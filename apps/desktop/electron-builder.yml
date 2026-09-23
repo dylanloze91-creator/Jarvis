@@ -1,6 +1,7 @@
 appId: com.thedexios.jarvis
 productName: Jarvis
 copyright: Copyright © 2026 thedexios
+electronVersion: 44.4.5
 directories:
   buildResources: resources
   output: release
@@ -8,6 +9,7 @@ files:
   - out/**
   - resources/**
   - '!**/*.map'
+afterPack: scripts/after-pack.cjs
 extraMetadata:
   main: out/main/index.js
 win:
