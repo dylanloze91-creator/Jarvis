@@ -142,6 +142,7 @@ export default function App() {
             <SettingsPanel
               settings={settings}
               status={status}
+              wakeWordScore={voice.wakeWordScore}
               onSaved={(payload) => {
                 setSettings(payload.settings);
                 setStatus(payload.status);

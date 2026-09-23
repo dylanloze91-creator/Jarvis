@@ -55,9 +55,12 @@ export { OpenAITtsProvider, openAITtsDescriptor, OPENAI_TTS_VOICES } from './spe
 export { concatFloat32, encodeWav } from './speech/wav.js';
 export {
   WakeWordDetector,
+  buildWakeWordEnvelope,
   buildWakeWordProfile,
   defaultWakeWordOptions,
+  thresholdForSensitivity,
   WAKE_WORD_PROFILE_LENGTH,
+  type WakeWordDetection,
   type WakeWordProfile,
   type WakeWordDetectorOptions,
 } from './speech/wakeword.js';

@@ -19,10 +19,12 @@ import type { RuntimeStatus } from '../../../shared/ipc';
 interface SettingsPanelProps {
   settings: Settings;
   status: RuntimeStatus;
+  /** Score de détection du mot de réveil en direct, transmis à la section vocale. */
+  wakeWordScore: number;
   onSaved: (payload: { settings: Settings; status: RuntimeStatus }) => void;
 }
 
-export function SettingsPanel({ settings, status, onSaved }: SettingsPanelProps) {
+export function SettingsPanel({ settings, status, wakeWordScore, onSaved }: SettingsPanelProps) {
   const [draft, setDraft] = useState<Settings>(settings);
   const [providers, setProviders] = useState<ProviderDescriptor[]>([]);
   const [searchProviders, setSearchProviders] = useState<SearchProviderDescriptor[]>([]);
@@ -259,6 +261,7 @@ export function SettingsPanel({ settings, status, onSaved }: SettingsPanelProps)
       <VoiceSettingsSection
         voice={draft.voice}
         voiceKeyConfigured={status.voiceKeyConfigured}
+        wakeWordScore={wakeWordScore}
         onChange={patchVoice}
       />
 

@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
   WakeWordDetector,
+  buildWakeWordEnvelope,
   buildWakeWordProfile,
   cosineSimilarity,
   normalize,
   resample,
+  thresholdForSensitivity,
 } from './wakeword.js';
 
 /** Simule une trame d'énergie en forme de cloche, pour représenter un mot prononcé. */
@@ -16,7 +18,18 @@ function bellCurve(length: number, peakAt = length / 2): number[] {
 }
 
 function silence(length: number): number[] {
-  return new Array(length).fill(0.01);
+  return new Array(length).fill(0.004);
+}
+
+/** Fait défiler une séquence d'énergies et renvoie le nombre de détections. */
+function feed(detector: WakeWordDetector, energies: number[], startAt = 0): number {
+  let now = startAt;
+  let detections = 0;
+  for (const energy of energies) {
+    now += 30;
+    if (detector.pushEnergy(energy, now).detected) detections += 1;
+  }
+  return detections;
 }
 
 describe('resample', () => {
@@ -50,87 +63,110 @@ describe('cosineSimilarity', () => {
   });
 });
 
+describe('thresholdForSensitivity', () => {
+  it('exige une correspondance plus forte quand la sensibilité baisse', () => {
+    expect(thresholdForSensitivity(0)).toBeGreaterThan(thresholdForSensitivity(1));
+  });
+
+  it('borne les valeurs hors intervalle', () => {
+    expect(thresholdForSensitivity(-5)).toBe(thresholdForSensitivity(0));
+    expect(thresholdForSensitivity(5)).toBe(thresholdForSensitivity(1));
+  });
+});
+
 describe('buildWakeWordProfile', () => {
-  it('produit un gabarit normalisé de la longueur demandée', () => {
-    const profile = buildWakeWordProfile(bellCurve(40), 24);
-    expect(profile.envelope).toHaveLength(24);
-    expect(Math.max(...profile.envelope)).toBeCloseTo(1, 5);
+  it('produit un gabarit normalisé par échantillon', () => {
+    const profile = buildWakeWordProfile([bellCurve(40), bellCurve(30)]);
+    expect(profile.envelopes).toHaveLength(2);
+    for (const envelope of profile.envelopes) {
+      expect(envelope).toHaveLength(24);
+      expect(Math.max(...envelope)).toBeCloseTo(1, 5);
+    }
+  });
+
+  it('ignore les échantillons vides', () => {
+    expect(buildWakeWordProfile([[], bellCurve(30)]).envelopes).toHaveLength(1);
   });
 });
 
 describe('WakeWordDetector', () => {
+  const options = { frameMs: 30, windowMs: 900, sensitivity: 0.2, cooldownMs: 1000 };
+
   it("ne détecte rien tant qu'aucun gabarit n'est configuré", () => {
-    const detector = new WakeWordDetector(null, { frameMs: 30, windowMs: 300 });
-    let detected = false;
-    for (let i = 0; i < 20; i += 1) {
-      detected = detector.pushEnergy(0.8, i * 30) || detected;
-    }
-    expect(detected).toBe(false);
+    const detector = new WakeWordDetector(null, options);
+    expect(feed(detector, new Array(40).fill(0.8))).toBe(0);
   });
 
-  it('détecte une trame qui reproduit fidèlement le gabarit entraîné', () => {
-    const trainingEnergy = bellCurve(30);
-    const profile = buildWakeWordProfile(trainingEnergy, 24);
-    const detector = new WakeWordDetector(profile, {
-      frameMs: 30,
-      windowMs: 30 * 30,
-      threshold: 0.9,
-      cooldownMs: 1000,
-    });
-
-    let detected = false;
-    let now = 0;
-    for (const energy of trainingEnergy) {
-      now += 30;
-      detected = detector.pushEnergy(energy, now) || detected;
-    }
-    expect(detected).toBe(true);
+  it('détecte une prononciation qui reproduit le gabarit entraîné', () => {
+    const training = bellCurve(30);
+    const detector = new WakeWordDetector(buildWakeWordProfile([training]), options);
+    expect(feed(detector, training)).toBe(1);
   });
 
-  it('ne se déclenche pas sur du silence', () => {
-    const trainingEnergy = bellCurve(30);
-    const profile = buildWakeWordProfile(trainingEnergy, 24);
-    const detector = new WakeWordDetector(profile, {
-      frameMs: 30,
-      windowMs: 30 * 30,
-      threshold: 0.9,
-      cooldownMs: 1000,
-    });
+  it('ne se déclenche pas sur du silence, dont l’enveloppe est plate', () => {
+    const detector = new WakeWordDetector(buildWakeWordProfile([bellCurve(30)]), options);
+    expect(feed(detector, silence(60))).toBe(0);
+  });
 
-    let detected = false;
+  it('reconnaît une prononciation que seul le second échantillon couvre', () => {
+    const late = bellCurve(30, 24);
+    const single = new WakeWordDetector(buildWakeWordProfile([bellCurve(30, 6)]), options);
+    const multiple = new WakeWordDetector(
+      buildWakeWordProfile([bellCurve(30, 6), bellCurve(30, 24)]),
+      options,
+    );
+
+    expect(feed(single, late)).toBe(0);
+    expect(feed(multiple, late)).toBe(1);
+  });
+
+  it('remonte un score exploitable par l’indicateur de calibration', () => {
+    const training = bellCurve(30);
+    const detector = new WakeWordDetector(buildWakeWordProfile([training]), options);
+
+    let best = 0;
     let now = 0;
-    for (const energy of silence(60)) {
+    for (const energy of training) {
       now += 30;
-      detected = detector.pushEnergy(energy, now) || detected;
+      best = Math.max(best, detector.pushEnergy(energy, now).score);
     }
-    expect(detected).toBe(false);
+    expect(best).toBeGreaterThan(0.9);
   });
 
   it('respecte le délai de repos entre deux détections', () => {
-    const trainingEnergy = bellCurve(30);
-    const profile = buildWakeWordProfile(trainingEnergy, 24);
-    const detector = new WakeWordDetector(profile, {
-      frameMs: 30,
-      windowMs: 30 * 30,
-      threshold: 0.9,
+    const training = bellCurve(30);
+    const detector = new WakeWordDetector(buildWakeWordProfile([training]), {
+      ...options,
       cooldownMs: 5000,
     });
-
-    let now = 0;
-    let detections = 0;
-    for (let repetition = 0; repetition < 2; repetition += 1) {
-      for (const energy of trainingEnergy) {
-        now += 30;
-        if (detector.pushEnergy(energy, now)) detections += 1;
-      }
-    }
-    expect(detections).toBe(1);
+    expect(feed(detector, [...training, ...training])).toBe(1);
   });
 
-  it('setProfile met à jour le gabarit utilisé et réinitialise la mémoire tampon', () => {
+  it('une sensibilité plus basse rejette une prononciation approximative', () => {
+    const approximate = bellCurve(30, 18);
+    const permissive = new WakeWordDetector(buildWakeWordProfile([bellCurve(30, 10)]), {
+      ...options,
+      sensitivity: 1,
+    });
+    const strict = new WakeWordDetector(buildWakeWordProfile([bellCurve(30, 10)]), {
+      ...options,
+      sensitivity: 0,
+    });
+
+    expect(feed(permissive, approximate)).toBe(1);
+    expect(feed(strict, approximate)).toBe(0);
+  });
+
+  it('setProfile met à jour les gabarits utilisés', () => {
     const detector = new WakeWordDetector(null);
     expect(detector.hasProfile()).toBe(false);
-    detector.setProfile(buildWakeWordProfile(bellCurve(30)));
+    detector.setProfile(buildWakeWordProfile([bellCurve(30)]));
     expect(detector.hasProfile()).toBe(true);
+    detector.setProfile({ envelopes: [] });
+    expect(detector.hasProfile()).toBe(false);
+  });
+
+  it('buildWakeWordEnvelope produit une enveloppe de longueur fixe', () => {
+    expect(buildWakeWordEnvelope(bellCurve(100))).toHaveLength(24);
   });
 });

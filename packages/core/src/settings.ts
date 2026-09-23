@@ -20,12 +20,18 @@ export const toolPoliciesSchema = z
   .default(defaultCategoryPolicies);
 
 /** Réglages de la commande vocale : écoute permanente, mot de réveil, voix. */
-export const voiceSettingsSchema = z.object({
+const voiceSettingsShape = z.object({
   /** Écoute permanente en arrière-plan, avec détection locale du mot de réveil. */
   enabled: z.boolean().default(false),
   wakeWord: z.string().min(1).default('jarvis'),
-  /** Gabarit d'énergie du mot de réveil, capturé localement (vide = pas encore entraîné). */
-  wakeWordProfile: z.array(z.number()).default([]),
+  /**
+   * Un gabarit d'énergie par échantillon enregistré localement (vide = pas
+   * encore calibré). Plusieurs prononciations rendent la détection nettement
+   * plus tolérante aux variations de voix.
+   */
+  wakeWordProfiles: z.array(z.array(z.number())).default([]),
+  /** Sensibilité de la détection, de 0 (très strict) à 1 (très permissif). */
+  wakeWordSensitivity: z.number().min(0).max(1).default(0.5),
   /** Identifiant du périphérique micro choisi ; vide = périphérique par défaut du système. */
   microphoneId: z.string().default(''),
   /** Moteur de reconnaissance vocale : identifiant enregistré dans le registre STT. */
@@ -43,7 +49,21 @@ export const voiceSettingsSchema = z.object({
   apiKey: z.string().default(''),
 });
 
-export type VoiceSettings = z.infer<typeof voiceSettingsSchema>;
+/**
+ * Les premières versions ne gardaient qu'un seul gabarit, sous la clé
+ * `wakeWordProfile`. On le reprend comme premier échantillon plutôt que de
+ * faire perdre sa calibration à l'utilisateur.
+ */
+export const voiceSettingsSchema = z.preprocess((input) => {
+  if (typeof input !== 'object' || input === null) return input;
+  const record = input as Record<string, unknown>;
+  const legacy = record.wakeWordProfile;
+  if (!Array.isArray(legacy) || legacy.length === 0 || record.wakeWordProfiles) return record;
+  const { wakeWordProfile: _legacy, ...rest } = record;
+  return { ...rest, wakeWordProfiles: [legacy] };
+}, voiceSettingsShape);
+
+export type VoiceSettings = z.infer<typeof voiceSettingsShape>;
 
 export const settingsSchema = z.object({
   provider: z.string().min(1).default('mock'),

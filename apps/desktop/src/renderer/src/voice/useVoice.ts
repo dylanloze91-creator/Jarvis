@@ -32,6 +32,8 @@ export interface UseVoiceOptions {
 export interface UseVoiceResult {
   state: VoiceState;
   level: number;
+  /** Similarité courante avec les gabarits du mot de réveil, de 0 à 1. */
+  wakeWordScore: number;
   liveTranscript: string;
   micError: string | null;
   speakingText: string | null;
@@ -51,6 +53,7 @@ export function useVoice({
 }: UseVoiceOptions): UseVoiceResult {
   const [state, setState] = useState<VoiceState>('idle');
   const [level, setLevel] = useState(0);
+  const [wakeWordScore, setWakeWordScore] = useState(0);
   const [liveTranscript, setLiveTranscript] = useState('');
   const [micError, setMicError] = useState<string | null>(null);
   const [speakingText, setSpeakingText] = useState<string | null>(null);
@@ -160,8 +163,9 @@ export function useVoice({
       setLevel((previous) => previous + (rms - previous) * LEVEL_SMOOTHING);
 
       if (stateRef.current === 'sleeping') {
-        const detected = detectorRef.current?.pushEnergy(rms) ?? false;
-        if (detected) beginListening();
+        const result = detectorRef.current?.pushEnergy(rms);
+        if (result) setWakeWordScore(result.score);
+        if (result?.detected) beginListening();
         return;
       }
 
@@ -188,6 +192,7 @@ export function useVoice({
     captureRef.current = null;
     detectorRef.current = null;
     setLevel(0);
+    setWakeWordScore(0);
     setLiveTranscript('');
   }, [clearMaxDurationTimer]);
 
@@ -216,10 +221,11 @@ export function useVoice({
           return;
         }
         captureRef.current = handle;
-        const profile = settingsRef.current?.voice.wakeWordProfile ?? [];
-        detectorRef.current = new WakeWordDetector(
-          profile.length > 0 ? { envelope: profile } : null,
-        );
+        const voiceSettings = settingsRef.current?.voice;
+        const envelopes = voiceSettings?.wakeWordProfiles ?? [];
+        detectorRef.current = new WakeWordDetector(envelopes.length > 0 ? { envelopes } : null, {
+          sensitivity: voiceSettings?.wakeWordSensitivity ?? 0.5,
+        });
         setMicError(null);
         setVoiceState('sleeping');
       } catch (error) {
@@ -237,12 +243,14 @@ export function useVoice({
     // réveil est appliqué par l'effet suivant, sans rouvrir le micro.
   }, [settings?.voice.enabled, settings?.voice.microphoneId]);
 
-  // Applique un nouveau gabarit de mot de réveil sans redémarrer la capture.
-  const wakeWordProfileKey = JSON.stringify(settings?.voice.wakeWordProfile ?? []);
+  // Applique les nouveaux gabarits et la sensibilité sans redémarrer la capture.
+  const wakeWordProfileKey = JSON.stringify(settings?.voice.wakeWordProfiles ?? []);
+  const sensitivity = settings?.voice.wakeWordSensitivity ?? 0.5;
   useEffect(() => {
-    const profile = settings?.voice.wakeWordProfile ?? [];
-    detectorRef.current?.setProfile(profile.length > 0 ? { envelope: profile } : null);
-  }, [wakeWordProfileKey]);
+    const envelopes = settings?.voice.wakeWordProfiles ?? [];
+    detectorRef.current?.setProfile(envelopes.length > 0 ? { envelopes } : null);
+    detectorRef.current?.setSensitivity(sensitivity);
+  }, [wakeWordProfileKey, sensitivity]);
 
   const stopSpeaking = useCallback(() => {
     ttsControllerRef.current?.stop();
@@ -310,6 +318,7 @@ export function useVoice({
   return {
     state,
     level,
+    wakeWordScore,
     liveTranscript,
     micError,
     speakingText,
