@@ -1,22 +1,29 @@
-import { useEffect, useMemo, useState } from 'react';
-import { thresholdForSensitivity, type VoiceDescriptor, type VoiceSettings } from '@jarvis/core';
-import { Trash2 } from 'lucide-react';
-import { Field, Input, Select, Toggle } from '@/components/ui/field';
+import { sensitivityToThreshold } from '@jarvis/core';
+import type { VoiceDescriptor, VoiceSettings } from '@jarvis/core';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Field, Input, Range, Select, Toggle } from '@/components/ui/field';
 import { Button } from '@/components/ui/button';
 import { listMicrophones } from '@/voice/audioCapture';
-import { createSttRegistry, createTtsRegistry } from '@/voice/registries';
-import { recordWakeWordSample } from '@/voice/trainWakeWord';
+import {
+  createSttRegistry,
+  createTtsRegistry,
+  createWakeWordEngineRegistry,
+} from '@/voice/registries';
+import {
+  recordWakeWordProfile,
+  startWakeWordTest,
+  type WakeWordTestHandle,
+} from '@/voice/trainWakeWord';
 
 interface VoiceSettingsSectionProps {
   voice: VoiceSettings;
   voiceKeyConfigured: boolean;
-  /** Score de détection en direct (0 à 1), affiché pour aider au réglage. */
-  wakeWordScore: number;
   onChange: (patch: Partial<VoiceSettings>) => void;
 }
 
-/** Trois prononciations suffisent à couvrir les variations habituelles de voix. */
-const RECOMMENDED_SAMPLES = 3;
+type RecordingState = 'idle' | 'recording' | 'error';
+
+const MIN_SAMPLES_RECOMMENDED = 3;
 
 /**
  * Section « Commande vocale » des réglages. Chaque sélecteur de moteur lit
@@ -27,17 +34,26 @@ const RECOMMENDED_SAMPLES = 3;
 export function VoiceSettingsSection({
   voice,
   voiceKeyConfigured,
-  wakeWordScore,
   onChange,
 }: VoiceSettingsSectionProps) {
   const sttRegistry = useMemo(() => createSttRegistry(), []);
   const ttsRegistry = useMemo(() => createTtsRegistry(), []);
+  const wakeWordRegistry = useMemo(() => createWakeWordEngineRegistry(), []);
 
   const [microphones, setMicrophones] = useState<MediaDeviceInfo[]>([]);
-  const [recording, setRecording] = useState(false);
-  const [recordingLevel, setRecordingLevel] = useState(0);
-  const [recordError, setRecordError] = useState<string | null>(null);
+  const [recording, setRecording] = useState<RecordingState>('idle');
   const [ttsVoices, setTtsVoices] = useState<VoiceDescriptor[]>([]);
+
+  const [testing, setTesting] = useState(false);
+  const [testScore, setTestScore] = useState(0);
+  const [testFlash, setTestFlash] = useState(false);
+  const [testError, setTestError] = useState<string | null>(null);
+  const testHandleRef = useRef<WakeWordTestHandle | null>(null);
+  const flashTimerRef = useRef<number | null>(null);
+
+  const usingPorcupine = voice.wakeWordEngine === 'porcupine';
+  const sampleCount = voice.wakeWordProfiles.length;
+  const threshold = sensitivityToThreshold(voice.wakeWordSensitivity);
 
   useEffect(() => {
     void listMicrophones()
@@ -56,24 +72,65 @@ export function VoiceSettingsSection({
     };
   }, [voice.ttsProvider, ttsRegistry]);
 
+  // Coupe le test en cours si l'utilisateur change de panneau ou d'onglet.
+  useEffect(() => {
+    return () => {
+      testHandleRef.current?.stop();
+      if (flashTimerRef.current) window.clearTimeout(flashTimerRef.current);
+    };
+  }, []);
+
   const addSample = async (): Promise<void> => {
-    setRecording(true);
-    setRecordError(null);
+    setRecording('recording');
     try {
-      const envelope = await recordWakeWordSample(voice.microphoneId || undefined, (progress) =>
-        setRecordingLevel(progress.level),
-      );
-      onChange({ wakeWordProfiles: [...voice.wakeWordProfiles, envelope] });
-    } catch (error) {
-      setRecordError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setRecording(false);
-      setRecordingLevel(0);
+      const profile = await recordWakeWordProfile(voice.microphoneId || undefined);
+      onChange({ wakeWordProfiles: [...voice.wakeWordProfiles, profile.envelope] });
+      setRecording('idle');
+    } catch {
+      setRecording('error');
     }
   };
 
-  const sampleCount = voice.wakeWordProfiles.length;
-  const threshold = thresholdForSensitivity(voice.wakeWordSensitivity);
+  const clearSamples = (): void => {
+    onChange({ wakeWordProfiles: [] });
+  };
+
+  const toggleTest = async (): Promise<void> => {
+    if (testing) {
+      testHandleRef.current?.stop();
+      testHandleRef.current = null;
+      setTesting(false);
+      return;
+    }
+
+    setTestError(null);
+    setTestScore(0);
+    try {
+      const handle = await startWakeWordTest(
+        voice.microphoneId || undefined,
+        voice.wakeWordProfiles.length > 0
+          ? {
+              profiles: voice.wakeWordProfiles.map((envelope) => ({ envelope })),
+              matchStrategy: voice.wakeWordMatchStrategy,
+            }
+          : null,
+        voice.wakeWordSensitivity,
+        (score, detected) => {
+          setTestScore(score);
+          if (detected) {
+            setTestFlash(true);
+            if (flashTimerRef.current) window.clearTimeout(flashTimerRef.current);
+            flashTimerRef.current = window.setTimeout(() => setTestFlash(false), 600);
+          }
+        },
+        (message) => setTestError(message),
+      );
+      testHandleRef.current = handle;
+      setTesting(true);
+    } catch (error) {
+      setTestError(error instanceof Error ? error.message : String(error));
+    }
+  };
 
   return (
     <div className="flex flex-col gap-4 border-t border-white/8 pt-4">
@@ -88,12 +145,170 @@ export function VoiceSettingsSection({
         onChange={(enabled) => onChange({ enabled })}
       />
 
-      <Field label="Mot de réveil">
-        <Input
-          value={voice.wakeWord}
-          onChange={(event) => onChange({ wakeWord: event.target.value })}
-        />
-      </Field>
+      <div className="rounded-lg border border-white/8 bg-white/[0.02] p-3">
+        <p className="mb-3 text-[11px] font-medium tracking-wide text-slate-500 uppercase">
+          Mot de réveil — calibration guidée
+        </p>
+
+        <div className="flex flex-col gap-3">
+          <Field label="Moteur de détection">
+            <Select
+              value={voice.wakeWordEngine}
+              onChange={(event) => onChange({ wakeWordEngine: event.target.value })}
+            >
+              {wakeWordRegistry.list().map((descriptor) => (
+                <option key={descriptor.id} value={descriptor.id}>
+                  {descriptor.label}
+                </option>
+              ))}
+            </Select>
+          </Field>
+
+          {usingPorcupine ? (
+            <>
+              <p className="rounded-lg border border-amber-400/25 bg-amber-400/10 px-3 py-2 text-xs leading-snug text-amber-100">
+                Porcupine reconnaît « jarvis » sans calibration, mais sa formule personnelle{' '}
+                <strong>n'est plus gratuite depuis le 30 juin 2026</strong> (Picovoice a mis fin à
+                son offre gratuite et n'a pas prévu de palier non commercial). Une carte bancaire et
+                un abonnement payant sont nécessaires pour obtenir une clé valide — voir le README
+                pour le détail. Sans clé, l'application repasse automatiquement sur le gabarit local
+                ci-dessous.
+              </p>
+              <Field label="Clé d'accès Picovoice">
+                <Input
+                  type="password"
+                  value={voice.wakeWordAccessKey}
+                  placeholder="AccessKey Picovoice…"
+                  onChange={(event) => onChange({ wakeWordAccessKey: event.target.value })}
+                />
+              </Field>
+            </>
+          ) : (
+            <p className="text-xs leading-snug text-slate-500">
+              Gratuit, sans compte : Jarvis compare le son capté à un ou plusieurs échantillons que
+              tu enregistres toi-même ci-dessous. C'est le moteur par défaut de l'application.
+            </p>
+          )}
+
+          {!usingPorcupine ? (
+            <>
+              <Field label="Mot de réveil">
+                <Input
+                  value={voice.wakeWord}
+                  onChange={(event) => onChange({ wakeWord: event.target.value })}
+                />
+              </Field>
+
+              <Field label="Comparaison des échantillons">
+                <Select
+                  value={voice.wakeWordMatchStrategy}
+                  onChange={(event) =>
+                    onChange({
+                      wakeWordMatchStrategy: event.target
+                        .value as VoiceSettings['wakeWordMatchStrategy'],
+                    })
+                  }
+                >
+                  <option value="best">
+                    Meilleur gabarit (tolère la variabilité entre essais)
+                  </option>
+                  <option value="average">Moyenne des gabarits (lisse le bruit)</option>
+                </Select>
+              </Field>
+
+              <div className="flex flex-col gap-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-medium tracking-wide text-slate-400 uppercase">
+                    Sensibilité
+                  </span>
+                  <span className="text-xs text-slate-400">
+                    {Math.round(voice.wakeWordSensitivity * 100)}% · seuil{' '}
+                    {Math.round(threshold * 100)}%
+                  </span>
+                </div>
+                <Range
+                  min={0}
+                  max={100}
+                  value={Math.round(voice.wakeWordSensitivity * 100)}
+                  onChange={(event) =>
+                    onChange({ wakeWordSensitivity: Number(event.target.value) / 100 })
+                  }
+                />
+                <div className="flex justify-between text-[11px] text-slate-500">
+                  <span>Stricte (peu de faux positifs)</span>
+                  <span>Sensible (se déclenche facilement)</span>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between gap-3 rounded-lg border border-white/8 bg-white/[0.03] px-3 py-2.5">
+                <div>
+                  <p className="text-sm text-slate-200">
+                    {sampleCount} échantillon{sampleCount === 1 ? '' : 's'} enregistré
+                    {sampleCount === 1 ? '' : 's'}
+                  </p>
+                  <p className="text-xs text-slate-500">
+                    {sampleCount === 0
+                      ? "Aucun gabarit : dis le mot de réveil pendant l'enregistrement."
+                      : sampleCount < MIN_SAMPLES_RECOMMENDED
+                        ? `Recommandé : au moins ${MIN_SAMPLES_RECOMMENDED} échantillons pour bien couvrir ta voix.`
+                        : 'Bonne base : tu peux tester la détection ci-dessous.'}
+                  </p>
+                </div>
+                <div className="flex shrink-0 gap-2">
+                  {sampleCount > 0 ? (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={clearSamples}
+                      disabled={recording === 'recording'}
+                    >
+                      Effacer
+                    </Button>
+                  ) : null}
+                  <Button
+                    size="sm"
+                    variant="subtle"
+                    onClick={() => void addSample()}
+                    disabled={recording === 'recording'}
+                  >
+                    {recording === 'recording'
+                      ? 'Dis « ' + voice.wakeWord + ' »…'
+                      : 'Ajouter un échantillon'}
+                  </Button>
+                </div>
+              </div>
+              {recording === 'error' ? (
+                <p className="text-xs text-rose-300">
+                  Impossible d'accéder au microphone (normal sur une machine sans micro).
+                </p>
+              ) : null}
+
+              <div className="flex flex-col gap-2 rounded-lg border border-white/8 bg-white/[0.03] px-3 py-2.5">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm text-slate-200">Tester la détection</p>
+                    <p className="text-xs text-slate-500">
+                      Dis le mot de réveil et observe le score : il doit dépasser le seuil pour
+                      déclencher.
+                    </p>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant={testing ? 'danger' : 'subtle'}
+                    onClick={() => void toggleTest()}
+                  >
+                    {testing ? 'Arrêter le test' : 'Tester'}
+                  </Button>
+                </div>
+                {testing ? (
+                  <ScoreMeter score={testScore} threshold={threshold} flash={testFlash} />
+                ) : null}
+                {testError ? <p className="text-xs text-rose-300">{testError}</p> : null}
+              </div>
+            </>
+          ) : null}
+        </div>
+      </div>
 
       <Field
         label="Microphone"
@@ -112,79 +327,10 @@ export function VoiceSettingsSection({
         </Select>
       </Field>
 
-      <div className="flex flex-col gap-3 rounded-lg border border-white/8 bg-white/[0.03] px-3 py-3">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <p className="text-sm text-slate-200">Calibrer le mot de réveil</p>
-            <p className="text-xs leading-snug text-slate-500">
-              {sampleCount === 0
-                ? `Dis « ${voice.wakeWord} » à chaque enregistrement. ${RECOMMENDED_SAMPLES} échantillons recommandés.`
-                : `${sampleCount} échantillon${sampleCount > 1 ? 's' : ''} enregistré${sampleCount > 1 ? 's' : ''}${
-                    sampleCount < RECOMMENDED_SAMPLES
-                      ? ` — ${RECOMMENDED_SAMPLES - sampleCount} de plus pour une détection fiable.`
-                      : '.'
-                  }`}
-            </p>
-          </div>
-          <div className="flex shrink-0 gap-1.5">
-            {sampleCount > 0 ? (
-              <Button
-                size="icon"
-                variant="ghost"
-                title="Effacer les échantillons"
-                onClick={() => onChange({ wakeWordProfiles: [] })}
-              >
-                <Trash2 className="size-3.5" />
-              </Button>
-            ) : null}
-            <Button
-              size="sm"
-              variant="subtle"
-              onClick={() => void addSample()}
-              disabled={recording}
-            >
-              {recording ? 'Parle…' : 'Enregistrer'}
-            </Button>
-          </div>
-        </div>
-
-        {recording ? <Meter value={recordingLevel * 4} tone="accent" /> : null}
-
-        {recordError ? <p className="text-xs text-rose-300">{recordError}</p> : null}
-      </div>
-
       <Field
-        label="Sensibilité de la détection"
-        hint="Vers la droite, Jarvis se réveille plus facilement mais se trompe plus souvent."
+        label="Moteur de reconnaissance vocale (STT)"
+        hint="La reconnaissance locale du navigateur ne fonctionne pas dans Electron (limitation connue et vérifiée : elle dépend des serveurs de Google, absents d'Electron). Tant qu'aucune clé OpenAI n'est configurée, seuls le mot de réveil et la simulation restent utilisables."
       >
-        <input
-          type="range"
-          min={0}
-          max={1}
-          step={0.05}
-          value={voice.wakeWordSensitivity}
-          onChange={(event) => onChange({ wakeWordSensitivity: Number(event.target.value) })}
-          className="no-drag w-full accent-[var(--color-accent)]"
-        />
-      </Field>
-
-      {voice.enabled && sampleCount > 0 ? (
-        <div className="flex flex-col gap-1.5">
-          <div className="flex items-center justify-between text-xs text-slate-500">
-            <span>Correspondance en direct</span>
-            <span className="font-mono">
-              {Math.round(wakeWordScore * 100)} % / {Math.round(threshold * 100)} %
-            </span>
-          </div>
-          <Meter value={wakeWordScore} marker={threshold} tone="accent" />
-          <p className="text-xs leading-snug text-slate-500">
-            Dis le mot de réveil : si la barre ne franchit pas le repère, augmente la sensibilité ou
-            ajoute un échantillon.
-          </p>
-        </div>
-      ) : null}
-
-      <Field label="Moteur de reconnaissance vocale (STT)">
         <Select
           value={voice.sttProvider}
           onChange={(event) => onChange({ sttProvider: event.target.value })}
@@ -192,9 +338,7 @@ export function VoiceSettingsSection({
           {sttRegistry.list().map((descriptor) => (
             <option key={descriptor.id} value={descriptor.id}>
               {descriptor.label}
-              {descriptor.requiresApiKey && !voiceKeyConfigured
-                ? ' — clé requise, repli local'
-                : ''}
+              {descriptor.requiresApiKey && !voiceKeyConfigured ? ' — clé requise' : ''}
             </option>
           ))}
         </Select>
@@ -202,7 +346,7 @@ export function VoiceSettingsSection({
 
       <Toggle
         label="Réponse vocale"
-        hint="Jarvis lit ses réponses à voix haute, même pour un message tapé."
+        hint="Jarvis lit ses réponses à voix haute avec les voix du système (Windows/SAPI), gratuitement — même pour un message tapé."
         checked={voice.ttsEnabled}
         onChange={(ttsEnabled) => onChange({ ttsEnabled })}
       />
@@ -243,7 +387,7 @@ export function VoiceSettingsSection({
 
       <Field
         label="Clé API OpenAI dédiée à la voix (optionnel)"
-        hint="Laisse vide pour réutiliser la clé du fournisseur OpenAI ci-dessus, si configuré."
+        hint="Laisse vide pour réutiliser la clé du fournisseur OpenAI ci-dessus, si configuré. Facultative : toute la chaîne vocale par défaut (mot de réveil + réponse) fonctionne sans elle."
       >
         <Input
           type="password"
@@ -256,21 +400,38 @@ export function VoiceSettingsSection({
   );
 }
 
-/** Barre de niveau, avec un repère optionnel matérialisant le seuil. */
-function Meter({ value, marker, tone }: { value: number; marker?: number; tone: 'accent' }) {
-  const width = `${Math.min(100, Math.max(0, value * 100))}%`;
+function ScoreMeter({
+  score,
+  threshold,
+  flash,
+}: {
+  score: number;
+  threshold: number;
+  flash: boolean;
+}) {
+  const percent = Math.round(Math.min(1, Math.max(0, score)) * 100);
+  const thresholdPercent = Math.round(Math.min(1, Math.max(0, threshold)) * 100);
+  const passed = score >= threshold;
+
   return (
-    <div className="relative h-1.5 w-full overflow-hidden rounded-full bg-white/10">
-      <div
-        className={tone === 'accent' ? 'h-full rounded-full bg-accent transition-[width]' : ''}
-        style={{ width }}
-      />
-      {marker !== undefined ? (
-        <span
-          className="absolute top-0 h-full w-px bg-white/60"
-          style={{ left: `${Math.min(100, Math.max(0, marker * 100))}%` }}
+    <div className="flex flex-col gap-1">
+      <div className="relative h-3 overflow-hidden rounded-full bg-white/10">
+        <div
+          className={`h-full rounded-full transition-[width] duration-100 ${
+            flash ? 'bg-emerald-400' : passed ? 'bg-accent' : 'bg-white/30'
+          }`}
+          style={{ width: `${percent}%` }}
         />
-      ) : null}
+        <div
+          className="absolute top-0 h-full w-px bg-rose-300/80"
+          style={{ left: `${thresholdPercent}%` }}
+          title="Seuil de déclenchement"
+        />
+      </div>
+      <div className="flex justify-between text-[11px] text-slate-500">
+        <span>Score : {percent}%</span>
+        <span>{flash ? 'Détecté !' : `Seuil : ${thresholdPercent}%`}</span>
+      </div>
     </div>
   );
 }

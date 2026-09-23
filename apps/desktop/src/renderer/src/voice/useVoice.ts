@@ -3,8 +3,11 @@ import type {
   SpeechToTextProvider,
   TextToSpeechController,
   TextToSpeechProvider,
+  VoiceSettings,
+  WakeWordDetectorConfig,
+  WakeWordEngine,
+  WakeWordEngineController,
 } from '@jarvis/core';
-import { WakeWordDetector } from '@jarvis/core';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   computeRms,
@@ -12,7 +15,7 @@ import {
   startAudioCapture,
   type AudioCaptureHandle,
 } from './audioCapture';
-import { createSttRegistry, createTtsRegistry } from './registries';
+import { createSttRegistry, createTtsRegistry, createWakeWordEngineRegistry } from './registries';
 
 export type VoiceState = 'idle' | 'sleeping' | 'listening' | 'speaking' | 'error';
 
@@ -32,8 +35,6 @@ export interface UseVoiceOptions {
 export interface UseVoiceResult {
   state: VoiceState;
   level: number;
-  /** Similarité courante avec les gabarits du mot de réveil, de 0 à 1. */
-  wakeWordScore: number;
   liveTranscript: string;
   micError: string | null;
   speakingText: string | null;
@@ -46,6 +47,17 @@ export interface UseVoiceResult {
   listMicrophones: typeof listMicrophones;
 }
 
+function buildWakeWordDetectorConfig(
+  voice: VoiceSettings | undefined,
+): WakeWordDetectorConfig | null {
+  const profiles = voice?.wakeWordProfiles ?? [];
+  if (profiles.length === 0) return null;
+  return {
+    profiles: profiles.map((envelope) => ({ envelope })),
+    matchStrategy: voice?.wakeWordMatchStrategy ?? 'best',
+  };
+}
+
 export function useVoice({
   settings,
   voiceKeyConfigured,
@@ -53,13 +65,13 @@ export function useVoice({
 }: UseVoiceOptions): UseVoiceResult {
   const [state, setState] = useState<VoiceState>('idle');
   const [level, setLevel] = useState(0);
-  const [wakeWordScore, setWakeWordScore] = useState(0);
   const [liveTranscript, setLiveTranscript] = useState('');
   const [micError, setMicError] = useState<string | null>(null);
   const [speakingText, setSpeakingText] = useState<string | null>(null);
 
   const sttRegistry = useMemo(() => createSttRegistry(), []);
   const ttsRegistry = useMemo(() => createTtsRegistry(), []);
+  const wakeWordRegistry = useMemo(() => createWakeWordEngineRegistry(), []);
 
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
@@ -70,7 +82,8 @@ export function useVoice({
 
   const stateRef = useRef<VoiceState>('idle');
   const captureRef = useRef<AudioCaptureHandle | null>(null);
-  const detectorRef = useRef<WakeWordDetector | null>(null);
+  const wakeWordControllerRef = useRef<WakeWordEngineController | null>(null);
+  const wakeWordOwnsCaptureRef = useRef(false);
   const sttControllerRef = useRef<ReturnType<SpeechToTextProvider['start']> | null>(null);
   const sttOwnsCaptureRef = useRef(false);
   const silenceSinceRef = useRef<number | null>(null);
@@ -105,6 +118,21 @@ export function useVoice({
     });
   }, [ttsRegistry]);
 
+  const resolveWakeWordEngine = useCallback((): WakeWordEngine => {
+    const voice = settingsRef.current?.voice;
+    const requestedId = voice?.wakeWordEngine ?? 'local-template';
+    const descriptor = wakeWordRegistry.describe(requestedId);
+    const accessKey = voice?.wakeWordAccessKey?.trim() ?? '';
+    const eligible = descriptor && (!descriptor.requiresApiKey || accessKey.length > 0);
+    return wakeWordRegistry.create({
+      provider: eligible ? requestedId : 'local-template',
+      apiKey: accessKey,
+      keyword: voice?.wakeWord ?? 'jarvis',
+      detectorConfig: buildWakeWordDetectorConfig(voice),
+      sensitivity: voice?.wakeWordSensitivity ?? 0.5,
+    });
+  }, [wakeWordRegistry]);
+
   const backToSleepOrIdle = useCallback(() => {
     setVoiceState(settingsRef.current?.voice.enabled ? 'sleeping' : 'idle');
   }, [setVoiceState]);
@@ -134,6 +162,7 @@ export function useVoice({
   }, [clearMaxDurationTimer]);
 
   const beginListening = useCallback(() => {
+    if (stateRef.current !== 'sleeping') return;
     setVoiceState('listening');
     setLiveTranscript('');
     silenceSinceRef.current = null;
@@ -157,15 +186,24 @@ export function useVoice({
     maxDurationTimerRef.current = window.setTimeout(() => finishListening(), MAX_UTTERANCE_MS);
   }, [finalizeTranscript, finishListening, resolveStt, setVoiceState]);
 
+  const startWakeWordEngine = useCallback(() => {
+    wakeWordControllerRef.current?.stop();
+    const engine = resolveWakeWordEngine();
+    wakeWordOwnsCaptureRef.current = engine.managesOwnCapture;
+    wakeWordControllerRef.current = engine.start({
+      onDetected: () => beginListening(),
+      onError: (message) => setMicError(message),
+    });
+  }, [beginListening, resolveWakeWordEngine]);
+
   const handleFrame = useCallback(
     (frame: Float32Array, sampleRate: number) => {
       const rms = computeRms(frame);
       setLevel((previous) => previous + (rms - previous) * LEVEL_SMOOTHING);
 
       if (stateRef.current === 'sleeping') {
-        const result = detectorRef.current?.pushEnergy(rms);
-        if (result) setWakeWordScore(result.score);
-        if (result?.detected) beginListening();
+        if (!wakeWordOwnsCaptureRef.current)
+          wakeWordControllerRef.current?.pushAudio?.(frame, sampleRate);
         return;
       }
 
@@ -181,25 +219,25 @@ export function useVoice({
         }
       }
     },
-    [beginListening, finishListening],
+    [finishListening],
   );
 
   const stopCapture = useCallback(() => {
     clearMaxDurationTimer();
     sttControllerRef.current?.abort();
     sttControllerRef.current = null;
+    wakeWordControllerRef.current?.stop();
+    wakeWordControllerRef.current = null;
     captureRef.current?.stop();
     captureRef.current = null;
-    detectorRef.current = null;
     setLevel(0);
-    setWakeWordScore(0);
     setLiveTranscript('');
   }, [clearMaxDurationTimer]);
 
   // (Re)démarre l'écoute permanente quand elle est activée, ou l'arrête sinon.
-  // Ne dépend que du micro et de l'activation : le gabarit du mot de réveil
-  // est appliqué séparément (voir l'effet suivant) pour ne pas rouvrir le
-  // flux audio à chaque enregistrement d'échantillon.
+  // Ne dépend que du micro et de l'activation : la configuration du mot de
+  // réveil est appliquée séparément (voir l'effet suivant) pour ne pas
+  // rouvrir le flux audio à chaque changement de réglage vocal.
   useEffect(() => {
     if (!settings) return;
     if (!settings.voice.enabled) {
@@ -221,13 +259,9 @@ export function useVoice({
           return;
         }
         captureRef.current = handle;
-        const voiceSettings = settingsRef.current?.voice;
-        const envelopes = voiceSettings?.wakeWordProfiles ?? [];
-        detectorRef.current = new WakeWordDetector(envelopes.length > 0 ? { envelopes } : null, {
-          sensitivity: voiceSettings?.wakeWordSensitivity ?? 0.5,
-        });
         setMicError(null);
         setVoiceState('sleeping');
+        startWakeWordEngine();
       } catch (error) {
         if (cancelled) return;
         setMicError(error instanceof Error ? error.message : String(error));
@@ -239,18 +273,24 @@ export function useVoice({
       cancelled = true;
       stopCapture();
     };
-    // Volontairement limité à ces deux dépendances : le gabarit du mot de
-    // réveil est appliqué par l'effet suivant, sans rouvrir le micro.
+    // Volontairement limité à ces deux dépendances : le moteur de mot de
+    // réveil est (re)configuré par l'effet suivant, sans rouvrir le micro.
   }, [settings?.voice.enabled, settings?.voice.microphoneId]);
 
-  // Applique les nouveaux gabarits et la sensibilité sans redémarrer la capture.
-  const wakeWordProfileKey = JSON.stringify(settings?.voice.wakeWordProfiles ?? []);
-  const sensitivity = settings?.voice.wakeWordSensitivity ?? 0.5;
+  // Reconfigure le moteur de mot de réveil (gabarits, sensibilité, stratégie,
+  // moteur choisi, clé Porcupine) sans redémarrer la capture audio.
+  const wakeWordConfigKey = JSON.stringify({
+    engine: settings?.voice.wakeWordEngine,
+    word: settings?.voice.wakeWord,
+    profiles: settings?.voice.wakeWordProfiles,
+    strategy: settings?.voice.wakeWordMatchStrategy,
+    sensitivity: settings?.voice.wakeWordSensitivity,
+    accessKey: settings?.voice.wakeWordAccessKey,
+  });
   useEffect(() => {
-    const envelopes = settings?.voice.wakeWordProfiles ?? [];
-    detectorRef.current?.setProfile(envelopes.length > 0 ? { envelopes } : null);
-    detectorRef.current?.setSensitivity(sensitivity);
-  }, [wakeWordProfileKey, sensitivity]);
+    if (stateRef.current === 'sleeping' && captureRef.current) startWakeWordEngine();
+    // Dépendance volontairement limitée à la clé sérialisée ci-dessus.
+  }, [wakeWordConfigKey]);
 
   const stopSpeaking = useCallback(() => {
     ttsControllerRef.current?.stop();
@@ -318,7 +358,6 @@ export function useVoice({
   return {
     state,
     level,
-    wakeWordScore,
     liveTranscript,
     micError,
     speakingText,

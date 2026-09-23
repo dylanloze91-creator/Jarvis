@@ -5,8 +5,15 @@
  * niveau sonore) ; la détection du mot de réveil et la transcription sont
  * des couches séparées qui consomment ces trames.
  */
+export { computeRms } from '@jarvis/core';
 
 const FRAME_SIZE = 4096;
+/**
+ * 16 kHz : c'est ce qu'attendent aussi bien Whisper que Porcupine. Demander
+ * ce taux dès la capture évite un ré-échantillonnage manuel dans chaque
+ * consommateur (le détecteur local, lui, n'y est pas sensible).
+ */
+const TARGET_SAMPLE_RATE = 16000;
 
 export interface AudioCaptureHandlers {
   /** Trame PCM mono brute, amplitude normalisée [-1, 1]. */
@@ -39,7 +46,7 @@ export async function startAudioCapture(
     audio: deviceId ? { deviceId: { exact: deviceId } } : true,
   });
 
-  const context = new AudioContext();
+  const context = new AudioContext({ sampleRate: TARGET_SAMPLE_RATE });
   const source = context.createMediaStreamSource(stream);
   const processor = context.createScriptProcessor(FRAME_SIZE, 1, 1);
   // Un ScriptProcessorNode ne s'exécute que s'il est relié à une
@@ -71,10 +78,4 @@ export async function startAudioCapture(
   };
 
   return { stop };
-}
-
-export function computeRms(frame: Float32Array): number {
-  let sum = 0;
-  for (const sample of frame) sum += sample * sample;
-  return Math.sqrt(sum / frame.length);
 }

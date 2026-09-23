@@ -12,6 +12,20 @@ export function Textarea({ className, ...props }: ComponentProps<'textarea'>) {
   return <textarea className={cn(control, 'resize-none', className)} {...props} />;
 }
 
+export function Range({ className, style, ...props }: ComponentProps<'input'>) {
+  return (
+    <input
+      type="range"
+      className={cn(
+        'no-drag h-1.5 w-full cursor-pointer appearance-none rounded-full bg-white/10',
+        className,
+      )}
+      style={{ accentColor: 'var(--color-accent)', ...style }}
+      {...props}
+    />
+  );
+}
+
 export function Select({ className, children, ...props }: ComponentProps<'select'>) {
   return (
     <select className={cn(control, 'h-9 py-0', className)} {...props}>

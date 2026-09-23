@@ -20,18 +20,27 @@ export const toolPoliciesSchema = z
   .default(defaultCategoryPolicies);
 
 /** Réglages de la commande vocale : écoute permanente, mot de réveil, voix. */
-const voiceSettingsShape = z.object({
+export const voiceSettingsSchema = z.object({
   /** Écoute permanente en arrière-plan, avec détection locale du mot de réveil. */
   enabled: z.boolean().default(false),
   wakeWord: z.string().min(1).default('jarvis'),
   /**
-   * Un gabarit d'énergie par échantillon enregistré localement (vide = pas
-   * encore calibré). Plusieurs prononciations rendent la détection nettement
-   * plus tolérante aux variations de voix.
+   * Gabarits d'énergie du mot de réveil, capturés localement (plusieurs
+   * échantillons possibles, tableau vide = pas encore entraîné).
    */
   wakeWordProfiles: z.array(z.array(z.number())).default([]),
-  /** Sensibilité de la détection, de 0 (très strict) à 1 (très permissif). */
+  /** `best` compare au gabarit le plus proche, `average` à leur moyenne. */
+  wakeWordMatchStrategy: z.enum(['best', 'average']).default('best'),
+  /** 0 (strict, peu de faux positifs) à 1 (très sensible). */
   wakeWordSensitivity: z.number().min(0).max(1).default(0.5),
+  /** Moteur de détection du mot de réveil : identifiant enregistré dans le registre dédié. */
+  wakeWordEngine: z.string().min(1).default('local-template'),
+  /**
+   * Clé d'accès Picovoice (Porcupine), optionnelle. Sa présence sélectionne
+   * automatiquement Porcupine ; vide, l'application reste sur le gabarit
+   * local. Voir le README pour le coût réel de cette clé.
+   */
+  wakeWordAccessKey: z.string().default(''),
   /** Identifiant du périphérique micro choisi ; vide = périphérique par défaut du système. */
   microphoneId: z.string().default(''),
   /** Moteur de reconnaissance vocale : identifiant enregistré dans le registre STT. */
@@ -49,21 +58,7 @@ const voiceSettingsShape = z.object({
   apiKey: z.string().default(''),
 });
 
-/**
- * Les premières versions ne gardaient qu'un seul gabarit, sous la clé
- * `wakeWordProfile`. On le reprend comme premier échantillon plutôt que de
- * faire perdre sa calibration à l'utilisateur.
- */
-export const voiceSettingsSchema = z.preprocess((input) => {
-  if (typeof input !== 'object' || input === null) return input;
-  const record = input as Record<string, unknown>;
-  const legacy = record.wakeWordProfile;
-  if (!Array.isArray(legacy) || legacy.length === 0 || record.wakeWordProfiles) return record;
-  const { wakeWordProfile: _legacy, ...rest } = record;
-  return { ...rest, wakeWordProfiles: [legacy] };
-}, voiceSettingsShape);
-
-export type VoiceSettings = z.infer<typeof voiceSettingsShape>;
+export type VoiceSettings = z.infer<typeof voiceSettingsSchema>;
 
 export const settingsSchema = z.object({
   provider: z.string().min(1).default('mock'),

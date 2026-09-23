@@ -9,3 +9,7 @@ release/
 !.env.example
 coverage/
 .vite/
+
+# Modèle Porcupine (Picovoice) : propriétaire, ~1 Mo, jamais commité — voir
+# apps/desktop/src/renderer/public/porcupine/README.md pour l'obtenir.
+apps/desktop/src/renderer/public/porcupine/*.pv

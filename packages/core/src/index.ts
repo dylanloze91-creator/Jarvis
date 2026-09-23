@@ -49,18 +49,38 @@ export {
 
 export * from './speech/types.js';
 export { SpeechToTextRegistry, TextToSpeechRegistry } from './speech/registry.js';
-export { createDefaultSttRegistry, createDefaultTtsRegistry } from './speech/default-registries.js';
+export {
+  createDefaultSttRegistry,
+  createDefaultTtsRegistry,
+  createDefaultWakeWordEngineRegistry,
+} from './speech/default-registries.js';
 export { OpenAISttProvider, openAISttDescriptor } from './speech/openai-stt.js';
 export { OpenAITtsProvider, openAITtsDescriptor, OPENAI_TTS_VOICES } from './speech/openai-tts.js';
 export { concatFloat32, encodeWav } from './speech/wav.js';
 export {
   WakeWordDetector,
-  buildWakeWordEnvelope,
+  averageProfiles,
   buildWakeWordProfile,
+  computeRms,
   defaultWakeWordOptions,
-  thresholdForSensitivity,
+  sensitivityToThreshold,
+  thresholdToSensitivity,
+  SENSITIVITY_THRESHOLD_RANGE,
   WAKE_WORD_PROFILE_LENGTH,
-  type WakeWordDetection,
   type WakeWordProfile,
+  type WakeWordDetectorConfig,
   type WakeWordDetectorOptions,
+  type WakeWordMatchStrategy,
 } from './speech/wakeword.js';
+export {
+  WakeWordEngineRegistry,
+  LocalTemplateWakeWordEngine,
+  createLocalTemplateWakeWordEngine,
+  localTemplateWakeWordDescriptor,
+  type WakeWordEngine,
+  type WakeWordEngineConfig,
+  type WakeWordEngineController,
+  type WakeWordEngineDescriptor,
+  type WakeWordEngineFactory,
+  type WakeWordEngineHandlers,
+} from './speech/wakewordEngine.js';

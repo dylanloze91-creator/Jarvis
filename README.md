@@ -163,49 +163,149 @@ Micro → détection locale du mot de réveil → capture de la phrase → silen
       → synthèse (TextToSpeechProvider) → lecture, interruptible à tout moment
 ```
 
-- **Le mot de réveil se détecte toujours localement et hors ligne**, quel que soit le
-  moteur de transcription choisi ensuite : aucun audio ne quitte la machine avant sa
-  détection. L'algorithme (`WakeWordDetector`, dans `packages/core/src/speech/wakeword.ts`)
-  compare l'enveloppe d'énergie du flux audio à un gabarit enregistré une fois par
-  l'utilisateur dans les réglages (« Calibrer le mot de réveil »). C'est volontairement
-  simple pour un MVP : suffisant pour démontrer le mécanisme de bout en bout, mais
-  remplaçable sans toucher au reste de l'application par un moteur dédié (Vosk, Porcupine,
-  openWakeWord…) si une meilleure précision est nécessaire un jour.
-- Une fois réveillé, l'application capture la phrase, détecte la fin de parole par
-  silence, puis transcrit et envoie le texte dans la boucle de conversation **exactement
-  comme un message tapé** — le reste de l'application (agent, outils, historique) ne sait
-  pas que la phrase vient de la voix.
-- La réponse de l'assistant peut être lue à voix haute, que le message d'origine ait été
-  tapé ou parlé, avec un bouton pour couper la lecture à tout moment.
-- Comme pour les modèles de langage, la transcription et la synthèse passent par des
-  interfaces dédiées — `SpeechToTextProvider` et `TextToSpeechProvider`, dans
-  `packages/core/src/speech/types.ts` — avec un registre par capacité
-  (`SpeechToTextRegistry`, `TextToSpeechRegistry`). Deux moteurs sont livrés pour chacune :
-  - **local (navigateur)** : Web Speech API pour la reconnaissance, `speechSynthesis` pour
-    la synthèse — gratuit, sans clé, et **c'est le repli automatique** dès qu'aucune clé
-    API n'est configurée ;
-  - **OpenAI** : Whisper pour la transcription, l'API de synthèse d'OpenAI pour la voix.
-- La clé API ne quitte jamais le processus principal. Les moteurs OpenAI vivent dans
-  `packages/core` (comme les autres providers OpenAI : uniquement `fetch`, aucune
-  dépendance DOM) mais sont appelés depuis le renderer via deux canaux IPC dédiés
-  (`voice:transcribe`, `voice:speak`) qui portent la clé côté processus principal. Tout le
-  reste — micro, mot de réveil, moteurs locaux — reste dans le renderer, sans IPC.
-- Réglages disponibles : écoute permanente on/off, mot de réveil (texte + calibrage),
-  microphone, moteur de reconnaissance, réponse vocale on/off, moteur de synthèse, voix, et
-  une clé API OpenAI dédiée à la voix (facultative : elle réutilise celle du fournisseur de
-  modèle si celui-ci est déjà OpenAI).
+**Objectif de conception : toute la chaîne doit pouvoir fonctionner à zéro euro.** Les
+options payantes (Porcupine, OpenAI) restent des améliorations facultatives, jamais un
+passage obligé — voir le tableau de coûts en fin de section pour l'état réel, honnête, de
+chaque brique.
+
+### Mot de réveil : gabarit local par défaut, Porcupine en option
+
+Le mot de réveil se détecte **toujours localement et hors ligne**, quel que soit le
+moteur choisi : aucun audio ne quitte la machine avant sa détection. C'est la seule
+brique de la chaîne vocale qui n'a pas de version « cloud » — juste des moteurs locaux de
+qualité différente, derrière une interface dédiée, `WakeWordEngine`
+(`packages/core/src/speech/wakewordEngine.ts`), avec son propre registre
+(`WakeWordEngineRegistry`), sur le même principe que `SpeechToTextProvider` et
+`TextToSpeechProvider`.
+
+- **Gabarit local (`local-template`, moteur par défaut, gratuit, sans compte)** —
+  ce n'est pas un simple repli, c'est le chemin conçu pour être utilisable sérieusement au
+  quotidien : `WakeWordDetector` (`packages/core/src/speech/wakeword.ts`) compare
+  l'enveloppe d'énergie du flux audio à **plusieurs** échantillons enregistrés par
+  l'utilisateur (recommandé : au moins trois, pour couvrir la variabilité naturelle de la
+  voix), comparés soit au **meilleur** gabarit (`matchStrategy: 'best'`, tolère la
+  variabilité entre essais), soit à leur **moyenne** (`'average'`, lisse le bruit). Un
+  réglage de **sensibilité** (0 à 1) ajuste le seuil de déclenchement
+  (`sensitivityToThreshold`/`thresholdToSensitivity`), et le détecteur expose un **score en
+  temps réel** (`getLastScore()`) : les réglages proposent une calibration guidée
+  (enregistrer des échantillons, régler la sensibilité, puis « Tester la détection » avec un
+  indicateur visuel du score face au seuil) pour que l'utilisateur puisse trouver le bon
+  compromis lui-même, sans deviner. Entièrement pur — `WakeWordDetector` et
+  `LocalTemplateWakeWordEngine` ne font que des calculs sur des nombres, zéro DOM — la
+  capture audio réelle reste dans `apps/desktop`.
+- **Porcupine (Picovoice), en option, jamais le défaut** — reconnaît le mot-clé « jarvis »
+  sans aucune calibration (mot-clé intégré au SDK). Techniquement propre à intégrer : le
+  SDK web (`@picovoice/porcupine-web`, WebAssembly) se charge par un `import()` dynamique
+  dans `apps/desktop/src/renderer/src/voice/porcupineWakeWordEngine.ts`, donc **n'alourdit
+  pas le bundle principal** (vérifié : le build en fait un chunk séparé, chargé seulement si
+  ce moteur est choisi). Ce qui a changé, et pourquoi ce n'est pas le défaut : **Picovoice a
+  mis fin à son offre gratuite le 30 juin 2026** (annonce officielle confirmée par plusieurs
+  utilisateurs sur le forum Home Assistant, et par la réponse du support Picovoice
+  lui-même : _« the AccessKey is validated when the engine is initialized, before offline
+  data processing […] there is no non-commercial tier planned »_). Concrètement, aujourd'hui,
+  pour un usage personnel : il faut un abonnement payant auprès de Picovoice (carte bancaire
+  requise), la clé est vérifiée en ligne à chaque initialisation même si le traitement audio
+  qui suit est local, et aucune offre non commerciale n'est prévue. Le champ « clé d'accès »
+  des réglages l'indique explicitement. Sans clé, l'application repasse automatiquement sur
+  le gabarit local. Le fichier de modèle Porcupine (`porcupine_params.pv`, ~1 Mo,
+  propriété de Picovoice) n'est ni fourni ni commité — voir
+  `apps/desktop/src/renderer/public/porcupine/README.md` pour l'obtenir si tu choisis
+  malgré tout cette option.
+
+### Reconnaissance (STT) : le vrai obstacle du zéro euro
+
+Une fois réveillé, l'application capture la phrase, détecte la fin de parole par silence,
+transcrit, puis envoie le texte dans la boucle de conversation **exactement comme un
+message tapé** — le reste de l'application (agent, outils, historique) ne sait pas que la
+phrase vient de la voix. La transcription passe par `SpeechToTextProvider`
+(`packages/core/src/speech/types.ts`) et son registre (`SpeechToTextRegistry`).
+
+**Constat vérifié, pas supposé : la reconnaissance vocale du navigateur
+(`webkitSpeechRecognition`) ne fonctionne pas dans Electron — jamais, pas seulement
+« parfois ».** Ce n'est pas une limite d'implémentation de ce projet : Electron ne
+distribue pas la clé Google API que Chrome utilise pour son service de reconnaissance
+cloud, et sa version « on-device » plus récente est explicitement désactivée dans Electron
+(elle renvoie `kUnavailable`, voir la PR
+[electron/electron#52955](https://github.com/electron/electron/pull/52955)). Le résultat,
+constaté et documenté par de nombreux utilisateurs
+([electron/electron#46143](https://github.com/electron/electron/issues/46143),
+[#31732](https://github.com/electron/electron/issues/31732)), est une erreur `network`
+systématique, y compris en développement. Le moteur `browser-local` reste dans le code
+(interface honnête, label explicite dans les réglages) mais **ne doit pas être considéré
+comme un vrai moteur gratuit fonctionnel dans cette application** : c'est un candidat qui a
+échoué à l'usage, gardé pour mémoire et pour le jour où Electron changerait de
+comportement.
+
+**Alternative locale gratuite évaluée, non retenue — voici pourquoi.** L'objectif était de
+trouver un moteur Whisper/Vosk embarqué, sans clé, sans compilation native pénible et sans
+faire exploser la taille de l'application :
+
+| Piste testée                                                      | Verdict                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `vosk` (npm)                                                      | Rejeté — dernier publié en 2022, dépend de `ffi-napi`/`ref-napi` (historiquement fragiles face aux nouvelles versions d'ABI Node), aucune garantie de fonctionner avec le Node d'Electron 44.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `nodejs-whisper`, `smart-whisper` (bindings whisper.cpp)          | Rejetés — les deux compilent whisper.cpp _à l'installation_ via `node-gyp`/CMake : sur Windows, `nodejs-whisper` documente lui-même l'exigence d'installer MinGW-w64/MSYS2. C'est exactement la « compilation native pénible » à éviter pour un utilisateur non technicien.                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `@echogarden/whisper.cpp-binding`                                 | Rejeté en pratique — binaire natif précompilé réel pour Windows/macOS/Linux (2,5 Mo, MIT, sans compilation), mais c'est un binding _minimal_ sans tokenisation ni calcul du spectrogramme : l'utiliser correctement suppose soit de réimplémenter tout le pipeline Whisper à la main, soit de dépendre du paquet complet `echogarden`, qui embarque des dizaines de dépendances sans rapport (SDK AWS/Azure/Google, segmentation de texte multilingue, `jsdom`…) et gonflerait franchement la taille de l'application.                                                                                                                                                                                                                    |
+| `@huggingface/transformers` + `onnxruntime-web` (Whisper en WASM) | Techniquement faisable (aucune compilation native, licences permissives) mais lourd : `onnxruntime-web` pèse à lui seul plus de 140 Mo installé, avant même le modèle Whisper (encore 40 à 150 Mo selon la taille choisie). Chargeable en différé (comme Porcupine) pour ne pas alourdir l'installateur de base, mais la validation du comportement réel dans un exécutable Electron packagé (gestion des fichiers `.wasm` par `electron-builder`, téléchargement du modèle au premier lancement) n'a pas pu être faite ici, faute de machine Windows pour packager et tester. C'est la piste la plus prometteuse pour une prochaine itération, mais elle n'a pas été intégrée dans cette passe pour ne pas livrer un chemin non vérifié. |
+
+**État actuel, honnête : il n'existe aujourd'hui, dans cette application, aucun moteur de
+transcription vocale local qui fonctionne réellement et gratuitement.** Le seul moteur de
+transcription qui marche est **OpenAI Whisper** (`openai-whisper`, cloud, payant à l'usage —
+de l'ordre de 0,006 $/minute, donc quelques centimes par commande vocale, mais pas zéro).
+Tant qu'aucune clé n'est configurée, la commande vocale se limite au mot de réveil (gratuit)
+et au champ de simulation de la barre vocale, qui permet de vérifier tout le reste du
+pipeline (conversation, outils, réponse) sans dépenser un centime.
+
+### Synthèse (TTS) : gratuite et vérifiée, via les voix Windows
+
+Contrairement à la reconnaissance, la synthèse vocale du navigateur (`speechSynthesis`)
+**fonctionne dans Electron** : elle ne dépend pas des serveurs de Google, seulement des voix
+installées par le système d'exploitation (SAPI / OneCore sur Windows), exposées à
+Chromium par Electron depuis la correction de
+[electron/electron#14070](https://github.com/electron/electron/pull/14070) (Chromium ≥ 70,
+largement dépassé par la version embarquée dans Electron 44). C'est le moteur `browser-local`
+côté synthèse (`LocalBrowserTtsProvider`), et il reste le moteur par défaut de
+l'application : gratuit, sans clé, aucune dépendance réseau. Nuance à garder en tête : si
+Windows n'a que des voix OneCore récentes et aucune voix SAPI classique installée, la liste
+peut apparaître vide selon la configuration — dans ce cas, installer une voix depuis les
+paramètres vocaux de Windows résout le problème. L'API de synthèse d'OpenAI
+(`openai-tts`, payante) reste disponible comme option, jamais requise.
+
+### Frontière clé API / IPC
+
+La clé API ne quitte jamais le processus principal. Les moteurs OpenAI (STT et TTS) vivent
+dans `packages/core` (comme les autres providers OpenAI : uniquement `fetch`, aucune
+dépendance DOM) mais sont appelés depuis le renderer via deux canaux IPC dédiés
+(`voice:transcribe`, `voice:speak`) qui portent la clé côté processus principal. Tout le
+reste — micro, mot de réveil (local et Porcupine), synthèse locale — reste dans le
+renderer, sans IPC, puisqu'aucune clé n'y est nécessaire.
+
+### Réglages disponibles
+
+Écoute permanente on/off ; mot de réveil (texte, échantillons, stratégie de comparaison,
+sensibilité, test en direct) ; moteur de détection (gabarit local / Porcupine) et sa clé
+d'accès ; microphone ; moteur de reconnaissance (STT) ; réponse vocale on/off ; moteur de
+synthèse (TTS) et voix ; une clé API OpenAI dédiée à la voix (facultative : elle réutilise
+celle du fournisseur de modèle si celui-ci est déjà OpenAI).
+
+### Coût réel de chaque brique, résumé
+
+| Brique                     | Moteur par défaut                                                               | Coût par défaut | Option payante                                     |
+| -------------------------- | ------------------------------------------------------------------------------- | --------------- | -------------------------------------------------- |
+| Détection du mot de réveil | Gabarit local (calibré)                                                         | **0 €**         | Porcupine — abonnement payant depuis le 30/06/2026 |
+| Transcription (STT)        | _(aucun moteur gratuit fonctionnel dans Electron aujourd'hui — voir ci-dessus)_ | —               | OpenAI Whisper — ≈ 0,006 $/minute                  |
+| Réponse vocale (TTS)       | Voix du système (Windows)                                                       | **0 €**         | OpenAI (synthèse) — payant à l'usage               |
 
 ### Limites connues
 
-- Electron ne fournit pas de clé Google API par défaut : la reconnaissance vocale du
-  navigateur (`webkitSpeechRecognition`) peut donc échouer selon la version d'Electron. Le
-  code signale cette erreur clairement plutôt que de rester silencieux ; si elle se
-  confirme à l'usage, le remède est d'écrire un nouveau `SpeechToTextProvider` local basé
-  sur un moteur embarqué (Vosk, whisper.cpp…) — l'abstraction est faite pour ça.
-- Le mot de réveil doit être calibré une fois (bouton dans les réglages) avant que
-  l'écoute permanente puisse le détecter ; sans gabarit enregistré, l'écoute reste active
-  mais ne se réveille jamais toute seule (le champ de simulation de la barre vocale permet
-  de tester le reste du pipeline en attendant).
+- La reconnaissance vocale du navigateur ne fonctionne pas dans Electron (voir ci-dessus) :
+  c'est une limite d'Electron, pas de ce code, et elle est documentée plutôt que masquée.
+- Le mot de réveil doit être calibré (au moins un échantillon, idéalement trois ou plus,
+  bouton dans les réglages) avant que l'écoute permanente puisse le détecter ; sans gabarit
+  enregistré, l'écoute reste active mais ne se réveille jamais toute seule (le champ de
+  simulation de la barre vocale permet de tester le reste du pipeline en attendant).
+- Porcupine n'a pas pu être testé de bout en bout dans cette passe : sa formule gratuite
+  ayant disparu, aucune clé d'accès valide n'était disponible pour vérifier la détection
+  réelle (seul le chemin d'erreur sans clé a pu être vérifié).
 
 ## Étendre l'application
 
@@ -249,15 +349,27 @@ Même principe que pour un fournisseur de modèle, une interface par capacité :
 - **Synthèse (TTS)** : implémente `TextToSpeechProvider`. Même logique avec
   `managesOwnPlayback` : `true` si le moteur lit lui-même l'audio (voix système), `false`
   s'il renvoie des octets à jouer (API de synthèse distante).
+- **Mot de réveil** : implémente `WakeWordEngine` (`packages/core/src/speech/wakewordEngine.ts`).
+  `managesOwnCapture` a le même rôle que pour le STT. Contrairement aux deux autres
+  capacités, il n'y a pas de « registre par défaut avec repli sur le cloud » : le repli va
+  toujours vers un moteur local (`requiresApiKey: false`), jamais vers un service distant —
+  la détection doit rester locale et hors ligne dans tous les cas.
 - Enregistre le nouveau moteur dans le registre correspondant :
   - un moteur **sans DOM/micro réel** (un nouveau moteur cloud, par exemple) va dans
-    `packages/core/src/speech/default-registries.ts`, comme `OpenAISttProvider` ;
-  - un moteur qui **a besoin du DOM ou du micro** (reconnaissance embarquée locale
-    alternative) va dans `apps/desktop/src/renderer/src/voice/registries.ts`, comme
-    `LocalBrowserSttProvider`.
+    `packages/core/src/speech/default-registries.ts`, comme `OpenAISttProvider` ou
+    `LocalTemplateWakeWordEngine` (celui-ci n'a pas besoin du DOM : il ne fait que des
+    calculs sur les trames qu'on lui pousse) ;
+  - un moteur qui **a besoin du DOM, du micro ou du WebAssembly** (reconnaissance embarquée
+    du navigateur, Porcupine…) va dans `apps/desktop/src/renderer/src/voice/registries.ts`,
+    comme `LocalBrowserSttProvider` ou `PorcupineWakeWordEngine`. Charge-le en `import()`
+    dynamique si le SDK est volumineux, pour ne pas alourdir le bundle principal — voir
+    `porcupineWakeWordEngine.ts` pour l'exemple.
 - S'il a besoin d'une clé API, expose-la dans `VoiceBridge`
   (`apps/desktop/src/main/voice.ts`) plutôt que dans le renderer : la clé ne doit jamais
-  quitter le processus principal.
+  quitter le processus principal. Exception : les clés de moteurs qui tournent entièrement
+  dans le renderer en WebAssembly (comme Porcupine) restent forcément côté renderer,
+  puisque c'est là que le SDK s'exécute ; ce n'est acceptable que si le SDK ne fait
+  transiter la clé vers aucun autre tiers que son propre fournisseur.
 
 Le reste — `useVoice`, la barre d'état, les réglages — ne change pas : le nouveau moteur
 apparaît dans les listes déroulantes dès qu'il est enregistré dans le registre.
@@ -271,6 +383,8 @@ La mémoire personnelle se branche comme un outil, à la manière de la recherch
 ### Ce qui reste à valider sur une vraie machine Windows
 
 Ce dépôt est développé et testé en continu sur Linux (typecheck, tests, lint, build, et l'interface elle-même via un serveur d'affichage X). Les outils suivants dépendent d'API Windows (PowerShell, App Paths, UAC, journal d'événements) et n'ont pu être validés que par relecture, pas par exécution réelle : `list_processes` (branche `Get-Process`), `get_active_window` (branche `user32.dll`), `get_system_errors`, `open_application`/`close_application` (résolution par nom sur Windows), la corbeille Windows (`Microsoft.VisualBasic.FileIO.FileSystem`), et surtout l'élévation administrateur de `run_command` (UAC via `Start-Process -Verb RunAs` + `-EncodedCommand`). Une passe de validation sur une machine Windows réelle est nécessaire avant de considérer ces chemins de code fiables en production.
+
+Côté voix, deux points précis restent à valider sur Windows, avec un vrai microphone : la qualité pratique du gabarit local (seuils de sensibilité par défaut, nombre d'échantillons nécessaires en conditions réelles) et la liste des voix `speechSynthesis` réellement exposées (SAPI vs OneCore, voir la section « Commande vocale »). Porcupine n'a pas pu être testé du tout, faute de clé d'accès valide (formule gratuite disparue) — voir la section correspondante.
 
 ## Développement
 

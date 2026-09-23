@@ -1,38 +1,31 @@
-import { buildWakeWordEnvelope } from '@jarvis/core';
-import { computeRms, startAudioCapture } from './audioCapture';
+import {
+  WakeWordDetector,
+  buildWakeWordProfile,
+  computeRms,
+  type WakeWordDetectorConfig,
+  type WakeWordProfile,
+} from '@jarvis/core';
+import { startAudioCapture, type AudioCaptureHandle } from './audioCapture';
 
-const SAMPLE_DURATION_MS = 1400;
-
-export interface RecordingProgress {
-  /** Niveau sonore instantané (0 à ~1), pour l'indicateur visuel. */
-  level: number;
-  /** Fraction écoulée de l'enregistrement, de 0 à 1. */
-  elapsed: number;
-}
+const SAMPLE_DURATION_MS = 1200;
 
 /**
- * Enregistre un échantillon local du mot de réveil et construit son gabarit
- * d'énergie. L'audio brut n'est jamais conservé ni envoyé nulle part : seule
- * l'enveloppe (quelques dizaines de nombres) est gardée, dans les réglages.
+ * Enregistre un court échantillon local du mot de réveil et construit son
+ * gabarit d'énergie. L'audio brut n'est jamais conservé ni envoyé nulle
+ * part : seule l'enveloppe (quelques dizaines de nombres) est gardée, dans
+ * les réglages. Le composant appelant est responsable d'accumuler plusieurs
+ * échantillons (`voice.wakeWordProfiles`) : cette fonction n'en produit
+ * qu'un à la fois.
  */
-export async function recordWakeWordSample(
+export async function recordWakeWordProfile(
   deviceId: string | undefined,
-  onProgress?: (progress: RecordingProgress) => void,
-): Promise<number[]> {
+): Promise<WakeWordProfile> {
   const energies: number[] = [];
-  const startedAt = performance.now();
 
-  let handle;
+  let handle: AudioCaptureHandle;
   try {
     handle = await startAudioCapture(deviceId, {
-      onFrame: (frame) => {
-        const rms = computeRms(frame);
-        energies.push(rms);
-        onProgress?.({
-          level: rms,
-          elapsed: Math.min(1, (performance.now() - startedAt) / SAMPLE_DURATION_MS),
-        });
-      },
+      onFrame: (frame) => energies.push(computeRms(frame)),
       onError: () => {},
     });
   } catch (error) {
@@ -48,11 +41,11 @@ export async function recordWakeWordSample(
   if (Math.max(...energies) < 0.02) {
     throw new Error('Rien n’a été entendu : parle plus fort ou vérifie le microphone.');
   }
-  return buildWakeWordEnvelope(energies);
+  return buildWakeWordProfile(energies);
 }
 
 /** Les erreurs de `getUserMedia` arrivent en anglais et sans contexte utile. */
-function describeMicrophoneError(error: unknown): string {
+export function describeMicrophoneError(error: unknown): string {
   const name = error instanceof Error ? error.name : '';
   const message = error instanceof Error ? error.message : String(error);
 
@@ -66,4 +59,44 @@ function describeMicrophoneError(error: unknown): string {
     return 'Le microphone est déjà utilisé par une autre application.';
   }
   return `Microphone indisponible : ${message}`;
+}
+
+export interface WakeWordTestHandle {
+  stop: () => void;
+}
+
+/**
+ * Boucle de test en direct pour la calibration : réutilise le même
+ * détecteur que la production (`WakeWordDetector`) sur le micro choisi, et
+ * remonte le score de similarité en continu — l'utilisateur voit tout de
+ * suite si la sensibilité choisie est trop stricte ou trop permissive,
+ * avant même d'activer l'écoute permanente.
+ */
+export async function startWakeWordTest(
+  deviceId: string | undefined,
+  detectorConfig: WakeWordDetectorConfig | null,
+  sensitivity: number,
+  onUpdate: (score: number, detected: boolean) => void,
+  onError: (message: string) => void,
+): Promise<WakeWordTestHandle> {
+  const detector = new WakeWordDetector(detectorConfig);
+  detector.setSensitivity(sensitivity);
+
+  let handle: AudioCaptureHandle | null = null;
+  try {
+    handle = await startAudioCapture(deviceId, {
+      onFrame: (frame) => {
+        const rms = computeRms(frame);
+        const detected = detector.pushEnergy(rms);
+        onUpdate(detector.getLastScore(), detected);
+      },
+      onError,
+    });
+  } catch (error) {
+    throw new Error(describeMicrophoneError(error));
+  }
+
+  return {
+    stop: () => handle?.stop(),
+  };
 }
