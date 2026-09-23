@@ -8,10 +8,12 @@ import {
   type ProviderDescriptor,
   type SearchProviderDescriptor,
   type Settings,
+  type VoiceSettings,
 } from '@jarvis/core';
 import { Lock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Field, Input, Select, Textarea, Toggle } from '@/components/ui/field';
+import { VoiceSettingsSection } from '@/components/VoiceSettings';
 import type { RuntimeStatus } from '../../../shared/ipc';
 
 interface SettingsPanelProps {
@@ -44,6 +46,10 @@ export function SettingsPanel({ settings, status, onSaved }: SettingsPanelProps)
   );
   const patch = (values: Partial<Settings>): void => {
     setDraft((current) => ({ ...current, ...values }));
+    setSaved(false);
+  };
+  const patchVoice = (values: Partial<VoiceSettings>): void => {
+    setDraft((current) => ({ ...current, voice: { ...current.voice, ...values } }));
     setSaved(false);
   };
 
@@ -249,6 +255,12 @@ export function SettingsPanel({ settings, status, onSaved }: SettingsPanelProps)
           </p>
         </div>
       </div>
+
+      <VoiceSettingsSection
+        voice={draft.voice}
+        voiceKeyConfigured={status.voiceKeyConfigured}
+        onChange={patchVoice}
+      />
 
       <div className="flex items-center justify-end gap-3 pt-1">
         {saved ? <span className="text-xs text-accent">Réglages enregistrés</span> : null}

@@ -1,5 +1,14 @@
 import { join } from 'node:path';
-import { BrowserWindow, Menu, Tray, app, globalShortcut, ipcMain, nativeImage } from 'electron';
+import {
+  BrowserWindow,
+  Menu,
+  Tray,
+  app,
+  globalShortcut,
+  ipcMain,
+  nativeImage,
+  session as electronSession,
+} from 'electron';
 import {
   createDefaultMarketDataRegistry,
   createDefaultRegistry,
@@ -10,11 +19,18 @@ import {
   type SearchProviderDescriptor,
   type Settings,
 } from '@jarvis/core';
-import { IpcChannel, type SendChatInput, type ToolInfo } from '../shared/ipc.js';
+import {
+  IpcChannel,
+  type SendChatInput,
+  type ToolInfo,
+  type VoiceSpeakInput,
+  type VoiceTranscribeInput,
+} from '../shared/ipc.js';
 import { FileAuditLogStore } from './audit-store.js';
 import { ChatSession } from './session.js';
 import { FileConversationStore, readSettings, writeSettings } from './store.js';
 import { createToolManager } from './tools/index.js';
+import { VoiceBridge } from './voice.js';
 import { createOverlayWindow, type OverlayWindow } from './window.js';
 
 const isDev = !app.isPackaged;
@@ -23,6 +39,7 @@ const searchRegistry = createDefaultSearchRegistry();
 const marketDataRegistry = createDefaultMarketDataRegistry();
 const store = new FileConversationStore();
 const auditLog = new FileAuditLogStore();
+const voice = new VoiceBridge(() => settings);
 
 let settings: Settings = parseSettings({});
 const tools = createToolManager({
@@ -38,6 +55,7 @@ const session = new ChatSession({
   tools,
   store,
   auditLog,
+  voice,
   getSettings: () => settings,
 });
 
@@ -55,6 +73,13 @@ async function bootstrap(): Promise<void> {
 
   app.setAppUserModelId('com.thedexios.jarvis');
   if (process.platform === 'darwin') app.dock?.hide();
+
+  // Électron refuse l'accès au micro par défaut : la commande vocale en a besoin.
+  electronSession.defaultSession.setPermissionRequestHandler(
+    (_webContents, permission, callback) => {
+      callback(permission === 'media');
+    },
+  );
 
   // En développement, garder la fenêtre visible quand le focus part (devtools, éditeur).
   overlay = createOverlayWindow(settings.hideOnBlur && !isDev);
@@ -163,6 +188,11 @@ function registerIpc(): void {
 
   ipcMain.handle(IpcChannel.windowHide, () => overlay?.hide());
   ipcMain.handle(IpcChannel.windowResize, (_event, height: number) => overlay?.resize(height));
+
+  ipcMain.handle(IpcChannel.voiceTranscribe, (_event, input: VoiceTranscribeInput) =>
+    voice.transcribe(input),
+  );
+  ipcMain.handle(IpcChannel.voiceSpeak, (_event, input: VoiceSpeakInput) => voice.speak(input));
 }
 
 app.on('window-all-closed', () => {

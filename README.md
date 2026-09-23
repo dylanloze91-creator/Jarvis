@@ -17,6 +17,7 @@ Jarvis a un véritable accès au système : lire les processus, la fenêtre acti
 - Accès à Internet : recherche web synthétisée avec ses sources, lecture d'une page pour creuser un résultat, cours de bourse d'une ou plusieurs entreprises nommées en langage naturel
 - Modèle de permissions configurable par catégorie d'outils, avec un socle incompressible (suppression, élévation, commande arbitraire)
 - Journal d'audit persistant de chaque exécution d'outil, consultable dans l'interface
+- Commande vocale : écoute permanente avec mot de réveil détecté localement (« Jarvis »), transcription, envoi automatique dans la conversation, réponse lue à voix haute et interruptible à tout moment
 
 ## Démarrer
 
@@ -44,20 +45,23 @@ Utilisateur → Assistant IA → Tool Manager → Outils autorisés → Windows
 Le modèle ne touche jamais le système directement. Il ne voit que les outils enregistrés, ses arguments sont revalidés avant exécution, et les actions sensibles passent par l'utilisateur.
 
 ```
-packages/core/      Logique pure, sans aucune dépendance à Electron
+packages/core/      Logique pure, sans aucune dépendance à Electron, Node ou au DOM
   providers/        Interface LLMProvider et ses implémentations
   search/           Interface SearchProvider et ses implémentations (Wikipédia, Brave Search)
   market/           Interface MarketDataProvider et ses implémentations (Yahoo Finance, Finnhub)
   web/              Utilitaires purs partagés : extraction de texte lisible, sécurité des URL
+  speech/           Interfaces SpeechToTextProvider / TextToSpeechProvider, registres,
+                    moteurs OpenAI (Whisper, synthèse), détection locale du mot de réveil
   tools/            Tool Manager, validation et politique de risque
   agent/            Boucle appel du modèle → outils → relance
   history/          Contrat de persistance des conversations
   settings.ts       Schéma de configuration
 
 apps/desktop/       Application Electron
-  src/main/         Processus principal : fenêtre, tray, raccourci, IPC, outils
+  src/main/         Processus principal : fenêtre, tray, raccourci, IPC, outils, voix distante
   src/preload/      Pont typé à surface minimale entre les deux processus
   src/renderer/     Interface React (Tailwind, composants shadcn/ui)
+    voice/          Micro, niveau sonore, moteurs locaux (navigateur), proxys IPC vers OpenAI
   src/shared/       Types d'IPC partagés par les trois processus
 ```
 
@@ -151,6 +155,58 @@ Les deux fournisseurs résolvent eux-mêmes un nom d'entreprise en langage natur
 - Si le fournisseur choisi dans les réglages exige une clé absente, le registre bascule silencieusement sur le fournisseur par défaut (Wikipédia / Yahoo Finance) plutôt que d'échouer.
 - Aucune clé n'est jamais committée : elles vivent uniquement dans `settings.json`, sur la machine de l'utilisateur.
 
+## Commande vocale
+
+```
+Micro → détection locale du mot de réveil → capture de la phrase → silence détecté
+      → transcription (SpeechToTextProvider) → conversation existante → réponse
+      → synthèse (TextToSpeechProvider) → lecture, interruptible à tout moment
+```
+
+- **Le mot de réveil se détecte toujours localement et hors ligne**, quel que soit le
+  moteur de transcription choisi ensuite : aucun audio ne quitte la machine avant sa
+  détection. L'algorithme (`WakeWordDetector`, dans `packages/core/src/speech/wakeword.ts`)
+  compare l'enveloppe d'énergie du flux audio à un gabarit enregistré une fois par
+  l'utilisateur dans les réglages (« Calibrer le mot de réveil »). C'est volontairement
+  simple pour un MVP : suffisant pour démontrer le mécanisme de bout en bout, mais
+  remplaçable sans toucher au reste de l'application par un moteur dédié (Vosk, Porcupine,
+  openWakeWord…) si une meilleure précision est nécessaire un jour.
+- Une fois réveillé, l'application capture la phrase, détecte la fin de parole par
+  silence, puis transcrit et envoie le texte dans la boucle de conversation **exactement
+  comme un message tapé** — le reste de l'application (agent, outils, historique) ne sait
+  pas que la phrase vient de la voix.
+- La réponse de l'assistant peut être lue à voix haute, que le message d'origine ait été
+  tapé ou parlé, avec un bouton pour couper la lecture à tout moment.
+- Comme pour les modèles de langage, la transcription et la synthèse passent par des
+  interfaces dédiées — `SpeechToTextProvider` et `TextToSpeechProvider`, dans
+  `packages/core/src/speech/types.ts` — avec un registre par capacité
+  (`SpeechToTextRegistry`, `TextToSpeechRegistry`). Deux moteurs sont livrés pour chacune :
+  - **local (navigateur)** : Web Speech API pour la reconnaissance, `speechSynthesis` pour
+    la synthèse — gratuit, sans clé, et **c'est le repli automatique** dès qu'aucune clé
+    API n'est configurée ;
+  - **OpenAI** : Whisper pour la transcription, l'API de synthèse d'OpenAI pour la voix.
+- La clé API ne quitte jamais le processus principal. Les moteurs OpenAI vivent dans
+  `packages/core` (comme les autres providers OpenAI : uniquement `fetch`, aucune
+  dépendance DOM) mais sont appelés depuis le renderer via deux canaux IPC dédiés
+  (`voice:transcribe`, `voice:speak`) qui portent la clé côté processus principal. Tout le
+  reste — micro, mot de réveil, moteurs locaux — reste dans le renderer, sans IPC.
+- Réglages disponibles : écoute permanente on/off, mot de réveil (texte + calibrage),
+  microphone, moteur de reconnaissance, réponse vocale on/off, moteur de synthèse, voix, et
+  une clé API OpenAI dédiée à la voix (facultative : elle réutilise celle du fournisseur de
+  modèle si celui-ci est déjà OpenAI).
+
+### Limites connues
+
+- Electron ne fournit pas de clé Google API par défaut : la reconnaissance vocale du
+  navigateur (`webkitSpeechRecognition`) peut donc échouer selon la version d'Electron. Le
+  code signale cette erreur clairement plutôt que de rester silencieux ; si elle se
+  confirme à l'usage, le remède est d'écrire un nouveau `SpeechToTextProvider` local basé
+  sur un moteur embarqué (Vosk, whisper.cpp…) — l'abstraction est faite pour ça.
+- Le mot de réveil doit être calibré une fois (bouton dans les réglages) avant que
+  l'écoute permanente puisse le détecter ; sans gabarit enregistré, l'écoute reste active
+  mais ne se réveille jamais toute seule (le champ de simulation de la barre vocale permet
+  de tester le reste du pipeline en attendant).
+
 ## Étendre l'application
 
 ### Ajouter un outil
@@ -182,11 +238,35 @@ Les backends compatibles OpenAI (Ollama, LM Studio, vLLM, OpenRouter, Groq) ne d
 
 Même principe que pour les modèles : implémente `SearchProvider` (dans `packages/core/src/search/providers/`) ou `MarketDataProvider` (dans `packages/core/src/market/providers/`), puis enregistre le résultat dans `createDefaultSearchRegistry()` ou `createDefaultMarketDataRegistry()`. Le nouveau fournisseur apparaît aussitôt dans le sélecteur des réglages ; les outils `web_search`, `fetch_page` et `get_stock_quote` n'ont besoin d'aucune modification.
 
+### Ajouter un moteur vocal
+
+Même principe que pour un fournisseur de modèle, une interface par capacité :
+
+- **Reconnaissance (STT)** : implémente `SpeechToTextProvider` (`packages/core/src/speech/types.ts`).
+  Si le moteur capture lui-même le micro (reconnaissance embarquée), mets
+  `managesOwnCapture = true` et ignore les appels à `pushAudio` ; sinon (moteur qui reçoit
+  l'audio, comme Whisper), mets-le à `false` et accumule les trames reçues jusqu'à `stop()`.
+- **Synthèse (TTS)** : implémente `TextToSpeechProvider`. Même logique avec
+  `managesOwnPlayback` : `true` si le moteur lit lui-même l'audio (voix système), `false`
+  s'il renvoie des octets à jouer (API de synthèse distante).
+- Enregistre le nouveau moteur dans le registre correspondant :
+  - un moteur **sans DOM/micro réel** (un nouveau moteur cloud, par exemple) va dans
+    `packages/core/src/speech/default-registries.ts`, comme `OpenAISttProvider` ;
+  - un moteur qui **a besoin du DOM ou du micro** (reconnaissance embarquée locale
+    alternative) va dans `apps/desktop/src/renderer/src/voice/registries.ts`, comme
+    `LocalBrowserSttProvider`.
+- S'il a besoin d'une clé API, expose-la dans `VoiceBridge`
+  (`apps/desktop/src/main/voice.ts`) plutôt que dans le renderer : la clé ne doit jamais
+  quitter le processus principal.
+
+Le reste — `useVoice`, la barre d'état, les réglages — ne change pas : le nouveau moteur
+apparaît dans les listes déroulantes dès qu'il est enregistré dans le registre.
+
 ### Prochaines étapes prévues
 
 Vision de l'écran, mémoire personnelle, automatisation (enchaîner plusieurs outils sans repasser par une confirmation à chaque étape quand la politique le permet), et connexion avec l'application de blocage de sites pour des commandes du type « active mon mode travail ».
 
-La mémoire personnelle se branche comme un outil, à la manière de la recherche Internet livrée dans cette version. La voix et la vision se branchent au niveau de la couche provider et du processus principal.
+La mémoire personnelle se branche comme un outil, à la manière de la recherche Internet. La vision se branche au niveau de la couche provider et du processus principal, sur le même principe que la commande vocale.
 
 ### Ce qui reste à valider sur une vraie machine Windows
 

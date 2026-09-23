@@ -30,6 +30,8 @@ export const IpcChannel = {
   auditClear: 'audit:clear',
   windowHide: 'window:hide',
   windowResize: 'window:resize',
+  voiceTranscribe: 'voice:transcribe',
+  voiceSpeak: 'voice:speak',
 } as const;
 
 export interface SendChatInput {
@@ -75,7 +77,33 @@ export interface RuntimeStatus {
   providerLabel: string;
   model: string;
   usingFallback: boolean;
+  /** Vrai si une clé OpenAI est configurée pour la voix (jamais transmise elle-même au renderer). */
+  voiceKeyConfigured: boolean;
 }
+
+/**
+ * Requêtes vocales qui doivent obligatoirement passer par le processus
+ * principal : ce sont les seules à impliquer une clé API, qui ne doit
+ * jamais atteindre le renderer. Tout le reste de la voix (capture micro,
+ * détection du mot de réveil, reconnaissance et synthèse locales) se passe
+ * entièrement dans le renderer, sans IPC.
+ */
+export interface VoiceTranscribeInput {
+  /** PCM mono, amplitude normalisée [-1, 1]. */
+  pcm: Float32Array;
+  sampleRate: number;
+  language?: string;
+}
+
+export type VoiceTranscribeResult = { ok: true; text: string } | { ok: false; error: string };
+
+export interface VoiceSpeakInput {
+  text: string;
+  voice?: string;
+}
+
+export type VoiceSpeakResult =
+  { ok: true; data: Uint8Array; mimeType: string } | { ok: false; error: string };
 
 export interface JarvisApi {
   chat: {
@@ -107,5 +135,9 @@ export interface JarvisApi {
   window: {
     hide(): Promise<void>;
     resize(height: number): Promise<void>;
+  };
+  voice: {
+    transcribe(input: VoiceTranscribeInput): Promise<VoiceTranscribeResult>;
+    speak(input: VoiceSpeakInput): Promise<VoiceSpeakResult>;
   };
 }
