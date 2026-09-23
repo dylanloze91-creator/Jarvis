@@ -1,0 +1,118 @@
+@import 'tailwindcss';
+
+@theme {
+  --color-surface: oklch(0.18 0.015 265);
+  --color-surface-strong: oklch(0.23 0.018 265);
+  --color-accent: oklch(0.78 0.13 210);
+  --color-accent-soft: oklch(0.78 0.13 210 / 0.14);
+  --font-sans:
+    'Segoe UI Variable Display', 'Segoe UI', Inter, system-ui, -apple-system, sans-serif;
+}
+
+@layer base {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(255 255 255 / 0.18) transparent;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    background: transparent;
+    color: rgb(244 246 251);
+    font-family: var(--font-sans);
+    overflow: hidden;
+    user-select: none;
+  }
+
+  input,
+  textarea {
+    user-select: text;
+  }
+}
+
+@utility drag-region {
+  -webkit-app-region: drag;
+}
+
+@utility no-drag {
+  -webkit-app-region: no-drag;
+}
+
+/* Rendu markdown des réponses de l'assistant. */
+.markdown > * + * {
+  margin-top: 0.6rem;
+}
+.markdown p {
+  line-height: 1.6;
+}
+.markdown strong {
+  font-weight: 600;
+  color: rgb(255 255 255);
+}
+.markdown code {
+  background: rgb(255 255 255 / 0.08);
+  border-radius: 0.3rem;
+  padding: 0.1rem 0.32rem;
+  font-size: 0.85em;
+  font-family: 'Cascadia Code', ui-monospace, monospace;
+}
+.markdown pre {
+  background: rgb(0 0 0 / 0.35);
+  border: 1px solid rgb(255 255 255 / 0.08);
+  border-radius: 0.6rem;
+  padding: 0.75rem 0.9rem;
+  overflow-x: auto;
+}
+.markdown pre code {
+  background: transparent;
+  padding: 0;
+}
+.markdown ul,
+.markdown ol {
+  padding-left: 1.15rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.markdown ul {
+  list-style: disc;
+}
+.markdown ol {
+  list-style: decimal;
+}
+.markdown a {
+  color: var(--color-accent);
+  text-decoration: underline;
+}
+.markdown table {
+  border-collapse: collapse;
+  font-size: 0.85em;
+}
+.markdown th,
+.markdown td {
+  border: 1px solid rgb(255 255 255 / 0.12);
+  padding: 0.3rem 0.55rem;
+  text-align: left;
+}
+
+@keyframes pulse-ring {
+  0% {
+    box-shadow: 0 0 0 0 var(--color-accent-soft);
+  }
+  70% {
+    box-shadow: 0 0 0 7px transparent;
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+
+.pulse-dot {
+  animation: pulse-ring 2.2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}

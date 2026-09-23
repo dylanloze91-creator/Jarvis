@@ -1,0 +1,23 @@
+appId: com.thedexios.jarvis
+productName: Jarvis
+copyright: Copyright © 2026 thedexios
+directories:
+  buildResources: resources
+  output: release
+files:
+  - out/**
+  - resources/**
+  - '!**/*.map'
+extraMetadata:
+  main: out/main/index.js
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  icon: resources/icon.png
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  shortcutName: Jarvis
