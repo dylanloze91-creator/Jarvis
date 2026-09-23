@@ -19,6 +19,10 @@ export const mockDescriptor: ProviderDescriptor = {
  * Provider de démonstration : aucune requête réseau, aucune clé. Il sert à
  * faire tourner l'application et la boucle d'outils immédiatement après le
  * clonage, et de filet de sécurité quand aucune clé n'est configurée.
+ *
+ * Le « planificateur » ci-dessous route une phrase vers l'outil disponible le
+ * plus pertinent par mots-clés. Il couvre tous les outils livrés — lecture et
+ * action — pour que la démonstration reste possible sans clé OpenAI.
  */
 export class MockProvider implements LLMProvider {
   readonly id = mockDescriptor.id;
@@ -66,17 +70,138 @@ interface ToolPlan {
   args: Record<string, unknown>;
 }
 
+/**
+ * Router par mots-clés, du plus spécifique au plus générique : un outil placé
+ * plus haut dans la liste gagne en cas d'ambiguïté (par exemple « ferme le
+ * dossier X » doit déclencher `close_application`, pas `create_folder`).
+ */
 function planToolCall(prompt: string, available: Set<string>): ToolPlan | null {
   const normalized = prompt.toLowerCase();
+  const has = (tool: string): boolean => available.has(tool);
 
   if (
-    available.has('get_system_info') &&
+    has('get_active_window') &&
+    /fen[êe]tre active|fen[êe]tres ouvertes|qu(?:'|e )est-ce que j.ai d.ouvert|quelles applications/.test(
+      normalized,
+    )
+  ) {
+    return {
+      preamble: 'Je regarde ce qui est ouvert.\n\n',
+      tool: 'get_active_window',
+      args: {},
+    };
+  }
+
+  if (has('list_processes') && /processus|programmes? en cours/.test(normalized)) {
+    return {
+      preamble: 'Je liste les processus en cours.\n\n',
+      tool: 'list_processes',
+      args: { sortBy: 'cpu', limit: 15 },
+    };
+  }
+
+  if (
+    has('get_system_errors') &&
+    /erreurs? (système|systeme)|journal d.[ée]v[ée]nements|event ?log/.test(normalized)
+  ) {
+    return {
+      preamble: "Je consulte le journal d'événements.\n\n",
+      tool: 'get_system_errors',
+      args: {},
+    };
+  }
+
+  if (has('search_files') && /(recherch|cherch|trouv).{0,15}fichier/.test(normalized)) {
+    return {
+      preamble: 'Je lance la recherche de fichiers.\n\n',
+      tool: 'search_files',
+      args: { query: extractQuoted(prompt) ?? 'rapport' },
+    };
+  }
+
+  if (has('read_file') && /(lis|lire|affiche|contenu)( le| du)? fichier/.test(normalized)) {
+    return {
+      preamble: 'Je lis le fichier demandé.\n\n',
+      tool: 'read_file',
+      args: { path: extractQuoted(prompt) ?? 'notes.txt' },
+    };
+  }
+
+  if (has('take_screenshot') && /capture d.[ée]cran|screenshot/.test(normalized)) {
+    return {
+      preamble: "Je capture l'écran.\n\n",
+      tool: 'take_screenshot',
+      args: { display: 0 },
+    };
+  }
+
+  if (
+    has('run_command') &&
+    /(ex[ée]cute|lance)( la| une)? commande|commande shell/.test(normalized)
+  ) {
+    const raw = extractQuoted(prompt) ?? 'echo Bonjour depuis Jarvis';
+    const [command, ...cmdArgs] = raw.split(/\s+/);
+    return {
+      preamble: 'Je prépare l’exécution de la commande.\n\n',
+      tool: 'run_command',
+      args: { command, args: cmdArgs },
+    };
+  }
+
+  if (has('delete_file') && /(supprime|efface|corbeille)/.test(normalized)) {
+    return {
+      preamble: 'Je prépare la suppression (vers la corbeille).\n\n',
+      tool: 'delete_file',
+      args: { path: extractQuoted(prompt) ?? 'fichier-a-supprimer.txt' },
+    };
+  }
+
+  if (has('move_file') && /(d[ée]place|renomme)/.test(normalized)) {
+    const [source, destination] = extractAllQuoted(prompt);
+    return {
+      preamble: 'Je prépare le déplacement.\n\n',
+      tool: 'move_file',
+      args: { source: source ?? 'source.txt', destination: destination ?? 'destination.txt' },
+    };
+  }
+
+  if (has('copy_file') && /copi|duplique/.test(normalized)) {
+    const [source, destination] = extractAllQuoted(prompt);
+    return {
+      preamble: 'Je prépare la copie.\n\n',
+      tool: 'copy_file',
+      args: { source: source ?? 'source.txt', destination: destination ?? 'copie.txt' },
+    };
+  }
+
+  if (has('close_application') && /(ferme|quitte|arr[êe]te|tue)\s/.test(normalized)) {
+    return {
+      preamble: "Je prépare la fermeture de l'application.\n\n",
+      tool: 'close_application',
+      args: {
+        name: extractAfter(prompt, ['ferme', 'quitte', 'arrête', 'arrete', 'tue']) ?? 'application',
+      },
+    };
+  }
+
+  if (has('open_application') && /(ouvre|lance|d[ée]marre)\s/.test(normalized)) {
+    return {
+      preamble: "Je prépare l'ouverture de l'application.\n\n",
+      tool: 'open_application',
+      args: {
+        name: extractAfter(prompt, ['ouvre', 'lance', 'démarre', 'demarre']) ?? 'application',
+      },
+    };
+  }
+
+  if (
+    has('get_system_info') &&
     /système|systeme|cpu|ram|mémoire|memoire|disque|stockage|lent|perf|machine|pc/.test(normalized)
   ) {
     return { preamble: 'Je regarde l’état de la machine.\n\n', tool: 'get_system_info', args: {} };
   }
 
-  if (available.has('create_folder') && /dossier|répertoire|repertoire|folder/.test(normalized)) {
+  if (has('create_folder') && /dossier|répertoire|repertoire|folder/.test(normalized)) {
     return {
       preamble: 'Je prépare la création du dossier.\n\n',
       tool: 'create_folder',
@@ -88,11 +213,35 @@ function planToolCall(prompt: string, available: Set<string>): ToolPlan | null {
 }
 
 function extractFolderName(prompt: string): string {
-  const quoted = prompt.match(/[«"']([^»"']{1,60})[»"']/);
-  if (quoted?.[1]) return quoted[1].trim();
+  const quoted = extractQuoted(prompt);
+  if (quoted) return quoted;
   const named = prompt.match(/(?:nommé|nomme|appelé|appele|nommer)\s+([\p{L}\p{N}\-_. ]{1,40})/iu);
   if (named?.[1]) return named[1].trim();
   return 'Nouveau dossier';
+}
+
+/** Premier segment entre guillemets («», "" ou '') du texte, s'il existe. */
+function extractQuoted(prompt: string): string | null {
+  const match = prompt.match(/[«"']([^»"']{1,200})[»"']/);
+  return match?.[1]?.trim() ?? null;
+}
+
+/** Tous les segments entre guillemets, dans l'ordre d'apparition. */
+function extractAllQuoted(prompt: string): [string | null, string | null] {
+  const matches = [...prompt.matchAll(/[«"']([^»"']{1,200})[»"']/g)].map(
+    (m) => m[1]?.trim() ?? null,
+  );
+  return [matches[0] ?? null, matches[1] ?? null];
+}
+
+/** Mot ou groupe de mots qui suit le premier mot-clé trouvé parmi `keywords`. */
+function extractAfter(prompt: string, keywords: string[]): string | null {
+  const quoted = extractQuoted(prompt);
+  if (quoted) return quoted;
+  const pattern = new RegExp(`(?:${keywords.join('|')})\\s+([\\p{L}\\p{N}\\-_. ]{1,60})`, 'iu');
+  const match = prompt.match(pattern);
+  if (!match?.[1]) return null;
+  return match[1].replace(/\s+(et|puis)\b.*$/i, '').trim();
 }
 
 function summarizeToolRun(turn: ChatMessage[]): string {
