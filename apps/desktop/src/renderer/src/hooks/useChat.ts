@@ -18,6 +18,8 @@ export interface PendingConfirmation {
   requestId: string;
   toolName: string;
   details: string;
+  command?: string;
+  forced?: boolean;
 }
 
 let localId = 0;
@@ -73,6 +75,8 @@ export function useChat() {
             requestId: event.requestId,
             toolName: event.toolName,
             details: event.details,
+            command: event.command,
+            forced: event.forced,
           });
           break;
         }

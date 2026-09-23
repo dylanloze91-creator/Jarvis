@@ -1,6 +1,7 @@
-import { History, Plus, Settings as SettingsIcon, X } from 'lucide-react';
+import { History, Plus, ScrollText, Settings as SettingsIcon, X } from 'lucide-react';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { Conversation, Settings } from '@jarvis/core';
+import { AuditPanel } from '@/components/AuditPanel';
 import { Composer } from '@/components/Composer';
 import { ConfirmationCard } from '@/components/ConfirmationCard';
 import { EmptyState } from '@/components/EmptyState';
@@ -12,7 +13,7 @@ import { useChat } from '@/hooks/useChat';
 import { cn } from '@/lib/utils';
 import type { RuntimeStatus, ToolInfo } from '../../shared/ipc';
 
-type View = 'chat' | 'history' | 'settings';
+type View = 'chat' | 'history' | 'settings' | 'audit';
 
 const HEADER_HEIGHT = 44;
 const MAX_BODY_HEIGHT = 540;
@@ -95,6 +96,13 @@ export default function App() {
             <History className="size-4" />
           </IconButton>
           <IconButton
+            label="Journal d'audit"
+            active={view === 'audit'}
+            onClick={() => setView(view === 'audit' ? 'chat' : 'audit')}
+          >
+            <ScrollText className="size-4" />
+          </IconButton>
+          <IconButton
             label="Réglages"
             active={view === 'settings'}
             onClick={() => setView(view === 'settings' ? 'chat' : 'settings')}
@@ -114,6 +122,8 @@ export default function App() {
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div ref={content}>
           {view === 'history' ? <HistoryPanel onOpen={openConversation} /> : null}
+
+          {view === 'audit' ? <AuditPanel /> : null}
 
           {view === 'settings' && settings && status ? (
             <SettingsPanel

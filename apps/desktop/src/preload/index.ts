@@ -33,6 +33,10 @@ const api: JarvisApi = {
   tools: {
     list: () => ipcRenderer.invoke(IpcChannel.toolsList),
   },
+  audit: {
+    list: (limit?: number) => ipcRenderer.invoke(IpcChannel.auditList, limit),
+    clear: () => ipcRenderer.invoke(IpcChannel.auditClear),
+  },
   window: {
     hide: () => ipcRenderer.invoke(IpcChannel.windowHide),
     resize: (height: number) => ipcRenderer.invoke(IpcChannel.windowResize, height),

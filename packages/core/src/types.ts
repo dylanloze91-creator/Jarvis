@@ -1,3 +1,5 @@
+import type { ToolCategory } from './tools/types.js';
+
 export type MessageRole = 'system' | 'user' | 'assistant' | 'tool';
 
 export interface ToolCall {
@@ -6,11 +8,26 @@ export interface ToolCall {
   arguments: Record<string, unknown>;
 }
 
+/**
+ * Comment l'exécution a-t-elle été autorisée ?
+ * - `auto`     : outil `safe`, aucune confirmation n'était nécessaire.
+ * - `approved` : outil `confirm`, l'utilisateur a accepté.
+ * - `refused`  : outil `confirm`, l'utilisateur a refusé.
+ * - `blocked`  : outil `denied` ou inconnu, jamais soumis à l'utilisateur.
+ */
+export type ToolDecision = 'auto' | 'approved' | 'refused' | 'blocked';
+
 export interface ToolCallOutcome {
   callId: string;
   name: string;
   status: 'ok' | 'error' | 'denied';
   content: string;
+  /** Arguments exacts transmis à l'outil, pour le journal d'audit. */
+  arguments: Record<string, unknown>;
+  decision: ToolDecision;
+  /** Durée d'exécution en millisecondes, confirmation utilisateur comprise. */
+  durationMs: number;
+  category?: ToolCategory;
 }
 
 export interface ChatMessage {

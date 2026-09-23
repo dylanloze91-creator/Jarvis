@@ -7,6 +7,7 @@ import {
   type Settings,
 } from '@jarvis/core';
 import { IpcChannel, type SendChatInput, type ToolInfo } from '../shared/ipc.js';
+import { FileAuditLogStore } from './audit-store.js';
 import { ChatSession } from './session.js';
 import { FileConversationStore, readSettings, writeSettings } from './store.js';
 import { createToolManager } from './tools/index.js';
@@ -16,6 +17,7 @@ const isDev = !app.isPackaged;
 const registry = createDefaultRegistry();
 const tools = createToolManager();
 const store = new FileConversationStore();
+const auditLog = new FileAuditLogStore();
 
 let settings: Settings = parseSettings({});
 let overlay: OverlayWindow | null = null;
@@ -25,6 +27,7 @@ const session = new ChatSession({
   registry,
   tools,
   store,
+  auditLog,
   getSettings: () => settings,
 });
 
@@ -130,8 +133,17 @@ function registerIpc(): void {
   ipcMain.handle(IpcChannel.historyClear, () => store.clear());
 
   ipcMain.handle(IpcChannel.toolsList, (): ToolInfo[] =>
-    tools.list().map(({ name, description, risk }) => ({ name, description, risk })),
+    tools.list().map(({ name, description, risk, category, forceConfirm }) => ({
+      name,
+      description,
+      risk,
+      category,
+      forceConfirm,
+    })),
   );
+
+  ipcMain.handle(IpcChannel.auditList, (_event, limit?: number) => auditLog.list(limit));
+  ipcMain.handle(IpcChannel.auditClear, () => auditLog.clear());
 
   ipcMain.handle(IpcChannel.windowHide, () => overlay?.hide());
   ipcMain.handle(IpcChannel.windowResize, (_event, height: number) => overlay?.resize(height));

@@ -9,6 +9,17 @@ export { ProviderRegistry, createDefaultRegistry } from './providers/registry.js
 
 export * from './tools/types.js';
 export { ToolManager, defineTool } from './tools/manager.js';
+export {
+  defaultCategoryPolicies,
+  categoryLabels,
+  policyLabels,
+  CONFIGURABLE_CATEGORIES,
+  requiresConfirmation,
+  parseCategoryPolicies,
+} from './tools/permissions.js';
+
+export * from './audit/types.js';
+export { buildAuditEntry, InMemoryAuditLogStore } from './audit/log.js';
 
 export { Agent, DEFAULT_SYSTEM_PROMPT, type AgentEvent, type AgentOptions } from './agent/agent.js';
 

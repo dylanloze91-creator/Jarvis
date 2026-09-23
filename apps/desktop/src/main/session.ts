@@ -1,11 +1,14 @@
 import type { WebContents } from 'electron';
 import {
   Agent,
+  buildAuditEntry,
   createMessage,
   newConversation,
   randomId,
   withMessages,
+  type AuditLogStore,
   type ChatMessage,
+  type ConfirmationRequest,
   type Conversation,
   type ConversationStore,
   type ProviderRegistry,
@@ -19,6 +22,7 @@ interface SessionDeps {
   registry: ProviderRegistry;
   tools: ToolManager;
   store: ConversationStore;
+  auditLog: AuditLogStore;
   getSettings: () => Settings;
 }
 
@@ -83,8 +87,8 @@ export class ChatSession {
     try {
       for await (const event of agent.run(messages, {
         signal: controller.signal,
-        requestConfirmation: (request) =>
-          this.askUser(emit, request.toolName, request.details, controller.signal),
+        policies: settings.toolPolicies,
+        requestConfirmation: (request) => this.askUser(emit, request, controller.signal),
       })) {
         switch (event.type) {
           case 'assistant_delta':
@@ -105,6 +109,7 @@ export class ChatSession {
               status: event.outcome.status,
               content: event.outcome.content,
             });
+            void this.deps.auditLog.append(buildAuditEntry(event.outcome));
             break;
           case 'error':
             emit({ type: 'error', message: event.message });
@@ -126,8 +131,7 @@ export class ChatSession {
 
   private askUser(
     emit: (event: ChatEvent) => void,
-    toolName: string,
-    details: string,
+    request: ConfirmationRequest,
     signal: AbortSignal,
   ): Promise<boolean> {
     const requestId = randomId();
@@ -143,7 +147,14 @@ export class ChatSession {
 
       signal.addEventListener('abort', onAbort, { once: true });
       this.pendingConfirmations.set(requestId, settle);
-      emit({ type: 'confirm', requestId, toolName, details });
+      emit({
+        type: 'confirm',
+        requestId,
+        toolName: request.toolName,
+        details: request.details,
+        command: request.command,
+        forced: request.forced,
+      });
     });
   }
 

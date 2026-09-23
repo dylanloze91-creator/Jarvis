@@ -1,10 +1,12 @@
 import type {
+  AuditEntry,
   ChatMessage,
   Conversation,
   ConversationSummary,
   ProviderDescriptor,
   RiskLevel,
   Settings,
+  ToolCategory,
 } from '@jarvis/core';
 
 export const IpcChannel = {
@@ -20,6 +22,8 @@ export const IpcChannel = {
   historyRemove: 'history:remove',
   historyClear: 'history:clear',
   toolsList: 'tools:list',
+  auditList: 'audit:list',
+  auditClear: 'audit:clear',
   windowHide: 'window:hide',
   windowResize: 'window:resize',
 } as const;
@@ -33,13 +37,24 @@ export interface ToolInfo {
   name: string;
   description: string;
   risk: RiskLevel;
+  category?: ToolCategory;
+  forceConfirm: boolean;
 }
 
 /** Événements poussés du processus principal vers l'interface pendant un tour. */
 export type ChatEvent =
   | { type: 'started'; conversationId: string; message: ChatMessage }
   | { type: 'delta'; text: string }
-  | { type: 'confirm'; requestId: string; toolName: string; details: string }
+  | {
+      type: 'confirm';
+      requestId: string;
+      toolName: string;
+      details: string;
+      /** Commande ou action exacte à afficher telle quelle (obligatoire pour `run_command`). */
+      command?: string;
+      /** Confirmation incompressible : l'interface le signale distinctement. */
+      forced?: boolean;
+    }
   | { type: 'tool_start'; callId: string; toolName: string }
   | {
       type: 'tool_result';
@@ -78,6 +93,10 @@ export interface JarvisApi {
   };
   tools: {
     list(): Promise<ToolInfo[]>;
+  };
+  audit: {
+    list(limit?: number): Promise<AuditEntry[]>;
+    clear(): Promise<void>;
   };
   window: {
     hide(): Promise<void>;

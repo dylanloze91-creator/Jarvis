@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 import { ToolManager, defineTool } from './manager.js';
-import type { ToolContext } from './types.js';
+import type { CategoryPolicies, ToolContext } from './types.js';
 
 const allow: ToolContext = { requestConfirmation: async () => true };
 const refuse: ToolContext = { requestConfirmation: async () => false };
@@ -132,5 +132,99 @@ describe('ToolManager', () => {
     const outcome = await exploding.execute({ id: '7', name: 'boom', arguments: {} }, allow);
     expect(outcome.status).toBe('error');
     expect(outcome.content).toContain('disque injoignable');
+  });
+
+  it('produit un résultat exploitable par le journal d’audit', async () => {
+    const outcome = await manager().execute(
+      { id: '8', name: 'write_value', arguments: { key: 'a', value: 'b' } },
+      allow,
+    );
+
+    expect(outcome).toMatchObject({
+      arguments: { key: 'a', value: 'b' },
+      decision: 'approved',
+    });
+    expect(outcome.durationMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it('marque un outil sûr comme approuvé automatiquement', async () => {
+    const outcome = await manager().execute(
+      { id: '9', name: 'read_value', arguments: { key: 'cpu' } },
+      allow,
+    );
+    expect(outcome.decision).toBe('auto');
+  });
+
+  it('marque un refus utilisateur avec la décision « refused »', async () => {
+    const outcome = await manager().execute(
+      { id: '10', name: 'write_value', arguments: { key: 'a', value: 'b' } },
+      refuse,
+    );
+    expect(outcome.decision).toBe('refused');
+  });
+
+  it('marque un outil interdit avec la décision « blocked »', async () => {
+    const outcome = await manager().execute(
+      { id: '11', name: 'format_disk', arguments: {} },
+      allow,
+    );
+    expect(outcome.decision).toBe('blocked');
+  });
+
+  it('respecte la politique de permissions transmise par le contexte', async () => {
+    const requestConfirmation = vi.fn(async () => true);
+    const permissive: CategoryPolicies = {
+      apps: 'never',
+      files: 'never',
+      capture: 'never',
+      shell: 'always',
+    };
+
+    const relaxed = defineTool({
+      name: 'open_thing',
+      description: 'Ouvre quelque chose.',
+      risk: 'confirm',
+      category: 'apps',
+      isDestructive: false,
+      schema: z.object({}),
+      execute: async () => ({ ok: true, content: 'ouvert' }),
+    });
+
+    const outcome = await new ToolManager()
+      .register(relaxed)
+      .execute(
+        { id: '12', name: 'open_thing', arguments: {} },
+        { requestConfirmation, policies: permissive },
+      );
+
+    expect(requestConfirmation).not.toHaveBeenCalled();
+    expect(outcome.decision).toBe('auto');
+    expect(outcome.status).toBe('ok');
+  });
+
+  it('transmet la commande exacte à la fenêtre de confirmation', async () => {
+    const requestConfirmation = vi.fn(async () => true);
+    const shellLike = defineTool({
+      name: 'run_thing',
+      description: 'Exécute quelque chose.',
+      risk: 'confirm',
+      category: 'shell',
+      forceConfirm: true,
+      schema: z.object({ command: z.string() }),
+      describeCommand: ({ command }) => command,
+      execute: async () => ({ ok: true, content: 'fait' }),
+    });
+
+    await new ToolManager()
+      .register(shellLike)
+      .execute(
+        { id: '13', name: 'run_thing', arguments: { command: 'rm -rf /tmp/x' } },
+        { requestConfirmation },
+      );
+
+    expect(requestConfirmation.mock.calls[0]?.[0]).toMatchObject({
+      command: 'rm -rf /tmp/x',
+      forced: true,
+    });
   });
 });

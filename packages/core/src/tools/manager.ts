@@ -1,6 +1,7 @@
 import { z } from 'zod';
-import type { ToolCall, ToolCallOutcome } from '../types.js';
+import type { ToolCall, ToolCallOutcome, ToolDecision } from '../types.js';
 import type { ToolSchema } from '../providers/types.js';
+import { defaultCategoryPolicies, requiresConfirmation } from './permissions.js';
 import type {
   RegisteredTool,
   ToolContext,
@@ -14,13 +15,19 @@ import type {
  * fois le contrat exposé au modèle et le validateur des arguments reçus.
  */
 export function defineTool<S extends z.ZodType>(definition: ToolDefinition<S>): RegisteredTool {
+  const isDestructive = normalizeDestructive(definition.isDestructive);
+
   return {
     name: definition.name,
     description: definition.description,
     risk: definition.risk,
+    category: definition.category,
+    forceConfirm: definition.forceConfirm ?? false,
+    isDestructive,
     jsonSchema: toJsonSchema(definition.schema),
     summarize: (input) =>
       definition.summarize?.(input as z.infer<S>) ?? describeFallback(definition.name, input),
+    describeCommand: (input) => definition.describeCommand?.(input as z.infer<S>),
     run: async (input, context) => {
       const parsed = definition.schema.safeParse(input ?? {});
       if (!parsed.success) {
@@ -34,6 +41,16 @@ export function defineTool<S extends z.ZodType>(definition: ToolDefinition<S>): 
   };
 }
 
+function normalizeDestructive<S extends z.ZodType>(
+  isDestructive: ToolDefinition<S>['isDestructive'],
+): (input: unknown) => boolean {
+  if (typeof isDestructive === 'function') {
+    return (input) => isDestructive(input as z.infer<S>);
+  }
+  const flag = Boolean(isDestructive);
+  return () => flag;
+}
+
 export interface ToolExecutionEvents {
   onStart?: (call: ToolCall, tool: RegisteredTool) => void;
   onFinish?: (outcome: ToolCallOutcome) => void;
@@ -43,6 +60,10 @@ export interface ToolExecutionEvents {
  * Seul point de passage entre l'IA et le système. Le modèle ne reçoit que les
  * outils enregistrés et actifs, et ses arguments sont revalidés avant toute
  * exécution : Utilisateur → Assistant IA → Tool Manager → Outils → Windows.
+ *
+ * Chaque exécution — qu'elle réussisse, échoue ou soit refusée — produit un
+ * `ToolCallOutcome` complet (arguments, décision, durée) afin d'alimenter le
+ * journal d'audit sans que l'appelant ait à reconstituer ce contexte.
  */
 export class ToolManager {
   private readonly tools = new Map<string, RegisteredTool>();
@@ -88,6 +109,7 @@ export class ToolManager {
     context: ToolContext,
     events: ToolExecutionEvents = {},
   ): Promise<ToolCallOutcome> {
+    const startedAt = Date.now();
     const tool = this.tools.get(call.name);
 
     if (!tool) {
@@ -96,6 +118,9 @@ export class ToolManager {
         name: call.name,
         status: 'error',
         content: `Outil inconnu : « ${call.name} ». Aucune action n'a été effectuée.`,
+        arguments: call.arguments,
+        decision: 'blocked',
+        durationMs: Date.now() - startedAt,
       });
     }
 
@@ -105,23 +130,39 @@ export class ToolManager {
         name: call.name,
         status: 'denied',
         content: `L'outil « ${call.name} » est désactivé par la politique de sécurité.`,
+        arguments: call.arguments,
+        decision: 'blocked',
+        durationMs: Date.now() - startedAt,
+        category: tool.category,
       });
     }
 
+    let decision: ToolDecision = 'auto';
+
     if (tool.risk === 'confirm') {
-      const approved = await context.requestConfirmation({
-        callId: call.id,
-        toolName: tool.name,
-        title: tool.name,
-        details: tool.summarize(call.arguments),
-      });
-      if (!approved) {
-        return this.finish(events, {
+      const policies = context.policies ?? defaultCategoryPolicies;
+      if (requiresConfirmation(tool, call.arguments, policies)) {
+        const approved = await context.requestConfirmation({
           callId: call.id,
-          name: call.name,
-          status: 'denied',
-          content: "L'utilisateur a refusé cette action. Ne la retente pas sans son accord.",
+          toolName: tool.name,
+          title: tool.name,
+          details: tool.summarize(call.arguments),
+          command: tool.describeCommand(call.arguments),
+          forced: tool.forceConfirm,
         });
+        decision = approved ? 'approved' : 'refused';
+        if (!approved) {
+          return this.finish(events, {
+            callId: call.id,
+            name: call.name,
+            status: 'denied',
+            content: "L'utilisateur a refusé cette action. Ne la retente pas sans son accord.",
+            arguments: call.arguments,
+            decision,
+            durationMs: Date.now() - startedAt,
+            category: tool.category,
+          });
+        }
       }
     }
 
@@ -139,6 +180,10 @@ export class ToolManager {
       name: call.name,
       status: result.ok ? 'ok' : 'error',
       content: result.content,
+      arguments: call.arguments,
+      decision,
+      durationMs: Date.now() - startedAt,
+      category: tool.category,
     });
   }
 

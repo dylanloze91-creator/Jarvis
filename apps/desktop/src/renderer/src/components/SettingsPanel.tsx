@@ -1,5 +1,13 @@
 import { useEffect, useState } from 'react';
-import type { ProviderDescriptor, Settings } from '@jarvis/core';
+import {
+  CONFIGURABLE_CATEGORIES,
+  categoryLabels,
+  policyLabels,
+  type ConfirmationPolicy,
+  type ProviderDescriptor,
+  type Settings,
+} from '@jarvis/core';
+import { Lock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Field, Input, Select, Textarea, Toggle } from '@/components/ui/field';
 import type { RuntimeStatus } from '../../../shared/ipc';
@@ -122,6 +130,50 @@ export function SettingsPanel({ settings, status, onSaved }: SettingsPanelProps)
         checked={draft.launchAtLogin}
         onChange={(launchAtLogin) => patch({ launchAtLogin })}
       />
+
+      <div className="flex flex-col gap-3 border-t border-white/8 pt-4">
+        <div>
+          <p className="text-[11px] font-medium tracking-wide text-slate-400 uppercase">
+            Permissions
+          </p>
+          <p className="mt-1 text-xs leading-snug text-slate-500">
+            Choisis, par catégorie d’outils, si Jarvis doit te demander confirmation toujours, ou
+            seulement pour les actions destructrices, ou jamais.
+          </p>
+        </div>
+
+        {CONFIGURABLE_CATEGORIES.map((category) => (
+          <Field key={category} label={categoryLabels[category]}>
+            <Select
+              value={draft.toolPolicies[category]}
+              onChange={(event) =>
+                patch({
+                  toolPolicies: {
+                    ...draft.toolPolicies,
+                    [category]: event.target.value as ConfirmationPolicy,
+                  },
+                })
+              }
+            >
+              {(['always', 'destructive-only', 'never'] as ConfirmationPolicy[]).map((policy) => (
+                <option key={policy} value={policy}>
+                  {policyLabels[policy]}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        ))}
+
+        <div className="flex items-start gap-2 rounded-lg border border-white/8 bg-white/[0.03] px-3 py-2.5">
+          <Lock className="mt-0.5 size-3.5 shrink-0 text-slate-500" />
+          <p className="text-xs leading-snug text-slate-500">
+            La suppression de fichiers, l’élévation administrateur et l’exécution de commandes (
+            <code className="text-slate-400">run_command</code>) demandent toujours une
+            confirmation. Ce réglage n’est pas modifiable, quelle que soit la politique choisie
+            ci-dessus.
+          </p>
+        </div>
+      </div>
 
       <div className="flex items-center justify-end gap-3 pt-1">
         {saved ? <span className="text-xs text-accent">Réglages enregistrés</span> : null}

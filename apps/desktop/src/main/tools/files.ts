@@ -24,6 +24,8 @@ export const createFolderTool = defineTool({
   description:
     "Crée un dossier dans un emplacement personnel de l'utilisateur (Documents, Bureau, Téléchargements ou dossier personnel).",
   risk: 'confirm',
+  category: 'files',
+  isDestructive: false,
   schema: z.object({
     name: z.string().min(1).max(120).describe('Nom du dossier à créer.'),
     location: locationSchema
