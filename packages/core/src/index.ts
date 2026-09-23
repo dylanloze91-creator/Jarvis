@@ -12,6 +12,22 @@ export { ToolManager, defineTool } from './tools/manager.js';
 
 export { Agent, DEFAULT_SYSTEM_PROMPT, type AgentEvent, type AgentOptions } from './agent/agent.js';
 
+export * from './search/types.js';
+export { WikipediaSearchProvider, wikipediaDescriptor } from './search/providers/wikipedia.js';
+export { BraveSearchProvider, braveDescriptor } from './search/providers/brave.js';
+export { SearchProviderRegistry, createDefaultSearchRegistry } from './search/registry.js';
+
+export * from './market/types.js';
+export {
+  YahooFinanceMarketDataProvider,
+  yahooFinanceDescriptor,
+} from './market/providers/yahooFinance.js';
+export { FinnhubMarketDataProvider, finnhubDescriptor } from './market/providers/finnhub.js';
+export { MarketDataProviderRegistry, createDefaultMarketDataRegistry } from './market/registry.js';
+
+export { extractReadableText, type ReadablePage } from './web/readableText.js';
+export { checkUrlSafety, isPrivateIpAddress, type UrlSafetyResult } from './web/urlSafety.js';
+
 export {
   InMemoryConversationStore,
   newConversation,

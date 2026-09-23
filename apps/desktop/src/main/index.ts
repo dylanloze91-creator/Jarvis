@@ -1,9 +1,13 @@
 import { join } from 'node:path';
 import { BrowserWindow, Menu, Tray, app, globalShortcut, ipcMain, nativeImage } from 'electron';
 import {
+  createDefaultMarketDataRegistry,
   createDefaultRegistry,
+  createDefaultSearchRegistry,
   parseSettings,
+  type MarketDataProviderDescriptor,
   type ProviderDescriptor,
+  type SearchProviderDescriptor,
   type Settings,
 } from '@jarvis/core';
 import { IpcChannel, type SendChatInput, type ToolInfo } from '../shared/ipc.js';
@@ -14,10 +18,16 @@ import { createOverlayWindow, type OverlayWindow } from './window.js';
 
 const isDev = !app.isPackaged;
 const registry = createDefaultRegistry();
-const tools = createToolManager();
+const searchRegistry = createDefaultSearchRegistry();
+const marketDataRegistry = createDefaultMarketDataRegistry();
 const store = new FileConversationStore();
 
 let settings: Settings = parseSettings({});
+const tools = createToolManager({
+  getSettings: () => settings,
+  searchRegistry,
+  marketDataRegistry,
+});
 let overlay: OverlayWindow | null = null;
 let tray: Tray | null = null;
 
@@ -123,6 +133,12 @@ function registerIpc(): void {
     return { settings, status: session.status() };
   });
   ipcMain.handle(IpcChannel.settingsProviders, (): ProviderDescriptor[] => registry.list());
+  ipcMain.handle(IpcChannel.settingsSearchProviders, (): SearchProviderDescriptor[] =>
+    searchRegistry.list(),
+  );
+  ipcMain.handle(IpcChannel.settingsMarketDataProviders, (): MarketDataProviderDescriptor[] =>
+    marketDataRegistry.list(),
+  );
 
   ipcMain.handle(IpcChannel.historyList, () => store.list());
   ipcMain.handle(IpcChannel.historyGet, (_event, id: string) => store.get(id));

@@ -1,5 +1,10 @@
 import { useEffect, useState } from 'react';
-import type { ProviderDescriptor, Settings } from '@jarvis/core';
+import type {
+  MarketDataProviderDescriptor,
+  ProviderDescriptor,
+  SearchProviderDescriptor,
+  Settings,
+} from '@jarvis/core';
 import { Button } from '@/components/ui/button';
 import { Field, Input, Select, Textarea, Toggle } from '@/components/ui/field';
 import type { RuntimeStatus } from '../../../shared/ipc';
@@ -13,15 +18,25 @@ interface SettingsPanelProps {
 export function SettingsPanel({ settings, status, onSaved }: SettingsPanelProps) {
   const [draft, setDraft] = useState<Settings>(settings);
   const [providers, setProviders] = useState<ProviderDescriptor[]>([]);
+  const [searchProviders, setSearchProviders] = useState<SearchProviderDescriptor[]>([]);
+  const [marketDataProviders, setMarketDataProviders] = useState<MarketDataProviderDescriptor[]>(
+    [],
+  );
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
     void window.jarvis.settings.providers().then(setProviders);
+    void window.jarvis.settings.searchProviders().then(setSearchProviders);
+    void window.jarvis.settings.marketDataProviders().then(setMarketDataProviders);
   }, []);
 
   useEffect(() => setDraft(settings), [settings]);
 
   const descriptor = providers.find((provider) => provider.id === draft.provider);
+  const searchDescriptor = searchProviders.find((provider) => provider.id === draft.searchProvider);
+  const marketDataDescriptor = marketDataProviders.find(
+    (provider) => provider.id === draft.marketDataProvider,
+  );
   const patch = (values: Partial<Settings>): void => {
     setDraft((current) => ({ ...current, ...values }));
     setSaved(false);
@@ -96,6 +111,69 @@ export function SettingsPanel({ settings, status, onSaved }: SettingsPanelProps)
             />
           </Field>
         </>
+      ) : null}
+
+      <div className="mt-1 flex flex-col gap-1">
+        <span className="text-[11px] font-medium tracking-wide text-slate-400 uppercase">
+          Recherche &amp; données boursières
+        </span>
+        <p className="text-xs leading-snug text-slate-500">
+          Utilisés par les outils « web_search », « fetch_page » et « get_stock_quote ».
+        </p>
+      </div>
+
+      <Field label="Fournisseur de recherche Internet">
+        <Select
+          value={draft.searchProvider}
+          onChange={(event) => patch({ searchProvider: event.target.value })}
+        >
+          {searchProviders.map((provider) => (
+            <option key={provider.id} value={provider.id}>
+              {provider.label}
+            </option>
+          ))}
+        </Select>
+      </Field>
+
+      {searchDescriptor?.requiresApiKey ? (
+        <Field
+          label="Clé API — recherche"
+          hint="Stockée uniquement sur cette machine, jamais versionnée."
+        >
+          <Input
+            type="password"
+            value={draft.searchApiKey}
+            placeholder="Clé Brave Search…"
+            onChange={(event) => patch({ searchApiKey: event.target.value })}
+          />
+        </Field>
+      ) : null}
+
+      <Field label="Fournisseur de cours de bourse">
+        <Select
+          value={draft.marketDataProvider}
+          onChange={(event) => patch({ marketDataProvider: event.target.value })}
+        >
+          {marketDataProviders.map((provider) => (
+            <option key={provider.id} value={provider.id}>
+              {provider.label}
+            </option>
+          ))}
+        </Select>
+      </Field>
+
+      {marketDataDescriptor?.requiresApiKey ? (
+        <Field
+          label="Clé API — bourse"
+          hint="Stockée uniquement sur cette machine, jamais versionnée."
+        >
+          <Input
+            type="password"
+            value={draft.marketDataApiKey}
+            placeholder="Clé Finnhub…"
+            onChange={(event) => patch({ marketDataApiKey: event.target.value })}
+          />
+        </Field>
       ) : null}
 
       <Field label="Raccourci global" hint="Exemples : Control+Space, Alt+J, Super+K.">

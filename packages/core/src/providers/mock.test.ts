@@ -6,6 +6,9 @@ import { createMessage, type ChatMessage } from '../types.js';
 const tools: ToolSchema[] = [
   { name: 'get_system_info', description: '', parameters: {} },
   { name: 'create_folder', description: '', parameters: {} },
+  { name: 'web_search', description: '', parameters: {} },
+  { name: 'fetch_page', description: '', parameters: {} },
+  { name: 'get_stock_quote', description: '', parameters: {} },
 ];
 
 async function run(messages: ChatMessage[]): Promise<ChatStreamEvent[]> {
@@ -75,5 +78,41 @@ describe('MockProvider', () => {
     const events = await run([createMessage('user', 'Bonjour')]);
     expect(calls(events)).toHaveLength(0);
     expect(text(events).length).toBeGreaterThan(0);
+  });
+
+  it('planifie une recherche boursière et en extrait le nom de la société', async () => {
+    const events = await run([createMessage('user', 'Quel est le cours de Nvidia ?')]);
+    expect(calls(events)[0]).toMatchObject({
+      name: 'get_stock_quote',
+      arguments: { queries: ['Nvidia'] },
+    });
+  });
+
+  it('planifie une recherche boursière pour plusieurs sociétés à la fois', async () => {
+    const events = await run([createMessage('user', 'Cours de bourse de Nvidia et Apple')]);
+    expect(calls(events)[0]).toMatchObject({
+      name: 'get_stock_quote',
+      arguments: { queries: ['Nvidia', 'Apple'] },
+    });
+  });
+
+  it('planifie une recherche Internet et nettoie la formule d’introduction', async () => {
+    const events = await run([
+      createMessage('user', 'Peux-tu chercher sur Internet qui a inventé le jeu d’échecs ?'),
+    ]);
+    expect(calls(events)[0]).toMatchObject({
+      name: 'web_search',
+      arguments: { query: 'qui a inventé le jeu d’échecs' },
+    });
+  });
+
+  it('planifie la lecture d’une page quand une URL est fournie', async () => {
+    const events = await run([
+      createMessage('user', 'Peux-tu résumer cette page : https://fr.wikipedia.org/wiki/Nvidia ?'),
+    ]);
+    expect(calls(events)[0]).toMatchObject({
+      name: 'fetch_page',
+      arguments: { url: 'https://fr.wikipedia.org/wiki/Nvidia' },
+    });
   });
 });

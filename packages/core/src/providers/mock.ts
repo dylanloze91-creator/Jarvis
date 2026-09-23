@@ -69,6 +69,22 @@ interface ToolPlan {
 function planToolCall(prompt: string, available: Set<string>): ToolPlan | null {
   const normalized = prompt.toLowerCase();
 
+  const url = extractUrl(prompt);
+  if (available.has('fetch_page') && url) {
+    return { preamble: 'Je vais lire cette page.\n\n', tool: 'fetch_page', args: { url } };
+  }
+
+  if (available.has('get_stock_quote') && /\b(cours|bourse|actions?)\b/.test(normalized)) {
+    const queries = extractCompanyNames(prompt);
+    if (queries.length > 0) {
+      return {
+        preamble: 'Je vérifie le cours de bourse.\n\n',
+        tool: 'get_stock_quote',
+        args: { queries },
+      };
+    }
+  }
+
   if (
     available.has('get_system_info') &&
     /système|systeme|cpu|ram|mémoire|memoire|disque|stockage|lent|perf|machine|pc/.test(normalized)
@@ -84,6 +100,19 @@ function planToolCall(prompt: string, available: Set<string>): ToolPlan | null {
     };
   }
 
+  if (
+    available.has('web_search') &&
+    /recherche|cherche|internet|actualit|météo|meteo|qui est|qui a|quelle est|qu'est-ce que|c'est quoi|capitale de/.test(
+      normalized,
+    )
+  ) {
+    return {
+      preamble: 'Je cherche ça sur Internet.\n\n',
+      tool: 'web_search',
+      args: { query: extractSearchQuery(prompt), limit: 5 },
+    };
+  }
+
   return null;
 }
 
@@ -93,6 +122,39 @@ function extractFolderName(prompt: string): string {
   const named = prompt.match(/(?:nommé|nomme|appelé|appele|nommer)\s+([\p{L}\p{N}\-_. ]{1,40})/iu);
   if (named?.[1]) return named[1].trim();
   return 'Nouveau dossier';
+}
+
+function extractUrl(prompt: string): string | null {
+  const match = prompt.match(/https?:\/\/[^\s)\]>,]+/i);
+  if (!match) return null;
+  return match[0].replace(/[.,;:)\]>'"]+$/, '');
+}
+
+/** Extrait un ou plusieurs noms d'entreprises après « cours de », « action(s) »… */
+function extractCompanyNames(prompt: string): string[] {
+  const match = prompt.match(
+    /(?:cours(?:\s+(?:de\s+bourse|boursier))?|actions?)\s+(?:de\s+|d['’])?([^?!.\n]{2,80})/iu,
+  );
+  const raw = match?.[1] ?? '';
+  return raw
+    .split(/,| et | & /iu)
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0)
+    .slice(0, 5);
+}
+
+/** Nettoie les formules d'introduction (« peux-tu chercher… ») pour garder l'essentiel de la requête. */
+function extractSearchQuery(prompt: string): string {
+  const stripped = prompt
+    .replace(/^(?:est-ce que tu peux|peux-tu|pourrais-tu|merci de|stp)\s+/iu, '')
+    .replace(
+      /^(?:faire une recherche|fais une recherche|rechercher|recherche|chercher|cherche)\s*(?:sur internet|sur le web|en ligne)?\s*(?:sur|pour|de|à propos de)?\s*/iu,
+      '',
+    )
+    .replace(/\s*(?:sur internet|sur le web|en ligne)\s*$/iu, '')
+    .replace(/[?!.]+$/u, '')
+    .trim();
+  return stripped.length > 0 ? stripped : prompt.trim();
 }
 
 function summarizeToolRun(turn: ChatMessage[]): string {
