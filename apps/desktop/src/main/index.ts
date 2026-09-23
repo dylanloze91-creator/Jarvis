@@ -36,13 +36,15 @@ if (!app.requestSingleInstanceLock()) {
 }
 
 async function bootstrap(): Promise<void> {
+  app.setName('Jarvis');
   settings = await readSettings();
   await app.whenReady();
 
   app.setAppUserModelId('com.thedexios.jarvis');
   if (process.platform === 'darwin') app.dock?.hide();
 
-  overlay = createOverlayWindow(settings.hideOnBlur);
+  // En développement, garder la fenêtre visible quand le focus part (devtools, éditeur).
+  overlay = createOverlayWindow(settings.hideOnBlur && !isDev);
   registerIpc();
   await loadRenderer(overlay.browserWindow);
   registerHotkey(settings.hotkey);
@@ -120,20 +122,15 @@ function registerIpc(): void {
 
     return { settings, status: session.status() };
   });
-  ipcMain.handle(
-    IpcChannel.settingsProviders,
-    (): ProviderDescriptor[] => registry.list(),
-  );
+  ipcMain.handle(IpcChannel.settingsProviders, (): ProviderDescriptor[] => registry.list());
 
   ipcMain.handle(IpcChannel.historyList, () => store.list());
   ipcMain.handle(IpcChannel.historyGet, (_event, id: string) => store.get(id));
   ipcMain.handle(IpcChannel.historyRemove, (_event, id: string) => store.remove(id));
   ipcMain.handle(IpcChannel.historyClear, () => store.clear());
 
-  ipcMain.handle(
-    IpcChannel.toolsList,
-    (): ToolInfo[] =>
-      tools.list().map(({ name, description, risk }) => ({ name, description, risk })),
+  ipcMain.handle(IpcChannel.toolsList, (): ToolInfo[] =>
+    tools.list().map(({ name, description, risk }) => ({ name, description, risk })),
   );
 
   ipcMain.handle(IpcChannel.windowHide, () => overlay?.hide());

@@ -97,10 +97,7 @@ describe('ToolManager', () => {
   });
 
   it('bloque un outil interdit même si le modèle le demande', async () => {
-    const outcome = await manager().execute(
-      { id: '4', name: 'format_disk', arguments: {} },
-      allow,
-    );
+    const outcome = await manager().execute({ id: '4', name: 'format_disk', arguments: {} }, allow);
     expect(outcome.status).toBe('denied');
   });
 

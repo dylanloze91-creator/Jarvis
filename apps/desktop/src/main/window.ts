@@ -4,6 +4,7 @@ import { BrowserWindow, screen, shell } from 'electron';
 const WIDTH = 720;
 const DEFAULT_HEIGHT = 520;
 const MIN_HEIGHT = 132;
+const MAX_HEIGHT = 700;
 
 export interface OverlayWindow {
   browserWindow: BrowserWindow;
@@ -23,8 +24,7 @@ export function createOverlayWindow(hideOnBlur: boolean): OverlayWindow {
   const browserWindow = new BrowserWindow({
     width: WIDTH,
     height: DEFAULT_HEIGHT,
-    minWidth: WIDTH,
-    maxWidth: WIDTH,
+    useContentSize: true,
     show: false,
     frame: false,
     transparent: true,
@@ -65,10 +65,9 @@ export function createOverlayWindow(hideOnBlur: boolean): OverlayWindow {
     const cursor = screen.getCursorScreenPoint();
     const display = screen.getDisplayNearestPoint(cursor);
     const { x, y, width, height } = display.workArea;
-    const [, windowHeight] = browserWindow.getSize();
     browserWindow.setPosition(
       Math.round(x + (width - WIDTH) / 2),
-      Math.round(y + Math.max(64, height * 0.18 - (windowHeight ?? DEFAULT_HEIGHT) / 4)),
+      Math.round(y + Math.max(64, height * 0.16)),
     );
   };
 
@@ -88,10 +87,14 @@ export function createOverlayWindow(hideOnBlur: boolean): OverlayWindow {
       hideOnBlurEnabled = enabled;
     },
     resize: (height) => {
-      const clamped = Math.round(Math.min(Math.max(height, MIN_HEIGHT), 760));
-      const [, current] = browserWindow.getSize();
+      const clamped = Math.round(Math.min(Math.max(height, MIN_HEIGHT), MAX_HEIGHT));
+      const [, current] = browserWindow.getContentSize();
       if (current === clamped) return;
-      browserWindow.setSize(WIDTH, clamped);
+      // Une fenêtre non redimensionnable ignore setContentSize sur plusieurs
+      // plateformes : on lève la contrainte le temps de l'ajustement.
+      browserWindow.setResizable(true);
+      browserWindow.setContentSize(WIDTH, clamped, false);
+      browserWindow.setResizable(false);
     },
   };
 }

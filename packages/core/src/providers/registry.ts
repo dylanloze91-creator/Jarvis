@@ -1,12 +1,7 @@
 import { AnthropicProvider, anthropicDescriptor } from './anthropic.js';
 import { MockProvider, mockDescriptor } from './mock.js';
 import { OpenAIProvider, openAIDescriptor } from './openai.js';
-import type {
-  LLMProvider,
-  ProviderConfig,
-  ProviderDescriptor,
-  ProviderFactory,
-} from './types.js';
+import type { LLMProvider, ProviderConfig, ProviderDescriptor, ProviderFactory } from './types.js';
 
 interface Entry {
   descriptor: ProviderDescriptor;

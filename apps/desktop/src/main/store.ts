@@ -81,7 +81,9 @@ export class FileConversationStore implements ConversationStore {
     for (const file of files) {
       if (!file.endsWith('.json')) continue;
       try {
-        conversations.push(JSON.parse(await readFile(join(this.dir, file), 'utf8')) as Conversation);
+        conversations.push(
+          JSON.parse(await readFile(join(this.dir, file), 'utf8')) as Conversation,
+        );
       } catch {
         // Un fichier corrompu ne doit pas rendre tout l'historique illisible.
       }

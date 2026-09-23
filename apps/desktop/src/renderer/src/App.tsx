@@ -14,8 +14,8 @@ import type { RuntimeStatus, ToolInfo } from '../../shared/ipc';
 
 type View = 'chat' | 'history' | 'settings';
 
-const CHROME_HEIGHT = 44 + 56;
-const MAX_BODY_HEIGHT = 560;
+const HEADER_HEIGHT = 44;
+const MAX_BODY_HEIGHT = 540;
 
 export default function App() {
   const chat = useChat();
@@ -23,7 +23,8 @@ export default function App() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [status, setStatus] = useState<RuntimeStatus | null>(null);
   const [tools, setTools] = useState<ToolInfo[]>([]);
-  const body = useRef<HTMLDivElement>(null);
+  const content = useRef<HTMLDivElement>(null);
+  const footer = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     void window.jarvis.settings.get().then((payload) => {
@@ -45,17 +46,19 @@ export default function App() {
 
   /** La fenêtre suit la hauteur du contenu pour rester compacte au repos. */
   useLayoutEffect(() => {
-    const node = body.current;
+    const node = content.current;
     if (!node) return;
     const sync = (): void => {
-      const height = Math.min(node.scrollHeight, MAX_BODY_HEIGHT) + CHROME_HEIGHT;
-      void window.jarvis.window.resize(height);
+      const body = Math.min(node.getBoundingClientRect().height, MAX_BODY_HEIGHT);
+      const chrome = HEADER_HEIGHT + (footer.current?.getBoundingClientRect().height ?? 0);
+      void window.jarvis.window.resize(Math.ceil(body + chrome));
     };
     sync();
     const observer = new ResizeObserver(sync);
     observer.observe(node);
+    if (footer.current) observer.observe(footer.current);
     return () => observer.disconnect();
-  }, [view, chat.items.length, chat.confirmation]);
+  }, [view]);
 
   const startNew = (): void => {
     chat.reset();
@@ -74,7 +77,9 @@ export default function App() {
         <span className="text-[13px] font-semibold tracking-wide text-slate-200">JARVIS</span>
         {status ? (
           <span className="truncate text-[11px] text-slate-500">
-            {status.usingFallback ? 'mode démonstration' : `${status.providerLabel} · ${status.model}`}
+            {status.usingFallback
+              ? 'mode démonstration'
+              : `${status.providerLabel} · ${status.model}`}
           </span>
         ) : null}
 
@@ -96,37 +101,43 @@ export default function App() {
           >
             <SettingsIcon className="size-4" />
           </IconButton>
-          <IconButton label="Fermer" active={false} onClick={() => void window.jarvis.window.hide()}>
+          <IconButton
+            label="Fermer"
+            active={false}
+            onClick={() => void window.jarvis.window.hide()}
+          >
             <X className="size-4" />
           </IconButton>
         </div>
       </header>
 
-      <div ref={body} className="min-h-0 flex-1 overflow-y-auto">
-        {view === 'history' ? <HistoryPanel onOpen={openConversation} /> : null}
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <div ref={content}>
+          {view === 'history' ? <HistoryPanel onOpen={openConversation} /> : null}
 
-        {view === 'settings' && settings && status ? (
-          <SettingsPanel
-            settings={settings}
-            status={status}
-            onSaved={(payload) => {
-              setSettings(payload.settings);
-              setStatus(payload.status);
-            }}
-          />
-        ) : null}
+          {view === 'settings' && settings && status ? (
+            <SettingsPanel
+              settings={settings}
+              status={status}
+              onSaved={(payload) => {
+                setSettings(payload.settings);
+                setStatus(payload.status);
+              }}
+            />
+          ) : null}
 
-        {view === 'chat' ? (
-          chat.items.length === 0 ? (
-            <EmptyState tools={tools} onPick={chat.send} />
-          ) : (
-            <Messages items={chat.items} />
-          )
-        ) : null}
+          {view === 'chat' ? (
+            chat.items.length === 0 ? (
+              <EmptyState tools={tools} onPick={chat.send} />
+            ) : (
+              <Messages items={chat.items} />
+            )
+          ) : null}
+        </div>
       </div>
 
       {view === 'chat' ? (
-        <div className="shrink-0">
+        <div ref={footer} className="shrink-0">
           {chat.confirmation ? (
             <ConfirmationCard confirmation={chat.confirmation} onRespond={chat.respond} />
           ) : null}

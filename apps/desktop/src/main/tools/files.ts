@@ -26,7 +26,9 @@ export const createFolderTool = defineTool({
   risk: 'confirm',
   schema: z.object({
     name: z.string().min(1).max(120).describe('Nom du dossier à créer.'),
-    location: locationSchema.default('documents').describe("Emplacement parent du nouveau dossier."),
+    location: locationSchema
+      .default('documents')
+      .describe('Emplacement parent du nouveau dossier.'),
     subPath: z
       .string()
       .max(200)

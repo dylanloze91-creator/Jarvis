@@ -34,7 +34,8 @@ export function withMessages(conversation: Conversation, messages: ChatMessage[]
   return {
     ...conversation,
     messages,
-    title: conversation.title === 'Nouvelle conversation' ? deriveTitle(messages) : conversation.title,
+    title:
+      conversation.title === 'Nouvelle conversation' ? deriveTitle(messages) : conversation.title,
     updatedAt: Date.now(),
   };
 }

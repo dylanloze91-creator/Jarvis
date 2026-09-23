@@ -41,7 +41,12 @@ export const getSystemInfoTool = defineTool({
   },
 });
 
-async function readDisk(): Promise<{ path: string; total: number; free: number; used: number } | null> {
+async function readDisk(): Promise<{
+  path: string;
+  total: number;
+  free: number;
+  used: number;
+} | null> {
   const target = app.getPath('home');
   try {
     const stats = await statfs(target);

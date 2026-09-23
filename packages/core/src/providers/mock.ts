@@ -1,4 +1,4 @@
-import { randomId } from '../types.js';
+import { randomId, type ChatMessage } from '../types.js';
 import type {
   ChatRequest,
   ChatStreamEvent,
@@ -31,9 +31,11 @@ export class MockProvider implements LLMProvider {
   }
 
   async *streamChat(request: ChatRequest): AsyncIterable<ChatStreamEvent> {
-    const lastUser = [...request.messages].reverse().find((m) => m.role === 'user');
-    const prompt = (lastUser?.content ?? '').toLowerCase();
-    const alreadyRan = request.messages.some((m) => m.role === 'tool');
+    // Seul le tour courant compte : les outils des tours précédents ne doivent
+    // pas empêcher d'en planifier un nouveau.
+    const turn = currentTurn(request.messages);
+    const prompt = turn.find((m) => m.role === 'user')?.content ?? '';
+    const alreadyRan = turn.some((m) => m.role === 'tool');
     const available = new Set((request.tools ?? []).map((t) => t.name));
 
     const plan = alreadyRan ? null : planToolCall(prompt, available);
@@ -45,9 +47,17 @@ export class MockProvider implements LLMProvider {
       return;
     }
 
-    yield* stream(alreadyRan ? summarizeToolRun(request) : answer(prompt));
+    yield* stream(alreadyRan ? summarizeToolRun(turn) : answer(prompt));
     yield { type: 'done', finishReason: 'stop' };
   }
+}
+
+/** Messages postérieurs au dernier message utilisateur, celui-ci inclus. */
+function currentTurn(messages: ChatMessage[]): ChatMessage[] {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index]?.role === 'user') return messages.slice(index);
+  }
+  return messages;
 }
 
 interface ToolPlan {
@@ -57,26 +67,20 @@ interface ToolPlan {
 }
 
 function planToolCall(prompt: string, available: Set<string>): ToolPlan | null {
+  const normalized = prompt.toLowerCase();
+
   if (
     available.has('get_system_info') &&
-    /système|systeme|cpu|ram|mémoire|memoire|disque|stockage|lent|perf|machine|pc/.test(prompt)
+    /système|systeme|cpu|ram|mémoire|memoire|disque|stockage|lent|perf|machine|pc/.test(normalized)
   ) {
     return { preamble: 'Je regarde l’état de la machine.\n\n', tool: 'get_system_info', args: {} };
   }
 
-  if (available.has('create_folder') && /dossier|répertoire|repertoire|folder/.test(prompt)) {
+  if (available.has('create_folder') && /dossier|répertoire|repertoire|folder/.test(normalized)) {
     return {
       preamble: 'Je prépare la création du dossier.\n\n',
       tool: 'create_folder',
       args: { name: extractFolderName(prompt), location: 'documents' },
-    };
-  }
-
-  if (available.has('search_files') && /cherche|trouve|fichier|recherche/.test(prompt)) {
-    return {
-      preamble: 'Je lance la recherche.\n\n',
-      tool: 'search_files',
-      args: { query: extractQuery(prompt), location: 'documents' },
     };
   }
 
@@ -86,25 +90,25 @@ function planToolCall(prompt: string, available: Set<string>): ToolPlan | null {
 function extractFolderName(prompt: string): string {
   const quoted = prompt.match(/[«"']([^»"']{1,60})[»"']/);
   if (quoted?.[1]) return quoted[1].trim();
-  const named = prompt.match(/(?:nommé|nomme|appelé|appele|nommer)\s+([\w\-. ]{1,40})/);
+  const named = prompt.match(/(?:nommé|nomme|appelé|appele|nommer)\s+([\p{L}\p{N}\-_. ]{1,40})/iu);
   if (named?.[1]) return named[1].trim();
   return 'Nouveau dossier';
 }
 
-function extractQuery(prompt: string): string {
-  const quoted = prompt.match(/[«"']([^»"']{1,60})[»"']/);
-  if (quoted?.[1]) return quoted[1].trim();
-  const words = prompt.replace(/[^\p{L}\p{N}\s.-]/gu, ' ').split(/\s+/).filter(Boolean);
-  return words.at(-1) ?? '';
-}
-
-function summarizeToolRun(request: ChatRequest): string {
-  const last = [...request.messages].reverse().find((m) => m.role === 'tool');
+function summarizeToolRun(turn: ChatMessage[]): string {
+  const last = [...turn].reverse().find((m) => m.role === 'tool');
   const body = last?.content?.trim() ?? '';
+  const lines = body
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+
   return [
     'Voici ce que j’ai obtenu :',
     '',
-    body.length > 0 ? body : '_Aucun résultat retourné par l’outil._',
+    lines.length > 0
+      ? lines.map((line) => `- ${line}`).join('\n')
+      : '_Aucun résultat retourné par l’outil._',
     '',
     '_(Réponse générée par le provider de démonstration. Ajoute une clé API dans les réglages pour parler à un vrai modèle.)_',
   ].join('\n');

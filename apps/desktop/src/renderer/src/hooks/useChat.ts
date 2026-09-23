@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { ChatMessage, Conversation } from '@jarvis/core';
 import type { ChatEvent } from '../../../shared/ipc';
 
@@ -28,30 +28,33 @@ export function useChat() {
   const [busy, setBusy] = useState(false);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [confirmation, setConfirmation] = useState<PendingConfirmation | null>(null);
-  /** Une réponse reprise après un outil doit s'afficher dans une nouvelle bulle. */
-  const openBubble = useRef<string | null>(null);
 
   useEffect(() => {
     return window.jarvis.chat.onEvent((event: ChatEvent) => {
       switch (event.type) {
         case 'started': {
           setConversationId(event.conversationId);
-          openBubble.current = null;
           setItems((current) => [
-            ...current,
+            ...closeStreaming(current),
             { kind: 'user', id: event.message.id, text: event.message.content },
           ]);
           break;
         }
         case 'delta': {
-          setItems((current) => appendDelta(current, openBubble, event.text));
+          const id = nextId();
+          setItems((current) => appendDelta(current, id, event.text));
           break;
         }
         case 'tool_start': {
-          openBubble.current = null;
           setItems((current) => [
-            ...current,
-            { kind: 'tool', id: event.callId, name: event.toolName, status: 'running', content: '' },
+            ...closeStreaming(current),
+            {
+              kind: 'tool',
+              id: event.callId,
+              name: event.toolName,
+              status: 'running',
+              content: '',
+            },
           ]);
           break;
         }
@@ -78,15 +81,10 @@ export function useChat() {
           break;
         }
         case 'done': {
-          openBubble.current = null;
           setConfirmation(null);
           setBusy(false);
           setConversationId(event.conversationId);
-          setItems((current) =>
-            current.map((item) =>
-              item.kind === 'assistant' ? { ...item, streaming: false } : item,
-            ),
-          );
+          setItems(closeStreaming);
           break;
         }
       }
@@ -118,35 +116,34 @@ export function useChat() {
     setItems([]);
     setConversationId(null);
     setConfirmation(null);
-    openBubble.current = null;
   }, []);
 
   const load = useCallback((conversation: Conversation) => {
     setItems(toItems(conversation.messages));
     setConversationId(conversation.id);
     setConfirmation(null);
-    openBubble.current = null;
   }, []);
 
   return { items, busy, confirmation, conversationId, send, cancel, respond, reset, load };
 }
 
-function appendDelta(
-  current: ChatItem[],
-  openBubble: { current: string | null },
-  text: string,
-): ChatItem[] {
-  if (openBubble.current) {
-    return current.map((item) =>
-      item.kind === 'assistant' && item.id === openBubble.current
-        ? { ...item, text: item.text + text }
-        : item,
-    );
+/**
+ * Le texte s'accumule dans la dernière bulle tant qu'elle est en cours. Un
+ * appel d'outil la referme, si bien que la suite de la réponse s'affiche dans
+ * une nouvelle bulle, après le résultat de l'outil.
+ */
+function appendDelta(current: ChatItem[], id: string, text: string): ChatItem[] {
+  const last = current.at(-1);
+  if (last?.kind === 'assistant' && last.streaming) {
+    return [...current.slice(0, -1), { ...last, text: last.text + text }];
   }
-
-  const id = nextId();
-  openBubble.current = id;
   return [...current, { kind: 'assistant', id, text, streaming: true }];
+}
+
+function closeStreaming(items: ChatItem[]): ChatItem[] {
+  return items.map((item) =>
+    item.kind === 'assistant' && item.streaming ? { ...item, streaming: false } : item,
+  );
 }
 
 function toItems(messages: ChatMessage[]): ChatItem[] {
