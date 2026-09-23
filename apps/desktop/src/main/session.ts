@@ -14,12 +14,14 @@ import {
 } from '@jarvis/core';
 import type { ChatEvent, RuntimeStatus, SendChatInput } from '../shared/ipc.js';
 import { IpcChannel } from '../shared/ipc.js';
+import type { VoiceBridge } from './voice.js';
 
 interface SessionDeps {
   registry: ProviderRegistry;
   tools: ToolManager;
   store: ConversationStore;
   getSettings: () => Settings;
+  voice: VoiceBridge;
 }
 
 /**
@@ -41,6 +43,7 @@ export class ChatSession {
       providerLabel: provider.label,
       model: provider.model,
       usingFallback: fellBack,
+      voiceKeyConfigured: this.deps.voice.hasApiKey(),
     };
   }
 

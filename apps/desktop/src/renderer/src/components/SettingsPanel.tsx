@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
-import type { ProviderDescriptor, Settings } from '@jarvis/core';
+import type { ProviderDescriptor, Settings, VoiceSettings } from '@jarvis/core';
 import { Button } from '@/components/ui/button';
 import { Field, Input, Select, Textarea, Toggle } from '@/components/ui/field';
+import { VoiceSettingsSection } from '@/components/VoiceSettings';
 import type { RuntimeStatus } from '../../../shared/ipc';
 
 interface SettingsPanelProps {
@@ -24,6 +25,10 @@ export function SettingsPanel({ settings, status, onSaved }: SettingsPanelProps)
   const descriptor = providers.find((provider) => provider.id === draft.provider);
   const patch = (values: Partial<Settings>): void => {
     setDraft((current) => ({ ...current, ...values }));
+    setSaved(false);
+  };
+  const patchVoice = (values: Partial<VoiceSettings>): void => {
+    setDraft((current) => ({ ...current, voice: { ...current.voice, ...values } }));
     setSaved(false);
   };
 
@@ -121,6 +126,12 @@ export function SettingsPanel({ settings, status, onSaved }: SettingsPanelProps)
         label="Lancer au démarrage de Windows"
         checked={draft.launchAtLogin}
         onChange={(launchAtLogin) => patch({ launchAtLogin })}
+      />
+
+      <VoiceSettingsSection
+        voice={draft.voice}
+        voiceKeyConfigured={status.voiceKeyConfigured}
+        onChange={patchVoice}
       />
 
       <div className="flex items-center justify-end gap-3 pt-1">

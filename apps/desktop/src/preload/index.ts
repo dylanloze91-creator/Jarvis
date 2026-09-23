@@ -1,5 +1,12 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import { IpcChannel, type ChatEvent, type JarvisApi, type SendChatInput } from '../shared/ipc.js';
+import {
+  IpcChannel,
+  type ChatEvent,
+  type JarvisApi,
+  type SendChatInput,
+  type VoiceSpeakInput,
+  type VoiceTranscribeInput,
+} from '../shared/ipc.js';
 import type { Settings } from '@jarvis/core';
 
 /**
@@ -36,6 +43,11 @@ const api: JarvisApi = {
   window: {
     hide: () => ipcRenderer.invoke(IpcChannel.windowHide),
     resize: (height: number) => ipcRenderer.invoke(IpcChannel.windowResize, height),
+  },
+  voice: {
+    transcribe: (input: VoiceTranscribeInput) =>
+      ipcRenderer.invoke(IpcChannel.voiceTranscribe, input),
+    speak: (input: VoiceSpeakInput) => ipcRenderer.invoke(IpcChannel.voiceSpeak, input),
   },
 };
 

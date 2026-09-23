@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ChatMessage, Conversation } from '@jarvis/core';
 import type { ChatEvent } from '../../../shared/ipc';
 
@@ -23,11 +23,18 @@ export interface PendingConfirmation {
 let localId = 0;
 const nextId = (): string => `local-${(localId += 1)}`;
 
-export function useChat() {
+export interface UseChatOptions {
+  /** Appelé avec le texte final de l'assistant à chaque tour, pour la réponse vocale. */
+  onAssistantFinal?: (text: string) => void;
+}
+
+export function useChat(options: UseChatOptions = {}) {
   const [items, setItems] = useState<ChatItem[]>([]);
   const [busy, setBusy] = useState(false);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [confirmation, setConfirmation] = useState<PendingConfirmation | null>(null);
+  const onAssistantFinal = useRef(options.onAssistantFinal);
+  onAssistantFinal.current = options.onAssistantFinal;
 
   useEffect(() => {
     return window.jarvis.chat.onEvent((event: ChatEvent) => {
@@ -85,6 +92,10 @@ export function useChat() {
           setBusy(false);
           setConversationId(event.conversationId);
           setItems(closeStreaming);
+          const lastAssistant = [...event.messages]
+            .reverse()
+            .find((message) => message.role === 'assistant' && message.content.trim().length > 0);
+          if (lastAssistant) onAssistantFinal.current?.(lastAssistant.content);
           break;
         }
       }

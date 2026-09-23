@@ -1,5 +1,5 @@
 import { History, Plus, Settings as SettingsIcon, X } from 'lucide-react';
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { Conversation, Settings } from '@jarvis/core';
 import { Composer } from '@/components/Composer';
 import { ConfirmationCard } from '@/components/ConfirmationCard';
@@ -7,9 +7,11 @@ import { EmptyState } from '@/components/EmptyState';
 import { HistoryPanel } from '@/components/HistoryPanel';
 import { Messages } from '@/components/Messages';
 import { SettingsPanel } from '@/components/SettingsPanel';
+import { VoiceBar } from '@/components/VoiceBar';
 import { Button } from '@/components/ui/button';
 import { useChat } from '@/hooks/useChat';
 import { cn } from '@/lib/utils';
+import { useVoice } from '@/voice/useVoice';
 import type { RuntimeStatus, ToolInfo } from '../../shared/ipc';
 
 type View = 'chat' | 'history' | 'settings';
@@ -18,13 +20,24 @@ const HEADER_HEIGHT = 44;
 const MAX_BODY_HEIGHT = 540;
 
 export default function App() {
-  const chat = useChat();
   const [view, setView] = useState<View>('chat');
   const [settings, setSettings] = useState<Settings | null>(null);
   const [status, setStatus] = useState<RuntimeStatus | null>(null);
   const [tools, setTools] = useState<ToolInfo[]>([]);
   const content = useRef<HTMLDivElement>(null);
   const footer = useRef<HTMLDivElement>(null);
+
+  // `chat` et `voice` dépendent l'un de l'autre (la voix envoie au chat, le
+  // chat déclenche la réponse vocale) : une ref casse le cycle sans effet de bord.
+  const voiceRef = useRef<ReturnType<typeof useVoice> | null>(null);
+  const handleAssistantFinal = useCallback((text: string) => voiceRef.current?.speak(text), []);
+  const chat = useChat({ onAssistantFinal: handleAssistantFinal });
+  const voice = useVoice({
+    settings,
+    voiceKeyConfigured: status?.voiceKeyConfigured ?? false,
+    onTranscript: chat.send,
+  });
+  voiceRef.current = voice;
 
   useEffect(() => {
     void window.jarvis.settings.get().then((payload) => {
@@ -142,6 +155,7 @@ export default function App() {
             <ConfirmationCard confirmation={chat.confirmation} onRespond={chat.respond} />
           ) : null}
           <Composer busy={chat.busy} onSend={chat.send} onCancel={chat.cancel} />
+          <VoiceBar voice={voice} voiceEnabled={settings?.voice.enabled ?? false} />
         </div>
       ) : null}
     </div>
