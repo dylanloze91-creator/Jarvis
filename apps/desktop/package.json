@@ -15,7 +15,8 @@
     "package:dir": "npm run build && electron-builder --dir --publish never"
   },
   "dependencies": {
-    "@jarvis/core": "*"
+    "@jarvis/core": "*",
+    "@picovoice/porcupine-web": "^4.0.1"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",

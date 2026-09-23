@@ -1,10 +1,19 @@
-import { useEffect, useMemo, useState } from 'react';
+import { sensitivityToThreshold } from '@jarvis/core';
 import type { VoiceDescriptor, VoiceSettings } from '@jarvis/core';
-import { Field, Input, Select, Toggle } from '@/components/ui/field';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Field, Input, Range, Select, Toggle } from '@/components/ui/field';
 import { Button } from '@/components/ui/button';
 import { listMicrophones } from '@/voice/audioCapture';
-import { createSttRegistry, createTtsRegistry } from '@/voice/registries';
-import { recordWakeWordProfile } from '@/voice/trainWakeWord';
+import {
+  createSttRegistry,
+  createTtsRegistry,
+  createWakeWordEngineRegistry,
+} from '@/voice/registries';
+import {
+  recordWakeWordProfile,
+  startWakeWordTest,
+  type WakeWordTestHandle,
+} from '@/voice/trainWakeWord';
 
 interface VoiceSettingsSectionProps {
   voice: VoiceSettings;
@@ -12,7 +21,9 @@ interface VoiceSettingsSectionProps {
   onChange: (patch: Partial<VoiceSettings>) => void;
 }
 
-type TrainingState = 'idle' | 'recording' | 'done' | 'error';
+type RecordingState = 'idle' | 'recording' | 'error';
+
+const MIN_SAMPLES_RECOMMENDED = 3;
 
 /**
  * Section « Commande vocale » des réglages. Chaque sélecteur de moteur lit
@@ -27,10 +38,22 @@ export function VoiceSettingsSection({
 }: VoiceSettingsSectionProps) {
   const sttRegistry = useMemo(() => createSttRegistry(), []);
   const ttsRegistry = useMemo(() => createTtsRegistry(), []);
+  const wakeWordRegistry = useMemo(() => createWakeWordEngineRegistry(), []);
 
   const [microphones, setMicrophones] = useState<MediaDeviceInfo[]>([]);
-  const [training, setTraining] = useState<TrainingState>('idle');
+  const [recording, setRecording] = useState<RecordingState>('idle');
   const [ttsVoices, setTtsVoices] = useState<VoiceDescriptor[]>([]);
+
+  const [testing, setTesting] = useState(false);
+  const [testScore, setTestScore] = useState(0);
+  const [testFlash, setTestFlash] = useState(false);
+  const [testError, setTestError] = useState<string | null>(null);
+  const testHandleRef = useRef<WakeWordTestHandle | null>(null);
+  const flashTimerRef = useRef<number | null>(null);
+
+  const usingPorcupine = voice.wakeWordEngine === 'porcupine';
+  const sampleCount = voice.wakeWordProfiles.length;
+  const threshold = sensitivityToThreshold(voice.wakeWordSensitivity);
 
   useEffect(() => {
     void listMicrophones()
@@ -49,14 +72,63 @@ export function VoiceSettingsSection({
     };
   }, [voice.ttsProvider, ttsRegistry]);
 
-  const trainWakeWord = async (): Promise<void> => {
-    setTraining('recording');
+  // Coupe le test en cours si l'utilisateur change de panneau ou d'onglet.
+  useEffect(() => {
+    return () => {
+      testHandleRef.current?.stop();
+      if (flashTimerRef.current) window.clearTimeout(flashTimerRef.current);
+    };
+  }, []);
+
+  const addSample = async (): Promise<void> => {
+    setRecording('recording');
     try {
       const profile = await recordWakeWordProfile(voice.microphoneId || undefined);
-      onChange({ wakeWordProfile: profile.envelope });
-      setTraining('done');
+      onChange({ wakeWordProfiles: [...voice.wakeWordProfiles, profile.envelope] });
+      setRecording('idle');
     } catch {
-      setTraining('error');
+      setRecording('error');
+    }
+  };
+
+  const clearSamples = (): void => {
+    onChange({ wakeWordProfiles: [] });
+  };
+
+  const toggleTest = async (): Promise<void> => {
+    if (testing) {
+      testHandleRef.current?.stop();
+      testHandleRef.current = null;
+      setTesting(false);
+      return;
+    }
+
+    setTestError(null);
+    setTestScore(0);
+    try {
+      const handle = await startWakeWordTest(
+        voice.microphoneId || undefined,
+        voice.wakeWordProfiles.length > 0
+          ? {
+              profiles: voice.wakeWordProfiles.map((envelope) => ({ envelope })),
+              matchStrategy: voice.wakeWordMatchStrategy,
+            }
+          : null,
+        voice.wakeWordSensitivity,
+        (score, detected) => {
+          setTestScore(score);
+          if (detected) {
+            setTestFlash(true);
+            if (flashTimerRef.current) window.clearTimeout(flashTimerRef.current);
+            flashTimerRef.current = window.setTimeout(() => setTestFlash(false), 600);
+          }
+        },
+        (message) => setTestError(message),
+      );
+      testHandleRef.current = handle;
+      setTesting(true);
+    } catch (error) {
+      setTestError(error instanceof Error ? error.message : String(error));
     }
   };
 
@@ -73,12 +145,170 @@ export function VoiceSettingsSection({
         onChange={(enabled) => onChange({ enabled })}
       />
 
-      <Field label="Mot de réveil">
-        <Input
-          value={voice.wakeWord}
-          onChange={(event) => onChange({ wakeWord: event.target.value })}
-        />
-      </Field>
+      <div className="rounded-lg border border-white/8 bg-white/[0.02] p-3">
+        <p className="mb-3 text-[11px] font-medium tracking-wide text-slate-500 uppercase">
+          Mot de réveil — calibration guidée
+        </p>
+
+        <div className="flex flex-col gap-3">
+          <Field label="Moteur de détection">
+            <Select
+              value={voice.wakeWordEngine}
+              onChange={(event) => onChange({ wakeWordEngine: event.target.value })}
+            >
+              {wakeWordRegistry.list().map((descriptor) => (
+                <option key={descriptor.id} value={descriptor.id}>
+                  {descriptor.label}
+                </option>
+              ))}
+            </Select>
+          </Field>
+
+          {usingPorcupine ? (
+            <>
+              <p className="rounded-lg border border-amber-400/25 bg-amber-400/10 px-3 py-2 text-xs leading-snug text-amber-100">
+                Porcupine reconnaît « jarvis » sans calibration, mais sa formule personnelle{' '}
+                <strong>n'est plus gratuite depuis le 30 juin 2026</strong> (Picovoice a mis fin à
+                son offre gratuite et n'a pas prévu de palier non commercial). Une carte bancaire et
+                un abonnement payant sont nécessaires pour obtenir une clé valide — voir le README
+                pour le détail. Sans clé, l'application repasse automatiquement sur le gabarit local
+                ci-dessous.
+              </p>
+              <Field label="Clé d'accès Picovoice">
+                <Input
+                  type="password"
+                  value={voice.wakeWordAccessKey}
+                  placeholder="AccessKey Picovoice…"
+                  onChange={(event) => onChange({ wakeWordAccessKey: event.target.value })}
+                />
+              </Field>
+            </>
+          ) : (
+            <p className="text-xs leading-snug text-slate-500">
+              Gratuit, sans compte : Jarvis compare le son capté à un ou plusieurs échantillons que
+              tu enregistres toi-même ci-dessous. C'est le moteur par défaut de l'application.
+            </p>
+          )}
+
+          {!usingPorcupine ? (
+            <>
+              <Field label="Mot de réveil">
+                <Input
+                  value={voice.wakeWord}
+                  onChange={(event) => onChange({ wakeWord: event.target.value })}
+                />
+              </Field>
+
+              <Field label="Comparaison des échantillons">
+                <Select
+                  value={voice.wakeWordMatchStrategy}
+                  onChange={(event) =>
+                    onChange({
+                      wakeWordMatchStrategy: event.target
+                        .value as VoiceSettings['wakeWordMatchStrategy'],
+                    })
+                  }
+                >
+                  <option value="best">
+                    Meilleur gabarit (tolère la variabilité entre essais)
+                  </option>
+                  <option value="average">Moyenne des gabarits (lisse le bruit)</option>
+                </Select>
+              </Field>
+
+              <div className="flex flex-col gap-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-medium tracking-wide text-slate-400 uppercase">
+                    Sensibilité
+                  </span>
+                  <span className="text-xs text-slate-400">
+                    {Math.round(voice.wakeWordSensitivity * 100)}% · seuil{' '}
+                    {Math.round(threshold * 100)}%
+                  </span>
+                </div>
+                <Range
+                  min={0}
+                  max={100}
+                  value={Math.round(voice.wakeWordSensitivity * 100)}
+                  onChange={(event) =>
+                    onChange({ wakeWordSensitivity: Number(event.target.value) / 100 })
+                  }
+                />
+                <div className="flex justify-between text-[11px] text-slate-500">
+                  <span>Stricte (peu de faux positifs)</span>
+                  <span>Sensible (se déclenche facilement)</span>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between gap-3 rounded-lg border border-white/8 bg-white/[0.03] px-3 py-2.5">
+                <div>
+                  <p className="text-sm text-slate-200">
+                    {sampleCount} échantillon{sampleCount === 1 ? '' : 's'} enregistré
+                    {sampleCount === 1 ? '' : 's'}
+                  </p>
+                  <p className="text-xs text-slate-500">
+                    {sampleCount === 0
+                      ? "Aucun gabarit : dis le mot de réveil pendant l'enregistrement."
+                      : sampleCount < MIN_SAMPLES_RECOMMENDED
+                        ? `Recommandé : au moins ${MIN_SAMPLES_RECOMMENDED} échantillons pour bien couvrir ta voix.`
+                        : 'Bonne base : tu peux tester la détection ci-dessous.'}
+                  </p>
+                </div>
+                <div className="flex shrink-0 gap-2">
+                  {sampleCount > 0 ? (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={clearSamples}
+                      disabled={recording === 'recording'}
+                    >
+                      Effacer
+                    </Button>
+                  ) : null}
+                  <Button
+                    size="sm"
+                    variant="subtle"
+                    onClick={() => void addSample()}
+                    disabled={recording === 'recording'}
+                  >
+                    {recording === 'recording'
+                      ? 'Dis « ' + voice.wakeWord + ' »…'
+                      : 'Ajouter un échantillon'}
+                  </Button>
+                </div>
+              </div>
+              {recording === 'error' ? (
+                <p className="text-xs text-rose-300">
+                  Impossible d'accéder au microphone (normal sur une machine sans micro).
+                </p>
+              ) : null}
+
+              <div className="flex flex-col gap-2 rounded-lg border border-white/8 bg-white/[0.03] px-3 py-2.5">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm text-slate-200">Tester la détection</p>
+                    <p className="text-xs text-slate-500">
+                      Dis le mot de réveil et observe le score : il doit dépasser le seuil pour
+                      déclencher.
+                    </p>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant={testing ? 'danger' : 'subtle'}
+                    onClick={() => void toggleTest()}
+                  >
+                    {testing ? 'Arrêter le test' : 'Tester'}
+                  </Button>
+                </div>
+                {testing ? (
+                  <ScoreMeter score={testScore} threshold={threshold} flash={testFlash} />
+                ) : null}
+                {testError ? <p className="text-xs text-rose-300">{testError}</p> : null}
+              </div>
+            </>
+          ) : null}
+        </div>
+      </div>
 
       <Field
         label="Microphone"
@@ -97,31 +327,10 @@ export function VoiceSettingsSection({
         </Select>
       </Field>
 
-      <div className="flex items-center justify-between gap-3 rounded-lg border border-white/8 bg-white/[0.03] px-3 py-2.5">
-        <div>
-          <p className="text-sm text-slate-200">Calibrer le mot de réveil</p>
-          <p className="text-xs text-slate-500">
-            {voice.wakeWordProfile.length > 0
-              ? 'Gabarit enregistré localement.'
-              : "Aucun gabarit : dis le mot de réveil pendant l'enregistrement."}
-          </p>
-        </div>
-        <Button
-          size="sm"
-          variant="subtle"
-          onClick={() => void trainWakeWord()}
-          disabled={training === 'recording'}
-        >
-          {training === 'recording' ? 'Enregistrement…' : 'Enregistrer un échantillon'}
-        </Button>
-      </div>
-      {training === 'error' ? (
-        <p className="text-xs text-rose-300">
-          Impossible d'accéder au microphone (normal sur une machine sans micro).
-        </p>
-      ) : null}
-
-      <Field label="Moteur de reconnaissance vocale (STT)">
+      <Field
+        label="Moteur de reconnaissance vocale (STT)"
+        hint="La reconnaissance locale du navigateur ne fonctionne pas dans Electron (limitation connue et vérifiée : elle dépend des serveurs de Google, absents d'Electron). Tant qu'aucune clé OpenAI n'est configurée, seuls le mot de réveil et la simulation restent utilisables."
+      >
         <Select
           value={voice.sttProvider}
           onChange={(event) => onChange({ sttProvider: event.target.value })}
@@ -129,9 +338,7 @@ export function VoiceSettingsSection({
           {sttRegistry.list().map((descriptor) => (
             <option key={descriptor.id} value={descriptor.id}>
               {descriptor.label}
-              {descriptor.requiresApiKey && !voiceKeyConfigured
-                ? ' — clé requise, repli local'
-                : ''}
+              {descriptor.requiresApiKey && !voiceKeyConfigured ? ' — clé requise' : ''}
             </option>
           ))}
         </Select>
@@ -139,7 +346,7 @@ export function VoiceSettingsSection({
 
       <Toggle
         label="Réponse vocale"
-        hint="Jarvis lit ses réponses à voix haute, même pour un message tapé."
+        hint="Jarvis lit ses réponses à voix haute avec les voix du système (Windows/SAPI), gratuitement — même pour un message tapé."
         checked={voice.ttsEnabled}
         onChange={(ttsEnabled) => onChange({ ttsEnabled })}
       />
@@ -180,7 +387,7 @@ export function VoiceSettingsSection({
 
       <Field
         label="Clé API OpenAI dédiée à la voix (optionnel)"
-        hint="Laisse vide pour réutiliser la clé du fournisseur OpenAI ci-dessus, si configuré."
+        hint="Laisse vide pour réutiliser la clé du fournisseur OpenAI ci-dessus, si configuré. Facultative : toute la chaîne vocale par défaut (mot de réveil + réponse) fonctionne sans elle."
       >
         <Input
           type="password"
@@ -189,6 +396,42 @@ export function VoiceSettingsSection({
           onChange={(event) => onChange({ apiKey: event.target.value })}
         />
       </Field>
+    </div>
+  );
+}
+
+function ScoreMeter({
+  score,
+  threshold,
+  flash,
+}: {
+  score: number;
+  threshold: number;
+  flash: boolean;
+}) {
+  const percent = Math.round(Math.min(1, Math.max(0, score)) * 100);
+  const thresholdPercent = Math.round(Math.min(1, Math.max(0, threshold)) * 100);
+  const passed = score >= threshold;
+
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="relative h-3 overflow-hidden rounded-full bg-white/10">
+        <div
+          className={`h-full rounded-full transition-[width] duration-100 ${
+            flash ? 'bg-emerald-400' : passed ? 'bg-accent' : 'bg-white/30'
+          }`}
+          style={{ width: `${percent}%` }}
+        />
+        <div
+          className="absolute top-0 h-full w-px bg-rose-300/80"
+          style={{ left: `${thresholdPercent}%` }}
+          title="Seuil de déclenchement"
+        />
+      </div>
+      <div className="flex justify-between text-[11px] text-slate-500">
+        <span>Score : {percent}%</span>
+        <span>{flash ? 'Détecté !' : `Seuil : ${thresholdPercent}%`}</span>
+      </div>
     </div>
   );
 }

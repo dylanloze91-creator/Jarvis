@@ -24,8 +24,23 @@ export const voiceSettingsSchema = z.object({
   /** Écoute permanente en arrière-plan, avec détection locale du mot de réveil. */
   enabled: z.boolean().default(false),
   wakeWord: z.string().min(1).default('jarvis'),
-  /** Gabarit d'énergie du mot de réveil, capturé localement (vide = pas encore entraîné). */
-  wakeWordProfile: z.array(z.number()).default([]),
+  /**
+   * Gabarits d'énergie du mot de réveil, capturés localement (plusieurs
+   * échantillons possibles, tableau vide = pas encore entraîné).
+   */
+  wakeWordProfiles: z.array(z.array(z.number())).default([]),
+  /** `best` compare au gabarit le plus proche, `average` à leur moyenne. */
+  wakeWordMatchStrategy: z.enum(['best', 'average']).default('best'),
+  /** 0 (strict, peu de faux positifs) à 1 (très sensible). */
+  wakeWordSensitivity: z.number().min(0).max(1).default(0.5),
+  /** Moteur de détection du mot de réveil : identifiant enregistré dans le registre dédié. */
+  wakeWordEngine: z.string().min(1).default('local-template'),
+  /**
+   * Clé d'accès Picovoice (Porcupine), optionnelle. Sa présence sélectionne
+   * automatiquement Porcupine ; vide, l'application reste sur le gabarit
+   * local. Voir le README pour le coût réel de cette clé.
+   */
+  wakeWordAccessKey: z.string().default(''),
   /** Identifiant du périphérique micro choisi ; vide = périphérique par défaut du système. */
   microphoneId: z.string().default(''),
   /** Moteur de reconnaissance vocale : identifiant enregistré dans le registre STT. */
