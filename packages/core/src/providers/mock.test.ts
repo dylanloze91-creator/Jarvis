@@ -18,6 +18,9 @@ const tools: ToolSchema[] = [
   { name: 'delete_file', description: '', parameters: {} },
   { name: 'take_screenshot', description: '', parameters: {} },
   { name: 'run_command', description: '', parameters: {} },
+  { name: 'web_search', description: '', parameters: {} },
+  { name: 'fetch_page', description: '', parameters: {} },
+  { name: 'get_stock_quote', description: '', parameters: {} },
 ];
 
 async function run(messages: ChatMessage[]): Promise<ChatStreamEvent[]> {
@@ -165,5 +168,41 @@ describe('MockProvider', () => {
   it('n’escalade pas vers run_command une simple demande d’ouverture', async () => {
     const events = await run([createMessage('user', 'Lance Spotify')]);
     expect(calls(events)[0]?.name).toBe('open_application');
+  });
+
+  it('planifie une recherche boursière et en extrait le nom de la société', async () => {
+    const events = await run([createMessage('user', 'Quel est le cours de Nvidia ?')]);
+    expect(calls(events)[0]).toMatchObject({
+      name: 'get_stock_quote',
+      arguments: { queries: ['Nvidia'] },
+    });
+  });
+
+  it('planifie une recherche boursière pour plusieurs sociétés à la fois', async () => {
+    const events = await run([createMessage('user', 'Cours de bourse de Nvidia et Apple')]);
+    expect(calls(events)[0]).toMatchObject({
+      name: 'get_stock_quote',
+      arguments: { queries: ['Nvidia', 'Apple'] },
+    });
+  });
+
+  it('planifie une recherche Internet et nettoie la formule d’introduction', async () => {
+    const events = await run([
+      createMessage('user', 'Peux-tu chercher sur Internet qui a inventé le jeu d’échecs ?'),
+    ]);
+    expect(calls(events)[0]).toMatchObject({
+      name: 'web_search',
+      arguments: { query: 'qui a inventé le jeu d’échecs' },
+    });
+  });
+
+  it('planifie la lecture d’une page quand une URL est fournie', async () => {
+    const events = await run([
+      createMessage('user', 'Peux-tu résumer cette page : https://fr.wikipedia.org/wiki/Nvidia ?'),
+    ]);
+    expect(calls(events)[0]).toMatchObject({
+      name: 'fetch_page',
+      arguments: { url: 'https://fr.wikipedia.org/wiki/Nvidia' },
+    });
   });
 });

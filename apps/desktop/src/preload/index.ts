@@ -23,6 +23,8 @@ const api: JarvisApi = {
     get: () => ipcRenderer.invoke(IpcChannel.settingsGet),
     set: (patch: Partial<Settings>) => ipcRenderer.invoke(IpcChannel.settingsSet, patch),
     providers: () => ipcRenderer.invoke(IpcChannel.settingsProviders),
+    searchProviders: () => ipcRenderer.invoke(IpcChannel.settingsSearchProviders),
+    marketDataProviders: () => ipcRenderer.invoke(IpcChannel.settingsMarketDataProviders),
   },
   history: {
     list: () => ipcRenderer.invoke(IpcChannel.historyList),

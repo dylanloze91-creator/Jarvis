@@ -3,8 +3,10 @@ import type {
   ChatMessage,
   Conversation,
   ConversationSummary,
+  MarketDataProviderDescriptor,
   ProviderDescriptor,
   RiskLevel,
+  SearchProviderDescriptor,
   Settings,
   ToolCategory,
 } from '@jarvis/core';
@@ -17,6 +19,8 @@ export const IpcChannel = {
   settingsGet: 'settings:get',
   settingsSet: 'settings:set',
   settingsProviders: 'settings:providers',
+  settingsSearchProviders: 'settings:search-providers',
+  settingsMarketDataProviders: 'settings:market-data-providers',
   historyList: 'history:list',
   historyGet: 'history:get',
   historyRemove: 'history:remove',
@@ -84,6 +88,8 @@ export interface JarvisApi {
     get(): Promise<{ settings: Settings; status: RuntimeStatus }>;
     set(patch: Partial<Settings>): Promise<{ settings: Settings; status: RuntimeStatus }>;
     providers(): Promise<ProviderDescriptor[]>;
+    searchProviders(): Promise<SearchProviderDescriptor[]>;
+    marketDataProviders(): Promise<MarketDataProviderDescriptor[]>;
   };
   history: {
     list(): Promise<ConversationSummary[]>;

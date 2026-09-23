@@ -79,6 +79,22 @@ function planToolCall(prompt: string, available: Set<string>): ToolPlan | null {
   const normalized = prompt.toLowerCase();
   const has = (tool: string): boolean => available.has(tool);
 
+  const url = extractUrl(prompt);
+  if (available.has('fetch_page') && url) {
+    return { preamble: 'Je vais lire cette page.\n\n', tool: 'fetch_page', args: { url } };
+  }
+
+  if (available.has('get_stock_quote') && /\b(cours|bourse|actions?)\b/.test(normalized)) {
+    const queries = extractCompanyNames(prompt);
+    if (queries.length > 0) {
+      return {
+        preamble: 'Je vérifie le cours de bourse.\n\n',
+        tool: 'get_stock_quote',
+        args: { queries },
+      };
+    }
+  }
+
   if (
     has('get_active_window') &&
     /fen[êe]tre active|fen[êe]tres ouvertes|qu(?:'|e )est-ce que j.ai d.ouvert|quelles applications/.test(
@@ -209,6 +225,19 @@ function planToolCall(prompt: string, available: Set<string>): ToolPlan | null {
     };
   }
 
+  if (
+    available.has('web_search') &&
+    /recherche|cherche|internet|actualit|météo|meteo|qui est|qui a|quelle est|qu'est-ce que|c'est quoi|capitale de/.test(
+      normalized,
+    )
+  ) {
+    return {
+      preamble: 'Je cherche ça sur Internet.\n\n',
+      tool: 'web_search',
+      args: { query: extractSearchQuery(prompt), limit: 5 },
+    };
+  }
+
   return null;
 }
 
@@ -242,6 +271,39 @@ function extractAfter(prompt: string, keywords: string[]): string | null {
   const match = prompt.match(pattern);
   if (!match?.[1]) return null;
   return match[1].replace(/\s+(et|puis)\b.*$/i, '').trim();
+}
+
+function extractUrl(prompt: string): string | null {
+  const match = prompt.match(/https?:\/\/[^\s)\]>,]+/i);
+  if (!match) return null;
+  return match[0].replace(/[.,;:)\]>'"]+$/, '');
+}
+
+/** Extrait un ou plusieurs noms d'entreprises après « cours de », « action(s) »… */
+function extractCompanyNames(prompt: string): string[] {
+  const match = prompt.match(
+    /(?:cours(?:\s+(?:de\s+bourse|boursier))?|actions?)\s+(?:de\s+|d['’])?([^?!.\n]{2,80})/iu,
+  );
+  const raw = match?.[1] ?? '';
+  return raw
+    .split(/,| et | & /iu)
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0)
+    .slice(0, 5);
+}
+
+/** Nettoie les formules d'introduction (« peux-tu chercher… ») pour garder l'essentiel de la requête. */
+function extractSearchQuery(prompt: string): string {
+  const stripped = prompt
+    .replace(/^(?:est-ce que tu peux|peux-tu|pourrais-tu|merci de|stp)\s+/iu, '')
+    .replace(
+      /^(?:faire une recherche|fais une recherche|rechercher|recherche|chercher|cherche)\s*(?:sur internet|sur le web|en ligne)?\s*(?:sur|pour|de|à propos de)?\s*/iu,
+      '',
+    )
+    .replace(/\s*(?:sur internet|sur le web|en ligne)\s*$/iu, '')
+    .replace(/[?!.]+$/u, '')
+    .trim();
+  return stripped.length > 0 ? stripped : prompt.trim();
 }
 
 function summarizeToolRun(turn: ChatMessage[]): string {

@@ -28,6 +28,14 @@ export const settingsSchema = z.object({
   hotkey: z.string().min(1).default('Control+Space'),
   systemPrompt: z.string().default(DEFAULT_SYSTEM_PROMPT),
   temperature: z.number().min(0).max(2).default(0.4),
+  /** Fournisseur utilisé par l'outil `web_search`. */
+  searchProvider: z.string().min(1).default('wikipedia'),
+  /** Clé optionnelle, requise seulement par certains fournisseurs (ex. Brave Search). */
+  searchApiKey: z.string().default(''),
+  /** Fournisseur utilisé par l'outil `get_stock_quote`. */
+  marketDataProvider: z.string().min(1).default('yahoo-finance'),
+  /** Clé optionnelle, requise seulement par certains fournisseurs (ex. Finnhub). */
+  marketDataApiKey: z.string().default(''),
   /** Masquer la fenêtre dès qu'elle perd le focus, à la manière d'un lanceur. */
   hideOnBlur: z.boolean().default(true),
   launchAtLogin: z.boolean().default(false),
