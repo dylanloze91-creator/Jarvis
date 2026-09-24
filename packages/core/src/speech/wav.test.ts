@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { concatFloat32, encodeWav } from './wav.js';
+import { concatFloat32, decodeWav, encodeWav } from './wav.js';
 
 describe('concatFloat32', () => {
   it('concatène plusieurs trames dans l’ordre', () => {
@@ -36,6 +36,32 @@ describe('encodeWav', () => {
     expect(view.getInt16(44, true)).toBe(0x7fff);
     expect(view.getInt16(46, true)).toBe(-0x8000);
     expect(view.getInt16(48, true)).toBe(0);
+  });
+});
+
+describe('decodeWav', () => {
+  it('retrouve les échantillons et le débit encodés par encodeWav (aller-retour)', () => {
+    const original = new Float32Array([0, 0.5, -0.5, 1, -1, 0.25]);
+    const wav = encodeWav(original, 22050);
+    const decoded = decodeWav(wav);
+
+    expect(decoded.sampleRate).toBe(22050);
+    expect(decoded.samples).toHaveLength(original.length);
+    for (let index = 0; index < original.length; index += 1) {
+      expect(decoded.samples[index]).toBeCloseTo(original[index]!, 3);
+    }
+  });
+
+  it('rejette un fichier sans en-tête RIFF/WAVE valide', () => {
+    expect(() => decodeWav(new Uint8Array([0, 1, 2, 3]))).toThrow(/RIFF\/WAVE/);
+  });
+
+  it('rejette un WAV sans bloc "data"', () => {
+    const wav = encodeWav(new Float32Array([0, 0.5]), 16000);
+    // Renomme le bloc "data" pour simuler un fichier sans données.
+    const corrupted = new Uint8Array(wav);
+    corrupted[36] = 'x'.charCodeAt(0);
+    expect(() => decodeWav(corrupted)).toThrow(/"data"/);
   });
 });
 
