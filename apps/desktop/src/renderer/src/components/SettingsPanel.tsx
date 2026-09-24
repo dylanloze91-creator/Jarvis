@@ -13,6 +13,7 @@ import {
 import { Lock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Field, Input, Select, Textarea, Toggle } from '@/components/ui/field';
+import { OllamaSettingsSection } from '@/components/OllamaSettings';
 import { VoiceSettingsSection } from '@/components/VoiceSettings';
 import type { RuntimeStatus } from '../../../shared/ipc';
 
@@ -113,7 +114,7 @@ export function SettingsPanel({ settings, status, onSaved }: SettingsPanelProps)
 
           <Field
             label="URL de base"
-            hint="À renseigner pour un backend compatible OpenAI (Ollama, LM Studio, OpenRouter…)."
+            hint="À renseigner pour un backend compatible OpenAI (LM Studio, OpenRouter…)."
           >
             <Input
               value={draft.baseUrl}
@@ -122,6 +123,14 @@ export function SettingsPanel({ settings, status, onSaved }: SettingsPanelProps)
             />
           </Field>
         </>
+      ) : null}
+
+      {draft.provider === 'ollama' ? (
+        <OllamaSettingsSection
+          baseUrl={draft.baseUrl}
+          model={draft.model}
+          onChange={(values) => patch(values)}
+        />
       ) : null}
 
       <div className="mt-1 flex flex-col gap-1">

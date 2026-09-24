@@ -7,6 +7,37 @@ export { OpenAIProvider, openAIDescriptor } from './providers/openai.js';
 export { AnthropicProvider, anthropicDescriptor } from './providers/anthropic.js';
 export { ProviderRegistry, createDefaultRegistry } from './providers/registry.js';
 
+export {
+  OllamaProvider,
+  ollamaDescriptor,
+  OLLAMA_DEFAULT_MODEL,
+  OLLAMA_RECOMMENDED_NUM_CTX,
+  detectLeakedToolCallAttempt,
+  type LeakedToolCallAttempt,
+} from './providers/ollama.js';
+export {
+  checkOllamaStatus,
+  normalizeBaseUrl as normalizeOllamaBaseUrl,
+  type OllamaServerStatus,
+  type OllamaModelInfo,
+  type OllamaStatusResult,
+  type FetchLike as OllamaFetchLike,
+} from './providers/ollamaStatus.js';
+export {
+  OLLAMA_RTX2060_6GB_RECOMMENDATIONS,
+  OLLAMA_TOOL_CATALOG_FOOTPRINT,
+  getOllamaDefaultRecommendation,
+  type OllamaModelRecommendation,
+  type OllamaRecommendationRole,
+} from './providers/ollamaModels.js';
+export {
+  testOllamaConnection,
+  type OllamaDiagnosticResult,
+  type OllamaDiagnosticStep,
+  type OllamaDiagnosticStepId,
+  type TestOllamaConnectionOptions,
+} from './providers/ollamaDiagnostics.js';
+
 export * from './tools/types.js';
 export { ToolManager, defineTool } from './tools/manager.js';
 export {

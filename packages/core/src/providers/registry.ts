@@ -1,5 +1,6 @@
 import { AnthropicProvider, anthropicDescriptor } from './anthropic.js';
 import { MockProvider, mockDescriptor } from './mock.js';
+import { OllamaProvider, ollamaDescriptor } from './ollama.js';
 import { OpenAIProvider, openAIDescriptor } from './openai.js';
 import type { LLMProvider, ProviderConfig, ProviderDescriptor, ProviderFactory } from './types.js';
 
@@ -58,5 +59,6 @@ export function createDefaultRegistry(): ProviderRegistry {
   return new ProviderRegistry()
     .register(mockDescriptor, (config) => new MockProvider(config))
     .register(openAIDescriptor, (config) => new OpenAIProvider(config))
-    .register(anthropicDescriptor, (config) => new AnthropicProvider(config));
+    .register(anthropicDescriptor, (config) => new AnthropicProvider(config))
+    .register(ollamaDescriptor, (config) => new OllamaProvider(config));
 }

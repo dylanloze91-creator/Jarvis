@@ -32,6 +32,10 @@ const api: JarvisApi = {
     providers: () => ipcRenderer.invoke(IpcChannel.settingsProviders),
     searchProviders: () => ipcRenderer.invoke(IpcChannel.settingsSearchProviders),
     marketDataProviders: () => ipcRenderer.invoke(IpcChannel.settingsMarketDataProviders),
+    ollamaStatus: (baseUrl?: string) =>
+      ipcRenderer.invoke(IpcChannel.settingsOllamaStatus, baseUrl),
+    ollamaTest: (input: { baseUrl?: string; model: string }) =>
+      ipcRenderer.invoke(IpcChannel.settingsOllamaTest, input),
   },
   history: {
     list: () => ipcRenderer.invoke(IpcChannel.historyList),

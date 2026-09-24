@@ -11,7 +11,7 @@ Jarvis a un véritable accès au système : lire les processus, la fenêtre acti
 - Raccourci clavier global `Ctrl + Espace` pour ouvrir et fermer ; `Échap` pour masquer
 - Conversation avec réponses en streaming et rendu markdown
 - Historique des conversations, persisté sur disque et consultable dans l'interface
-- Trois fournisseurs de modèle interchangeables, dont un mode démonstration hors ligne qui couvre tous les outils par mots-clés
+- Quatre fournisseurs de modèle interchangeables — OpenAI, Anthropic, **Ollama (local, gratuit)** en tant que fournisseur à part entière, et un mode démonstration hors ligne qui couvre tous les outils par mots-clés
 - Boucle d'appel d'outils complète, avec demande de confirmation pour les actions sensibles
 - Outils de contrôle du PC : lecture système (processus, fenêtre active, fichiers, journal d'événements) et actions (applications, fichiers, capture d'écran, commande shell)
 - Accès à Internet : recherche web synthétisée avec ses sources, lecture d'une page pour creuser un résultat, cours de bourse d'une ou plusieurs entreprises nommées en langage naturel
@@ -420,6 +420,140 @@ celui-ci est déjà OpenAI).
   aucune clé d'accès valide n'était disponible pour vérifier la détection réelle (seul le
   chemin d'erreur sans clé a pu être vérifié).
 
+## Modèle local gratuit (Ollama)
+
+**Objectif de conception : ne pas payer d'API doit être un chemin de premier plan, pas un
+réglage caché.** Ollama est un fournisseur à part entière dans le registre, à côté d'OpenAI
+et d'Anthropic — pas une simple URL à saisir à la main. Sélectionné dans les réglages, il
+détecte automatiquement un serveur local, liste les modèles réellement installés, recommande
+un modèle chiffré pour la configuration cible (RTX 2060 6 Go, 64 Go de RAM), et propose un
+test de connexion qui vérifie — c'est le point qui compte le plus — que l'appel d'outils
+fonctionne vraiment, pas seulement que le serveur répond.
+
+### 1. Installer Ollama
+
+- **Windows / macOS** : télécharger l'installateur sur [ollama.com/download](https://ollama.com/download).
+- **Linux** : `curl -fsSL https://ollama.com/install.sh | sh` (nécessite `zstd` sur certaines
+  distributions récentes : `sudo apt-get install zstd` avant si l'installateur s'y arrête).
+
+Une fois installé, Ollama tourne en arrière-plan et écoute sur `http://127.0.0.1:11434`
+(service système sur Windows/macOS ; `ollama serve` à lancer manuellement sur certaines
+installations Linux sans systemd).
+
+### 2. Choisir un modèle
+
+Vérifié pendant le développement de cette fonctionnalité, pas supposé : tous les modèles
+n'annoncent pas la capacité « tools » de la même façon, et l'annonce ne garantit pas un
+comportement fiable. La famille **Qwen2.5** (et plus récemment Qwen3) fait partie des rares
+familles de modèles ouverts avec un support d'appel d'outils correctement implémenté par
+Ollama (`ollama show <modèle>` liste `tools` dans ses capacités) et un support multilingue
+officiel incluant le français. Llama 3.1+ et 3.2 le font aussi, mais Llama 3 (sans suffixe)
+et Gemma 2/3 ne le font **pas** — un point à vérifier avant de choisir un modèle en dehors de
+cette liste (`ollama show <modèle>` puis regarder `Capabilities`).
+
+**Pour une GeForce RTX 2060 (6 Go de VRAM)**, en tenant compte du fait que Windows et son
+pilote réservent déjà une partie de la carte, et que Jarvis envoie son catalogue de 17 outils
+(~2 900 tokens mesurés) à chaque tour :
+
+| Rôle                                    | Modèle         | Téléchargement (mesuré) | VRAM estimée                                                                      | Vitesse                                                                                                                                                                            | Appel d'outils                                                                                                                                                                              |
+| --------------------------------------- | -------------- | ----------------------- | --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Par défaut, recommandé**              | `qwen2.5:3b`   | 1,93 Go                 | ~2,5-2,9 Go (tient largement sur 6 Go)                                            | Rapide — ~36 tokens/s mesurés par la communauté sur cette carte                                                                                                                    | **Vérifié dans ce projet** : 3 appels sur 3 corrects avec une consigne explicite (voir « Vérification » ci-dessous)                                                                         |
+| **Plus performant, déborde sur le CPU** | `qwen2.5:7b`   | 4,68 Go                 | ~5,1-5,8 Go — à la limite des 6 Go réellement disponibles une fois Windows déduit | Nettement plus lent dès le débordement (26 s pour une réponse courte sur CPU seul, contre 2-9 s pour le 3B) ; reste utilisable grâce aux 64 Go de RAM, mais sensiblement plus lent | Vérifié : fonctionne, mais plus lentement                                                                                                                                                   |
+| **À éviter pour l'appel d'outils**      | `qwen2.5:1.5b` | 0,99 Go                 | ~1,3-1,6 Go                                                                       | Très rapide                                                                                                                                                                        | **Testé, échoue systématiquement** (3/3) malgré une consigne explicite — répond en texte libre sans jamais appeler la fonction, bien qu'Ollama annonce la capacité « tools » pour ce modèle |
+
+```bash
+ollama pull qwen2.5:3b   # recommandé par défaut pour une RTX 2060 6 Go
+```
+
+C'est précisément à la taille 7B que le débordement CPU commence sur une carte à 6 Go : les
+poids seuls pèsent 4,68 Go, plus environ 0,5 Go de cache clé/valeur pour la fenêtre de
+contexte de 8192 tokens que Jarvis demande, plus 0,4-0,6 Go de tampons de calcul. Ces chiffres
+sont documentés (mesures réelles de téléchargement, architecture lue via `ollama show`,
+formule standard du cache clé/valeur) dans `packages/core/src/providers/ollamaModels.ts` et
+affichés directement dans les réglages, avec la commande d'installation exacte pour chaque
+modèle. **Ce qui reste incertain tant que l'utilisateur n'a pas essayé sur sa propre RTX
+2060** : le partage GPU/CPU réel dépend aussi de ce qui tourne déjà sur la carte (navigateur,
+jeu en arrière-plan) au moment où Ollama charge le modèle.
+
+Si la carte a plus de VRAM (12 Go ou plus), `qwen2.5:7b` tient entièrement sur le GPU sans
+débordement ; `qwen2.5:14b` devient également jouable en Q4_K_M.
+
+### 3. Le brancher dans Jarvis
+
+Dans les réglages, choisir « Ollama (local, gratuit) » comme fournisseur de modèle. La
+section qui apparaît :
+
+- **Détecte automatiquement** le serveur local (`/api/tags`) et affiche clairement son état :
+  détecté (avec le nombre de modèles installés), absent (rien n'écoute sur le port — Ollama
+  n'est probablement pas démarré), ou injoignable (mauvaise URL, pare-feu, délai dépassé).
+- Propose un **sélecteur des modèles réellement installés**, avec leur taille et leur
+  quantization — pas une liste générique.
+- Affiche les **recommandations chiffrées** ci-dessus, avec un bouton pour appliquer
+  directement le modèle recommandé.
+- Propose un bouton **« Tester la connexion »** qui vérifie, dans l'ordre : que le serveur
+  répond, que le modèle choisi est installé, et — le test le plus important — qu'il **appelle
+  vraiment un outil** avec les arguments attendus. Un modèle qui échoue à cette dernière étape
+  n'est pas fiable pour Jarvis, même s'il répond normalement aux messages simples.
+
+Aucune URL à saisir à la main dans le cas courant (Ollama tourne sur la même machine) : le
+champ URL n'est là que pour un serveur Ollama distant ou un port non standard.
+
+### 4. Repli explicite quand l'appel d'outils échoue
+
+Un modèle local peut échouer à produire un appel d'outil valide sans jamais renvoyer d'erreur
+HTTP — c'est le piège le plus courant, documenté ci-dessus avec `qwen2.5:1.5b`. Plutôt que de
+laisser la conversation partir en vrille, `OllamaProvider` (`packages/core/src/providers/ollama.ts`)
+s'arrête explicitement dans trois cas concrets, avec un message en français qui explique quoi
+faire :
+
+- **Le modèle ne supporte pas les outils** (erreur HTTP d'Ollama : « does not support
+  tools ») → message clair invitant à choisir un modèle qui les supporte.
+- **L'appel d'outil est malformé** (nom de fonction manquant, arguments qui ne sont pas un
+  JSON valide) → arrêt explicite plutôt qu'exécuter l'outil avec des arguments incorrects ou
+  vides par défaut.
+- **La syntaxe d'appel d'outil a fui en texte brut** au lieu du canal structuré (le motif
+  `<tool_call>…</tool_call>` du format Hermes utilisé par Qwen, ou un objet JSON nu imitant un
+  appel de fonction) → détecté avant qu'il n'atteigne l'écran, remplacé par une explication.
+
+Ce que ce mécanisme **ne peut pas** détecter : un modèle qui ignore silencieusement l'outil et
+répond en texte normal, sans rien de suspect dans sa réponse (le comportement observé avec
+`qwen2.5:1.5b`). Il n'y a pas de signal exploitable dans ce cas — c'est pour cette raison que
+le test de connexion (étape 3) est la vraie protection : il vérifie l'appel d'outils _avant_
+que l'utilisateur ne s'appuie sur un modèle qui ne le fait pas.
+
+### 5. Vérification effectuée pour cette fonctionnalité
+
+Ollama a été réellement installé sur la machine qui a développé cette fonctionnalité (VM
+Linux, **sans carte graphique**, CPU seul) : téléchargement de plusieurs modèles, boucle
+complète de Jarvis exécutée pour de vrai contre un serveur Ollama local avec `qwen2.5:3b` —
+le modèle a appelé `get_system_info` puis commenté le résultat en français, et une demande de
+création de dossier a déclenché la fenêtre de confirmation standard, approuvée, exécutée, puis
+commentée. Sans GPU, chaque tour a pris de 2 à 9 secondes : lent au regard d'un modèle distant,
+mais fonctionnel — cette vérification portait sur la justesse du comportement, pas sur la
+vitesse. La vitesse réelle sur une RTX 2060 n'a pas pu être mesurée directement ; les chiffres
+de vitesse ci-dessus viennent de mesures communautaires publiées pour cette carte précise.
+
+### Honnêteté sur les limites d'un modèle local face à un modèle distant
+
+- **Moins capable, surtout en raisonnement multi-étapes.** Un modèle de 3 à 7 milliards de
+  paramètres tournant en quantization 4 bits reste loin d'un GPT-4o ou d'un Claude sur les
+  tâches qui demandent d'enchaîner plusieurs déductions, de suivre des instructions
+  ambiguës, ou de gérer un contexte long et complexe.
+- **L'appel d'outils est le point le plus fragile**, pas un détail : beaucoup de modèles
+  locaux annoncent le support des outils et le gèrent mal (voir `qwen2.5:1.5b` ci-dessus).
+  C'est précisément pour ça que le test de connexion (étape 3) existe, et que ce n'est **pas**
+  une case à cocher facultative — c'est la vérification à faire avant de faire confiance à un
+  modèle local pour des actions réelles sur la machine.
+- **Plus lent**, surtout sans GPU dédié suffisant, et le débordement partiel sur CPU
+  (au-delà de la VRAM disponible) ralentit fortement la génération.
+- **Pas de mise à jour automatique des connaissances** : un modèle téléchargé une fois reste
+  figé à sa date d'entraînement, sans accès implicite à une information récente — c'est
+  exactement pour ça que l'outil `web_search` existe et reste utile même avec un modèle local.
+- **Gratuit et privé**, en contrepartie : aucune donnée envoyée à un tiers, aucun coût à
+  l'usage, fonctionne hors ligne. Pour du texte simple, une commande d'action claire, ou une
+  question sur l'état de la machine, la différence de qualité avec un modèle distant est
+  souvent négligeable — c'est sur l'ambigu et le complexe qu'elle se creuse.
+
 ## Étendre l'application
 
 ### Ajouter un outil
@@ -445,7 +579,7 @@ Le niveau de risque déclenche la confirmation ; la catégorie détermine si l'u
 
 Implémente l'interface `LLMProvider` dans `packages/core/src/providers/`, puis enregistre-la dans `createDefaultRegistry()`. Elle apparaît aussitôt dans les réglages.
 
-Les backends compatibles OpenAI (Ollama, LM Studio, vLLM, OpenRouter, Groq) ne demandent aucun code : il suffit de renseigner l'URL de base dans les réglages.
+Les backends compatibles OpenAI (LM Studio, vLLM, OpenRouter, Groq) ne demandent aucun code : il suffit de renseigner l'URL de base dans les réglages, avec le fournisseur « OpenAI ». Ollama a sa propre implémentation dédiée (`OllamaProvider`, voir la section « Modèle local gratuit (Ollama) » ci-dessous) plutôt que de passer par ce chemin générique : elle lui est spécifique parce qu'elle parle l'API native d'Ollama (détection de la capacité « tools » par modèle, messages NDJSON) et non son point de compatibilité OpenAI.
 
 ### Ajouter un fournisseur de recherche ou de données boursières
 
