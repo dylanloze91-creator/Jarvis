@@ -14,11 +14,22 @@ import type { AutomaticSpeechRecognitionPipeline, ProgressInfo } from '@huggingf
  * cache, seulement pour la progression affichée à l'utilisateur pendant le
  * premier téléchargement.
  *
- * `@huggingface/transformers` est importé dynamiquement (jamais en haut de
- * fichier) : c'est une dépendance lourde, à ne charger que si la commande
- * vocale locale est effectivement utilisée — même logique que Porcupine
- * dans `porcupineWakeWordEngine.ts`.
+ * `@huggingface/transformers` est chargé depuis un CDN (jsDelivr,
+ * l'hébergement officiellement documenté par le projet — voir son README,
+ * section « vanilla JS ») via une URL complète dans `import()`, jamais
+ * depuis le paquet npm local : Vite/Rollup détecte statiquement le
+ * `new URL(..., import.meta.url)` qu'utilise `onnxruntime-web` pour
+ * localiser son binaire WASM et l'aurait sinon copié dans le paquet final
+ * — vérifié : ce binaire pèse à lui seul environ 27 Mo, largement plus que
+ * l'installateur entier ne peut se permettre d'ajouter. Un import par URL
+ * explicite reste totalement opaque pour le bundler (jamais résolu ni
+ * empaqueté), donc ni ce binaire ni le reste de la bibliothèque
+ * n'atterrissent dans l'installateur : ils sont mis en cache par le
+ * navigateur (Chromium, dans Electron) après le tout premier chargement,
+ * exactement comme les poids du modèle. Nécessite d'autoriser ce domaine
+ * dans la CSP (`index.html`).
  */
+const TRANSFORMERS_JS_CDN_URL = 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.3.0';
 export type WhisperDevice = 'webgpu' | 'wasm';
 
 export interface WhisperLoadProgress {
@@ -66,7 +77,7 @@ async function loadPipeline(
   repo: string,
   device: WhisperDevice,
 ): Promise<AutomaticSpeechRecognitionPipeline> {
-  const { pipeline } = await import('@huggingface/transformers');
+  const { pipeline } = await import(/* @vite-ignore */ TRANSFORMERS_JS_CDN_URL);
   return pipeline('automatic-speech-recognition', repo, {
     device,
     dtype: 'q8',
