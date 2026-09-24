@@ -1,12 +1,13 @@
-import type {
-  Settings,
-  SpeechToTextProvider,
-  TextToSpeechController,
-  TextToSpeechProvider,
-  VoiceSettings,
-  WakeWordDetectorConfig,
-  WakeWordEngine,
-  WakeWordEngineController,
+import {
+  stripLeadingWakeWord,
+  type Settings,
+  type SpeechToTextProvider,
+  type TextToSpeechController,
+  type TextToSpeechProvider,
+  type VoiceSettings,
+  type WakeWordDetectorConfig,
+  type WakeWordEngine,
+  type WakeWordEngineController,
 } from '@jarvis/core';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -96,6 +97,13 @@ export function useVoice({
   const wakeWordOwnsCaptureRef = useRef(false);
   const sttControllerRef = useRef<ReturnType<SpeechToTextProvider['start']> | null>(null);
   const sttOwnsCaptureRef = useRef(false);
+  /**
+   * Renseigné quand l'audio du mot de réveil a été transmis en préfixe à la
+   * dictée (voir `beginListening`) : indique à `finalizeTranscript` qu'il
+   * faut retirer le mot de réveil du texte transcrit avant de le traiter
+   * comme une commande.
+   */
+  const pendingWakeWordStripRef = useRef<{ word: string; variants: string[] } | null>(null);
   const silenceSinceRef = useRef<number | null>(null);
   const maxDurationTimerRef = useRef<number | null>(null);
   const ttsControllerRef = useRef<TextToSpeechController | null>(null);
@@ -161,7 +169,10 @@ export function useVoice({
       clearMaxDurationTimer();
       sttControllerRef.current = null;
       setLiveTranscript('');
-      const trimmed = text.trim();
+      const pendingStrip = pendingWakeWordStripRef.current;
+      pendingWakeWordStripRef.current = null;
+      const command = pendingStrip ? stripLeadingWakeWord(text, pendingStrip) : text;
+      const trimmed = command.trim();
       if (trimmed) onTranscriptRef.current(trimmed);
       backToSleepOrIdle();
     },
@@ -194,6 +205,27 @@ export function useVoice({
       { language: 'fr-FR' },
     );
     sttControllerRef.current = controller;
+
+    // Préfixe la dictée avec l'audio qui a déclenché le mot de réveil, quand
+    // le moteur le conserve (`WhisperWakeWordEngine`) : Whisper transcrit
+    // ainsi l'énoncé complet — mot de réveil compris — plutôt que l'audio
+    // coupé pile à l'instant de la détection, ce qui lui donne plus de
+    // contexte (meilleure reconnaissance du mot de réveil lui-même) et évite
+    // de risquer d'amputer l'attaque du mot suivant. Le mot de réveil est
+    // retiré ensuite du texte obtenu, jamais de l'audio — voir
+    // `finalizeTranscript` et `stripLeadingWakeWord`.
+    const lastWindow = wakeWordControllerRef.current?.getLastAnalyzedWindow?.();
+    if (lastWindow && !provider.managesOwnCapture) {
+      controller.pushAudio?.(lastWindow.pcm, lastWindow.sampleRate);
+      controller.markPrefixEnd?.();
+      const voice = settingsRef.current?.voice;
+      pendingWakeWordStripRef.current = {
+        word: voice?.wakeWord ?? 'jarvis',
+        variants: voice?.wakeWordVariants ?? [],
+      };
+    } else {
+      pendingWakeWordStripRef.current = null;
+    }
 
     maxDurationTimerRef.current = window.setTimeout(() => finishListening(), MAX_UTTERANCE_MS);
   }, [finalizeTranscript, finishListening, resolveStt, setVoiceState]);

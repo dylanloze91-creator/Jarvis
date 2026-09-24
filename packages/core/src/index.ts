@@ -62,6 +62,7 @@ export {
   levenshteinDistance,
   defaultWakeWordVariants,
   matchesWakeWord,
+  stripLeadingWakeWord,
   type WakeWordTextMatchConfig,
 } from './speech/wakeWordTextMatch.js';
 export {

@@ -4,6 +4,7 @@ import {
   levenshteinDistance,
   matchesWakeWord,
   normalizeForWakeWordMatch,
+  stripLeadingWakeWord,
 } from './wakeWordTextMatch.js';
 
 describe('normalizeForWakeWordMatch', () => {
@@ -70,6 +71,8 @@ describe('matchesWakeWord', () => {
     expect(matchesWakeWord('jarviss allume la lumière', { word: 'jarvis' })).toBe(true);
     expect(matchesWakeWord('djarvis tu es là', { word: 'jarvis' })).toBe(true);
     expect(matchesWakeWord('jarvice', { word: 'jarvis' })).toBe(true);
+    // Observé sur un enregistrement réel (voir test-fixtures/) : « r » avalé à la prononciation.
+    expect(matchesWakeWord('javice, ouvre Chrome', { word: 'jarvis' })).toBe(true);
   });
 
   it('détecte un mot de réveil collé à un autre mot', () => {
@@ -107,5 +110,53 @@ describe('matchesWakeWord', () => {
 
   it('respecte une distance maximale personnalisée, plus stricte que le défaut', () => {
     expect(matchesWakeWord('jarvus', { word: 'jarvis', maxDistance: () => 0 })).toBe(false);
+  });
+});
+
+describe('stripLeadingWakeWord', () => {
+  it('retire le mot de réveil en tête, avec sa ponctuation collée', () => {
+    expect(stripLeadingWakeWord('Jarvis, ouvre Chrome', { word: 'jarvis' })).toBe('ouvre Chrome');
+  });
+
+  it("retire une variante mal transcrite qui dépasse la tolérance de matchesWakeWord (« j'avise », observé en pratique)", () => {
+    // distance("javise", "jarvis") = 2 : au-delà du seuil par défaut de matchesWakeWord pour
+    // ce mot (1), mais dans la tolérance volontairement plus large de cette fonction (2).
+    expect(stripLeadingWakeWord("J'avise ouf Chrome", { word: 'jarvis' })).toBe('ouf Chrome');
+  });
+
+  it('gère le mot de réveil transcrit en anglais, ponctuation comprise', () => {
+    expect(stripLeadingWakeWord('Jarvis, off-crum.', { word: 'jarvis' })).toBe('off-crum.');
+  });
+
+  it('renvoie une chaîne vide quand rien ne suit le mot de réveil (pas de commande)', () => {
+    expect(stripLeadingWakeWord("J'avis.", { word: 'jarvis' })).toBe('');
+  });
+
+  it('utilise une variante intégrée (« javice ») même avec de la ponctuation', () => {
+    expect(stripLeadingWakeWord('Javice, ferme la fenêtre', { word: 'jarvis' })).toBe(
+      'ferme la fenêtre',
+    );
+  });
+
+  it('accepte une variante utilisateur supplémentaire', () => {
+    expect(
+      stripLeadingWakeWord('Athina, ouvre la porte', { word: 'athena', variants: ['athina'] }),
+    ).toBe('ouvre la porte');
+  });
+
+  it("renvoie le texte tel quel si aucun mot de réveil n'est trouvé en tête", () => {
+    expect(stripLeadingWakeWord('Il fait beau aujourd’hui', { word: 'jarvis' })).toBe(
+      'Il fait beau aujourd’hui',
+    );
+  });
+
+  it('renvoie une chaîne vide pour un transcript vide', () => {
+    expect(stripLeadingWakeWord('', { word: 'jarvis' })).toBe('');
+  });
+
+  it('respecte une distance maximale personnalisée', () => {
+    expect(
+      stripLeadingWakeWord("J'avise ouf Chrome", { word: 'jarvis', maxDistance: () => 0 }),
+    ).toBe("J'avise ouf Chrome");
   });
 });

@@ -35,6 +35,18 @@ export interface WakeWordEngineController {
    */
   pushAudio?: (frame: Float32Array, sampleRate: number) => void;
   stop: () => void;
+  /**
+   * PCM (et son débit) de la dernière fenêtre analysée qui a déclenché la
+   * détection — ou `null` si le moteur ne conserve pas cet audio (le
+   * gabarit local et Porcupine, par exemple, n'ont pas besoin de le
+   * transcrire). Permet à l'appelant de transmettre cet audio au moteur de
+   * dictée comme préfixe : transcrire l'énoncé complet (mot de réveil
+   * compris), puis retirer le mot de réveil du *texte* obtenu
+   * (`stripLeadingWakeWord`), donne à Whisper plus de contexte qu'une
+   * coupure de l'audio à l'instant précis de la détection — voir
+   * `WhisperWakeWordEngine` (`apps/desktop`) pour l'implémentation.
+   */
+  getLastAnalyzedWindow?: () => { pcm: Float32Array; sampleRate: number } | null;
 }
 
 export interface WakeWordEngine {

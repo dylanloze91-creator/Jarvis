@@ -30,6 +30,7 @@ import {
   decodeWav,
   evaluateWakeWordWindow,
   peakEnergy,
+  stripLeadingWakeWord,
   WHISPER_WAKE_WORD_LANGUAGE,
   WHISPER_WAKE_WORD_MODEL,
 } from '@jarvis/core';
@@ -191,12 +192,22 @@ export async function diagnoseWakeWordFile(filePath, options = {}) {
  * pendant l'état « sleeping », puis, une fois détecté, le passage à
  * « listening » où les trames vont au moteur de dictée jusqu'à ce que le
  * silence soit détecté pendant plus de `SILENCE_DURATION_MS` — exactement
- * la logique de `useVoice.ts`. Contrairement à `diagnoseWakeWordFile`
- * (fenêtres fixes, indépendantes), cette fonction ne transcrit la commande
- * qu'à partir de l'instant réel de détection, jamais avant : c'est la
- * preuve que le mot de réveil ne peut structurellement pas se retrouver
- * dans le texte envoyé au modèle de dictée, et que la fin de phrase est
- * bien détectée par silence, pas par une durée fixe arbitraire.
+ * la logique de `useVoice.ts`.
+ *
+ * La commande est transcrite sur l'énoncé complet (le préfixe audio qui a
+ * déclenché la détection du mot de réveil, suivi de l'audio capturé
+ * pendant « listening »), PAS sur l'audio découpé pile à l'instant de la
+ * détection — vérifié empiriquement (voir l'historique de ce fichier) :
+ * couper l'audio à cet instant ne mutilait pas la commande (la coupure
+ * tombait dans le silence qui suit le mot de réveil, avant l'attaque du mot
+ * suivant), donc ce n'était pas la cause d'une commande mal transcrite —
+ * mais transcrire la phrase entière donne quand même plus de contexte à
+ * Whisper pour le mot de réveil lui-même, et reste l'architecture retenue
+ * (voir `WhisperWakeWordEngine`/`useVoice.ts`). Le mot de réveil est retiré
+ * ensuite du *texte* obtenu (`stripLeadingWakeWord`), jamais de l'audio :
+ * c'est la preuve que le mot de réveil ne peut structurellement pas se
+ * retrouver dans la commande transmise à l'agent. La fin de phrase, elle,
+ * est bien détectée par silence, pas par une durée fixe arbitraire.
  */
 export async function simulateVoiceSessionFile(filePath, options = {}) {
   const {
@@ -233,6 +244,8 @@ export async function simulateVoiceSessionFile(filePath, options = {}) {
     let lastAnalysisAt = -Infinity;
     let wakeDetectedAtMs = null;
     let wakeTranscript = null;
+    /** Préfixe audio transmis à la dictée : la fenêtre qui a déclenché la détection (voir `getLastAnalyzedWindow`). */
+    let wakeWordPrefixPcm = null;
     let silenceSinceMs = null;
     const commandFrames = [];
     let commandStartMs = null;
@@ -264,6 +277,7 @@ export async function simulateVoiceSessionFile(filePath, options = {}) {
           if (result.matched) {
             wakeDetectedAtMs = simulatedNowMs + frameDurationMs;
             wakeTranscript = result.transcript;
+            wakeWordPrefixPcm = snapshot;
             state = 'listening';
             commandStartMs = wakeDetectedAtMs;
             wakeBuffer = [];
@@ -291,24 +305,36 @@ export async function simulateVoiceSessionFile(filePath, options = {}) {
     if (state === 'listening' && commandEndReason === null) commandEndReason = 'fin-de-fichier';
 
     let command = null;
-    if (commandFrames.length > 0) {
-      const commandPcm = concatFloat32(commandFrames);
+    if (wakeWordPrefixPcm && commandFrames.length > 0) {
+      // Préfixe (mot de réveil) + audio capturé pendant "listening" — exactement ce que
+      // `useVoice.ts` transmet à `LocalWhisperSttProvider` (voir `beginListening`).
+      const fullPcm = concatFloat32([wakeWordPrefixPcm, ...commandFrames]);
       const baseResult = {
         startMs: Math.round(commandStartMs),
         endMs: commandEndMs !== null ? Math.round(commandEndMs) : null,
         endReason: commandEndReason,
       };
-      if (peakEnergy(commandPcm) < COMMAND_MIN_PEAK_ENERGY) {
+      // Garde d'énergie appliquée seulement à l'audio arrivé après le préfixe (voir
+      // `markPrefixEnd` dans LocalWhisperSttProvider) : le préfixe contient forcément de la
+      // parole (le mot de réveil), il fausserait la détection d'un énoncé sans commande réelle.
+      const tailPcm = concatFloat32(commandFrames);
+      if (peakEnergy(tailPcm) < COMMAND_MIN_PEAK_ENERGY) {
         // Reproduit la garde de `LocalWhisperSttProvider` : énoncé quasi silencieux, pas de transcription tentée.
-        command = { ...baseResult, modelRepo: null, transcript: '', skippedReason: 'énoncé quasi silencieux' };
+        command = { ...baseResult, modelRepo: null, rawTranscript: '', transcript: '', skippedReason: 'énoncé quasi silencieux' };
       } else {
         const commandTranscriber = await pipeline('automatic-speech-recognition', commandModelRepo, {
           device,
           dtype: 'q8',
         });
-        const output = await commandTranscriber(commandPcm, { language: commandLanguage, task: 'transcribe' });
+        const output = await commandTranscriber(fullPcm, { language: commandLanguage, task: 'transcribe' });
         const first = Array.isArray(output) ? output[0] : output;
-        command = { ...baseResult, modelRepo: commandModelRepo, transcript: first?.text?.trim() ?? '' };
+        const rawTranscript = first?.text?.trim() ?? '';
+        command = {
+          ...baseResult,
+          modelRepo: commandModelRepo,
+          rawTranscript,
+          transcript: stripLeadingWakeWord(rawTranscript, { word, variants }).trim(),
+        };
       }
     }
 
@@ -375,7 +401,8 @@ async function main() {
     if (simulation.command.skippedReason) {
       console.log(`  (transcription non tentée : ${simulation.command.skippedReason})`);
     } else {
-      console.log(`  "${simulation.command.transcript}"`);
+      console.log(`  Transcription brute (mot de réveil compris) : "${simulation.command.rawTranscript}"`);
+      console.log(`  Commande retenue (après retrait du mot de réveil) : "${simulation.command.transcript}"`);
     }
   } else {
     console.log('Aucune commande capturée après le mot de réveil.');

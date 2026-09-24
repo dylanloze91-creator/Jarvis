@@ -73,6 +73,14 @@ function sensitivityToPeakEnergy(sensitivity: number): number {
  * analyse en cours empêche d'en lancer une seconde tant qu'elle n'est pas
  * terminée). Aucun audio ne quitte jamais la machine : Whisper tourne dans
  * ce processus, sans requête réseau une fois le modèle en cache.
+ *
+ * Conserve la fenêtre PCM qui a déclenché la détection
+ * (`getLastAnalyzedWindow`) : `useVoice.ts` la transmet en préfixe au
+ * moteur de dictée, qui transcrit ainsi l'énoncé complet (mot de réveil
+ * compris) plutôt que l'audio coupé pile à l'instant de la détection —
+ * vérifié en pratique : couper au mauvais endroit pouvait amputer l'attaque
+ * du mot suivant, alors que la phrase entière donne aussi plus de contexte
+ * à Whisper pour bien reconnaître le mot de réveil lui-même.
  */
 export class WhisperWakeWordEngine implements WakeWordEngine {
   readonly id = whisperWakeWordDescriptor.id;
@@ -94,6 +102,7 @@ export class WhisperWakeWordEngine implements WakeWordEngine {
     let lastAnalysisAt = 0;
     let cooldownUntil = 0;
     let stopped = false;
+    let lastAnalyzedWindow: { pcm: Float32Array; sampleRate: number } | null = null;
 
     const transcribeWindow: TranscribeWindow = async (frame) =>
       transcribeWithWhisper(WHISPER_WAKE_WORD_MODEL.repo, frame, {
@@ -101,6 +110,7 @@ export class WhisperWakeWordEngine implements WakeWordEngine {
       });
 
     return {
+      getLastAnalyzedWindow: () => lastAnalyzedWindow,
       pushAudio: (frame, rate) => {
         if (stopped) return;
         sampleRate = rate;
@@ -134,6 +144,7 @@ export class WhisperWakeWordEngine implements WakeWordEngine {
             handlers.onScore?.(result.matched ? 1 : 0);
             if (result.matched) {
               cooldownUntil = performance.now() + COOLDOWN_MS;
+              lastAnalyzedWindow = { pcm: snapshot, sampleRate: analysisSampleRate };
               buffer = [];
               bufferedMs = 0;
               handlers.onDetected(this.engineOptions.keyword);

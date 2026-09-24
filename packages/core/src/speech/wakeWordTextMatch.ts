@@ -69,7 +69,19 @@ export function levenshteinDistance(a: string, b: string): number {
  * code.
  */
 const BUILT_IN_VARIANTS: Readonly<Record<string, readonly string[]>> = {
-  jarvis: ['jarvis', 'jarviss', 'jarvice', 'jarvi', 'djarvis', 'jarvys', 'jarvisse', 'charvis'],
+  // "javice" : observé sur un enregistrement réel (voir test-fixtures/), à distance 3 de
+  // "jarvis" — trop loin pour la tolérance floue par défaut, ajouté explicitement ici.
+  jarvis: [
+    'jarvis',
+    'jarviss',
+    'jarvice',
+    'jarvi',
+    'djarvis',
+    'jarvys',
+    'jarvisse',
+    'charvis',
+    'javice',
+  ],
 };
 
 /** Variantes connues d'un mot de réveil, normalisées, mot lui-même inclus. */
@@ -135,4 +147,95 @@ export function matchesWakeWord(transcript: string, config: WakeWordTextMatchCon
       (candidate) => levenshteinDistance(word, candidate) <= maxDistance(candidate.length),
     ),
   );
+}
+
+interface Token {
+  text: string;
+  start: number;
+  end: number;
+}
+
+/** Découpe sur les espaces uniquement (contrairement à `normalizeForWakeWordMatch`) : conserve les positions dans la chaîne d'origine. */
+function tokenizeByWhitespace(text: string): Token[] {
+  const tokens: Token[] = [];
+  const regex = /\S+/g;
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(text)) !== null) {
+    tokens.push({ text: match[0], start: match.index, end: match.index + match[0].length });
+  }
+  return tokens;
+}
+
+/** Comme `normalizeForWakeWordMatch`, mais retire aussi les espaces internes (« j'avise » → « javise »). */
+function tightNormalize(text: string): string {
+  return normalizeForWakeWordMatch(text).replace(/\s+/g, '');
+}
+
+/**
+ * Tolérance délibérément plus large que `defaultMaxDistance` : cette
+ * fonction ne sert qu'à retrouver *où* couper un texte dont la présence du
+ * mot de réveil en tête a déjà été confirmée par ailleurs (par le moteur de
+ * mot de réveil, sur un passage de transcription séparé) — pas à décider
+ * *si* il est présent. Le risque d'une tolérance élargie est donc plus
+ * faible ici que dans `matchesWakeWord`. Constaté en pratique : une
+ * deuxième transcription (modèle de dictée, contexte de phrase complète)
+ * peut rendre « Jarvis » assez différemment du passage de détection
+ * (« J'avise », distance 2 de « jarvis » — au-delà du seuil par défaut).
+ */
+function leadingStripMaxDistance(wordLength: number): number {
+  if (wordLength <= 5) return 1;
+  if (wordLength <= 8) return 2;
+  return 3;
+}
+
+const MAX_LEADING_TOKENS = 3;
+
+/**
+ * Retire le mot de réveil en tête d'un texte transcrit, avec sa ponctuation
+ * immédiatement collée (« Jarvis, » → rien), pour ne transmettre que la
+ * commande qui suit à l'agent. Utilisé quand la transcription porte sur
+ * l'énoncé complet (mot de réveil compris) plutôt que sur l'audio découpé à
+ * l'instant de détection — voir `WhisperWakeWordEngine` et `useVoice.ts`
+ * pour pourquoi : transcrire la phrase entière donne plus de contexte à
+ * Whisper (meilleure reconnaissance du mot de réveil lui-même) qu'une coupe
+ * à l'échantillon près, qui risquait de couper l'attaque du mot suivant.
+ *
+ * Cherche parmi les 1 à 3 premiers mots (espaces d'origine, pas la
+ * normalisation) une correspondance exacte ou floue avec le mot de réveil,
+ * et renvoie ce qui suit, débarrassé de la ponctuation de tête restante. Si
+ * rien ne correspond en tête, renvoie le texte tel quel (mieux vaut
+ * transmettre un texte non nettoyé que tronquer à tort).
+ */
+export function stripLeadingWakeWord(transcript: string, config: WakeWordTextMatchConfig): string {
+  const tokens = tokenizeByWhitespace(transcript);
+  if (tokens.length === 0) return transcript.trim();
+
+  const canonical = normalizeForWakeWordMatch(config.word);
+  const exactCandidates = Array.from(
+    new Set([
+      ...defaultWakeWordVariants(config.word),
+      ...(config.variants ?? []).map(normalizeForWakeWordMatch),
+    ]),
+  ).filter((candidate) => candidate.length > 0);
+  const maxDistance = config.maxDistance ?? leadingStripMaxDistance;
+
+  const windowLimit = Math.min(tokens.length, MAX_LEADING_TOKENS);
+  for (let windowSize = 1; windowSize <= windowLimit; windowSize += 1) {
+    const windowTokens = tokens.slice(0, windowSize);
+    const tight = windowTokens.map((token) => tightNormalize(token.text)).join('');
+    if (!tight) continue;
+
+    const matchesExact = exactCandidates.some((candidate) => tight.includes(candidate));
+    const matchesFuzzy =
+      canonical.length > 0 &&
+      levenshteinDistance(tight, canonical) <= maxDistance(canonical.length);
+    if (matchesExact || matchesFuzzy) {
+      const cutAt = windowTokens[windowTokens.length - 1]!.end;
+      return transcript
+        .slice(cutAt)
+        .replace(/^[\s,;:.!?…"'«»-]+/u, '')
+        .trim();
+    }
+  }
+  return transcript.trim();
 }

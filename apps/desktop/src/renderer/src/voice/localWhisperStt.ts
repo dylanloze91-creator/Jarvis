@@ -8,18 +8,21 @@ import {
   type SpeechToTextHandlers,
   type SpeechToTextProvider,
 } from '@jarvis/core';
+import { subscribeWhisperProgress, transcribeWithWhisper } from './whisper/pipelineLoader';
 
 /**
- * Amplitude de crête minimale, sur tout l'énoncé capturé, pour tenter une
- * transcription. Sans cette garde, un énoncé quasi silencieux (l'utilisateur
- * dit le mot de réveil puis ne dit rien) finit par être poussé à Whisper
- * malgré tout — vérifié en pratique : Whisper hallucine alors une phrase
- * sans rapport en boucle (comportement connu du modèle sur du bruit de fond
- * pur). Autant ne rien transcrire dans ce cas : `onFinal('')` est déjà
- * traité comme « rien à dire » par l'appelant (`useVoice.ts`).
+ * Amplitude de crête minimale pour tenter une transcription, appliquée
+ * seulement à l'audio arrivé après un éventuel préfixe (`markPrefixEnd`) —
+ * jamais au préfixe lui-même, qui contient forcément de la parole (le mot
+ * de réveil) et fausserait la mesure. Sans cette garde, un énoncé quasi
+ * silencieux (l'utilisateur dit le mot de réveil puis ne dit rien) finirait
+ * par être poussé à Whisper malgré tout — vérifié en pratique : Whisper
+ * hallucine alors une phrase sans rapport en boucle (comportement connu du
+ * modèle sur du bruit de fond pur). Autant ne rien transcrire dans ce cas :
+ * `onFinal('')` est déjà traité comme « rien à dire » par l'appelant
+ * (`useVoice.ts`).
  */
 const MIN_UTTERANCE_PEAK_ENERGY = 0.02;
-import { subscribeWhisperProgress, transcribeWithWhisper } from './whisper/pipelineLoader';
 
 export const localWhisperSttDescriptor: SpeechToTextDescriptor = {
   id: 'local-whisper',
@@ -56,6 +59,8 @@ export class LocalWhisperSttProvider implements SpeechToTextProvider {
     options: { language?: string; signal?: AbortSignal } = {},
   ): SpeechToTextController {
     const frames: Float32Array[] = [];
+    let prefixFrameCount = 0;
+    let prefixMarked = false;
     let settled = false;
 
     return {
@@ -63,10 +68,14 @@ export class LocalWhisperSttProvider implements SpeechToTextProvider {
         if (settled) return;
         frames.push(frame);
       },
+      markPrefixEnd: () => {
+        prefixFrameCount = frames.length;
+        prefixMarked = true;
+      },
       stop: () => {
         if (settled) return;
         settled = true;
-        void this.transcribe(frames, handlers, options);
+        void this.transcribe(frames, prefixMarked ? prefixFrameCount : 0, handlers, options);
       },
       abort: () => {
         settled = true;
@@ -76,6 +85,7 @@ export class LocalWhisperSttProvider implements SpeechToTextProvider {
 
   private async transcribe(
     frames: Float32Array[],
+    prefixFrameCount: number,
     handlers: SpeechToTextHandlers,
     options: { language?: string; signal?: AbortSignal },
   ): Promise<void> {
@@ -84,12 +94,15 @@ export class LocalWhisperSttProvider implements SpeechToTextProvider {
       return;
     }
 
-    const pcm = concatFloat32(frames);
-    if (peakEnergy(pcm) < MIN_UTTERANCE_PEAK_ENERGY) {
-      // Énoncé quasi silencieux : ne pas solliciter Whisper pour rien (coût CPU, et hallucinations connues sur du bruit).
+    const gateFrames = frames.slice(prefixFrameCount);
+    const energyToCheck = gateFrames.length > 0 ? gateFrames : frames;
+    if (peakEnergy(concatFloat32(energyToCheck)) < MIN_UTTERANCE_PEAK_ENERGY) {
+      // Énoncé quasi silencieux (hors préfixe) : ne pas solliciter Whisper pour rien (coût CPU, et hallucinations connues sur du bruit).
       handlers.onFinal('');
       return;
     }
+
+    const pcm = concatFloat32(frames);
 
     const unsubscribe = subscribeWhisperProgress((info) => {
       if (info.repo !== this.repo || info.status !== 'loading') return;
