@@ -98,12 +98,13 @@ export function useVoice({
 
   const resolveStt = useCallback((): SpeechToTextProvider => {
     const current = settingsRef.current;
-    const requestedId = current?.voice.sttProvider ?? 'browser-local';
+    const requestedId = current?.voice.sttProvider ?? 'local-whisper';
     const descriptor = sttRegistry.describe(requestedId);
     const eligible = descriptor && (!descriptor.requiresApiKey || voiceKeyConfiguredRef.current);
     return sttRegistry.create({
-      provider: eligible ? requestedId : 'browser-local',
+      provider: eligible ? requestedId : 'local-whisper',
       apiKey: voiceKeyConfiguredRef.current ? 'configured' : '',
+      model: current?.voice.sttModel,
     });
   }, [sttRegistry]);
 
@@ -120,16 +121,17 @@ export function useVoice({
 
   const resolveWakeWordEngine = useCallback((): WakeWordEngine => {
     const voice = settingsRef.current?.voice;
-    const requestedId = voice?.wakeWordEngine ?? 'local-template';
+    const requestedId = voice?.wakeWordEngine ?? 'whisper-transcript';
     const descriptor = wakeWordRegistry.describe(requestedId);
     const accessKey = voice?.wakeWordAccessKey?.trim() ?? '';
     const eligible = descriptor && (!descriptor.requiresApiKey || accessKey.length > 0);
     return wakeWordRegistry.create({
-      provider: eligible ? requestedId : 'local-template',
+      provider: eligible ? requestedId : 'whisper-transcript',
       apiKey: accessKey,
       keyword: voice?.wakeWord ?? 'jarvis',
       detectorConfig: buildWakeWordDetectorConfig(voice),
       sensitivity: voice?.wakeWordSensitivity ?? 0.5,
+      variants: voice?.wakeWordVariants ?? [],
     });
   }, [wakeWordRegistry]);
 
