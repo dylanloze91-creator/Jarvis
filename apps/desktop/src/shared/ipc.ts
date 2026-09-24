@@ -4,6 +4,8 @@ import type {
   Conversation,
   ConversationSummary,
   MarketDataProviderDescriptor,
+  OllamaDiagnosticResult,
+  OllamaStatusResult,
   ProviderDescriptor,
   RiskLevel,
   SearchProviderDescriptor,
@@ -21,6 +23,8 @@ export const IpcChannel = {
   settingsProviders: 'settings:providers',
   settingsSearchProviders: 'settings:search-providers',
   settingsMarketDataProviders: 'settings:market-data-providers',
+  settingsOllamaStatus: 'settings:ollama-status',
+  settingsOllamaTest: 'settings:ollama-test',
   historyList: 'history:list',
   historyGet: 'history:get',
   historyRemove: 'history:remove',
@@ -118,6 +122,10 @@ export interface JarvisApi {
     providers(): Promise<ProviderDescriptor[]>;
     searchProviders(): Promise<SearchProviderDescriptor[]>;
     marketDataProviders(): Promise<MarketDataProviderDescriptor[]>;
+    /** Sonde le serveur Ollama local (détecté / absent / injoignable) et liste ses modèles installés. */
+    ollamaStatus(baseUrl?: string): Promise<OllamaStatusResult>;
+    /** Test de connexion complet : serveur, modèle installé, puis appel d'outil réel. */
+    ollamaTest(input: { baseUrl?: string; model: string }): Promise<OllamaDiagnosticResult>;
   };
   history: {
     list(): Promise<ConversationSummary[]>;

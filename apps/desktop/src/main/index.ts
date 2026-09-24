@@ -10,10 +10,13 @@ import {
   session as electronSession,
 } from 'electron';
 import {
+  checkOllamaStatus,
   createDefaultMarketDataRegistry,
   createDefaultRegistry,
   createDefaultSearchRegistry,
+  ollamaDescriptor,
   parseSettings,
+  testOllamaConnection,
   type MarketDataProviderDescriptor,
   type ProviderDescriptor,
   type SearchProviderDescriptor,
@@ -166,6 +169,17 @@ function registerIpc(): void {
   );
   ipcMain.handle(IpcChannel.settingsMarketDataProviders, (): MarketDataProviderDescriptor[] =>
     marketDataRegistry.list(),
+  );
+  ipcMain.handle(IpcChannel.settingsOllamaStatus, (_event, baseUrl?: string) =>
+    checkOllamaStatus(baseUrl || settings.baseUrl || ollamaDescriptor.defaultBaseUrl),
+  );
+  ipcMain.handle(
+    IpcChannel.settingsOllamaTest,
+    (_event, input: { baseUrl?: string; model: string }) =>
+      testOllamaConnection({
+        baseUrl: input.baseUrl || settings.baseUrl || ollamaDescriptor.defaultBaseUrl,
+        model: input.model,
+      }),
   );
 
   ipcMain.handle(IpcChannel.historyList, () => store.list());
