@@ -1,6 +1,6 @@
 {
   "name": "@jarvis/desktop",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Application de bureau Jarvis (Electron)",
   "main": "./out/main/index.js",
@@ -16,11 +16,11 @@
     "package:dir": "npm run build && electron-builder --dir --publish never"
   },
   "dependencies": {
-    "@huggingface/transformers": "^4.3.0",
-    "@jarvis/core": "*",
-    "@picovoice/porcupine-web": "^4.0.1"
+    "@jarvis/core": "*"
   },
   "devDependencies": {
+    "@huggingface/transformers": "^4.3.0",
+    "@picovoice/porcupine-web": "^4.0.1",
     "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^22.18.12",
     "@types/react": "^19.3.0",

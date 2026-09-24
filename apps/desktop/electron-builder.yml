@@ -9,6 +9,28 @@ files:
   - out/**
   - resources/**
   - '!**/*.map'
+  # @jarvis/core est un paquet du monorepo (lien local, pas un tarball npm
+  # publié) : son dossier sur disque contient aussi ses sources TS et ses
+  # tests, inutiles au runtime (seul dist/ est chargé) — ~400 Ko à eux
+  # seuls, mais l'idée compte plus que le volume ici, contrairement aux deux
+  # points suivants.
+  - '!node_modules/@jarvis/core/src/**'
+  - '!node_modules/@jarvis/core/tsconfig.json'
+  # @huggingface/transformers et @picovoice/porcupine-web sont chargés par
+  # le renderer (CDN pour le premier, chunk Vite pour le second) — jamais
+  # par require() côté main/preload — donc `devDependencies` (voir
+  # apps/desktop/package.json) : électron-builder ne les inclut alors plus
+  # du tout. Ces deux exclusions ne sont qu'un filet de sécurité si l'un
+  # d'eux redevenait un jour une dépendance de production par erreur —
+  # onnxruntime-node (transitif de transformers.js) pèse ~550 Mo à lui
+  # seul (tous binaires natifs multiplateformes confondus) et a fait
+  # dépasser l'installateur à plus de 600 Mo le temps de le corriger.
+  - '!node_modules/@huggingface/**'
+  - '!node_modules/onnxruntime-node/**'
+  - '!node_modules/onnxruntime-common/**'
+  - '!node_modules/sharp/**'
+  - '!node_modules/@img/**'
+  - '!node_modules/@picovoice/**'
 afterPack: scripts/after-pack.cjs
 extraMetadata:
   main: out/main/index.js
