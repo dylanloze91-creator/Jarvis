@@ -45,3 +45,10 @@ nsis:
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
   shortcutName: Jarvis
+  differentialPackage: true
+publish:
+  provider: github
+  owner: dylanloze91-creator
+  repo: Jarvis
+  releaseType: release
+

@@ -13,6 +13,7 @@
     "typecheck": "tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.web.json --noEmit",
     "test": "vitest run",
     "package:win": "npm run build && electron-builder --win --publish never",
+    "package:win:publish": "npm run build && electron-builder --win --publish always",
     "package:dir": "npm run build && electron-builder --dir --publish never"
   },
   "dependencies": {

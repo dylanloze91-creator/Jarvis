@@ -12,6 +12,7 @@
     "dev": "npm run dev --workspace @jarvis/desktop",
     "build": "npm run build --workspace @jarvis/core && npm run build --workspace @jarvis/desktop",
     "package:win": "npm run build --workspace @jarvis/core && npm run package:win --workspace @jarvis/desktop",
+    "package:win:publish": "npm run build --workspace @jarvis/core && npm run package:win:publish --workspace @jarvis/desktop",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
     "lint": "eslint .",
