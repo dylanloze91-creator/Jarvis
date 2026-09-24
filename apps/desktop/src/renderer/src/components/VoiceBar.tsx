@@ -67,7 +67,8 @@ export function VoiceBar({ voice, voiceEnabled }: VoiceBarProps) {
             voice.state === 'error' && 'text-rose-300',
           )}
         >
-          {voice.micError ?? (voice.liveTranscript || STATE_LABEL[voice.state])}
+          {voice.micError ??
+            (voice.whisperStatus || voice.liveTranscript || STATE_LABEL[voice.state])}
         </span>
 
         {active ? <LevelMeter level={voice.level} /> : null}

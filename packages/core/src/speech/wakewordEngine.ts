@@ -35,6 +35,18 @@ export interface WakeWordEngineController {
    */
   pushAudio?: (frame: Float32Array, sampleRate: number) => void;
   stop: () => void;
+  /**
+   * PCM (et son débit) de la dernière fenêtre analysée qui a déclenché la
+   * détection — ou `null` si le moteur ne conserve pas cet audio (le
+   * gabarit local et Porcupine, par exemple, n'ont pas besoin de le
+   * transcrire). Permet à l'appelant de transmettre cet audio au moteur de
+   * dictée comme préfixe : transcrire l'énoncé complet (mot de réveil
+   * compris), puis retirer le mot de réveil du *texte* obtenu
+   * (`stripLeadingWakeWord`), donne à Whisper plus de contexte qu'une
+   * coupure de l'audio à l'instant précis de la détection — voir
+   * `WhisperWakeWordEngine` (`apps/desktop`) pour l'implémentation.
+   */
+  getLastAnalyzedWindow?: () => { pcm: Float32Array; sampleRate: number } | null;
 }
 
 export interface WakeWordEngine {
@@ -57,17 +69,23 @@ export interface WakeWordEngineConfig {
   apiKey?: string;
   /** Étiquette renvoyée à `onDetected` (moteur local uniquement). */
   keyword?: string;
-  /** Gabarits enregistrés par l'utilisateur (moteur local uniquement). */
+  /** Gabarits enregistrés par l'utilisateur (moteur gabarit local uniquement). */
   detectorConfig?: WakeWordDetectorConfig | null;
-  /** 0 (strict) à 1 (très sensible) (moteur local uniquement). */
+  /** 0 (strict) à 1 (très sensible). */
   sensitivity?: number;
+  /**
+   * Variantes orthographiques supplémentaires du mot de réveil, en plus des
+   * variantes intégrées (moteur par transcription uniquement — voir
+   * `matchesWakeWord`). Extensible depuis les réglages, sans toucher au code.
+   */
+  variants?: string[];
 }
 
 export type WakeWordEngineFactory = (config: WakeWordEngineConfig) => WakeWordEngine;
 
 export const localTemplateWakeWordDescriptor: WakeWordEngineDescriptor = {
   id: 'local-template',
-  label: 'Gabarit local (gratuit, sans clé)',
+  label: 'Gabarit par énergie (gratuit — peu fiable : sans analyse spectrale, préférer Whisper)',
   requiresApiKey: false,
 };
 
@@ -90,12 +108,16 @@ export function createLocalTemplateWakeWordEngine(
 }
 
 /**
- * Implémentation par défaut de `WakeWordEngine` : enveloppe `WakeWordDetector`
- * (comparaison d'énergie à un ou plusieurs gabarits enregistrés localement).
- * Entièrement pur — pas de DOM, pas de micro — car l'audio lui est fourni
- * par l'appelant via `pushAudio`. C'est le moteur par défaut de
- * l'application : gratuit, sans compte, sans calibration imposée par un
- * tiers.
+ * Enveloppe `WakeWordDetector` (comparaison d'énergie à un ou plusieurs
+ * gabarits enregistrés localement). Entièrement pur — pas de DOM, pas de
+ * micro — car l'audio lui est fourni par l'appelant via `pushAudio`.
+ *
+ * N'est plus le moteur par défaut : ne comparer que des enveloppes
+ * d'énergie dans le temps, sans aucune information spectrale, s'est révélé
+ * peu fiable en conditions réelles (le mot de réveil ne se déclenche pas de
+ * façon fiable). Reste une option gratuite et sans compte, au cas où
+ * `whisper-transcript` (voir `apps/desktop`) serait trop coûteux en CPU sur
+ * une machine donnée.
  */
 export class LocalTemplateWakeWordEngine implements WakeWordEngine {
   readonly id = localTemplateWakeWordDescriptor.id;

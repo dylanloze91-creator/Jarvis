@@ -1,7 +1,7 @@
-import { sensitivityToThreshold } from '@jarvis/core';
+import { WHISPER_STT_MODELS, WHISPER_WAKE_WORD_MODEL, sensitivityToThreshold } from '@jarvis/core';
 import type { VoiceDescriptor, VoiceSettings } from '@jarvis/core';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Field, Input, Range, Select, Toggle } from '@/components/ui/field';
+import { Field, Input, Range, Select, Textarea, Toggle } from '@/components/ui/field';
 import { Button } from '@/components/ui/button';
 import { listMicrophones } from '@/voice/audioCapture';
 import {
@@ -14,6 +14,12 @@ import {
   startWakeWordTest,
   type WakeWordTestHandle,
 } from '@/voice/trainWakeWord';
+import {
+  describeWhisperProgress,
+  getWhisperPipeline,
+  subscribeWhisperProgress,
+  type WhisperLoadProgress,
+} from '@/voice/whisper/pipelineLoader';
 
 interface VoiceSettingsSectionProps {
   voice: VoiceSettings;
@@ -52,8 +58,20 @@ export function VoiceSettingsSection({
   const flashTimerRef = useRef<number | null>(null);
 
   const usingPorcupine = voice.wakeWordEngine === 'porcupine';
+  const usingWhisperWakeWord = voice.wakeWordEngine === 'whisper-transcript';
+  const usingLocalTemplate = voice.wakeWordEngine === 'local-template';
+  const usingLocalWhisperStt = voice.sttProvider === 'local-whisper';
   const sampleCount = voice.wakeWordProfiles.length;
   const threshold = sensitivityToThreshold(voice.wakeWordSensitivity);
+  const selectedSttModel =
+    WHISPER_STT_MODELS.find((model) => model.id === voice.sttModel) ?? WHISPER_STT_MODELS[1]!;
+
+  const [whisperProgress, setWhisperProgress] = useState<Record<string, WhisperLoadProgress>>({});
+  useEffect(() => {
+    return subscribeWhisperProgress((info) => {
+      setWhisperProgress((current) => ({ ...current, [info.repo]: info }));
+    });
+  }, []);
 
   useEffect(() => {
     void listMicrophones()
@@ -171,8 +189,7 @@ export function VoiceSettingsSection({
                 <strong>n'est plus gratuite depuis le 30 juin 2026</strong> (Picovoice a mis fin à
                 son offre gratuite et n'a pas prévu de palier non commercial). Une carte bancaire et
                 un abonnement payant sont nécessaires pour obtenir une clé valide — voir le README
-                pour le détail. Sans clé, l'application repasse automatiquement sur le gabarit local
-                ci-dessous.
+                pour le détail. Sans clé, l'application repasse automatiquement sur Whisper local.
               </p>
               <Field label="Clé d'accès Picovoice">
                 <Input
@@ -183,22 +200,95 @@ export function VoiceSettingsSection({
                 />
               </Field>
             </>
+          ) : usingLocalTemplate ? (
+            <p className="rounded-lg border border-amber-400/25 bg-amber-400/10 px-3 py-2 text-xs leading-snug text-amber-100">
+              Gratuit, sans compte, mais <strong>peu fiable</strong> : ce moteur ne compare que le
+              volume du son dans le temps, sans aucune analyse de la parole elle-même — il rate
+              souvent la détection en conditions réelles. Whisper local (moteur par défaut) est
+              recommandé à la place.
+            </p>
           ) : (
             <p className="text-xs leading-snug text-slate-500">
-              Gratuit, sans compte : Jarvis compare le son capté à un ou plusieurs échantillons que
-              tu enregistres toi-même ci-dessous. C'est le moteur par défaut de l'application.
+              Gratuit, sans compte : Whisper (le même modèle local que pour la dictée, mais toujours
+              le plus petit qui fonctionne correctement) transcrit de courtes fenêtres audio en
+              continu et cherche le mot de réveil dans le texte obtenu. C'est le moteur par défaut
+              de l'application — aucun audio ne quitte jamais la machine.
             </p>
           )}
 
-          {!usingPorcupine ? (
-            <>
-              <Field label="Mot de réveil">
-                <Input
-                  value={voice.wakeWord}
-                  onChange={(event) => onChange({ wakeWord: event.target.value })}
-                />
-              </Field>
+          {usingWhisperWakeWord ? (
+            <WhisperModelStatus
+              label="Modèle du mot de réveil (toujours le plus petit qui fonctionne)"
+              repo={WHISPER_WAKE_WORD_MODEL.repo}
+              progress={whisperProgress[WHISPER_WAKE_WORD_MODEL.repo]}
+            />
+          ) : null}
 
+          {!usingPorcupine ? (
+            <Field label="Mot de réveil">
+              <Input
+                value={voice.wakeWord}
+                onChange={(event) => onChange({ wakeWord: event.target.value })}
+              />
+            </Field>
+          ) : null}
+
+          {usingWhisperWakeWord ? (
+            <Field
+              label="Variantes orthographiques supplémentaires (une par ligne)"
+              hint="En plus des variantes déjà connues (« jarviss », « djarvis »…) et de la tolérance automatique aux petites fautes de transcription. Utile pour un mot de réveil personnalisé mal reconnu."
+            >
+              <Textarea
+                rows={2}
+                value={voice.wakeWordVariants.join('\n')}
+                onChange={(event) =>
+                  onChange({
+                    wakeWordVariants: event.target.value
+                      .split('\n')
+                      .map((line) => line.trim())
+                      .filter((line) => line.length > 0),
+                  })
+                }
+              />
+            </Field>
+          ) : null}
+
+          {!usingPorcupine ? (
+            <div className="flex flex-col gap-1.5">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-medium tracking-wide text-slate-400 uppercase">
+                  Sensibilité
+                </span>
+                <span className="text-xs text-slate-400">
+                  {Math.round(voice.wakeWordSensitivity * 100)}%
+                  {usingLocalTemplate ? ` · seuil ${Math.round(threshold * 100)}%` : ''}
+                </span>
+              </div>
+              <Range
+                min={0}
+                max={100}
+                value={Math.round(voice.wakeWordSensitivity * 100)}
+                onChange={(event) =>
+                  onChange({ wakeWordSensitivity: Number(event.target.value) / 100 })
+                }
+              />
+              <div className="flex justify-between text-[11px] text-slate-500">
+                <span>
+                  {usingWhisperWakeWord
+                    ? 'Économe en CPU (moins réactif)'
+                    : 'Stricte (peu de faux positifs)'}
+                </span>
+                <span>
+                  {usingWhisperWakeWord
+                    ? 'Réactif (analyse plus souvent, plus de CPU)'
+                    : 'Sensible (se déclenche facilement)'}
+                </span>
+              </div>
+            </div>
+          ) : null}
+
+          {usingLocalTemplate ? (
+            <>
               <Field label="Comparaison des échantillons">
                 <Select
                   value={voice.wakeWordMatchStrategy}
@@ -215,30 +305,6 @@ export function VoiceSettingsSection({
                   <option value="average">Moyenne des gabarits (lisse le bruit)</option>
                 </Select>
               </Field>
-
-              <div className="flex flex-col gap-1.5">
-                <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-medium tracking-wide text-slate-400 uppercase">
-                    Sensibilité
-                  </span>
-                  <span className="text-xs text-slate-400">
-                    {Math.round(voice.wakeWordSensitivity * 100)}% · seuil{' '}
-                    {Math.round(threshold * 100)}%
-                  </span>
-                </div>
-                <Range
-                  min={0}
-                  max={100}
-                  value={Math.round(voice.wakeWordSensitivity * 100)}
-                  onChange={(event) =>
-                    onChange({ wakeWordSensitivity: Number(event.target.value) / 100 })
-                  }
-                />
-                <div className="flex justify-between text-[11px] text-slate-500">
-                  <span>Stricte (peu de faux positifs)</span>
-                  <span>Sensible (se déclenche facilement)</span>
-                </div>
-              </div>
 
               <div className="flex items-center justify-between gap-3 rounded-lg border border-white/8 bg-white/[0.03] px-3 py-2.5">
                 <div>
@@ -329,7 +395,7 @@ export function VoiceSettingsSection({
 
       <Field
         label="Moteur de reconnaissance vocale (STT)"
-        hint="La reconnaissance locale du navigateur ne fonctionne pas dans Electron (limitation connue et vérifiée : elle dépend des serveurs de Google, absents d'Electron). Tant qu'aucune clé OpenAI n'est configurée, seuls le mot de réveil et la simulation restent utilisables."
+        hint="Whisper local (transformers.js, WebAssembly/WebGPU) est le moteur gratuit par défaut : aucune clé, hors ligne après le premier téléchargement du modèle. La reconnaissance intégrée du navigateur a été retirée : elle ne fonctionne structurellement pas dans Electron (dépend de serveurs Google absents des builds Electron)."
       >
         <Select
           value={voice.sttProvider}
@@ -343,6 +409,33 @@ export function VoiceSettingsSection({
           ))}
         </Select>
       </Field>
+
+      {usingLocalWhisperStt ? (
+        <>
+          <Field
+            label="Taille du modèle Whisper (dictée)"
+            hint={`${selectedSttModel.sizeLabel} · ${selectedSttModel.speedLabel}`}
+          >
+            <Select
+              value={voice.sttModel}
+              onChange={(event) =>
+                onChange({ sttModel: event.target.value as VoiceSettings['sttModel'] })
+              }
+            >
+              {WHISPER_STT_MODELS.map((model) => (
+                <option key={model.id} value={model.id}>
+                  {model.label} — {model.sizeLabel}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <WhisperModelStatus
+            label={`Modèle de dictée (${selectedSttModel.label})`}
+            repo={selectedSttModel.repo}
+            progress={whisperProgress[selectedSttModel.repo]}
+          />
+        </>
+      ) : null}
 
       <Toggle
         label="Réponse vocale"
@@ -396,6 +489,64 @@ export function VoiceSettingsSection({
           onChange={(event) => onChange({ apiKey: event.target.value })}
         />
       </Field>
+    </div>
+  );
+}
+
+/**
+ * Statut de chargement d'un modèle Whisper (téléchargé au premier usage,
+ * mis en cache localement ensuite — voir `whisper/pipelineLoader.ts`).
+ * Le bouton permet de le préparer à l'avance, plutôt que de découvrir le
+ * téléchargement au premier « Jarvis » prononcé.
+ */
+function WhisperModelStatus({
+  label,
+  repo,
+  progress,
+}: {
+  label: string;
+  repo: string;
+  progress?: WhisperLoadProgress;
+}) {
+  const [preparing, setPreparing] = useState(false);
+
+  const prepare = async (): Promise<void> => {
+    setPreparing(true);
+    try {
+      await getWhisperPipeline(repo);
+    } catch {
+      // L'erreur est déjà remontée via subscribeWhisperProgress (status 'error').
+    } finally {
+      setPreparing(false);
+    }
+  };
+
+  const percent = progress?.status === 'loading' ? Math.round(progress.progress ?? 0) : null;
+
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-lg border border-white/8 bg-white/[0.03] px-3 py-2.5">
+      <div className="min-w-0 flex-1">
+        <p className="text-sm text-slate-200">{label}</p>
+        <p className="truncate text-xs text-slate-500">
+          {progress ? describeWhisperProgress(progress) : `${repo} — pas encore préparé`}
+        </p>
+        {percent !== null ? (
+          <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-white/10">
+            <div
+              className="h-full rounded-full bg-accent transition-[width]"
+              style={{ width: `${percent}%` }}
+            />
+          </div>
+        ) : null}
+      </div>
+      <Button
+        size="sm"
+        variant="subtle"
+        onClick={() => void prepare()}
+        disabled={preparing || progress?.status === 'loading'}
+      >
+        {progress?.status === 'ready' ? 'Prêt' : 'Préparer maintenant'}
+      </Button>
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { DEFAULT_SYSTEM_PROMPT } from './agent/agent.js';
 import { defaultCategoryPolicies } from './tools/permissions.js';
+import { DEFAULT_WHISPER_STT_MODEL_ID } from './speech/whisperModels.js';
 
 const confirmationPolicySchema = z.enum(['always', 'destructive-only', 'never']);
 
@@ -33,18 +34,43 @@ export const voiceSettingsSchema = z.object({
   wakeWordMatchStrategy: z.enum(['best', 'average']).default('best'),
   /** 0 (strict, peu de faux positifs) à 1 (très sensible). */
   wakeWordSensitivity: z.number().min(0).max(1).default(0.5),
-  /** Moteur de détection du mot de réveil : identifiant enregistré dans le registre dédié. */
-  wakeWordEngine: z.string().min(1).default('local-template'),
+  /**
+   * Moteur de détection du mot de réveil : identifiant enregistré dans le
+   * registre dédié. `whisper-transcript` (Whisper local sur de courtes
+   * fenêtres glissantes) est le défaut : le gabarit par énergie
+   * (`local-template`) ne compare que des volumes dans le temps, sans
+   * information spectrale, et se révèle peu fiable en conditions réelles.
+   */
+  wakeWordEngine: z.string().min(1).default('whisper-transcript'),
   /**
    * Clé d'accès Picovoice (Porcupine), optionnelle. Sa présence sélectionne
-   * automatiquement Porcupine ; vide, l'application reste sur le gabarit
-   * local. Voir le README pour le coût réel de cette clé.
+   * automatiquement Porcupine ; vide, l'application reste sur le moteur par
+   * transcription. Voir le README pour le coût réel de cette clé.
    */
   wakeWordAccessKey: z.string().default(''),
+  /**
+   * Variantes orthographiques supplémentaires du mot de réveil, en plus des
+   * variantes intégrées (erreurs de transcription connues) — pour le moteur
+   * `whisper-transcript` uniquement. Éditable dans les réglages, pour rester
+   * extensible sans toucher au code.
+   */
+  wakeWordVariants: z.array(z.string()).default([]),
   /** Identifiant du périphérique micro choisi ; vide = périphérique par défaut du système. */
   microphoneId: z.string().default(''),
-  /** Moteur de reconnaissance vocale : identifiant enregistré dans le registre STT. */
-  sttProvider: z.string().min(1).default('browser-local'),
+  /**
+   * Moteur de reconnaissance vocale : identifiant enregistré dans le
+   * registre STT. `local-whisper` (Whisper local, gratuit et hors ligne
+   * après le premier téléchargement) est le défaut — la reconnaissance
+   * intégrée du navigateur (`browser-local`) est structurellement cassée
+   * dans Electron (dépend de serveurs Google absents des builds Electron)
+   * et n'est plus proposée.
+   */
+  sttProvider: z.string().min(1).default('local-whisper'),
+  /**
+   * Taille du modèle Whisper local utilisé pour la dictée : voir
+   * `WHISPER_STT_MODELS`. Sans effet sur les autres moteurs.
+   */
+  sttModel: z.enum(['tiny', 'base', 'small']).default(DEFAULT_WHISPER_STT_MODEL_ID),
   /** Moteur de synthèse vocale : identifiant enregistré dans le registre TTS. */
   ttsProvider: z.string().min(1).default('browser-local'),
   /** Réponse vocale de l'assistant, activable indépendamment de l'écoute permanente. */

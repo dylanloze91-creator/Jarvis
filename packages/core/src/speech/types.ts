@@ -72,6 +72,19 @@ export interface SpeechToTextController {
   stop: () => void;
   /** Annule la session en cours sans produire de transcription. */
   abort: () => void;
+  /**
+   * Marque, dans les trames déjà poussées via `pushAudio`, la fin d'un
+   * éventuel préfixe (par exemple l'audio qui a déclenché un mot de réveil
+   * « par transcription », transmis pour donner plus de contexte — voir
+   * `WhisperWakeWordEngine` côté `apps/desktop`). Un moteur qui applique une
+   * garde d'énergie pour éviter de transcrire un énoncé quasi silencieux
+   * (comme `LocalWhisperSttProvider`) doit l'appliquer seulement à l'audio
+   * arrivé *après* ce marqueur : le préfixe contient forcément de la
+   * parole (le mot de réveil), ce qui fausserait sinon la détection d'un
+   * énoncé sans commande réelle. Sans effet pour un moteur qui ne fait pas
+   * cette distinction.
+   */
+  markPrefixEnd?: () => void;
 }
 
 export interface SpeechToTextProvider {

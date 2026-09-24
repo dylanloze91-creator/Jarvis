@@ -7,13 +7,41 @@ const path = require('path');
 // natives de Chromium/Electron).
 const LOCALES_TO_KEEP = new Set(['en-US.pak', 'fr.pak']);
 
+/**
+ * Fichiers purement informatifs (aucun effet sur le fonctionnement de
+ * l'application) qu'Electron embarque par défaut, mais dont la taille est
+ * disproportionnée par rapport à leur utilité ici — `LICENSES.chromium.html`
+ * seul pèse plus de 20 Mo (la liste exhaustive des licences tierces de
+ * Chromium, mise en forme HTML). Remplacé par un fichier texte minimal
+ * pointant vers la source publique, pour rester transparent sans alourdir
+ * l'installateur : le texte des licences reste consultable sur le dépôt
+ * public d'Electron, seule sa duplication locale volumineuse est retirée.
+ */
+const OVERSIZED_NOTICES = {
+  'LICENSES.chromium.html': [
+    'Les licences tierces de Chromium ne sont pas dupliquées ici (fichier',
+    "d'origine : ~20 Mo), pour garder l'installateur de Jarvis léger.",
+    '',
+    'Texte complet et à jour : https://github.com/electron/electron/blob/main/LICENSE',
+    "et, pour Chromium lui-même, dans les sources publiques du projet Chromium.",
+  ].join('\n'),
+};
+
 exports.default = async function afterPack(context) {
   const localesDir = path.join(context.appOutDir, 'locales');
-  if (!fs.existsSync(localesDir)) return;
+  if (fs.existsSync(localesDir)) {
+    for (const file of fs.readdirSync(localesDir)) {
+      if (!LOCALES_TO_KEEP.has(file)) {
+        fs.rmSync(path.join(localesDir, file));
+      }
+    }
+  }
 
-  for (const file of fs.readdirSync(localesDir)) {
-    if (!LOCALES_TO_KEEP.has(file)) {
-      fs.rmSync(path.join(localesDir, file));
+  for (const [file, noticeText] of Object.entries(OVERSIZED_NOTICES)) {
+    const filePath = path.join(context.appOutDir, file);
+    if (fs.existsSync(filePath)) {
+      fs.rmSync(filePath);
+      fs.writeFileSync(filePath, noticeText, 'utf8');
     }
   }
 };
