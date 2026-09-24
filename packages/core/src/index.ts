@@ -56,7 +56,30 @@ export {
 } from './speech/default-registries.js';
 export { OpenAISttProvider, openAISttDescriptor } from './speech/openai-stt.js';
 export { OpenAITtsProvider, openAITtsDescriptor, OPENAI_TTS_VOICES } from './speech/openai-tts.js';
-export { concatFloat32, encodeWav } from './speech/wav.js';
+export { concatFloat32, encodeWav, decodeWav, type DecodedWav } from './speech/wav.js';
+export {
+  normalizeForWakeWordMatch,
+  levenshteinDistance,
+  defaultWakeWordVariants,
+  matchesWakeWord,
+  type WakeWordTextMatchConfig,
+} from './speech/wakeWordTextMatch.js';
+export {
+  evaluateWakeWordWindow,
+  peakEnergy,
+  defaultWakeWordTranscriptionGateOptions,
+  type TranscribeWindow,
+  type WakeWordTranscriptionGateOptions,
+  type WakeWordTranscriptionResult,
+} from './speech/wakeWordFromTranscript.js';
+export {
+  WHISPER_STT_MODELS,
+  WHISPER_WAKE_WORD_MODEL,
+  WHISPER_WAKE_WORD_LANGUAGE,
+  DEFAULT_WHISPER_STT_MODEL_ID,
+  findWhisperModel,
+  type WhisperModelOption,
+} from './speech/whisperModels.js';
 export {
   WakeWordDetector,
   averageProfiles,
