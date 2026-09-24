@@ -16,6 +16,7 @@ import {
   type AudioCaptureHandle,
 } from './audioCapture';
 import { createSttRegistry, createTtsRegistry, createWakeWordEngineRegistry } from './registries';
+import { describeWhisperProgress, subscribeWhisperProgress } from './whisper/pipelineLoader';
 
 export type VoiceState = 'idle' | 'sleeping' | 'listening' | 'speaking' | 'error';
 
@@ -37,6 +38,14 @@ export interface UseVoiceResult {
   level: number;
   liveTranscript: string;
   micError: string | null;
+  /**
+   * Statut de chargement d'un modèle Whisper local (téléchargement en
+   * cours, prêt, erreur), affiché en priorité par `VoiceBar` : le premier
+   * usage peut prendre du temps (quelques dizaines de Mo à récupérer une
+   * seule fois), sans ce retour la commande vocale semblerait ne rien
+   * faire pendant ce temps.
+   */
+  whisperStatus: string | null;
   speakingText: string | null;
   /** Injecte un texte comme s'il avait été transcrit, pour démonstration sans microphone. */
   simulate: (text: string) => void;
@@ -67,6 +76,7 @@ export function useVoice({
   const [level, setLevel] = useState(0);
   const [liveTranscript, setLiveTranscript] = useState('');
   const [micError, setMicError] = useState<string | null>(null);
+  const [whisperStatus, setWhisperStatus] = useState<string | null>(null);
   const [speakingText, setSpeakingText] = useState<string | null>(null);
 
   const sttRegistry = useMemo(() => createSttRegistry(), []);
@@ -357,11 +367,26 @@ export function useVoice({
 
   useEffect(() => stopCapture, [stopCapture]);
 
+  // Abonnement global au chargement des modèles Whisper (dictée et mot de
+  // réveil partagent le même mécanisme) : le badge « prêt » disparaît après
+  // un court délai, l'erreur reste affichée jusqu'au prochain événement.
+  useEffect(() => {
+    let clearTimer: number | null = null;
+    return subscribeWhisperProgress((info) => {
+      if (clearTimer !== null) window.clearTimeout(clearTimer);
+      setWhisperStatus(describeWhisperProgress(info));
+      if (info.status === 'ready') {
+        clearTimer = window.setTimeout(() => setWhisperStatus(null), 4000);
+      }
+    });
+  }, []);
+
   return {
     state,
     level,
     liveTranscript,
     micError,
+    whisperStatus,
     speakingText,
     simulate,
     stopSpeaking,

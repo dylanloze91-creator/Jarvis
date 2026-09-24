@@ -34,9 +34,7 @@ export interface WhisperWakeWordEngineOptions {
   sensitivity: number;
 }
 
-export function createWhisperWakeWordEngine(
-  config: WakeWordEngineConfig,
-): WhisperWakeWordEngine {
+export function createWhisperWakeWordEngine(config: WakeWordEngineConfig): WhisperWakeWordEngine {
   return new WhisperWakeWordEngine({
     keyword: config.keyword ?? 'jarvis',
     variants: config.variants ?? [],

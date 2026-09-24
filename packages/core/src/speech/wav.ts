@@ -96,7 +96,9 @@ export function decodeWav(bytes: Uint8Array): DecodedWav {
 
   if (dataOffset < 0) throw new Error('Fichier WAV invalide (bloc "data" introuvable).');
   if (bitsPerSample !== 16) {
-    throw new Error(`Format WAV non pris en charge (${bitsPerSample} bits par échantillon, 16 attendus).`);
+    throw new Error(
+      `Format WAV non pris en charge (${bitsPerSample} bits par échantillon, 16 attendus).`,
+    );
   }
 
   const frameCount = Math.floor(dataSize / 2 / Math.max(1, numChannels));

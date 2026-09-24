@@ -63,9 +63,7 @@ describe('defaultWakeWordVariants', () => {
 
 describe('matchesWakeWord', () => {
   it('détecte le mot de réveil au milieu d’une phrase', () => {
-    expect(matchesWakeWord('Bonjour Jarvis, quelle heure est-il ?', { word: 'jarvis' })).toBe(
-      true,
-    );
+    expect(matchesWakeWord('Bonjour Jarvis, quelle heure est-il ?', { word: 'jarvis' })).toBe(true);
   });
 
   it('tolère les variantes orthographiques fréquentes de Whisper', () => {

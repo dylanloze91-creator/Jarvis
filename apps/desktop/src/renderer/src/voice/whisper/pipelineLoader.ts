@@ -144,3 +144,14 @@ export async function transcribeWithWhisper(
 function describeError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
+
+/** Texte prêt à afficher (français), pour un badge de progression partagé entre `VoiceBar` et `VoiceSettings`. */
+export function describeWhisperProgress(info: WhisperLoadProgress): string {
+  if (info.status === 'error')
+    return `Modèle Whisper indisponible : ${info.message ?? 'erreur inconnue'}`;
+  if (info.status === 'ready') return 'Modèle Whisper prêt (en cache localement).';
+  const percent = Math.round(info.progress ?? 0);
+  return info.message
+    ? info.message
+    : `Téléchargement du modèle Whisper (une seule fois, ${info.repo})… ${percent}%`;
+}

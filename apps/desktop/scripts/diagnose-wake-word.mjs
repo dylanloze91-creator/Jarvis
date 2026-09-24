@@ -39,13 +39,12 @@ import {
  * `simulateVoiceSessionFile` rejoue exactement le même comportement que
  * l'application — pas une approximation. Toute modification de ces valeurs
  * dans le code réel doit être répercutée ici :
- * - `FRAME_SIZE_SAMPLES`/`SIMULATED_SAMPLE_RATE` : `apps/desktop/src/renderer/src/voice/audioCapture.ts`.
+ * - `FRAME_SIZE_SAMPLES` : `apps/desktop/src/renderer/src/voice/audioCapture.ts`.
  * - `SILENCE_RMS_THRESHOLD`/`SILENCE_DURATION_MS` : `apps/desktop/src/renderer/src/voice/useVoice.ts`.
  * - `WAKE_WINDOW_MS`/`WAKE_MIN_WINDOW_FILL_RATIO`/`WAKE_MIN_ANALYSIS_INTERVAL_MS`/`WAKE_COOLDOWN_MS` :
  *   `apps/desktop/src/renderer/src/voice/whisperWakeWordEngine.ts`.
  */
 const FRAME_SIZE_SAMPLES = 4096;
-const SIMULATED_SAMPLE_RATE = 16000;
 const SILENCE_RMS_THRESHOLD = 0.012;
 const SILENCE_DURATION_MS = 900;
 const WAKE_WINDOW_MS = 1600;
@@ -258,7 +257,7 @@ export async function simulateVoiceSessionFile(filePath, options = {}) {
         if (canAnalyze) {
           lastAnalysisAt = simulatedNowMs;
           const snapshot = concatFloat32(wakeBuffer);
-          // eslint-disable-next-line no-await-in-loop -- simulation séquentielle volontaire (un seul appel Whisper en vol, comme en production).
+          // Simulation séquentielle volontaire : un seul appel Whisper en vol, comme en production.
           const result = await evaluateWakeWordWindow(snapshot, sampleRate, transcribeWake, { word, variants }, {
             minPeakEnergy,
           });

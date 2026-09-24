@@ -119,7 +119,9 @@ export function matchesWakeWord(transcript: string, config: WakeWordTextMatchCon
   const canonical = normalizeForWakeWordMatch(config.word);
   const userVariants = (config.variants ?? []).map(normalizeForWakeWordMatch).filter(Boolean);
 
-  const exactCandidates = Array.from(new Set([...defaultWakeWordVariants(config.word), ...userVariants]));
+  const exactCandidates = Array.from(
+    new Set([...defaultWakeWordVariants(config.word), ...userVariants]),
+  );
   if (exactCandidates.some((candidate) => normalizedTranscript.includes(candidate))) return true;
   if (!canonical) return false;
 
@@ -129,6 +131,8 @@ export function matchesWakeWord(transcript: string, config: WakeWordTextMatchCon
   const maxDistance = config.maxDistance ?? defaultMaxDistance;
   const transcriptWords = normalizedTranscript.split(' ');
   return transcriptWords.some((word) =>
-    fuzzyCandidates.some((candidate) => levenshteinDistance(word, candidate) <= maxDistance(candidate.length)),
+    fuzzyCandidates.some(
+      (candidate) => levenshteinDistance(word, candidate) <= maxDistance(candidate.length),
+    ),
   );
 }
