@@ -168,31 +168,47 @@ options payantes (Porcupine, OpenAI) restent des améliorations facultatives, ja
 passage obligé — voir le tableau de coûts en fin de section pour l'état réel, honnête, de
 chaque brique.
 
-### Mot de réveil : gabarit local par défaut, Porcupine en option
+### Mot de réveil : Whisper par transcription, par défaut
 
 Le mot de réveil se détecte **toujours localement et hors ligne**, quel que soit le
-moteur choisi : aucun audio ne quitte la machine avant sa détection. C'est la seule
-brique de la chaîne vocale qui n'a pas de version « cloud » — juste des moteurs locaux de
-qualité différente, derrière une interface dédiée, `WakeWordEngine`
-(`packages/core/src/speech/wakewordEngine.ts`), avec son propre registre
-(`WakeWordEngineRegistry`), sur le même principe que `SpeechToTextProvider` et
-`TextToSpeechProvider`.
+moteur choisi : aucun audio ne quitte la machine avant sa détection (ni jamais, dans le cas
+du moteur par défaut — voir plus bas). C'est la seule brique de la chaîne vocale qui n'a pas
+de version « cloud » — juste des moteurs locaux de qualité différente, derrière une
+interface dédiée, `WakeWordEngine` (`packages/core/src/speech/wakewordEngine.ts`), avec son
+propre registre (`WakeWordEngineRegistry`), sur le même principe que
+`SpeechToTextProvider` et `TextToSpeechProvider`.
 
-- **Gabarit local (`local-template`, moteur par défaut, gratuit, sans compte)** —
-  ce n'est pas un simple repli, c'est le chemin conçu pour être utilisable sérieusement au
-  quotidien : `WakeWordDetector` (`packages/core/src/speech/wakeword.ts`) compare
-  l'enveloppe d'énergie du flux audio à **plusieurs** échantillons enregistrés par
-  l'utilisateur (recommandé : au moins trois, pour couvrir la variabilité naturelle de la
-  voix), comparés soit au **meilleur** gabarit (`matchStrategy: 'best'`, tolère la
-  variabilité entre essais), soit à leur **moyenne** (`'average'`, lisse le bruit). Un
-  réglage de **sensibilité** (0 à 1) ajuste le seuil de déclenchement
-  (`sensitivityToThreshold`/`thresholdToSensitivity`), et le détecteur expose un **score en
-  temps réel** (`getLastScore()`) : les réglages proposent une calibration guidée
-  (enregistrer des échantillons, régler la sensibilité, puis « Tester la détection » avec un
-  indicateur visuel du score face au seuil) pour que l'utilisateur puisse trouver le bon
-  compromis lui-même, sans deviner. Entièrement pur — `WakeWordDetector` et
-  `LocalTemplateWakeWordEngine` ne font que des calculs sur des nombres, zéro DOM — la
-  capture audio réelle reste dans `apps/desktop`.
+- **Whisper local, par transcription (`whisper-transcript`, moteur par défaut, gratuit,
+  sans compte)** — le gabarit par énergie (ci-dessous) ne compare que des _volumes_ dans le
+  temps, sans aucune information spectrale : vérifié peu fiable en conditions réelles (le
+  mot de réveil ne se déclenchait pas de façon fiable avec un vrai micro). `WhisperWakeWordEngine`
+  (`apps/desktop/src/renderer/src/voice/whisperWakeWordEngine.ts`) fait tourner Whisper sur
+  de courtes fenêtres glissantes (1,6 s) et cherche le mot de réveil dans le texte produit
+  (`evaluateWakeWordWindow` + `matchesWakeWord`, cœur pur et testable dans `packages/core`).
+  Trois précautions contre un usage CPU excessif en écoute permanente : une garde d'énergie
+  (aucune transcription tentée sur une fenêtre silencieuse), un intervalle minimal entre deux
+  analyses, et une seule analyse en vol à la fois. La comparaison texte tolère les fautes de
+  transcription fréquentes (« jarviss », « djarvis », « javice »…) via une liste de variantes
+  extensible dans les réglages, plus une distance d'édition pour les fautes imprévues —
+  **volontairement pas appliquée à la liste intégrée elle-même** : vérifié contre le
+  dictionnaire français `hunspell-fr` (~81 000 mots), l'appliquer aussi à cette liste créait
+  144 collisions (« paris », « avis »…) ; restreinte au seul mot canonique, une seule
+  subsiste (« parvis »), documentée dans le code plutôt que corrigée en douce.
+  **Constat vérifié sur deux enregistrements réels** (voix humaine, pas un synthétiseur) :
+  le modèle `tiny` hallucine systématiquement une phrase sans rapport, quelle que soit la
+  langue forcée — `base` est donc le plus petit modèle qui fonctionne vraiment pour cette
+  tâche, pas `tiny`. Autre constat contre-intuitif mais vérifié : Whisper décode mieux
+  « Jarvis » — un nom propre sans entrée lexicale française — en forçant la langue anglaise
+  qu'en français, où le modèle le rabat sur le mot français le plus proche phonétiquement
+  (« j'avise »). Voir `packages/core/src/speech/whisperModels.ts` pour le détail et les
+  sources de ces deux choix.
+- **Gabarit local par énergie (`local-template`, gratuit, sans compte, mais peu fiable)** —
+  reste une option pour qui préférerait éviter tout usage de Whisper, ou sur une machine où
+  le coût CPU de la transcription en continu serait rédhibitoire : `WakeWordDetector`
+  (`packages/core/src/speech/wakeword.ts`) compare l'enveloppe d'énergie du flux audio à un
+  ou plusieurs échantillons enregistrés par l'utilisateur (comparés au **meilleur** gabarit
+  ou à leur **moyenne**), avec un réglage de sensibilité et un score en temps réel pour
+  calibrer. L'interface des réglages l'indique désormais clairement comme peu fiable.
 - **Porcupine (Picovoice), en option, jamais le défaut** — reconnaît le mot-clé « jarvis »
   sans aucune calibration (mot-clé intégré au SDK). Techniquement propre à intégrer : le
   SDK web (`@picovoice/porcupine-web`, WebAssembly) se charge par un `import()` dynamique
@@ -212,7 +228,7 @@ qualité différente, derrière une interface dédiée, `WakeWordEngine`
   `apps/desktop/src/renderer/public/porcupine/README.md` pour l'obtenir si tu choisis
   malgré tout cette option.
 
-### Reconnaissance (STT) : le vrai obstacle du zéro euro
+### Reconnaissance (STT) : Whisper local, gratuit, par défaut
 
 Une fois réveillé, l'application capture la phrase, détecte la fin de parole par silence,
 transcrit, puis envoie le texte dans la boucle de conversation **exactement comme un
@@ -222,38 +238,124 @@ phrase vient de la voix. La transcription passe par `SpeechToTextProvider`
 
 **Constat vérifié, pas supposé : la reconnaissance vocale du navigateur
 (`webkitSpeechRecognition`) ne fonctionne pas dans Electron — jamais, pas seulement
-« parfois ».** Ce n'est pas une limite d'implémentation de ce projet : Electron ne
-distribue pas la clé Google API que Chrome utilise pour son service de reconnaissance
-cloud, et sa version « on-device » plus récente est explicitement désactivée dans Electron
-(elle renvoie `kUnavailable`, voir la PR
-[electron/electron#52955](https://github.com/electron/electron/pull/52955)). Le résultat,
+« parfois ».** Electron ne distribue pas la clé Google API que Chrome utilise pour son
+service de reconnaissance cloud, et sa version « on-device » plus récente est
+explicitement désactivée dans Electron (elle renvoie `kUnavailable`, voir la PR
+[electron/electron#52955](https://github.com/electron/electron/pull/52955)) — résultat
 constaté et documenté par de nombreux utilisateurs
 ([electron/electron#46143](https://github.com/electron/electron/issues/46143),
-[#31732](https://github.com/electron/electron/issues/31732)), est une erreur `network`
-systématique, y compris en développement. Le moteur `browser-local` reste dans le code
-(interface honnête, label explicite dans les réglages) mais **ne doit pas être considéré
-comme un vrai moteur gratuit fonctionnel dans cette application** : c'est un candidat qui a
-échoué à l'usage, gardé pour mémoire et pour le jour où Electron changerait de
-comportement.
+[#31732](https://github.com/electron/electron/issues/31732)) : une erreur `network`
+systématique. **Ce moteur a été retiré** du registre STT de `apps/desktop` (le fichier
+`localStt.ts` n'existe plus) : le laisser choisissable n'aurait fait que tendre un piège à
+l'utilisateur pour un moteur qui ne peut structurellement pas fonctionner.
 
-**Alternative locale gratuite évaluée, non retenue — voici pourquoi.** L'objectif était de
-trouver un moteur Whisper/Vosk embarqué, sans clé, sans compilation native pénible et sans
-faire exploser la taille de l'application :
+#### Whisper local (`local-whisper`), via `@huggingface/transformers` (transformers.js)
 
-| Piste testée                                                      | Verdict                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `vosk` (npm)                                                      | Rejeté — dernier publié en 2022, dépend de `ffi-napi`/`ref-napi` (historiquement fragiles face aux nouvelles versions d'ABI Node), aucune garantie de fonctionner avec le Node d'Electron 44.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| `nodejs-whisper`, `smart-whisper` (bindings whisper.cpp)          | Rejetés — les deux compilent whisper.cpp _à l'installation_ via `node-gyp`/CMake : sur Windows, `nodejs-whisper` documente lui-même l'exigence d'installer MinGW-w64/MSYS2. C'est exactement la « compilation native pénible » à éviter pour un utilisateur non technicien.                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| `@echogarden/whisper.cpp-binding`                                 | Rejeté en pratique — binaire natif précompilé réel pour Windows/macOS/Linux (2,5 Mo, MIT, sans compilation), mais c'est un binding _minimal_ sans tokenisation ni calcul du spectrogramme : l'utiliser correctement suppose soit de réimplémenter tout le pipeline Whisper à la main, soit de dépendre du paquet complet `echogarden`, qui embarque des dizaines de dépendances sans rapport (SDK AWS/Azure/Google, segmentation de texte multilingue, `jsdom`…) et gonflerait franchement la taille de l'application.                                                                                                                                                                                                                    |
-| `@huggingface/transformers` + `onnxruntime-web` (Whisper en WASM) | Techniquement faisable (aucune compilation native, licences permissives) mais lourd : `onnxruntime-web` pèse à lui seul plus de 140 Mo installé, avant même le modèle Whisper (encore 40 à 150 Mo selon la taille choisie). Chargeable en différé (comme Porcupine) pour ne pas alourdir l'installateur de base, mais la validation du comportement réel dans un exécutable Electron packagé (gestion des fichiers `.wasm` par `electron-builder`, téléchargement du modèle au premier lancement) n'a pas pu être faite ici, faute de machine Windows pour packager et tester. C'est la piste la plus prometteuse pour une prochaine itération, mais elle n'a pas été intégrée dans cette passe pour ne pas livrer un chemin non vérifié. |
+C'est désormais le moteur gratuit par défaut, et il fonctionne réellement — vérifié sur des
+enregistrements réels, pas seulement sur des tests unitaires (voir « Preuves » ci-dessous).
+Pur WebAssembly (avec accélération WebGPU quand le navigateur l'expose, repli WebAssembly
+sinon) : aucune compilation native, aucun binaire à installer, contrairement à toutes les
+pistes suivantes, évaluées puis rejetées lors d'une passe précédente pour cette raison
+précise :
 
-**État actuel, honnête : il n'existe aujourd'hui, dans cette application, aucun moteur de
-transcription vocale local qui fonctionne réellement et gratuitement.** Le seul moteur de
-transcription qui marche est **OpenAI Whisper** (`openai-whisper`, cloud, payant à l'usage —
-de l'ordre de 0,006 $/minute, donc quelques centimes par commande vocale, mais pas zéro).
-Tant qu'aucune clé n'est configurée, la commande vocale se limite au mot de réveil (gratuit)
-et au champ de simulation de la barre vocale, qui permet de vérifier tout le reste du
-pipeline (conversation, outils, réponse) sans dépenser un centime.
+| Piste testée                                                  | Verdict                                                                                                                                                                                                                                                                                                   |
+| ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `vosk` (npm)                                                  | Rejeté — dernier publié en 2022, dépend de `ffi-napi`/`ref-napi`, aucune garantie de fonctionner avec le Node d'Electron 44.                                                                                                                                                                              |
+| `nodejs-whisper`, `smart-whisper` (bindings whisper.cpp)      | Rejetés — compilent whisper.cpp _à l'installation_ via `node-gyp`/CMake ; sur Windows, `nodejs-whisper` exige explicitement MinGW-w64/MSYS2.                                                                                                                                                              |
+| `@echogarden/whisper.cpp-binding`                             | Rejeté en pratique — binaire précompilé réel (2,5 Mo, MIT) mais binding minimal sans tokenisation ni spectrogramme : l'utiliser proprement suppose de dépendre du paquet complet `echogarden`, avec des dizaines de dépendances sans rapport.                                                             |
+| `@huggingface/transformers` + `onnxruntime-web` (cette passe) | **Retenu.** Pur WebAssembly/WebGPU, aucune compilation native. L'obstacle n'était pas technique mais d'empaquetage : le binaire WASM d'`onnxruntime-web` (~27 Mo avec WebGPU) est copié par Vite dès que le paquet est importé localement — voir « Pourquoi charger le moteur depuis un CDN » ci-dessous. |
+
+**Choix de modèle, vérifié sur des enregistrements réels (pas supposé) :**
+
+- `WHISPER_STT_MODELS` (`packages/core/src/speech/whisperModels.ts`) propose trois tailles
+  pour la **dictée**, réglables dans les réglages, avec taille et vitesse indiquées :
+  `tiny` (≈ 40 Mo, rapide mais médiocre en français), `base` (≈ 75 Mo, **défaut**, bon
+  compromis) et `small` (≈ 245 Mo, meilleure qualité mais lent sans GPU).
+- Le **mot de réveil**, lui, n'est **pas** configurable sur ce point : `tiny` a été mesuré
+  insuffisant pour cette tâche précise — il hallucine systématiquement une phrase sans
+  rapport sur les deux enregistrements réels utilisés pour vérifier — donc `base` est
+  utilisé quel que soit le modèle choisi pour la dictée. Un modèle plus petit économiserait
+  du CPU mais ne détecterait jamais rien : le choisir serait mentir sur la fiabilité pour
+  gagner en vitesse.
+- Whisper décode mieux « Jarvis » en forçant la langue **anglaise** qu'en français (constat
+  vérifié, pas une supposition) : un nom propre sans entrée lexicale française se fait
+  sinon rabattre sur le mot français phonétiquement le plus proche (« j'avise »). La
+  dictée, elle, reste forcée en français.
+
+**Architecture : transcrire l'énoncé complet, retirer le mot de réveil du texte.** Une
+première version découpait l'audio à l'instant précis de la détection du mot de réveil.
+Hypothèse testée puis infirmée : ce découpage tombait dans le silence qui suit le mot de
+réveil, avant l'attaque du mot suivant — il n'amputait donc pas la commande. Transcrire
+l'énoncé complet (mot de réveil compris) reste néanmoins l'architecture retenue : plus de
+contexte pour Whisper, meilleure reconnaissance du mot de réveil lui-même (vérifié : «
+Jarvis » reconnu correctement en contexte de phrase complète, contre « Javis »/« j'avise »
+isolé). `WhisperWakeWordEngine.getLastAnalyzedWindow()` expose l'audio qui a déclenché la
+détection ; `useVoice.ts` le transmet en préfixe au moteur de dictée
+(`SpeechToTextController.markPrefixEnd()` marque où il s'arrête, pour que la garde
+anti-hallucination sur un énoncé silencieux — voir plus bas — ne porte que sur l'audio
+réellement capturé après, jamais sur le préfixe qui contient forcément de la parole) ; le
+mot de réveil est ensuite retiré du **texte** obtenu (`stripLeadingWakeWord`, dans
+`packages/core`), jamais de l'audio.
+
+**Garde anti-hallucination.** Whisper, comme tout modèle de ce type, peut halluciner une
+phrase sans rapport en boucle sur du bruit de fond pur — vérifié en pratique sur un énoncé
+« mot de réveil, puis silence ». `LocalWhisperSttProvider` vérifie l'amplitude de crête de
+l'audio capturé après le préfixe avant de solliciter Whisper ; en dessous d'un seuil,
+aucune transcription n'est tentée (`onFinal('')`, traité comme « rien à dire »).
+
+**Limite constatée et non maquillée : la qualité de la dictée locale reste imparfaite sur
+certaines prononciations.** Sur l'enregistrement réel utilisé pour vérifier l'architecture
+(« Jarvis, ouvre Chrome »), le mot de réveil est détecté et retiré correctement, mais
+« ouvre » est systématiquement transcrit « ouf »/« off »/« oof » — testé sur 14
+configurations (`base` et `small`, français et anglais, avec ou sans découpage de l'audio,
+ré-échantillonnage haute qualité, normalisation de volume), même résultat partout. Ce n'est
+pas un bug de découpage — l'hypothèse a été vérifiée puis infirmée par des tests
+reproductibles — mais une limite réelle des modèles Whisper `base`/`small` sur cette
+prononciation précise (cohérente avec « Jarvis » lui-même entendu comme « j'avise » :
+consonnes affaiblies à l'articulation ou à la captation). Documenté ici plutôt que corrigé
+en élargissant la tolérance de correspondance texte jusqu'à ce que ce cas précis passe —
+ce qui aurait été trompeur.
+
+#### Pourquoi charger le moteur depuis un CDN, pas le paquet npm local
+
+`@huggingface/transformers` (`devDependency`, jamais empaqueté dans l'installateur — voir
+plus bas) est importé par une URL complète vers jsDelivr
+(`voice/whisper/pipelineLoader.ts`), l'hébergement officiellement documenté par le projet
+pour un usage sans bundler, plutôt que par son nom de paquet. Raison précise, vérifiée
+plutôt que supposée : le paquet `onnxruntime-web` référence son binaire WASM via
+`new URL(..., import.meta.url)`, un motif que Vite/Rollup détecte **statiquement** à la
+compilation et copie dans le paquet final — indépendamment de tout `import()` dynamique ou
+de toute configuration au runtime. Pour la variante avec accélération WebGPU (celle
+retenue ici), ce binaire pèse environ 27 Mo à lui seul.
+
+Expérience refaite pour trancher, avec les chiffres exacts : importer le paquet localement
+et forcer la variante WebAssembly la plus légère (sans WebGPU, ~14 Mo) donne un
+installateur de 101,49 Mio ; retirer en plus le rendu Vulkan de Chromium (SwiftShader et son
+chargeur, ~6,4 Mo) le fait redescendre à 99,95 Mio — sous la limite de 100 Mio, mais avec une
+marge de 51 Kio seulement, et au prix du WebGPU **et** du Vulkan. Le chargement par CDN
+donne 98,98 Mio avec WebGPU et Vulkan intacts, et une marge d'environ 1 Mio. Le compromis a
+été tranché en faveur du CDN pour cette raison précise, pas par facilité.
+
+Le hors-ligne après premier usage n'est pas qu'une intention : jsDelivr renvoie
+`Cache-Control: public, max-age=31536000, immutable` sur l'URL versionnée (jamais réécrite
+pour une version donnée) — un an de cache, sans revalidation. L'application n'utilise
+aucune session Electron personnalisée (pas de partition, pas de session en mémoire) : c'est
+la session persistante par défaut, dont le cache disque survit aux redémarrages. Après le
+tout premier chargement réussi (qui nécessite une connexion Internet, comme pour les poids
+du modèle ci-dessous), la bibliothèque elle-même est donc servie du disque local — même
+garantie que pour les poids du modèle, pas une garantie plus faible.
+
+**Modèle non embarqué, téléchargé et mis en cache au premier usage.** Les poids du modèle
+Whisper choisi (dépôts `Xenova/whisper-*` sur Hugging Face) ne sont, eux non plus, jamais
+inclus dans l'installateur : `pipeline()` les télécharge au premier appel pour un modèle
+donné, et transformers.js les met en cache lui-même (Cache API du navigateur) — les
+lancements suivants sont hors ligne. Une progression de téléchargement (pourcentage, taille
+transférée) est affichée dans les réglages (bouton « Préparer maintenant », avec barre de
+progression) et dans la barre vocale pendant l'utilisation, pour ne jamais laisser
+l'application sembler bloquée pendant ce premier téléchargement.
+
+Whisper via l'API OpenAI (`openai-whisper`, cloud, payant à l'usage — de l'ordre de
+0,006 $/minute) reste disponible comme option plus précise, jamais requise.
 
 ### Synthèse (TTS) : gratuite et vérifiée, via les voix Windows
 
@@ -281,31 +383,42 @@ renderer, sans IPC, puisqu'aucune clé n'y est nécessaire.
 
 ### Réglages disponibles
 
-Écoute permanente on/off ; mot de réveil (texte, échantillons, stratégie de comparaison,
-sensibilité, test en direct) ; moteur de détection (gabarit local / Porcupine) et sa clé
-d'accès ; microphone ; moteur de reconnaissance (STT) ; réponse vocale on/off ; moteur de
-synthèse (TTS) et voix ; une clé API OpenAI dédiée à la voix (facultative : elle réutilise
-celle du fournisseur de modèle si celui-ci est déjà OpenAI).
+Écoute permanente on/off ; mot de réveil (texte, variantes orthographiques extensibles,
+échantillons pour le gabarit par énergie, sensibilité, test en direct) ; moteur de détection
+(Whisper local / gabarit par énergie / Porcupine) et sa clé d'accès ; microphone ; moteur de
+reconnaissance (STT), avec taille de modèle Whisper et statut de téléchargement quand ce
+moteur est choisi ; réponse vocale on/off ; moteur de synthèse (TTS) et voix ; une clé API
+OpenAI dédiée à la voix (facultative : elle réutilise celle du fournisseur de modèle si
+celui-ci est déjà OpenAI).
 
 ### Coût réel de chaque brique, résumé
 
-| Brique                     | Moteur par défaut                                                               | Coût par défaut | Option payante                                     |
-| -------------------------- | ------------------------------------------------------------------------------- | --------------- | -------------------------------------------------- |
-| Détection du mot de réveil | Gabarit local (calibré)                                                         | **0 €**         | Porcupine — abonnement payant depuis le 30/06/2026 |
-| Transcription (STT)        | _(aucun moteur gratuit fonctionnel dans Electron aujourd'hui — voir ci-dessus)_ | —               | OpenAI Whisper — ≈ 0,006 $/minute                  |
-| Réponse vocale (TTS)       | Voix du système (Windows)                                                       | **0 €**         | OpenAI (synthèse) — payant à l'usage               |
+| Brique                     | Moteur par défaut                                | Coût par défaut | Option payante                                     |
+| -------------------------- | ------------------------------------------------ | --------------- | -------------------------------------------------- |
+| Détection du mot de réveil | Whisper local, par transcription                 | **0 €**         | Porcupine — abonnement payant depuis le 30/06/2026 |
+| Transcription (STT)        | Whisper local (`local-whisper`, transformers.js) | **0 €**         | OpenAI Whisper — ≈ 0,006 $/minute, plus précis     |
+| Réponse vocale (TTS)       | Voix du système (Windows)                        | **0 €**         | OpenAI (synthèse) — payant à l'usage               |
 
 ### Limites connues
 
 - La reconnaissance vocale du navigateur ne fonctionne pas dans Electron (voir ci-dessus) :
-  c'est une limite d'Electron, pas de ce code, et elle est documentée plutôt que masquée.
-- Le mot de réveil doit être calibré (au moins un échantillon, idéalement trois ou plus,
-  bouton dans les réglages) avant que l'écoute permanente puisse le détecter ; sans gabarit
-  enregistré, l'écoute reste active mais ne se réveille jamais toute seule (le champ de
-  simulation de la barre vocale permet de tester le reste du pipeline en attendant).
-- Porcupine n'a pas pu être testé de bout en bout dans cette passe : sa formule gratuite
-  ayant disparu, aucune clé d'accès valide n'était disponible pour vérifier la détection
-  réelle (seul le chemin d'erreur sans clé a pu être vérifié).
+  c'est une limite d'Electron, pas de ce code — le moteur correspondant a été retiré plutôt
+  que laissé comme piège.
+- Le premier lancement de la commande vocale (mot de réveil ou dictée, quel que soit l'ordre)
+  nécessite une connexion Internet, le temps de charger le moteur Whisper (bibliothèque,
+  ~1,3 Mo compressés, depuis un CDN) et de télécharger le modèle choisi (40 à 245 Mo selon
+  la taille). Les lancements suivants sont hors ligne — voir la section « Pourquoi charger
+  le moteur depuis un CDN » ci-dessus pour le détail et les garanties de mise en cache.
+- Sur l'enregistrement réel utilisé pour vérifier l'architecture, la commande qui suit le
+  mot de réveil (« ouvre Chrome ») reste imparfaitement transcrite (« ouf chrome ») malgré
+  un mot de réveil correctement détecté et retiré du texte — limite documentée dans la
+  section « Reconnaissance (STT) » ci-dessus, pas maquillée.
+- Le gabarit par énergie (option, plus le défaut) doit être calibré (échantillons, bouton
+  dans les réglages) avant de pouvoir détecter quoi que ce soit ; sans gabarit enregistré,
+  l'écoute reste active mais ne se réveille jamais toute seule.
+- Porcupine n'a pas pu être testé de bout en bout : sa formule gratuite ayant disparu,
+  aucune clé d'accès valide n'était disponible pour vérifier la détection réelle (seul le
+  chemin d'erreur sans clé a pu être vérifié).
 
 ## Étendre l'application
 
@@ -359,11 +472,16 @@ Même principe que pour un fournisseur de modèle, une interface par capacité :
     `packages/core/src/speech/default-registries.ts`, comme `OpenAISttProvider` ou
     `LocalTemplateWakeWordEngine` (celui-ci n'a pas besoin du DOM : il ne fait que des
     calculs sur les trames qu'on lui pousse) ;
-  - un moteur qui **a besoin du DOM, du micro ou du WebAssembly** (reconnaissance embarquée
-    du navigateur, Porcupine…) va dans `apps/desktop/src/renderer/src/voice/registries.ts`,
-    comme `LocalBrowserSttProvider` ou `PorcupineWakeWordEngine`. Charge-le en `import()`
+  - un moteur qui **a besoin du DOM, du micro ou du WebAssembly** (Porcupine, Whisper
+    local…) va dans `apps/desktop/src/renderer/src/voice/registries.ts`, comme
+    `LocalWhisperSttProvider` ou `PorcupineWakeWordEngine`. Charge-le en `import()`
     dynamique si le SDK est volumineux, pour ne pas alourdir le bundle principal — voir
-    `porcupineWakeWordEngine.ts` pour l'exemple.
+    `porcupineWakeWordEngine.ts` pour l'exemple ; si le SDK embarque en plus un binaire WASM
+    référencé via `new URL(..., import.meta.url)` (le cas d'`onnxruntime-web`, dépendance de
+    transformers.js), Vite le détecte et le copie **statiquement**, indépendamment du
+    caractère dynamique de l'`import()` — un `import()` d'une URL complète (CDN) reste, lui,
+    entièrement opaque pour le bundler : voir `whisper/pipelineLoader.ts` et la section
+    « Pourquoi charger le moteur depuis un CDN » plus haut pour le compromis retenu.
 - S'il a besoin d'une clé API, expose-la dans `VoiceBridge`
   (`apps/desktop/src/main/voice.ts`) plutôt que dans le renderer : la clé ne doit jamais
   quitter le processus principal. Exception : les clés de moteurs qui tournent entièrement
@@ -383,6 +501,15 @@ La mémoire personnelle se branche comme un outil, à la manière de la recherch
 ### Ce qui reste à valider sur une vraie machine Windows
 
 Ce dépôt est développé et testé en continu sur Linux (typecheck, tests, lint, build, et l'interface elle-même via un serveur d'affichage X). Les outils suivants dépendent d'API Windows (PowerShell, App Paths, UAC, journal d'événements) et n'ont pu être validés que par relecture, pas par exécution réelle : `list_processes` (branche `Get-Process`), `get_active_window` (branche `user32.dll`), `get_system_errors`, `open_application`/`close_application` (résolution par nom sur Windows), la corbeille Windows (`Microsoft.VisualBasic.FileIO.FileSystem`), et surtout l'élévation administrateur de `run_command` (UAC via `Start-Process -Verb RunAs` + `-EncodedCommand`). Une passe de validation sur une machine Windows réelle est nécessaire avant de considérer ces chemins de code fiables en production.
+
+Côté Whisper local, vérifié dans Electron sur Linux (téléchargement du modèle, progression,
+transcription réelle sur deux enregistrements réels — voir la section « Reconnaissance
+(STT) ») mais pas encore sur Windows : le chemin WebGPU (`navigator.gpu`, non exposé dans ce
+conteneur) n'a été exercé qu'en repli WebAssembly ; à vérifier sur une machine Windows avec
+une carte graphique compatible. La suppression du rendu logiciel Vulkan de Chromium
+(`vk_swiftshader.dll`) — évaluée puis écartée pour cette livraison, voir plus haut — reste
+une piste si l'installateur doit encore être allégé à l'avenir, mais nécessite un test réel
+sur une machine sans pilote GPU pour être validée sans risque.
 
 Côté voix, deux points précis restent à valider sur Windows, avec un vrai microphone : la qualité pratique du gabarit local (seuils de sensibilité par défaut, nombre d'échantillons nécessaires en conditions réelles) et la liste des voix `speechSynthesis` réellement exposées (SAPI vs OneCore, voir la section « Commande vocale »). Porcupine n'a pas pu être testé du tout, faute de clé d'accès valide (formule gratuite disparue) — voir la section correspondante.
 
