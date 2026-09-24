@@ -53,6 +53,11 @@ export * from './audit/types.js';
 export { buildAuditEntry, InMemoryAuditLogStore } from './audit/log.js';
 
 export { Agent, DEFAULT_SYSTEM_PROMPT, type AgentEvent, type AgentOptions } from './agent/agent.js';
+export {
+  VOICE_TRANSCRIPTION_NOTICE,
+  withVoiceOriginNotice,
+  type MessageOrigin,
+} from './agent/voiceOriginNotice.js';
 
 export * from './search/types.js';
 export { WikipediaSearchProvider, wikipediaDescriptor } from './search/providers/wikipedia.js';

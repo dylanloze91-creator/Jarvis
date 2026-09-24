@@ -33,10 +33,14 @@ export default function App() {
   const voiceRef = useRef<ReturnType<typeof useVoice> | null>(null);
   const handleAssistantFinal = useCallback((text: string) => voiceRef.current?.speak(text), []);
   const chat = useChat({ onAssistantFinal: handleAssistantFinal });
+  // Marque explicitement l'origine vocale : le modèle en est averti côté
+  // prompt système (voir `withVoiceOriginNotice`), jamais dans le texte
+  // affiché ou enregistré, qui reste la transcription telle quelle.
+  const onVoiceTranscript = useCallback((text: string) => chat.send(text, 'voice'), [chat.send]);
   const voice = useVoice({
     settings,
     voiceKeyConfigured: status?.voiceKeyConfigured ?? false,
-    onTranscript: chat.send,
+    onTranscript: onVoiceTranscript,
   });
   voiceRef.current = voice;
 

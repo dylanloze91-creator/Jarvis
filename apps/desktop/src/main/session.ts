@@ -6,6 +6,7 @@ import {
   newConversation,
   randomId,
   withMessages,
+  withVoiceOriginNotice,
   type AuditLogStore,
   type ChatMessage,
   type ConfirmationRequest,
@@ -83,7 +84,10 @@ export class ChatSession {
 
     const { provider } = this.deps.registry.createOrFallback(settings);
     const agent = new Agent(provider, this.deps.tools, {
-      systemPrompt: settings.systemPrompt,
+      // La note d'origine vocale ne vit que dans ce prompt système, transmis
+      // au modèle pour ce tour : elle n'est jamais écrite dans `userMessage`
+      // ni dans `messages`, donc jamais affichée ni persistée.
+      systemPrompt: withVoiceOriginNotice(settings.systemPrompt, input.source ?? 'text'),
       temperature: settings.temperature,
     });
 

@@ -41,6 +41,13 @@ export const IpcChannel = {
 export interface SendChatInput {
   conversationId: string | null;
   text: string;
+  /**
+   * Origine du message : `voice` pour la reconnaissance vocale, `text` pour
+   * le clavier (défaut). Sert uniquement à avertir le modèle, dans le prompt
+   * système, que le texte peut contenir des erreurs de transcription — ne
+   * touche jamais le contenu affiché ni celui persisté dans l'historique.
+   */
+  source?: 'voice' | 'text';
 }
 
 export interface ToolInfo {

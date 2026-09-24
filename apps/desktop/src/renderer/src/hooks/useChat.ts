@@ -107,11 +107,11 @@ export function useChat(options: UseChatOptions = {}) {
   }, []);
 
   const send = useCallback(
-    (text: string) => {
+    (text: string, source: 'voice' | 'text' = 'text') => {
       const trimmed = text.trim();
       if (trimmed.length === 0 || busy) return;
       setBusy(true);
-      void window.jarvis.chat.send({ conversationId, text: trimmed });
+      void window.jarvis.chat.send({ conversationId, text: trimmed, source });
     },
     [busy, conversationId],
   );
