@@ -5,6 +5,7 @@ electronVersion: 44.4.5
 directories:
   buildResources: resources
   output: release
+compression: maximum
 files:
   - out/**
   - resources/**
@@ -16,21 +17,29 @@ files:
   # points suivants.
   - '!node_modules/@jarvis/core/src/**'
   - '!node_modules/@jarvis/core/tsconfig.json'
-  # @huggingface/transformers et @picovoice/porcupine-web sont chargés par
-  # le renderer (CDN pour le premier, chunk Vite pour le second) — jamais
-  # par require() côté main/preload — donc `devDependencies` (voir
-  # apps/desktop/package.json) : électron-builder ne les inclut alors plus
-  # du tout. Ces deux exclusions ne sont qu'un filet de sécurité si l'un
-  # d'eux redevenait un jour une dépendance de production par erreur —
-  # onnxruntime-node (transitif de transformers.js) pèse ~550 Mo à lui
-  # seul (tous binaires natifs multiplateformes confondus) et a fait
-  # dépasser l'installateur à plus de 600 Mo le temps de le corriger.
+  # @huggingface/transformers et onnxruntime-web sont bundlés par Vite dans le
+  # renderer (devDependencies) : jamais chargés par require() côté main. Ces
+  # exclusions ne sont qu'un filet de sécurité — onnxruntime-node (transitif
+  # de transformers.js) pèse ~550 Mo à lui seul.
   - '!node_modules/@huggingface/**'
   - '!node_modules/onnxruntime-node/**'
   - '!node_modules/onnxruntime-common/**'
+  - '!node_modules/onnxruntime-web/**'
   - '!node_modules/sharp/**'
   - '!node_modules/@img/**'
-  - '!node_modules/@picovoice/**'
+  # Filet de sécurité : aucun modèle ni runtime voix dans l'asar.
+  - '!**/*.onnx'
+  - '!**/*.wasm'
+# Runtime ONNX, Whisper et openWakeWord : à côté de app.asar, lus par le
+# protocole jarvis-oww: (voir voice-assets/README.md). Jamais dans l'asar :
+# Chromium ne peut pas fetch un .onnx à l'intérieur (ERROR_CODE 6).
+extraResources:
+  - from: voice-assets/ort
+    to: ort
+  - from: voice-assets/whisper
+    to: whisper
+  - from: voice-assets/openwakeword
+    to: openwakeword
 afterPack: scripts/after-pack.cjs
 extraMetadata:
   main: out/main/index.js
@@ -39,16 +48,36 @@ win:
     - target: nsis
       arch: [x64]
   icon: resources/icon.png
+  artifactName: Jarvis-Setup-${version}.${ext}
 nsis:
-  oneClick: false
+  oneClick: true
   perMachine: false
-  allowToChangeInstallationDirectory: true
-  createDesktopShortcut: true
+  language: "1036"
+  installerLanguages:
+    - fr
+  displayLanguageSelector: false
+  createDesktopShortcut: always
+  createStartMenuShortcut: true
   shortcutName: Jarvis
+  runAfterFinish: true
+  # Généré pour electron-updater (blockmap + latest.yml sur GitHub).
+  # L'utilisateur n'a besoin que de l'exe.
   differentialPackage: true
+# Alimente à la fois `electron-builder --publish` (dépose l'installateur,
+# son .blockmap et latest.yml sur une publication GitHub) et, à l'exécution,
+# le fichier `app-update.yml` qu'electron-updater lit pour savoir où chercher
+# une nouvelle version — les deux sont générés à partir de cette même
+# configuration, il n'y a rien d'autre à dupliquer côté application.
+#
+# `releaseType: release` : la publication créée par `--publish always` est
+# immédiatement visible par electron-updater (une publication `draft`,
+# valeur par défaut d'electron-builder, resterait invisible pour les
+# utilisateurs tant que quelqu'un ne cliquerait pas manuellement sur
+# « Publish release » sur GitHub — ce qui recréerait exactement le geste
+# manuel que cette fonctionnalité doit supprimer). Revenir à `draft` si une
+# relecture humaine avant publication devient nécessaire.
 publish:
   provider: github
   owner: dylanloze91-creator
   repo: Jarvis
   releaseType: release
-

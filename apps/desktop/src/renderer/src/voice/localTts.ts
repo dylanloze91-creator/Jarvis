@@ -48,13 +48,29 @@ export class LocalBrowserTtsProvider implements TextToSpeechProvider {
       : undefined;
     if (match) utterance.voice = match;
 
-    utterance.onstart = () => handlers.onStart?.();
-    utterance.onend = () => handlers.onEnd?.();
-    utterance.onerror = (event) => handlers.onError(`Erreur de synthèse vocale : ${event.error}`);
+    // `cancel()` (bouton « Couper », ou nouvelle réponse qui remplace
+    // l'ancienne) fait lever `interrupted` / `canceled` : ce n'est pas une
+    // panne, et l'ancienne phrase ne doit plus toucher à l'état de la voix.
+    let stopped = false;
+    utterance.onstart = () => {
+      if (!stopped) handlers.onStart?.();
+    };
+    utterance.onend = () => {
+      if (!stopped) handlers.onEnd?.();
+    };
+    utterance.onerror = (event) => {
+      if (stopped || event.error === 'interrupted' || event.error === 'canceled') return;
+      handlers.onError(`Erreur de synthèse vocale : ${event.error}`);
+    };
 
     window.speechSynthesis.speak(utterance);
 
-    return { stop: () => window.speechSynthesis.cancel() };
+    return {
+      stop: () => {
+        stopped = true;
+        window.speechSynthesis.cancel();
+      },
+    };
   }
 }
 

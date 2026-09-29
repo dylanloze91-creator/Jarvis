@@ -1,5 +1,7 @@
 export * from './types.js';
 export * from './settings.js';
+export * from './personalization/index.js';
+export * from './knowledge/index.js';
 
 export * from './providers/types.js';
 export { MockProvider, mockDescriptor } from './providers/mock.js';
@@ -52,7 +54,15 @@ export {
 export * from './audit/types.js';
 export { buildAuditEntry, InMemoryAuditLogStore } from './audit/log.js';
 
-export { Agent, DEFAULT_SYSTEM_PROMPT, type AgentEvent, type AgentOptions } from './agent/agent.js';
+export {
+  Agent,
+  DEFAULT_SYSTEM_PROMPT,
+  composeSystemPrompt,
+  isSpotifyToolName,
+  looksLikeWebResearchIntent,
+  type AgentEvent,
+  type AgentOptions,
+} from './agent/agent.js';
 export {
   VOICE_TRANSCRIPTION_NOTICE,
   withVoiceOriginNotice,
@@ -61,8 +71,25 @@ export {
 
 export * from './search/types.js';
 export { WikipediaSearchProvider, wikipediaDescriptor } from './search/providers/wikipedia.js';
+export { GoogleSearchProvider, googleDescriptor } from './search/providers/google.js';
 export { BraveSearchProvider, braveDescriptor } from './search/providers/brave.js';
 export { SearchProviderRegistry, createDefaultSearchRegistry } from './search/registry.js';
+
+export * from './media/types.js';
+export { extractSpotifyPlayQuery, isMusicIntent, searchQueryVariants } from './media/playIntent.js';
+
+export {
+  DEFAULT_SITEBLOCK_BASE_URL,
+  SITEBLOCK_TIME_PATTERN,
+  checkSiteBlockBaseUrl,
+  type SiteBlockUrlCheck,
+} from './siteblock/url.js';
+export {
+  extractSiteBlockIntent,
+  normalizeSiteBlockDomain,
+  type SiteBlockToolPlan,
+} from './siteblock/intent.js';
+export { SITEBLOCK_SYSTEM_PROMPT_FRAGMENT, withSiteBlockPrompt } from './siteblock/prompt.js';
 
 export * from './market/types.js';
 export {
@@ -72,8 +99,47 @@ export {
 export { FinnhubMarketDataProvider, finnhubDescriptor } from './market/providers/finnhub.js';
 export { MarketDataProviderRegistry, createDefaultMarketDataRegistry } from './market/registry.js';
 
+export { extractYoutubeUrl, parseYoutubeVideoId } from './youtube/url.js';
+export {
+  NO_CAPTIONS_ERROR,
+  captionTracksFromPlayer,
+  fetchYoutubeTranscript,
+  loadYoutubePlayer,
+  orderCaptionTracks,
+  parseCaptionPayload,
+  pickCaptionTrack,
+  readBestCaption,
+  titleFromPlayer,
+} from './youtube/captions.js';
+export { listAudioOnlyFormats, pickAudioOnlyFormat } from './youtube/audioFormat.js';
+export { splitTranscript } from './youtube/chunk.js';
+export { IMPORTANCE_RUBRIC, chunkPrompt, mergePrompt } from './youtube/rubric.js';
+export { detectVideoDomain, FINANCE_DISCLAIMER, type VideoDomain } from './youtube/domain.js';
+export { formatMediaTimestamp, joinTimedParts, type TimedTranscriptPart } from './youtube/timed.js';
+export { dropSentencesWithInventedNumbers, numbersIn } from './youtube/numbers.js';
+export { condenseTranscript, type TextComplete } from './youtube/summarize.js';
+export {
+  CAPTION_FALLBACK_NOTICE,
+  summarizeYoutubeVideo,
+  type YoutubeSummaryDeps,
+} from './youtube/listen.js';
+export { resolveLocalSummaryModel } from './youtube/localModel.js';
+
 export { extractReadableText, type ReadablePage } from './web/readableText.js';
 export { checkUrlSafety, isPrivateIpAddress, type UrlSafetyResult } from './web/urlSafety.js';
+
+export { classifyUpdateError } from './update/errorClassifier.js';
+export {
+  compareSemver,
+  githubLatestYmlUrl,
+  interpretLatestYmlResponse,
+  parseLatestYmlVersion,
+  GITHUB_UPDATES_OWNER,
+  GITHUB_UPDATES_REPO,
+  type UpdateFeedInterpretation,
+  type UpdateFeedKind,
+} from './update/feed.js';
+export type { UpdateFailure, UpdateFailureKind } from './update/types.js';
 
 export {
   InMemoryConversationStore,
@@ -85,11 +151,7 @@ export {
 
 export * from './speech/types.js';
 export { SpeechToTextRegistry, TextToSpeechRegistry } from './speech/registry.js';
-export {
-  createDefaultSttRegistry,
-  createDefaultTtsRegistry,
-  createDefaultWakeWordEngineRegistry,
-} from './speech/default-registries.js';
+export { createDefaultSttRegistry, createDefaultTtsRegistry } from './speech/default-registries.js';
 export { OpenAISttProvider, openAISttDescriptor } from './speech/openai-stt.js';
 export { OpenAITtsProvider, openAITtsDescriptor, OPENAI_TTS_VOICES } from './speech/openai-tts.js';
 export { concatFloat32, encodeWav, decodeWav, type DecodedWav } from './speech/wav.js';
@@ -99,48 +161,90 @@ export {
   defaultWakeWordVariants,
   matchesWakeWord,
   stripLeadingWakeWord,
+  commandAfterWakeWord,
   type WakeWordTextMatchConfig,
 } from './speech/wakeWordTextMatch.js';
 export {
   evaluateWakeWordWindow,
   peakEnergy,
+  speechDurationMs,
   defaultWakeWordTranscriptionGateOptions,
   type TranscribeWindow,
   type WakeWordTranscriptionGateOptions,
   type WakeWordTranscriptionResult,
 } from './speech/wakeWordFromTranscript.js';
+export { WHISPER_WAKE_WORD_LANGUAGE, WHISPER_DICTATION_LANGUAGE } from './speech/whisperModels.js';
 export {
-  WHISPER_STT_MODELS,
-  WHISPER_WAKE_WORD_MODEL,
-  WHISPER_WAKE_WORD_LANGUAGE,
-  DEFAULT_WHISPER_STT_MODEL_ID,
-  findWhisperModel,
-  type WhisperModelOption,
-} from './speech/whisperModels.js';
+  VOICE_ASSETS_PROTOCOL,
+  VOICE_ASSET_HOSTS,
+  ORT_WASM_MJS,
+  ORT_WASM_BINARY,
+  WHISPER_MODEL_REPO,
+  WHISPER_LOCAL_MODEL_ROOT,
+  OPENWAKEWORD_MODEL_FILES,
+  REQUIRED_VOICE_ASSETS,
+  parseVoiceAssetUrl,
+  voiceAssetContentType,
+  voiceAssetUrl,
+  type OpenWakeWordModelFile,
+  type VoiceAssetHost,
+  type VoiceAssetKind,
+  type VoiceAssetSpec,
+} from './speech/voiceAssets.js';
+export {
+  wrapWakeWordEngineWithTranscriptConfirmation,
+  confirmWakeWordCandidate,
+  type ConfirmWakeWordCandidateResult,
+  type TranscriptConfirmationOptions,
+} from './speech/confirmWakeWordCandidate.js';
+export {
+  wrapWakeWordEngineWithLoadFallback,
+  type WakeWordLoadFallbackOptions,
+} from './speech/wakeWordLoadFallback.js';
+export {
+  OPENWAKEWORD_FRAME_SIZE,
+  OPENWAKEWORD_SAMPLE_RATE,
+  openWakeWordSensitivityToThreshold,
+  describeOpenWakeWordLoadError,
+  resampleLinear,
+  takeFixedFrames,
+} from './speech/openWakeWord.js';
 export {
   WakeWordDetector,
+  SpeechBurstDetector,
   averageProfiles,
   buildWakeWordProfile,
+  buildWakeWordProfileFromPcm,
+  buildWakeWordProfilesFromPcm,
+  buildWakeWordProfileFromEnergyFrames,
+  energyFramesFromPcm,
+  extractSpeechBurstRanges,
+  paddedEnergyWindow,
+  zeroCrossingRate,
   computeRms,
   defaultWakeWordOptions,
   sensitivityToThreshold,
   thresholdToSensitivity,
   SENSITIVITY_THRESHOLD_RANGE,
   WAKE_WORD_PROFILE_LENGTH,
+  WAKE_WORD_BURST_DURATION_MS,
+  WAKE_WORD_SPEECH_ZCR,
   type WakeWordProfile,
+  type WakeWordProfileFromPcmResult,
+  type WakeWordProfilesFromPcmResult,
+  type WakeWordClipRejectReason,
+  type SpeechBurstRange,
   type WakeWordDetectorConfig,
   type WakeWordDetectorOptions,
   type WakeWordMatchStrategy,
 } from './speech/wakeword.js';
 export {
-  WakeWordEngineRegistry,
   LocalTemplateWakeWordEngine,
   createLocalTemplateWakeWordEngine,
-  localTemplateWakeWordDescriptor,
+  splitWakeWordWindow,
+  type WakeWordWindow,
   type WakeWordEngine,
   type WakeWordEngineConfig,
   type WakeWordEngineController,
-  type WakeWordEngineDescriptor,
-  type WakeWordEngineFactory,
   type WakeWordEngineHandlers,
 } from './speech/wakewordEngine.js';

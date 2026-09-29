@@ -5,6 +5,7 @@ import {
   matchesWakeWord,
   normalizeForWakeWordMatch,
   stripLeadingWakeWord,
+  commandAfterWakeWord,
 } from './wakeWordTextMatch.js';
 
 describe('normalizeForWakeWordMatch', () => {
@@ -55,6 +56,8 @@ describe('defaultWakeWordVariants', () => {
     const variants = defaultWakeWordVariants('jarvis');
     expect(variants).toContain('jarviss');
     expect(variants).toContain('djarvis');
+    expect(variants).toContain('javise');
+    expect(variants).toContain('javis');
   });
 
   it('se limite au mot lui-même pour un mot de réveil sans variantes intégrées', () => {
@@ -73,6 +76,8 @@ describe('matchesWakeWord', () => {
     expect(matchesWakeWord('jarvice', { word: 'jarvis' })).toBe(true);
     // Observé sur un enregistrement réel (voir test-fixtures/) : « r » avalé à la prononciation.
     expect(matchesWakeWord('javice, ouvre Chrome', { word: 'jarvis' })).toBe(true);
+    expect(matchesWakeWord("J'avise, ouvre Chrome", { word: 'jarvis' })).toBe(true);
+    expect(matchesWakeWord('j avis', { word: 'jarvis' })).toBe(true);
   });
 
   it('détecte un mot de réveil collé à un autre mot', () => {
@@ -113,7 +118,28 @@ describe('matchesWakeWord', () => {
   });
 });
 
+describe('commandAfterWakeWord', () => {
+  const cfg = { word: 'jarvis' };
+  it('un seul mot mal orthographié après un réveil confirmé n’est pas une commande', () => {
+    expect(commandAfterWakeWord("J'arrive!", cfg)).toBe('');
+    expect(commandAfterWakeWord('Javis Javis Javis', cfg)).toBe('');
+    expect(commandAfterWakeWord("J'arvisse", cfg)).toBe('');
+  });
+  it('garde la commande après le mot de réveil, même d’un seul mot', () => {
+    expect(commandAfterWakeWord('Jarvis, pause.', cfg)).toBe('pause.');
+    expect(commandAfterWakeWord("J'arvie qu'elle aurait-il?", cfg)).toBe("qu'elle aurait-il?");
+    expect(commandAfterWakeWord("J'avis ouf crôme", cfg)).toBe('ouf crôme');
+    expect(commandAfterWakeWord('la vie ou recromb.', cfg)).toBe('la vie ou recromb.');
+  });
+});
+
 describe('stripLeadingWakeWord', () => {
+  it('retire les répétitions du mot de réveil en tête (prises « Javis Javis Javis »)', () => {
+    expect(stripLeadingWakeWord('Javis Javis Javis Javis Javis', { word: 'jarvis' })).toBe('');
+    expect(stripLeadingWakeWord('Jarvis, Jarvis, ouvre Chrome', { word: 'jarvis' })).toBe('ouvre Chrome');
+    expect(stripLeadingWakeWord("J'arvie qu'elle aurait-il?", { word: 'jarvis' })).toBe("qu'elle aurait-il?");
+  });
+
   it('retire le mot de réveil en tête, avec sa ponctuation collée', () => {
     expect(stripLeadingWakeWord('Jarvis, ouvre Chrome', { word: 'jarvis' })).toBe('ouvre Chrome');
   });
@@ -155,8 +181,9 @@ describe('stripLeadingWakeWord', () => {
   });
 
   it('respecte une distance maximale personnalisée', () => {
+    // « jarvus » n'est pas une variante intégrée : seul le flou s'applique.
     expect(
-      stripLeadingWakeWord("J'avise ouf Chrome", { word: 'jarvis', maxDistance: () => 0 }),
-    ).toBe("J'avise ouf Chrome");
+      stripLeadingWakeWord('jarvus ouf Chrome', { word: 'jarvis', maxDistance: () => 0 }),
+    ).toBe('jarvus ouf Chrome');
   });
 });

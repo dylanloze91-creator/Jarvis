@@ -15,13 +15,36 @@ import { openApplicationTool, closeApplicationTool } from './applications.js';
 import { moveFileTool, copyFileTool, deleteFileTool } from './filesystem.js';
 import { takeScreenshotTool } from './screenshot.js';
 import { runCommandTool } from './shell.js';
-import { createWebSearchTool, fetchPageTool } from './web.js';
+import { createWebSearchTool, createWebResearchTool, fetchPageTool } from './web.js';
 import { createGetStockQuoteTool } from './stocks.js';
+import { createSpotifyTools } from './spotify.js';
+import { createYoutubeTranscriptTool } from './youtube.js';
+import type { SpotifyBridge } from '../media/SpotifyBridge.js';
+import type { SiteBlockBridge } from '../siteblock/SiteBlockBridge.js';
+import { createSiteBlockTools } from './siteblock.js';
+import type { PersonalizationStore } from '../personalization.js';
+import { createPersonalizationTools } from './personalization.js';
+import type { KnowledgeStore } from '../knowledge.js';
+import { createKnowledgeTools } from './knowledge.js';
+
+export interface YoutubeSummarize {
+  (
+    url: string,
+    onProgress: (message: string) => void,
+    signal?: AbortSignal,
+  ): Promise<{ ok: boolean; content: string }>;
+}
 
 export interface ToolManagerDeps {
   getSettings: () => Settings;
   searchRegistry: SearchProviderRegistry;
   marketDataRegistry: MarketDataProviderRegistry;
+  spotify: SpotifyBridge;
+  siteBlock: SiteBlockBridge;
+  personalization: PersonalizationStore;
+  knowledge: KnowledgeStore;
+  /** Écoute YouTube. Absent dans les tests qui ne construisent pas le catalogue complet. */
+  summarizeYoutube?: YoutubeSummarize;
 }
 
 /**
@@ -39,8 +62,21 @@ export function createToolManager(deps: ToolManagerDeps): ToolManager {
     readFileTool,
     getSystemErrorsTool,
     createWebSearchTool(deps),
+    createWebResearchTool(deps),
     fetchPageTool,
+    createYoutubeTranscriptTool({
+      summarize:
+        deps.summarizeYoutube ??
+        (async () => ({
+          ok: false,
+          content: "L'écoute YouTube n'est pas disponible dans ce processus.",
+        })),
+    }),
     createGetStockQuoteTool(deps),
+    ...createSpotifyTools(deps),
+    ...createSiteBlockTools(deps),
+    ...createPersonalizationTools(deps.personalization),
+    ...createKnowledgeTools(deps.knowledge, deps.getSettings),
     // Action — niveau confirm
     createFolderTool,
     openApplicationTool,

@@ -14,6 +14,11 @@ import { Lock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Field, Input, Select, Textarea, Toggle } from '@/components/ui/field';
 import { OllamaSettingsSection } from '@/components/OllamaSettings';
+import { SpotifySettingsSection } from '@/components/SpotifySettings';
+import { SiteBlockSettingsSection } from '@/components/SiteBlockSettings';
+import { PersonalizationSettingsSection } from '@/components/PersonalizationSettings';
+import { KnowledgeSettingsSection } from '@/components/KnowledgeSettings';
+import { UpdateSettingsSection } from '@/components/UpdateSettings';
 import { VoiceSettingsSection } from '@/components/VoiceSettings';
 import type { RuntimeStatus } from '../../../shared/ipc';
 
@@ -138,7 +143,9 @@ export function SettingsPanel({ settings, status, onSaved }: SettingsPanelProps)
           Recherche &amp; données boursières
         </span>
         <p className="text-xs leading-snug text-slate-500">
-          Utilisés par les outils « web_search », « fetch_page » et « get_stock_quote ».
+          Utilisés par les outils « web_search », « web_research », « fetch_page » et
+          « get_stock_quote ». Google fonctionne sans clé. Brave Search (optionnel) demande une
+          clé gratuite dans le champ ci-dessous.
         </p>
       </div>
 
@@ -196,11 +203,46 @@ export function SettingsPanel({ settings, status, onSaved }: SettingsPanelProps)
         </Field>
       ) : null}
 
+      <div className="mt-1 flex flex-col gap-1">
+        <span className="text-[11px] font-medium tracking-wide text-slate-400 uppercase">
+          Musique
+        </span>
+        <p className="text-xs leading-snug text-slate-500">
+          Utilisé par les huit outils « spotify_* » : recherche et lecture, pause, reprise, morceau
+          suivant/précédent, volume, mode aléatoire, morceau en cours.
+        </p>
+      </div>
+
+      <SpotifySettingsSection
+        clientId={draft.spotifyClientId}
+        onChange={(spotifyClientId) => patch({ spotifyClientId })}
+      />
+
+      <div className="mt-1 flex flex-col gap-1">
+        <span className="text-[11px] font-medium tracking-wide text-slate-400 uppercase">
+          Blocage de sites
+        </span>
+        <p className="text-xs leading-snug text-slate-500">
+          Utilisé par les outils « siteblock_* » : mode travail, liste de sites, créneaux. Toute
+          modification de règle demande une confirmation, même si tu as mis Applications à « jamais
+          ».
+        </p>
+      </div>
+
+      <SiteBlockSettingsSection
+        baseUrl={draft.siteBlockBaseUrl}
+        token={draft.siteBlockToken}
+        onChange={(values) => patch(values)}
+      />
+
       <Field label="Raccourci global" hint="Exemples : Control+Space, Alt+J, Super+K.">
         <Input value={draft.hotkey} onChange={(event) => patch({ hotkey: event.target.value })} />
       </Field>
 
-      <Field label="Personnalité" hint="Instructions envoyées au modèle à chaque conversation.">
+      <Field
+        label="Personnalité"
+        hint="Instructions envoyées au modèle à chaque conversation. Distinct de la mémoire persistante ci-dessous, qui survit aux conversations et au changement de modèle Ollama."
+      >
         <Textarea
           rows={4}
           value={draft.systemPrompt}
@@ -208,11 +250,15 @@ export function SettingsPanel({ settings, status, onSaved }: SettingsPanelProps)
         />
       </Field>
 
+      <PersonalizationSettingsSection />
+
+      <KnowledgeSettingsSection />
+
       <Toggle
-        label="Masquer à la perte de focus"
-        hint="Comportement de lanceur, comme la recherche Windows."
-        checked={draft.hideOnBlur}
-        onChange={(hideOnBlur) => patch({ hideOnBlur })}
+        label="Rester ouverte"
+        hint="La fenêtre reste visible si tu cliques dans une autre application. Masquage uniquement par Ctrl+Espace, Échap, ou le bouton fermer."
+        checked={draft.stayVisibleOnBlur}
+        onChange={(stayVisibleOnBlur) => patch({ stayVisibleOnBlur })}
       />
 
       <Toggle
@@ -220,6 +266,8 @@ export function SettingsPanel({ settings, status, onSaved }: SettingsPanelProps)
         checked={draft.launchAtLogin}
         onChange={(launchAtLogin) => patch({ launchAtLogin })}
       />
+
+      <UpdateSettingsSection />
 
       <div className="flex flex-col gap-3 border-t border-white/8 pt-4">
         <div>
@@ -257,9 +305,10 @@ export function SettingsPanel({ settings, status, onSaved }: SettingsPanelProps)
         <div className="flex items-start gap-2 rounded-lg border border-white/8 bg-white/[0.03] px-3 py-2.5">
           <Lock className="mt-0.5 size-3.5 shrink-0 text-slate-500" />
           <p className="text-xs leading-snug text-slate-500">
-            La suppression de fichiers, l’élévation administrateur et l’exécution de commandes (
-            <code className="text-slate-400">run_command</code>) demandent toujours une
-            confirmation. Ce réglage n’est pas modifiable, quelle que soit la politique choisie
+            La suppression de fichiers, l’élévation administrateur, l’exécution de commandes (
+            <code className="text-slate-400">run_command</code>), les règles de blocage de sites,
+            l’indexation d’un dossier et l’effacement de la mémoire documentaire demandent toujours
+            une confirmation. Ce réglage n’est pas modifiable, quelle que soit la politique choisie
             ci-dessus.
           </p>
         </div>

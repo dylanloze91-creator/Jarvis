@@ -1,5 +1,6 @@
 import {
-  stripLeadingWakeWord,
+  commandAfterWakeWord,
+  splitWakeWordWindow,
   type Settings,
   type SpeechToTextProvider,
   type TextToSpeechController,
@@ -16,8 +17,8 @@ import {
   startAudioCapture,
   type AudioCaptureHandle,
 } from './audioCapture';
-import { createSttRegistry, createTtsRegistry, createWakeWordEngineRegistry } from './registries';
-import { describeWhisperProgress, subscribeWhisperProgress } from './whisper/pipelineLoader';
+import { createSttRegistry, createTtsRegistry, createWakeWordEngine } from './registries';
+import { describeWhisperProgress, getWhisperPipeline, subscribeWhisperProgress } from './whisper/pipelineLoader';
 
 export type VoiceState = 'idle' | 'sleeping' | 'listening' | 'speaking' | 'error';
 
@@ -48,8 +49,6 @@ export interface UseVoiceResult {
    */
   whisperStatus: string | null;
   speakingText: string | null;
-  /** Injecte un texte comme s'il avait été transcrit, pour démonstration sans microphone. */
-  simulate: (text: string) => void;
   /** Coupe la réponse vocale en cours. */
   stopSpeaking: () => void;
   /** Lit un texte à voix haute avec le moteur configuré (branché sur la fin d'un tour de conversation). */
@@ -82,7 +81,6 @@ export function useVoice({
 
   const sttRegistry = useMemo(() => createSttRegistry(), []);
   const ttsRegistry = useMemo(() => createTtsRegistry(), []);
-  const wakeWordRegistry = useMemo(() => createWakeWordEngineRegistry(), []);
 
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
@@ -104,7 +102,7 @@ export function useVoice({
    * comme une commande.
    */
   const pendingWakeWordStripRef = useRef<{ word: string; variants: string[] } | null>(null);
-  const silenceSinceRef = useRef<number | null>(null);
+  const silenceMsRef = useRef<number | null>(null);
   const maxDurationTimerRef = useRef<number | null>(null);
   const ttsControllerRef = useRef<TextToSpeechController | null>(null);
   const audioElementRef = useRef<HTMLAudioElement | null>(null);
@@ -122,7 +120,6 @@ export function useVoice({
     return sttRegistry.create({
       provider: eligible ? requestedId : 'local-whisper',
       apiKey: voiceKeyConfiguredRef.current ? 'configured' : '',
-      model: current?.voice.sttModel,
     });
   }, [sttRegistry]);
 
@@ -139,19 +136,13 @@ export function useVoice({
 
   const resolveWakeWordEngine = useCallback((): WakeWordEngine => {
     const voice = settingsRef.current?.voice;
-    const requestedId = voice?.wakeWordEngine ?? 'whisper-transcript';
-    const descriptor = wakeWordRegistry.describe(requestedId);
-    const accessKey = voice?.wakeWordAccessKey?.trim() ?? '';
-    const eligible = descriptor && (!descriptor.requiresApiKey || accessKey.length > 0);
-    return wakeWordRegistry.create({
-      provider: eligible ? requestedId : 'whisper-transcript',
-      apiKey: accessKey,
+    return createWakeWordEngine({
       keyword: voice?.wakeWord ?? 'jarvis',
       detectorConfig: buildWakeWordDetectorConfig(voice),
-      sensitivity: voice?.wakeWordSensitivity ?? 0.5,
+      sensitivity: voice?.wakeWordSensitivity ?? 0.7,
       variants: voice?.wakeWordVariants ?? [],
     });
-  }, [wakeWordRegistry]);
+  }, []);
 
   const backToSleepOrIdle = useCallback(() => {
     setVoiceState(settingsRef.current?.voice.enabled ? 'sleeping' : 'idle');
@@ -171,7 +162,7 @@ export function useVoice({
       setLiveTranscript('');
       const pendingStrip = pendingWakeWordStripRef.current;
       pendingWakeWordStripRef.current = null;
-      const command = pendingStrip ? stripLeadingWakeWord(text, pendingStrip) : text;
+      const command = pendingStrip ? commandAfterWakeWord(text, pendingStrip) : text;
       const trimmed = command.trim();
       if (trimmed) onTranscriptRef.current(trimmed);
       backToSleepOrIdle();
@@ -188,7 +179,7 @@ export function useVoice({
     if (stateRef.current !== 'sleeping') return;
     setVoiceState('listening');
     setLiveTranscript('');
-    silenceSinceRef.current = null;
+    silenceMsRef.current = null;
 
     const provider = resolveStt();
     sttOwnsCaptureRef.current = provider.managesOwnCapture;
@@ -207,7 +198,7 @@ export function useVoice({
     sttControllerRef.current = controller;
 
     // Préfixe la dictée avec l'audio qui a déclenché le mot de réveil, quand
-    // le moteur le conserve (`WhisperWakeWordEngine`) : Whisper transcrit
+    // le moteur le conserve : Whisper transcrit
     // ainsi l'énoncé complet — mot de réveil compris — plutôt que l'audio
     // coupé pile à l'instant de la détection, ce qui lui donne plus de
     // contexte (meilleure reconnaissance du mot de réveil lui-même) et évite
@@ -216,8 +207,10 @@ export function useVoice({
     // `finalizeTranscript` et `stripLeadingWakeWord`.
     const lastWindow = wakeWordControllerRef.current?.getLastAnalyzedWindow?.();
     if (lastWindow && !provider.managesOwnCapture) {
-      controller.pushAudio?.(lastWindow.pcm, lastWindow.sampleRate);
+      const { prefix, command } = splitWakeWordWindow(lastWindow);
+      controller.pushAudio?.(prefix, lastWindow.sampleRate);
       controller.markPrefixEnd?.();
+      if (command.length > 0) controller.pushAudio?.(command, lastWindow.sampleRate);
       const voice = settingsRef.current?.voice;
       pendingWakeWordStripRef.current = {
         word: voice?.wakeWord ?? 'jarvis',
@@ -254,12 +247,13 @@ export function useVoice({
       if (stateRef.current === 'listening') {
         if (!sttOwnsCaptureRef.current) sttControllerRef.current?.pushAudio?.(frame, sampleRate);
 
-        const now = performance.now();
+        // Durée mesurée en audio, pas à l'horloge : après une inférence
+        // Whisper, les trames retenues arrivent d'un coup.
         if (rms < SILENCE_RMS) {
-          if (silenceSinceRef.current === null) silenceSinceRef.current = now;
-          else if (now - silenceSinceRef.current > SILENCE_MS) finishListening();
+          silenceMsRef.current = (silenceMsRef.current ?? 0) + (frame.length / sampleRate) * 1000;
+          if (silenceMsRef.current > SILENCE_MS) finishListening();
         } else {
-          silenceSinceRef.current = null;
+          silenceMsRef.current = null;
         }
       }
     },
@@ -321,15 +315,14 @@ export function useVoice({
     // réveil est (re)configuré par l'effet suivant, sans rouvrir le micro.
   }, [settings?.voice.enabled, settings?.voice.microphoneId]);
 
-  // Reconfigure le moteur de mot de réveil (gabarits, sensibilité, stratégie,
-  // moteur choisi, clé Porcupine) sans redémarrer la capture audio.
+  // Reconfigure le mot de réveil (gabarits, sensibilité, stratégie,
+  // variantes) sans redémarrer la capture audio.
   const wakeWordConfigKey = JSON.stringify({
-    engine: settings?.voice.wakeWordEngine,
     word: settings?.voice.wakeWord,
     profiles: settings?.voice.wakeWordProfiles,
     strategy: settings?.voice.wakeWordMatchStrategy,
     sensitivity: settings?.voice.wakeWordSensitivity,
-    accessKey: settings?.voice.wakeWordAccessKey,
+    variants: settings?.voice.wakeWordVariants,
   });
   useEffect(() => {
     if (stateRef.current === 'sleeping' && captureRef.current) startWakeWordEngine();
@@ -392,11 +385,6 @@ export function useVoice({
     [backToSleepOrIdle, playClip, resolveTts, setVoiceState, stopSpeaking],
   );
 
-  const simulate = useCallback((text: string) => {
-    const trimmed = text.trim();
-    if (trimmed) onTranscriptRef.current(trimmed);
-  }, []);
-
   useEffect(() => stopCapture, [stopCapture]);
 
   // Abonnement global au chargement des modèles Whisper (dictée et mot de
@@ -413,6 +401,13 @@ export function useVoice({
     });
   }, []);
 
+  useEffect(() => {
+    if (!settings?.voice.enabled) return;
+    void getWhisperPipeline().catch(() => {
+      // L'erreur est déjà affichée via subscribeWhisperProgress.
+    });
+  }, [settings?.voice.enabled]);
+
   return {
     state,
     level,
@@ -420,7 +415,6 @@ export function useVoice({
     micError,
     whisperStatus,
     speakingText,
-    simulate,
     stopSpeaking,
     speak,
     listMicrophones,

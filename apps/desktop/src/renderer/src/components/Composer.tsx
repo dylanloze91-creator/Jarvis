@@ -1,4 +1,4 @@
-import { ArrowUp, Square } from 'lucide-react';
+import { ArrowUp, Square, Sparkles } from 'lucide-react';
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { Button } from '@/components/ui/button';
 
@@ -42,31 +42,37 @@ export function Composer({ busy, onSend, onCancel }: ComposerProps) {
   };
 
   return (
-    <div className="no-drag flex items-end gap-2 border-t border-white/8 bg-black/20 px-3 py-2.5">
-      <textarea
-        ref={textarea}
-        rows={1}
-        value={value}
-        onChange={(event) => setValue(event.target.value)}
-        onKeyDown={onKeyDown}
-        placeholder="Demande quelque chose à Jarvis…"
-        className="max-h-35 flex-1 resize-none bg-transparent px-1 py-1.5 text-sm text-slate-100 outline-none placeholder:text-slate-500"
-      />
-      {busy ? (
-        <Button variant="subtle" size="icon" onClick={onCancel} title="Interrompre">
-          <Square className="size-3.5 fill-current" />
-        </Button>
-      ) : (
-        <Button
-          variant="default"
-          size="icon"
-          onClick={submit}
-          disabled={value.trim().length === 0}
-          title="Envoyer (Entrée)"
-        >
-          <ArrowUp className="size-4" />
-        </Button>
-      )}
+    <div className="no-drag composer-wrap">
+      <div className="composer-box">
+        <Sparkles className="composer-spark" />
+        <textarea
+          ref={textarea}
+          rows={1}
+          value={value}
+          onChange={(event) => setValue(event.target.value)}
+          onKeyDown={onKeyDown}
+          placeholder="Demande quelque chose à Jarvis…"
+        />
+        <div className="composer-meta">
+          <span>Entrée pour envoyer · Maj + Entrée pour une nouvelle ligne</span>
+          {busy ? <span className="composer-thinking">Jarvis réfléchit…</span> : null}
+        </div>
+        {busy ? (
+          <Button variant="subtle" size="icon" onClick={onCancel} title="Interrompre">
+            <Square className="size-3.5 fill-current" />
+          </Button>
+        ) : (
+          <Button
+            variant="default"
+            size="icon"
+            onClick={submit}
+            disabled={value.trim().length === 0}
+            title="Envoyer (Entrée)"
+          >
+            <ArrowUp className="size-4" />
+          </Button>
+        )}
+      </div>
     </div>
   );
 }

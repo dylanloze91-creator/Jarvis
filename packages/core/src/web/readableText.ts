@@ -54,9 +54,13 @@ export function extractReadableText(html: string, maxLength = 6000): ReadablePag
   };
 }
 
+function codePoint(code: number): string {
+  return Number.isInteger(code) && code >= 0 && code <= 0x10ffff ? String.fromCodePoint(code) : '';
+}
+
 function decodeEntities(value: string): string {
   return value
-    .replace(NUMERIC_ENTITY, (_match, code: string) => String.fromCodePoint(Number(code)))
-    .replace(HEX_ENTITY, (_match, code: string) => String.fromCodePoint(Number.parseInt(code, 16)))
+    .replace(NUMERIC_ENTITY, (_match, code: string) => codePoint(Number(code)))
+    .replace(HEX_ENTITY, (_match, code: string) => codePoint(Number.parseInt(code, 16)))
     .replace(/&([a-z]+);/gi, (match, name: string) => NAMED_ENTITIES[name.toLowerCase()] ?? match);
 }

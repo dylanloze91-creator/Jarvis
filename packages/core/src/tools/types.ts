@@ -39,6 +39,8 @@ export interface ToolContext {
   /** Politique de permissions courante. Absente = comportement le plus prudent (toujours confirmer). */
   policies?: CategoryPolicies;
   signal?: AbortSignal;
+  /** Texte français affiché dans le chat pendant un outil long (écoute YouTube, etc.). */
+  onProgress?: (message: string) => void;
 }
 
 export interface ToolResult {

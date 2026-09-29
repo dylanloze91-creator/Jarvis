@@ -41,17 +41,18 @@ export interface OllamaModelRecommendation {
 export const OLLAMA_RECOMMENDED_NUM_CTX = 8192;
 
 /**
- * Empreinte mesurée du catalogue d'outils de Jarvis (17 outils, description +
+ * Empreinte mesurée du catalogue d'outils de Jarvis (26 outils, description +
  * schéma JSON complets) sérialisé comme le fait `OllamaProvider` — mesuré via
  * `tools.schemas()` + `JSON.stringify`, converti en tokens avec
  * l'approximation usuelle 3,3 à 4 caractères par token pour un tokenizer BPE
- * de type GPT/Qwen sur du JSON technique.
+ * de type GPT/Qwen sur du JSON technique. Remesuré lors de l'intégration des
+ * huit outils Spotify, puis +1 pour `web_research` (valeurs indicatives).
  */
 export const OLLAMA_TOOL_CATALOG_FOOTPRINT = {
-  toolCount: 17,
-  jsonBytes: 9847,
-  estimatedTokensLow: 2425,
-  estimatedTokensHigh: 2939,
+  toolCount: 26,
+  jsonBytes: 11500,
+  estimatedTokensLow: 2850,
+  estimatedTokensHigh: 3500,
 } as const;
 
 export const OLLAMA_RTX2060_6GB_RECOMMENDATIONS: OllamaModelRecommendation[] = [
@@ -72,7 +73,7 @@ export const OLLAMA_RTX2060_6GB_RECOMMENDATIONS: OllamaModelRecommendation[] = [
     frenchSupport:
       "Qwen2.5 annonce officiellement le support de plus de 29 langues, français inclus, avec des scores multilingues publiés par l'équipe Qwen (IFEval, MMLU traduits).",
     notes:
-      'Tient très largement dans 6 Go, même avec la fenêtre de contexte élargie à 8192 tokens pour le catalogue de 17 outils : reste entièrement sur le GPU, aucun débordement attendu même avec Windows et son overlay actifs.',
+      'Tient très largement dans 6 Go, même avec la fenêtre de contexte élargie à 8192 tokens pour le catalogue d’outils : reste entièrement sur le GPU, aucun débordement attendu même avec Windows et son overlay actifs. Alternative plus capable, non mesurée ici : `ollama pull qwen3.5:4b` (proposé dans les suggestions Ollama).',
   },
   {
     role: 'performance',

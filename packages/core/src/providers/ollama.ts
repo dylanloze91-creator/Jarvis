@@ -32,7 +32,7 @@ export const ollamaDescriptor: ProviderDescriptor = {
   label: 'Ollama (local, gratuit)',
   requiresApiKey: false,
   defaultModel: OLLAMA_DEFAULT_MODEL,
-  suggestedModels: ['qwen2.5:3b', 'qwen2.5:7b', 'qwen2.5:1.5b', 'llama3.2:3b'],
+  suggestedModels: ['qwen2.5:3b', 'qwen3.5:4b', 'qwen2.5:7b', 'qwen2.5:1.5b'],
   defaultBaseUrl: 'http://127.0.0.1:11434',
 };
 
@@ -84,7 +84,7 @@ export class OllamaProvider implements LLMProvider {
       stream: true,
       messages: toOllamaMessages(request),
       options: {
-        temperature: request.temperature ?? 0.4,
+        temperature: request.temperature ?? 0.25,
         num_ctx: OLLAMA_RECOMMENDED_NUM_CTX,
         ...(request.maxTokens ? { num_predict: request.maxTokens } : {}),
       },

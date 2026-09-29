@@ -39,6 +39,8 @@ export interface ChatMessage {
   /** Présent sur les messages `tool`, référence l'appel auquel ils répondent. */
   toolCallId?: string;
   toolName?: string;
+  /** Présent sur les messages `tool` : un refus ne doit pas se relire « terminé » dans l'historique. */
+  toolStatus?: ToolCallOutcome['status'];
   createdAt: number;
 }
 

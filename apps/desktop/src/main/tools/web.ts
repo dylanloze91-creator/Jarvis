@@ -21,7 +21,7 @@ interface WebSearchDeps {
 
 /**
  * Recherche sur Internet : délègue au fournisseur choisi dans les réglages
- * (Wikipédia par défaut, Brave Search si une clé est renseignée) via le
+ * (Wikipédia, Google sans clé, Brave Search si une clé est renseignée) via le
  * registre `SearchProviderRegistry` de `@jarvis/core`. L'outil ne connaît
  * jamais l'implémentation concrète, ce qui permet de changer de fournisseur
  * sans toucher à ce fichier.
@@ -77,6 +77,127 @@ export function createWebSearchTool(deps: WebSearchDeps) {
       }
     },
   });
+}
+
+/**
+ * Recherche approfondie : plusieurs angles indépendants sont interrogés,
+ * les doublons sont retirés et les meilleurs résultats sont regroupés par
+ * domaine. Le modèle reste responsable de la formulation des requêtes et de
+ * la synthèse finale ; l'outil fournit un jeu de sources plus robuste qu'une
+ * requête unique. Même politique que `web_search` : lecture Internet `safe`,
+ * pas d'accès au PC.
+ */
+export function createWebResearchTool(deps: WebSearchDeps) {
+  return defineTool({
+    name: 'web_research',
+    description:
+      "Recherche approfondie sur Internet. Utilise-la pour une question complexe, actuelle ou importante nécessitant plusieurs sources. Donne 2 à 4 requêtes complémentaires (faits, source officielle, contre-vérification). L'outil déduplique et classe les résultats ; utilise ensuite fetch_page sur les sources importantes si nécessaire.",
+    risk: 'safe',
+    schema: z.object({
+      queries: z
+        .array(z.string().min(1).max(220))
+        .min(2)
+        .max(4)
+        .describe('2 à 4 requêtes complémentaires, indépendantes et précises.'),
+      limitPerQuery: z.number().int().min(2).max(6).default(4),
+    }),
+    summarize: ({ queries }) => `Recherche approfondie : ${queries.join(' | ')}`,
+    execute: async ({ queries, limitPerQuery }) => {
+      const settings = deps.getSettings();
+      const { provider, fellBack } = deps.searchRegistry.createOrFallback({
+        provider: settings.searchProvider,
+        apiKey: settings.searchApiKey,
+      });
+
+      const settled = await Promise.allSettled(
+        queries.map((query) =>
+          provider.search({
+            query,
+            limit: limitPerQuery,
+            language: 'fr',
+          }),
+        ),
+      );
+
+      const merged = settled.flatMap((item) =>
+        item.status === 'fulfilled' ? item.value.results : [],
+      );
+
+      const seen = new Set<string>();
+      const results = merged.filter((item) => {
+        const key = normalizeUrl(item.url) || `${item.title}|${item.snippet}`.toLowerCase();
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+
+      results.sort((a, b) => {
+        const domainA = sourceDomain(a.url);
+        const domainB = sourceDomain(b.url);
+        const scoreA = domainA ? 1 : 0;
+        const scoreB = domainB ? 1 : 0;
+        return scoreB - scoreA;
+      });
+
+      if (results.length === 0) {
+        const failed = settled.filter((item) => item.status === 'rejected').length;
+        return {
+          ok: false,
+          content:
+            `La recherche approfondie n'a retourné aucun résultat via ${provider.label}. ` +
+            (failed ? `${failed} requête(s) ont échoué. ` : '') +
+            'Réessaie avec des requêtes plus précises.',
+        };
+      }
+
+      const lines = results.slice(0, 12).map(
+        (result, index) =>
+          `${index + 1}. ${result.title}\n` +
+          `   Domaine : ${result.source || sourceDomain(result.url) || 'inconnu'}\n` +
+          `   Extrait : ${result.snippet || 'Aucun extrait.'}\n` +
+          `   URL : ${result.url}`,
+      );
+
+      const fallbackNote =
+        fellBack && settings.searchProvider !== provider.id
+          ? `Fournisseur configuré indisponible ; recherche effectuée via ${provider.label}.\n\n`
+          : '';
+
+      return {
+        ok: true,
+        content:
+          `${fallbackNote}Recherche multi-angle terminée via ${provider.label}.\n` +
+          `Requêtes : ${queries.join(' | ')}\n\n` +
+          `${lines.join('\n')}\n\n` +
+          'Consigne de synthèse : vérifie les affirmations importantes dans les sources originales ; ' +
+          'ne traite pas un extrait de moteur de recherche comme une preuve suffisante.',
+        data: {
+          provider: provider.id,
+          queries,
+          results: results.slice(0, 12),
+        },
+      };
+    },
+  });
+}
+
+export function normalizeUrl(raw: string): string {
+  try {
+    const url = new URL(raw);
+    url.hash = '';
+    url.hostname = url.hostname.toLowerCase();
+    return url.toString().replace(/\/+$/, '');
+  } catch {
+    return '';
+  }
+}
+
+export function sourceDomain(raw: string): string {
+  try {
+    return new URL(raw).hostname.replace(/^www\./i, '');
+  } catch {
+    return '';
+  }
 }
 
 /**

@@ -19,8 +19,36 @@ const tools: ToolSchema[] = [
   { name: 'take_screenshot', description: '', parameters: {} },
   { name: 'run_command', description: '', parameters: {} },
   { name: 'web_search', description: '', parameters: {} },
+  { name: 'web_research', description: '', parameters: {} },
   { name: 'fetch_page', description: '', parameters: {} },
+  { name: 'youtube_transcript', description: '', parameters: {} },
   { name: 'get_stock_quote', description: '', parameters: {} },
+  { name: 'spotify_play', description: '', parameters: {} },
+  { name: 'spotify_pause', description: '', parameters: {} },
+  { name: 'spotify_resume', description: '', parameters: {} },
+  { name: 'spotify_next', description: '', parameters: {} },
+  { name: 'spotify_previous', description: '', parameters: {} },
+  { name: 'spotify_set_volume', description: '', parameters: {} },
+  { name: 'spotify_set_shuffle', description: '', parameters: {} },
+  { name: 'spotify_current_track', description: '', parameters: {} },
+  { name: 'get_jarvis_personalization', description: '', parameters: {} },
+  { name: 'set_jarvis_personalization', description: '', parameters: {} },
+  { name: 'add_jarvis_personalization_rule', description: '', parameters: {} },
+  { name: 'forget_jarvis_personalization', description: '', parameters: {} },
+  { name: 'reset_jarvis_personalization', description: '', parameters: {} },
+  { name: 'search_jarvis_memory', description: '', parameters: {} },
+  { name: 'remember_jarvis', description: '', parameters: {} },
+  { name: 'index_jarvis_folder', description: '', parameters: {} },
+  { name: 'get_jarvis_memory_stats', description: '', parameters: {} },
+  { name: 'clear_jarvis_memory', description: '', parameters: {} },
+  { name: 'siteblock_get_status', description: '', parameters: {} },
+  { name: 'siteblock_set_blocking', description: '', parameters: {} },
+  { name: 'siteblock_add_domain', description: '', parameters: {} },
+  { name: 'siteblock_remove_domain', description: '', parameters: {} },
+  { name: 'siteblock_start_focus', description: '', parameters: {} },
+  { name: 'siteblock_stop_focus', description: '', parameters: {} },
+  { name: 'siteblock_add_period', description: '', parameters: {} },
+  { name: 'siteblock_remove_period', description: '', parameters: {} },
 ];
 
 async function run(messages: ChatMessage[]): Promise<ChatStreamEvent[]> {
@@ -125,6 +153,16 @@ describe('MockProvider', () => {
     expect(calls(events)[0]?.name).toBe('take_screenshot');
   });
 
+  it('planifie la capture de l’action rapide du tableau de bord', async () => {
+    const events = await run([createMessage('user', 'Prends une capture de l’écran.')]);
+    expect(calls(events)[0]).toMatchObject({ name: 'take_screenshot', arguments: { display: 0 } });
+  });
+
+  it('salue même avec une majuscule', async () => {
+    const events = await run([createMessage('user', 'Bonjour Jarvis')]);
+    expect(text(events)).toMatch(/^Bonjour\. Je suis Jarvis/);
+  });
+
   it('planifie l’ouverture d’une application par son nom courant', async () => {
     const events = await run([createMessage('user', 'Ouvre Chrome')]);
     expect(calls(events)[0]).toMatchObject({
@@ -196,6 +234,32 @@ describe('MockProvider', () => {
     });
   });
 
+  it('planifie web_research pour une demande de recherche approfondie', async () => {
+    const events = await run([
+      createMessage('user', 'Fais une recherche approfondie sur Qwen 3.5'),
+    ]);
+    expect(calls(events)[0]?.name).toBe('web_research');
+    const args = calls(events)[0]?.arguments as { queries: string[] };
+    expect(args.queries.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('planifie youtube_transcript seulement si le lien est dans le dernier message', async () => {
+    const events = await run([
+      createMessage('user', 'Résume https://youtu.be/dQw4w9WgXcQ'),
+    ]);
+    expect(calls(events)[0]).toMatchObject({
+      name: 'youtube_transcript',
+      arguments: { url: 'https://youtu.be/dQw4w9WgXcQ' },
+    });
+
+    const later = await run([
+      createMessage('user', 'Résume https://youtu.be/dQw4w9WgXcQ'),
+      createMessage('assistant', 'Condensé.'),
+      createMessage('user', 'Quelle heure est-il ?'),
+    ]);
+    expect(calls(later)[0]?.name).not.toBe('youtube_transcript');
+  });
+
   it('planifie la lecture d’une page quand une URL est fournie', async () => {
     const events = await run([
       createMessage('user', 'Peux-tu résumer cette page : https://fr.wikipedia.org/wiki/Nvidia ?'),
@@ -203,6 +267,165 @@ describe('MockProvider', () => {
     expect(calls(events)[0]).toMatchObject({
       name: 'fetch_page',
       arguments: { url: 'https://fr.wikipedia.org/wiki/Nvidia' },
+    });
+  });
+
+  it('planifie la lecture d’un morceau sur Spotify (« … sur Spotify »)', async () => {
+    const events = await run([createMessage('user', 'Lance Get Lucky de Daft Punk sur Spotify')]);
+    expect(calls(events)[0]).toMatchObject({
+      name: 'spotify_play',
+      arguments: { query: 'Get Lucky de Daft Punk' },
+    });
+  });
+
+  it('planifie la lecture d’un morceau sur Spotify (« mets du … »)', async () => {
+    const events = await run([createMessage('user', 'Mets du Daft Punk')]);
+    expect(calls(events)[0]).toMatchObject({
+      name: 'spotify_play',
+      arguments: { query: 'Daft Punk' },
+    });
+  });
+
+  it('planifie « écouter On Verra de Nekfeu » vers spotify_play (repro 0.4.2)', async () => {
+    const events = await run([createMessage('user', 'écouter On Verra de Nekfeu')]);
+    expect(calls(events)[0]).toMatchObject({
+      name: 'spotify_play',
+      arguments: { query: 'On Verra de Nekfeu' },
+    });
+  });
+
+  it('planifie « je veux écouter un versat de Necfeu » vers spotify_play', async () => {
+    const events = await run([createMessage('user', 'je veux écouter un versat de Necfeu')]);
+    expect(calls(events)[0]?.name).toBe('spotify_play');
+    expect(String(calls(events)[0]?.arguments.query)).toMatch(/versat de Necfeu/i);
+  });
+
+  it('« Lance Spotify » seul reste une ouverture d’application, pas une lecture', async () => {
+    const events = await run([createMessage('user', 'Lance Spotify')]);
+    expect(calls(events)[0]).toMatchObject({
+      name: 'open_application',
+      arguments: { name: 'Spotify' },
+    });
+  });
+
+  it('« lance Chrome » ouvre l’application, ne lance pas de morceau', async () => {
+    const events = await run([createMessage('user', 'Lance Chrome')]);
+    expect(calls(events)[0]).toMatchObject({
+      name: 'open_application',
+      arguments: { name: 'Chrome' },
+    });
+  });
+
+  it('après une lecture, un autre sujet ne reste pas sur Spotify', async () => {
+    const events = await run([
+      createMessage('user', 'écouter On Verra de Nekfeu'),
+      createMessage('assistant', 'Lecture lancée sur Spotify : On Verra.'),
+      createMessage('user', 'quelle heure est-il ?'),
+    ]);
+    expect(calls(events)[0]?.name).not.toBe('spotify_play');
+    expect(calls(events)[0]?.name).not.toBe('spotify_pause');
+  });
+
+  it('planifie la mise en pause de Spotify', async () => {
+    const events = await run([createMessage('user', 'Pause')]);
+    expect(calls(events)[0]?.name).toBe('spotify_pause');
+  });
+
+  it('planifie la reprise de la lecture Spotify', async () => {
+    const events = await run([createMessage('user', 'Reprends la musique')]);
+    expect(calls(events)[0]?.name).toBe('spotify_resume');
+  });
+
+  it('planifie le morceau Spotify suivant', async () => {
+    const events = await run([createMessage('user', 'Passe au morceau suivant')]);
+    expect(calls(events)[0]?.name).toBe('spotify_next');
+  });
+
+  it('planifie le morceau Spotify précédent', async () => {
+    const events = await run([createMessage('user', 'Reviens au morceau précédent')]);
+    expect(calls(events)[0]?.name).toBe('spotify_previous');
+  });
+
+  it('planifie le réglage du volume Spotify avec le pourcentage demandé', async () => {
+    const events = await run([createMessage('user', 'Mets le volume Spotify à 50 %')]);
+    expect(calls(events)[0]).toMatchObject({
+      name: 'spotify_set_volume',
+      arguments: { percent: 50 },
+    });
+  });
+
+  it('planifie l’activation du shuffle Spotify', async () => {
+    const events = await run([createMessage('user', 'Active le shuffle sur Spotify')]);
+    expect(calls(events)[0]).toMatchObject({
+      name: 'spotify_set_shuffle',
+      arguments: { enabled: true },
+    });
+  });
+
+  it('planifie la désactivation du shuffle Spotify', async () => {
+    const events = await run([createMessage('user', 'Désactive le mode aléatoire')]);
+    expect(calls(events)[0]).toMatchObject({
+      name: 'spotify_set_shuffle',
+      arguments: { enabled: false },
+    });
+  });
+
+  it('planifie la consultation du morceau Spotify en cours', async () => {
+    const events = await run([createMessage('user', "Qu'est-ce qui joue ?")]);
+    expect(calls(events)[0]?.name).toBe('spotify_current_track');
+  });
+
+  it('planifie « appelle-moi Monsieur » vers set_jarvis_personalization', async () => {
+    const events = await run([createMessage('user', 'Appelle-moi Monsieur.')]);
+    expect(calls(events)[0]).toMatchObject({
+      name: 'set_jarvis_personalization',
+      arguments: { scope: 'user', key: 'preferredName', value: 'Monsieur' },
+    });
+  });
+
+  it('planifie « efface toute ta personnalisation » vers reset', async () => {
+    const events = await run([createMessage('user', 'Efface toute ta personnalisation.')]);
+    expect(calls(events)[0]?.name).toBe('reset_jarvis_personalization');
+  });
+
+  it('planifie « cherche dans ta mémoire » vers search_jarvis_memory, pas web_search', async () => {
+    const events = await run([
+      createMessage('user', 'Cherche dans ta mémoire le projet SiteBlock'),
+    ]);
+    expect(calls(events)[0]).toMatchObject({
+      name: 'search_jarvis_memory',
+      arguments: { query: 'le projet SiteBlock', limit: 6 },
+    });
+  });
+
+  it('planifie « souviens-toi que » vers remember_jarvis', async () => {
+    const events = await run([
+      createMessage('user', 'Souviens-toi que le code Wi-Fi du bureau est Jarvis42'),
+    ]);
+    expect(calls(events)[0]?.name).toBe('remember_jarvis');
+  });
+
+  it('planifie « active mon mode travail » vers SiteBlock', async () => {
+    const events = await run([createMessage('user', 'active mon mode travail')]);
+    expect(calls(events)[0]).toMatchObject({
+      name: 'siteblock_start_focus',
+      arguments: { minutes: 60 },
+    });
+  });
+
+  it('planifie « bloque Instagram » vers SiteBlock', async () => {
+    const events = await run([createMessage('user', 'bloque Instagram')]);
+    expect(calls(events)[0]).toMatchObject({
+      name: 'siteblock_add_domain',
+      arguments: { domain: 'instagram.com' },
+    });
+  });
+
+  it('« Lance Chrome » n’est pas volé par SiteBlock', async () => {
+    const events = await run([createMessage('user', 'Lance Chrome')]);
+    expect(calls(events)[0]).toMatchObject({
+      name: 'open_application',
+      arguments: { name: 'Chrome' },
     });
   });
 });

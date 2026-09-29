@@ -1,0 +1,17 @@
+{
+  "events": [
+    {
+      "tStartMs": 0,
+      "dDurationMs": 1600,
+      "segs": [{ "utf8": "Bonjour " }, { "utf8": "à tous." }]
+    },
+    {
+      "tStartMs": 1600,
+      "segs": [{ "utf8": "\n" }]
+    },
+    {
+      "tStartMs": 2000,
+      "segs": [{ "utf8": "Le point important est la synthèse." }]
+    }
+  ]
+}

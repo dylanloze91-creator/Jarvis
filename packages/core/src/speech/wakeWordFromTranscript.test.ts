@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { evaluateWakeWordWindow, peakEnergy } from './wakeWordFromTranscript.js';
+import { evaluateWakeWordWindow, peakEnergy, speechDurationMs } from './wakeWordFromTranscript.js';
 
 function silentFrame(length = 512): Float32Array {
   return new Float32Array(length).fill(0.001);
@@ -12,6 +12,24 @@ function speechLikeFrame(length = 512): Float32Array {
   }
   return frame;
 }
+
+describe('speechDurationMs', () => {
+  const tone = (ms: number, amplitude: number) =>
+    new Float32Array(Math.round(16 * ms)).map((_, i) => Math.sin(i / 5) * amplitude);
+
+  it('mesure la parole par fenêtres de 64 ms, pas un pic isolé', () => {
+    expect(speechDurationMs(new Float32Array(16000), 16000)).toBe(0);
+    expect(speechDurationMs(tone(1000, 0.2), 16000)).toBeCloseTo(960, -1);
+    const click = new Float32Array(16000);
+    click[100] = 1;
+    expect(speechDurationMs(click, 16000)).toBeLessThanOrEqual(64);
+  });
+
+  it('la fin d’un « Jarvis » (≤ 256 ms) reste sous le seuil d’une commande (300 ms)', () => {
+    expect(speechDurationMs(tone(256, 0.1), 16000)).toBeLessThan(300);
+    expect(speechDurationMs(tone(600, 0.1), 16000)).toBeGreaterThan(300);
+  });
+});
 
 describe('peakEnergy', () => {
   it('vaut 0 pour un silence numérique parfait', () => {

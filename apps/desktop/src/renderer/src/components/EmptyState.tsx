@@ -1,9 +1,10 @@
+import { BrainCircuit, Globe2, Mic, Search, Sparkles } from 'lucide-react';
 import type { ToolInfo } from '../../../shared/ipc';
 
 const suggestions = [
-  'Que se passe-t-il sur mon PC ?',
-  'Pourquoi mon PC est lent ?',
-  'Crée un dossier nommé Projet',
+  { text: 'Cherche les dernières infos importantes', icon: Globe2 },
+  { text: 'Que se passe-t-il sur mon PC ?', icon: Search },
+  { text: 'Rappelle-moi ce que tu sais de mes projets', icon: BrainCircuit },
 ];
 
 interface EmptyStateProps {
@@ -13,47 +14,38 @@ interface EmptyStateProps {
 
 export function EmptyState({ tools, onPick }: EmptyStateProps) {
   return (
-    <div className="flex flex-col gap-4 px-4 py-5">
-      <div>
-        <p className="text-sm text-slate-300">Bonjour. Que puis-je faire pour toi ?</p>
-        <p className="mt-1 text-xs text-slate-500">
-          Pose une question, ou demande une action sur ton ordinateur.
+    <div className="empty-stage">
+      <div className="hero-orb" aria-hidden>
+        <div className="orb-core" />
+        <div className="orb-ring ring-one" />
+        <div className="orb-ring ring-two" />
+        <div className="orb-glow" />
+      </div>
+      <div className="relative z-10 text-center">
+        <div className="mb-2 flex items-center justify-center gap-2 text-[10px] font-semibold tracking-[0.3em] text-cyan-200/60 uppercase">
+          <Sparkles className="size-3" /> Système prêt
+        </div>
+        <h1 className="text-[24px] font-semibold tracking-tight text-white">
+          Bonjour, je suis Jarvis.
+        </h1>
+        <p className="mx-auto mt-2 max-w-[390px] text-[13px] leading-relaxed text-slate-500">
+          Recherche, mémoire, ordinateur, musique et commandes vocales. Dis-moi simplement ce que tu
+          veux faire.
         </p>
       </div>
-
-      <div className="flex flex-wrap gap-2">
-        {suggestions.map((suggestion) => (
-          <button
-            key={suggestion}
-            type="button"
-            onClick={() => onPick(suggestion)}
-            className="no-drag rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs text-slate-300 transition-colors hover:border-accent/40 hover:bg-accent/10 hover:text-slate-100"
-          >
-            {suggestion}
+      <div className="relative z-10 mt-7 grid w-full max-w-[520px] gap-2 sm:grid-cols-3">
+        {suggestions.map(({ text, icon: Icon }) => (
+          <button key={text} type="button" onClick={() => onPick(text)} className="suggestion-card">
+            <Icon className="size-4 text-cyan-200/80" />
+            <span>{text}</span>
           </button>
         ))}
       </div>
-
+      <div className="relative z-10 mt-5 flex items-center justify-center gap-2 text-[10px] text-slate-600">
+        <Mic className="size-3" /> Dis « Jarvis » pour commencer
+      </div>
       {tools.length > 0 ? (
-        <div className="flex flex-col gap-1.5 border-t border-white/8 pt-3">
-          <p className="text-[11px] font-medium tracking-wide text-slate-500 uppercase">
-            Outils disponibles
-          </p>
-          {tools.map((tool) => (
-            <div key={tool.name} className="flex items-center gap-2 text-xs">
-              <span className="font-mono text-slate-300">{tool.name}</span>
-              <span
-                className={
-                  tool.risk === 'safe'
-                    ? 'rounded-full bg-emerald-400/10 px-1.5 py-0.5 text-[10px] text-emerald-300'
-                    : 'rounded-full bg-amber-400/10 px-1.5 py-0.5 text-[10px] text-amber-300'
-                }
-              >
-                {tool.risk === 'safe' ? 'sans risque' : 'confirmation'}
-              </span>
-            </div>
-          ))}
-        </div>
+        <div className="sr-only">{tools.length} outils disponibles</div>
       ) : null}
     </div>
   );

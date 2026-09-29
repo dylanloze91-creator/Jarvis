@@ -74,9 +74,8 @@ export interface SpeechToTextController {
   abort: () => void;
   /**
    * Marque, dans les trames déjà poussées via `pushAudio`, la fin d'un
-   * éventuel préfixe (par exemple l'audio qui a déclenché un mot de réveil
-   * « par transcription », transmis pour donner plus de contexte — voir
-   * `WhisperWakeWordEngine` côté `apps/desktop`). Un moteur qui applique une
+   * éventuel préfixe (l'audio qui a déclenché le mot de réveil, transmis
+   * pour donner plus de contexte à Whisper). Un moteur qui applique une
    * garde d'énergie pour éviter de transcrire un énoncé quasi silencieux
    * (comme `LocalWhisperSttProvider`) doit l'appliquer seulement à l'audio
    * arrivé *après* ce marqueur : le préfixe contient forcément de la

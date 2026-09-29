@@ -1,27 +1,28 @@
 {
   "name": "@jarvis/desktop",
-  "version": "0.3.0",
+  "version": "0.4.11",
   "private": true,
   "description": "Application de bureau Jarvis (Electron)",
   "main": "./out/main/index.js",
   "author": "thedexios",
   "scripts": {
     "icons": "node scripts/generate-icons.mjs",
-    "dev": "electron-vite dev",
-    "build": "npm run icons && electron-vite build",
+    "dev": "npm run setup:voice && electron-vite dev",
+    "build": "npm run setup:voice && npm run icons && electron-vite build",
     "preview": "electron-vite preview",
     "typecheck": "tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.web.json --noEmit",
     "test": "vitest run",
+    "setup:voice": "node scripts/setup-voice-assets.mjs",
     "package:win": "npm run build && electron-builder --win --publish never",
     "package:win:publish": "npm run build && electron-builder --win --publish always",
     "package:dir": "npm run build && electron-builder --dir --publish never"
   },
   "dependencies": {
-    "@jarvis/core": "*"
+    "@jarvis/core": "*",
+    "electron-updater": "^6.8.9"
   },
   "devDependencies": {
     "@huggingface/transformers": "^4.3.0",
-    "@picovoice/porcupine-web": "^4.0.1",
     "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^22.18.12",
     "@types/react": "^19.3.0",
@@ -33,6 +34,7 @@
     "electron-builder": "^26.15.3",
     "electron-vite": "^5.0.0",
     "lucide-react": "^1.47.0",
+    "onnxruntime-web": "1.31.0-dev.20260914-8d85527a0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "react-markdown": "^10.1.0",

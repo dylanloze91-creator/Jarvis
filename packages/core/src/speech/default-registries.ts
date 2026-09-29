@@ -1,11 +1,6 @@
 import { OpenAISttProvider, openAISttDescriptor } from './openai-stt.js';
 import { OpenAITtsProvider, openAITtsDescriptor } from './openai-tts.js';
 import { SpeechToTextRegistry, TextToSpeechRegistry } from './registry.js';
-import {
-  WakeWordEngineRegistry,
-  createLocalTemplateWakeWordEngine,
-  localTemplateWakeWordDescriptor,
-} from './wakewordEngine.js';
 
 /**
  * Registres par défaut, côté cœur : seuls les moteurs distants (OpenAI) y
@@ -24,18 +19,5 @@ export function createDefaultTtsRegistry(): TextToSpeechRegistry {
   return new TextToSpeechRegistry().register(
     openAITtsDescriptor,
     (config) => new OpenAITtsProvider(config),
-  );
-}
-
-/**
- * Registre par défaut du mot de réveil : seul le gabarit local y figure —
- * c'est le chemin par défaut de l'application, gratuit et sans compte. Un
- * moteur tiers comme Porcupine (WASM, DOM) s'ajoute côté `apps/desktop`,
- * jamais ici, et reste une option, jamais le repli.
- */
-export function createDefaultWakeWordEngineRegistry(): WakeWordEngineRegistry {
-  return new WakeWordEngineRegistry().register(
-    localTemplateWakeWordDescriptor,
-    createLocalTemplateWakeWordEngine,
   );
 }

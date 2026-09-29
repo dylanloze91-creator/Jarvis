@@ -35,8 +35,15 @@ export const getSystemErrorsTool = defineTool({
     }
 
     const logs = logName === 'both' ? "'System','Application'" : `'${logName}'`;
+    // Le message « aucun événement » est traduit selon la langue de Windows :
+    // on teste l'identifiant d'erreur, identique dans toutes les langues.
     const script = `
-$events = Get-WinEvent -FilterHashtable @{LogName=${logs}; Level=1,2,3} -MaxEvents ${maxEvents} -ErrorAction Stop
+try {
+  $events = Get-WinEvent -FilterHashtable @{LogName=${logs}; Level=1,2,3} -MaxEvents ${maxEvents} -ErrorAction Stop
+} catch {
+  if ($_.FullyQualifiedErrorId -like 'NoMatchingEventsFound*') { Write-Output '[]'; exit 0 }
+  throw
+}
 $events | Select-Object TimeCreated,LevelDisplayName,ProviderName,Id,@{n='Message';e={$_.Message -replace "\`r\`n"," "}} | ConvertTo-Json -Compress -Depth 3
 `.trim();
 

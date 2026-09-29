@@ -11,6 +11,8 @@ export type ChatItem =
       name: string;
       status: 'running' | 'ok' | 'error' | 'denied';
       content: string;
+      /** Dernière étape française, affichée pendant que l'outil tourne. */
+      progress?: string;
     }
   | { kind: 'error'; id: string; text: string };
 
@@ -67,11 +69,21 @@ export function useChat(options: UseChatOptions = {}) {
           ]);
           break;
         }
+        case 'tool_progress': {
+          setItems((current) =>
+            current.map((item) =>
+              item.kind === 'tool' && item.id === event.callId
+                ? { ...item, progress: event.message }
+                : item,
+            ),
+          );
+          break;
+        }
         case 'tool_result': {
           setItems((current) =>
             current.map((item) =>
               item.kind === 'tool' && item.id === event.callId
-                ? { ...item, status: event.status, content: event.content }
+                ? { ...item, status: event.status, content: event.content, progress: undefined }
                 : item,
             ),
           );
@@ -161,7 +173,7 @@ function closeStreaming(items: ChatItem[]): ChatItem[] {
   );
 }
 
-function toItems(messages: ChatMessage[]): ChatItem[] {
+export function toItems(messages: ChatMessage[]): ChatItem[] {
   const items: ChatItem[] = [];
   for (const message of messages) {
     if (message.role === 'user') {
@@ -173,10 +185,18 @@ function toItems(messages: ChatMessage[]): ChatItem[] {
         kind: 'tool',
         id: message.id,
         name: message.toolName ?? 'outil',
-        status: 'ok',
+        status: message.toolStatus ?? inferToolStatus(message.content),
         content: message.content,
       });
     }
   }
   return items;
+}
+
+/** Historique d'avant 0.4.10 : pas de statut enregistré, seuls les textes fixes du Tool Manager le trahissent. */
+function inferToolStatus(content: string): 'ok' | 'error' | 'denied' {
+  if (/^L'utilisateur a refusé cette action\./.test(content)) return 'denied';
+  if (/^L'outil « .+ » est désactivé par la politique de sécurité\./.test(content)) return 'denied';
+  if (/^Outil inconnu : /.test(content)) return 'error';
+  return 'ok';
 }

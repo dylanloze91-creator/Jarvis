@@ -4,24 +4,13 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <!--
-      script-src/connect-src/worker-src élargis à jsDelivr et Hugging Face :
-      seule dérogation à « self » de toute l'application, nécessaire pour
-      Whisper local (transformers.js, chargé depuis un CDN pour ne pas
-      alourdir l'installateur — voir voice/whisper/pipelineLoader.ts) et le
-      téléchargement de ses poids de modèle au premier usage. connect-src
-      autorise aussi https: en général : les poids sont servis par le CDN de
-      stockage de Hugging Face, dont les sous-domaines varient (répartition
-      de charge) et ne peuvent pas être listés un par un de façon fiable.
-      blob: (script-src et worker-src) : les workers d'onnxruntime-web sont
-      instanciés depuis un Blob, pas un fichier. 'wasm-unsafe-eval' :
-      directive CSP dédiée à la compilation WebAssembly (distincte du
-      'unsafe-eval' générique, qui autoriserait aussi eval()/Function() —
-      non nécessaire ici) ; sans elle, WebAssembly.instantiate() échoue avec
-      une CompileError — vérifié en conditions réelles (Electron, DISPLAY:1).
+      Whisper et openWakeWord lisent le runtime ONNX et leurs modèles via jarvis-oww:
+      (extraResources, hors asar). Aucun CDN. blob: : fabrique .mjs d'onnxruntime-web.
+      'wasm-unsafe-eval' : compilation WebAssembly. connect-src https: : recherche web.
     -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://cdn.jsdelivr.net blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https: wss:; worker-src 'self' blob:"
+      content="default-src 'self' jarvis-oww:; script-src 'self' 'wasm-unsafe-eval' jarvis-oww: blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' jarvis-oww: https: wss: blob:; worker-src 'self' blob: jarvis-oww:"
     />
     <title>Jarvis</title>
   </head>

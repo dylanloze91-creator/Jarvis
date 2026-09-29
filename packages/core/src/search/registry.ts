@@ -1,5 +1,6 @@
 import { BraveSearchProvider, braveDescriptor } from './providers/brave.js';
 import { WikipediaSearchProvider, wikipediaDescriptor } from './providers/wikipedia.js';
+import { GoogleSearchProvider, googleDescriptor } from './providers/google.js';
 import type {
   SearchProvider,
   SearchProviderConfig,
@@ -46,15 +47,15 @@ export class SearchProviderRegistry {
   }
 
   /**
-   * Bascule sur Wikipédia plutôt que d'échouer quand la configuration est
-   * incomplète (fournisseur inconnu ou clé manquante), pour que l'outil reste
-   * utilisable sans configuration.
+   * Bascule sur Google (sans clé) plutôt que d'échouer quand la configuration
+   * est incomplète (fournisseur inconnu ou clé manquante), pour que l'outil
+   * reste utilisable sans configuration payante.
    */
   createOrFallback(config: SearchProviderConfig): { provider: SearchProvider; fellBack: boolean } {
     const entry = this.entries.get(config.provider);
-    if (!entry) return { provider: new WikipediaSearchProvider(), fellBack: true };
+    if (!entry) return { provider: new GoogleSearchProvider(), fellBack: true };
     if (entry.descriptor.requiresApiKey && !config.apiKey?.trim()) {
-      return { provider: new WikipediaSearchProvider(), fellBack: true };
+      return { provider: new GoogleSearchProvider(), fellBack: true };
     }
     return { provider: entry.factory(config), fellBack: false };
   }
@@ -62,6 +63,7 @@ export class SearchProviderRegistry {
 
 export function createDefaultSearchRegistry(): SearchProviderRegistry {
   return new SearchProviderRegistry()
+    .register(googleDescriptor, () => new GoogleSearchProvider())
     .register(wikipediaDescriptor, () => new WikipediaSearchProvider())
     .register(braveDescriptor, (config) => new BraveSearchProvider(config));
 }

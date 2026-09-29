@@ -4,6 +4,7 @@ import {
   Menu,
   Tray,
   app,
+  clipboard,
   globalShortcut,
   ipcMain,
   nativeImage,
@@ -30,27 +31,59 @@ import {
   type VoiceTranscribeInput,
 } from '../shared/ipc.js';
 import { FileAuditLogStore } from './audit-store.js';
+import { SpotifyBridge } from './media/SpotifyBridge.js';
+import { SiteBlockBridge } from './siteblock/SiteBlockBridge.js';
+import { PersonalizationStore } from './personalization.js';
+import { KnowledgeStore } from './knowledge.js';
 import { ChatSession } from './session.js';
 import { FileConversationStore, readSettings, writeSettings } from './store.js';
+import { readMachineSnapshot } from './machineStats.js';
 import { createToolManager } from './tools/index.js';
+import { summarizeYoutubeLink } from './youtube/runtime.js';
+import { UpdateManager } from './updater.js';
 import { VoiceBridge } from './voice.js';
 import { createOverlayWindow, type OverlayWindow } from './window.js';
+import {
+  currentVoiceAssetsRoot,
+  inspectVoiceAssets,
+  registerVoiceAssetsProtocol,
+  registerVoiceAssetsScheme,
+} from './voiceAssetsProtocol.js';
+
+registerVoiceAssetsScheme();
 
 const isDev = !app.isPackaged;
 const registry = createDefaultRegistry();
 const searchRegistry = createDefaultSearchRegistry();
 const marketDataRegistry = createDefaultMarketDataRegistry();
 const store = new FileConversationStore();
+const personalization = new PersonalizationStore();
+const knowledge = new KnowledgeStore({ getUserDataPath: () => app.getPath('userData') });
 const auditLog = new FileAuditLogStore();
 const voice = new VoiceBridge(() => settings);
+const updateManager = new UpdateManager();
 
 let settings: Settings = parseSettings({});
+const spotify = new SpotifyBridge(() => settings);
+const siteBlock = new SiteBlockBridge(() => settings);
+let overlay: OverlayWindow | null = null;
 const tools = createToolManager({
   getSettings: () => settings,
   searchRegistry,
   marketDataRegistry,
+  spotify,
+  siteBlock,
+  personalization,
+  knowledge,
+  summarizeYoutube: (url, onProgress, signal) =>
+    summarizeYoutubeLink({
+      url,
+      getSettings: () => settings,
+      getWebContents: () => overlay?.browserWindow.webContents ?? null,
+      onProgress,
+      signal,
+    }),
 });
-let overlay: OverlayWindow | null = null;
 let tray: Tray | null = null;
 
 const session = new ChatSession({
@@ -60,6 +93,8 @@ const session = new ChatSession({
   auditLog,
   voice,
   getSettings: () => settings,
+  personalization,
+  knowledge,
 });
 
 if (!app.requestSingleInstanceLock()) {
@@ -73,6 +108,7 @@ async function bootstrap(): Promise<void> {
   app.setName('Jarvis');
   settings = await readSettings();
   await app.whenReady();
+  registerVoiceAssetsProtocol();
 
   app.setAppUserModelId('com.thedexios.jarvis');
   if (process.platform === 'darwin') app.dock?.hide();
@@ -85,11 +121,18 @@ async function bootstrap(): Promise<void> {
   );
 
   // En développement, garder la fenêtre visible quand le focus part (devtools, éditeur).
-  overlay = createOverlayWindow(settings.hideOnBlur && !isDev);
+  overlay = createOverlayWindow(!settings.stayVisibleOnBlur && !isDev);
   registerIpc();
   await loadRenderer(overlay.browserWindow);
   registerHotkey(settings.hotkey);
   createTray();
+
+  // Poussé à l'interface dès qu'un état change (vérification, téléchargement,
+  // progression…) : la fenêtre n'a jamais besoin de sonder l'état elle-même.
+  updateManager.onStateChange((state) => {
+    overlay?.browserWindow.webContents.send(IpcChannel.updateEvent, state);
+  });
+  updateManager.start();
 
   overlay.show();
 
@@ -146,12 +189,12 @@ function registerIpc(): void {
 
   ipcMain.handle(IpcChannel.settingsGet, () => ({ settings, status: session.status() }));
   ipcMain.handle(IpcChannel.settingsSet, async (_event, patch: Partial<Settings>) => {
-    const next = parseSettings({ ...settings, ...patch });
+    const next = parseSettings({ ...settings, ...patch }, settings);
     const hotkeyChanged = next.hotkey !== settings.hotkey;
     settings = next;
     await writeSettings(settings);
 
-    overlay?.setHideOnBlur(settings.hideOnBlur);
+    overlay?.setHideOnBlur(!settings.stayVisibleOnBlur && !isDev);
     if (hotkeyChanged && !registerHotkey(settings.hotkey)) {
       registerHotkey('Control+Space');
       settings = parseSettings({ ...settings, hotkey: 'Control+Space' });
@@ -181,6 +224,26 @@ function registerIpc(): void {
         model: input.model,
       }),
   );
+  ipcMain.handle(IpcChannel.settingsSpotifyStatus, (_event, clientId?: string) =>
+    spotify.status(clientId),
+  );
+  ipcMain.handle(IpcChannel.settingsSpotifyConnect, (_event, clientId?: string) =>
+    spotify.connect(clientId),
+  );
+  ipcMain.handle(IpcChannel.settingsSpotifyDisconnect, (_event, clientId?: string) =>
+    spotify.disconnect(clientId),
+  );
+  ipcMain.handle(
+    IpcChannel.settingsSiteBlockStatus,
+    (_event, credentials?: { baseUrl?: string; token?: string }) =>
+      siteBlock.connectionStatus(credentials),
+  );
+  ipcMain.handle(IpcChannel.settingsPersonalizationGet, () => personalization.get());
+  ipcMain.handle(IpcChannel.settingsPersonalizationReset, () => personalization.reset());
+  ipcMain.handle(IpcChannel.settingsKnowledgeStats, () => knowledge.stats());
+  ipcMain.handle(IpcChannel.settingsKnowledgeClear, () =>
+    knowledge.clear().then(() => knowledge.stats()),
+  );
 
   ipcMain.handle(IpcChannel.historyList, () => store.list());
   ipcMain.handle(IpcChannel.historyGet, (_event, id: string) => store.get(id));
@@ -202,15 +265,42 @@ function registerIpc(): void {
 
   ipcMain.handle(IpcChannel.windowHide, () => overlay?.hide());
   ipcMain.handle(IpcChannel.windowResize, (_event, height: number) => overlay?.resize(height));
+  ipcMain.handle(IpcChannel.windowSetChrome, (_event, mode: 'compact' | 'dashboard') => {
+    if (mode === 'compact' || mode === 'dashboard') overlay?.setChrome(mode);
+  });
+  ipcMain.handle(IpcChannel.systemSnapshot, () => readMachineSnapshot(app.getVersion()));
 
   ipcMain.handle(IpcChannel.voiceTranscribe, (_event, input: VoiceTranscribeInput) =>
     voice.transcribe(input),
   );
   ipcMain.handle(IpcChannel.voiceSpeak, (_event, input: VoiceSpeakInput) => voice.speak(input));
+  ipcMain.handle(IpcChannel.voiceAssetsReport, async () => {
+    const root = currentVoiceAssetsRoot();
+    return {
+      appVersion: app.getVersion(),
+      platform: process.platform,
+      arch: process.arch,
+      packaged: app.isPackaged,
+      electron: process.versions.electron,
+      chrome: process.versions.chrome,
+      root,
+      files: await inspectVoiceAssets(root),
+    };
+  });
+  ipcMain.handle(IpcChannel.voiceCopyReport, (_event, text: unknown) => {
+    if (typeof text === 'string') clipboard.writeText(text.slice(0, 20_000));
+  });
+
+  ipcMain.handle(IpcChannel.updateGetState, () => updateManager.getState());
+  ipcMain.handle(IpcChannel.updateCheck, () => updateManager.checkNow());
+  ipcMain.handle(IpcChannel.updateInstall, () => updateManager.quitAndInstall());
 }
 
 app.on('window-all-closed', () => {
   // L'assistant vit dans la zone de notification : fermer la fenêtre ne quitte pas.
 });
 
-app.on('will-quit', () => globalShortcut.unregisterAll());
+app.on('will-quit', () => {
+  globalShortcut.unregisterAll();
+  updateManager.stop();
+});

@@ -25,7 +25,8 @@ export const getSystemInfoTool = defineTool({
       `Système : ${os.type()} ${os.release()} (${os.arch()})`,
       `Machine : ${os.hostname()}`,
       `Processeur : ${cpus[0]?.model?.trim() ?? 'inconnu'} — ${cpus.length} cœurs logiques`,
-      `Charge moyenne (1 min) : ${os.loadavg()[0]?.toFixed(2) ?? 'n/d'}`,
+      // `os.loadavg()` vaut toujours [0, 0, 0] sous Windows : ne pas l'annoncer comme une mesure.
+      `Charge moyenne (1 min) : ${process.platform === 'win32' ? 'non mesurée sous Windows' : (os.loadavg()[0]?.toFixed(2) ?? 'n/d')}`,
       `Mémoire : ${formatBytes(totalMemory - freeMemory)} utilisés sur ${formatBytes(totalMemory)} (${percent(totalMemory - freeMemory, totalMemory)} occupés)`,
       disk
         ? `Disque (${disk.path}) : ${formatBytes(disk.used)} utilisés sur ${formatBytes(disk.total)} (${formatBytes(disk.free)} libres)`

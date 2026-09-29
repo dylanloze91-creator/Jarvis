@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import { z } from 'zod';
 import { defineTool } from '@jarvis/core';
+import { launchSpotifyDesktop } from '../media/launchSpotifyDesktop.js';
 import { findAlias, normalizeAppName } from './platform/app-aliases.js';
 import { psQuote, run, runPowerShell } from './platform/exec.js';
 
@@ -16,6 +17,7 @@ export const openApplicationTool = defineTool({
   }),
   summarize: ({ name }) => `Ouvrir l'application « ${name} ».`,
   execute: async ({ name }) => {
+    if (isSpotifyAppName(name)) return openSpotify();
     if (process.platform === 'win32') return openWindows(name);
     if (process.platform === 'darwin') return openMac(name);
     if (process.platform === 'linux') return openLinux(name);
@@ -54,6 +56,21 @@ export const closeApplicationTool = defineTool({
   },
 });
 
+function isSpotifyAppName(name: string): boolean {
+  return findAlias(name)?.names.includes('spotify') === true || normalizeAppName(name) === 'spotify';
+}
+
+async function openSpotify() {
+  const launched = await launchSpotifyDesktop();
+  if (launched.ok) {
+    return { ok: true, content: `Application lancée : Spotify (${launched.detail}).` };
+  }
+  return {
+    ok: false,
+    content: `Impossible d'ouvrir Spotify : ${launched.detail}`,
+  };
+}
+
 // --- Windows ---------------------------------------------------------------
 
 async function openWindows(name: string) {
@@ -69,8 +86,9 @@ async function openWindows(name: string) {
 
   const query = normalizeAppName(name).replace(/\s+/g, '*');
   const searchScript = `
+$query = ${psQuote(query)}
 $roots = @($env:ProgramFiles, \${env:ProgramFiles(x86)}, "$env:LOCALAPPDATA\\Programs", $env:LOCALAPPDATA) | Where-Object { $_ }
-$match = Get-ChildItem -Path $roots -Recurse -Depth 3 -Filter "*${query}*.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+$match = Get-ChildItem -Path $roots -Recurse -Depth 3 -Filter ('*' + $query + '*.exe') -ErrorAction SilentlyContinue | Select-Object -First 1
 if ($match) { Start-Process -FilePath $match.FullName -ErrorAction Stop; Write-Output $match.FullName }
 else { throw "introuvable" }
 `.trim();
@@ -89,8 +107,12 @@ else { throw "introuvable" }
 async function closeWindows(name: string, forceKill: boolean) {
   const alias = findAlias(name);
   const processHint = alias?.win?.replace(/\.exe$/i, '') ?? name;
+  // Le nom vient du modèle : uniquement en chaîne PowerShell entre apostrophes,
+  // jamais interpolé dans des guillemets doubles (où `$(...)` s'exécuterait).
   const script = `
-$targets = Get-Process | Where-Object { $_.ProcessName -like "*${processHint}*" -or $_.MainWindowTitle -like "*${name}*" }
+$hint = [WildcardPattern]::Escape(${psQuote(processHint)})
+$title = [WildcardPattern]::Escape(${psQuote(name)})
+$targets = Get-Process | Where-Object { $_.ProcessName -like ('*' + $hint + '*') -or $_.MainWindowTitle -like ('*' + $title + '*') }
 if (-not $targets) { throw "introuvable" }
 foreach ($p in $targets) {
   if (${forceKill ? '$true' : '$false'}) {

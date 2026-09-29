@@ -1,8 +1,7 @@
 /**
- * Comparaison texte du mot de réveil, utilisée par le moteur de mot de
- * réveil « par transcription » (`WhisperWakeWordEngine`, côté
- * `apps/desktop`) : Whisper transcrit une courte fenêtre audio, et ce module
- * décide si le texte obtenu contient le mot de réveil. Aucune dépendance au
+ * Comparaison texte du mot de réveil, utilisée par la confirmation Whisper
+ * du déclencheur « Jarvis » nu : Whisper transcrit une courte fenêtre audio,
+ * et ce module décide si le texte obtenu contient le mot de réveil. Aucune dépendance au
  * DOM ni à un modèle réel — uniquement des chaînes de caractères — pour
  * rester testable sans microphone ni téléchargement de modèle.
  *
@@ -81,6 +80,15 @@ const BUILT_IN_VARIANTS: Readonly<Record<string, readonly string[]>> = {
     'jarvisse',
     'charvis',
     'javice',
+    // Hallucinations Whisper fréquentes en français (« j'avise », « j'avis »).
+    'javise',
+    'javis',
+    'jarvise',
+    'djervis',
+    'djarvice',
+    'charvisse',
+    'yarvis',
+    'jarvie',
   ],
 };
 
@@ -135,6 +143,14 @@ export function matchesWakeWord(transcript: string, config: WakeWordTextMatchCon
     new Set([...defaultWakeWordVariants(config.word), ...userVariants]),
   );
   if (exactCandidates.some((candidate) => normalizedTranscript.includes(candidate))) return true;
+  // « j'avise », « jar vis » : une fois les espaces retirés, ça recouvre
+  // les variantes collées que Whisper coupe souvent en deux mots français.
+  const tightTranscript = normalizedTranscript.replace(/\s+/g, '');
+  if (
+    exactCandidates.some((candidate) => tightTranscript.includes(candidate.replace(/\s+/g, '')))
+  ) {
+    return true;
+  }
   if (!canonical) return false;
 
   const fuzzyCandidates = Array.from(new Set([canonical, ...userVariants])).filter(
@@ -195,8 +211,7 @@ const MAX_LEADING_TOKENS = 3;
  * immédiatement collée (« Jarvis, » → rien), pour ne transmettre que la
  * commande qui suit à l'agent. Utilisé quand la transcription porte sur
  * l'énoncé complet (mot de réveil compris) plutôt que sur l'audio découpé à
- * l'instant de détection — voir `WhisperWakeWordEngine` et `useVoice.ts`
- * pour pourquoi : transcrire la phrase entière donne plus de contexte à
+ * l'instant de détection — voir `useVoice.ts` pour pourquoi : transcrire la phrase entière donne plus de contexte à
  * Whisper (meilleure reconnaissance du mot de réveil lui-même) qu'une coupe
  * à l'échantillon près, qui risquait de couper l'attaque du mot suivant.
  *
@@ -206,7 +221,31 @@ const MAX_LEADING_TOKENS = 3;
  * rien ne correspond en tête, renvoie le texte tel quel (mieux vaut
  * transmettre un texte non nettoyé que tronquer à tort).
  */
+/**
+ * Commande à envoyer quand la dictée commence par un mot de réveil déjà
+ * confirmé : on retire ce mot. Si Whisper l'a écrit autrement (« J'arrive! »
+ * pour un « Jarvis ? » traînant) et qu'il ne reste qu'un seul mot, ce mot
+ * est le mot de réveil lui-même : une vraie commande en donne au moins deux.
+ */
+export function commandAfterWakeWord(transcript: string, config: WakeWordTextMatchConfig): string {
+  const trimmed = transcript.trim();
+  const command = stripLeadingWakeWord(trimmed, config);
+  if (command === trimmed && tokenizeByWhitespace(trimmed).length <= 1) return '';
+  return command;
+}
+
 export function stripLeadingWakeWord(transcript: string, config: WakeWordTextMatchConfig): string {
+  // « Jarvis, Jarvis, ouvre Chrome » : on retire chaque répétition en tête.
+  let current = transcript.trim();
+  for (let round = 0; round < 5; round += 1) {
+    const next = stripOneLeadingWakeWord(current, config);
+    if (next === current) break;
+    current = next;
+  }
+  return current;
+}
+
+function stripOneLeadingWakeWord(transcript: string, config: WakeWordTextMatchConfig): string {
   const tokens = tokenizeByWhitespace(transcript);
   if (tokens.length === 0) return transcript.trim();
 

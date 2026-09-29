@@ -11,12 +11,12 @@ coverage/
 .vite/
 agent-tools/
 
-# Modèle Porcupine (Picovoice) : propriétaire, ~1 Mo, jamais commité — voir
-# apps/desktop/src/renderer/public/porcupine/README.md pour l'obtenir.
-apps/desktop/src/renderer/public/porcupine/*.pv
-
 # Enregistrements vocaux réels utilisés pour le test de régression du mot de
 # réveil : jamais commités (voix d'une personne réelle) — voir
 # apps/desktop/test-fixtures/README.md pour les y déposer localement.
 apps/desktop/test-fixtures/*.mp3
 apps/desktop/test-fixtures/*.wav
+
+# Runtime ONNX, Whisper et openWakeWord (téléchargés par setup:voice).
+apps/desktop/voice-assets/*
+!apps/desktop/voice-assets/README.md

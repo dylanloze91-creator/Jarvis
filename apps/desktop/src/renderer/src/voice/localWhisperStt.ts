@@ -1,14 +1,19 @@
 import {
+  WHISPER_DICTATION_LANGUAGE,
   concatFloat32,
-  findWhisperModel,
   peakEnergy,
-  type SpeechProviderConfig,
+  speechDurationMs,
   type SpeechToTextController,
   type SpeechToTextDescriptor,
   type SpeechToTextHandlers,
   type SpeechToTextProvider,
 } from '@jarvis/core';
-import { subscribeWhisperProgress, transcribeWithWhisper } from './whisper/pipelineLoader';
+import {
+  describeWhisperLoadError,
+  describeWhisperProgress,
+  subscribeWhisperProgress,
+  transcribeWithWhisper,
+} from './whisper/pipelineLoader';
 
 /**
  * Amplitude de crête minimale pour tenter une transcription, appliquée
@@ -22,20 +27,27 @@ import { subscribeWhisperProgress, transcribeWithWhisper } from './whisper/pipel
  * `onFinal('')` est déjà traité comme « rien à dire » par l'appelant
  * (`useVoice.ts`).
  */
+const SAMPLE_RATE = 16000;
 const MIN_UTTERANCE_PEAK_ENERGY = 0.02;
+/**
+ * Après un mot de réveil, il faut au moins ça de parole pour transcrire :
+ * la fin du mot (« …vis », jusqu'à une trame de 256 ms) déborde souvent
+ * du préfixe. Sur « Jarvis » seul, Whisper écrivait sinon « J'arrive! »,
+ * envoyé comme une commande.
+ */
+const MIN_COMMAND_SPEECH_MS = 300;
 
 export const localWhisperSttDescriptor: SpeechToTextDescriptor = {
   id: 'local-whisper',
-  label: 'Whisper local (gratuit, hors ligne après le premier téléchargement)',
+  label: 'Whisper local (gratuit, hors ligne, whisper-base embarqué)',
   requiresApiKey: false,
 };
 
 /**
  * Moteur de dictée gratuit par défaut : Whisper tourne entièrement dans ce
- * processus (transformers.js, WebAssembly ou WebGPU — voir
- * `whisper/pipelineLoader.ts`), sans clé ni serveur. Remplace la
- * reconnaissance intégrée du navigateur (`browser-local`, retirée),
- * structurellement cassée dans Electron.
+ * processus (transformers.js, WebAssembly — voir `whisper/pipelineLoader.ts`),
+ * sans clé ni serveur ni CDN. Remplace la reconnaissance intégrée du
+ * navigateur (`browser-local`, retirée), structurellement cassée dans Electron.
  *
  * Comme `OpenAISttProvider`, ce moteur ne capture pas lui-même le micro
  * (`managesOwnCapture = false`) : l'orchestrateur (`useVoice`) lui pousse
@@ -47,12 +59,6 @@ export class LocalWhisperSttProvider implements SpeechToTextProvider {
   readonly label = localWhisperSttDescriptor.label;
   readonly requiresApiKey = false;
   readonly managesOwnCapture = false;
-
-  private readonly repo: string;
-
-  constructor(config: SpeechProviderConfig) {
-    this.repo = findWhisperModel(config.model).repo;
-  }
 
   start(
     handlers: SpeechToTextHandlers,
@@ -95,8 +101,11 @@ export class LocalWhisperSttProvider implements SpeechToTextProvider {
     }
 
     const gateFrames = frames.slice(prefixFrameCount);
-    const energyToCheck = gateFrames.length > 0 ? gateFrames : frames;
-    if (peakEnergy(concatFloat32(energyToCheck)) < MIN_UTTERANCE_PEAK_ENERGY) {
+    const tooQuiet =
+      prefixFrameCount > 0
+        ? speechDurationMs(concatFloat32(gateFrames), SAMPLE_RATE) < MIN_COMMAND_SPEECH_MS
+        : peakEnergy(concatFloat32(frames)) < MIN_UTTERANCE_PEAK_ENERGY;
+    if (tooQuiet) {
       // Énoncé quasi silencieux (hors préfixe) : ne pas solliciter Whisper pour rien (coût CPU, et hallucinations connues sur du bruit).
       handlers.onFinal('');
       return;
@@ -104,25 +113,20 @@ export class LocalWhisperSttProvider implements SpeechToTextProvider {
 
     const pcm = concatFloat32(frames);
 
+    handlers.onPartial?.('Transcription…');
     const unsubscribe = subscribeWhisperProgress((info) => {
-      if (info.repo !== this.repo || info.status !== 'loading') return;
-      const percent = Math.round(info.progress ?? 0);
-      handlers.onPartial?.(
-        info.message
-          ? info.message
-          : `Téléchargement du modèle Whisper (une seule fois)… ${percent}%`,
-      );
+      if (info.status === 'loading') handlers.onPartial?.(describeWhisperProgress(info));
     });
 
     try {
-      const text = await transcribeWithWhisper(this.repo, pcm, {
+      const text = await transcribeWithWhisper(pcm, {
         language: frenchNameOrDefault(options.language),
       });
       if (options.signal?.aborted) return;
       handlers.onFinal(text);
     } catch (error) {
       if (options.signal?.aborted) return;
-      handlers.onError(describeError(error));
+      handlers.onError(describeWhisperLoadError(error));
     } finally {
       unsubscribe();
     }
@@ -131,14 +135,7 @@ export class LocalWhisperSttProvider implements SpeechToTextProvider {
 
 /** Whisper attend un nom de langue complet (« french »), pas un code ISO (« fr-FR »). */
 function frenchNameOrDefault(language: string | undefined): string {
-  if (!language) return 'french';
-  return language.toLowerCase().startsWith('fr') ? 'french' : language;
+  if (!language) return WHISPER_DICTATION_LANGUAGE;
+  return language.toLowerCase().startsWith('fr') ? WHISPER_DICTATION_LANGUAGE : language;
 }
 
-function describeError(error: unknown): string {
-  const message = error instanceof Error ? error.message : String(error);
-  if (/fetch|network|Failed to fetch/i.test(message)) {
-    return `Téléchargement du modèle Whisper impossible (vérifie la connexion réseau) : ${message}`;
-  }
-  return `Transcription locale indisponible : ${message}`;
-}

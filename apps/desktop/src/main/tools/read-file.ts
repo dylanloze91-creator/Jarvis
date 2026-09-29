@@ -40,7 +40,7 @@ export const readFileTool = defineTool({
       const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
       const text = buffer.subarray(0, bytesRead).toString('utf8');
       const truncatedText = text.length > maxChars ? text.slice(0, maxChars) : text;
-      const truncated = truncatedText.length < size || bytesRead < size;
+      const truncated = bytesRead < size || text.length > maxChars;
 
       if (containsBinaryMarkers(truncatedText)) {
         return {

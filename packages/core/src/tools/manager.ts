@@ -15,6 +15,13 @@ import type {
  * fois le contrat exposé au modèle et le validateur des arguments reçus.
  */
 export function defineTool<S extends z.ZodType>(definition: ToolDefinition<S>): RegisteredTool {
+  // La confirmation et la politique voient les mêmes valeurs que `execute` :
+  // sans ça, un argument omis par le modèle arrivait sans son défaut
+  // (« Capturer l'écran n°NaN »).
+  const withDefaults = (input: unknown): unknown => {
+    const parsed = definition.schema.safeParse(input ?? {});
+    return parsed.success ? parsed.data : input;
+  };
   const isDestructive = normalizeDestructive(definition.isDestructive);
 
   return {
@@ -23,11 +30,12 @@ export function defineTool<S extends z.ZodType>(definition: ToolDefinition<S>): 
     risk: definition.risk,
     category: definition.category,
     forceConfirm: definition.forceConfirm ?? false,
-    isDestructive,
+    isDestructive: (input) => isDestructive(withDefaults(input)),
     jsonSchema: toJsonSchema(definition.schema),
     summarize: (input) =>
-      definition.summarize?.(input as z.infer<S>) ?? describeFallback(definition.name, input),
-    describeCommand: (input) => definition.describeCommand?.(input as z.infer<S>),
+      definition.summarize?.(withDefaults(input) as z.infer<S>) ??
+      describeFallback(definition.name, input),
+    describeCommand: (input) => definition.describeCommand?.(withDefaults(input) as z.infer<S>),
     run: async (input, context) => {
       const parsed = definition.schema.safeParse(input ?? {});
       if (!parsed.success) {

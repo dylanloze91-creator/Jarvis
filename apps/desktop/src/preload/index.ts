@@ -4,8 +4,13 @@ import {
   type ChatEvent,
   type JarvisApi,
   type SendChatInput,
+  type UpdateState,
   type VoiceSpeakInput,
   type VoiceTranscribeInput,
+  type WindowChrome,
+  type YoutubeTranscribeProgress,
+  type YoutubeTranscribeRequest,
+  type YoutubeTranscribeResult,
 } from '../shared/ipc.js';
 import type { Settings } from '@jarvis/core';
 
@@ -36,6 +41,18 @@ const api: JarvisApi = {
       ipcRenderer.invoke(IpcChannel.settingsOllamaStatus, baseUrl),
     ollamaTest: (input: { baseUrl?: string; model: string }) =>
       ipcRenderer.invoke(IpcChannel.settingsOllamaTest, input),
+    spotifyStatus: (clientId?: string) =>
+      ipcRenderer.invoke(IpcChannel.settingsSpotifyStatus, clientId),
+    spotifyConnect: (clientId?: string) =>
+      ipcRenderer.invoke(IpcChannel.settingsSpotifyConnect, clientId),
+    spotifyDisconnect: (clientId?: string) =>
+      ipcRenderer.invoke(IpcChannel.settingsSpotifyDisconnect, clientId),
+    siteBlockStatus: (credentials?: { baseUrl?: string; token?: string }) =>
+      ipcRenderer.invoke(IpcChannel.settingsSiteBlockStatus, credentials),
+    personalizationGet: () => ipcRenderer.invoke(IpcChannel.settingsPersonalizationGet),
+    personalizationReset: () => ipcRenderer.invoke(IpcChannel.settingsPersonalizationReset),
+    knowledgeStats: () => ipcRenderer.invoke(IpcChannel.settingsKnowledgeStats),
+    knowledgeClear: () => ipcRenderer.invoke(IpcChannel.settingsKnowledgeClear),
   },
   history: {
     list: () => ipcRenderer.invoke(IpcChannel.historyList),
@@ -53,11 +70,40 @@ const api: JarvisApi = {
   window: {
     hide: () => ipcRenderer.invoke(IpcChannel.windowHide),
     resize: (height: number) => ipcRenderer.invoke(IpcChannel.windowResize, height),
+    setChrome: (mode: WindowChrome) => ipcRenderer.invoke(IpcChannel.windowSetChrome, mode),
+  },
+  system: {
+    snapshot: () => ipcRenderer.invoke(IpcChannel.systemSnapshot),
   },
   voice: {
     transcribe: (input: VoiceTranscribeInput) =>
       ipcRenderer.invoke(IpcChannel.voiceTranscribe, input),
     speak: (input: VoiceSpeakInput) => ipcRenderer.invoke(IpcChannel.voiceSpeak, input),
+    assetsReport: () => ipcRenderer.invoke(IpcChannel.voiceAssetsReport),
+    copyReport: (text: string) => ipcRenderer.invoke(IpcChannel.voiceCopyReport, text),
+  },
+  youtube: {
+    onTranscribe: (listener) => {
+      const handler = (_event: Electron.IpcRendererEvent, payload: YoutubeTranscribeRequest): void =>
+        listener(payload);
+      ipcRenderer.on(IpcChannel.youtubeTranscribe, handler);
+      return () => ipcRenderer.removeListener(IpcChannel.youtubeTranscribe, handler);
+    },
+    reportProgress: (payload: YoutubeTranscribeProgress) =>
+      ipcRenderer.send(IpcChannel.youtubeTranscribeProgress, payload),
+    reportResult: (payload: YoutubeTranscribeResult) =>
+      ipcRenderer.send(IpcChannel.youtubeTranscribeResult, payload),
+  },
+  update: {
+    getState: () => ipcRenderer.invoke(IpcChannel.updateGetState),
+    check: () => ipcRenderer.invoke(IpcChannel.updateCheck),
+    install: () => ipcRenderer.invoke(IpcChannel.updateInstall),
+    onEvent: (listener) => {
+      const handler = (_event: Electron.IpcRendererEvent, payload: UpdateState): void =>
+        listener(payload);
+      ipcRenderer.on(IpcChannel.updateEvent, handler);
+      return () => ipcRenderer.removeListener(IpcChannel.updateEvent, handler);
+    },
   },
 };
 

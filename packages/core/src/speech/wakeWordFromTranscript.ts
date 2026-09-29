@@ -22,7 +22,7 @@ export interface WakeWordTranscriptionGateOptions {
 }
 
 export const defaultWakeWordTranscriptionGateOptions: WakeWordTranscriptionGateOptions = {
-  minPeakEnergy: 0.015,
+  minPeakEnergy: 0.01,
 };
 
 export interface WakeWordTranscriptionResult {
@@ -44,6 +44,22 @@ export function peakEnergy(frame: Float32Array): number {
     if (abs > peak) peak = abs;
   }
   return peak;
+}
+
+/**
+ * Durée (ms) de parole dans `pcm` : fenêtres de 64 ms dont le RMS dépasse
+ * `rmsThreshold`. Sert à distinguer une vraie commande de la fin du mot de
+ * réveil ou d'un souffle, qu'un simple pic laisse passer.
+ */
+export function speechDurationMs(pcm: Float32Array, sampleRate: number, rmsThreshold = 0.02): number {
+  const window = Math.max(1, Math.round(sampleRate * 0.064));
+  let speechWindows = 0;
+  for (let start = 0; start + window <= pcm.length; start += window) {
+    let sum = 0;
+    for (let index = start; index < start + window; index += 1) sum += pcm[index]! * pcm[index]!;
+    if (Math.sqrt(sum / window) >= rmsThreshold) speechWindows += 1;
+  }
+  return (speechWindows * window * 1000) / sampleRate;
 }
 
 /**

@@ -10,6 +10,7 @@
   },
   "include": [
     "electron.vite.config.ts",
+    "vite.ui.config.ts",
     "src/main/**/*.ts",
     "src/preload/**/*.ts",
     "src/shared/**/*.ts"

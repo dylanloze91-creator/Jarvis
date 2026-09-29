@@ -1,4 +1,9 @@
 import { randomId, type ChatMessage } from '../types.js';
+import { extractSpotifyPlayQuery, isMusicIntent } from '../media/playIntent.js';
+import { extractYoutubeUrl } from '../youtube/url.js';
+import { extractPersonalizationIntent } from '../personalization/intent.js';
+import { extractKnowledgeIntent } from '../knowledge/intent.js';
+import { extractSiteBlockIntent } from '../siteblock/intent.js';
 import type {
   ChatRequest,
   ChatStreamEvent,
@@ -79,6 +84,26 @@ function planToolCall(prompt: string, available: Set<string>): ToolPlan | null {
   const normalized = prompt.toLowerCase();
   const has = (tool: string): boolean => available.has(tool);
 
+  const youtubeUrl = extractYoutubeUrl(prompt);
+  if (has('youtube_transcript') && youtubeUrl) {
+    return {
+      preamble: 'Je vais écouter cette vidéo.\n\n',
+      tool: 'youtube_transcript',
+      args: { url: youtubeUrl },
+    };
+  }
+
+  // Avant `delete_file` (« efface » / « supprime ») : « efface toute ta
+  // personnalisation » n'est pas une suppression de fichier.
+  const personalizationPlan = planPersonalizationToolCall(prompt, has);
+  if (personalizationPlan) return personalizationPlan;
+
+  const knowledgePlan = planKnowledgeToolCall(prompt, has);
+  if (knowledgePlan) return knowledgePlan;
+
+  const siteBlockPlan = planSiteBlockToolCall(prompt, has);
+  if (siteBlockPlan) return siteBlockPlan;
+
   const url = extractUrl(prompt);
   if (available.has('fetch_page') && url) {
     return { preamble: 'Je vais lire cette page.\n\n', tool: 'fetch_page', args: { url } };
@@ -143,7 +168,10 @@ function planToolCall(prompt: string, available: Set<string>): ToolPlan | null {
     };
   }
 
-  if (has('take_screenshot') && /capture d.[ée]cran|screenshot/.test(normalized)) {
+  if (
+    has('take_screenshot') &&
+    /capture (?:d['’]|de l['’])?(?:[ée]cran)|screenshot/.test(normalized)
+  ) {
     return {
       preamble: "Je capture l'écran.\n\n",
       tool: 'take_screenshot',
@@ -190,6 +218,9 @@ function planToolCall(prompt: string, available: Set<string>): ToolPlan | null {
     };
   }
 
+  const spotifyPlan = isMusicIntent(prompt) ? planSpotifyToolCall(prompt, normalized, has) : null;
+  if (spotifyPlan) return spotifyPlan;
+
   if (has('close_application') && /(ferme|quitte|arr[êe]te|tue)\s/.test(normalized)) {
     return {
       preamble: "Je prépare la fermeture de l'application.\n\n",
@@ -226,6 +257,21 @@ function planToolCall(prompt: string, available: Set<string>): ToolPlan | null {
   }
 
   if (
+    has('web_research') &&
+    /recherche approfondie|plusieurs sources|compare\b|comparaison/.test(normalized)
+  ) {
+    const query = extractSearchQuery(prompt);
+    return {
+      preamble: 'Je lance une recherche approfondie.\n\n',
+      tool: 'web_research',
+      args: {
+        queries: [query, `${query} source officielle`].slice(0, 4),
+        limitPerQuery: 4,
+      },
+    };
+  }
+
+  if (
     available.has('web_search') &&
     /recherche|cherche|internet|actualit|météo|meteo|qui est|qui a|quelle est|qu'est-ce que|c'est quoi|capitale de/.test(
       normalized,
@@ -236,6 +282,150 @@ function planToolCall(prompt: string, available: Set<string>): ToolPlan | null {
       tool: 'web_search',
       args: { query: extractSearchQuery(prompt), limit: 5 },
     };
+  }
+
+  return null;
+}
+
+function planSiteBlockToolCall(prompt: string, has: (tool: string) => boolean): ToolPlan | null {
+  const intent = extractSiteBlockIntent(prompt);
+  if (!intent || !has(intent.tool)) return null;
+
+  const preambles: Record<string, string> = {
+    siteblock_get_status: 'Je consulte SiteBlock.\n\n',
+    siteblock_set_blocking: 'Je prépare la modification du blocage SiteBlock.\n\n',
+    siteblock_add_domain: 'Je prépare l’ajout du site à la liste de blocage.\n\n',
+    siteblock_remove_domain: 'Je prépare le déblocage du site.\n\n',
+    siteblock_start_focus: 'Je prépare le mode concentration SiteBlock.\n\n',
+    siteblock_stop_focus: 'Je prépare l’arrêt du mode concentration.\n\n',
+    siteblock_add_period: 'Je prépare la période de blocage.\n\n',
+    siteblock_remove_period: 'Je prépare la suppression de la période SiteBlock.\n\n',
+  };
+
+  return {
+    preamble: preambles[intent.tool] ?? 'Je prépare l’action SiteBlock.\n\n',
+    tool: intent.tool,
+    args: intent.args,
+  };
+}
+
+function planPersonalizationToolCall(
+  prompt: string,
+  has: (tool: string) => boolean,
+): ToolPlan | null {
+  const intent = extractPersonalizationIntent(prompt);
+  if (!intent || !has(intent.tool)) return null;
+
+  const preambles: Record<string, string> = {
+    get_jarvis_personalization: 'Je consulte la mémoire persistante.\n\n',
+    set_jarvis_personalization: 'Je retiens cette préférence.\n\n',
+    add_jarvis_personalization_rule:
+      'J’enregistre cette règle pour les prochaines conversations.\n\n',
+    forget_jarvis_personalization: 'J’oublie cette préférence.\n\n',
+    reset_jarvis_personalization: 'J’efface toute la mémoire persistante.\n\n',
+  };
+
+  return {
+    preamble: preambles[intent.tool] ?? 'Je mets à jour la personnalisation.\n\n',
+    tool: intent.tool,
+    args: intent.args,
+  };
+}
+
+function planKnowledgeToolCall(prompt: string, has: (tool: string) => boolean): ToolPlan | null {
+  const intent = extractKnowledgeIntent(prompt);
+  if (!intent || !has(intent.tool)) return null;
+
+  const preambles: Record<string, string> = {
+    search_jarvis_memory: 'Je cherche dans la mémoire locale.\n\n',
+    remember_jarvis: 'Je prépare l’enregistrement dans la mémoire locale.\n\n',
+    index_jarvis_folder: 'Je prépare l’indexation du dossier.\n\n',
+    get_jarvis_memory_stats: 'Je consulte l’index local.\n\n',
+    clear_jarvis_memory: 'Je prépare l’effacement de la mémoire documentaire.\n\n',
+  };
+
+  return {
+    preamble: preambles[intent.tool] ?? 'Je consulte la mémoire documentaire.\n\n',
+    tool: intent.tool,
+    args: intent.args,
+  };
+}
+
+/**
+ * Routage des huit outils `spotify_*`. Séparé de `planToolCall` parce que
+ * deux de ses motifs (« lance … sur Spotify », « mets du … ») doivent être
+ * vérifiés avant les motifs génériques `ouvre|lance|démarre` de
+ * `open_application` : sans ça, « Lance Get Lucky sur Spotify » ouvrirait
+ * l'application "Get Lucky sur Spotify" au lieu de lancer le morceau. À
+ * l'inverse, une simple « Lance Spotify » (sans morceau ni « sur Spotify »)
+ * ne doit surtout pas déclencher `spotify_play` : c'est bien
+ * `open_application` qui doit s'en charger, comme avant l'ajout de Spotify.
+ */
+function planSpotifyToolCall(
+  prompt: string,
+  normalized: string,
+  has: (tool: string) => boolean,
+): ToolPlan | null {
+  if (
+    has('spotify_current_track') &&
+    /qu(?:'|e )est-ce qui joue|morceau (?:actuel|en cours)/.test(normalized)
+  ) {
+    return {
+      preamble: 'Je regarde ce qui joue sur Spotify.\n\n',
+      tool: 'spotify_current_track',
+      args: {},
+    };
+  }
+
+  if (has('spotify_next') && /morceau suivant|piste suivante|chanson suivante/.test(normalized)) {
+    return { preamble: 'Je passe au morceau suivant.\n\n', tool: 'spotify_next', args: {} };
+  }
+
+  if (
+    has('spotify_previous') &&
+    /morceau pr[ée]c[ée]dent|piste pr[ée]c[ée]dente|chanson pr[ée]c[ée]dente/.test(normalized)
+  ) {
+    return { preamble: 'Je reviens au morceau précédent.\n\n', tool: 'spotify_previous', args: {} };
+  }
+
+  if (has('spotify_set_shuffle') && /\bshuffle\b|mode al[ée]atoire/.test(normalized)) {
+    const enabled = !/(désactiv|desactiv|coupe|arr[êe]te)/.test(normalized);
+    return {
+      preamble: `Je ${enabled ? 'active' : 'désactive'} le mode aléatoire Spotify.\n\n`,
+      tool: 'spotify_set_shuffle',
+      args: { enabled },
+    };
+  }
+
+  if (has('spotify_set_volume') && /\bvolume\b/.test(normalized)) {
+    const percent = Number(prompt.match(/(\d{1,3})\s*%?/)?.[1] ?? 50);
+    return {
+      preamble: `Je règle le volume Spotify à ${percent} %.\n\n`,
+      tool: 'spotify_set_volume',
+      args: { percent: Math.min(100, Math.max(0, percent)) },
+    };
+  }
+
+  if (has('spotify_pause') && /\bpause\b/.test(normalized)) {
+    return { preamble: 'Je mets Spotify en pause.\n\n', tool: 'spotify_pause', args: {} };
+  }
+
+  if (
+    has('spotify_resume') &&
+    (/\breprend(?:s|re)?\b/.test(normalized) || /mets la musique/.test(normalized))
+  ) {
+    return { preamble: 'Je reprends la lecture Spotify.\n\n', tool: 'spotify_resume', args: {} };
+  }
+
+  if (has('spotify_play')) {
+    const query = extractSpotifyPlayQuery(prompt);
+    if (query) {
+      return {
+        preamble: `Je cherche « ${query} » sur Spotify.\n\n`,
+        tool: 'spotify_play',
+        args: { query },
+      };
+    }
   }
 
   return null;
@@ -329,7 +519,7 @@ function answer(prompt: string): string {
   if (prompt.trim().length === 0) {
     return 'Je t’écoute. Pose-moi une question ou demande-moi une action.';
   }
-  if (/bonjour|salut|hello|hey/.test(prompt)) {
+  if (/bonjour|salut|hello|hey/i.test(prompt)) {
     return 'Bonjour. Je suis Jarvis, en mode démonstration hors ligne. Demande-moi l’état de ta machine ou la création d’un dossier pour voir la boucle d’outils en action.';
   }
   return [

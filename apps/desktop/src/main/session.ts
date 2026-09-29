@@ -2,10 +2,13 @@ import type { WebContents } from 'electron';
 import {
   Agent,
   buildAuditEntry,
+  buildPersonalizationPrompt,
   createMessage,
   newConversation,
   randomId,
   withMessages,
+  withSiteBlockPrompt,
+  withKnowledgePrompt,
   withVoiceOriginNotice,
   type AuditLogStore,
   type ChatMessage,
@@ -18,6 +21,8 @@ import {
 } from '@jarvis/core';
 import type { ChatEvent, RuntimeStatus, SendChatInput } from '../shared/ipc.js';
 import { IpcChannel } from '../shared/ipc.js';
+import type { PersonalizationStore } from './personalization.js';
+import type { KnowledgeStore } from './knowledge.js';
 import type { VoiceBridge } from './voice.js';
 
 interface SessionDeps {
@@ -27,6 +32,8 @@ interface SessionDeps {
   auditLog: AuditLogStore;
   getSettings: () => Settings;
   voice: VoiceBridge;
+  personalization: PersonalizationStore;
+  knowledge: KnowledgeStore;
 }
 
 /**
@@ -87,7 +94,12 @@ export class ChatSession {
       // La note d'origine vocale ne vit que dans ce prompt système, transmis
       // au modèle pour ce tour : elle n'est jamais écrite dans `userMessage`
       // ni dans `messages`, donc jamais affichée ni persistée.
-      systemPrompt: withVoiceOriginNotice(settings.systemPrompt, input.source ?? 'text'),
+      systemPrompt: withKnowledgePrompt(
+        withSiteBlockPrompt(
+          withVoiceOriginNotice(settings.systemPrompt, input.source ?? 'text') +
+            buildPersonalizationPrompt(await this.deps.personalization.get()),
+        ),
+      ),
       temperature: settings.temperature,
     });
 
@@ -106,6 +118,9 @@ export class ChatSession {
             break;
           case 'tool_start':
             emit({ type: 'tool_start', callId: event.call.id, toolName: event.call.name });
+            break;
+          case 'tool_progress':
+            emit({ type: 'tool_progress', callId: event.callId, message: event.message });
             break;
           case 'tool_result':
             messages.push(event.message);
@@ -132,7 +147,25 @@ export class ChatSession {
     }
 
     const updated = withMessages(conversation, messages);
-    await this.deps.store.save(updated);
+    try {
+      await this.deps.store.save(updated);
+    } catch (error) {
+      // `done` doit partir quand même : sinon l'interface reste « Jarvis réfléchit… ».
+      emit({
+        type: 'error',
+        message: `Conversation non enregistrée dans l'historique : ${error instanceof Error ? error.message : String(error)}`,
+      });
+    }
+    void this.deps.knowledge
+      .indexConversation(
+        `conversation:${updated.id}`,
+        messages
+          .filter((message) => message.role === 'user' || message.role === 'assistant')
+          .map((message) => `${message.role}: ${message.content}`)
+          .join('\n'),
+        settings,
+      )
+      .catch(() => undefined);
     emit({ type: 'done', conversationId: updated.id, messages: updated.messages });
   }
 

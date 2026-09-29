@@ -83,7 +83,7 @@ export function run(
       return {
         code,
         signal,
-        stdout: clip(stdout, maxOutput),
+        stdout: clip(stdout.replace(/^\uFEFF/, ''), maxOutput),
         stderr: clip(stderr, maxOutput),
         timedOut,
         truncated,
@@ -97,13 +97,27 @@ function clip(text: string, max: number): string {
 }
 
 /**
+ * Sans ça, Windows PowerShell 5.1 écrit sur un tube dans la page de code OEM
+ * (850 en français) : « é » arrive illisible une fois décodé en UTF-8.
+ */
+export const POWERSHELL_UTF8_PREAMBLE =
+  'try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch {}';
+
+/**
  * Exécute un script PowerShell (Windows uniquement) avec `-NoProfile` et
  * `-NonInteractive` pour éviter tout profil utilisateur ou invite bloquante.
  */
 export function runPowerShell(script: string, options: RunOptions = {}): Promise<RunResult> {
   return run(
     'powershell.exe',
-    ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script],
+    [
+      '-NoProfile',
+      '-NonInteractive',
+      '-ExecutionPolicy',
+      'Bypass',
+      '-Command',
+      `${POWERSHELL_UTF8_PREAMBLE}\n${script}`,
+    ],
     options,
   );
 }

@@ -1,0 +1,15 @@
+Jarvis — code source 0.4.11
+
+Version : 0.4.11 (apps/desktop/package.json).
+
+Lisez CLAUDE.md en premier.
+
+Puis, depuis cette racine :
+
+npm ci
+npm run build --workspace @jarvis/core
+npm run dev
+
+Les fichiers voix .onnx et .wasm ne sont pas inclus dans cette archive.
+tokenizer.json et tokenizer_config.json (Whisper) sont inclus.
+npm run dev exécute setup:voice, qui télécharge les poids .onnx et .wasm.

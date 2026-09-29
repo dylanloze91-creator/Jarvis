@@ -227,4 +227,41 @@ describe('ToolManager', () => {
       forced: true,
     });
   });
+
+  it('applique les valeurs par défaut avant d’écrire la confirmation', async () => {
+    const requestConfirmation = vi.fn(async () => true);
+    const capture = defineTool({
+      name: 'take_screenshot',
+      description: 'Capture.',
+      risk: 'confirm',
+      category: 'capture',
+      schema: z.object({ display: z.number().int().min(0).default(0) }),
+      summarize: ({ display }) =>
+        `Capturer l'écran ${display === 0 ? 'principal' : `n°${display + 1}`}.`,
+      describeCommand: ({ display }) => `écran ${display}`,
+      execute: async () => ({ ok: true, content: 'fait' }),
+    });
+
+    await new ToolManager()
+      .register(capture)
+      .execute({ id: '14', name: 'take_screenshot', arguments: {} }, { requestConfirmation });
+
+    expect(requestConfirmation.mock.calls[0]?.[0]).toMatchObject({
+      details: "Capturer l'écran principal.",
+      command: 'écran 0',
+    });
+  });
+
+  it('juge le caractère destructeur avec les défauts du schéma', () => {
+    const close = defineTool({
+      name: 'close_application',
+      description: 'Ferme.',
+      risk: 'confirm',
+      category: 'apps',
+      isDestructive: (input: { forceKill: boolean }) => input.forceKill !== false,
+      schema: z.object({ name: z.string(), forceKill: z.boolean().default(false) }),
+      execute: async () => ({ ok: true, content: 'fait' }),
+    });
+    expect(close.isDestructive({ name: 'notepad' })).toBe(false);
+  });
 });

@@ -1,15 +1,23 @@
 import { describe, expect, it } from 'vitest';
 import {
   SENSITIVITY_THRESHOLD_RANGE,
+  SpeechBurstDetector,
   WakeWordDetector,
   averageProfiles,
   buildWakeWordProfile,
+  buildWakeWordProfileFromEnergyFrames,
+  buildWakeWordProfileFromPcm,
+  buildWakeWordProfilesFromPcm,
   computeRms,
   cosineSimilarity,
+  energyFramesFromPcm,
+  extractSpeechBurstRanges,
   normalize,
+  paddedEnergyWindow,
   resample,
   sensitivityToThreshold,
   thresholdToSensitivity,
+  zeroCrossingRate,
 } from './wakeword.js';
 
 /** Simule une trame d'énergie en forme de cloche, pour représenter un mot prononcé. */
@@ -27,6 +35,19 @@ function sawtoothCurve(length: number): number[] {
 
 function silence(length: number): number[] {
   return new Array(length).fill(0.01);
+}
+
+/** PCM d’une syllabe : enveloppe en cloche, voisée + un peu de friction. */
+function speechLikePcm(durationMs: number, sampleRate = 16000, peak = 0.4): Float32Array {
+  const length = Math.max(1, Math.round((sampleRate * durationMs) / 1000));
+  const pcm = new Float32Array(length);
+  for (let index = 0; index < length; index += 1) {
+    const envelope = Math.sin(Math.PI * (index / Math.max(1, length - 1)));
+    const voiced = Math.sin((2 * Math.PI * 140 * index) / sampleRate);
+    const friction = ((index * 17) % 100) / 100 - 0.5;
+    pcm[index] = envelope * peak * (0.85 * voiced + 0.15 * friction);
+  }
+  return pcm;
 }
 
 describe('resample', () => {
@@ -75,6 +96,45 @@ describe('buildWakeWordProfile', () => {
     const profile = buildWakeWordProfile(bellCurve(40), 24);
     expect(profile.envelope).toHaveLength(24);
     expect(Math.max(...profile.envelope)).toBeCloseTo(1, 5);
+  });
+});
+
+describe('energyFramesFromPcm / buildWakeWordProfileFromPcm', () => {
+  it('découpe un PCM en trames d’énergie de la durée demandée', () => {
+    const sampleRate = 1000;
+    const pcm = new Float32Array(90).fill(0.5);
+    const frames = energyFramesFromPcm(pcm, sampleRate, 30);
+    expect(frames).toHaveLength(3);
+    expect(frames[0]).toBeCloseTo(0.5, 5);
+  });
+
+  it('construit un gabarit à partir d’une rafale de parole, recadrée sur la fenêtre du détecteur', () => {
+    const pcm = speechLikePcm(500);
+    const result = buildWakeWordProfileFromPcm(pcm, 16000);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.profile.envelope).toHaveLength(24);
+  });
+
+  it('refuse un PCM silencieux, sans l’assimiler à un gabarit', () => {
+    const pcm = new Float32Array(8000).fill(0.001);
+    expect(buildWakeWordProfileFromPcm(pcm, 16000)).toEqual({ ok: false, reason: 'silent' });
+  });
+
+  it('refuse un PCM vide', () => {
+    expect(buildWakeWordProfileFromPcm(new Float32Array(0), 16000)).toEqual({
+      ok: false,
+      reason: 'empty',
+    });
+  });
+
+  it('refuse un clic trop court pour être une prise vocale', () => {
+    const pcm = speechLikePcm(80);
+    expect(buildWakeWordProfileFromPcm(pcm, 16000)).toEqual({ ok: false, reason: 'non-speech' });
+  });
+
+  it('refuse un sinus d’amplitude constante (pas une voix)', () => {
+    const pcm = new Float32Array(16000).map((_, index) => Math.sin(index / 8) * 0.4);
+    expect(buildWakeWordProfileFromPcm(pcm, 16000)).toEqual({ ok: false, reason: 'non-speech' });
   });
 });
 
@@ -304,5 +364,111 @@ describe('WakeWordDetector', () => {
     detector.pushEnergy(0.5, 0);
     detector.reset();
     expect(detector.getLastScore()).toBe(0);
+  });
+});
+
+describe('extractSpeechBurstRanges / paddedEnergyWindow', () => {
+  it('isole la parole au milieu d’un long silence', () => {
+    const energies = [...silence(40), ...bellCurve(20).map((value) => value * 0.4), ...silence(40)];
+    const extracted = extractSpeechBurstRanges(energies, 30, 0.012);
+    expect(extracted.ok).toBe(true);
+    if (!extracted.ok) return;
+    expect(extracted.ranges).toHaveLength(1);
+    expect(extracted.ranges[0]!.startFrame).toBeGreaterThan(30);
+    expect(extracted.ranges[0]!.endFrame).toBeLessThan(70);
+  });
+
+  it('recadre une rafale courte au centre d’une fenêtre de 30 trames', () => {
+    const energies = [0.1, 0.5, 1, 0.5, 0.1];
+    const window = paddedEnergyWindow(energies, 0, 5, 9);
+    expect(window).toHaveLength(9);
+    expect(window[4]).toBe(1);
+    expect(window[0]).toBe(0);
+    expect(window[8]).toBe(0);
+  });
+});
+
+describe('buildWakeWordProfilesFromPcm', () => {
+  it('extrait deux prises distinctes dans le même clip', () => {
+    const first = speechLikePcm(400);
+    const gap = new Float32Array(8000);
+    const second = speechLikePcm(500, 16000, 0.5);
+    const pcm = new Float32Array(first.length + gap.length + second.length);
+    pcm.set(first, 0);
+    pcm.set(second, first.length + gap.length);
+    const result = buildWakeWordProfilesFromPcm(pcm, 16000);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.profiles.length).toBe(2);
+  });
+
+  it('un mot noyé dans 8 s de silence matche encore la fenêtre glissante de 900 ms', () => {
+    const word = speechLikePcm(450);
+    const lead = new Float32Array(16000 * 4);
+    const tail = new Float32Array(16000 * 4);
+    const pcm = new Float32Array(lead.length + word.length + tail.length);
+    pcm.set(word, lead.length);
+
+    const built = buildWakeWordProfileFromPcm(pcm, 16000);
+    expect(built.ok).toBe(true);
+    if (!built.ok) return;
+
+    const detector = new WakeWordDetector(
+      { profiles: [built.profile], matchStrategy: 'best' },
+      { frameMs: 30, windowMs: 900, threshold: 0.72, cooldownMs: 1000 },
+    );
+
+    const live = paddedEnergyWindow(
+      energyFramesFromPcm(pcm, 16000),
+      Math.round((lead.length / 16000) * 1000 / 30),
+      Math.round(((lead.length + word.length) / 16000) * 1000 / 30),
+      30,
+    );
+    let now = 0;
+    let detected = false;
+    for (const energy of live) {
+      now += 30;
+      detected = detector.pushEnergy(energy, now) || detected;
+    }
+    expect(detected).toBe(true);
+    expect(detector.getLastScore()).toBeGreaterThanOrEqual(0.72);
+  });
+});
+
+describe('zeroCrossingRate / buildWakeWordProfileFromEnergyFrames', () => {
+  it('un silence a un taux de passages par zéro nul', () => {
+    expect(zeroCrossingRate(new Float32Array(200))).toBe(0);
+  });
+
+  it('construit un gabarit depuis des trames RMS déjà isolées', () => {
+    const energies = [...silence(10), ...bellCurve(16).map((value) => value * 0.3), ...silence(10)];
+    const result = buildWakeWordProfileFromEnergyFrames(energies);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.profile.envelope).toHaveLength(24);
+  });
+});
+
+describe('SpeechBurstDetector', () => {
+  it('émet un candidat après assez de trames au-dessus du seuil', () => {
+    const burst = new SpeechBurstDetector(3, 0.1, 1000);
+    expect(burst.push(0.2, 0)).toBe(false);
+    expect(burst.push(0.2, 30)).toBe(false);
+    expect(burst.push(0.2, 60)).toBe(true);
+  });
+
+  it('repart de zéro si une trame retombe sous le seuil', () => {
+    const burst = new SpeechBurstDetector(3, 0.1, 1000);
+    burst.push(0.2, 0);
+    burst.push(0.01, 30);
+    expect(burst.push(0.2, 60)).toBe(false);
+    expect(burst.push(0.2, 90)).toBe(false);
+    expect(burst.push(0.2, 120)).toBe(true);
+  });
+
+  it('respecte le repos entre deux candidats', () => {
+    const burst = new SpeechBurstDetector(2, 0.1, 5000);
+    expect(burst.push(0.2, 0)).toBe(false);
+    expect(burst.push(0.2, 30)).toBe(true);
+    expect(burst.push(0.2, 60)).toBe(false);
+    expect(burst.push(0.2, 90)).toBe(false);
   });
 });

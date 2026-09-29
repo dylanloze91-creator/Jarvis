@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { DEFAULT_SYSTEM_PROMPT } from './agent/agent.js';
+import { DEFAULT_SITEBLOCK_BASE_URL } from './siteblock/url.js';
 import { defaultCategoryPolicies } from './tools/permissions.js';
-import { DEFAULT_WHISPER_STT_MODEL_ID } from './speech/whisperModels.js';
 
 const confirmationPolicySchema = z.enum(['always', 'destructive-only', 'never']);
 
@@ -26,33 +26,19 @@ export const voiceSettingsSchema = z.object({
   enabled: z.boolean().default(false),
   wakeWord: z.string().min(1).default('jarvis'),
   /**
-   * Gabarits d'énergie du mot de réveil, capturés localement (plusieurs
-   * échantillons possibles, tableau vide = pas encore entraîné).
+   * Gabarits d'énergie du déclencheur « Jarvis » nu, qui tourne à côté
+   * d'openWakeWord (modèle « hey jarvis ») et que Whisper confirme. Micro
+   * ou import WAV/MP3. L'audio brut n'est jamais conservé.
    */
   wakeWordProfiles: z.array(z.array(z.number())).default([]),
   /** `best` compare au gabarit le plus proche, `average` à leur moyenne. */
   wakeWordMatchStrategy: z.enum(['best', 'average']).default('best'),
   /** 0 (strict, peu de faux positifs) à 1 (très sensible). */
-  wakeWordSensitivity: z.number().min(0).max(1).default(0.5),
-  /**
-   * Moteur de détection du mot de réveil : identifiant enregistré dans le
-   * registre dédié. `whisper-transcript` (Whisper local sur de courtes
-   * fenêtres glissantes) est le défaut : le gabarit par énergie
-   * (`local-template`) ne compare que des volumes dans le temps, sans
-   * information spectrale, et se révèle peu fiable en conditions réelles.
-   */
-  wakeWordEngine: z.string().min(1).default('whisper-transcript'),
-  /**
-   * Clé d'accès Picovoice (Porcupine), optionnelle. Sa présence sélectionne
-   * automatiquement Porcupine ; vide, l'application reste sur le moteur par
-   * transcription. Voir le README pour le coût réel de cette clé.
-   */
-  wakeWordAccessKey: z.string().default(''),
+  wakeWordSensitivity: z.number().min(0).max(1).default(0.7),
   /**
    * Variantes orthographiques supplémentaires du mot de réveil, en plus des
-   * variantes intégrées (erreurs de transcription connues) — pour le moteur
-   * `whisper-transcript` uniquement. Éditable dans les réglages, pour rester
-   * extensible sans toucher au code.
+   * variantes intégrées — utilisées par la confirmation Whisper. Éditable
+   * dans les réglages.
    */
   wakeWordVariants: z.array(z.string()).default([]),
   /** Identifiant du périphérique micro choisi ; vide = périphérique par défaut du système. */
@@ -66,11 +52,6 @@ export const voiceSettingsSchema = z.object({
    * et n'est plus proposée.
    */
   sttProvider: z.string().min(1).default('local-whisper'),
-  /**
-   * Taille du modèle Whisper local utilisé pour la dictée : voir
-   * `WHISPER_STT_MODELS`. Sans effet sur les autres moteurs.
-   */
-  sttModel: z.enum(['tiny', 'base', 'small']).default(DEFAULT_WHISPER_STT_MODEL_ID),
   /** Moteur de synthèse vocale : identifiant enregistré dans le registre TTS. */
   ttsProvider: z.string().min(1).default('browser-local'),
   /** Réponse vocale de l'assistant, activable indépendamment de l'écoute permanente. */
@@ -95,16 +76,44 @@ export const settingsSchema = z.object({
   hotkey: z.string().min(1).default('Control+Space'),
   systemPrompt: z.string().default(DEFAULT_SYSTEM_PROMPT),
   temperature: z.number().min(0).max(2).default(0.4),
-  /** Fournisseur utilisé par l'outil `web_search`. */
-  searchProvider: z.string().min(1).default('wikipedia'),
+  /** Fournisseur utilisé par l'outil `web_search`. Google HTML sans clé par défaut. */
+  searchProvider: z.string().min(1).default('google'),
   /** Clé optionnelle, requise seulement par certains fournisseurs (ex. Brave Search). */
   searchApiKey: z.string().default(''),
   /** Fournisseur utilisé par l'outil `get_stock_quote`. */
   marketDataProvider: z.string().min(1).default('yahoo-finance'),
   /** Clé optionnelle, requise seulement par certains fournisseurs (ex. Finnhub). */
   marketDataApiKey: z.string().default(''),
-  /** Masquer la fenêtre dès qu'elle perd le focus, à la manière d'un lanceur. */
-  hideOnBlur: z.boolean().default(true),
+  /**
+   * Identifiant client (« Client ID ») de l'application Spotify for
+   * Developers, utilisé par les outils `spotify_*`. Volontairement pas une
+   * variable d'environnement : une application Windows installée n'a pas de
+   * shell pour la définir. Comme les autres clés, elle vit uniquement dans
+   * `settings.json`, sur la machine de l'utilisateur. Il n'y a pas de Client
+   * Secret : l'authentification utilise PKCE, conçu pour ne jamais en avoir
+   * besoin côté application desktop/mobile.
+   */
+  spotifyClientId: z.string().default(''),
+  /**
+   * URL loopback de l'API locale SiteBlock. Pas une variable
+   * d'environnement : comme Spotify, elle vit dans `settings.json`.
+   * Défaut : `http://127.0.0.1:18741`. Seules les adresses locales
+   * (127.0.0.1 / localhost / ::1) sont acceptées par le pont.
+   */
+  siteBlockBaseUrl: z.string().default(DEFAULT_SITEBLOCK_BASE_URL),
+  /**
+   * Jeton Bearer de l'API ControlApi de SiteBlock. Secret local, jamais
+   * une variable d'environnement. Laissé vide, Jarvis tente de le lire
+   * dans `%APPDATA%\\SiteBlock\\api.json` si SiteBlock tourne.
+   */
+  siteBlockToken: z.string().default(''),
+  /**
+   * Garder la fenêtre visible quand une autre application prend le focus.
+   * Masquage uniquement via Ctrl+Espace, Échap, ou le bouton fermer.
+   * Remplace l'ancien `hideOnBlur` (défaut true) : la clé historique est
+   * ignorée pour que les installations 0.4.0 passent au nouveau défaut.
+   */
+  stayVisibleOnBlur: z.boolean().default(true),
   launchAtLogin: z.boolean().default(false),
   /** Politique de confirmation par catégorie d'outils. Voir `packages/core/src/tools/permissions.ts`. */
   toolPolicies: toolPoliciesSchema,
@@ -115,7 +124,49 @@ export type Settings = z.infer<typeof settingsSchema>;
 
 export const defaultSettings: Settings = settingsSchema.parse({});
 
-export function parseSettings(input: unknown): Settings {
+/**
+ * Un champ invalide (modèle vidé, raccourci effacé…) ne doit jamais faire
+ * perdre le reste de la configuration, clés API comprises : seul ce champ
+ * reprend la valeur de `fallback` (les réglages précédents lors d'un
+ * enregistrement, les défauts à la lecture du disque).
+ */
+export function parseSettings(input: unknown, fallback: Settings = defaultSettings): Settings {
   const result = settingsSchema.safeParse(input ?? {});
-  return result.success ? result.data : defaultSettings;
+  if (result.success) return result.data;
+  if (!isRecord(input)) return fallback;
+
+  let candidate: Record<string, unknown> = { ...input };
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const retry = settingsSchema.safeParse(candidate);
+    if (retry.success) return retry.data;
+    const repaired = replaceInvalidFields(candidate, retry.error.issues, fallback);
+    if (!repaired) break;
+    candidate = repaired;
+  }
+  return fallback;
+}
+
+function replaceInvalidFields(
+  value: Record<string, unknown>,
+  issues: z.core.$ZodIssue[],
+  fallback: Settings,
+): Record<string, unknown> | null {
+  const next: Record<string, unknown> = { ...value };
+  const defaults = fallback as unknown as Record<string, unknown>;
+  for (const issue of issues) {
+    const [top, nested] = issue.path;
+    if (typeof top !== 'string') return null;
+    const child = next[top];
+    const fallbackChild = defaults[top];
+    if (typeof nested === 'string' && isRecord(child) && isRecord(fallbackChild)) {
+      next[top] = { ...child, [nested]: fallbackChild[nested] };
+    } else {
+      next[top] = fallbackChild;
+    }
+  }
+  return next;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

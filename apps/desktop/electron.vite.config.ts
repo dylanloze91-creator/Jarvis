@@ -1,7 +1,16 @@
-import { resolve } from 'node:path';
+import { createRequire } from 'node:module';
+import { dirname, join, resolve } from 'node:path';
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
+import { jarvisMachinePlugin } from './src/main/machinePlugin';
+
+const require = createRequire(import.meta.url);
+// Un seul runtime ONNX pour Whisper et openWakeWord. transformers.js importe
+// `onnxruntime-web/webgpu`, openWakeWord `onnxruntime-web` : les deux pointent
+// sur `ort.wasm.min.mjs` (WebAssembly seul, ni JSEP ni WebGPU), donc un seul
+// module, un seul `.wasm` (celui copié par setup:voice dans voice-assets/ort).
+const onnxRuntimeWasm = join(dirname(require.resolve('onnxruntime-web')), 'ort.wasm.min.mjs');
 
 export default defineConfig({
   main: {
@@ -23,9 +32,12 @@ export default defineConfig({
   renderer: {
     root: resolve(__dirname, 'src/renderer'),
     resolve: {
-      alias: { '@': resolve(__dirname, 'src/renderer/src') },
+      alias: [
+        { find: '@', replacement: resolve(__dirname, 'src/renderer/src') },
+        { find: /^onnxruntime-web(\/webgpu)?$/, replacement: onnxRuntimeWasm },
+      ],
     },
-    plugins: [react(), tailwindcss()],
+    plugins: [react(), tailwindcss(), jarvisMachinePlugin(resolve(__dirname, 'package.json'))],
     build: {
       rollupOptions: {
         input: { index: resolve(__dirname, 'src/renderer/index.html') },

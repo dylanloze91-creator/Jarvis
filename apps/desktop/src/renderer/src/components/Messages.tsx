@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { ChatItem } from '@/hooks/useChat';
+import { sourcePillLabel, sourcePills, type SourcePill } from '@/dashboard/sources';
 import { cn } from '@/lib/utils';
 
 export function Messages({ items }: { items: ChatItem[] }) {
@@ -13,41 +14,53 @@ export function Messages({ items }: { items: ChatItem[] }) {
   }, [items]);
 
   return (
-    <div className="flex flex-col gap-3 px-4 py-3">
-      {items.map((item) => (
-        <Item key={item.id} item={item} />
+    <div className="messages-list">
+      {items.map((item, index) => (
+        <Item
+          key={item.id}
+          item={item}
+          sources={item.kind === 'assistant' ? sourcePills(items, index) : []}
+        />
       ))}
       <div ref={bottom} />
     </div>
   );
 }
 
-function Item({ item }: { item: ChatItem }) {
+function Item({ item, sources }: { item: ChatItem; sources: SourcePill[] }) {
   if (item.kind === 'user') {
     return (
-      <div className="flex justify-end">
-        <div className="max-w-[80%] rounded-2xl rounded-br-md bg-accent/15 px-3.5 py-2 text-sm leading-relaxed text-slate-100">
-          {item.text}
-        </div>
+      <div className="message-row user-row">
+        <div className="user-bubble">{item.text}</div>
       </div>
     );
   }
 
   if (item.kind === 'assistant') {
     return (
-      <div className="markdown max-w-[92%] text-sm text-slate-200">
-        <Markdown remarkPlugins={[remarkGfm]}>{item.text}</Markdown>
-        {item.streaming ? (
-          <span className="ml-0.5 inline-block h-3.5 w-[2px] translate-y-0.5 animate-pulse bg-accent" />
-        ) : null}
+      <div className="assistant-row">
+        <div className="assistant-avatar">J</div>
+        <div className="markdown assistant-copy">
+          <Markdown remarkPlugins={[remarkGfm]}>{item.text}</Markdown>
+          {item.streaming ? <span className="stream-caret" /> : null}
+          {sources.length > 0 ? (
+            <div className="source-pills">
+              {sources.map((pill) => (
+                <span key={pill.host} className="source-pill">
+                  {sourcePillLabel(pill)}
+                </span>
+              ))}
+            </div>
+          ) : null}
+        </div>
       </div>
     );
   }
 
   if (item.kind === 'error') {
     return (
-      <div className="flex items-start gap-2 rounded-xl border border-rose-500/25 bg-rose-500/10 px-3 py-2 text-sm text-rose-200">
-        <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+      <div className="error-card">
+        <AlertTriangle className="size-4 shrink-0" />
         <span>{item.text}</span>
       </div>
     );
@@ -62,42 +75,38 @@ function ToolItem({ item }: { item: Extract<ChatItem, { kind: 'tool' }> }) {
   const failed = item.status === 'error';
 
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className="tool-row">
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
-        disabled={item.content.length === 0}
-        className={cn(
-          'no-drag flex w-fit items-center gap-2 rounded-full border px-2.5 py-1 text-xs transition-colors',
-          denied && 'border-amber-500/30 bg-amber-500/10 text-amber-200',
-          failed && 'border-rose-500/30 bg-rose-500/10 text-rose-200',
-          !denied && !failed && 'border-white/10 bg-white/5 text-slate-300 hover:bg-white/10',
-        )}
+        disabled={item.content.length === 0 && !item.progress}
+        className={cn('tool-chip', denied && 'denied', failed && 'failed')}
       >
         {denied ? (
           <ShieldOff className="size-3.5" />
         ) : item.status === 'ok' ? (
-          <Check className="size-3.5 text-accent" />
+          <Check className="size-3.5 text-cyan-300" />
         ) : (
           <Wrench className={cn('size-3.5', item.status === 'running' && 'animate-pulse')} />
         )}
-        <span className="font-mono">{item.name}</span>
-        <span className="text-slate-500">{statusLabel(item.status)}</span>
+        <span className="max-w-[440px] truncate">{toolTitle(item)}</span>
+        <span className="tool-status">{statusLabel(item.status)}</span>
       </button>
-
-      {open && item.content ? (
-        <pre className="max-h-48 overflow-auto rounded-xl border border-white/8 bg-black/30 px-3 py-2 font-mono text-[11px] leading-relaxed whitespace-pre-wrap text-slate-400">
-          {item.content}
-        </pre>
-      ) : null}
+      {open && item.content ? <pre className="tool-detail">{item.content}</pre> : null}
     </div>
   );
+}
+
+function toolTitle(item: Extract<ChatItem, { kind: 'tool' }>): string {
+  if (item.status === 'running' && item.progress) return item.progress;
+  if (item.name === 'youtube_transcript') return 'Écoute YouTube';
+  return item.name;
 }
 
 function statusLabel(status: Extract<ChatItem, { kind: 'tool' }>['status']): string {
   switch (status) {
     case 'running':
-      return 'en cours…';
+      return 'en cours';
     case 'ok':
       return 'terminé';
     case 'error':

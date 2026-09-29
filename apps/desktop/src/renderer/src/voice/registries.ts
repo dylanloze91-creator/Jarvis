@@ -1,36 +1,32 @@
 import {
   SpeechToTextRegistry,
   TextToSpeechRegistry,
-  createDefaultWakeWordEngineRegistry,
+  WHISPER_DICTATION_LANGUAGE,
+  WHISPER_WAKE_WORD_LANGUAGE,
   createLocalTemplateWakeWordEngine,
   openAISttDescriptor,
   openAITtsDescriptor,
-  type WakeWordEngineRegistry,
+  wrapWakeWordEngineWithLoadFallback,
+  wrapWakeWordEngineWithTranscriptConfirmation,
+  type WakeWordEngine,
+  type WakeWordEngineConfig,
 } from '@jarvis/core';
 import { LocalBrowserTtsProvider, localTtsDescriptor } from './localTts';
 import { LocalWhisperSttProvider, localWhisperSttDescriptor } from './localWhisperStt';
-import { PorcupineWakeWordEngine, porcupineWakeWordDescriptor } from './porcupineWakeWordEngine';
+import { OpenWakeWordEngine } from './openWakeWordEngine';
 import { IpcSttProvider, IpcTtsProvider } from './remote';
-import { createWhisperWakeWordEngine, whisperWakeWordDescriptor } from './whisperWakeWordEngine';
+import { WAKE_WORD_MAX_NEW_TOKENS, transcribeWithWhisper } from './whisper/pipelineLoader';
 
 /**
- * Registres complets côté renderer : les moteurs locaux (DOM, transformers.js)
- * et les moteurs distants (OpenAI, proxifiés par IPC) y sont enregistrés
- * côte à côte. C'est le seul endroit qui les assemble tous les deux —
- * exactement comme `createToolManager()` assemble les outils spécifiques à
- * Electron sur le `ToolManager` générique du cœur.
- *
- * La reconnaissance intégrée du navigateur (Web Speech API, id
- * `browser-local`) n'est plus enregistrée ici : elle est structurellement
- * cassée dans Electron (dépend de serveurs Google absents des builds
- * Electron — voir le README) et ne fonctionnera jamais. La laisser dans la
- * liste des moteurs choisissables n'aurait fait que tendre un piège à
- * l'utilisateur ; `LocalWhisperSttProvider` la remplace comme moteur
- * gratuit par défaut.
+ * Registres côté renderer. Un seul moteur local de reconnaissance : Whisper
+ * (`LocalWhisperSttProvider`), le même que celui qui confirme le mot de
+ * réveil et écoute les vidéos YouTube. OpenAI reste proposé à part (clé
+ * requise, jamais un repli). La reconnaissance intégrée du navigateur n'est
+ * pas enregistrée : elle dépend de serveurs Google absents d'Electron.
  */
 export function createSttRegistry(): SpeechToTextRegistry {
   return new SpeechToTextRegistry()
-    .register(localWhisperSttDescriptor, (config) => new LocalWhisperSttProvider(config))
+    .register(localWhisperSttDescriptor, () => new LocalWhisperSttProvider())
     .register(openAISttDescriptor, () => new IpcSttProvider());
 }
 
@@ -40,23 +36,34 @@ export function createTtsRegistry(): TextToSpeechRegistry {
     .register(openAITtsDescriptor, () => new IpcTtsProvider());
 }
 
-/**
- * Registre du mot de réveil : `whisper-transcript` (Whisper local sur de
- * courtes fenêtres glissantes) est le moteur par défaut — voir
- * `whisperWakeWordEngine.ts` pour le détail. Le gabarit par énergie
- * (`local-template`, dans le cœur) reste une option, désormais documentée
- * comme peu fiable. Porcupine s'y ajoute aussi comme option, jamais comme
- * repli automatique — voir le README pour son coût réel avant de le
- * choisir.
- */
-export function createWakeWordEngineRegistry(): WakeWordEngineRegistry {
-  const registry = createDefaultWakeWordEngineRegistry();
-  registry.register(whisperWakeWordDescriptor, createWhisperWakeWordEngine);
-  registry.register(
-    porcupineWakeWordDescriptor,
-    (config) => new PorcupineWakeWordEngine(config.apiKey ?? ''),
-  );
-  return registry;
+/** Gabarit d'énergie confirmé par Whisper : le déclencheur « Jarvis » nu. */
+function createBareJarvisTrigger(config: WakeWordEngineConfig): WakeWordEngine {
+  return wrapWakeWordEngineWithTranscriptConfirmation(createLocalTemplateWakeWordEngine(config), {
+    transcribe: (pcm) =>
+      transcribeWithWhisper(pcm, {
+        language: WHISPER_WAKE_WORD_LANGUAGE,
+        maxNewTokens: WAKE_WORD_MAX_NEW_TOKENS,
+      }),
+    secondOpinion: (pcm) =>
+      transcribeWithWhisper(pcm, {
+        language: WHISPER_DICTATION_LANGUAGE,
+        maxNewTokens: WAKE_WORD_MAX_NEW_TOKENS,
+      }),
+    word: config.keyword ?? 'jarvis',
+    variants: config.variants ?? [],
+    acceptOnTranscriptionError: false,
+  });
 }
 
-export { createLocalTemplateWakeWordEngine };
+/**
+ * Le seul chemin du mot de réveil : openWakeWord (modèle officiel
+ * « hey jarvis ») et, en parallèle dès le départ, le déclencheur « Jarvis »
+ * nu. Si openWakeWord ne charge pas, le déclencheur continue seul.
+ */
+export function createWakeWordEngine(config: WakeWordEngineConfig): WakeWordEngine {
+  return wrapWakeWordEngineWithLoadFallback(
+    new OpenWakeWordEngine(config),
+    () => createBareJarvisTrigger(config),
+    { alwaysOn: true },
+  );
+}

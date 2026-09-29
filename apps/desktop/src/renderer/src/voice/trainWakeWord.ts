@@ -1,21 +1,22 @@
 import {
-  WakeWordDetector,
-  buildWakeWordProfile,
+  buildWakeWordProfileFromEnergyFrames,
+  buildWakeWordProfilesFromPcm,
   computeRms,
-  type WakeWordDetectorConfig,
+  type WakeWordEngineConfig,
   type WakeWordProfile,
 } from '@jarvis/core';
 import { startAudioCapture, type AudioCaptureHandle } from './audioCapture';
+import { VOICE_SAMPLE_RATE, decodeAudioToMono16k } from './audioDecode';
+import { createWakeWordEngine } from './registries';
 
 const SAMPLE_DURATION_MS = 1200;
 
 /**
  * Enregistre un court échantillon local du mot de réveil et construit son
- * gabarit d'énergie. L'audio brut n'est jamais conservé ni envoyé nulle
- * part : seule l'enveloppe (quelques dizaines de nombres) est gardée, dans
- * les réglages. Le composant appelant est responsable d'accumuler plusieurs
- * échantillons (`voice.wakeWordProfiles`) : cette fonction n'en produit
- * qu'un à la fois.
+ * gabarit d'énergie. L'audio brut n'est jamais conservé ni envoyé à Whisper :
+ * seule l'enveloppe (quelques dizaines de nombres) est gardée, dans les
+ * réglages. Whisper ne s'en sert pas pour s'entraîner — il confirme ensuite
+ * que le candidat est bien « Jarvis ».
  */
 export async function recordWakeWordProfile(
   deviceId: string | undefined,
@@ -35,13 +36,55 @@ export async function recordWakeWordProfile(
   await new Promise((resolve) => setTimeout(resolve, SAMPLE_DURATION_MS));
   handle.stop();
 
-  if (energies.length === 0) {
+  const result = buildWakeWordProfileFromEnergyFrames(energies);
+  if (!result.ok && result.reason === 'empty') {
     throw new Error("Aucun son capturé pendant l'enregistrement.");
   }
-  if (Math.max(...energies) < 0.02) {
+  if (!result.ok && result.reason === 'silent') {
     throw new Error('Rien n’a été entendu : parle plus fort ou vérifie le microphone.');
   }
-  return buildWakeWordProfile(energies);
+  if (!result.ok) {
+    throw new Error(
+      'Ça ne ressemble pas à une prise vocale. Dis « Jarvis » clairement, sans trop de silence autour.',
+    );
+  }
+  return result.profile;
+}
+
+/**
+ * Importe un WAV ou un MP3 comme gabarit de déclenchement — pas comme
+ * données d'entraînement Whisper. Chromium décode les deux formats via
+ * `decodeAudioData` ; l'audio brut est jeté dès que l'enveloppe est extraite.
+ */
+export async function importWakeWordProfilesFromAudioFile(file: File): Promise<WakeWordProfile[]> {
+  let pcm: Float32Array;
+  try {
+    pcm = await decodeAudioToMono16k(await file.arrayBuffer());
+  } catch {
+    throw new Error(`Impossible de lire « ${file.name} ». Utilise un WAV ou un MP3.`);
+  }
+
+  const result = buildWakeWordProfilesFromPcm(pcm, VOICE_SAMPLE_RATE);
+  if (!result.ok && result.reason === 'empty') {
+    throw new Error(`« ${file.name} » est trop court pour servir de gabarit.`);
+  }
+  if (!result.ok && result.reason === 'silent') {
+    throw new Error(
+      `Rien n’a été entendu dans « ${file.name} » : enregistre « Jarvis » plus fort, ou choisis un autre fichier.`,
+    );
+  }
+  if (!result.ok) {
+    throw new Error(
+      `« ${file.name} » ne contient pas de prise vocale utilisable (silence, clic ou bruit).`,
+    );
+  }
+  return result.profiles;
+}
+
+/** @deprecated préfère `importWakeWordProfilesFromAudioFile` (plusieurs rafales). */
+export async function importWakeWordProfileFromAudioFile(file: File): Promise<WakeWordProfile> {
+  const profiles = await importWakeWordProfilesFromAudioFile(file);
+  return profiles[0]!;
 }
 
 /** Les erreurs de `getUserMedia` arrivent en anglais et sans contexte utile. */
@@ -66,37 +109,37 @@ export interface WakeWordTestHandle {
 }
 
 /**
- * Boucle de test en direct pour la calibration : réutilise le même
- * détecteur que la production (`WakeWordDetector`) sur le micro choisi, et
- * remonte le score de similarité en continu — l'utilisateur voit tout de
- * suite si la sensibilité choisie est trop stricte ou trop permissive,
- * avant même d'activer l'écoute permanente.
+ * Test en direct : le même moteur que l'écoute permanente
+ * (`createWakeWordEngine` : openWakeWord + « Jarvis » nu confirmé par
+ * Whisper), sur le micro choisi. Le score affiché est celui d'openWakeWord.
  */
 export async function startWakeWordTest(
   deviceId: string | undefined,
-  detectorConfig: WakeWordDetectorConfig | null,
-  sensitivity: number,
+  config: WakeWordEngineConfig,
   onUpdate: (score: number, detected: boolean) => void,
   onError: (message: string) => void,
 ): Promise<WakeWordTestHandle> {
-  const detector = new WakeWordDetector(detectorConfig);
-  detector.setSensitivity(sensitivity);
+  const controller = createWakeWordEngine(config).start({
+    onScore: (score) => onUpdate(score, false),
+    onDetected: () => onUpdate(1, true),
+    onError,
+  });
 
   let handle: AudioCaptureHandle | null = null;
   try {
     handle = await startAudioCapture(deviceId, {
-      onFrame: (frame) => {
-        const rms = computeRms(frame);
-        const detected = detector.pushEnergy(rms);
-        onUpdate(detector.getLastScore(), detected);
-      },
+      onFrame: (frame, sampleRate) => controller.pushAudio?.(frame, sampleRate),
       onError,
     });
   } catch (error) {
+    controller.stop();
     throw new Error(describeMicrophoneError(error));
   }
 
   return {
-    stop: () => handle?.stop(),
+    stop: () => {
+      handle?.stop();
+      controller.stop();
+    },
   };
 }

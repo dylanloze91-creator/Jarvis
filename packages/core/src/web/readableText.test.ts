@@ -46,6 +46,11 @@ describe('extractReadableText', () => {
     expect(result.text).toContain('€');
   });
 
+  it('ignore une entité numérique hors Unicode au lieu de planter', () => {
+    const result = extractReadableText('<p>A&#99999999;B&#x110000;C</p>');
+    expect(result.text).toBe('ABC');
+  });
+
   it('gère une page vide sans planter', () => {
     const result = extractReadableText('');
     expect(result.text).toBe('');
