@@ -42,6 +42,7 @@ import { createToolManager } from './tools/index.js';
 import { summarizeYoutubeLink } from './youtube/runtime.js';
 import { UpdateManager } from './updater.js';
 import { VoiceBridge } from './voice.js';
+import { presentWindow } from './startup.js';
 import { createOverlayWindow, type OverlayWindow } from './window.js';
 import {
   currentVoiceAssetsRoot,
@@ -101,13 +102,16 @@ if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
   app.on('second-instance', () => overlay?.show());
-  void bootstrap();
+  void bootstrap().catch((error: unknown) => {
+    console.error(error);
+    overlay?.show();
+  });
 }
 
 async function bootstrap(): Promise<void> {
   app.setName('Jarvis');
-  settings = await readSettings();
-  await app.whenReady();
+  const [loaded] = await Promise.all([readSettings(), app.whenReady()]);
+  settings = loaded;
   registerVoiceAssetsProtocol();
 
   app.setAppUserModelId('com.thedexios.jarvis');
@@ -123,7 +127,14 @@ async function bootstrap(): Promise<void> {
   // En développement, garder la fenêtre visible quand le focus part (devtools, éditeur).
   overlay = createOverlayWindow(!settings.stayVisibleOnBlur && !isDev);
   registerIpc();
-  await loadRenderer(overlay.browserWindow);
+  const window = overlay.browserWindow;
+  await presentWindow(
+    {
+      once: (event, listener) => window.once(event, listener),
+      show: () => overlay?.show(),
+    },
+    () => loadRenderer(window),
+  );
   registerHotkey(settings.hotkey);
   createTray();
 
@@ -133,8 +144,6 @@ async function bootstrap(): Promise<void> {
     overlay?.browserWindow.webContents.send(IpcChannel.updateEvent, state);
   });
   updateManager.start();
-
-  overlay.show();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) return;
@@ -264,6 +273,7 @@ function registerIpc(): void {
   ipcMain.handle(IpcChannel.auditClear, () => auditLog.clear());
 
   ipcMain.handle(IpcChannel.windowHide, () => overlay?.hide());
+  ipcMain.handle(IpcChannel.windowIsVisible, () => overlay?.browserWindow.isVisible() ?? false);
   ipcMain.handle(IpcChannel.windowResize, (_event, height: number) => overlay?.resize(height));
   ipcMain.handle(IpcChannel.windowSetChrome, (_event, mode: 'compact' | 'dashboard') => {
     if (mode === 'compact' || mode === 'dashboard') overlay?.setChrome(mode);

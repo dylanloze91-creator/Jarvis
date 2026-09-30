@@ -139,6 +139,12 @@ export function installPreviewBridge(): void {
         document.documentElement.dataset.jarvisChrome = mode;
         window.dispatchEvent(new Event('resize'));
       },
+      isVisible: async () => true,
+      onShown: (listener: () => void) => {
+        const onShow = (): void => listener();
+        window.addEventListener('jarvis-window-shown', onShow);
+        return () => window.removeEventListener('jarvis-window-shown', onShow);
+      },
     },
     system: {
       snapshot: previewSnapshot,

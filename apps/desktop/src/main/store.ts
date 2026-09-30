@@ -26,9 +26,27 @@ export async function readSettings(): Promise<Settings> {
   }
 }
 
-export async function writeSettings(settings: Settings): Promise<void> {
-  await mkdir(userDataPath(), { recursive: true });
-  await writeFile(userDataPath(SETTINGS_FILE), JSON.stringify(settings, null, 2), 'utf8');
+/**
+ * File d'écriture. Le JSON est figé à l'appel : deux enregistrements
+ * rapprochés ne doivent pas se dépasser, sinon le disque garde l'ancien.
+ */
+export function createSerialQueue(): (task: () => Promise<void>) => Promise<void> {
+  let tail: Promise<void> = Promise.resolve();
+  return (task) => {
+    const run = tail.then(task, task);
+    tail = run.catch(() => undefined);
+    return run;
+  };
+}
+
+const enqueueSettingsWrite = createSerialQueue();
+
+export function writeSettings(settings: Settings): Promise<void> {
+  const body = JSON.stringify(settings, null, 2);
+  return enqueueSettingsWrite(async () => {
+    await mkdir(userDataPath(), { recursive: true });
+    await writeFile(userDataPath(SETTINGS_FILE), body, 'utf8');
+  });
 }
 
 /**

@@ -71,6 +71,12 @@ const api: JarvisApi = {
     hide: () => ipcRenderer.invoke(IpcChannel.windowHide),
     resize: (height: number) => ipcRenderer.invoke(IpcChannel.windowResize, height),
     setChrome: (mode: WindowChrome) => ipcRenderer.invoke(IpcChannel.windowSetChrome, mode),
+    isVisible: () => ipcRenderer.invoke(IpcChannel.windowIsVisible),
+    onShown: (listener: () => void) => {
+      const handler = (): void => listener();
+      ipcRenderer.on(IpcChannel.windowShown, handler);
+      return () => ipcRenderer.removeListener(IpcChannel.windowShown, handler);
+    },
   },
   system: {
     snapshot: () => ipcRenderer.invoke(IpcChannel.systemSnapshot),

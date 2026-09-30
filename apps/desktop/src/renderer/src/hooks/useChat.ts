@@ -123,7 +123,18 @@ export function useChat(options: UseChatOptions = {}) {
       const trimmed = text.trim();
       if (trimmed.length === 0 || busy) return;
       setBusy(true);
-      void window.jarvis.chat.send({ conversationId, text: trimmed, source });
+      void window.jarvis.chat.send({ conversationId, text: trimmed, source }).catch(() => {
+        setItems((current) => [
+          ...current,
+          {
+            kind: 'error',
+            id: nextId(),
+            text: "Le message n'a pas pu être envoyé. Réessaie dans un instant.",
+          },
+        ]);
+        setConfirmation(null);
+        setBusy(false);
+      });
     },
     [busy, conversationId],
   );

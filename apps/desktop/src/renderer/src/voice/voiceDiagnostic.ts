@@ -359,7 +359,8 @@ export async function runVoiceDiagnostic(
 
   await run('runtime', async (step) => {
     await deps.startRuntime();
-    step.summary = `onnxruntime-web ${deps.runtimeVersion()} démarré (1 thread).`;
+    result.runtimeVersion = deps.runtimeVersion();
+    step.summary = `onnxruntime-web ${result.runtimeVersion} démarré (1 thread).`;
   });
 
   await run('wakeword', async (step) => {

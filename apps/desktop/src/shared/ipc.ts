@@ -46,6 +46,8 @@ export const IpcChannel = {
   windowHide: 'window:hide',
   windowResize: 'window:resize',
   windowSetChrome: 'window:set-chrome',
+  windowIsVisible: 'window:is-visible',
+  windowShown: 'window:shown',
   systemSnapshot: 'system:snapshot',
   voiceTranscribe: 'voice:transcribe',
   voiceSpeak: 'voice:speak',
@@ -297,6 +299,10 @@ export interface JarvisApi {
     resize(height: number): Promise<void>;
     /** Étroit = overlay actuel. Large = tableau de bord. */
     setChrome(mode: WindowChrome): Promise<void>;
+    /** Vrai une fois la fenêtre affichée. Le mot de réveil attend ça. */
+    isVisible(): Promise<boolean>;
+    /** Émis à chaque affichage. Ne pas rater un événement déjà parti : combiner avec `isVisible`. */
+    onShown(listener: () => void): () => void;
   };
   system: {
     /** Relevé réel. Les champs inconnus restent `null`. */

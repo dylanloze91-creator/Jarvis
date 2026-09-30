@@ -1,5 +1,6 @@
-import * as ort from 'onnxruntime-web';
 import { ORT_WASM_BINARY, ORT_WASM_MJS, voiceAssetUrl } from '@jarvis/core';
+
+type OrtModule = typeof import('onnxruntime-web');
 
 /**
  * Au-delà, onnxruntime-web rejette l'initialisation WebAssembly au lieu
@@ -7,7 +8,8 @@ import { ORT_WASM_BINARY, ORT_WASM_MJS, voiceAssetUrl } from '@jarvis/core';
  */
 export const ORT_INIT_TIMEOUT_MS = 30_000;
 
-let configured: Promise<typeof ort> | null = null;
+let configured: Promise<OrtModule> | null = null;
+let loadedVersion = 'pas encore chargé';
 let queue: Promise<unknown> = Promise.resolve();
 
 /**
@@ -37,15 +39,17 @@ async function fetchOk(url: string, fetchImpl: typeof fetch): Promise<Response> 
  * en blob (onnxruntime-web ≥ 1.24.3 gère ce couple, PR microsoft/onnxruntime#27411).
  * Un seul thread : la page `file://` n'est pas cross-origin isolated.
  */
-export function configureOnnxRuntime(fetchImpl: typeof fetch = fetch): Promise<typeof ort> {
+export function configureOnnxRuntime(fetchImpl: typeof fetch = fetch): Promise<OrtModule> {
   if (configured) return configured;
   configured = (async () => {
+    const ort = await import('onnxruntime-web');
     const mjsUrl = voiceAssetUrl('ort', ORT_WASM_MJS);
     const wasmUrl = voiceAssetUrl('ort', ORT_WASM_BINARY);
     const [mjsText, wasmBinary] = await Promise.all([
       fetchOk(mjsUrl, fetchImpl).then((response) => response.text()),
       fetchOk(wasmUrl, fetchImpl).then((response) => response.arrayBuffer()),
     ]);
+    loadedVersion = ort.env.versions?.web ?? 'inconnue';
     ort.env.wasm.numThreads = 1;
     ort.env.wasm.proxy = false;
     ort.env.wasm.initTimeout = ORT_INIT_TIMEOUT_MS;
@@ -63,5 +67,5 @@ export function configureOnnxRuntime(fetchImpl: typeof fetch = fetch): Promise<t
 }
 
 export function onnxRuntimeVersion(): string {
-  return ort.env.versions?.web ?? 'inconnue';
+  return loadedVersion;
 }

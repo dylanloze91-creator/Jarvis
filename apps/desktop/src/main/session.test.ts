@@ -106,4 +106,44 @@ describe('ChatSession', () => {
     expect(events.find((event) => event.type === 'tool_result')).toMatchObject({ status: 'ok' });
     expect(events.at(-1)?.type).toBe('done');
   });
+
+  it('termine le tour si l’historique est illisible', async () => {
+    const events: ChatEvent[] = [];
+    const { chat, store } = session();
+    store.get = () => Promise.reject(new Error('EPERM'));
+
+    await chat.send(sender(events), { conversationId: 'conv-1', text: 'Bonjour' });
+
+    expect(
+      events.some((event) => event.type === 'error' && event.message.includes("n'a pas pu être envoyé")),
+    ).toBe(true);
+    expect(events.at(-1)?.type).toBe('done');
+  });
+
+  it('refuse la confirmation si la fenêtre disparaît', async () => {
+    const events: ChatEvent[] = [];
+    const { chat, executed } = session();
+    let onDestroyed: (() => void) | undefined;
+    const web = {
+      isDestroyed: () => false,
+      send: (_channel: string, event: ChatEvent) => events.push(event),
+      once: (_event: string, listener: () => void) => {
+        onDestroyed = listener;
+      },
+      removeListener: () => {
+        onDestroyed = undefined;
+      },
+    };
+
+    const turn = chat.send(web as unknown as Electron.WebContents, {
+      conversationId: null,
+      text: 'Crée un dossier nommé "Projet"',
+    });
+    await waitFor(() => events.find((event) => event.type === 'confirm'));
+    onDestroyed?.();
+    await turn;
+
+    expect(executed).not.toHaveBeenCalled();
+    expect(events.at(-1)?.type).toBe('done');
+  });
 });

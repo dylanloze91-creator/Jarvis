@@ -78,14 +78,17 @@ export class ChatSession {
     const controller = new AbortController();
     this.controller = controller;
 
-    const settings = this.deps.getSettings();
-    const conversation = await this.loadConversation(input.conversationId);
-    const userMessage = createMessage('user', input.text);
-    const messages: ChatMessage[] = [...conversation.messages, userMessage];
-
     const emit = (event: ChatEvent): void => {
       if (!sender.isDestroyed()) sender.send(IpcChannel.chatEvent, event);
     };
+
+    let conversationId = input.conversationId ?? '';
+    try {
+    const settings = this.deps.getSettings();
+    const conversation = await this.loadConversation(input.conversationId);
+    conversationId = conversation.id;
+    const userMessage = createMessage('user', input.text);
+    const messages: ChatMessage[] = [...conversation.messages, userMessage];
 
     emit({ type: 'started', conversationId: conversation.id, message: userMessage });
 
@@ -108,7 +111,7 @@ export class ChatSession {
         signal: controller.signal,
         policies: settings.toolPolicies,
         debug: settings.debugLogging,
-        requestConfirmation: (request) => this.askUser(emit, request, controller.signal),
+        requestConfirmation: (request) => this.askUser(sender, emit, request, controller.signal),
       })) {
         switch (event.type) {
           case 'assistant_delta':
@@ -168,25 +171,43 @@ export class ChatSession {
       )
       .catch(() => undefined);
     emit({ type: 'done', conversationId: updated.id, messages: updated.messages });
+    } catch {
+      if (this.controller === controller) this.controller = null;
+      emit({
+        type: 'error',
+        message: "Le message n'a pas pu être envoyé. Réessaie dans un instant.",
+      });
+      emit({ type: 'done', conversationId, messages: [] });
+    }
   }
 
   private askUser(
+    sender: WebContents,
     emit: (event: ChatEvent) => void,
     request: ConfirmationRequest,
     signal: AbortSignal,
   ): Promise<boolean> {
     const requestId = randomId();
     return new Promise<boolean>((resolve) => {
+      let settled = false;
       const settle = (approved: boolean): void => {
+        if (settled) return;
+        settled = true;
         signal.removeEventListener('abort', onAbort);
+        sender.removeListener?.('destroyed', onDestroyed);
         resolve(approved);
       };
       const onAbort = (): void => {
         this.pendingConfirmations.delete(requestId);
         settle(false);
       };
+      const onDestroyed = (): void => {
+        this.pendingConfirmations.delete(requestId);
+        settle(false);
+      };
 
       signal.addEventListener('abort', onAbort, { once: true });
+      sender.once?.('destroyed', onDestroyed);
       this.pendingConfirmations.set(requestId, settle);
       emit({
         type: 'confirm',

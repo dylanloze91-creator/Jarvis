@@ -20,7 +20,8 @@ import {
   type AudioCaptureHandle,
 } from './audioCapture';
 import { createSttRegistry, createTtsRegistry, createWakeWordEngine } from './registries';
-import { describeWhisperProgress, getWhisperPipeline, subscribeWhisperProgress } from './whisper/pipelineLoader';
+import { startWakeWhenWindowVisible } from './voiceStartup';
+import { describeWhisperProgress, subscribeWhisperProgress } from './whisper/pipelineLoader';
 
 function microphoneMessage(error: unknown): string {
   const message = error instanceof Error ? error.message.trim() : String(error ?? '').trim();
@@ -294,6 +295,12 @@ export function useVoice({
     }
 
     let cancelled = false;
+    const abort = new AbortController();
+    const armWake = async (): Promise<void> => {
+      await startWakeWhenWindowVisible(window.jarvis.window, () => {
+        if (!cancelled) startWakeWordEngine();
+      }, abort.signal);
+    };
     void (async () => {
       try {
         const handle = await startAudioCapture(settings.voice.microphoneId || undefined, {
@@ -307,9 +314,9 @@ export function useVoice({
         captureRef.current = handle;
         setMicError(null);
         setVoiceState('sleeping');
-        startWakeWordEngine();
+        await armWake();
       } catch (error) {
-        if (cancelled) return;
+        if (cancelled || (error instanceof DOMException && error.name === 'AbortError')) return;
         const french = microphoneMessage(error);
         debugLog(settings.debugLogging, 'voice', french);
         if (settings.voice.microphoneId) {
@@ -325,10 +332,10 @@ export function useVoice({
             captureRef.current = handle;
             setMicError('Le micro choisi est déconnecté. Reprise sur le micro par défaut.');
             setVoiceState('sleeping');
-            startWakeWordEngine();
+            await armWake();
             return;
           } catch (retryError) {
-            if (cancelled) return;
+            if (cancelled || (retryError instanceof DOMException && retryError.name === 'AbortError')) return;
             const retryMessage = microphoneMessage(retryError);
             debugLog(settings.debugLogging, 'voice', retryMessage);
             setMicError(retryMessage);
@@ -343,6 +350,7 @@ export function useVoice({
 
     return () => {
       cancelled = true;
+      abort.abort();
       stopCapture();
     };
     // Volontairement limité à ces deux dépendances : le moteur de mot de
@@ -434,13 +442,6 @@ export function useVoice({
       }
     });
   }, []);
-
-  useEffect(() => {
-    if (!settings?.voice.enabled) return;
-    void getWhisperPipeline().catch(() => {
-      // L'erreur est déjà affichée via subscribeWhisperProgress.
-    });
-  }, [settings?.voice.enabled]);
 
   return {
     state,

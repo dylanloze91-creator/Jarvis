@@ -128,7 +128,7 @@ export async function fetchPublicText(rawUrl: string, options: FetchTextOptions 
           redirect: 'manual',
           headers: {
             accept: 'text/html,application/xhtml+xml,text/plain',
-            'user-agent': 'Mozilla/5.0 (compatible; Jarvis/0.4.13; assistant personnel)',
+            'user-agent': 'Mozilla/5.0 (compatible; Jarvis/0.4.14; assistant personnel)',
             ...options.headers,
           },
         });

@@ -1,5 +1,6 @@
 import { join } from 'node:path';
 import { BrowserWindow, screen, shell } from 'electron';
+import { IpcChannel } from '../shared/ipc.js';
 
 const WIDTH = 720;
 const DEFAULT_HEIGHT = 520;
@@ -135,7 +136,7 @@ export function createOverlayWindow(hideOnBlur: boolean): OverlayWindow {
     position();
     browserWindow.show();
     browserWindow.focus();
-    browserWindow.webContents.send('window:shown');
+    browserWindow.webContents.send(IpcChannel.windowShown);
   };
 
   return {
