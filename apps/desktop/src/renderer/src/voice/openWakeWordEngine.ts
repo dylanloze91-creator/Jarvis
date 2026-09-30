@@ -1,7 +1,10 @@
 import type * as Ort from 'onnxruntime-web';
 import {
   OPENWAKEWORD_FRAME_SIZE,
+  OPENWAKEWORD_MEL_BINS,
+  OPENWAKEWORD_MEL_WINDOW,
   OPENWAKEWORD_SAMPLE_RATE,
+  OpenWakeWordMelStream,
   CircularPcmBuffer,
   WakeTriggerGate,
   attenuateClipping,
@@ -19,8 +22,6 @@ import {
 } from '@jarvis/core';
 import { configureOnnxRuntime, withOrtLock } from './onnxRuntime';
 
-const MEL_WINDOW = 76;
-const MEL_STRIDE = 8;
 const DEFAULT_EMBEDDING_WINDOW = 16;
 const COOLDOWN_MS = 1800;
 /** Chargement des 3 modèles (~4 Mo) : au-delà, erreur et repli, jamais une attente sans fin. */
@@ -100,7 +101,7 @@ export class OpenWakeWordEngine implements WakeWordEngine {
     let failed = false;
     let processing = Promise.resolve();
     let remainder = new Float32Array(0);
-    let melBuffer: Float32Array[] = [];
+    const melStream = new OpenWakeWordMelStream();
     let lastAnalyzedWindow: { pcm: Float32Array; sampleRate: number } | null = null;
     const recentAudio = new CircularPcmBuffer(Math.round(OPENWAKEWORD_SAMPLE_RATE * 3));
     const triggerGate = new WakeTriggerGate(this.config.cooldownMs ?? COOLDOWN_MS);
@@ -111,7 +112,7 @@ export class OpenWakeWordEngine implements WakeWordEngine {
 
     const resetRuntime = (windowSize: number): void => {
       keywordWindowSize = windowSize;
-      melBuffer = [];
+      melStream.reset();
       embeddingHistory = Array.from({ length: windowSize }, () => new Float32Array(96));
       triggerGate.reset();
     };
@@ -153,54 +154,50 @@ export class OpenWakeWordEngine implements WakeWordEngine {
       if (stopped) return;
       const { ort, mel, embedding, keyword } = loadedModels;
 
+      // Même flux que `AudioFeatures` d'openWakeWord : 480 échantillons de
+      // contexte, 8 trames mel par pas, un embedding par pas.
+      const melInput = melStream.melInput(chunk);
       const melResults = await mel.run({
-        [mel.inputNames[0]!]: new ort.Tensor('float32', chunk, [1, OPENWAKEWORD_FRAME_SIZE]),
+        [mel.inputNames[0]!]: new ort.Tensor('float32', melInput, [1, melInput.length]),
       });
-      const rawMel = melResults[mel.outputNames[0]!]!.data as Float32Array;
-      const newMel = new Float32Array(rawMel.length);
-      for (let i = 0; i < rawMel.length; i += 1) newMel[i] = rawMel[i]! / 10 + 2;
-      for (let i = 0; i < 5; i += 1) {
-        melBuffer.push(new Float32Array(newMel.subarray(i * 32, (i + 1) * 32)));
+      melStream.pushMel(melResults[mel.outputNames[0]!]!.data as Float32Array);
+
+      const embeddingResult = await embedding.run({
+        [embedding.inputNames[0]!]: new ort.Tensor('float32', melStream.embeddingWindow(), [
+          1,
+          OPENWAKEWORD_MEL_WINDOW,
+          OPENWAKEWORD_MEL_BINS,
+          1,
+        ]),
+      });
+      const embeddingVector = new Float32Array(
+        embeddingResult[embedding.outputNames[0]!]!.data as Float32Array,
+      );
+      embeddingHistory.shift();
+      embeddingHistory.push(embeddingVector);
+
+      const flattenedEmbeddings = new Float32Array(keywordWindowSize * 96);
+      for (let i = 0; i < embeddingHistory.length; i += 1) {
+        flattenedEmbeddings.set(embeddingHistory[i]!, i * 96);
       }
+      const prediction = await keyword.run({
+        [keyword.inputNames[0]!]: new ort.Tensor('float32', flattenedEmbeddings, [
+          1,
+          keywordWindowSize,
+          96,
+        ]),
+      });
+      const score = Number(prediction[keyword.outputNames[0]!]!.data[0] ?? 0);
+      handlers.onScore?.(score);
 
-      while (melBuffer.length >= MEL_WINDOW) {
-        const flattenedMel = new Float32Array(MEL_WINDOW * 32);
-        for (let i = 0; i < MEL_WINDOW; i += 1) {
-          flattenedMel.set(melBuffer[i]!, i * 32);
-        }
-        const embeddingResult = await embedding.run({
-          [embedding.inputNames[0]!]: new ort.Tensor('float32', flattenedMel, [1, MEL_WINDOW, 32, 1]),
-        });
-        const embeddingVector = new Float32Array(
-          embeddingResult[embedding.outputNames[0]!]!.data as Float32Array,
-        );
-        embeddingHistory.shift();
-        embeddingHistory.push(embeddingVector);
-
-        const flattenedEmbeddings = new Float32Array(keywordWindowSize * 96);
-        for (let i = 0; i < embeddingHistory.length; i += 1) {
-          flattenedEmbeddings.set(embeddingHistory[i]!, i * 96);
-        }
-        const prediction = await keyword.run({
-          [keyword.inputNames[0]!]: new ort.Tensor('float32', flattenedEmbeddings, [
-            1,
-            keywordWindowSize,
-            96,
-          ]),
-        });
-        const score = Number(prediction[keyword.outputNames[0]!]!.data[0] ?? 0);
-        handlers.onScore?.(score);
-
-        const threshold = openWakeWordSensitivityToThreshold(this.config.sensitivity ?? 0.7);
-        const now = performance.now();
-        if (score >= threshold && triggerGate.allow(now)) {
-          lastAnalyzedWindow = {
-            pcm: recentAudio.snapshot(),
-            sampleRate: OPENWAKEWORD_SAMPLE_RATE,
-          };
-          handlers.onDetected(this.config.keyword ?? 'jarvis');
-        }
-        melBuffer.splice(0, MEL_STRIDE);
+      const threshold = openWakeWordSensitivityToThreshold(this.config.sensitivity ?? 0.7);
+      const now = performance.now();
+      if (score >= threshold && triggerGate.allow(now)) {
+        lastAnalyzedWindow = {
+          pcm: recentAudio.snapshot(),
+          sampleRate: OPENWAKEWORD_SAMPLE_RATE,
+        };
+        handlers.onDetected(this.config.keyword ?? 'jarvis');
       }
     };
 
@@ -229,7 +226,7 @@ export class OpenWakeWordEngine implements WakeWordEngine {
         stopped = true;
         remainder = new Float32Array(0);
         recentAudio.clear();
-        melBuffer = [];
+        melStream.reset();
         embeddingHistory = [];
       },
     };

@@ -21,7 +21,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { chooseMicrophone, type Conversation, type Settings } from '@jarvis/core';
+import { formatSeconds, type Conversation, type Settings } from '@jarvis/core';
 import { AuditPanel } from '@/components/AuditPanel';
 import { Composer } from '@/components/Composer';
 import { ConfirmationCard } from '@/components/ConfirmationCard';
@@ -161,8 +161,6 @@ export function Dashboard({
 }: DashboardProps) {
   const machine = useMachineSnapshot();
   const [profileInitial, setProfileInitial] = useState<string | null>(null);
-  const [micLabel, setMicLabel] = useState<string | null>(null);
-  const [micResolved, setMicResolved] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -182,31 +180,6 @@ export function Dashboard({
       cancelled = true;
     };
   }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    void voice
-      .listMicrophones()
-      .then((devices) => {
-        if (cancelled) return;
-        const wanted = settings?.voice.microphoneId ?? '';
-        const choice = chooseMicrophone(
-          devices.map((device) => ({ deviceId: device.deviceId, label: device.label })),
-          wanted,
-        );
-        const label = choice?.label.trim() ?? '';
-        setMicLabel(label.length > 0 ? label : null);
-        setMicResolved(true);
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setMicLabel(null);
-        setMicResolved(true);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [settings?.voice.microphoneId, voice.listMicrophones]);
 
   const ask = (prompt: string): void => {
     setView('chat');
@@ -401,9 +374,12 @@ export function Dashboard({
           <h2>Micro</h2>
           <p className="mic-live">{micTitle(settings, voice, booting)}</p>
           <p className="metric-sub">{micDetail(settings, voice, booting)}</p>
-          <p className="metric-sub">
-            Périphérique : {micResolved ? (micLabel ?? 'indisponible') : 'chargement'}
-          </p>
+          <p className="metric-sub">{micDevice(settings, voice)}</p>
+          {settings?.voice.enabled && (voice.mic.phase === 'error' || voice.mic.phase === 'recovering') ? (
+            <button type="button" className="quick-btn" onClick={voice.retryMicrophone}>
+              Réessayer le micro
+            </button>
+          ) : null}
           {voice.state === 'listening' ? (
             <div className="meter" aria-hidden>
               <span style={{ width: `${Math.round(Math.max(0, Math.min(1, voice.level)) * 100)}%` }} />
@@ -549,8 +525,10 @@ function micTitle(
   booting: boolean,
 ): string {
   if (booting || !settings) return 'Chargement du micro…';
-  if (voice.micError || voice.state === 'error') return 'Micro indisponible';
   if (!settings.voice.enabled) return 'Micro désactivé';
+  if (voice.mic.phase === 'error') return voice.mic.failure?.title ?? 'Micro en erreur';
+  if (voice.mic.phase === 'recovering') return 'Micro perdu — reprise automatique…';
+  if (voice.mic.phase === 'opening') return 'Ouverture du micro…';
   if (voice.state === 'listening') return 'Micro actif';
   if (voice.state === 'speaking') return 'Jarvis parle';
   if (voice.state === 'sleeping') return 'En veille';
@@ -563,9 +541,24 @@ function micDetail(
   booting: boolean,
 ): string {
   if (booting || !settings) return 'Lecture des réglages…';
-  if (voice.micError) return voice.micError;
   if (!settings.voice.enabled) return 'Active l’écoute dans les réglages pour dire « Jarvis ».';
-  if (voice.state === 'sleeping') return 'Dis « Jarvis »';
+  if (voice.micError) return voice.micError;
+  if (voice.micNotice) return voice.micNotice;
   if (voice.state === 'listening') return voice.liveTranscript || 'À l’écoute…';
+  if (voice.state === 'sleeping') {
+    return voice.voiceError ? `Dis « Jarvis ». Hors micro : ${voice.voiceError}` : 'Dis « Jarvis »';
+  }
   return 'La commande vocale est prête.';
+}
+
+/** Le périphérique réellement ouvert, pas celui qu'on croit avoir choisi. */
+function micDevice(settings: Settings | null, voice: UseVoiceResult): string {
+  if (!settings?.voice.enabled) return 'Périphérique : non ouvert (écoute coupée)';
+  const { mic } = voice;
+  if (mic.phase === 'open') {
+    const opened = mic.timings.getUserMediaMs;
+    return `Périphérique ouvert : ${mic.label || 'sans nom'}${opened !== undefined ? ` · ${formatSeconds(opened)}` : ''}`;
+  }
+  if (mic.phase === 'opening') return 'Périphérique : ouverture…';
+  return `Périphérique : ${mic.preferredId ? 'micro choisi' : 'entrée par défaut de Windows'} (non ouvert)`;
 }

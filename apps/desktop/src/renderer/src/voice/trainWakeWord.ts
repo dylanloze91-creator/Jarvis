@@ -23,15 +23,15 @@ export async function recordWakeWordProfile(
 ): Promise<WakeWordProfile> {
   const energies: number[] = [];
 
-  let handle: AudioCaptureHandle;
-  try {
-    handle = await startAudioCapture(deviceId, {
+  // `startAudioCapture` rejette déjà avec la cause exacte (nom de l'erreur compris).
+  const handle: AudioCaptureHandle = await startAudioCapture(
+    deviceId,
+    {
       onFrame: (frame) => energies.push(computeRms(frame)),
       onError: () => {},
-    });
-  } catch (error) {
-    throw new Error(describeMicrophoneError(error));
-  }
+    },
+    'échantillon',
+  );
 
   await new Promise((resolve) => setTimeout(resolve, SAMPLE_DURATION_MS));
   handle.stop();
@@ -87,23 +87,6 @@ export async function importWakeWordProfileFromAudioFile(file: File): Promise<Wa
   return profiles[0]!;
 }
 
-/** Les erreurs de `getUserMedia` arrivent en anglais et sans contexte utile. */
-export function describeMicrophoneError(error: unknown): string {
-  const name = error instanceof Error ? error.name : '';
-  const message = error instanceof Error ? error.message : String(error);
-
-  if (name === 'NotAllowedError' || /permission/i.test(message)) {
-    return 'Accès au microphone refusé. Autorise-le dans les réglages de Windows, puis réessaie.';
-  }
-  if (name === 'NotFoundError' || /device not found/i.test(message)) {
-    return 'Aucun microphone détecté. Branche-en un, ou choisis-en un autre ci-dessus.';
-  }
-  if (name === 'NotReadableError') {
-    return 'Le microphone est déjà utilisé par une autre application.';
-  }
-  return `Microphone indisponible : ${message}`;
-}
-
 export interface WakeWordTestHandle {
   stop: () => void;
 }
@@ -127,13 +110,17 @@ export async function startWakeWordTest(
 
   let handle: AudioCaptureHandle | null = null;
   try {
-    handle = await startAudioCapture(deviceId, {
-      onFrame: (frame, sampleRate) => controller.pushAudio?.(frame, sampleRate),
-      onError,
-    });
+    handle = await startAudioCapture(
+      deviceId,
+      {
+        onFrame: (frame, sampleRate) => controller.pushAudio?.(frame, sampleRate),
+        onError,
+      },
+      'test du mot de réveil',
+    );
   } catch (error) {
     controller.stop();
-    throw new Error(describeMicrophoneError(error));
+    throw error;
   }
 
   return {

@@ -4,6 +4,8 @@ import { defineConfig, externalizeDepsPlugin } from 'electron-vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { jarvisMachinePlugin } from './src/main/machinePlugin';
+// vosk-browser : worker sans `new Function` (CSP sans unsafe-eval), voir scripts/voskCspPatch.mjs.
+import { voskCspPlugin } from './scripts/voskCspPatch.mjs';
 
 const require = createRequire(import.meta.url);
 // Un seul runtime ONNX pour Whisper et openWakeWord. transformers.js importe
@@ -37,7 +39,12 @@ export default defineConfig({
         { find: /^onnxruntime-web(\/webgpu)?$/, replacement: onnxRuntimeWasm },
       ],
     },
-    plugins: [react(), tailwindcss(), jarvisMachinePlugin(resolve(__dirname, 'package.json'))],
+    plugins: [
+      voskCspPlugin(),
+      react(),
+      tailwindcss(),
+      jarvisMachinePlugin(resolve(__dirname, 'package.json')),
+    ],
     build: {
       rollupOptions: {
         input: { index: resolve(__dirname, 'src/renderer/index.html') },

@@ -1,4 +1,4 @@
-import { chooseMicrophone, microphoneOptionLabel, type VoiceSettings } from '@jarvis/core';
+import type { VoiceSettings } from '@jarvis/core';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -11,9 +11,9 @@ import {
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { Select } from '@/components/ui/field';
 import { cn } from '@/lib/utils';
-import { prepareMicrophoneList } from '@/voice/audioCapture';
+import { captureLog, microphone } from '@/voice/audioCapture';
+import type { MicrophoneStatus } from '@/voice/microphone';
 import {
   DIAGNOSTIC_STEPS,
   formatDiagnosticReport,
@@ -36,13 +36,7 @@ const initialSteps = (): DiagnosticStep[] =>
  * WebAssembly, openWakeWord, Whisper, micro) et affiche la première étape
  * en échec. « Copier le détail » donne le texte à renvoyer.
  */
-export function VoiceDiagnostic({
-  voice,
-  onMicrophoneChange,
-}: {
-  voice: VoiceSettings;
-  onMicrophoneChange?: (microphoneId: string) => void;
-}) {
+export function VoiceDiagnostic({ voice }: { voice: VoiceSettings }) {
   const [steps, setSteps] = useState<DiagnosticStep[]>(initialSteps);
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<VoiceDiagnosticResult | null>(null);
@@ -53,34 +47,8 @@ export function VoiceDiagnostic({
   const [fileError, setFileError] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement | null>(null);
   const runId = useRef(0);
-  const deviceIdRef = useRef(voice.microphoneId);
-  const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
-  const [pickedId, setPickedId] = useState(voice.microphoneId);
-
-  useEffect(() => {
-    let cancelled = false;
-    void prepareMicrophoneList()
-      .then((list) => {
-        if (cancelled) return;
-        setDevices(list);
-        const choice = chooseMicrophone(
-          list.map((device) => ({ deviceId: device.deviceId, label: device.label })),
-          voice.microphoneId,
-        );
-        if (!choice) return;
-        setPickedId(choice.deviceId);
-        deviceIdRef.current = choice.deviceId;
-      })
-      .catch(() => {
-        if (!cancelled) setDevices([]);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [voice.microphoneId]);
-
-  const listenLocked = steps.some((step) => step.id === 'microphone' && step.status !== 'pending');
-  const picked = devices.find((device) => device.deviceId === pickedId);
+  const [mic, setMic] = useState<MicrophoneStatus>(() => microphone.getStatus());
+  useEffect(() => microphone.subscribe(setMic), []);
 
   const start = async (): Promise<void> => {
     const id = runId.current + 1;
@@ -96,7 +64,6 @@ export function VoiceDiagnostic({
           (message) => {
             if (runId.current === id) setPrompt(message);
           },
-          () => deviceIdRef.current || undefined,
         ),
         (next) => {
           if (runId.current === id) setSteps(next);
@@ -113,7 +80,7 @@ export function VoiceDiagnostic({
 
   const copy = async (): Promise<void> => {
     if (!result) return;
-    await window.jarvis.voice.copyReport(formatDiagnosticReport(result, files));
+    await window.jarvis.voice.copyReport(formatDiagnosticReport(result, files, captureLog.slice(-60)));
     setCopied(true);
   };
 
@@ -152,35 +119,11 @@ export function VoiceDiagnostic({
         </Button>
       </div>
 
-      <div className="flex flex-col gap-1.5" data-testid="voice-diagnostic-device">
-        <label className="text-xs text-slate-400" htmlFor="voice-diagnostic-mic">
-          Micro utilisé pour l’écoute
-        </label>
-        <Select
-          id="voice-diagnostic-mic"
-          value={pickedId}
-          disabled={running && listenLocked}
-          onChange={(event) => {
-            const id = event.target.value;
-            setPickedId(id);
-            deviceIdRef.current = id;
-            onMicrophoneChange?.(id);
-          }}
-        >
-          {pickedId === '' ? <option value="">Périphérique par défaut de Windows</option> : null}
-          {devices.map((device) => (
-            <option key={device.deviceId} value={device.deviceId}>
-              {microphoneOptionLabel(device.label)}
-              {device.deviceId === pickedId ? ' — en cours' : ''}
-            </option>
-          ))}
-        </Select>
-        <p className="text-xs leading-snug text-slate-500">
-          {picked
-            ? `L’étape d’écoute ouvrira « ${picked.label.trim() || 'ce périphérique'} ». Un mixage (Broadcast Stream Mix, Stereo Mix, mixage stéréo) est conservé s’il est choisi ou s’il est l’entrée par défaut de Windows.`
-            : 'Choisis le périphérique avant l’étape d’écoute. Le choix est mémorisé avec les réglages.'}
-        </p>
-      </div>
+      <p className="text-xs leading-snug text-slate-500" data-testid="voice-diagnostic-device">
+        {mic.phase === 'open'
+          ? `Micro testé : « ${mic.label || 'sans nom'} » (celui de l’écoute). Change-le au-dessus.`
+          : 'Micro testé : celui choisi au-dessus. Un mixage (Broadcast Stream Mix, Stereo Mix) est conservé s’il est choisi ou s’il est l’entrée par défaut de Windows.'}
+      </p>
 
       {prompt ? (
         <p className="rounded-lg border border-cyan-300/30 bg-cyan-300/10 px-3 py-2 text-sm text-cyan-100" role="status">
@@ -233,7 +176,9 @@ export function VoiceDiagnostic({
               </p>
               <p className="text-slate-500">
                 openWakeWord {file.analysis.wakeWordScore.toFixed(2)} (seuil {file.analysis.wakeWordThreshold.toFixed(2)}) ·
-                « Jarvis » nu {file.analysis.bareJarvisConfirmed ? 'confirmé' : 'non confirmé'}
+                {file.analysis.voskHits === null
+                  ? ` Vosk indisponible · « Jarvis » nu ${file.analysis.bareJarvisConfirmed ? 'confirmé' : 'non confirmé'} par Whisper`
+                  : ` Vosk « Jarvis » : ${file.analysis.voskHits.length > 0 ? `oui (${file.analysis.voskHits.length})` : 'non'}`}
                 {file.analysis.bareJarvisText !== null ? ` (Whisper : « ${file.analysis.bareJarvisText} »)` : ''}
               </p>
               <p className="break-words text-slate-400">« {file.analysis.transcript || '(rien)'} »</p>

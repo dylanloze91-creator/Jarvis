@@ -1,6 +1,6 @@
 import {
+  captureFailureText,
   commandAfterWakeWord,
-  debugLog,
   splitWakeWordWindow,
   type Settings,
   type SpeechToTextProvider,
@@ -12,22 +12,11 @@ import {
   type WakeWordEngineController,
 } from '@jarvis/core';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  computeRms,
-  listMicrophones,
-  describeMicrophoneError,
-  startAudioCapture,
-  type AudioCaptureHandle,
-} from './audioCapture';
+import { computeRms, listMicrophones, microphone } from './audioCapture';
+import type { MicrophoneStatus } from './microphone';
 import { createSttRegistry, createTtsRegistry, createWakeWordEngine } from './registries';
 import { startWakeWhenWindowVisible } from './voiceStartup';
 import { describeWhisperProgress, subscribeWhisperProgress } from './whisper/pipelineLoader';
-
-function microphoneMessage(error: unknown): string {
-  const message = error instanceof Error ? error.message.trim() : String(error ?? '').trim();
-  if (/micro|Microphone|indisponible|Branche|déconnecté|périphérique/i.test(message)) return message;
-  return describeMicrophoneError(error);
-}
 
 export type VoiceState = 'idle' | 'sleeping' | 'listening' | 'speaking' | 'error';
 
@@ -35,6 +24,8 @@ const SILENCE_RMS = 0.012;
 const SILENCE_MS = 900;
 const MAX_UTTERANCE_MS = 12_000;
 const LEVEL_SMOOTHING = 0.35;
+/** Une erreur de Whisper, de la synthèse ou du réveil s'efface d'elle-même. */
+const VOICE_ERROR_TTL_MS = 20_000;
 
 export interface UseVoiceOptions {
   settings: Settings | null;
@@ -48,7 +39,14 @@ export interface UseVoiceResult {
   state: VoiceState;
   level: number;
   liveTranscript: string;
+  /** État du micro : périphérique ouvert, durées, dernier échec exact. */
+  mic: MicrophoneStatus;
+  /** Échec du micro seulement (nom exact de l'erreur + prochaine étape), sinon `null`. */
   micError: string | null;
+  /** Information sur le micro qui n'est pas une panne (repli sur le défaut, piste coupée). */
+  micNotice: string | null;
+  /** Erreur de Whisper, de la synthèse vocale ou du mot de réveil. Jamais affichée comme « micro ». */
+  voiceError: string | null;
   /**
    * Statut de chargement d'un modèle Whisper local (téléchargement en
    * cours, prêt, erreur), affiché en priorité par `VoiceBar` : le premier
@@ -63,6 +61,8 @@ export interface UseVoiceResult {
   /** Lit un texte à voix haute avec le moteur configuré (branché sur la fin d'un tour de conversation). */
   speak: (text: string) => void;
   listMicrophones: typeof listMicrophones;
+  /** Nouvelle tentative d'ouverture du micro. */
+  retryMicrophone: () => void;
 }
 
 function buildWakeWordDetectorConfig(
@@ -76,6 +76,22 @@ function buildWakeWordDetectorConfig(
   };
 }
 
+export function microphoneNotice(status: MicrophoneStatus): string | null {
+  if (status.phase !== 'open') return null;
+  if (status.muted) return `« ${status.label || 'Le micro'} » est coupé par le système (mute).`;
+  if (status.usingFallback) {
+    return `Le micro choisi n’est pas branché : écoute sur l’entrée par défaut de Windows${status.label ? ` (« ${status.label} »)` : ''}. Il sera repris dès qu’il revient.`;
+  }
+  return null;
+}
+
+export function microphoneErrorText(status: MicrophoneStatus): string | null {
+  if (status.phase === 'off' || !status.failure) return null;
+  const text = captureFailureText(status.failure);
+  if (status.phase === 'open') return `${text} L’écoute continue sur « ${status.label || 'le micro précédent'} ».`;
+  return text;
+}
+
 export function useVoice({
   settings,
   voiceKeyConfigured,
@@ -84,9 +100,10 @@ export function useVoice({
   const [state, setState] = useState<VoiceState>('idle');
   const [level, setLevel] = useState(0);
   const [liveTranscript, setLiveTranscript] = useState('');
-  const [micError, setMicError] = useState<string | null>(null);
+  const [voiceError, setVoiceErrorState] = useState<string | null>(null);
   const [whisperStatus, setWhisperStatus] = useState<string | null>(null);
   const [speakingText, setSpeakingText] = useState<string | null>(null);
+  const [mic, setMic] = useState<MicrophoneStatus>(() => microphone.getStatus());
 
   const sttRegistry = useMemo(() => createSttRegistry(), []);
   const ttsRegistry = useMemo(() => createTtsRegistry(), []);
@@ -99,7 +116,6 @@ export function useVoice({
   onTranscriptRef.current = onTranscript;
 
   const stateRef = useRef<VoiceState>('idle');
-  const captureRef = useRef<AudioCaptureHandle | null>(null);
   const wakeWordControllerRef = useRef<WakeWordEngineController | null>(null);
   const wakeWordOwnsCaptureRef = useRef(false);
   const sttControllerRef = useRef<ReturnType<SpeechToTextProvider['start']> | null>(null);
@@ -115,6 +131,18 @@ export function useVoice({
   const maxDurationTimerRef = useRef<number | null>(null);
   const ttsControllerRef = useRef<TextToSpeechController | null>(null);
   const audioElementRef = useRef<HTMLAudioElement | null>(null);
+  const voiceErrorTimerRef = useRef<number | null>(null);
+
+  useEffect(() => microphone.subscribe(setMic), []);
+
+  const setVoiceError = useCallback((message: string | null) => {
+    if (voiceErrorTimerRef.current !== null) window.clearTimeout(voiceErrorTimerRef.current);
+    voiceErrorTimerRef.current = null;
+    setVoiceErrorState(message);
+    if (message) {
+      voiceErrorTimerRef.current = window.setTimeout(() => setVoiceErrorState(null), VOICE_ERROR_TTL_MS);
+    }
+  }, []);
 
   const setVoiceState = useCallback((next: VoiceState) => {
     stateRef.current = next;
@@ -173,6 +201,7 @@ export function useVoice({
       pendingWakeWordStripRef.current = null;
       const command = pendingStrip ? commandAfterWakeWord(text, pendingStrip) : text;
       const trimmed = command.trim();
+      microphoneLog(`dictée terminée : ${trimmed ? `commande de ${trimmed.length} caractères envoyée` : 'rien à envoyer'}`);
       if (trimmed) onTranscriptRef.current(trimmed);
       backToSleepOrIdle();
     },
@@ -186,6 +215,7 @@ export function useVoice({
 
   const beginListening = useCallback(() => {
     if (stateRef.current !== 'sleeping') return;
+    microphoneLog('mot de réveil détecté : dictée');
     setVoiceState('listening');
     setLiveTranscript('');
     silenceMsRef.current = null;
@@ -198,7 +228,7 @@ export function useVoice({
         onPartial: (text) => setLiveTranscript(text),
         onFinal: (text) => finalizeTranscript(text),
         onError: (message) => {
-          setMicError(message);
+          setVoiceError(message);
           finalizeTranscript('');
         },
       },
@@ -230,17 +260,19 @@ export function useVoice({
     }
 
     maxDurationTimerRef.current = window.setTimeout(() => finishListening(), MAX_UTTERANCE_MS);
-  }, [finalizeTranscript, finishListening, resolveStt, setVoiceState]);
+  }, [finalizeTranscript, finishListening, resolveStt, setVoiceError, setVoiceState]);
 
   const startWakeWordEngine = useCallback(() => {
     wakeWordControllerRef.current?.stop();
     const engine = resolveWakeWordEngine();
     wakeWordOwnsCaptureRef.current = engine.managesOwnCapture;
+    microphoneLog('moteur du mot de réveil démarré');
     wakeWordControllerRef.current = engine.start({
       onDetected: () => beginListening(),
-      onError: (message) => setMicError(message),
+      onScore: () => microphone.markWakeScore(),
+      onError: (message) => setVoiceError(message),
     });
-  }, [beginListening, resolveWakeWordEngine]);
+  }, [beginListening, resolveWakeWordEngine, setVoiceError]);
 
   const handleFrame = useCallback(
     (frame: Float32Array, sampleRate: number) => {
@@ -268,94 +300,55 @@ export function useVoice({
     },
     [finishListening],
   );
+  const handleFrameRef = useRef(handleFrame);
+  handleFrameRef.current = handleFrame;
+  useEffect(() => microphone.onFrame((frame, rate) => handleFrameRef.current(frame, rate)), []);
 
-  const stopCapture = useCallback(() => {
+  const stopEngines = useCallback(() => {
     clearMaxDurationTimer();
     sttControllerRef.current?.abort();
     sttControllerRef.current = null;
     wakeWordControllerRef.current?.stop();
     wakeWordControllerRef.current = null;
-    captureRef.current?.stop();
-    captureRef.current = null;
     setLevel(0);
     setLiveTranscript('');
   }, [clearMaxDurationTimer]);
 
-  // (Re)démarre l'écoute permanente quand elle est activée, ou l'arrête sinon.
-  // Ne dépend que du micro et de l'activation : la configuration du mot de
-  // réveil est appliquée séparément (voir l'effet suivant) pour ne pas
-  // rouvrir le flux audio à chaque changement de réglage vocal.
+  // Le choix du micro est appliqué tout de suite, sans rouvrir le reste.
+  useEffect(() => {
+    if (!settings) return;
+    void microphone.setPreferredDevice(settings.voice.microphoneId);
+  }, [settings?.voice.microphoneId]);
+
+  // Écoute permanente : un bail sur le micro partagé, et le moteur du mot de
+  // réveil démarré une fois la fenêtre affichée. Une reprise du micro
+  // (débranché, changé, pilote relancé) ne redémarre pas le moteur.
   useEffect(() => {
     if (!settings) return;
     if (!settings.voice.enabled) {
-      stopCapture();
+      stopEngines();
       setVoiceState('idle');
-      setMicError(null);
       return;
     }
-
-    let cancelled = false;
+    void microphone.setPreferredDevice(settings.voice.microphoneId);
+    const release = microphone.acquire('écoute permanente');
+    setVoiceState('sleeping');
     const abort = new AbortController();
-    const armWake = async (): Promise<void> => {
-      await startWakeWhenWindowVisible(window.jarvis.window, () => {
-        if (!cancelled) startWakeWordEngine();
-      }, abort.signal);
-    };
-    void (async () => {
-      try {
-        const handle = await startAudioCapture(settings.voice.microphoneId || undefined, {
-          onFrame: handleFrame,
-          onError: (message) => setMicError(message),
-        });
-        if (cancelled) {
-          handle.stop();
-          return;
-        }
-        captureRef.current = handle;
-        setMicError(null);
-        setVoiceState('sleeping');
-        await armWake();
-      } catch (error) {
-        if (cancelled || (error instanceof DOMException && error.name === 'AbortError')) return;
-        const french = microphoneMessage(error);
-        debugLog(settings.debugLogging, 'voice', french);
-        if (settings.voice.microphoneId) {
-          try {
-            const handle = await startAudioCapture(undefined, {
-              onFrame: handleFrame,
-              onError: (message) => setMicError(message),
-            });
-            if (cancelled) {
-              handle.stop();
-              return;
-            }
-            captureRef.current = handle;
-            setMicError('Le micro choisi est déconnecté. Reprise sur le micro par défaut.');
-            setVoiceState('sleeping');
-            await armWake();
-            return;
-          } catch (retryError) {
-            if (cancelled || (retryError instanceof DOMException && retryError.name === 'AbortError')) return;
-            const retryMessage = microphoneMessage(retryError);
-            debugLog(settings.debugLogging, 'voice', retryMessage);
-            setMicError(retryMessage);
-            setVoiceState('error');
-            return;
-          }
-        }
-        setMicError(french);
-        setVoiceState('error');
-      }
-    })();
-
+    void startWakeWhenWindowVisible(
+      window.jarvis.window,
+      () => {
+        if (!abort.signal.aborted) startWakeWordEngine();
+      },
+      abort.signal,
+    ).catch(() => undefined);
     return () => {
-      cancelled = true;
       abort.abort();
-      stopCapture();
+      stopEngines();
+      release();
     };
-    // Volontairement limité à ces deux dépendances : le moteur de mot de
-    // réveil est (re)configuré par l'effet suivant, sans rouvrir le micro.
-  }, [settings?.voice.enabled, settings?.voice.microphoneId]);
+    // Volontairement limité à l'activation : le micro et la configuration
+    // du mot de réveil sont appliqués par les autres effets.
+  }, [settings?.voice.enabled]);
 
   // Reconfigure le mot de réveil (gabarits, sensibilité, stratégie,
   // variantes) sans redémarrer la capture audio.
@@ -367,7 +360,7 @@ export function useVoice({
     variants: settings?.voice.wakeWordVariants,
   });
   useEffect(() => {
-    if (stateRef.current === 'sleeping' && captureRef.current) startWakeWordEngine();
+    if (stateRef.current === 'sleeping' && wakeWordControllerRef.current) startWakeWordEngine();
     // Dépendance volontairement limitée à la clé sérialisée ci-dessus.
   }, [wakeWordConfigKey]);
 
@@ -416,7 +409,7 @@ export function useVoice({
             if (provider.managesOwnPlayback) backToSleepOrIdle();
           },
           onError: (message) => {
-            setMicError(message);
+            setVoiceError(message);
             backToSleepOrIdle();
           },
         },
@@ -424,10 +417,16 @@ export function useVoice({
       );
       ttsControllerRef.current = controller;
     },
-    [backToSleepOrIdle, playClip, resolveTts, setVoiceState, stopSpeaking],
+    [backToSleepOrIdle, playClip, resolveTts, setVoiceError, setVoiceState, stopSpeaking],
   );
 
-  useEffect(() => stopCapture, [stopCapture]);
+  useEffect(
+    () => () => {
+      stopEngines();
+      if (voiceErrorTimerRef.current !== null) window.clearTimeout(voiceErrorTimerRef.current);
+    },
+    [stopEngines],
+  );
 
   // Abonnement global au chargement des modèles Whisper (dictée et mot de
   // réveil partagent le même mécanisme) : le badge « prêt » disparaît après
@@ -443,15 +442,34 @@ export function useVoice({
     });
   }, []);
 
+  const retryMicrophone = useCallback(() => {
+    void microphone.retry();
+  }, []);
+
+  const enabled = settings?.voice.enabled ?? false;
+  const effectiveState: VoiceState = enabled && mic.phase === 'error' ? 'error' : state;
+
   return {
-    state,
-    level,
+    state: effectiveState,
+    level: mic.phase === 'open' ? level : 0,
     liveTranscript,
-    micError,
+    mic,
+    micError: enabled ? microphoneErrorText(mic) : null,
+    micNotice: enabled ? microphoneNotice(mic) : null,
+    voiceError,
     whisperStatus,
     speakingText,
     stopSpeaking,
     speak,
     listMicrophones,
+    retryMicrophone,
   };
+}
+
+function microphoneLog(line: string): void {
+  try {
+    window.jarvis?.voice?.log?.(`[voix] ${line}`);
+  } catch {
+    // Journal seulement.
+  }
 }

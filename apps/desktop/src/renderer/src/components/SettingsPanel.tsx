@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   CONFIGURABLE_CATEGORIES,
   categoryLabels,
@@ -36,6 +36,7 @@ export function SettingsPanel({ settings, status, onSaved }: SettingsPanelProps)
     [],
   );
   const [saved, setSaved] = useState(false);
+  const dirty = useRef(false);
 
   useEffect(() => {
     void window.jarvis.settings.providers().then(setProviders);
@@ -43,7 +44,15 @@ export function SettingsPanel({ settings, status, onSaved }: SettingsPanelProps)
     void window.jarvis.settings.marketDataProviders().then(setMarketDataProviders);
   }, []);
 
-  useEffect(() => setDraft(settings), [settings]);
+  // Un choix de micro est enregistré tout de suite : les autres modifications
+  // non enregistrées du brouillon ne sont pas perdues pour autant.
+  useEffect(() => {
+    setDraft((current) =>
+      dirty.current
+        ? { ...current, voice: { ...current.voice, microphoneId: settings.voice.microphoneId } }
+        : settings,
+    );
+  }, [settings]);
 
   const descriptor = providers.find((provider) => provider.id === draft.provider);
   const searchDescriptor = searchProviders.find((provider) => provider.id === draft.searchProvider);
@@ -51,16 +60,26 @@ export function SettingsPanel({ settings, status, onSaved }: SettingsPanelProps)
     (provider) => provider.id === draft.marketDataProvider,
   );
   const patch = (values: Partial<Settings>): void => {
+    dirty.current = true;
     setDraft((current) => ({ ...current, ...values }));
     setSaved(false);
   };
   const patchVoice = (values: Partial<VoiceSettings>): void => {
+    dirty.current = true;
     setDraft((current) => ({ ...current, voice: { ...current.voice, ...values } }));
     setSaved(false);
   };
 
+  const chooseMicrophone = (microphoneId: string): void => {
+    setDraft((current) => ({ ...current, voice: { ...current.voice, microphoneId } }));
+    void window.jarvis.settings
+      .set({ voice: { ...settings.voice, microphoneId } })
+      .then((payload) => onSaved(payload));
+  };
+
   const save = (): void => {
     void window.jarvis.settings.set(draft).then((payload) => {
+      dirty.current = false;
       onSaved(payload);
       setSaved(true);
     });
@@ -328,6 +347,7 @@ export function SettingsPanel({ settings, status, onSaved }: SettingsPanelProps)
         voice={draft.voice}
         voiceKeyConfigured={status.voiceKeyConfigured}
         onChange={patchVoice}
+        onMicrophoneChange={chooseMicrophone}
       />
 
       <div className="flex items-center justify-end gap-3 pt-1">

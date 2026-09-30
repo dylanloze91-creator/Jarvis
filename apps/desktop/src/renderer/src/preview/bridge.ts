@@ -165,6 +165,8 @@ export function installPreviewBridge(): void {
       copyReport: async (text: string) => {
         await navigator.clipboard?.writeText(text).catch(() => undefined);
       },
+      log: (line: string) => console.debug(line),
+      openMicrophonePrivacy: async () => false,
     },
     youtube: {
       onTranscribe: () => () => undefined,

@@ -14,6 +14,7 @@ import {
 import { LocalBrowserTtsProvider, localTtsDescriptor } from './localTts';
 import { LocalWhisperSttProvider, localWhisperSttDescriptor } from './localWhisperStt';
 import { OpenWakeWordEngine } from './openWakeWordEngine';
+import { VoskWakeWordEngine } from './voskWakeWordEngine';
 import { IpcSttProvider, IpcTtsProvider } from './remote';
 import { WAKE_WORD_MAX_NEW_TOKENS, transcribeWithWhisper } from './whisper/pipelineLoader';
 
@@ -56,14 +57,23 @@ function createBareJarvisTrigger(config: WakeWordEngineConfig): WakeWordEngine {
 }
 
 /**
+ * « Jarvis » seul : Vosk (français, Web Worker). Si Vosk ne se charge pas,
+ * l'ancien déclencheur (rafale d'énergie confirmée par Whisper) prend le
+ * relais — plus lourd : Whisper tourne alors sur chaque rafale de parole.
+ */
+function createBareJarvisDetector(config: WakeWordEngineConfig): WakeWordEngine {
+  return wrapWakeWordEngineWithLoadFallback(new VoskWakeWordEngine(config), () => createBareJarvisTrigger(config));
+}
+
+/**
  * Le seul chemin du mot de réveil : openWakeWord (modèle officiel
- * « hey jarvis ») et, en parallèle dès le départ, le déclencheur « Jarvis »
- * nu. Si openWakeWord ne charge pas, le déclencheur continue seul.
+ * « hey jarvis ») et, en parallèle dès le départ, Vosk pour « Jarvis »
+ * seul. Si openWakeWord ne charge pas, Vosk continue seul.
  */
 export function createWakeWordEngine(config: WakeWordEngineConfig): WakeWordEngine {
   return wrapWakeWordEngineWithLoadFallback(
     new OpenWakeWordEngine(config),
-    () => createBareJarvisTrigger(config),
+    () => createBareJarvisDetector(config),
     { alwaysOn: true },
   );
 }

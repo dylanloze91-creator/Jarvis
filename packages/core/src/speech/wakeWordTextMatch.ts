@@ -331,11 +331,38 @@ export function stripLeadingWakeWord(transcript: string, config: WakeWordTextMat
   // « Jarvis, Jarvis, ouvre Chrome » : on retire chaque répétition en tête.
   let current = transcript.trim();
   for (let round = 0; round < 5; round += 1) {
-    const next = stripOneLeadingWakeWord(current, config);
+    let next = stripOneLeadingWakeWord(current, config);
+    if (round === 0 && next === current) next = stripLeadingJarvisShape(current, config);
     if (next === current) break;
     current = next;
   }
   return current;
+}
+
+/**
+ * « Jarvis » réécrit en français par Whisper garde la même charpente :
+ * J (ou Dj, Ch, Y), quelques lettres, V, une voyelle, puis S / CE / Z —
+ * « J'en avise », « J'invise », « J'ai un vis », « J'ai envie ce ». Utilisé
+ * seulement en tête, au premier passage, une fois le réveil déjà confirmé.
+ */
+const JARVIS_SHAPE = /^(?:j|dj|ch|y)[a-z]{0,5}v[aeiouy]{0,2}(?:s|ss|se|sse|ce|z|ze)$/;
+
+function stripLeadingJarvisShape(transcript: string, config: WakeWordTextMatchConfig): string {
+  if (normalizeForWakeWordMatch(config.word) !== 'jarvis' || config.maxDistance) return transcript.trim();
+  const tokens = tokenizeByWhitespace(transcript);
+  const windowLimit = Math.min(tokens.length, MAX_LEADING_TOKENS);
+  for (let windowSize = 1; windowSize <= windowLimit; windowSize += 1) {
+    const tight = tokens
+      .slice(0, windowSize)
+      .map((token) => tightNormalize(token.text))
+      .join('');
+    if (!JARVIS_SHAPE.test(tight)) continue;
+    return transcript
+      .slice(tokens[windowSize - 1]!.end)
+      .replace(/^[\s,;:.!?…"'«»-]+/u, '')
+      .trim();
+  }
+  return transcript.trim();
 }
 
 function stripOneLeadingWakeWord(transcript: string, config: WakeWordTextMatchConfig): string {

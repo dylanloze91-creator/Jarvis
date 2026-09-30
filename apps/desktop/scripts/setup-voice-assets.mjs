@@ -1,19 +1,31 @@
 #!/usr/bin/env node
 /**
  * Prépare `voice-assets/` (non commité) : le runtime onnxruntime-web
- * WebAssembly partagé, le modèle Whisper `Xenova/whisper-base` (q8) et les
- * modèles openWakeWord. electron-builder copie ce dossier tel quel dans
+ * WebAssembly partagé, le modèle Whisper `Xenova/whisper-base` (q8), les
+ * modèles openWakeWord et le modèle Vosk français (zip d'alphacephei
+ * converti en `.tar.gz` pour vosk-browser). electron-builder copie ce dossier tel quel dans
  * `resources/` (extraResources) ; en dev, le protocole `jarvis-oww:` le lit
  * directement. La liste des fichiers vient de `@jarvis/core`
  * (`REQUIRED_VOICE_ASSETS`), la même que celle du diagnostic et d'after-pack.
  */
-import { copyFileSync, createWriteStream, existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync } from 'node:fs';
+import {
+  copyFileSync,
+  createWriteStream,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { fileURLToPath } from 'node:url';
-import { REQUIRED_VOICE_ASSETS, WHISPER_MODEL_REPO } from '@jarvis/core';
+import { REQUIRED_VOICE_ASSETS, VOSK_MODEL_NAME, WHISPER_MODEL_REPO } from '@jarvis/core';
+import { sha256, zipToTarGz } from './zipToTarGz.mjs';
 
 const desktopRoot = join(fileURLToPath(new URL('.', import.meta.url)), '..');
 const assetsRoot = join(desktopRoot, 'voice-assets');
@@ -23,6 +35,25 @@ const SOURCES = {
   whisper: (path) => `https://huggingface.co/${WHISPER_MODEL_REPO}/resolve/main/${path.slice(WHISPER_MODEL_REPO.length + 1)}`,
   openwakeword: (path) => `https://github.com/dscripka/openWakeWord/releases/download/v0.5.1/${path}`,
 };
+
+/** Modèle Vosk français publié par alphacephei (zip). Empreinte vérifiée avant conversion. */
+const VOSK_ZIP_URL = `https://alphacephei.com/vosk/models/${VOSK_MODEL_NAME}.zip`;
+const VOSK_ZIP_SHA256 = 'cabf6180e177eb9b3a9a9d43a437bd5e549f3a7d09525e5d69a3fed787be12ad';
+
+async function prepareVoskModel(destination, minBytes) {
+  console.log(`[voix] téléchargement de ${VOSK_ZIP_URL}`);
+  const response = await fetch(VOSK_ZIP_URL, { redirect: 'follow', headers: { 'user-agent': 'Jarvis-setup-voice' } });
+  if (!response.ok) throw new Error(`HTTP ${response.status} pour ${VOSK_ZIP_URL}`);
+  const zip = Buffer.from(await response.arrayBuffer());
+  const digest = sha256(zip);
+  if (digest !== VOSK_ZIP_SHA256) {
+    throw new Error(`Empreinte inattendue pour ${VOSK_ZIP_URL} : ${digest} (attendu ${VOSK_ZIP_SHA256})`);
+  }
+  const archive = zipToTarGz(zip);
+  if (archive.length < minBytes) throw new Error(`Archive Vosk incomplète (${archive.length} octets)`);
+  writeFileSync(`${destination}.part`, archive);
+  renameSync(`${destination}.part`, destination);
+}
 
 async function download(url, destination, minBytes) {
   console.log(`[voix] téléchargement de ${url}`);
@@ -82,7 +113,13 @@ for (const asset of REQUIRED_VOICE_ASSETS) {
     continue;
   }
   if (existsSync(destination) && statSync(destination).size >= asset.minBytes) continue;
+  if (asset.host === 'vosk') {
+    await prepareVoskModel(destination, asset.minBytes);
+    continue;
+  }
   await download(SOURCES[asset.host](asset.path), destination, asset.minBytes);
 }
 
-console.log(`[voix] voice-assets prêt : onnxruntime-web ${ort.version}, ${WHISPER_MODEL_REPO} q8, openWakeWord.`);
+console.log(
+  `[voix] voice-assets prêt : onnxruntime-web ${ort.version}, ${WHISPER_MODEL_REPO} q8, openWakeWord, Vosk ${VOSK_MODEL_NAME}.`,
+);

@@ -53,6 +53,8 @@ export const IpcChannel = {
   voiceSpeak: 'voice:speak',
   voiceAssetsReport: 'voice:assets-report',
   voiceCopyReport: 'voice:copy-report',
+  voiceCaptureLog: 'voice:capture-log',
+  voiceOpenMicrophonePrivacy: 'voice:open-microphone-privacy',
   youtubeTranscribe: 'youtube:transcribe-audio',
   youtubeTranscribeProgress: 'youtube:transcribe-progress',
   youtubeTranscribeResult: 'youtube:transcribe-result',
@@ -314,6 +316,10 @@ export interface JarvisApi {
     assetsReport(): Promise<VoiceAssetsReport>;
     /** Copie le détail du diagnostic dans le presse-papiers (texte seul). */
     copyReport(text: string): Promise<void>;
+    /** Une ligne du journal de capture (durées, erreurs) : console du main + `logs/voice-capture.log`. */
+    log(line: string): void;
+    /** Ouvre Paramètres Windows > Confidentialité > Microphone. Faux hors Windows. */
+    openMicrophonePrivacy(): Promise<boolean>;
   };
   /** Écoute YouTube : le processus principal envoie l'audio, Whisper tourne ici. */
   youtube: {

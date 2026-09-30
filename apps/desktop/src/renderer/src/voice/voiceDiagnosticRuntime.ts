@@ -1,5 +1,12 @@
-import { computeRms, concatFloat32, voiceAssetUrl, type VoiceSettings } from '@jarvis/core';
-import { startAudioCapture } from './audioCapture';
+import {
+  computeRms,
+  concatFloat32,
+  formatCaptureTimings,
+  redactDeviceId,
+  voiceAssetUrl,
+  type VoiceSettings,
+} from '@jarvis/core';
+import { microphone, startAudioCapture } from './audioCapture';
 import { configureOnnxRuntime, onnxRuntimeVersion, withOrtLock } from './onnxRuntime';
 import {
   OpenWakeWordEngine,
@@ -13,6 +20,7 @@ import {
   transcribeWithWhisper,
 } from './whisper/pipelineLoader';
 import { VOICE_SAMPLE_RATE, decodeAudioToMono16k } from './audioDecode';
+import { spotWakeWordInClip } from './voskWakeWordEngine';
 import {
   analyzeRecording,
   type MicrophoneProbe,
@@ -56,37 +64,44 @@ const SPEECH_RMS = 0.02;
 const SILENCE_RMS = 0.012;
 const STOP_AFTER_SILENCE_MS = 1500;
 
+/**
+ * Le diagnostic rejoint le micro partagé (le même flux que l'écoute) : il
+ * ne rouvre pas un second périphérique, et il voit ce que l'écoute voit.
+ */
 async function openMicrophoneProbe(deviceId: string | undefined): Promise<MicrophoneProbe> {
   let recording: Float32Array[] | null = null;
   let rate = 16000;
-  let label = '';
   let heardSpeech = false;
   let silentMs = 0;
   let finish: (() => void) | null = null;
-  const handle = await startAudioCapture(deviceId, {
-    onFrame: (frame, sampleRate) => {
-      rate = sampleRate;
-      if (!recording) return;
-      recording.push(frame);
-      const rms = computeRms(frame);
-      if (rms >= SPEECH_RMS) heardSpeech = true;
-      silentMs = rms < SILENCE_RMS ? silentMs + (frame.length / sampleRate) * 1000 : 0;
-      if (heardSpeech && silentMs >= STOP_AFTER_SILENCE_MS) finish?.();
+  if (microphone.getStatus().phase === 'error') void microphone.retry();
+  const handle = await startAudioCapture(
+    deviceId,
+    {
+      onFrame: (frame, sampleRate) => {
+        rate = sampleRate;
+        if (!recording) return;
+        recording.push(frame);
+        const rms = computeRms(frame);
+        if (rms >= SPEECH_RMS) heardSpeech = true;
+        silentMs = rms < SILENCE_RMS ? silentMs + (frame.length / sampleRate) * 1000 : 0;
+        if (heardSpeech && silentMs >= STOP_AFTER_SILENCE_MS) finish?.();
+      },
+      onError: () => undefined,
     },
-    onError: () => undefined,
-  });
-  label = handle.label;
-  if (!label) {
-    try {
-      const devices = await navigator.mediaDevices.enumerateDevices();
-      const inputs = devices.filter((device) => device.kind === 'audioinput');
-      label = inputs.find((device) => device.deviceId === (handle.deviceId || deviceId))?.label ?? '';
-    } catch {
-      label = '';
-    }
-  }
+    'diagnostic',
+  );
+  const status = microphone.getStatus();
+  const details = [
+    `Périphérique ouvert : « ${status.label || 'sans nom'} » (${redactDeviceId(status.deviceId)})${status.usingFallback ? ' — repli : micro choisi absent' : ''}`,
+    `Micro choisi : ${status.preferredId ? redactDeviceId(status.preferredId) : 'entrée par défaut de Windows'}`,
+    `Durées : ${formatCaptureTimings(status.timings) || 'déjà ouvert par l’écoute'}`,
+    `Contraintes : sans annulation d’écho, réduction de bruit ni contrôle de gain ; ${status.inputs.length} entrées listées`,
+  ];
   return {
-    label,
+    label: handle.label || status.label,
+    openedMs: status.timings.getUserMediaMs,
+    details,
     record: async (maxMs) => {
       recording = [];
       heardSpeech = false;
@@ -127,6 +142,8 @@ export function createVoiceDiagnosticDeps(
       });
     },
     scoreWakeWord: (pcm, sampleRate) => scoreWakeWordClip(pcm, sampleRate),
+    spotJarvis: (pcm, sampleRate) =>
+      spotWakeWordInClip(pcm, sampleRate, { keyword: voice.wakeWord, sensitivity: voice.wakeWordSensitivity }),
     loadWhisper: async () => {
       try {
         await getWhisperPipeline({ force: true });

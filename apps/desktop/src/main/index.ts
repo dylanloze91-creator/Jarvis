@@ -9,6 +9,7 @@ import {
   ipcMain,
   nativeImage,
   session as electronSession,
+  shell,
 } from 'electron';
 import {
   checkOllamaStatus,
@@ -43,6 +44,8 @@ import { summarizeYoutubeLink } from './youtube/runtime.js';
 import { UpdateManager } from './updater.js';
 import { VoiceBridge } from './voice.js';
 import { presentWindow } from './startup.js';
+import { allowPermissionCheck, allowPermissionRequest, originForLog } from './mediaPermissions.js';
+import { VoiceCaptureLog } from './voiceCaptureLog.js';
 import { createOverlayWindow, type OverlayWindow } from './window.js';
 import {
   currentVoiceAssetsRoot,
@@ -63,6 +66,7 @@ const knowledge = new KnowledgeStore({ getUserDataPath: () => app.getPath('userD
 const auditLog = new FileAuditLogStore();
 const voice = new VoiceBridge(() => settings);
 const updateManager = new UpdateManager();
+const voiceCaptureLog = new VoiceCaptureLog(() => join(app.getPath('userData'), 'logs', 'voice-capture.log'));
 
 let settings: Settings = parseSettings({});
 const spotify = new SpotifyBridge(() => settings);
@@ -113,14 +117,35 @@ async function bootstrap(): Promise<void> {
   const [loaded] = await Promise.all([readSettings(), app.whenReady()]);
   settings = loaded;
   registerVoiceAssetsProtocol();
+  voiceCaptureLog.append(
+    `[démarrage] Jarvis ${app.getVersion()} · Electron ${process.versions.electron} · Chromium ${process.versions.chrome} · ${process.platform} ${process.arch} · écoute ${settings.voice.enabled ? 'activée' : 'coupée'}`,
+  );
 
   app.setAppUserModelId('com.thedexios.jarvis');
   if (process.platform === 'darwin') app.dock?.hide();
 
-  // Électron refuse l'accès au micro par défaut : la commande vocale en a besoin.
+  // Micro seul, depuis l'interface ; chaque décision va dans le journal de capture.
+  const devServer = isDev ? process.env.ELECTRON_RENDERER_URL : undefined;
   electronSession.defaultSession.setPermissionRequestHandler(
-    (_webContents, permission, callback) => {
-      callback(permission === 'media');
+    (_webContents, permission, callback, details) => {
+      const media = details as { mediaTypes?: string[]; requestingUrl?: string };
+      const allowed = allowPermissionRequest(permission, media, devServer);
+      if (permission === 'media' || !allowed) {
+        voiceCaptureLog.append(
+          `[autorisation] demande ${permission}${media.mediaTypes?.length ? ` (${media.mediaTypes.join(', ')})` : ''} de ${originForLog(media.requestingUrl)} → ${allowed ? 'accordée' : 'refusée'}`,
+        );
+      }
+      callback(allowed);
+    },
+  );
+  electronSession.defaultSession.setPermissionCheckHandler(
+    (_webContents, permission, _origin, details) => {
+      const mediaType = (details as { mediaType?: string }).mediaType;
+      const allowed = allowPermissionCheck(permission, mediaType);
+      if (!allowed && permission === 'media') {
+        voiceCaptureLog.append(`[autorisation] vérification media (${mediaType ?? '?'}) → refusée`);
+      }
+      return allowed;
     },
   );
 
@@ -189,6 +214,9 @@ function createTray(): void {
 
 function registerIpc(): void {
   ipcMain.handle(IpcChannel.chatSend, async (event, input: SendChatInput) => {
+    if (input.source === 'voice') {
+      voiceCaptureLog.append(`[commande] reçue par l'agent (${input.text.length} caractères)`);
+    }
     await session.send(event.sender, input);
   });
   ipcMain.handle(IpcChannel.chatCancel, () => session.cancel());
@@ -299,6 +327,15 @@ function registerIpc(): void {
   });
   ipcMain.handle(IpcChannel.voiceCopyReport, (_event, text: unknown) => {
     if (typeof text === 'string') clipboard.writeText(text.slice(0, 20_000));
+  });
+  ipcMain.on(IpcChannel.voiceCaptureLog, (_event, line: unknown) => {
+    if (typeof line === 'string') voiceCaptureLog.append(line);
+  });
+  // URI fixe, rien ne vient du renderer : Paramètres > Confidentialité > Microphone.
+  ipcMain.handle(IpcChannel.voiceOpenMicrophonePrivacy, async () => {
+    if (process.platform !== 'win32') return false;
+    await shell.openExternal('ms-settings:privacy-microphone');
+    return true;
   });
 
   ipcMain.handle(IpcChannel.updateGetState, () => updateManager.getState());

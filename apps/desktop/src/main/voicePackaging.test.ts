@@ -50,9 +50,9 @@ describe('empaquetage de la voix', () => {
     expect(readFileSync(join(desktopRoot, 'electron-builder.yml'), 'utf8')).not.toMatch(/picovoice|porcupine/i);
   });
 
-  it('extraResources copie voice-assets/{ort,whisper,openwakeword} à côté de app.asar', () => {
+  it('extraResources copie voice-assets/{ort,whisper,openwakeword,vosk} à côté de app.asar', () => {
     const yml = readFileSync(join(desktopRoot, 'electron-builder.yml'), 'utf8');
-    for (const host of ['ort', 'whisper', 'openwakeword']) {
+    for (const host of ['ort', 'whisper', 'openwakeword', 'vosk']) {
       expect(yml).toContain(`  - from: voice-assets/${host}\n    to: ${host}\n`);
     }
     expect(yml).toContain("  - '!**/*.onnx'\n");

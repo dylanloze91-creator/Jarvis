@@ -50,6 +50,8 @@ function deps(overrides: Partial<Deps> = {}): Deps {
     runtimeVersion: () => '1.31.0-dev',
     startRuntime: async () => undefined,
     scoreWakeWord: async (pcm) => (pcm.some((v) => Math.abs(v) > 0.1) ? 0.81 : 0.002),
+    spotJarvis: async (pcm) =>
+      pcm.some((v) => Math.abs(v) > 0.1) ? [{ word: 'jarvis', conf: 1, start: 0.44, end: 0.93 }] : [],
     loadWhisper: async () => undefined,
     transcribe: async (_pcm, language) => (language === 'english' ? 'Jarvis.' : 'Jarvis, quelle heure est-il ?'),
     openMicrophone: async () => ({
@@ -74,7 +76,8 @@ describe('Tester la voix', () => {
     const updates: string[][] = [];
     const result = await runVoiceDiagnostic(deps(), (steps) => updates.push(steps.map((s) => s.status)));
     expect(result.firstFailure).toBeNull();
-    expect(result.steps.map((step) => step.status)).toEqual(['ok', 'ok', 'ok', 'ok', 'ok', 'ok', 'ok', 'ok']);
+    expect(result.steps.map((step) => step.status)).toEqual(['ok', 'ok', 'ok', 'ok', 'ok', 'ok', 'ok', 'ok', 'ok']);
+    expect(result.steps.find((step) => step.id === 'vosk')?.summary).toMatch(/Modèle Vosk prêt en .* aucun « Jarvis »/);
     expect(result.analysis).toMatchObject({ detected: true, command: 'quelle heure est-il' });
     expect(updates.length).toBeGreaterThan(8);
     const report = formatDiagnosticReport(result);
@@ -82,6 +85,7 @@ describe('Tester la voix', () => {
     expect(report).toMatch(/Aucune étape en échec/);
     expect(report).toMatch(/jarvis-oww:\/\/ort\/ort-wasm-simd-threaded\.wasm → HTTP 200, application\/wasm/);
     expect(report).toMatch(/Score openWakeWord max : 0\.810/);
+    expect(report).toMatch(/« Jarvis » seul \(Vosk\) : à 0\.44 s, confiance 1\.00/);
     expect(report).toMatch(/Transcription : « Jarvis, quelle heure est-il \? »/);
     const withFile = formatDiagnosticReport(result, [
       { name: 'jarvis.mp3', durationS: 3.8, analysis: result.analysis! },
@@ -186,22 +190,47 @@ describe('Tester la voix', () => {
     expect(result.firstFailure?.summary).toMatch(/tokenizer\.json.*Réinstalle Jarvis/);
   });
 
-  it('teste le micro même quand Whisper échoue, et traduit un refus d’accès', async () => {
+  it('teste le micro en premier, garde le nom exact de l’erreur, et continue les autres étapes', async () => {
     const result = await runVoiceDiagnostic(
       deps({
         loadWhisper: async () => {
           throw new Error('Fichier Whisper introuvable dans l’application (HTTP 404). Réinstalle Jarvis.');
         },
         openMicrophone: async () => {
-          throw new Error('Accès au microphone refusé. Autorise-le dans les réglages de Windows, puis réessaie.');
+          throw new Error(
+            'Windows bloque le micro pour Jarvis (NotAllowedError : Permission denied by system). Paramètres Windows > Confidentialité et sécurité > Microphone…',
+          );
         },
       }),
     );
-    expect(result.firstFailure?.id).toBe('whisper');
+    expect(result.steps[0]?.id).toBe('microphone');
+    expect(result.firstFailure?.id).toBe('microphone');
     expect(result.steps.find((s) => s.id === 'microphone')).toMatchObject({
       status: 'failed',
-      summary: expect.stringMatching(/Accès au microphone refusé/),
+      summary: expect.stringMatching(/NotAllowedError : Permission denied by system/),
     });
+    expect(result.steps.find((s) => s.id === 'whisper')?.status).toBe('failed');
+    expect(result.steps.find((s) => s.id === 'disk')?.status).toBe('ok');
+  });
+
+  it('montre le périphérique ouvert, sa durée et le journal du micro dans le détail copié', async () => {
+    const result = await runVoiceDiagnostic(
+      deps({
+        openMicrophone: async () => ({
+          label: 'Broadcast Stream Mix (TC-HELICON GoXLR Mini)',
+          openedMs: 180,
+          details: ['autorisation granted (1 ms) · liste 4 ms (4 entrées) · getUserMedia 180 ms'],
+          record: async () => ({ pcm: speech(2), sampleRate: 16000 }),
+          close: () => undefined,
+        }),
+      }),
+    );
+    const mic = result.steps.find((s) => s.id === 'microphone');
+    expect(mic?.summary).toBe('Micro ouvert : « Broadcast Stream Mix (TC-HELICON GoXLR Mini) » en 180 ms.');
+    const report = formatDiagnosticReport(result, [], ['21:30:00.000 ouvert « Broadcast Stream Mix » (default)']);
+    expect(report).toMatch(/1\. Accès au micro — OK/);
+    expect(report).toMatch(/getUserMedia 180 ms/);
+    expect(report).toMatch(/Journal du micro \(identifiants abrégés\)\n {3}21:30:00\.000 ouvert/);
   });
 });
 
@@ -224,6 +253,9 @@ describe('analyzeRecording', () => {
       { pcm: speech(3, 1.2), sampleRate: 16000 },
       {
         ...deps(),
+        spotJarvis: async () => {
+          throw new Error('Vosk indisponible');
+        },
         scoreWakeWord: async (pcm, sampleRate) => {
           expect(sampleRate).toBe(16000);
           expect(pcm.some((value) => Math.abs(value) >= 1)).toBe(true);
@@ -246,6 +278,9 @@ describe('analyzeRecording', () => {
       { pcm: speech(3), sampleRate: 16000 },
       {
         ...deps(),
+        spotJarvis: async () => {
+          throw new Error('Vosk indisponible');
+        },
         scoreWakeWord: async () => 0.05,
         transcribe: async (_pcm, language) =>
           language === 'english' ? 'Good morning.' : 'Bonjour, je voudrais réserver une table.',
@@ -254,5 +289,30 @@ describe('analyzeRecording', () => {
     expect(analysis.detected).toBe(false);
     expect(analysis.bareJarvisConfirmed).toBe(false);
     expect(describeAnalysis(analysis).at(-1)).toBe('Commande envoyée : aucune (pas de réveil)');
+  });
+});
+
+describe('analyzeRecording avec Vosk', () => {
+  it('Vosk entend « Jarvis » seul : réveil, sans lancer Whisper pour confirmer', async () => {
+    const transcribe = vi.fn(async (_pcm: Float32Array, language: string) =>
+      language === 'french' ? 'Jarvis, quelle heure est-il ?' : 'Jarvis',
+    );
+    const analysis = await analyzeRecording({ pcm: speech(3), sampleRate: 16000 }, { ...deps(), transcribe, scoreWakeWord: async () => 0.2 });
+    expect(analysis.detected).toBe(true);
+    expect(analysis.voskHits).toHaveLength(1);
+    expect(analysis.bareJarvisText).toBeNull();
+    expect(transcribe).toHaveBeenCalledTimes(1);
+    expect(analysis.command).toBe('quelle heure est-il');
+  });
+
+  it('Vosk n’entend rien et openWakeWord reste bas : pas de réveil, pas de Whisper', async () => {
+    const transcribe = vi.fn(async () => 'Bonjour, je voudrais réserver une table.');
+    const analysis = await analyzeRecording(
+      { pcm: speech(3), sampleRate: 16000 },
+      { ...deps(), transcribe, spotJarvis: async () => [], scoreWakeWord: async () => 0.05 },
+    );
+    expect(analysis.detected).toBe(false);
+    expect(transcribe).not.toHaveBeenCalled();
+    expect(describeAnalysis(analysis)).toContain('« Jarvis » seul (Vosk) : non');
   });
 });

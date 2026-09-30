@@ -1,19 +1,29 @@
 /**
  * Tout le code qui touche le micro vit ici, dans `apps/desktop` : Web Audio
  * API et `getUserMedia` n'existent pas dans `packages/core`, qui reste
- * agnostique du DOM. Ce module se limite à la capture brute (trames PCM +
- * niveau sonore) ; la détection du mot de réveil et la transcription sont
- * des couches séparées qui consomment ces trames.
+ * agnostique du DOM. Ce module fournit le graphe Web Audio (AudioWorklet à
+ * 16 kHz) et l'instance unique de `MicrophoneService` (voir `microphone.ts`)
+ * que partagent l'écoute, le diagnostic et les tests.
  */
-import { chooseMicrophone, resampleLinear, type AudioInputOption } from '@jarvis/core';
+import {
+  captureFailureText,
+  describeCaptureFailure,
+  resampleLinear,
+} from '@jarvis/core';
+import {
+  MicrophoneService,
+  type AudioGraph,
+  type FrameListener,
+  type MicrophoneStatus,
+} from './microphone';
 
 export { computeRms } from '@jarvis/core';
 
 const FRAME_SIZE = 4096;
 /**
- * 16 kHz : c'est ce qu'attendent Whisper et openWakeWord. Demander
- * ce taux dès la capture évite un ré-échantillonnage manuel dans chaque
- * consommateur (le détecteur local, lui, n'y est pas sensible).
+ * 16 kHz : c'est ce qu'attendent Whisper et openWakeWord. Chromium
+ * rééchantillonne l'entrée pour ce contexte (meilleure qualité qu'un
+ * rééchantillonnage linéaire en JavaScript).
  */
 const TARGET_SAMPLE_RATE = 16000;
 
@@ -77,34 +87,40 @@ registerProcessor('jarvis-capture', JarvisCapture);
 `;
 
 let workletUrl: string | null = null;
+let sharedContext: Promise<AudioContext> | null = null;
 
 /**
- * Ouvre le micro et pousse des trames PCM de 4096 échantillons à 16 kHz.
- * La capture tourne dans un `AudioWorklet` : l'ancien `ScriptProcessorNode`
- * vivait sur le thread principal, et pendant chaque inférence Whisper
- * (~1 s) Chromium jetait l'audio — la commande dite juste après « Jarvis »
- * était perdue.
+ * Un seul `AudioContext` (16 kHz) pour toute la session du micro : un
+ * changement de périphérique ne recrée que la source et le nœud, pas le
+ * contexte ni le module du worklet.
  */
-export async function startAudioCapture(
-  deviceId: string | undefined,
-  handlers: AudioCaptureHandlers,
-): Promise<AudioCaptureHandle> {
-  let stream: MediaStream;
-  try {
-    stream = await openMicrophone(deviceId);
-  } catch (error) {
-    throw new Error(describeMicrophoneError(error));
-  }
+function audioContext(): Promise<AudioContext> {
+  sharedContext ??= (async () => {
+    let context: AudioContext;
+    try {
+      context = new AudioContext({ sampleRate: TARGET_SAMPLE_RATE });
+    } catch {
+      context = new AudioContext();
+    }
+    workletUrl ??= URL.createObjectURL(new Blob([CAPTURE_WORKLET_SOURCE], { type: 'text/javascript' }));
+    try {
+      await context.audioWorklet.addModule(workletUrl);
+    } catch (error) {
+      void context.close();
+      throw error;
+    }
+    return context;
+  })().catch((error: unknown) => {
+    sharedContext = null;
+    throw error;
+  });
+  return sharedContext;
+}
 
-  const context = new AudioContext({ sampleRate: TARGET_SAMPLE_RATE });
-  workletUrl ??= URL.createObjectURL(new Blob([CAPTURE_WORKLET_SOURCE], { type: 'text/javascript' }));
-  try {
-    await context.audioWorklet.addModule(workletUrl);
-  } catch (error) {
-    for (const track of stream.getTracks()) track.stop();
-    void context.close();
-    throw new Error(`Capture audio impossible : ${error instanceof Error ? error.message : String(error)}`);
-  }
+/** Branche un flux sur le worklet. La capture tourne dans un `AudioWorklet`, jamais sur le fil principal. */
+export async function openAudioGraph(stream: MediaStream, onFrame: FrameListener): Promise<AudioGraph> {
+  const context = await audioContext();
+  if (context.state === 'suspended') await context.resume().catch(() => undefined);
   const source = context.createMediaStreamSource(stream);
   const capture = new AudioWorkletNode(context, 'jarvis-capture', {
     numberOfInputs: 1,
@@ -117,123 +133,123 @@ export async function startAudioCapture(
   // rien ne part vers les haut-parleurs (pas d'écho).
   const mute = context.createGain();
   mute.gain.value = 0;
-
   capture.port.onmessage = (event: MessageEvent<Float32Array>) => {
     const rate = context.sampleRate;
     const frame = rate === TARGET_SAMPLE_RATE ? event.data : resampleLinear(event.data, rate, TARGET_SAMPLE_RATE);
-    handlers.onFrame(frame, TARGET_SAMPLE_RATE);
+    onFrame(frame, TARGET_SAMPLE_RATE);
   };
-
   source.connect(capture);
   capture.connect(mute);
   mute.connect(context.destination);
-
-  for (const track of stream.getTracks()) {
-    track.addEventListener('ended', () => handlers.onError('Le microphone a été déconnecté.'));
-  }
-
-  const stop = (): void => {
-    capture.port.onmessage = null;
-    capture.disconnect();
-    source.disconnect();
-    mute.disconnect();
-    for (const track of stream.getTracks()) track.stop();
-    void context.close();
+  return {
+    close: () => {
+      capture.port.onmessage = null;
+      source.disconnect();
+      capture.disconnect();
+      mute.disconnect();
+    },
+    resume: () => context.resume(),
   };
-
-  const actualId = stream.getAudioTracks()[0]?.getSettings?.().deviceId ?? deviceId ?? '';
-  let label = '';
-  try {
-    const devices = await listMicrophones();
-    label = devices.find((device) => device.deviceId === actualId)?.label ?? '';
-  } catch {
-    label = '';
-  }
-
-  return { stop, deviceId: actualId, label };
 }
 
-function requestInput(deviceId: string | undefined): Promise<MediaStream> {
-  if (!deviceId) return navigator.mediaDevices.getUserMedia({ audio: true });
-  return navigator.mediaDevices.getUserMedia({
-    audio: { deviceId: { exact: deviceId }, channelCount: { ideal: 1 } },
+function closeAudioGraphs(): void {
+  const pending = sharedContext;
+  sharedContext = null;
+  void pending?.then((context) => context.close()).catch(() => undefined);
+}
+
+function sendLog(line: string): void {
+  const stamped = `[micro] ${line}`;
+  try {
+    window.jarvis?.voice?.log?.(stamped);
+  } catch {
+    // Journal seulement.
+  }
+  captureLog.push(`${new Date().toISOString().slice(11, 23)} ${line}`);
+  if (captureLog.length > 200) captureLog.splice(0, captureLog.length - 200);
+}
+
+/** Dernières lignes du journal de capture (copiées par « Tester la voix »). */
+export const captureLog: string[] = [];
+
+async function queryMicrophonePermission(): Promise<string> {
+  if (!navigator.permissions?.query) return 'inconnu';
+  const status = await Promise.race([
+    navigator.permissions.query({ name: 'microphone' as PermissionName }),
+    new Promise<null>((resolve) => setTimeout(() => resolve(null), 1000)),
+  ]);
+  return status?.state ?? 'inconnu';
+}
+
+/** Instance unique : le micro n'est ouvert qu'une fois, quel que soit le nombre d'utilisateurs. */
+export const microphone = new MicrophoneService({
+  mediaDevices: typeof navigator !== 'undefined' ? navigator.mediaDevices : undefined,
+  queryPermission: queryMicrophonePermission,
+  openGraph: openAudioGraph,
+  closeGraphs: closeAudioGraphs,
+  now: () => performance.now(),
+  setTimer: (callback, ms) => window.setTimeout(callback, ms),
+  clearTimer: (handle) => window.clearTimeout(handle as number),
+  log: sendLog,
+  getUserMediaTimeoutMs: 10_000,
+  enumerateTimeoutMs: 3_000,
+  firstFrameTimeoutMs: 4_000,
+});
+
+/**
+ * Ouvre (ou rejoint) le micro partagé pour un usage ponctuel : test du mot
+ * de réveil, échantillon, diagnostic. `deviceId` est le choix enregistré ;
+ * il n'y a jamais deux flux ouverts. Rejette avec la cause exacte si le
+ * micro ne s'ouvre pas.
+ */
+export async function startAudioCapture(
+  deviceId: string | undefined,
+  handlers: AudioCaptureHandlers,
+  owner = 'test',
+): Promise<AudioCaptureHandle> {
+  if (deviceId !== undefined) void microphone.setPreferredDevice(deviceId);
+  const release = microphone.acquire(owner);
+  const status = await waitForOpen(microphone);
+  if (status.phase !== 'open') {
+    release();
+    throw new Error(status.failure ? captureFailureText(status.failure) : 'Le micro ne s’ouvre pas.');
+  }
+  const offFrame = microphone.onFrame(handlers.onFrame);
+  const offStatus = microphone.subscribe((next) => {
+    if (next.phase === 'recovering' && next.failure) handlers.onError(captureFailureText(next.failure));
+  });
+  return {
+    stop: () => {
+      offFrame();
+      offStatus();
+      release();
+    },
+    deviceId: status.deviceId,
+    label: status.label,
+  };
+}
+
+/** Attend que le micro soit ouvert ou en échec (jamais « en cours »). */
+export function waitForOpen(service: MicrophoneService, timeoutMs = 15_000): Promise<MicrophoneStatus> {
+  return new Promise((resolve) => {
+    let done = false;
+    let unsubscribe = (): void => undefined;
+    const finish = (status: MicrophoneStatus): void => {
+      if (done) return;
+      done = true;
+      window.clearTimeout(timer);
+      queueMicrotask(() => unsubscribe());
+      resolve(status);
+    };
+    const timer = window.setTimeout(() => finish(service.getStatus()), timeoutMs);
+    unsubscribe = service.subscribe((status) => {
+      if (status.phase === 'open' || status.phase === 'error') finish(status);
+    });
+    if (done) unsubscribe();
   });
 }
 
-async function listedInputs(): Promise<AudioInputOption[]> {
-  const devices = await prepareMicrophoneList();
-  return devices.map((device) => ({ deviceId: device.deviceId, label: device.label }));
-}
-
-/**
- * Liste les entrées. Sans autorisation les libellés sont vides et un mixage
- * est indiscernable d'un micro : on ouvre brièvement le défaut pour les lire,
- * puis on le referme.
- */
-export async function prepareMicrophoneList(): Promise<MediaDeviceInfo[]> {
-  if (!navigator.mediaDevices?.enumerateDevices) return [];
-  let devices = await listMicrophones();
-  if (devices.length > 0 && devices.every((device) => !device.label) && navigator.mediaDevices.getUserMedia) {
-    try {
-      const probe = await navigator.mediaDevices.getUserMedia({ audio: true });
-      for (const track of probe.getTracks()) track.stop();
-      devices = await listMicrophones();
-    } catch {
-      // Pas d'autorisation : la liste reste sans nom.
-    }
-  }
-  return devices;
-}
-
-/**
- * Ouvre l'entrée demandée, mixage compris. Sans identifiant, c'est le défaut
- * Windows (même périphérique que les autres applications). Sans liste
- * (tests, permission pas encore lisible) : l'identifiant demandé, puis le
- * défaut du système. Un périphérique disparu ne bascule pas vers un autre
- * micro de la liste.
- */
-export async function openMicrophone(deviceId: string | undefined): Promise<MediaStream> {
-  const inputs = await listedInputs();
-  if (inputs.length === 0) return openExactOrDefault(deviceId);
-  const choice = chooseMicrophone(inputs, deviceId ?? '');
-  if (!choice) return openExactOrDefault(deviceId);
-  try {
-    return await requestInput(choice.deviceId);
-  } catch (error) {
-    const name = (error as { name?: string } | null)?.name;
-    if (name !== 'OverconstrainedError' && name !== 'NotFoundError') throw error;
-    if (!deviceId || choice.deviceId === 'default') throw error;
-    return navigator.mediaDevices.getUserMedia({ audio: true });
-  }
-}
-
-async function openExactOrDefault(deviceId: string | undefined): Promise<MediaStream> {
-  if (!deviceId) return navigator.mediaDevices.getUserMedia({ audio: true });
-  try {
-    return await requestInput(deviceId);
-  } catch (error) {
-    const name = (error as { name?: string } | null)?.name;
-    if (name !== 'OverconstrainedError' && name !== 'NotFoundError') throw error;
-    return navigator.mediaDevices.getUserMedia({ audio: true });
-  }
-}
-
-/** Messages de `getUserMedia` en français (Chromium les donne en anglais, parfois vides). */
+/** Erreur `getUserMedia` (ou autre) → une ligne française qui garde le nom exact de l'erreur. */
 export function describeMicrophoneError(error: unknown): string {
-  const name = (error as { name?: string } | null)?.name;
-  switch (name) {
-    case 'NotFoundError':
-    case 'OverconstrainedError':
-      return 'Aucun micro détecté. Branche un micro, ou choisis-en un autre dans les réglages.';
-    case 'NotAllowedError':
-    case 'SecurityError':
-      return "L'accès au micro est refusé. Autorise-le dans Paramètres Windows > Confidentialité > Microphone.";
-    case 'NotReadableError':
-    case 'AbortError':
-      return 'Le micro est occupé par une autre application ou ne répond pas.';
-    default: {
-      const message = error instanceof Error ? error.message.trim() : String(error ?? '').trim();
-      return message ? `Micro indisponible : ${message}` : 'Micro indisponible.';
-    }
-  }
+  return captureFailureText(describeCaptureFailure(error, 'getUserMedia'));
 }

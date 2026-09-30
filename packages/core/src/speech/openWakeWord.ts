@@ -24,14 +24,14 @@ export function describeOpenWakeWordLoadError(error: unknown): string {
 }
 
 /**
- * Sensibilité 0–1 → seuil de score openWakeWord. 0.7 (défaut) ≈ 0.34.
- * Le modèle officiel est entraîné sur « hey jarvis » : un « Jarvis » nu
- * score plus bas, d'où un seuil plus permissif que 0.59. Plus c'est
- * sensible, plus le seuil descend (1.0 → 0.25).
+ * Sensibilité 0–1 → seuil de score openWakeWord. 0,7 (défaut) → 0,5, le
+ * seuil conseillé par openWakeWord ; 1 → 0,35 ; 0 → 0,85. Avec le mel
+ * corrigé (contexte de 480 échantillons), du bruit blanc atteignait 0,34 :
+ * l'ancien seuil par défaut. « Jarvis » seul est l'affaire de Vosk.
  */
 export function openWakeWordSensitivityToThreshold(sensitivity: number): number {
   const clamped = Math.max(0, Math.min(1, sensitivity));
-  return 0.55 - clamped * 0.3;
+  return 0.85 - clamped * 0.5;
 }
 
 /**
@@ -47,6 +47,72 @@ export function scaleOpenWakeWordPcm(pcm: Float32Array): Float32Array {
     out[index] = Math.max(-32768, Math.min(32767, value));
   }
   return out;
+}
+
+/** Échantillons du pas précédent redonnés au mel (3 pas de 160) : sans eux, 5 trames mel par 80 ms au lieu de 8. */
+export const OPENWAKEWORD_MEL_CONTEXT = 480;
+export const OPENWAKEWORD_MEL_BINS = 32;
+/** Trames mel vues par le modèle d'embedding (0,76 s). */
+export const OPENWAKEWORD_MEL_WINDOW = 76;
+/** Même plafond que `AudioFeatures` (10 s de trames mel). */
+const OPENWAKEWORD_MEL_BUFFER_MAX = 970;
+
+/**
+ * Flux de caractéristiques d'openWakeWord, calqué sur `AudioFeatures`
+ * (Python) : chaque trame de 1280 échantillons est passée au mel avec les
+ * 480 échantillons qui la précèdent, ce qui donne 8 trames mel (pas de
+ * 10 ms) ; un embedding est calculé à chaque trame sur les 76 dernières
+ * trames mel, le tampon démarrant rempli de 1. Sans le contexte, le mel
+ * ne rend que 5 trames par 80 ms : l'échelle de temps est faussée et le
+ * score s'effondre (0,012 au lieu de 0,207 sur la prise GoXLR).
+ */
+export class OpenWakeWordMelStream {
+  private raw = new Float32Array(0);
+  private frames: Float32Array[] = OpenWakeWordMelStream.initialFrames();
+
+  private static initialFrames(): Float32Array[] {
+    return Array.from({ length: OPENWAKEWORD_MEL_WINDOW }, () =>
+      new Float32Array(OPENWAKEWORD_MEL_BINS).fill(1),
+    );
+  }
+
+  /** Entrée du modèle mel pour cette trame : contexte précédent + trame. */
+  melInput(chunk: Float32Array): Float32Array {
+    const joined = new Float32Array(this.raw.length + chunk.length);
+    joined.set(this.raw);
+    joined.set(chunk, this.raw.length);
+    this.raw = joined.slice(Math.max(0, joined.length - chunk.length - OPENWAKEWORD_MEL_CONTEXT));
+    return this.raw;
+  }
+
+  /** Sortie brute du mel (n × 32) ; la transformation `x / 10 + 2` d'openWakeWord est appliquée ici. */
+  pushMel(rawMel: Float32Array): number {
+    const count = Math.floor(rawMel.length / OPENWAKEWORD_MEL_BINS);
+    for (let index = 0; index < count; index += 1) {
+      const frame = new Float32Array(OPENWAKEWORD_MEL_BINS);
+      for (let bin = 0; bin < OPENWAKEWORD_MEL_BINS; bin += 1) {
+        frame[bin] = rawMel[index * OPENWAKEWORD_MEL_BINS + bin]! / 10 + 2;
+      }
+      this.frames.push(frame);
+    }
+    if (this.frames.length > OPENWAKEWORD_MEL_BUFFER_MAX) {
+      this.frames = this.frames.slice(-OPENWAKEWORD_MEL_BUFFER_MAX);
+    }
+    return count;
+  }
+
+  /** Les 76 dernières trames mel, à plat, pour l'embedding. */
+  embeddingWindow(): Float32Array {
+    const window = this.frames.slice(-OPENWAKEWORD_MEL_WINDOW);
+    const flat = new Float32Array(OPENWAKEWORD_MEL_WINDOW * OPENWAKEWORD_MEL_BINS);
+    window.forEach((frame, index) => flat.set(frame, index * OPENWAKEWORD_MEL_BINS));
+    return flat;
+  }
+
+  reset(): void {
+    this.raw = new Float32Array(0);
+    this.frames = OpenWakeWordMelStream.initialFrames();
+  }
 }
 
 /** Rééchantillonnage linéaire — le micro Electron vise 16 kHz, mais le contexte peut diverger. */

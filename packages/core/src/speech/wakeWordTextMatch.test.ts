@@ -183,6 +183,17 @@ describe('commandAfterWakeWord', () => {
     }
   });
 
+  it('retire aussi les graphies vues dans l’appli sur la prise GoXLR (charpente J…V…S)', () => {
+    expect(commandAfterWakeWord("J'en avise quelle heure est-il?", cfg)).toBe('quelle heure est-il?');
+    expect(commandAfterWakeWord("J'en avise, quelle heure est-il ?", cfg)).toBe('quelle heure est-il');
+    expect(commandAfterWakeWord("J'ai envie ce qu'elle aurait dit", cfg)).toBe("qu'elle aurait dit");
+    expect(commandAfterWakeWord("J'en avise", cfg)).toBe('');
+    expect(commandAfterWakeWord('quelle heure est-il ?', cfg)).toBe('quelle heure est-il');
+    expect(commandAfterWakeWord('Jarvis, je vais bien', cfg)).toBe('je vais bien');
+    expect(commandAfterWakeWord('Je veux la météo', cfg)).toBe('Je veux la météo');
+    expect(commandAfterWakeWord('Hey Jarvis', { word: 'computer' })).toBe('Hey Jarvis');
+  });
+
   it('ne confirme pas une hallucination de silence et n’envoie pas « ... »', () => {
     expect(isWhisperHallucination('...')).toBe(true);
     expect(isWhisperHallucination('…')).toBe(true);

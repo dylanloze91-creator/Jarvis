@@ -64,6 +64,8 @@ describe('fichiers voix embarqués', () => {
     expect(paths).toContain('ort/ort-wasm-simd-threaded.wasm');
     for (const file of OPENWAKEWORD_MODEL_FILES) expect(paths).toContain(`openwakeword/${file}`);
     expect(paths.filter((p) => p.startsWith('ort/'))).toHaveLength(2);
+    expect(paths).toContain('vosk/vosk-model-small-fr-0.22.tar.gz');
+    expect(voiceAssetContentType('vosk-model-small-fr-0.22.tar.gz')).toBe('application/gzip');
     for (const asset of REQUIRED_VOICE_ASSETS) {
       expect(parseVoiceAssetUrl(voiceAssetUrl(asset.host, asset.path)), asset.path).not.toBeNull();
     }

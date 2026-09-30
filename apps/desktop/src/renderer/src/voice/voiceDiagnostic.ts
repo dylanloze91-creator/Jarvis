@@ -8,7 +8,9 @@ import {
   openWakeWordSensitivityToThreshold,
   peakEnergy,
   commandAfterWakeWord,
+  formatSeconds,
   voiceAssetUrl,
+  type VoskWord,
   type WakeWordDetectorConfig,
   type VoiceAssetSpec,
 } from '@jarvis/core';
@@ -19,6 +21,7 @@ export type DiagnosticStepId =
   | 'protocol'
   | 'runtime'
   | 'wakeword'
+  | 'vosk'
   | 'whisper'
   | 'inference'
   | 'microphone'
@@ -37,21 +40,27 @@ export interface DiagnosticStep {
   durationMs?: number;
 }
 
+/** Le micro d'abord : un problème de micro se voit en une seconde, sans attendre Whisper. */
 export const DIAGNOSTIC_STEPS: ReadonlyArray<{ id: DiagnosticStepId; label: string }> = [
+  { id: 'microphone', label: 'Accès au micro' },
   { id: 'disk', label: 'Fichiers voix sur le disque' },
   { id: 'protocol', label: 'Lecture par le protocole jarvis-oww' },
   { id: 'runtime', label: 'Moteur ONNX (WebAssembly)' },
-  { id: 'wakeword', label: 'Mot de réveil (openWakeWord)' },
+  { id: 'wakeword', label: 'Mot de réveil « Hey Jarvis » (openWakeWord)' },
+  { id: 'vosk', label: 'Mot de réveil « Jarvis » seul (Vosk, français)' },
   { id: 'whisper', label: 'Chargement de Whisper' },
   { id: 'inference', label: 'Transcription d’essai' },
-  { id: 'microphone', label: 'Accès au micro' },
   { id: 'live', label: 'Écoute : dis « Jarvis, quelle heure est-il ? »' },
 ];
+
+/** Au-delà, l'étape micro est déclarée bloquée (le service borne déjà getUserMedia à 10 s). */
+export const MICROPHONE_STEP_TIMEOUT_MS = 20_000;
 
 const DEPENDS_ON: Partial<Record<DiagnosticStepId, DiagnosticStepId[]>> = {
   protocol: ['disk'],
   runtime: ['protocol'],
   wakeword: ['runtime'],
+  vosk: ['protocol'],
   whisper: ['runtime'],
   inference: ['whisper'],
   live: ['whisper', 'microphone'],
@@ -64,6 +73,10 @@ export interface RecordedAudio {
 
 export interface MicrophoneProbe {
   label: string;
+  /** Temps d'ouverture (getUserMedia), si connu. */
+  openedMs?: number;
+  /** Lignes pour « Copier le détail » : durées, périphérique, repli. */
+  details?: string[];
   /** Enregistre jusqu'à un silence après la parole, ou `maxMs`. */
   record: (maxMs: number) => Promise<RecordedAudio>;
   close: () => void;
@@ -74,7 +87,9 @@ export interface RecordingAnalysis {
   /** Meilleur score openWakeWord sur l'enregistrement (0 à 1). */
   wakeWordScore: number;
   wakeWordThreshold: number;
-  /** Le déclencheur « Jarvis » nu a trouvé un candidat que Whisper a confirmé. */
+  /** Occurrences sûres de « Jarvis » seul trouvées par Vosk ; `null` si Vosk est indisponible. */
+  voskHits: VoskWord[] | null;
+  /** Le déclencheur « Jarvis » nu a trouvé un candidat que Whisper a confirmé (repli si Vosk manque). */
   bareJarvisConfirmed: boolean;
   bareJarvisText: string | null;
   detected: boolean;
@@ -90,6 +105,8 @@ export interface VoiceDiagnosticDeps {
   startRuntime: () => Promise<void>;
   /** Charge openWakeWord et renvoie le meilleur score sur `pcm` (même signal que `peak`, au débit indiqué). */
   scoreWakeWord: (pcm: Float32Array, sampleRate: number) => Promise<number>;
+  /** Charge Vosk et renvoie les occurrences sûres de « Jarvis » seul dans `pcm`. */
+  spotJarvis: (pcm: Float32Array, sampleRate: number) => Promise<VoskWord[]>;
   loadWhisper: () => Promise<void>;
   transcribe: (pcm: Float32Array, language: string, maxNewTokens: number) => Promise<string>;
   openMicrophone: () => Promise<MicrophoneProbe>;
@@ -178,7 +195,7 @@ export async function analyzeRecording(
   audio: RecordedAudio,
   deps: Pick<
     VoiceDiagnosticDeps,
-    'scoreWakeWord' | 'transcribe' | 'wakeWord' | 'wakeWordVariants' | 'sensitivity' | 'detectorConfig'
+    'scoreWakeWord' | 'spotJarvis' | 'transcribe' | 'wakeWord' | 'wakeWordVariants' | 'sensitivity' | 'detectorConfig'
   >,
 ): Promise<RecordingAnalysis> {
   const { pcm, sampleRate } = audio;
@@ -186,6 +203,12 @@ export async function analyzeRecording(
   const leveled = attenuateClipping(pcm).pcm;
   const wakeWordThreshold = openWakeWordSensitivityToThreshold(deps.sensitivity);
   const wakeWordScore = await deps.scoreWakeWord(pcm, sampleRate);
+  let voskHits: VoskWord[] | null = null;
+  try {
+    voskHits = await deps.spotJarvis(pcm, sampleRate);
+  } catch {
+    voskHits = null;
+  }
 
   const candidates: Float32Array[] = [];
   const trigger = createLocalTemplateWakeWordEngine({
@@ -208,7 +231,8 @@ export async function analyzeRecording(
   const match = { word: deps.wakeWord, variants: deps.wakeWordVariants };
   let bareJarvisText: string | null = null;
   let bareJarvisConfirmed = false;
-  for (const candidate of candidates) {
+  // Comme en direct : la confirmation Whisper n'est que le repli de Vosk.
+  for (const candidate of voskHits === null ? candidates : []) {
     const confirmation = await confirmWakeWordCandidate(
       { pcm: candidate, sampleRate },
       (window) => deps.transcribe(window, WHISPER_WAKE_WORD_LANGUAGE, 12),
@@ -222,14 +246,15 @@ export async function analyzeRecording(
     }
   }
 
-  const detected = wakeWordScore >= wakeWordThreshold || bareJarvisConfirmed;
-  // Whisper (dictée) seulement après un réveil. La confirmation du « Jarvis »
-  // nu, plus haut, reste le seul appel avant ça.
+  const detected =
+    wakeWordScore >= wakeWordThreshold || (voskHits?.length ?? 0) > 0 || bareJarvisConfirmed;
+  // Whisper (dictée) seulement après un réveil.
   const transcript = detected ? await deps.transcribe(leveled, WHISPER_DICTATION_LANGUAGE, 96) : '';
   return {
     peak,
     wakeWordScore,
     wakeWordThreshold,
+    voskHits,
     bareJarvisConfirmed,
     bareJarvisText,
     detected,
@@ -291,6 +316,20 @@ export async function runVoiceDiagnostic(
       publish();
     }
   };
+
+  let microphone: MicrophoneProbe | null = null;
+  await run(
+    'microphone',
+    async (step) => {
+      microphone = await deps.openMicrophone();
+      const opened = microphone.openedMs;
+      step.summary = `Micro ouvert : « ${microphone.label || 'périphérique par défaut'} »${
+        opened !== undefined ? ` en ${formatSeconds(opened)}` : ''
+      }.`;
+      step.details = microphone.details;
+    },
+    Math.min(deps.stepTimeoutMs, MICROPHONE_STEP_TIMEOUT_MS),
+  );
 
   await run('disk', async (step) => {
     const report = await deps.assetsReport();
@@ -373,6 +412,17 @@ export async function runVoiceDiagnostic(
   });
 
   await run(
+    'vosk',
+    async (step) => {
+      const startedAt = deps.now();
+      const hits = await deps.spotJarvis(new Float32Array(16000), 16000);
+      step.summary = `Modèle Vosk prêt en ${((deps.now() - startedAt) / 1000).toFixed(1).replace('.', ',')} s ; 1 s de silence : ${hits.length === 0 ? 'aucun « Jarvis »' : `${hits.length} « Jarvis » (anormal)`}.`;
+      if (hits.length > 0) step.status = 'warning';
+    },
+    deps.whisperTimeoutMs,
+  );
+
+  await run(
     'whisper',
     async (step) => {
       const startedAt = deps.now();
@@ -386,12 +436,6 @@ export async function runVoiceDiagnostic(
     const startedAt = deps.now();
     await deps.transcribe(syntheticProbe(), WHISPER_DICTATION_LANGUAGE, 4);
     step.summary = `Encodeur et décodeur ont répondu en ${((deps.now() - startedAt) / 1000).toFixed(1).replace('.', ',')} s.`;
-  });
-
-  let microphone: MicrophoneProbe | null = null;
-  await run('microphone', async (step) => {
-    microphone = await deps.openMicrophone();
-    step.summary = `Micro ouvert : ${microphone.label || 'périphérique par défaut'}.`;
   });
 
   try {
@@ -440,7 +484,9 @@ export function describeAnalysis(analysis: RecordingAnalysis): string[] {
       ? ['Crête ≥ 1 : signal atténué avant openWakeWord et Whisper (même forme, sous le plein échelle).']
       : []),
     `Score openWakeWord max : ${analysis.wakeWordScore.toFixed(3)} (seuil ${analysis.wakeWordThreshold.toFixed(2)})`,
-    `« Jarvis » nu confirmé par Whisper : ${analysis.bareJarvisConfirmed ? 'oui' : 'non'}${analysis.bareJarvisText !== null ? ` (« ${analysis.bareJarvisText} »)` : ''}`,
+    analysis.voskHits === null
+      ? `« Jarvis » seul (Vosk) : indisponible ; confirmé par Whisper : ${analysis.bareJarvisConfirmed ? 'oui' : 'non'}${analysis.bareJarvisText !== null ? ` (« ${analysis.bareJarvisText} »)` : ''}`
+      : `« Jarvis » seul (Vosk) : ${analysis.voskHits.length > 0 ? analysis.voskHits.map((hit) => `à ${hit.start.toFixed(2)} s, confiance ${hit.conf.toFixed(2)}`).join(' ; ') : 'non'}`,
     `Réveil : ${analysis.detected ? 'oui' : 'non'}`,
     `Transcription : « ${analysis.transcript} »`,
     analysis.detected
@@ -453,6 +499,7 @@ export function describeAnalysis(analysis: RecordingAnalysis): string[] {
 export function formatDiagnosticReport(
   result: VoiceDiagnosticResult,
   files: Array<{ name: string; durationS: number; analysis: RecordingAnalysis }> = [],
+  captureLog: string[] = [],
 ): string {
   const env = result.environment;
   const lines = [
@@ -475,6 +522,10 @@ export function formatDiagnosticReport(
   for (const file of files) {
     lines.push('', `Fichier « ${file.name} » (${file.durationS.toFixed(1)} s)`);
     for (const detail of describeAnalysis(file.analysis)) lines.push(`   ${detail}`);
+  }
+  if (captureLog.length > 0) {
+    lines.push('', 'Journal du micro (identifiants abrégés)');
+    for (const line of captureLog) lines.push(`   ${line}`);
   }
   return lines.join('\n');
 }

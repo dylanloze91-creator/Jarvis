@@ -28,7 +28,10 @@ export function VoiceBar({ voice, voiceEnabled }: VoiceBarProps) {
 
   const lines = voiceBarStatusLines({
     state: voice.state,
+    micPhase: voice.mic.phase,
     micError: voice.micError,
+    micNotice: voice.micNotice,
+    voiceError: voice.voiceError,
     whisperStatus: voice.whisperStatus,
     liveTranscript: voice.liveTranscript,
   });
@@ -62,6 +65,11 @@ export function VoiceBar({ voice, voiceEnabled }: VoiceBarProps) {
         </span>
       </div>
       {active ? <LevelMeter level={voice.level} /> : null}
+      {voice.state === 'error' || voice.mic.phase === 'recovering' ? (
+        <Button size="sm" variant="subtle" title="Rouvrir le micro" onClick={voice.retryMicrophone}>
+          Réessayer
+        </Button>
+      ) : null}
       {voice.state === 'speaking' ? (
         <Button size="icon" variant="subtle" title="Couper la réponse" onClick={voice.stopSpeaking}>
           <Square className="size-3 fill-current" />

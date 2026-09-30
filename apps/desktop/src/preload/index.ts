@@ -87,6 +87,8 @@ const api: JarvisApi = {
     speak: (input: VoiceSpeakInput) => ipcRenderer.invoke(IpcChannel.voiceSpeak, input),
     assetsReport: () => ipcRenderer.invoke(IpcChannel.voiceAssetsReport),
     copyReport: (text: string) => ipcRenderer.invoke(IpcChannel.voiceCopyReport, text),
+    log: (line: string) => ipcRenderer.send(IpcChannel.voiceCaptureLog, line),
+    openMicrophonePrivacy: () => ipcRenderer.invoke(IpcChannel.voiceOpenMicrophonePrivacy),
   },
   youtube: {
     onTranscribe: (listener) => {

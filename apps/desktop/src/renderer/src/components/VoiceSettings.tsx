@@ -1,13 +1,9 @@
-import {
-  WHISPER_MODEL_REPO,
-  microphoneOptionLabel,
-  openWakeWordSensitivityToThreshold,
-} from '@jarvis/core';
+import { WHISPER_MODEL_REPO, openWakeWordSensitivityToThreshold } from '@jarvis/core';
 import type { VoiceDescriptor, VoiceSettings } from '@jarvis/core';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Field, Input, Range, Select, Textarea, Toggle } from '@/components/ui/field';
 import { Button } from '@/components/ui/button';
-import { listMicrophones } from '@/voice/audioCapture';
+import { MicrophonePanel } from '@/components/MicrophonePanel';
 import { VoiceDiagnostic } from '@/components/VoiceDiagnostic';
 import { createSttRegistry, createTtsRegistry } from '@/voice/registries';
 import {
@@ -28,6 +24,8 @@ interface VoiceSettingsSectionProps {
   voice: VoiceSettings;
   voiceKeyConfigured: boolean;
   onChange: (patch: Partial<VoiceSettings>) => void;
+  /** Choix du micro : appliqué et enregistré tout de suite, sans « Enregistrer ». */
+  onMicrophoneChange: (microphoneId: string) => void;
 }
 
 type RecordingState = 'idle' | 'recording' | 'error';
@@ -43,11 +41,11 @@ export function VoiceSettingsSection({
   voice,
   voiceKeyConfigured,
   onChange,
+  onMicrophoneChange,
 }: VoiceSettingsSectionProps) {
   const sttRegistry = useMemo(() => createSttRegistry(), []);
   const ttsRegistry = useMemo(() => createTtsRegistry(), []);
 
-  const [microphones, setMicrophones] = useState<MediaDeviceInfo[]>([]);
   const [recording, setRecording] = useState<RecordingState>('idle');
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
@@ -69,12 +67,6 @@ export function VoiceSettingsSection({
     () => lastWhisperProgress(),
   );
   useEffect(() => subscribeWhisperProgress(setWhisperProgress), []);
-
-  useEffect(() => {
-    void listMicrophones()
-      .then(setMicrophones)
-      .catch(() => setMicrophones([]));
-  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -188,7 +180,13 @@ export function VoiceSettingsSection({
         onChange={(enabled) => onChange({ enabled })}
       />
 
-      <VoiceDiagnostic voice={voice} onMicrophoneChange={(microphoneId) => onChange({ microphoneId })} />
+      <MicrophonePanel
+        voiceEnabled={voice.enabled}
+        preferredId={voice.microphoneId}
+        onChange={onMicrophoneChange}
+      />
+
+      <VoiceDiagnostic voice={voice} />
 
       <div className="rounded-lg border border-white/8 bg-white/[0.02] p-3">
         <p className="mb-3 text-[11px] font-medium tracking-wide text-slate-500 uppercase">
@@ -197,9 +195,10 @@ export function VoiceSettingsSection({
 
         <div className="flex flex-col gap-3">
           <p className="text-xs leading-snug text-slate-500">
-            Local et gratuit : openWakeWord reconnaît « Hey Jarvis », et un déclencheur
-            « Jarvis » tout court tourne à côté (tes échantillons, confirmés par Whisper).
-            Aucune clé, aucun compte, aucun audio ne quitte le PC.
+            Local et gratuit : openWakeWord reconnaît « Hey Jarvis », et Vosk (modèle
+            français) reconnaît « Jarvis » tout court, dans un fil à part. Whisper ne sert
+            qu’après le réveil, pour la commande. Aucune clé, aucun compte, aucun audio ne
+            quitte le PC.
           </p>
 
           <WhisperModelStatus progress={whisperProgress} />
@@ -329,8 +328,8 @@ export function VoiceSettingsSection({
               <div>
                 <p className="text-sm text-slate-200">Tester la détection</p>
                 <p className="text-xs text-slate-500">
-                  Dis « Jarvis » : le score openWakeWord doit dépasser le seuil, ou le
-                  déclencheur « Jarvis » tout court s’allume.
+                  Dis « Hey Jarvis » ou « Jarvis » : la barre montre le score openWakeWord,
+                  et s’allume en vert quand Vosk ou openWakeWord réveille Jarvis.
                 </p>
               </div>
               <Button size="sm" variant={testing ? 'danger' : 'subtle'} onClick={() => void toggleTest()}>
@@ -342,23 +341,6 @@ export function VoiceSettingsSection({
           </div>
         </div>
       </div>
-
-      <Field
-        label="Microphone"
-        hint="La liste se remplit après la première autorisation d'accès au micro."
-      >
-        <Select
-          value={voice.microphoneId}
-          onChange={(event) => onChange({ microphoneId: event.target.value })}
-        >
-          <option value="">Périphérique par défaut</option>
-          {microphones.map((mic) => (
-            <option key={mic.deviceId} value={mic.deviceId}>
-              {microphoneOptionLabel(mic.label)}
-            </option>
-          ))}
-        </Select>
-      </Field>
 
       <Field
         label="Moteur de reconnaissance vocale (STT)"

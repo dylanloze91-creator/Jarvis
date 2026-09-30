@@ -1,120 +1,20 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { describeMicrophoneError, openMicrophone } from './audioCapture';
-
-function input(deviceId: string, label: string) {
-  return { kind: 'audioinput' as const, deviceId, label };
-}
+import { describe, expect, it } from 'vitest';
+import { describeMicrophoneError } from './audioCapture';
 
 function domError(name: string, message = ''): Error {
   return Object.assign(new Error(message), { name });
 }
 
-describe('ouverture du micro', () => {
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
-
-  it('reprend le micro par défaut si celui des réglages a été débranché', async () => {
-    const stream = { id: 'défaut' };
-    const getUserMedia = vi
-      .fn()
-      .mockRejectedValueOnce(domError('OverconstrainedError'))
-      .mockResolvedValueOnce(stream);
-    vi.stubGlobal('navigator', { mediaDevices: { getUserMedia } });
-
-    await expect(openMicrophone('casque-usb')).resolves.toBe(stream);
-    expect(getUserMedia.mock.calls[1]?.[0]).toEqual({ audio: true });
-  });
-
-  it('ne contourne pas un refus d’autorisation', async () => {
-    const getUserMedia = vi.fn().mockRejectedValue(domError('NotAllowedError', 'Permission denied'));
-    vi.stubGlobal('navigator', { mediaDevices: { getUserMedia } });
-
-    await expect(openMicrophone('casque-usb')).rejects.toMatchObject({ name: 'NotAllowedError' });
-    expect(getUserMedia).toHaveBeenCalledTimes(1);
-  });
-
-  it('garde le mixage par défaut au lieu d’un autre micro', async () => {
-    const stream = { id: 'mix' };
-    const getUserMedia = vi.fn().mockResolvedValue(stream);
-    vi.stubGlobal('navigator', {
-      mediaDevices: {
-        getUserMedia,
-        enumerateDevices: async () => [
-          input('mix', 'Broadcast Stream Mix (TC-HELICON GoXLR Mini)'),
-          input('chat', 'Chat Mic (TC-HELICON GoXLR Mini)'),
-        ],
-      },
-    });
-
-    await expect(openMicrophone(undefined)).resolves.toBe(stream);
-    expect(getUserMedia).toHaveBeenCalledWith({
-      audio: { deviceId: { exact: 'mix' }, channelCount: { ideal: 1 } },
-    });
-  });
-
-  it('garde un choix explicite du mixage, et le micro déjà choisi', async () => {
-    const stream = { id: 'usb' };
-    const getUserMedia = vi.fn().mockResolvedValue(stream);
-    const devices = [
-      input('mix', 'Mixage stéréo'),
-      input('usb', 'Microphone (USB)'),
-    ];
-    vi.stubGlobal('navigator', {
-      mediaDevices: { getUserMedia, enumerateDevices: async () => devices },
-    });
-    await openMicrophone('usb');
-    expect(getUserMedia).toHaveBeenCalledWith({
-      audio: { deviceId: { exact: 'usb' }, channelCount: { ideal: 1 } },
-    });
-
-    await openMicrophone('mix');
-    expect(getUserMedia).toHaveBeenLastCalledWith({
-      audio: { deviceId: { exact: 'mix' }, channelCount: { ideal: 1 } },
-    });
-
-    vi.stubGlobal('navigator', {
-      mediaDevices: {
-        getUserMedia,
-        enumerateDevices: async () => [
-          input('mix', 'Broadcast Stream Mix (TC-HELICON GoXLR Mini)'),
-          input('chat', 'Chat Mic (TC-HELICON GoXLR Mini)'),
-        ],
-      },
-    });
-    await expect(openMicrophone('mix')).resolves.toBe(stream);
-    expect(getUserMedia).toHaveBeenLastCalledWith({
-      audio: { deviceId: { exact: 'mix' }, channelCount: { ideal: 1 } },
-    });
-  });
-
-  it('ne remplace pas un mixage introuvable par un autre micro', async () => {
-    const fallback = { id: 'défaut' };
-    const getUserMedia = vi
-      .fn()
-      .mockRejectedValueOnce(domError('NotFoundError'))
-      .mockResolvedValueOnce(fallback);
-    vi.stubGlobal('navigator', {
-      mediaDevices: {
-        getUserMedia,
-        enumerateDevices: async () => [
-          input('mix', 'Broadcast Stream Mix (TC-HELICON GoXLR Mini)'),
-          input('chat', 'Chat Mic (TC-HELICON GoXLR Mini)'),
-        ],
-      },
-    });
-
-    await expect(openMicrophone('mix')).resolves.toBe(fallback);
-    expect(getUserMedia.mock.calls[1]?.[0]).toEqual({ audio: true });
-    expect(JSON.stringify(getUserMedia.mock.calls)).not.toContain('chat');
-  });
-
-  it('explique les erreurs en français, jamais une ligne vide', () => {
-    expect(describeMicrophoneError(domError('NotFoundError', 'Requested device not found'))).toBe(
-      'Aucun micro détecté. Branche un micro, ou choisis-en un autre dans les réglages.',
+describe('messages du micro', () => {
+  it('garde le nom exact de l’erreur, jamais un « Micro indisponible » nu', () => {
+    expect(describeMicrophoneError(domError('NotFoundError', 'Requested device not found'))).toMatch(
+      /^Aucune entrée audio trouvée \(NotFoundError : Requested device not found\)\./,
     );
-    expect(describeMicrophoneError(domError('NotAllowedError'))).toMatch(/Confidentialité/);
-    expect(describeMicrophoneError(domError('OverconstrainedError', ''))).toMatch(/Aucun micro/);
-    expect(describeMicrophoneError(new Error(''))).toBe('Micro indisponible.');
+    expect(describeMicrophoneError(domError('NotAllowedError', 'Permission denied by system'))).toMatch(
+      /Confidentialité et sécurité > Microphone/,
+    );
+    expect(describeMicrophoneError(domError('OverconstrainedError', ''))).toMatch(/\(OverconstrainedError\)/);
+    expect(describeMicrophoneError(new Error(''))).toMatch(/^Le micro ne s’ouvre pas \(Error\)/);
+    expect(describeMicrophoneError(new Error(''))).not.toMatch(/^Micro indisponible/);
   });
 });

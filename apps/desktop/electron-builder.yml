@@ -30,7 +30,7 @@ files:
   # Filet de sécurité : aucun modèle ni runtime voix dans l'asar.
   - '!**/*.onnx'
   - '!**/*.wasm'
-# Runtime ONNX, Whisper et openWakeWord : à côté de app.asar, lus par le
+# Runtime ONNX, Whisper, openWakeWord et Vosk : à côté de app.asar, lus par le
 # protocole jarvis-oww: (voir voice-assets/README.md). Jamais dans l'asar :
 # Chromium ne peut pas fetch un .onnx à l'intérieur (ERROR_CODE 6).
 extraResources:
@@ -40,6 +40,8 @@ extraResources:
     to: whisper
   - from: voice-assets/openwakeword
     to: openwakeword
+  - from: voice-assets/vosk
+    to: vosk
 afterPack: scripts/after-pack.cjs
 extraMetadata:
   main: out/main/index.js

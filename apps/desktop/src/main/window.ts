@@ -99,6 +99,9 @@ export function createOverlayWindow(hideOnBlur: boolean): OverlayWindow {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
+      // Fenêtre masquée = écoute du mot de réveil : pas de minuteurs ralentis
+      // (reprise du micro, fin de dictée) quand elle est en arrière-plan.
+      backgroundThrottling: false,
     },
   });
 

@@ -1,8 +1,8 @@
-# Jarvis 0.4.15 — contexte pour un autre développeur
+# Jarvis 0.4.16 — contexte pour un autre développeur
 
 Ce fichier est à la **racine du code**. Les chemins ci-dessous partent de ce dossier. Ce n’est pas un résumé marketing : c’est l’état réel de cet arbre. La voix a été refaite dans cet arbre (publiée en 0.4.11, section « Voix ») : la transcription restait « Chargement… 100 % » sur l’installateur Windows. La refonte du tableau de bord est dans cet arbre : fenêtre étroite = overlay, fenêtre large = tableau de bord.
 
-**Version confirmée :** `apps/desktop/package.json` → `"version": "0.4.15"`. Le `package.json` racine est encore à `0.3.0` : c’est le monorepo, pas l’appli. La version qui compte pour l’exe, l’updater et GitHub est celle de `@jarvis/desktop`. La voix corrigée en 0.4.11 (installateur Windows) est inchangée. Le modèle par défaut reste `qwen2.5:3b`. `qwen3.5:4b` est le modèle recommandé documenté ; le repli est réglable (`fallbackModel`, défaut `qwen2.5:3b`).
+**Version confirmée :** `apps/desktop/package.json` → `"version": "0.4.16"`. Le `package.json` racine est encore à `0.3.0` : c’est le monorepo, pas l’appli. La version qui compte pour l’exe, l’updater et GitHub est celle de `@jarvis/desktop`. La voix corrigée en 0.4.11 (installateur Windows) est inchangée. Le modèle par défaut reste `qwen2.5:3b`. `qwen3.5:4b` est le modèle recommandé documenté ; le repli est réglable (`fallbackModel`, défaut `qwen2.5:3b`).
 
 Lis ce fichier avant de modifier le code.
 
@@ -20,7 +20,7 @@ Utilisateur → Agent → Tool Manager → outils → Windows
 
 Le modèle ne touche jamais le système directement. TypeScript strict, Electron 44, React 19, Tailwind 4, Zod, Vitest, npm workspaces. **Aucune dépendance native à compiler.** Cible machine : Windows, 64 Go RAM, RTX 2060 6 Go, i7 10e gén. Beaucoup d’outils (PowerShell, journal d’événements, Spotify desktop, SiteBlock) n’ont de sens que sur Windows.
 
-Google Agenda / Gmail / Drive **n’est pas** dans cette 0.4.15.
+Google Agenda / Gmail / Drive **n’est pas** dans cette 0.4.16.
 
 ---
 
@@ -46,9 +46,9 @@ Scripts utiles (racine) :
 | `npm run build` | core puis desktop |
 | `npm run package:win` | installateur NSIS, `--publish never` |
 
-Le script `setup:voice` remplit `apps/desktop/voice-assets/` (runtime ONNX, Whisper, openWakeWord ; non commité, voir `.gitignore`). Premier `dev` / `build` : besoin de réseau.
+Le script `setup:voice` remplit `apps/desktop/voice-assets/` (runtime ONNX, Whisper, openWakeWord, modèle Vosk français ; non commité, voir `.gitignore`). Premier `dev` / `build` : besoin de réseau.
 
-L’installateur publié est `Jarvis-Setup-0.4.15.exe` (release GitHub `v0.4.15`).
+L’installateur publié est `Jarvis-Setup-0.4.16.exe` (release GitHub `v0.4.16`).
 
 Données utilisateur (Electron `userData`, typiquement `%APPDATA%\Jarvis`) :
 
@@ -80,7 +80,7 @@ Données utilisateur (Electron `userData`, typiquement `%APPDATA%\Jarvis`) :
     src/media/                 intent Spotify
     src/update/                lecture latest.yml GitHub
     src/history/  src/audit/
-  apps/desktop/                Electron (version 0.4.15)
+  apps/desktop/                Electron (version 0.4.16)
     electron-builder.yml       NSIS, extraResources, publish GitHub
     electron.vite.config.ts    aliases onnxruntime-web (wasm, pas JSEP)
     scripts/setup-whisper.mjs
@@ -101,7 +101,7 @@ Données utilisateur (Electron `userData`, typiquement `%APPDATA%\Jarvis`) :
     src/renderer/src/App.tsx   overlay : chat / historique / réglages / journal
     src/renderer/src/index.css overlay « futuriste » (orbe, glow cyan)
     src/renderer/src/voice/    STT/TTS/wake word côté DOM
-    voice-assets/              ort/, whisper/, openwakeword/ après setup:voice
+    voice-assets/              ort/, whisper/, openwakeword/, vosk/ après setup:voice
 ```
 
 Règle : **`packages/core` n’importe pas Electron.** Fenêtre, fs, PowerShell, IPC, Spotify, SiteBlock, index disque → `apps/desktop`. Contrats, Zod, agent, registres → core.
@@ -160,14 +160,14 @@ Défauts (`packages/core/src/settings.ts`) : écoute **off** jusqu’à activati
 
 **Fichiers et chargement (un seul chemin, dev comme installateur) :**
 
-- `npm run setup:voice` (`apps/desktop/scripts/setup-voice-assets.mjs`) remplit `apps/desktop/voice-assets/{ort,whisper,openwakeword}`. Liste unique : `REQUIRED_VOICE_ASSETS` (`packages/core/src/speech/voiceAssets.ts`), reprise par `after-pack.cjs` et par le diagnostic.
-- `electron-builder.yml` → `extraResources` copie ces trois dossiers dans `resources/`, à côté de `app.asar`.
-- Le renderer ne lit ces fichiers que par `jarvis-oww://<ort|whisper|openwakeword>/<chemin>` (`apps/desktop/src/main/voiceAssetsProtocol.ts`) : flux, `content-length`, `HEAD`, MIME `application/wasm`, chemins Windows via `path.join`. Schéma privilégié `standard`, `secure`, `supportFetchAPI`, `corsEnabled`, `stream`.
+- `npm run setup:voice` (`apps/desktop/scripts/setup-voice-assets.mjs`) remplit `apps/desktop/voice-assets/{ort,whisper,openwakeword,vosk}` (Vosk : zip d’alphacephei vérifié par SHA-256 puis converti en `.tar.gz` par `scripts/zipToTarGz.mjs`, sans dépendance). Liste unique : `REQUIRED_VOICE_ASSETS` (`packages/core/src/speech/voiceAssets.ts`), reprise par `after-pack.cjs` et par le diagnostic.
+- `electron-builder.yml` → `extraResources` copie ces quatre dossiers dans `resources/`, à côté de `app.asar`.
+- Le renderer ne lit ces fichiers que par `jarvis-oww://<ort|whisper|openwakeword|vosk>/<chemin>` (`apps/desktop/src/main/voiceAssetsProtocol.ts`) : flux, `content-length`, `HEAD`, MIME `application/wasm`, chemins Windows via `path.join`. Schéma privilégié `standard`, `secure`, `supportFetchAPI`, `corsEnabled`, `stream`.
 - **Un seul onnxruntime-web** (1.31, la version exigée par transformers.js, devDependency épinglée). `electron.vite.config.ts` envoie `onnxruntime-web` et `onnxruntime-web/webgpu` vers le même `ort.wasm.min.mjs`. Configuration unique : `apps/desktop/src/renderer/src/voice/onnxRuntime.ts` (`wasmBinary` + fabrique `.mjs` en blob, 1 thread, `initTimeout` 30 s).
 
 **Whisper** (`voice/whisper/pipelineLoader.ts`) : transformers.js npm, `Xenova/whisper-base` q8, wasm. Configuration « modèle local » : `allowLocalModels = true`, `localModelPath = 'jarvis-oww://whisper/'`, `allowRemoteModels = false`, `useBrowserCache = false`, `useWasmCache = false`. **Ne pas** revenir à `remoteHost = jarvis-oww` : transformers.js 4.x teste l’existence des fichiers par une requête `Range` réservée à http(s) ; sous `jarvis-oww:` tokenizer et `preprocessor_config.json` passaient pour absents (erreurs `feature_extractor` en 0.4.9, `tokenizer_class` en 0.4.10, et « Chargement… 100 % » en boucle). Chargement borné à 90 s (erreur qui nomme l’étape), pipeline incomplet refusé et libéré, pas de nouvel essai pendant 30 s après un échec (sauf « Préparer maintenant » / « Tester la voix »). Jetons générés bornés (dictée 96, confirmation 12, YouTube 224). Le même Whisper sert la dictée, la confirmation du mot de réveil et YouTube.
 
-**Mot de réveil** (`voice/registries.ts` → `createWakeWordEngine`) : openWakeWord (`hey_jarvis_v0.1.onnx`, sans VAD) **et**, en parallèle, un déclencheur « Jarvis » nu (rafale de ≥ 0,5 s de parole, plus les gabarits enregistrés s’il y en a ; candidat émis à la fin du mot ou après 1 s) confirmé par Whisper en anglais puis, à défaut, en français. Si Whisper est indisponible, le déclencheur ne réveille pas. L’audio reçu pendant la confirmation est gardé pour la dictée (`commandOffset`). Après un réveil, la dictée exige ≥ 0,3 s de parole et un transcript d’un seul mot non reconnu n’est pas une commande (`commandAfterWakeWord`). Porcupine et le moteur « transcription continue » sont supprimés.
+**Mot de réveil** (`voice/registries.ts` → `createWakeWordEngine`, 0.4.16) : openWakeWord (`hey_jarvis_v0.1.onnx`) pour « Hey Jarvis » **et**, en parallèle, Vosk (`vosk-model-small-fr-0.22`, vosk-browser dans son Web Worker) pour « Jarvis » seul : grammaire fermée `jarvis` + leurres (`gervais`, `javel`, `j'avais`, `avis`, `parvis`, `jardin`, `service`) + `[unk]`, confiance du mot ≥ 0,9 à la sensibilité par défaut (`packages/core/src/speech/voskWakeWord.ts`). Sur les 9 prises de thedexios : 9/9, 0 faux réveil sur 17 négatifs. L’audio transmis à la dictée part d’un peu avant le mot (temps des mots de Vosk). Si Vosk ne se charge pas (120 s), l’ancien déclencheur (rafale d’énergie confirmée par Whisper EN puis FR) prend le relais — lui fait tourner Whisper sur chaque rafale, sur le fil principal. L’audio reçu pendant la confirmation est gardé pour la dictée (`commandOffset`). Après un réveil, la dictée exige ≥ 0,3 s de parole et un transcript d’un seul mot non reconnu n’est pas une commande (`commandAfterWakeWord`, qui retire aussi une tête « J…V…S » : « J'en avise », « J'ai envie ce »). Porcupine et le moteur « transcription continue » sont supprimés.
 
 **À ne pas défaire (trouvé en testant le build installable)** :
 - Tout appel au runtime ONNX (création de session, `run`, `pipe()` de Whisper) passe par `withOrtLock` (`voice/onnxRuntime.ts`). Whisper et openWakeWord partagent la même instance WebAssembly ; des appels entrelacés faisaient planter la fenêtre (SIGSEGV).
@@ -177,9 +177,11 @@ Défauts (`packages/core/src/settings.ts`) : écoute **off** jusqu’à activati
 
 Barre vocale (`components/VoiceBar.tsx`) : aucun champ de saisie (l’ancien champ « simuler » se posait sur le composer). En veille, une erreur reste en détail sous « En veille — dis « Jarvis » ».
 
-**Périphérique et gain (0.4.15).** Un choix enregistré est ouvert tel quel, y compris `Broadcast Stream Mix (TC-HELICON GoXLR Mini)`, Stereo Mix ou un autre mixage. Sans choix, c’est l’entrée par défaut de Windows — le même périphérique que les autres applications, même si son libellé est un mixage. On ne bascule plus vers un « vrai micro ». « Tester la voix » liste toutes les entrées, mixages compris, et le choix en cours est celui du menu. La capture reste mono (moyenne des canaux) à 16 kHz, le même signal que le niveau crête. Une crête ≥ 1 est atténuée avant openWakeWord et avant Whisper (un dépassement dû au passage en 16 kHz n’écarte pas la phrase). Le mel reçoit ce signal à l’échelle PCM 16 bits (× 32767) : des flottants [-1, 1] laissaient le score à 0. Le seuil (0,25 à sensibilité maximale) n’est pas abaissé. `hey_jarvis` peut rester à 0 sur un « Jarvis » nu : la confirmation Whisper accepte aussi « J'invise », « J'ai un vis » et « J'en vis » (casse et apostrophes indifférentes, `?` compris) puis envoie la suite (« quelle heure est-il »). Une hallucination (« Je vous invite à vous dire… », « you », « M- », « ... » sur une queue de silence) ne confirme pas et n’est pas une commande.
+**Micro (0.4.16).** Un seul propriétaire du micro : `MicrophoneService` (`voice/microphone.ts`, instance `microphone` dans `voice/audioCapture.ts`). L’écoute, « Tester la voix », le test du mot de réveil et les échantillons prennent un bail (`acquire`) sur le même flux ; jamais deux `getUserMedia`. Ouverture mesurée : autorisation (`permissions.query`), liste, `getUserMedia` borné à 10 s, graphe Web Audio (un `AudioContext` 16 kHz partagé + `AudioWorklet`), première trame (chien de garde 4 s, puis `NoAudioError`). Contraintes (`captureConstraints`, core) : **sans** annulation d’écho, réduction de bruit ni contrôle de gain (l’AGC de Chromium modifie le volume d’entrée Windows pour toutes les applis) ; défaut Windows = pas de `deviceId` ; choix explicite = `exact`. Un choix enregistré absent → défaut Windows avec avis, repris quand il revient. Changement de micro sur place (l’ancien flux continue tant que le nouveau n’est pas ouvert ; un échec garde l’ancien). Reprise : `ended` → nouvelle ouverture (0,3/1/2/5/10 s), `devicechange`, et un contrôle de la liste toutes les 5 s (Chromium sous Linux/PulseAudio et certains pilotes ne signalent rien). Le choix du micro (panneau « Micro » des réglages, `components/MicrophonePanel.tsx`) s’applique et s’enregistre tout de suite, sans « Enregistrer ». Les erreurs gardent le nom exact (`describeCaptureFailure`, core) : `NotAllowedError : Permission denied by system` = confidentialité Windows (bouton « Ouvrir les réglages Windows » → IPC `voice:open-microphone-privacy`, URI fixe `ms-settings:privacy-microphone`). `micError` = micro seulement ; Whisper, synthèse et réveil vont dans `voiceError` (effacé après 20 s) — avant 0.4.16 une erreur de synthèse affichait « Micro indisponible ». Journal : `userData/logs/voice-capture.log` (et console du main), durée de chaque étape, identifiants abrégés ; « Copier le détail » ajoute les 60 dernières lignes. La capture reste mono (moyenne des canaux) à 16 kHz ; un mixage (Broadcast Stream Mix…) est ouvert tel quel s’il est choisi ou par défaut.
 
-Ne pas réintroduire `ort.min.mjs` (JSEP/WebGPU), un import CDN de transformers.js, ni un second onnxruntime-web.
+**openWakeWord (0.4.16).** Le mel reçoit les 480 échantillons précédents (`OpenWakeWordMelStream`, core), comme `AudioFeatures` en Python : 8 trames par 80 ms, un embedding par trame, tampon initial à 1. Sans ce contexte (0.4.15), 5 trames par 80 ms et un score ~18× trop bas (0,012 au lieu de 0,207 sur la prise GoXLR ; identique au Python à 4 décimales après correction). Seuil : 0,5 à la sensibilité par défaut (0,85 − 0,5 × s) — du bruit blanc atteignait 0,34. Échelle PCM 16 bits et atténuation des crêtes ≥ 1 inchangées.
+
+Ne pas réintroduire `ort.min.mjs` (JSEP/WebGPU), un import CDN de transformers.js, ni un second onnxruntime-web. Vosk n’utilise pas onnxruntime (Kaldi en WebAssembly). Son worker embarqué est corrigé au build (`scripts/voskCspPatch.mjs`, plugin Vite) : la colle Embind faisait `new Function`, refusé par la CSP ; **ne pas** ajouter `unsafe-eval` à la CSP.
 
 **Démarrage (0.4.14).** La première frame n’attend pas Whisper, openWakeWord, Ollama, Spotify, ni le réseau. Le moteur de réveil démarre après l’affichage de la fenêtre (`window:shown`). Whisper reste déchargé jusqu’à ce qu’un réveil demande une transcription (confirmation du mot, ou dictée). `onnxruntime-web` 1.31 n’est importé qu’à ce moment-là, toujours le même module (`ort.wasm.min.mjs`). Le contrôle de mise à jour reste 15 s après le démarrage.
 
@@ -215,7 +217,7 @@ L’overlay compact ci-dessus est celui de la 0.4.9, conservé pour la fenêtre 
 
 ## Updater / GitHub
 
-Dernière publication : **0.4.15** (`https://github.com/dylanloze91-creator/Jarvis/releases/tag/v0.4.15`).
+Dernière publication : **0.4.16** (`https://github.com/dylanloze91-creator/Jarvis/releases/tag/v0.4.16`).
 
 - `apps/desktop/electron-builder.yml` : `publish.provider: github`, owner `dylanloze91-creator`, repo `Jarvis`, `releaseType: release`, artifact `Jarvis-Setup-${version}.exe`
 - `apps/desktop/src/main/updater.ts` : contrôle 15 s après le démarrage puis toutes les 4 h ; téléchargement auto ; **installation seulement si l’utilisateur clique**
@@ -307,12 +309,12 @@ Corrections de la revue complète (détail : `docs/audit-0410.md` du store du pr
 
 ## Ce qu’il ne faut pas casser
 
-- **Le Tool Manager comme seul passage** vers le système. Pas d’`exec` / `fs` / `shell.openExternal` déclenché par le renderer (seule exception : un lien `http(s)` cliqué, ouvert dans le navigateur par `window.ts`).
+- **Le Tool Manager comme seul passage** vers le système. Pas d’`exec` / `fs` / `shell.openExternal` déclenché par le renderer (exceptions : un lien `http(s)` cliqué, ouvert dans le navigateur par `window.ts` ; l’URI fixe `ms-settings:privacy-microphone`, sans paramètre venu du renderer).
 - **Preload étroit** (`contextIsolation: true`, `nodeIntegration: false`). Pas d’`ipcRenderer` brut dans React.
 - **`packages/core` sans Electron.**
 - **Clés uniquement dans `settings.json`**, jamais d’env, jamais dans git (`.gitignore` ignore `.env`).
 - **`forceConfirm`** sur `run_command`, `delete_file`, mutations SiteBlock, indexation/effacement mémoire. `ConfirmationCard` doit montrer `command` tel quel pour le shell.
-- **Protocole `jarvis-oww:` + extraResources** (`voice-assets/`) pour le runtime ONNX, Whisper et openWakeWord. Ne pas remettre les ONNX dans asar ni charger transformers depuis jsDelivr. Ne pas bundler `onnxruntime-node` / `@huggingface/transformers` dans l’exe (`electron-builder.yml`).
+- **Protocole `jarvis-oww:` + extraResources** (`voice-assets/`) pour le runtime ONNX, Whisper, openWakeWord et Vosk. Ne pas remettre les ONNX dans asar ni charger transformers depuis jsDelivr. Ne pas bundler `onnxruntime-node` / `@huggingface/transformers` dans l’exe (`electron-builder.yml`).
 - **Whisper** : garder la configuration « modèle local » de transformers.js (`configureTransformersEnv`) et `preprocessor_config.json` / `tokenizer*.json` dans `REQUIRED_VOICE_ASSETS`.
 - **UI** : overlay compact sous 1100 px, tableau de bord au-dessus. Ne pas retirer les confirmations. Google / Automatisation / « Lire mes emails » restent « Bientôt ».
 - **Spotify PKCE** sans secret ; URI de redirect exacte ; outils `safe`.
@@ -336,3 +338,12 @@ Travaux **hors scope** de cet arbre (ne pas les reprendre ici) : Suite Google, p
 - **Mémoire** : `remember_jarvis`, `search_jarvis_memory`, `index_folder`, `search_documents`, `read_document`, `remember_video`. Passages seulement, jamais l’index entier dans le prompt. Embeddings `nomic-embed-text` si le modèle est là, sinon lexical.
 - **Vidéo** : segments, score 0–100, synthèse, cadre finance, mémoire vidéo. `visionHook` répond « vision indisponible » sans prétendre lire un graphique.
 - **Réveil** : buffer circulaire et cooldown dans le chemin openWakeWord existant. `scripts/setup-openwakeword.mjs` délègue à `setup-voice-assets.mjs`. Un seul `onnxruntime-web` 1.31. Whisper et `jarvis-oww` inchangés.
+
+## Micro 0.4.16 — à ne pas défaire
+
+- Un seul `getUserMedia` (le service `microphone`), contraintes brutes, `getUserMedia` borné, reprise sur `ended` / `devicechange` / contrôle 5 s.
+- `micError` ne contient que des échecs du micro, avec le nom exact de l’erreur. Jamais « Micro indisponible » seul.
+- Le choix du micro s’applique tout de suite ; l’étape « Accès au micro » passe en premier dans « Tester la voix ».
+- Autorisations : `setPermissionRequestHandler` (micro seul, depuis l’interface) **et** `setPermissionCheckHandler` (audio accordé, caméra refusée), décisions journalisées (`main/mediaPermissions.ts`).
+- `backgroundThrottling: false` : la fenêtre masquée écoute toujours.
+- Whisper ne tourne qu’après un réveil (ou en repli si Vosk manque) : sur le fil principal (`ort.env.wasm.proxy = false`), chaque inférence bloque l’interface ; avec le déclencheur Whisper de 0.4.15, un son continu dans l’entrée retardait `getUserMedia` de 18 à 65 s (mesuré sur la VM).

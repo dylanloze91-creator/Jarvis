@@ -10,8 +10,16 @@
  */
 export const VOICE_ASSETS_PROTOCOL = 'jarvis-oww';
 
-export type VoiceAssetHost = 'ort' | 'whisper' | 'openwakeword';
-export const VOICE_ASSET_HOSTS: readonly VoiceAssetHost[] = ['ort', 'whisper', 'openwakeword'];
+export type VoiceAssetHost = 'ort' | 'whisper' | 'openwakeword' | 'vosk';
+export const VOICE_ASSET_HOSTS: readonly VoiceAssetHost[] = ['ort', 'whisper', 'openwakeword', 'vosk'];
+
+/**
+ * Modèle Vosk français (Kaldi, Apache 2.0, alphacephei.com) : il repère
+ * « Jarvis » seul, dans un Web Worker (vosk-browser, sans onnxruntime).
+ * Archive `.tar.gz` d'un dossier, format attendu par vosk-browser.
+ */
+export const VOSK_MODEL_NAME = 'vosk-model-small-fr-0.22';
+export const VOSK_MODEL_ARCHIVE = `${VOSK_MODEL_NAME}.tar.gz`;
 
 /**
  * Build WebAssembly seul (ni JSEP ni WebGPU) d'onnxruntime-web, celui que
@@ -30,7 +38,7 @@ export const OPENWAKEWORD_MODEL_FILES = [
 ] as const;
 export type OpenWakeWordModelFile = (typeof OPENWAKEWORD_MODEL_FILES)[number];
 
-export type VoiceAssetKind = 'json' | 'onnx' | 'wasm' | 'mjs';
+export type VoiceAssetKind = 'json' | 'onnx' | 'wasm' | 'mjs' | 'archive';
 
 export interface VoiceAssetSpec {
   host: VoiceAssetHost;
@@ -69,6 +77,7 @@ export const REQUIRED_VOICE_ASSETS: readonly VoiceAssetSpec[] = [
   ...OPENWAKEWORD_MODEL_FILES.map(
     (file): VoiceAssetSpec => ({ host: 'openwakeword', path: file, kind: 'onnx', minBytes: 100_000 }),
   ),
+  { host: 'vosk', path: VOSK_MODEL_ARCHIVE, kind: 'archive', minBytes: 30_000_000 },
 ];
 
 export function voiceAssetUrl(host: VoiceAssetHost, relativePath: string): string {
@@ -117,5 +126,6 @@ export function voiceAssetContentType(file: string): string {
   if (lower.endsWith('.wasm')) return 'application/wasm';
   if (lower.endsWith('.mjs') || lower.endsWith('.js')) return 'text/javascript';
   if (lower.endsWith('.json')) return 'application/json';
+  if (lower.endsWith('.tar.gz') || lower.endsWith('.tgz')) return 'application/gzip';
   return 'application/octet-stream';
 }
