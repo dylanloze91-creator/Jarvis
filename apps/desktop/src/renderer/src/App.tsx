@@ -304,6 +304,23 @@ export default function App() {
           {chat.confirmation ? (
             <ConfirmationCard confirmation={chat.confirmation} onRespond={chat.respond} />
           ) : null}
+          <div className="mb-2 flex flex-wrap gap-1.5 px-4">
+            {[
+              ['Recherche', 'Cherche les dernières infos importantes'],
+              ['Mémoire', 'Rappelle-moi ce que tu sais de mes projets'],
+              ['Outils', 'Quels outils peux-tu utiliser sur ce PC ?'],
+              ['Vidéo', 'Analyse cette vidéo YouTube : '],
+            ].map(([label, prompt]) => (
+              <button
+                key={label}
+                type="button"
+                className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] text-slate-300 hover:border-cyan-300/40"
+                onClick={() => chat.send(prompt ?? '')}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
           <Composer busy={chat.busy} onSend={chat.send} onCancel={chat.cancel} />
           <VoiceBar voice={voice} voiceEnabled={settings?.voice.enabled ?? false} />
         </div>

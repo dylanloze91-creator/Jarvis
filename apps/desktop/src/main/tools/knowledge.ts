@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { defineTool, type Settings } from '@jarvis/core';
+import { defineTool, formatVideoMemory, type Settings, type VideoMemoryRecord } from '@jarvis/core';
 import type { KnowledgeStore } from '../knowledge.js';
 
 export function createKnowledgeTools(store: KnowledgeStore, getSettings: () => Settings) {
@@ -42,10 +42,11 @@ export function createKnowledgeTools(store: KnowledgeStore, getSettings: () => S
     schema: z.object({
       text: z.string().min(1).max(8_000),
       title: z.string().min(1).max(120).default('Mémoire Jarvis'),
+      section: z.enum(['profile', 'preferences', 'projects', 'conversations']).default('projects'),
     }),
     summarize: ({ title }) => `Mémoriser durablement : ${title}.`,
-    execute: async ({ text, title }) => {
-      await store.remember(text, getSettings(), title);
+    execute: async ({ text, title, section }) => {
+      await store.remember(text, getSettings(), title, section);
       return { ok: true, content: 'Information mémorisée localement par Jarvis.' };
     },
   });
@@ -110,5 +111,131 @@ export function createKnowledgeTools(store: KnowledgeStore, getSettings: () => S
     },
   });
 
-  return [search, remember, index, stats, clear];
+  const indexFolder = defineTool({
+    name: 'index_folder',
+    description:
+      "Indexe un dossier choisi par l'utilisateur (txt, md, json, csv, code, html, css, yaml, xml, sql, pdf lisible). Confirmation obligatoire. N'indexe rien d'autre.",
+    risk: 'confirm',
+    category: 'files',
+    forceConfirm: true,
+    isDestructive: false,
+    schema: z.object({
+      path: z.string().min(1).describe('Chemin absolu du dossier à indexer.'),
+    }),
+    summarize: ({ path }) => `Indexer le dossier ${path}.`,
+    describeCommand: ({ path }) => path,
+    execute: async ({ path }) => {
+      try {
+        const result = await store.indexFolder(path, getSettings());
+        return {
+          ok: true,
+          outcome: 'success',
+          content: `${result.files} fichier(s) indexé(s), ${result.chunks} passage(s) créés.`,
+        };
+      } catch (error) {
+        return {
+          ok: false,
+          outcome: 'definitive',
+          content: `Indexation impossible : ${error instanceof Error ? error.message : String(error)}`,
+          technicalDetail: error instanceof Error ? error.message : String(error),
+        };
+      }
+    },
+  });
+
+  const searchDocuments = defineTool({
+    name: 'search_documents',
+    description:
+      "Cherche dans les documents indexés par l'utilisateur, pas dans toute la mémoire. Renvoie seulement les passages pertinents.",
+    risk: 'safe',
+    schema: z.object({
+      query: z.string().min(2).max(500),
+      limit: z.number().int().min(1).max(8).default(6),
+    }),
+    execute: async ({ query, limit }) => {
+      const results = await store.searchDocuments(query, getSettings(), limit);
+      if (!results.length) {
+        return {
+          ok: true,
+          outcome: 'success',
+          content: 'Aucun passage correspondant dans les documents indexés.',
+        };
+      }
+      return {
+        ok: true,
+        outcome: 'success',
+        content: results
+          .map((item, i) => `[${i + 1}] ${item.title}\nSource: ${item.source}\n${item.text}`)
+          .join('\n\n'),
+      };
+    },
+  });
+
+  const readDocument = defineTool({
+    name: 'read_document',
+    description:
+      'Lit un document déjà indexé, par son chemin ou son nom de fichier. Ne charge pas le reste de la mémoire.',
+    risk: 'safe',
+    schema: z.object({
+      source: z.string().min(1).max(1000).describe('Chemin ou nom du document indexé.'),
+    }),
+    execute: async ({ source }) => {
+      const text = await store.readDocument(source);
+      if (!text) {
+        return {
+          ok: false,
+          outcome: 'definitive',
+          content: `Document introuvable dans l'index : ${source}.`,
+        };
+      }
+      return { ok: true, outcome: 'success', content: text };
+    },
+  });
+
+  const rememberVideo = defineTool({
+    name: 'remember_video',
+    description:
+      "Sur « garde cette vidéo en mémoire », indexe le résumé, les thèmes, concepts, chiffres, entreprises, risques, conclusions et timestamps. Ensuite une question retrouve les passages via search_jarvis_memory.",
+    risk: 'confirm',
+    category: 'apps',
+    isDestructive: false,
+    schema: z.object({
+      summary: z.string().min(1).max(4000),
+      themes: z.string().default(''),
+      concepts: z.string().default(''),
+      figures: z.string().default(''),
+      companies: z.string().default(''),
+      risks: z.string().default(''),
+      conclusions: z.string().default(''),
+      timestamps: z.string().default(''),
+    }),
+    summarize: () => 'Garder cette vidéo en mémoire.',
+    execute: async (input) => {
+      const record: VideoMemoryRecord = {
+        summary: input.summary,
+        themes: splitList(input.themes),
+        concepts: splitList(input.concepts),
+        figures: splitList(input.figures),
+        companies: splitList(input.companies),
+        risks: splitList(input.risks),
+        conclusions: splitList(input.conclusions),
+        timestamps: splitList(input.timestamps),
+      };
+      await store.remember(formatVideoMemory(record), getSettings(), 'Vidéo en mémoire', 'projects');
+      return {
+        ok: true,
+        outcome: 'success',
+        content: 'Vidéo indexée en mémoire locale. Une question ultérieure peut retrouver les passages.',
+      };
+    },
+  });
+
+  return [search, remember, index, stats, clear, indexFolder, searchDocuments, readDocument, rememberVideo];
+}
+
+function splitList(value: string): string[] {
+  return value
+    .split(/[|,;\n]/)
+    .map((part) => part.trim())
+    .filter(Boolean);
 }

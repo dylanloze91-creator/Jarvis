@@ -40,6 +40,14 @@ class FakeStore {
     return { files: 3, chunks: 5 };
   }
 
+  async searchDocuments(): Promise<KnowledgeChunk[]> {
+    return [];
+  }
+
+  async readDocument(): Promise<string> {
+    return '';
+  }
+
   async stats() {
     return { chunks: 2, sources: 1, embedded: 0 };
   }
@@ -65,6 +73,10 @@ describe('createKnowledgeTools', () => {
       'index_jarvis_folder',
       'get_jarvis_memory_stats',
       'clear_jarvis_memory',
+      'index_folder',
+      'search_documents',
+      'read_document',
+      'remember_video',
     ]);
     expect(tools[0]?.risk).toBe('safe');
     expect(tools[3]?.risk).toBe('safe');

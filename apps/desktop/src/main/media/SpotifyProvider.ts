@@ -5,6 +5,7 @@ import { chmod, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { shell, app } from 'electron';
 import {
+  redactSecrets,
   searchQueryVariants,
   type MediaProvider,
   type MediaTrack,
@@ -115,7 +116,7 @@ export interface SpotifyProviderOptions {
 }
 
 const DEFAULT_DEVICE_WAIT_MS = 12_000;
-const DEFAULT_POLL_MS = 400;
+const DEFAULT_POLL_MS = 700;
 const DEFAULT_PLAYBACK_VERIFY_MS = 8_000;
 const AUDIBLE_VOLUME = 50;
 
@@ -244,8 +245,8 @@ export class SpotifyProvider implements MediaProvider {
       } catch (error) {
         this.rethrowPlayError(error, diagnostic(state));
       }
-      state = await this.pollPlayback(device.id!, this.playbackVerifyMs);
-      if (this.isAudibleOnDevice(state, device.id!)) {
+      state = await this.pollPlayback(device.id!, this.playbackVerifyMs, trackUri);
+      if (this.isRequestedPlayback(state, device.id!, trackUri)) {
         await this.ensureAudibleVolume(state, device.id!);
         return;
       }
@@ -265,8 +266,8 @@ export class SpotifyProvider implements MediaProvider {
           this.rethrowPlayError(error, diagnostic(state));
         }
       }
-      state = await this.pollPlayback(device.id!, this.playbackVerifyMs);
-      if (this.isAudibleOnDevice(state, device.id!)) {
+      state = await this.pollPlayback(device.id!, this.playbackVerifyMs, trackUri);
+      if (this.isRequestedPlayback(state, device.id!, trackUri)) {
         await this.ensureAudibleVolume(state, device.id!);
         return;
       }
@@ -277,14 +278,14 @@ export class SpotifyProvider implements MediaProvider {
       } catch (error) {
         this.rethrowPlayError(error, diagnostic(state));
       }
-      state = await this.pollPlayback(device.id!, this.playbackVerifyMs);
-      if (this.isAudibleOnDevice(state, device.id!)) {
+      state = await this.pollPlayback(device.id!, this.playbackVerifyMs, trackUri);
+      if (this.isRequestedPlayback(state, device.id!, trackUri)) {
         await this.ensureAudibleVolume(state, device.id!);
         return;
       }
     }
 
-    throw new Error(this.silentPlaybackMessage(state, device, diagnostic(state)));
+    throw new Error(this.silentPlaybackMessage(state, device, diagnostic(state), trackUri));
   }
 
   private rethrowPlayError(error: unknown, diagnostic: string): never {
@@ -294,9 +295,22 @@ export class SpotifyProvider implements MediaProvider {
           "Spotify Premium est requis pour piloter la lecture (limite de l'API Spotify, pas de Jarvis).",
         );
       }
-      if (error.status === 404 || error.status === 403) {
+      if (error.status === 429) {
+        throw new Error('Spotify limite les requêtes (HTTP 429). Réessaie dans un instant.');
+      }
+      if (error.status === 401) {
         throw new Error(
-          `La lecture n'a pas démarré sur le lecteur de bureau (HTTP ${error.status}). ${diagnostic}`,
+          'Le jeton Spotify a expiré. Une tentative de renouvellement a échoué. Reconnecte Spotify dans les réglages.',
+        );
+      }
+      if (error.status === 404) {
+        throw new Error(
+          `Spotify semble fermé ou l'appareil est indisponible (HTTP 404). ${diagnostic}`,
+        );
+      }
+      if (error.status === 403) {
+        throw new Error(
+          `L'appareil Spotify est indisponible (HTTP 403). ${diagnostic}`,
         );
       }
     }
@@ -359,7 +373,13 @@ export class SpotifyProvider implements MediaProvider {
   ): string {
     const inventory = formatPlaybackDiagnostic(devices, null, null);
     if (options.launchFailed) {
-      return `Impossible d'ouvrir l'application Spotify sur ce PC. ${inventory}`;
+      return `Spotify est fermé. Impossible d'ouvrir l'application Spotify sur ce PC. ${inventory}`;
+    }
+    const restricted = devices.some(
+      (device) => device.is_restricted && /computer|ordinateur/i.test(device.type),
+    );
+    if (restricted) {
+      return `L'appareil Spotify est indisponible. ${inventory}`;
     }
     return `Aucun lecteur Spotify de bureau n'est apparu dans Connect. ${inventory}`;
   }
@@ -393,6 +413,17 @@ export class SpotifyProvider implements MediaProvider {
     }
   }
 
+  /** Un 204 ne suffit pas : lecture en cours ET URI demandée. */
+  private isRequestedPlayback(
+    state: SpotifyPlayback | null,
+    deviceId: string,
+    trackUri?: string,
+  ): boolean {
+    if (!this.isAudibleOnDevice(state, deviceId)) return false;
+    if (!trackUri) return true;
+    return state?.item?.uri === trackUri;
+  }
+
   private isAudibleOnDevice(state: SpotifyPlayback | null, deviceId: string): boolean {
     if (!state?.is_playing) return false;
     if (state.device?.id !== deviceId) return false;
@@ -402,13 +433,17 @@ export class SpotifyProvider implements MediaProvider {
     return volume > 0;
   }
 
-  private async pollPlayback(deviceId: string, windowMs: number): Promise<SpotifyPlayback | null> {
+  private async pollPlayback(
+    deviceId: string,
+    windowMs: number,
+    trackUri?: string,
+  ): Promise<SpotifyPlayback | null> {
     const deadline = Date.now() + windowMs;
     let last: SpotifyPlayback | null = null;
     let raisedVolume = false;
     while (true) {
       last = await this.fetchPlaybackSnapshot();
-      if (this.isAudibleOnDevice(last, deviceId)) return last;
+      if (this.isRequestedPlayback(last, deviceId, trackUri)) return last;
       if (
         last?.is_playing &&
         last.device?.id === deviceId &&
@@ -456,9 +491,13 @@ export class SpotifyProvider implements MediaProvider {
     state: SpotifyPlayback | null,
     expected: SpotifyDevice,
     diagnostic: string,
+    trackUri?: string,
   ): string {
     if (!state) {
       return `La lecture n'a pas démarré : is_playing=inconnu (204) après un PUT accepté. ${diagnostic}`;
+    }
+    if (trackUri && state.is_playing && state.item?.uri && state.item.uri !== trackUri) {
+      return `La lecture n'est pas confirmée : is_playing=true mais le morceau en cours (${state.item.uri}) n'est pas celui demandé (${trackUri}). ${diagnostic}`;
     }
     if (!state.is_playing) {
       return `La lecture n'a pas démarré : is_playing=false sur « ${state.device?.name ?? expected.name} ». Spotify a accepté la commande (HTTP 204) mais le morceau n'a pas démarré. ${diagnostic}`;
@@ -545,30 +584,51 @@ export class SpotifyProvider implements MediaProvider {
   private async request<T = unknown>(path: string, init: RequestInit = {}): Promise<T> {
     await this.ensureToken();
 
-    const headers: Record<string, string> = {
-      Authorization: `Bearer ${this.token!.accessToken}`,
-      ...(init.headers as Record<string, string> | undefined),
-    };
-    if (init.body) headers['Content-Type'] = 'application/json';
-
-    const send = () =>
-      fetch(`${API_BASE}${path}`, {
+    const send = () => {
+      const headers: Record<string, string> = {
+        Authorization: `Bearer ${this.token!.accessToken}`,
+        ...(init.headers as Record<string, string> | undefined),
+      };
+      if (init.body) headers['Content-Type'] = 'application/json';
+      return fetch(`${API_BASE}${path}`, {
         ...init,
         headers,
       });
+    };
 
     let response = await send();
 
     if (response.status === 401) {
       await this.refreshToken();
       response = await send();
+      if (response.status === 401) {
+        throw new Error(
+          'Le jeton Spotify a expiré. Une tentative de renouvellement a échoué. Reconnecte Spotify dans les réglages.',
+        );
+      }
+    }
+
+    let rateLimitTries = 0;
+    while (response.status === 429 && rateLimitTries < 2) {
+      const wait = retryAfterDelayMs(response.headers.get('retry-after'));
+      await response.body?.cancel().catch(() => undefined);
+      await this.sleep(wait);
+      rateLimitTries += 1;
+      response = await send();
+    }
+    if (response.status === 429) {
+      const retryAfter = response.headers.get('retry-after');
+      const french = retryAfter
+        ? `Spotify limite les requêtes (HTTP 429). Réessaie après ${retryAfter} s.`
+        : 'Spotify limite les requêtes (HTTP 429). Réessaie dans un instant.';
+      throw new SpotifyApiError(429, french);
     }
 
     if (response.status === 204) return undefined as T;
 
     if (!response.ok) {
-      const body = await response.text();
-      throw new SpotifyApiError(response.status, body.slice(0, 500));
+      const body = redactSecrets(await response.text()).slice(0, 500);
+      throw new SpotifyApiError(response.status, body);
     }
 
     return (await response.json()) as T;
@@ -775,4 +835,10 @@ export class SpotifyProvider implements MediaProvider {
       server.listen(AUTH_PORT, '127.0.0.1');
     });
   }
+}
+
+function retryAfterDelayMs(header: string | null): number {
+  const seconds = Number(header);
+  if (Number.isFinite(seconds) && seconds >= 0) return Math.min(8_000, Math.round(seconds * 1000));
+  return 700;
 }

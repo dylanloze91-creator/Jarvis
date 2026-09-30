@@ -13,6 +13,8 @@ export {
   OllamaProvider,
   ollamaDescriptor,
   OLLAMA_DEFAULT_MODEL,
+  OLLAMA_RECOMMENDED_MODEL,
+  OLLAMA_FALLBACK_MODEL,
   OLLAMA_RECOMMENDED_NUM_CTX,
   detectLeakedToolCallAttempt,
   type LeakedToolCallAttempt,
@@ -43,6 +45,17 @@ export {
 export * from './tools/types.js';
 export { ToolManager, defineTool } from './tools/manager.js';
 export {
+  TOOL_OUTCOME_KINDS,
+  classifyThrownError,
+  outcomeFromResult,
+  presentUserContent,
+  toolFailure,
+  toolSuccess,
+  type ClassifiedToolFailure,
+} from './tools/outcome.js';
+export { redactSecrets, redactValue } from './security/redact.js';
+export { debugLog } from './security/debugLog.js';
+export {
   defaultCategoryPolicies,
   categoryLabels,
   policyLabels,
@@ -57,9 +70,11 @@ export { buildAuditEntry, InMemoryAuditLogStore } from './audit/log.js';
 export {
   Agent,
   DEFAULT_SYSTEM_PROMPT,
+  HARD_TOOL_ROUND_CAP,
   composeSystemPrompt,
   isSpotifyToolName,
   looksLikeWebResearchIntent,
+  temperatureForTurn,
   type AgentEvent,
   type AgentOptions,
 } from './agent/agent.js';
@@ -124,9 +139,45 @@ export {
   type YoutubeSummaryDeps,
 } from './youtube/listen.js';
 export { resolveLocalSummaryModel } from './youtube/localModel.js';
+export {
+  buildVideoMemory,
+  classifyClaim,
+  formatVideoAnalysis,
+  formatVideoMemory,
+  importanceBand,
+  scoreSegment,
+  scoreTranscript,
+  visionHook,
+  type Claim,
+  type ClaimKind,
+  type ScoredSegment,
+  type VideoMemoryRecord,
+  type VisionHook,
+} from './youtube/analysis.js';
 
 export { extractReadableText, type ReadablePage } from './web/readableText.js';
 export { checkUrlSafety, isPrivateIpAddress, type UrlSafetyResult } from './web/urlSafety.js';
+export {
+  RETRYABLE_HTTP_STATUSES,
+  fetchPublicText,
+  frenchHttpMessage,
+  httpOutcome,
+  isRetryableHttpStatus,
+  retryAfterMs,
+  type FetchTextResult,
+} from './web/resilientFetch.js';
+export {
+  assessHtml,
+  compareSources,
+  dedupeHits,
+  formatClaimLabels,
+  normalizeResearchUrl,
+  researchDomain,
+  selectSources,
+  type ReadSource,
+  type ResearchBrief,
+  type ResearchHit,
+} from './web/research.js';
 
 export { classifyUpdateError } from './update/errorClassifier.js';
 export {
@@ -209,6 +260,11 @@ export {
   resampleLinear,
   takeFixedFrames,
 } from './speech/openWakeWord.js';
+export {
+  CircularPcmBuffer,
+  WakeTriggerGate,
+  slidingWindows,
+} from './speech/wakeBuffer.js';
 export {
   WakeWordDetector,
   SpeechBurstDetector,

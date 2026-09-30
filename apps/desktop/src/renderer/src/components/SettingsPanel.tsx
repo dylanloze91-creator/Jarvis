@@ -138,6 +138,16 @@ export function SettingsPanel({ settings, status, onSaved }: SettingsPanelProps)
         />
       ) : null}
 
+      <Field
+        label="Modèle de repli"
+        hint="Utilisé si le modèle choisi n’est pas disponible. Défaut : qwen2.5:3b. qwen3.5:4b est le modèle recommandé, pas le défaut."
+      >
+        <Input
+          value={draft.fallbackModel}
+          onChange={(event) => patch({ fallbackModel: event.target.value || 'qwen2.5:3b' })}
+        />
+      </Field>
+
       <div className="mt-1 flex flex-col gap-1">
         <span className="text-[11px] font-medium tracking-wide text-slate-400 uppercase">
           Recherche &amp; données boursières

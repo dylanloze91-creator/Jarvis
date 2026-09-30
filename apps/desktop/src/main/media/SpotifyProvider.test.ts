@@ -497,6 +497,52 @@ describe('SpotifyProvider', () => {
     );
   });
 
+  it('ne confirme pas la lecture si l’URI en cours n’est pas celle demandée', async () => {
+    await seedValidToken();
+    vi.stubGlobal(
+      'fetch',
+      playbackFetchMock({
+        devices: [spotifyDevice({ id: 'pc-1', is_active: true, name: 'Ordinateur' })],
+        playback: {
+          is_playing: true,
+          item: { uri: 'spotify:track:autre', name: 'Autre' },
+          device: { id: 'pc-1', name: 'Ordinateur', type: 'Computer', volume_percent: 80 },
+        },
+      }),
+    );
+
+    await expect(playProvider().play('spotify:track:xyz')).rejects.toThrow(/n'est pas celui demandé/);
+  });
+
+  it('échoue en français si le jeton reste refusé après un seul renouvellement', async () => {
+    await seedValidToken();
+    let apiCalls = 0;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: string | URL) => {
+        const url = String(input);
+        if (url.includes('accounts.spotify.com/api/token')) {
+          return jsonResponse({ access_token: 'nouveau', refresh_token: 'r2', expires_in: 3600 });
+        }
+        apiCalls += 1;
+        return new Response('unauthorized', { status: 401 });
+      }),
+    );
+
+    await expect(playProvider().getPlaybackState()).rejects.toThrow(/jeton Spotify a expiré/);
+    expect(apiCalls).toBe(2);
+  });
+
+  it('annonce un HTTP 429 en français après des essais bornés', async () => {
+    await seedValidToken();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('rate', { status: 429, headers: { 'retry-after': '0' } })),
+    );
+
+    await expect(playProvider().getPlaybackState()).rejects.toThrow(/HTTP 429/);
+  });
+
   it('repro 0.4.4 : is_playing=false après 204, diagnostic sans « rouvre l’appli »', async () => {
     await seedValidToken();
     const fetchMock = playbackFetchMock({

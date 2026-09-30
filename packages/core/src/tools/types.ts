@@ -41,14 +41,40 @@ export interface ToolContext {
   signal?: AbortSignal;
   /** Texte français affiché dans le chat pendant un outil long (écoute YouTube, etc.). */
   onProgress?: (message: string) => void;
+  /** Journal technique. Même activé, les secrets sont retirés avant l'écriture. */
+  debug?: boolean;
 }
+
+/**
+ * Issue d'un outil, additive par rapport à `ok`.
+ * - `success` : l'action est faite et vérifiée quand une vérification existe.
+ * - `recoverable` : échec temporaire, un nouvel essai a du sens.
+ * - `definitive` : l'action ne peut pas aboutir telle quelle.
+ * - `timeout` : pas de réponse dans le délai.
+ * - `cancelled` : annulé (signal ou utilisateur pendant l'exécution).
+ * - `missing_dependency` : un composant requis est absent.
+ */
+export type ToolOutcomeKind =
+  | 'success'
+  | 'recoverable'
+  | 'definitive'
+  | 'timeout'
+  | 'cancelled'
+  | 'missing_dependency';
 
 export interface ToolResult {
   ok: boolean;
-  /** Texte renvoyé au modèle. */
+  /** Phrase française renvoyée au modèle. Jamais un code brut (`ECONNRESET`). */
   content: string;
   /** Charge utile structurée, exploitable par l'interface. */
   data?: unknown;
+  /**
+   * Classification additive. Absente : déduite de `ok`
+   * (`true` → succès, `false` → erreur définitive).
+   */
+  outcome?: ToolOutcomeKind;
+  /** Détail technique pour le journal développeur, jamais montré tel quel. */
+  technicalDetail?: string;
 }
 
 export interface ToolDefinition<S extends z.ZodType> {

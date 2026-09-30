@@ -74,6 +74,8 @@ export interface WakeWordEngineConfig {
   detectorConfig?: WakeWordDetectorConfig | null;
   /** 0 (strict) à 1 (très sensible). */
   sensitivity?: number;
+  /** Délai minimum entre deux déclenchements, en millisecondes. */
+  cooldownMs?: number;
   /**
    * Variantes orthographiques supplémentaires du mot de réveil, en plus des
    * variantes intégrées (confirmation Whisper — voir `matchesWakeWord`).

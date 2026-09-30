@@ -1,9 +1,9 @@
-import { mkdtemp, mkdir, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { defaultSettings } from '@jarvis/core';
-import { KnowledgeStore, assertIndexableFolder } from './knowledge.js';
+import { KnowledgeStore, assertIndexableFolder, extractPdfText } from './knowledge.js';
 
 describe('KnowledgeStore', () => {
   it('mémorise et retrouve un fait en recherche lexicale sans embeddings', async () => {
@@ -18,6 +18,10 @@ describe('KnowledgeStore', () => {
 
     expect(hits[0]?.text).toMatch(/Jarvis42/);
     expect(hits[0]?.kind).toBe('memory');
+    const section = JSON.parse(await readFile(join(dir, 'memory', 'projects.json'), 'utf8')) as Array<{
+      text: string;
+    }>;
+    expect(section[0]?.text).toMatch(/Jarvis42/);
     const stats = await store.stats();
     expect(stats.chunks).toBe(1);
     expect(stats.embedded).toBe(0);
@@ -46,5 +50,11 @@ describe('KnowledgeStore', () => {
     await expect(assertIndexableFolder('C:\\Windows')).rejects.toThrow(/système/i);
     await expect(assertIndexableFolder('/')).rejects.toThrow();
     await expect(assertIndexableFolder('docs')).rejects.toThrow(/absolu/i);
+  });
+
+  it('indexe le texte lisible d’un PDF simple et ignore le binaire', () => {
+    const pdf = Buffer.from('BT (Marge nette 12 pour cent) Tj ET', 'latin1');
+    expect(extractPdfText(pdf)).toMatch(/Marge nette/);
+    expect(extractPdfText(Buffer.from([0, 1, 2, 3]))).toBe('');
   });
 });

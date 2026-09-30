@@ -23,7 +23,7 @@ function describeSpotifyFailure(error: unknown): string {
   }
   // Messages déjà rédigés : pas de lecteur audible, 204 silencieux, volume 0, mauvais appareil.
   if (
-    /aucun lecteur|lecture n'a pas démarré|volume est à 0|pas sur l'application de bureau|Impossible d'ouvrir l'application Spotify|Appareils Connect|is_playing=/i.test(
+    /aucun lecteur|lecture n'a pas démarré|lecture n'est pas confirmée|volume est à 0|pas sur l'application de bureau|Spotify est fermé|appareil Spotify est indisponible|Premium|jeton Spotify|HTTP 429|Appareils Connect|is_playing=/i.test(
       message,
     )
   ) {
@@ -75,7 +75,7 @@ export function createSpotifyTools(deps: SpotifyToolsDeps) {
 
         return {
           ok: true,
-          content: `Lecture lancée sur Spotify : ${track.title} — ${track.artists.join(', ')}.`,
+          content: `Lecture lancée sur Spotify : ${track.title} — ${track.artists.join(', ')}. Lecture vérifiée : is_playing=true et URI confirmée.`,
           data: track,
         };
       } catch (error) {
@@ -206,7 +206,8 @@ export function createSpotifyTools(deps: SpotifyToolsDeps) {
         if (!state?.track) {
           return {
             ok: true,
-            content: 'Aucun morceau Spotify n’est actuellement en lecture.',
+            content:
+              'État vérifié auprès de Spotify. Aucun morceau Spotify n’est actuellement en lecture. Rien n’est deviné.',
           };
         }
 
@@ -215,7 +216,8 @@ export function createSpotifyTools(deps: SpotifyToolsDeps) {
 
         return {
           ok: true,
-          content: `${status} : ${state.track.title} — ${state.track.artists.join(', ')}${device}.`,
+          outcome: 'success',
+          content: `État vérifié auprès de Spotify. ${status} : ${state.track.title} — ${state.track.artists.join(', ')}${device}.`,
           data: state,
         };
       } catch (error) {

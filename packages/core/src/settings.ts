@@ -76,6 +76,14 @@ export const settingsSchema = z.object({
   hotkey: z.string().min(1).default('Control+Space'),
   systemPrompt: z.string().default(DEFAULT_SYSTEM_PROMPT),
   temperature: z.number().min(0).max(2).default(0.4),
+  /**
+   * Modèle utilisé si le modèle choisi n'est pas disponible. Le défaut
+   * reste `qwen2.5:3b` : `qwen3.5:4b` est recommandé, mais l'appel d'outils
+   * sur une RTX 2060 6 Go n'est pas encore vérifié.
+   */
+  fallbackModel: z.string().min(1).default('qwen2.5:3b'),
+  /** Journal technique. Les secrets restent masqués même quand il est actif. */
+  debugLogging: z.boolean().default(false),
   /** Fournisseur utilisé par l'outil `web_search`. Google HTML sans clé par défaut. */
   searchProvider: z.string().min(1).default('google'),
   /** Clé optionnelle, requise seulement par certains fournisseurs (ex. Brave Search). */

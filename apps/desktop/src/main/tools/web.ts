@@ -1,10 +1,19 @@
 import dns from 'node:dns/promises';
 import { z } from 'zod';
 import {
+  assessHtml,
   checkUrlSafety,
+  classifyThrownError,
+  compareSources,
+  dedupeHits,
   defineTool,
   extractReadableText,
+  fetchPublicText,
+  formatClaimLabels,
   isPrivateIpAddress,
+  selectSources,
+  type ReadSource,
+  type ResearchHit,
   type SearchProviderRegistry,
   type Settings,
 } from '@jarvis/core';
@@ -14,9 +23,17 @@ const MAX_TEXT_LENGTH = 6000; // caractères renvoyés au modèle après extract
 const FETCH_TIMEOUT_MS = 10_000;
 const MAX_REDIRECTS = 5;
 
+export interface PageRead {
+  title?: string;
+  text: string;
+  raw?: string;
+}
+
 interface WebSearchDeps {
   getSettings: () => Settings;
   searchRegistry: SearchProviderRegistry;
+  /** Lecture d'une page. Absente : fetch HTML public, avec retries. */
+  readPage?: (url: string, signal?: AbortSignal) => Promise<PageRead>;
 }
 
 /**
@@ -66,13 +83,16 @@ export function createWebSearchTool(deps: WebSearchDeps) {
 
         return {
           ok: true,
-          content: `${fallbackNote}Résultats pour « ${query} » (via ${provider.label}) :\n\n${lines.join('\n')}`,
+          content: `${fallbackNote}Résultats pour « ${query} » (via ${provider.label}) :\n\n${lines.join('\n')}\n\nLe premier résultat n'est pas une preuve. Distingue FAIT, SOURCE, INTERPRÉTATION et INCERTITUDE.`,
           data: response,
         };
       } catch (error) {
+        const classified = classifyThrownError(error);
         return {
           ok: false,
-          content: `Recherche impossible pour « ${query} » via ${provider.label} : ${describeError(error)}`,
+          outcome: classified.outcome,
+          content: `La recherche Internet n'a pas abouti pour « ${query} ». ${classified.userMessage}`,
+          technicalDetail: classified.technicalDetail,
         };
       }
     },
@@ -119,25 +139,14 @@ export function createWebResearchTool(deps: WebSearchDeps) {
         ),
       );
 
-      const merged = settled.flatMap((item) =>
-        item.status === 'fulfilled' ? item.value.results : [],
+      const merged: ResearchHit[] = settled.flatMap((item, index) =>
+        item.status === 'fulfilled'
+          ? item.value.results.map((result) => ({ ...result, query: queries[index] }))
+          : [],
       );
-
-      const seen = new Set<string>();
-      const results = merged.filter((item) => {
-        const key = normalizeUrl(item.url) || `${item.title}|${item.snippet}`.toLowerCase();
-        if (seen.has(key)) return false;
-        seen.add(key);
-        return true;
-      });
-
-      results.sort((a, b) => {
-        const domainA = sourceDomain(a.url);
-        const domainB = sourceDomain(b.url);
-        const scoreA = domainA ? 1 : 0;
-        const scoreB = domainB ? 1 : 0;
-        return scoreB - scoreA;
-      });
+      const results = dedupeHits(merged);
+      const selected = selectSources(results, 4);
+      const reads = await readSelectedSources(selected, deps.readPage);
 
       if (results.length === 0) {
         const failed = settled.filter((item) => item.status === 'rejected').length;
@@ -162,6 +171,7 @@ export function createWebResearchTool(deps: WebSearchDeps) {
         fellBack && settings.searchProvider !== provider.id
           ? `Fournisseur configuré indisponible ; recherche effectuée via ${provider.label}.\n\n`
           : '';
+      const brief = compareSources(reads);
 
       return {
         ok: true,
@@ -170,15 +180,45 @@ export function createWebResearchTool(deps: WebSearchDeps) {
           `Requêtes : ${queries.join(' | ')}\n\n` +
           `${lines.join('\n')}\n\n` +
           'Consigne de synthèse : vérifie les affirmations importantes dans les sources originales ; ' +
-          'ne traite pas un extrait de moteur de recherche comme une preuve suffisante.',
+          'ne traite pas un extrait de moteur de recherche comme une preuve suffisante.\n\n' +
+          formatClaimLabels(brief),
         data: {
           provider: provider.id,
           queries,
           results: results.slice(0, 12),
+          brief,
         },
       };
     },
   });
+}
+
+async function readSelectedSources(
+  hits: ResearchHit[],
+  readPage: WebSearchDeps['readPage'],
+): Promise<ReadSource[]> {
+  const reader =
+    readPage ??
+    (async (url: string) => {
+      const fetched = await fetchPublicText(url, { timeoutMs: 8_000, maxRetries: 2 });
+      if (!fetched.ok) return { title: '', text: '' };
+      const page = extractReadableText(fetched.text, 4_000);
+      return { title: page.title, text: page.text, raw: fetched.text };
+    });
+
+  const settled = await Promise.allSettled(
+    hits.map(async (hit) => {
+      const page = await reader(hit.url);
+      const raw = page.raw ?? page.text;
+      return {
+        url: hit.url,
+        title: page.title || hit.title,
+        text: page.text || hit.snippet,
+        assessment: assessHtml(raw, page.text || ''),
+      } satisfies ReadSource;
+    }),
+  );
+  return settled.flatMap((item) => (item.status === 'fulfilled' ? [item.value] : []));
 }
 
 export function normalizeUrl(raw: string): string {
@@ -217,88 +257,60 @@ export const fetchPageTool = defineTool({
     url: z.string().url().describe('Adresse de la page à récupérer (http ou https).'),
   }),
   summarize: ({ url }) => `Récupérer la page ${url}.`,
-  execute: async ({ url }) => {
-    let current = url;
-
-    for (let hop = 0; hop <= MAX_REDIRECTS; hop += 1) {
-      const guard = await guardUrl(current);
-      if (!guard.allowed) {
-        return { ok: false, content: `Adresse refusée : ${guard.reason}` };
-      }
-
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-
-      let response: Response;
-      try {
-        response = await fetch(current, {
-          signal: controller.signal,
-          redirect: 'manual',
-          headers: { 'user-agent': 'Mozilla/5.0 (compatible; Jarvis/1.0; assistant personnel)' },
-        });
-      } catch (error) {
-        clearTimeout(timeout);
-        if (controller.signal.aborted) {
-          return {
-            ok: false,
-            content: `La page « ${current} » n'a pas répondu à temps (délai dépassé).`,
-          };
-        }
-        return {
-          ok: false,
-          content: `Impossible de récupérer la page « ${current} » : ${describeError(error)}`,
-        };
-      }
-      clearTimeout(timeout);
-
-      if (response.status >= 300 && response.status < 400) {
-        const location = response.headers.get('location');
-        if (!location) {
-          return { ok: false, content: `Redirection sans destination reçue pour « ${current} ».` };
-        }
-        current = new URL(location, current).toString();
-        continue;
-      }
-
-      if (!response.ok) {
-        return {
-          ok: false,
-          content: `La page a répondu avec une erreur (HTTP ${response.status}).`,
-        };
-      }
-
-      const contentType = response.headers.get('content-type') ?? '';
-      const isTextual =
-        contentType === '' ||
-        contentType.includes('text/') ||
-        contentType.includes('application/xhtml');
-      if (!isTextual) {
-        return {
-          ok: false,
-          content: `Type de contenu non pris en charge (${contentType.split(';')[0] || 'inconnu'}). Seules les pages HTML ou texte sont lues.`,
-        };
-      }
-
-      const html = await readBody(response, MAX_PAGE_BYTES);
-      const page = extractReadableText(html, MAX_TEXT_LENGTH);
-
-      if (page.text.length === 0) {
-        return { ok: true, content: `La page « ${current} » ne contient aucun texte exploitable.` };
-      }
-
-      const heading = page.title ? `${page.title}\n\n` : '';
-      const truncationNote = page.truncated
-        ? '\n\n_(texte tronqué : la page est plus longue que la limite lue par cet outil)_'
-        : '';
-
+  execute: async ({ url }, context) => {
+    const fetched = await fetchPublicText(url, {
+      timeoutMs: FETCH_TIMEOUT_MS,
+      maxRedirects: MAX_REDIRECTS,
+      readLimit: MAX_PAGE_BYTES,
+      signal: context.signal,
+      guard: guardUrl,
+    });
+    if (!fetched.ok) {
       return {
-        ok: true,
-        content: `${heading}${page.text}${truncationNote}`,
-        data: { url: current, title: page.title, truncated: page.truncated },
+        ok: false,
+        outcome: fetched.outcome,
+        content: fetched.userMessage,
+        technicalDetail: fetched.technicalDetail,
       };
     }
 
-    return { ok: false, content: `Trop de redirections en partant de « ${url} ».` };
+    const page = extractReadableText(fetched.text, MAX_TEXT_LENGTH);
+    const assessment = assessHtml(fetched.text, page.text);
+    if (assessment.antiBot) {
+      return {
+        ok: false,
+        outcome: 'recoverable',
+        content: 'La page a renvoyé un mur anti-robot. Je n’ai pas lu son contenu.',
+        technicalDetail: fetched.url,
+      };
+    }
+    if (assessment.invalidHtml) {
+      return {
+        ok: false,
+        outcome: 'definitive',
+        content: 'Le HTML reçu est invalide. Je n’en tire aucun fait.',
+        technicalDetail: fetched.url,
+      };
+    }
+    if (page.text.length === 0 || assessment.empty) {
+      return {
+        ok: true,
+        outcome: 'success',
+        content: `La page « ${fetched.url} » ne contient aucun texte exploitable.`,
+      };
+    }
+
+    const heading = page.title ? `${page.title}\n\n` : '';
+    const truncationNote = page.truncated
+      ? '\n\n_(texte tronqué : la page est plus longue que la limite lue par cet outil)_'
+      : '';
+
+    return {
+      ok: true,
+      outcome: 'success',
+      content: `${heading}${page.text}${truncationNote}`,
+      data: { url: fetched.url, title: page.title, truncated: page.truncated },
+    };
   },
 });
 
@@ -322,29 +334,3 @@ async function guardUrl(rawUrl: string): Promise<{ allowed: boolean; reason?: st
   return { allowed: true };
 }
 
-async function readBody(response: Response, maxBytes: number): Promise<string> {
-  if (!response.body) return response.text();
-
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let received = 0;
-  let text = '';
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    received += value.byteLength;
-    text += decoder.decode(value, { stream: true });
-    if (received >= maxBytes) {
-      await reader.cancel().catch(() => undefined);
-      break;
-    }
-  }
-  text += decoder.decode();
-
-  return text;
-}
-
-function describeError(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}

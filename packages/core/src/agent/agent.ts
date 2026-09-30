@@ -22,6 +22,21 @@ export type AgentEvent =
   | { type: 'error'; message: string }
   | { type: 'done' };
 
+/** Plafond dur de tours d'outils, même si l'appelant en demande plus. */
+export const HARD_TOOL_ROUND_CAP = 6;
+
+/** Température basse dès qu'un tour porte sur des faits, des outils ou des chiffres. */
+export function temperatureForTurn(text: string, configured = 0.4): number {
+  if (
+    /cherch|recherche|actualité|spotify|youtube|vidéo|video|mémoire|document|fichier|cours de|action |chiffre|combien|facture|quelle est/i.test(
+      text,
+    )
+  ) {
+    return Math.min(configured, 0.2);
+  }
+  return configured;
+}
+
 export interface AgentOptions {
   systemPrompt: string;
   /** Garde-fou contre les boucles d'outils sans fin. */
@@ -43,6 +58,9 @@ export const DEFAULT_SYSTEM_PROMPT = [
   "Si l'utilisateur donne un lien YouTube (youtube.com/watch, youtu.be, Shorts ou live), utilise youtube_transcript. L'outil écoute la piste audio avec Whisper local, puis le modèle local rédige un condensé en français : un court paragraphe et les points importants. N'invente aucun chiffre ni aucun fait absent de ce résultat. Conserve la séparation entre faits et opinions, les horodatages, et l'avertissement que ce n'est pas un conseil d'investissement s'il figure dans le résultat. S'il précise que les sous-titres ont remplacé l'écoute, conserve cette phrase.",
   "Si l'utilisateur demande de bloquer ou débloquer des sites, d'activer un mode travail ou concentration, ou de programmer un créneau, utilise les outils siteblock_*. Ne prétends jamais avoir modifié le blocage sans un résultat positif de l'outil.",
   "Certaines actions demandent l'accord de l'utilisateur ; s'il refuse, accepte-le sans insister.",
+  "N'invente jamais le contenu d'un fichier, un résultat de recherche, une action effectuée, un chiffre financier ni l'état Spotify. Si l'outil ne l'a pas renvoyé, dis-le.",
+  "Tu peux enchaîner plusieurs outils dans un même tour (mémoire, documents, web, lecture de page) puis vérifier avant de répondre.",
+  "Si l'utilisateur demande de garder une vidéo en mémoire, utilise remember_video. Ne transforme pas une opinion de la vidéo en fait.",
 ].join(' ');
 
 const WEB_RESEARCH_TURN_PROMPT =
@@ -101,7 +119,10 @@ export class Agent {
 
   async *run(history: ChatMessage[], context: ToolContext): AsyncGenerator<AgentEvent> {
     const conversation = [...history];
-    const maxRounds = this.options.maxToolRounds ?? 7;
+    const maxRounds = Math.min(
+      this.options.maxToolRounds ?? HARD_TOOL_ROUND_CAP,
+      HARD_TOOL_ROUND_CAP,
+    );
     const lastUser = lastUserMessage(conversation);
     const youtubeTurn = extractYoutubeUrl(lastUser) !== null;
     const musicTurn = !youtubeTurn && isMusicIntent(lastUser);
@@ -173,7 +194,7 @@ export class Agent {
           messages: [...conversation],
           system,
           tools: toolSchemas,
-          temperature: this.options.temperature,
+          temperature: temperatureForTurn(lastUser, this.options.temperature),
           maxTokens: this.options.maxTokens,
           signal: context.signal,
         });

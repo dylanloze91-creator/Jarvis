@@ -28,6 +28,19 @@ export interface ToolCallOutcome {
   /** Durée d'exécution en millisecondes, confirmation utilisateur comprise. */
   durationMs: number;
   category?: ToolCategory;
+  /**
+   * Classification additive (§23). Absente sur les anciens résultats :
+   * `ok` → succès, `error` → définitif, `denied` → annulation ou blocage.
+   */
+  outcome?:
+    | 'success'
+    | 'recoverable'
+    | 'definitive'
+    | 'timeout'
+    | 'cancelled'
+    | 'missing_dependency';
+  /** Détail technique déjà rédigé, réservé au journal. */
+  technicalDetail?: string;
 }
 
 export interface ChatMessage {

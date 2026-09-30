@@ -1,6 +1,7 @@
 import {
   Brain,
   Camera,
+  Clapperboard,
   CalendarClock,
   Globe2,
   History,
@@ -79,6 +80,14 @@ const FUNCTIONS: FunctionCard[] = [
     hint: 'Lecture Spotify',
     prompt: 'Que joue Spotify en ce moment ?',
     icon: Music,
+    soon: false,
+  },
+  {
+    id: 'video',
+    label: 'Analyse vidéo',
+    hint: 'Résumé et mémoire',
+    prompt: 'Analyse cette vidéo YouTube : ',
+    icon: Clapperboard,
     soon: false,
   },
   {

@@ -6,6 +6,7 @@ import {
   youtubeRefusalReason,
 } from './captions.js';
 import { parseYoutubeVideoId } from './url.js';
+import { formatVideoAnalysis } from './analysis.js';
 import { condenseTranscript, type TextComplete } from './summarize.js';
 
 export const CAPTION_FALLBACK_NOTICE =
@@ -101,8 +102,10 @@ export async function summarizeYoutubeVideo(
       complete: deps.complete,
       onProgress: progress,
     });
+    const analysis = formatVideoAnalysis(transcript, condensed);
     const body = title ? `${title}\n\n${condensed}` : condensed;
-    const content = usedCaptions ? `${CAPTION_FALLBACK_NOTICE}\n\n${body}` : body;
+    const withAnalysis = `${body}\n\n${analysis}`;
+    const content = usedCaptions ? `${CAPTION_FALLBACK_NOTICE}\n\n${withAnalysis}` : withAnalysis;
     return { ok: true, content };
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
@@ -128,7 +131,7 @@ async function tryListen(
   let file: string | null = null;
   try {
     file = await deps.downloadAudio(format.url);
-    const transcript = (await deps.transcribeFile(file, progress)).replace(/\s+/g, ' ').trim();
+    const transcript = (await deps.transcribeFile(file, progress)).replace(/[ \t]+/g, ' ').trim();
     return { transcript };
   } catch {
     return { transcript: '' };

@@ -17,6 +17,16 @@ export interface AuditEntry {
   /** Résultat renvoyé par l'outil, tronqué pour rester lisible dans la liste. */
   resultSummary: string;
   durationMs: number;
+  /** Classification additive (§23), absente sur les journaux plus anciens. */
+  outcome?:
+    | 'success'
+    | 'recoverable'
+    | 'definitive'
+    | 'timeout'
+    | 'cancelled'
+    | 'missing_dependency';
+  /** Détail technique rédigé, absent quand l'outil n'en a pas fourni. */
+  technicalDetail?: string;
 }
 
 export interface AuditLogStore {

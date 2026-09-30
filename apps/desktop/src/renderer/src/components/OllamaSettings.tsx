@@ -202,6 +202,10 @@ function RecommendationList({
       <p className="text-[11px] font-medium tracking-wide text-slate-500 uppercase">
         Recommandations pour une RTX 2060 6 Go
       </p>
+      <p className="text-xs leading-snug text-slate-400">
+        Modèle recommandé : qwen3.5:4b. Le défaut reste qwen2.5:3b tant que l’appel d’outils n’est
+        pas vérifié sur 6 Go.
+      </p>
       {OLLAMA_RTX2060_6GB_RECOMMENDATIONS.map((entry) => (
         <div
           key={entry.model}

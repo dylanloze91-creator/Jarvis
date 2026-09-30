@@ -2,7 +2,8 @@ import type * as Ort from 'onnxruntime-web';
 import {
   OPENWAKEWORD_FRAME_SIZE,
   OPENWAKEWORD_SAMPLE_RATE,
-  concatFloat32,
+  CircularPcmBuffer,
+  WakeTriggerGate,
   describeOpenWakeWordLoadError,
   openWakeWordSensitivityToThreshold,
   resampleLinear,
@@ -98,10 +99,9 @@ export class OpenWakeWordEngine implements WakeWordEngine {
     let processing = Promise.resolve();
     let remainder = new Float32Array(0);
     let melBuffer: Float32Array[] = [];
-    let lastDetectionAt = -Infinity;
     let lastAnalyzedWindow: { pcm: Float32Array; sampleRate: number } | null = null;
-    let recentAudio: Float32Array[] = [];
-    let recentSamples = 0;
+    const recentAudio = new CircularPcmBuffer(Math.round(OPENWAKEWORD_SAMPLE_RATE * 3));
+    const triggerGate = new WakeTriggerGate(this.config.cooldownMs ?? COOLDOWN_MS);
     let loadPromise: Promise<OpenWakeWordOnnxModels> | null = null;
     let models: OpenWakeWordOnnxModels | null = null;
     let keywordWindowSize = DEFAULT_EMBEDDING_WINDOW;
@@ -111,7 +111,7 @@ export class OpenWakeWordEngine implements WakeWordEngine {
       keywordWindowSize = windowSize;
       melBuffer = [];
       embeddingHistory = Array.from({ length: windowSize }, () => new Float32Array(96));
-      lastDetectionAt = -Infinity;
+      triggerGate.reset();
     };
 
     const emitError = (error: unknown): void => {
@@ -191,10 +191,9 @@ export class OpenWakeWordEngine implements WakeWordEngine {
 
         const threshold = openWakeWordSensitivityToThreshold(this.config.sensitivity ?? 0.7);
         const now = performance.now();
-        if (score >= threshold && now - lastDetectionAt >= COOLDOWN_MS) {
-          lastDetectionAt = now;
+        if (score >= threshold && triggerGate.allow(now)) {
           lastAnalyzedWindow = {
-            pcm: concatFloat32(recentAudio),
+            pcm: recentAudio.snapshot(),
             sampleRate: OPENWAKEWORD_SAMPLE_RATE,
           };
           handlers.onDetected(this.config.keyword ?? 'jarvis');
@@ -213,13 +212,7 @@ export class OpenWakeWordEngine implements WakeWordEngine {
             ? frame
             : resampleLinear(frame, sampleRate, OPENWAKEWORD_SAMPLE_RATE);
 
-        recentAudio.push(pcm.slice());
-        recentSamples += pcm.length;
-        const maxRecentSamples = OPENWAKEWORD_SAMPLE_RATE * 2.4;
-        while (recentSamples > maxRecentSamples && recentAudio.length > 1) {
-          const removed = recentAudio.shift()!;
-          recentSamples -= removed.length;
-        }
+        recentAudio.push(pcm);
 
         const split = takeFixedFrames(remainder, pcm, OPENWAKEWORD_FRAME_SIZE);
         remainder = new Float32Array(split.remainder);
@@ -230,8 +223,7 @@ export class OpenWakeWordEngine implements WakeWordEngine {
       stop: () => {
         stopped = true;
         remainder = new Float32Array(0);
-        recentAudio = [];
-        recentSamples = 0;
+        recentAudio.clear();
         melBuffer = [];
         embeddingHistory = [];
       },

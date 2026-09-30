@@ -1,8 +1,8 @@
-# Jarvis 0.4.11 — contexte pour un autre développeur
+# Jarvis 0.4.12 — contexte pour un autre développeur
 
 Ce fichier est à la **racine du code**. Les chemins ci-dessous partent de ce dossier. Ce n’est pas un résumé marketing : c’est l’état réel de cet arbre. La voix a été refaite dans cet arbre (publiée en 0.4.11, section « Voix ») : la transcription restait « Chargement… 100 % » sur l’installateur Windows. La refonte du tableau de bord est dans cet arbre : fenêtre étroite = overlay, fenêtre large = tableau de bord.
 
-**Version confirmée :** `apps/desktop/package.json` → `"version": "0.4.11"`. Le `package.json` racine est encore à `0.3.0` : c’est le monorepo, pas l’appli. La version qui compte pour l’exe, l’updater et GitHub est celle de `@jarvis/desktop`. Cette 0.4.11 est publiée : c’est la dernière publication GitHub (`v0.4.11`).
+**Version confirmée :** `apps/desktop/package.json` → `"version": "0.4.12"`. Le `package.json` racine est encore à `0.3.0` : c’est le monorepo, pas l’appli. La version qui compte pour l’exe, l’updater et GitHub est celle de `@jarvis/desktop`. La voix corrigée en 0.4.11 (installateur Windows) est inchangée. Le modèle par défaut reste `qwen2.5:3b`. `qwen3.5:4b` est le modèle recommandé documenté ; le repli est réglable (`fallbackModel`, défaut `qwen2.5:3b`).
 
 Lis ce fichier avant de modifier le code.
 
@@ -20,7 +20,7 @@ Utilisateur → Agent → Tool Manager → outils → Windows
 
 Le modèle ne touche jamais le système directement. TypeScript strict, Electron 44, React 19, Tailwind 4, Zod, Vitest, npm workspaces. **Aucune dépendance native à compiler.** Cible machine : Windows, 64 Go RAM, RTX 2060 6 Go, i7 10e gén. Beaucoup d’outils (PowerShell, journal d’événements, Spotify desktop, SiteBlock) n’ont de sens que sur Windows.
 
-Google Agenda / Gmail / Drive **n’est pas** dans cette 0.4.11.
+Google Agenda / Gmail / Drive **n’est pas** dans cette 0.4.12.
 
 ---
 
@@ -80,7 +80,7 @@ Données utilisateur (Electron `userData`, typiquement `%APPDATA%\Jarvis`) :
     src/media/                 intent Spotify
     src/update/                lecture latest.yml GitHub
     src/history/  src/audit/
-  apps/desktop/                Electron (version 0.4.11)
+  apps/desktop/                Electron (version 0.4.12)
     electron-builder.yml       NSIS, extraResources, publish GitHub
     electron.vite.config.ts    aliases onnxruntime-web (wasm, pas JSEP)
     scripts/setup-whisper.mjs
@@ -322,3 +322,13 @@ Corrections de la revue complète (détail : `docs/audit-0410.md` du store du pr
 - **Modèles / voix réelles** : ne pas committer `voice-assets/**` (sauf son README), `test-fixtures/*.wav|mp3`.
 
 Travaux **hors scope** de cet arbre (ne pas les reprendre ici) : Suite Google, publication GitHub.
+
+## Contrats 0.4.12
+
+- **Outil** : `ToolResult.outcome` vaut `success`, `recoverable`, `definitive`, `timeout`, `cancelled` ou `missing_dependency`. `content` est une phrase française. `technicalDetail` est le journal. `ok` reste le booléen historique.
+- **Secrets** : `redactSecrets` / `redactValue` avant l’audit et `debugLog`. Le drapeau est `settings.debugLogging`.
+- **Web** : `web_search` et `web_research` (2 à 4 requêtes, dédoublonnage, lecture, comparaison). Libellés `FAIT`, `SOURCE`, `INTERPRÉTATION`, `INCERTITUDE`. HTML sans clé. Le premier lien n’est pas un fait.
+- **Spotify** : succès seulement si `is_playing === true` et l’URI en cours est celle demandée. Redirect PKCE inchangé : `http://127.0.0.1:53124/callback`.
+- **Mémoire** : `remember_jarvis`, `search_jarvis_memory`, `index_folder`, `search_documents`, `read_document`, `remember_video`. Passages seulement, jamais l’index entier dans le prompt. Embeddings `nomic-embed-text` si le modèle est là, sinon lexical.
+- **Vidéo** : segments, score 0–100, synthèse, cadre finance, mémoire vidéo. `visionHook` répond « vision indisponible » sans prétendre lire un graphique.
+- **Réveil** : buffer circulaire et cooldown dans le chemin openWakeWord existant. `scripts/setup-openwakeword.mjs` délègue à `setup-voice-assets.mjs`. Un seul `onnxruntime-web` 1.31. Whisper et `jarvis-oww` inchangés.

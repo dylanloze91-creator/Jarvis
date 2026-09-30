@@ -3,8 +3,8 @@ import type { ToolInfo } from '../../../shared/ipc';
 
 const suggestions = [
   { text: 'Cherche les dernières infos importantes', icon: Globe2 },
-  { text: 'Que se passe-t-il sur mon PC ?', icon: Search },
   { text: 'Rappelle-moi ce que tu sais de mes projets', icon: BrainCircuit },
+  { text: 'Analyse cette vidéo YouTube : ', icon: Search },
 ];
 
 interface EmptyStateProps {

@@ -1,11 +1,15 @@
 import { z } from 'zod';
+import { debugLog } from '../security/debugLog.js';
+import { redactSecrets, redactValue } from '../security/redact.js';
 import type { ToolCall, ToolCallOutcome, ToolDecision } from '../types.js';
 import type { ToolSchema } from '../providers/types.js';
 import { defaultCategoryPolicies, requiresConfirmation } from './permissions.js';
+import { classifyThrownError, outcomeFromResult, presentUserContent } from './outcome.js';
 import type {
   RegisteredTool,
   ToolContext,
   ToolDefinition,
+  ToolOutcomeKind,
   ToolResult,
   RiskLevel,
 } from './types.js';
@@ -41,7 +45,9 @@ export function defineTool<S extends z.ZodType>(definition: ToolDefinition<S>): 
       if (!parsed.success) {
         return {
           ok: false,
+          outcome: 'definitive' as const,
           content: `Arguments invalides pour « ${definition.name} » : ${formatIssues(parsed.error)}`,
+          technicalDetail: redactSecrets(parsed.error.message),
         };
       }
       return definition.execute(parsed.data as z.infer<S>, context);
@@ -126,9 +132,10 @@ export class ToolManager {
         name: call.name,
         status: 'error',
         content: `Outil inconnu : « ${call.name} ». Aucune action n'a été effectuée.`,
-        arguments: call.arguments,
+        arguments: redactArguments(call.arguments),
         decision: 'blocked',
         durationMs: Date.now() - startedAt,
+        outcome: 'definitive',
       });
     }
 
@@ -138,10 +145,11 @@ export class ToolManager {
         name: call.name,
         status: 'denied',
         content: `L'outil « ${call.name} » est désactivé par la politique de sécurité.`,
-        arguments: call.arguments,
+        arguments: redactArguments(call.arguments),
         decision: 'blocked',
         durationMs: Date.now() - startedAt,
         category: tool.category,
+        outcome: 'definitive',
       });
     }
 
@@ -165,10 +173,11 @@ export class ToolManager {
             name: call.name,
             status: 'denied',
             content: "L'utilisateur a refusé cette action. Ne la retente pas sans son accord.",
-            arguments: call.arguments,
+            arguments: redactArguments(call.arguments),
             decision,
             durationMs: Date.now() - startedAt,
             category: tool.category,
+            outcome: 'cancelled',
           });
         }
       }
@@ -178,20 +187,45 @@ export class ToolManager {
 
     let result: ToolResult;
     try {
-      result = await tool.run(call.arguments, context);
+      if (context.signal?.aborted) {
+        result = {
+          ok: false,
+          outcome: 'cancelled',
+          content: "L'opération a été annulée.",
+          technicalDetail: 'AbortSignal déjà annulé',
+        };
+      } else {
+        result = await tool.run(call.arguments, context);
+      }
     } catch (error) {
-      result = { ok: false, content: `Échec de l'outil : ${describeError(error)}` };
+      const classified = classifyThrownError(error);
+      result = {
+        ok: false,
+        outcome: classified.outcome,
+        content: classified.userMessage,
+        technicalDetail: classified.technicalDetail,
+      };
     }
+
+    const outcomeKind: ToolOutcomeKind = outcomeFromResult(result);
+    const content = presentUserContent({ ...result, outcome: outcomeKind });
+    const technicalDetail = result.technicalDetail ? redactSecrets(result.technicalDetail) : undefined;
+    debugLog(context.debug === true, 'tool', `${call.name} ${outcomeKind}`, {
+      technicalDetail,
+      arguments: call.arguments,
+    });
 
     return this.finish(events, {
       callId: call.id,
       name: call.name,
       status: result.ok ? 'ok' : 'error',
-      content: result.content,
-      arguments: call.arguments,
+      content,
+      arguments: redactArguments(call.arguments),
       decision,
       durationMs: Date.now() - startedAt,
       category: tool.category,
+      outcome: outcomeKind,
+      technicalDetail,
     });
   }
 
@@ -221,6 +255,6 @@ function describeFallback(name: string, input: unknown): string {
   return `Exécuter « ${name} » avec :\n${args}`;
 }
 
-function describeError(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+function redactArguments(value: Record<string, unknown>): Record<string, unknown> {
+  return redactValue(value) as Record<string, unknown>;
 }

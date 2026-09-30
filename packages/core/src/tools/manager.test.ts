@@ -132,6 +132,28 @@ describe('ToolManager', () => {
     const outcome = await exploding.execute({ id: '7', name: 'boom', arguments: {} }, allow);
     expect(outcome.status).toBe('error');
     expect(outcome.content).toContain('disque injoignable');
+    expect(outcome.outcome).toBe('definitive');
+  });
+
+  it('traduit un ECONNRESET en phrase française et garde le code dans le détail', async () => {
+    const exploding = new ToolManager().register(
+      defineTool({
+        name: 'boom',
+        description: 'Échoue toujours.',
+        risk: 'safe',
+        schema: z.object({}),
+        execute: async () => {
+          throw Object.assign(new Error('connect ECONNRESET'), { code: 'ECONNRESET' });
+        },
+      }),
+    );
+
+    const outcome = await exploding.execute({ id: '7b', name: 'boom', arguments: {} }, allow);
+    expect(outcome.status).toBe('error');
+    expect(outcome.outcome).toBe('recoverable');
+    expect(outcome.content).toMatch(/interrompue/);
+    expect(outcome.content).not.toMatch(/ECONNRESET/);
+    expect(outcome.technicalDetail).toMatch(/ECONNRESET/);
   });
 
   it('produit un résultat exploitable par le journal d’audit', async () => {

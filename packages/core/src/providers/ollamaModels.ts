@@ -73,7 +73,7 @@ export const OLLAMA_RTX2060_6GB_RECOMMENDATIONS: OllamaModelRecommendation[] = [
     frenchSupport:
       "Qwen2.5 annonce officiellement le support de plus de 29 langues, français inclus, avec des scores multilingues publiés par l'équipe Qwen (IFEval, MMLU traduits).",
     notes:
-      'Tient très largement dans 6 Go, même avec la fenêtre de contexte élargie à 8192 tokens pour le catalogue d’outils : reste entièrement sur le GPU, aucun débordement attendu même avec Windows et son overlay actifs. Alternative plus capable, non mesurée ici : `ollama pull qwen3.5:4b` (proposé dans les suggestions Ollama).',
+      'Tient très largement dans 6 Go. C’est le modèle par défaut et le repli. Le modèle documenté comme recommandé est `qwen3.5:4b` (`ollama pull qwen3.5:4b`) : il n’est pas le défaut tant que l’appel d’outils n’est pas vérifié sur une RTX 2060 6 Go.',
   },
   {
     role: 'performance',

@@ -107,6 +107,7 @@ export class ChatSession {
       for await (const event of agent.run(messages, {
         signal: controller.signal,
         policies: settings.toolPolicies,
+        debug: settings.debugLogging,
         requestConfirmation: (request) => this.askUser(emit, request, controller.signal),
       })) {
         switch (event.type) {

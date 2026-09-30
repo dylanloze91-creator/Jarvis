@@ -55,7 +55,17 @@ const TEXT_EXTENSIONS = new Set([
   '.ini',
   '.toml',
   '.sql',
+  '.pdf',
 ]);
+
+export type MemorySection = 'profile' | 'preferences' | 'projects' | 'conversations';
+
+export const MEMORY_SECTIONS: MemorySection[] = [
+  'profile',
+  'preferences',
+  'projects',
+  'conversations',
+];
 
 const BLOCKED_FOLDER_NAMES = new Set([
   'windows',
@@ -104,14 +114,20 @@ export class KnowledgeStore {
     return this.index;
   }
 
-  async search(query: string, settings: Settings, limit = 6): Promise<KnowledgeChunk[]> {
+  async search(
+    query: string,
+    settings: Settings,
+    limit = 6,
+    kind?: KnowledgeChunk['kind'],
+  ): Promise<KnowledgeChunk[]> {
     const index = await this.load();
     const q = query.trim();
     if (!q) return [];
 
     const embedding = await this.embed(q, settings).catch(() => null);
     const terms = tokenize(q);
-    const scored = index.chunks.map((chunk) => {
+    const pool = kind ? index.chunks.filter((chunk) => chunk.kind === kind) : index.chunks;
+    const scored = pool.map((chunk) => {
       const lexical = lexicalScore(terms, `${chunk.title} ${chunk.text}`);
       const semantic = embedding && chunk.embedding ? cosine(embedding, chunk.embedding) : 0;
       const score = embedding ? semantic * 0.78 + lexical * 0.22 : lexical;
@@ -125,10 +141,28 @@ export class KnowledgeStore {
       .map((item) => item.chunk);
   }
 
+  async searchDocuments(query: string, settings: Settings, limit = 6): Promise<KnowledgeChunk[]> {
+    return this.search(query, settings, limit, 'file');
+  }
+
+  async readDocument(source: string): Promise<string> {
+    const index = await this.load();
+    const needle = source.trim();
+    if (!needle) return '';
+    const chunks = index.chunks.filter(
+      (chunk) => chunk.kind === 'file' && (chunk.source === needle || chunk.title === needle),
+    );
+    return chunks
+      .map((chunk) => chunk.text)
+      .join('\n\n')
+      .slice(0, 8_000);
+  }
+
   async remember(
     text: string,
     settings: Settings,
     title = 'Mémoire Jarvis',
+    section: MemorySection = 'projects',
   ): Promise<KnowledgeChunk> {
     const normalized = text.trim();
     if (!normalized) throw new Error('La mémoire à enregistrer est vide.');
@@ -145,6 +179,7 @@ export class KnowledgeStore {
     index.chunks = [chunk, ...index.chunks.filter((item) => item.id !== chunk.id)];
     capIndex(index);
     await this.save();
+    await this.appendMemorySection(section, { title, text: chunk.text, updatedAt: chunk.updatedAt });
     return chunk;
   }
 
@@ -159,6 +194,7 @@ export class KnowledgeStore {
       count += await this.indexFile(file, settings);
     }
     await this.save();
+    await this.writeDocumentManifest(files);
     return { files: files.length, chunks: count };
   }
 
@@ -202,10 +238,11 @@ export class KnowledgeStore {
   private async indexFile(file: string, settings: Settings): Promise<number> {
     const info = await stat(file);
     if (!info.isFile() || info.size > MAX_FILE_BYTES) return 0;
-    if (!TEXT_EXTENSIONS.has(extname(file).toLowerCase())) return 0;
-    const raw = await readFile(file, 'utf8').catch(() => '');
-    if (!raw.trim() || raw.includes('\0')) return 0;
-    const text = normalizeText(raw, file);
+    const ext = extname(file).toLowerCase();
+    if (!TEXT_EXTENSIONS.has(ext)) return 0;
+    const text =
+      ext === '.pdf' ? extractPdfText(await readFile(file)) : await this.readUtf8Document(file);
+    if (!text.trim()) return 0;
     const parts = splitText(text);
     const index = await this.load();
     index.chunks = index.chunks.filter((item) => item.source !== file);
@@ -223,6 +260,49 @@ export class KnowledgeStore {
     }
     capIndex(index);
     return parts.length;
+  }
+
+  private async readUtf8Document(file: string): Promise<string> {
+    const raw = await readFile(file, 'utf8').catch(() => '');
+    if (!raw.trim() || raw.includes('\0')) return '';
+    return normalizeText(raw, file);
+  }
+
+  private memoryRoot(): string {
+    return join(this.options.getUserDataPath(), 'memory');
+  }
+
+  private async appendMemorySection(
+    section: MemorySection,
+    entry: { title: string; text: string; updatedAt: number },
+  ): Promise<void> {
+    const dir = this.memoryRoot();
+    await mkdir(dir, { recursive: true });
+    const path = join(dir, `${section}.json`);
+    const current = await readJsonArray(path);
+    const next = [
+      entry,
+      ...current.filter(
+        (item) =>
+          !(
+            item &&
+            typeof item === 'object' &&
+            (item as { title?: string; text?: string }).title === entry.title &&
+            (item as { text?: string }).text === entry.text
+          ),
+      ),
+    ].slice(0, 200);
+    await writeFile(path, JSON.stringify(next), { encoding: 'utf8', mode: 0o600 });
+  }
+
+  private async writeDocumentManifest(files: string[]): Promise<void> {
+    const dir = join(this.options.getUserDataPath(), 'knowledge');
+    await mkdir(dir, { recursive: true });
+    await mkdir(join(this.options.getUserDataPath(), 'index'), { recursive: true });
+    await writeFile(join(dir, 'documents.json'), JSON.stringify({ files }, null, 2), {
+      encoding: 'utf8',
+      mode: 0o600,
+    });
   }
 
   private async embed(text: string, settings: Settings): Promise<number[]> {
@@ -385,6 +465,33 @@ function cosine(a: number[], b: number[]): number {
 
 function hash(value: string): string {
   return createHash('sha256').update(value).digest('hex').slice(0, 24);
+}
+
+export function extractPdfText(buffer: Buffer): string {
+  const raw = buffer.toString('latin1');
+  const parts: string[] = [];
+  const pattern = /\((?:\\.|[^\\)]){2,}\)\s*Tj/g;
+  for (const match of raw.matchAll(pattern)) {
+    const inner = match[0].replace(/\)\s*Tj$/, '').slice(1);
+    const text = inner
+      .replace(/\\n/g, '\n')
+      .replace(/\\r/g, '')
+      .replace(/\\([()\\])/g, '$1')
+      .replace(/[^\x09\x0A\x0D\x20-\x7E\u00A0-\u00FF]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (text.length >= 2) parts.push(text);
+  }
+  return parts.join('\n').slice(0, 200_000);
+}
+
+async function readJsonArray(path: string): Promise<unknown[]> {
+  try {
+    const parsed = JSON.parse(await readFile(path, 'utf8')) as unknown;
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
 }
 
 function capIndex(index: KnowledgeIndex): void {

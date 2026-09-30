@@ -49,6 +49,7 @@ describe('web_research', () => {
     const tool = createWebResearchTool({
       getSettings: () => parseSettings({ searchProvider: 'fake' }),
       searchRegistry: registry,
+      readPage: async () => ({ title: 'Lecture', text: 'Page lue sans recopier l’adresse.' }),
     });
 
     const outcome = await tool.run(
@@ -73,6 +74,7 @@ describe('web_research', () => {
     const tool = createWebResearchTool({
       getSettings: () => parseSettings({ searchProvider: 'fake' }),
       searchRegistry: registry,
+      readPage: async () => ({ title: 'Lecture', text: 'Page lue sans recopier l’adresse.' }),
     });
     const outcome = await tool.run(
       { queries: ['rien', 'toujours rien'], limitPerQuery: 3 },

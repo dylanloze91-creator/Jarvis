@@ -1,3 +1,4 @@
+import { redactSecrets, redactValue } from '../security/redact.js';
 import { randomId } from '../types.js';
 import type { ToolCallOutcome } from '../types.js';
 import type { AuditEntry, AuditLogStore } from './types.js';
@@ -16,11 +17,15 @@ export function buildAuditEntry(outcome: ToolCallOutcome): AuditEntry {
     timestamp: Date.now(),
     toolName: outcome.name,
     category: outcome.category,
-    arguments: outcome.arguments,
+    arguments: redactValue(outcome.arguments) as Record<string, unknown>,
     decision: outcome.decision,
     status: outcome.status,
-    resultSummary: truncate(outcome.content, SUMMARY_MAX_LENGTH),
+    resultSummary: truncate(redactSecrets(outcome.content), SUMMARY_MAX_LENGTH),
     durationMs: outcome.durationMs,
+    outcome: outcome.outcome,
+    technicalDetail: outcome.technicalDetail
+      ? truncate(redactSecrets(outcome.technicalDetail), SUMMARY_MAX_LENGTH)
+      : undefined,
   };
 }
 

@@ -14,6 +14,9 @@ import {
 
 /** Modèle par défaut : voir `packages/core/src/providers/ollamaModels.ts` pour la justification. */
 export const OLLAMA_DEFAULT_MODEL = 'qwen2.5:3b';
+/** Recommandé dans la doc. Pas le défaut : l'appel d'outils sur 6 Go n'est pas vérifié. */
+export const OLLAMA_RECOMMENDED_MODEL = 'qwen3.5:4b';
+export const OLLAMA_FALLBACK_MODEL = 'qwen2.5:3b';
 
 /**
  * Fenêtre de contexte demandée à chaque requête, indépendamment de la valeur

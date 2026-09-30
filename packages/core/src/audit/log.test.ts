@@ -31,6 +31,20 @@ describe('buildAuditEntry', () => {
     expect(entry.timestamp).toBeGreaterThan(0);
   });
 
+  it('retire un secret des arguments et du résumé', () => {
+    const entry = buildAuditEntry(
+      outcome({
+        content: 'Authorization: Bearer BQC-spotify-token-secret-value',
+        arguments: { apiKey: 'sk-live-abcdefghijklmnopqrstuvwxyz', query: 'ok' },
+        technicalDetail: 'refresh_token=spotify-refresh-very-long-secret',
+      }),
+    );
+    expect(JSON.stringify(entry)).not.toContain('BQC-spotify-token-secret-value');
+    expect(JSON.stringify(entry)).not.toContain('sk-live-abcdefghijklmnopqrstuvwxyz');
+    expect(JSON.stringify(entry)).not.toContain('spotify-refresh-very-long-secret');
+    expect(entry.arguments).toMatchObject({ apiKey: '[REDACTED]', query: 'ok' });
+  });
+
   it('tronque un résultat trop long en une seule ligne', () => {
     const long = 'x'.repeat(1000);
     const entry = buildAuditEntry(outcome({ content: long }));

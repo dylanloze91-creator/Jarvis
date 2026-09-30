@@ -1,5 +1,6 @@
 import {
   commandAfterWakeWord,
+  debugLog,
   splitWakeWordWindow,
   type Settings,
   type SpeechToTextProvider,
@@ -14,11 +15,18 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   computeRms,
   listMicrophones,
+  describeMicrophoneError,
   startAudioCapture,
   type AudioCaptureHandle,
 } from './audioCapture';
 import { createSttRegistry, createTtsRegistry, createWakeWordEngine } from './registries';
 import { describeWhisperProgress, getWhisperPipeline, subscribeWhisperProgress } from './whisper/pipelineLoader';
+
+function microphoneMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message.trim() : String(error ?? '').trim();
+  if (/micro|Microphone|indisponible|Branche|déconnecté|périphérique/i.test(message)) return message;
+  return describeMicrophoneError(error);
+}
 
 export type VoiceState = 'idle' | 'sleeping' | 'listening' | 'speaking' | 'error';
 
@@ -302,7 +310,33 @@ export function useVoice({
         startWakeWordEngine();
       } catch (error) {
         if (cancelled) return;
-        setMicError(error instanceof Error ? error.message : String(error));
+        const french = microphoneMessage(error);
+        debugLog(settings.debugLogging, 'voice', french);
+        if (settings.voice.microphoneId) {
+          try {
+            const handle = await startAudioCapture(undefined, {
+              onFrame: handleFrame,
+              onError: (message) => setMicError(message),
+            });
+            if (cancelled) {
+              handle.stop();
+              return;
+            }
+            captureRef.current = handle;
+            setMicError('Le micro choisi est déconnecté. Reprise sur le micro par défaut.');
+            setVoiceState('sleeping');
+            startWakeWordEngine();
+            return;
+          } catch (retryError) {
+            if (cancelled) return;
+            const retryMessage = microphoneMessage(retryError);
+            debugLog(settings.debugLogging, 'voice', retryMessage);
+            setMicError(retryMessage);
+            setVoiceState('error');
+            return;
+          }
+        }
+        setMicError(french);
         setVoiceState('error');
       }
     })();
