@@ -142,7 +142,59 @@ describe('commandAfterWakeWord', () => {
     expect(commandAfterWakeWord('M-', cfg)).toBe('');
     expect(commandAfterWakeWord('Je vous invite à vous dire que vous avez une question qui', cfg)).toBe('');
     expect(commandAfterWakeWord('Jarvis, je vous invite à vous dire que vous avez une question qui', cfg)).toBe('');
-    expect(commandAfterWakeWord('Jarvis, quelle heure est-il ?', cfg)).toBe('quelle heure est-il ?');
+    expect(commandAfterWakeWord('Jarvis, quelle heure est-il ?', cfg)).toBe('quelle heure est-il');
+  });
+
+  it('réveille sur un Jarvis nu, y compris les graphies françaises du GoXLR', () => {
+    const spellings = [
+      'Jarvis',
+      'JARVIS',
+      "J'invise",
+      'J’invise',
+      "J'INVISE",
+      "J'ai un vis",
+      "J'AI UN VIS",
+      'j ai un vis',
+      "J'en vis",
+      'J’en vis',
+      'jenvis',
+    ];
+    for (const spelling of spellings) {
+      expect(matchesWakeWord(spelling, cfg)).toBe(true);
+      expect(matchesWakeWord(`${spelling}?`, cfg)).toBe(true);
+      expect(commandAfterWakeWord(spelling, cfg)).toBe('');
+      expect(commandAfterWakeWord(`${spelling}?`, cfg)).toBe('');
+    }
+    expect(matchesWakeWord('hey', cfg)).toBe(false);
+    expect(matchesWakeWord("j'envisage de partir", cfg)).toBe(false);
+  });
+
+  it('« Jarvis, quelle heure est-il ? » et les mêmes graphies donnent la commande', () => {
+    for (const spoken of [
+      'Jarvis, quelle heure est-il ?',
+      "J'invise, quelle heure est-il ?",
+      "J'invise quelle heure est-il ?",
+      "J'ai un vis, quelle heure est-il ?",
+      "J'en vis quelle heure est-il ?",
+      "j'EN VIS, quelle heure est-il ?",
+      'JARVIS, quelle heure est-il ?',
+    ]) {
+      expect(commandAfterWakeWord(spoken, cfg)).toBe('quelle heure est-il');
+    }
+  });
+
+  it('ne confirme pas une hallucination de silence et n’envoie pas « ... »', () => {
+    expect(isWhisperHallucination('...')).toBe(true);
+    expect(isWhisperHallucination('…')).toBe(true);
+    expect(isWhisperHallucination('. . .')).toBe(true);
+    expect(matchesWakeWord('...', cfg)).toBe(false);
+    expect(matchesWakeWord('…', cfg)).toBe(false);
+    expect(commandAfterWakeWord('...', cfg)).toBe('');
+    expect(commandAfterWakeWord('…', cfg)).toBe('');
+    expect(commandAfterWakeWord('Jarvis ...', cfg)).toBe('');
+    expect(commandAfterWakeWord("J'invise …", cfg)).toBe('');
+    expect(commandAfterWakeWord('Jarvis, ...', cfg)).toBe('');
+    expect(commandAfterWakeWord('Jarvis, quelle heure est-il ? ...', cfg)).toBe('quelle heure est-il');
   });
 });
 

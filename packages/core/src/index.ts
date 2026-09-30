@@ -275,6 +275,7 @@ export {
   isLoopbackOrMixInput,
   loopbackInputMessage,
   microphoneOptionLabel,
+  windowsDefaultInput,
   type AudioInputOption,
   type MicrophoneChoice,
 } from './speech/audioInput.js';

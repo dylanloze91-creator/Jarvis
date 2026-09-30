@@ -1,8 +1,8 @@
 /**
- * Choix du micro. Windows expose aussi des mixages de sortie (GoXLR
+ * Choix de l'entrée audio. Windows expose aussi des mixages (GoXLR
  * « Broadcast Stream Mix », « Mixage stéréo », « Stereo Mix »…) comme des
- * entrées. Ce ne sont pas des micros : y écouter mélange la musique et le
- * bureau, souvent déjà saturés.
+ * entrées. C'est souvent l'entrée déjà utilisée par les autres applications :
+ * un choix enregistré, ou le défaut Windows, est ouvert tel quel.
  */
 
 export interface AudioInputOption {
@@ -13,11 +13,11 @@ export interface AudioInputOption {
 export interface MicrophoneChoice {
   deviceId: string;
   label: string;
-  /** Vrai seulement s'il n'existe aucun vrai micro : l'entrée retenue est un mixage. */
+  /** Vrai si l'entrée retenue est un mixage. Cela n'empêche pas de l'ouvrir. */
   loopback: boolean;
 }
 
-/** Mixage / loopback, pas une capsule. Les libellés vides ne sont pas classés. */
+/** Mixage / loopback. Les libellés vides ne sont pas classés. */
 export function isLoopbackOrMixInput(label: string): boolean {
   const normalized = label
     .normalize('NFD')
@@ -36,37 +36,47 @@ export function isLoopbackOrMixInput(label: string): boolean {
   );
 }
 
-/**
- * Micro à ouvrir. Un identifiant enregistré qui pointe encore un vrai micro
- * est conservé. Un mixage enregistré ou le défaut Windows est écarté dès
- * qu'un autre micro existe.
- */
-export function chooseMicrophone(inputs: AudioInputOption[], savedId: string): MicrophoneChoice | null {
-  const real = inputs.filter((input) => input.deviceId && !isLoopbackOrMixInput(input.label));
-  const saved = inputs.find((input) => input.deviceId === savedId);
-  if (saved && !isLoopbackOrMixInput(saved.label)) {
-    return { deviceId: saved.deviceId, label: saved.label, loopback: false };
-  }
-  const preferred = real[0];
-  if (preferred) return { deviceId: preferred.deviceId, label: preferred.label, loopback: false };
-  const fallback = saved ?? inputs.find((input) => input.deviceId);
-  if (!fallback) return null;
+function toChoice(input: AudioInputOption): MicrophoneChoice {
   return {
-    deviceId: fallback.deviceId,
-    label: fallback.label,
-    loopback: isLoopbackOrMixInput(fallback.label),
+    deviceId: input.deviceId,
+    label: input.label,
+    loopback: isLoopbackOrMixInput(input.label),
   };
 }
 
-export function microphoneOptionLabel(label: string, loopback: boolean): string {
-  const name = label.trim() || 'Microphone sans nom';
-  return loopback ? `${name} — mixage, pas un micro` : name;
+/**
+ * Entrée par défaut de Windows : l'identifiant `default` de Chromium, sinon
+ * la première entrée listée. Un mixage n'est pas sauté.
+ */
+export function windowsDefaultInput(inputs: AudioInputOption[]): AudioInputOption | null {
+  const listed = inputs.filter((input) => input.deviceId);
+  const marked = listed.find((input) => input.deviceId === 'default');
+  if (marked) return marked;
+  return listed.find((input) => input.deviceId !== 'communications') ?? listed[0] ?? null;
+}
+
+/**
+ * Entrée à ouvrir. Un identifiant enregistré qui existe encore est conservé,
+ * mixage compris. Sans choix (ou si l'identifiant a disparu), c'est le défaut
+ * Windows — le même périphérique que les autres applications.
+ */
+export function chooseMicrophone(inputs: AudioInputOption[], savedId: string): MicrophoneChoice | null {
+  const listed = inputs.filter((input) => input.deviceId);
+  if (listed.length === 0) return null;
+  const saved = savedId ? listed.find((input) => input.deviceId === savedId) : undefined;
+  if (saved) return toChoice(saved);
+  const fallback = windowsDefaultInput(listed);
+  return fallback ? toChoice(fallback) : null;
+}
+
+export function microphoneOptionLabel(label: string, _loopback = false): string {
+  return label.trim() || 'Microphone sans nom';
 }
 
 export function loopbackInputMessage(label: string): string {
   const name = label.trim();
   const who = name ? `« ${name} »` : 'Ce périphérique';
-  return `${who} est un mixage de la sortie (musique et bureau compris), pas un microphone. Choisis un vrai micro dans la liste.`;
+  return `${who} est un mixage de la sortie. Jarvis l'utilise s'il est choisi ou s'il est l'entrée par défaut de Windows.`;
 }
 
 export class LoopbackInputError extends Error {

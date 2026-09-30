@@ -28,4 +28,12 @@ describe('atténuation quand la crête atteint le plein échelle', () => {
     expect(Math.abs(scaled[0]!)).toBeLessThan(32767);
     expect(scaled[1]).toBeCloseTo(((-0.5 * ATTENUATED_PEAK) / 1.001) * 32767, 0);
   });
+
+  it('porte un signal dans [-1, 1) à l’échelle int16, pas des flottants unitaires', () => {
+    const scaled = scaleOpenWakeWordPcm(new Float32Array([0.5, -0.25, 0]));
+    expect(scaled[0]).toBeCloseTo(0.5 * 32767, 0);
+    expect(scaled[1]).toBeCloseTo(-0.25 * 32767, 0);
+    expect(scaled[2]).toBe(0);
+    expect(Math.abs(scaled[0]!)).toBeGreaterThan(1000);
+  });
 });

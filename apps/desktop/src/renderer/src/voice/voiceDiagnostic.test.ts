@@ -75,7 +75,7 @@ describe('Tester la voix', () => {
     const result = await runVoiceDiagnostic(deps(), (steps) => updates.push(steps.map((s) => s.status)));
     expect(result.firstFailure).toBeNull();
     expect(result.steps.map((step) => step.status)).toEqual(['ok', 'ok', 'ok', 'ok', 'ok', 'ok', 'ok', 'ok']);
-    expect(result.analysis).toMatchObject({ detected: true, command: 'quelle heure est-il ?' });
+    expect(result.analysis).toMatchObject({ detected: true, command: 'quelle heure est-il' });
     expect(updates.length).toBeGreaterThan(8);
     const report = formatDiagnosticReport(result);
     expect(report).toMatch(/Jarvis 0\.4\.10 · win32 x64 · Electron 44\.4\.5/);

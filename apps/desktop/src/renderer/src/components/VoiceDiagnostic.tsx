@@ -1,9 +1,4 @@
-import {
-  chooseMicrophone,
-  isLoopbackOrMixInput,
-  microphoneOptionLabel,
-  type VoiceSettings,
-} from '@jarvis/core';
+import { chooseMicrophone, microphoneOptionLabel, type VoiceSettings } from '@jarvis/core';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -58,8 +53,6 @@ export function VoiceDiagnostic({
   const [fileError, setFileError] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement | null>(null);
   const runId = useRef(0);
-  const onPick = useRef(onMicrophoneChange);
-  onPick.current = onMicrophoneChange;
   const deviceIdRef = useRef(voice.microphoneId);
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
   const [pickedId, setPickedId] = useState(voice.microphoneId);
@@ -74,10 +67,9 @@ export function VoiceDiagnostic({
           list.map((device) => ({ deviceId: device.deviceId, label: device.label })),
           voice.microphoneId,
         );
-        if (!choice || choice.loopback) return;
+        if (!choice) return;
         setPickedId(choice.deviceId);
         deviceIdRef.current = choice.deviceId;
-        if (choice.deviceId !== voice.microphoneId) onPick.current?.(choice.deviceId);
       })
       .catch(() => {
         if (!cancelled) setDevices([]);
@@ -89,7 +81,6 @@ export function VoiceDiagnostic({
 
   const listenLocked = steps.some((step) => step.id === 'microphone' && step.status !== 'pending');
   const picked = devices.find((device) => device.deviceId === pickedId);
-  const mixPresent = devices.some((device) => isLoopbackOrMixInput(device.label));
 
   const start = async (): Promise<void> => {
     const id = runId.current + 1;
@@ -176,22 +167,18 @@ export function VoiceDiagnostic({
             onMicrophoneChange?.(id);
           }}
         >
-          {pickedId === '' ? <option value="">Micro proposé automatiquement</option> : null}
-          {devices.map((device) => {
-            const loopback = isLoopbackOrMixInput(device.label);
-            return (
-              <option key={device.deviceId} value={device.deviceId} disabled={loopback}>
-                {microphoneOptionLabel(device.label, loopback)}
-              </option>
-            );
-          })}
+          {pickedId === '' ? <option value="">Périphérique par défaut de Windows</option> : null}
+          {devices.map((device) => (
+            <option key={device.deviceId} value={device.deviceId}>
+              {microphoneOptionLabel(device.label)}
+              {device.deviceId === pickedId ? ' — en cours' : ''}
+            </option>
+          ))}
         </Select>
         <p className="text-xs leading-snug text-slate-500">
-          {mixPresent
-            ? `Les mixages (Broadcast Stream Mix, mixage stéréo, Stereo Mix…) sont écartés. L’écoute prendra ${picked && !isLoopbackOrMixInput(picked.label) ? `« ${picked.label} »` : 'le premier vrai micro'}.`
-            : picked
-              ? `L’étape d’écoute ouvrira « ${picked.label || 'ce micro'} ». Tu peux en choisir un autre avant.`
-              : 'Choisis le micro avant l’étape d’écoute. Le choix est mémorisé avec les réglages.'}
+          {picked
+            ? `L’étape d’écoute ouvrira « ${picked.label.trim() || 'ce périphérique'} ». Un mixage (Broadcast Stream Mix, Stereo Mix, mixage stéréo) est conservé s’il est choisi ou s’il est l’entrée par défaut de Windows.`
+            : 'Choisis le périphérique avant l’étape d’écoute. Le choix est mémorisé avec les réglages.'}
         </p>
       </div>
 

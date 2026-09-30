@@ -1,6 +1,5 @@
 import {
   WHISPER_MODEL_REPO,
-  isLoopbackOrMixInput,
   microphoneOptionLabel,
   openWakeWordSensitivityToThreshold,
 } from '@jarvis/core';
@@ -353,14 +352,11 @@ export function VoiceSettingsSection({
           onChange={(event) => onChange({ microphoneId: event.target.value })}
         >
           <option value="">Périphérique par défaut</option>
-          {microphones.map((mic) => {
-            const loopback = isLoopbackOrMixInput(mic.label);
-            return (
-              <option key={mic.deviceId} value={mic.deviceId} disabled={loopback}>
-                {microphoneOptionLabel(mic.label, loopback)}
-              </option>
-            );
-          })}
+          {microphones.map((mic) => (
+            <option key={mic.deviceId} value={mic.deviceId}>
+              {microphoneOptionLabel(mic.label)}
+            </option>
+          ))}
         </Select>
       </Field>
 

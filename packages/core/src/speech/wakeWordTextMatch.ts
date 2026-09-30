@@ -34,9 +34,20 @@ const WHITESPACE_REGEX = /\s+/g;
 const WHISPER_HALLUCINATION =
   /^(?:you|thank you|thanks for watching\b.*|please subscribe\b.*|sous titres\b.*|sous titrage\b.*|merci d avoir regarde\b.*|je vous invite a vous\b.*|m)$|amara org/;
 
+/**
+ * Queue silencieuse : Whisper renvoie « ... » ou « … » quand le clip se
+ * termine par du silence. Ce n'est pas une parole.
+ */
+function isEllipsisOnly(text: string): boolean {
+  return /^(?:[\s.…]|\u2026)+$/u.test(text);
+}
+
 export function isWhisperHallucination(text: string): boolean {
-  const normalized = normalizeForWakeWordMatch(text);
-  if (!normalized) return false;
+  const trimmed = text.trim();
+  if (!trimmed) return false;
+  if (isEllipsisOnly(trimmed)) return true;
+  const normalized = normalizeForWakeWordMatch(trimmed);
+  if (!normalized) return true;
   return WHISPER_HALLUCINATION.test(normalized);
 }
 
@@ -81,6 +92,33 @@ export function levenshteinDistance(a: string, b: string): number {
  * l'appelant (réglages utilisateur), pour rester extensible sans toucher au
  * code.
  */
+/**
+ * Graphies de « Jarvis » observées sur la prise GoXLR
+ * (« Jarvis, quelle heure est-il ? », sans « hey »). Whisper français
+ * réécrit le prénom : « J'invise », « J'ai un vis », « J'en vis », avec ou
+ * sans point d'interrogation. La casse et l'apostrophe disparaissent à la
+ * normalisation. Ce sont des suites de mots entiers, pas un préfixe :
+ * « j'envisage » ne doit pas compter.
+ */
+const JARVIS_WORD_SEQUENCES: readonly (readonly string[])[] = [
+  ['j', 'invise'],
+  ['jinvise'],
+  ['j', 'ai', 'un', 'vis'],
+  ['jai', 'un', 'vis'],
+  ['j', 'en', 'vis'],
+  ['jen', 'vis'],
+  ['jenvis'],
+  ['jaiunvis'],
+];
+
+function containsWordSequence(words: readonly string[], phrase: readonly string[]): boolean {
+  if (phrase.length === 0 || phrase.length > words.length) return false;
+  for (let start = 0; start <= words.length - phrase.length; start += 1) {
+    if (phrase.every((part, index) => words[start + index] === part)) return true;
+  }
+  return false;
+}
+
 const BUILT_IN_VARIANTS: Readonly<Record<string, readonly string[]>> = {
   // "javice" : observé sur un enregistrement réel (voir test-fixtures/), à distance 3 de
   // "jarvis" — trop loin pour la tolérance floue par défaut, ajouté explicitement ici.
@@ -153,6 +191,11 @@ export function matchesWakeWord(transcript: string, config: WakeWordTextMatchCon
   const canonical = normalizeForWakeWordMatch(config.word);
   const userVariants = (config.variants ?? []).map(normalizeForWakeWordMatch).filter(Boolean);
 
+  const words = normalizedTranscript.split(' ');
+  if (canonical === 'jarvis' && JARVIS_WORD_SEQUENCES.some((phrase) => containsWordSequence(words, phrase))) {
+    return true;
+  }
+
   const exactCandidates = Array.from(
     new Set([...defaultWakeWordVariants(config.word), ...userVariants]),
   );
@@ -221,6 +264,32 @@ function leadingStripMaxDistance(wordLength: number): number {
 const MAX_LEADING_TOKENS = 3;
 
 /**
+ * Découpe d'origine (apostrophe collée) ou déjà espacée. La plus longue
+ * suite en tête gagne : « j'ai un vis » ne s'arrête pas à « j ».
+ */
+const JARVIS_LEADING_TOKENS: readonly (readonly string[])[] = [
+  ['jinvise'],
+  ['j', 'invise'],
+  ['jai', 'un', 'vis'],
+  ['j', 'ai', 'un', 'vis'],
+  ['jaiunvis'],
+  ['jen', 'vis'],
+  ['j', 'en', 'vis'],
+  ['jenvis'],
+];
+
+function leadingJarvisTokenCount(tokens: Token[], canonical: string): number {
+  if (canonical !== 'jarvis') return 0;
+  const tights = tokens.map((token) => tightNormalize(token.text));
+  let best = 0;
+  for (const phrase of JARVIS_LEADING_TOKENS) {
+    if (phrase.length > tights.length || phrase.length <= best) continue;
+    if (phrase.every((part, index) => tights[index] === part)) best = phrase.length;
+  }
+  return best;
+}
+
+/**
  * Retire le mot de réveil en tête d'un texte transcrit, avec sa ponctuation
  * immédiatement collée (« Jarvis, » → rien), pour ne transmettre que la
  * commande qui suit à l'agent. Utilisé quand la transcription porte sur
@@ -241,10 +310,18 @@ const MAX_LEADING_TOKENS = 3;
  * pour un « Jarvis ? » traînant) et qu'il ne reste qu'un seul mot, ce mot
  * est le mot de réveil lui-même : une vraie commande en donne au moins deux.
  */
+/** Retire une queue « ... » / « … » laissée par le silence après la phrase. */
+function withoutSilenceTail(text: string): string {
+  return text
+    .replace(/(?:\s*(?:\.{2,}|…)+)+\s*$/u, '')
+    .replace(/\s+\?$/u, '')
+    .trim();
+}
+
 export function commandAfterWakeWord(transcript: string, config: WakeWordTextMatchConfig): string {
   const trimmed = transcript.trim();
   if (isWhisperHallucination(trimmed)) return '';
-  const command = stripLeadingWakeWord(trimmed, config);
+  const command = withoutSilenceTail(stripLeadingWakeWord(trimmed, config));
   if (!command || isWhisperHallucination(command)) return '';
   if (command === trimmed && tokenizeByWhitespace(trimmed).length <= 1) return '';
   return command;
@@ -266,6 +343,15 @@ function stripOneLeadingWakeWord(transcript: string, config: WakeWordTextMatchCo
   if (tokens.length === 0) return transcript.trim();
 
   const canonical = normalizeForWakeWordMatch(config.word);
+  const phraseTokens = leadingJarvisTokenCount(tokens, canonical);
+  if (phraseTokens > 0) {
+    const cutAt = tokens[phraseTokens - 1]!.end;
+    return transcript
+      .slice(cutAt)
+      .replace(/^[\s,;:.!?…"'«»-]+/u, '')
+      .trim();
+  }
+
   const exactCandidates = Array.from(
     new Set([
       ...defaultWakeWordVariants(config.word),

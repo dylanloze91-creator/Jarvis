@@ -20,12 +20,16 @@ describe('classification mixage / loopback', () => {
     expect(isLoopbackOrMixInput('')).toBe(false);
   });
 
-  it('ignore le mixage et retient le micro déjà choisi', () => {
-    expect(chooseMicrophone(GOXLR, '').deviceId).toBe('chat');
+  it('garde le mixage par défaut et un choix explicite du mixage', () => {
+    expect(chooseMicrophone(GOXLR, '')).toEqual({
+      deviceId: 'mix',
+      label: 'Broadcast Stream Mix (TC-HELICON GoXLR Mini)',
+      loopback: true,
+    });
     expect(chooseMicrophone(GOXLR, 'mix')).toEqual({
-      deviceId: 'chat',
-      label: 'Chat Mic (TC-HELICON GoXLR Mini)',
-      loopback: false,
+      deviceId: 'mix',
+      label: 'Broadcast Stream Mix (TC-HELICON GoXLR Mini)',
+      loopback: true,
     });
     expect(chooseMicrophone(GOXLR, 'usb')).toEqual({
       deviceId: 'usb',
@@ -34,12 +38,24 @@ describe('classification mixage / loopback', () => {
     });
   });
 
-  it('signale le mixage quand c’est la seule entrée', () => {
-    expect(chooseMicrophone([{ deviceId: 'mix', label: 'Stereo Mix' }], 'mix')).toEqual({
-      deviceId: 'mix',
-      label: 'Stereo Mix',
+  it('garde Stereo Mix quand c’est l’entrée par défaut, même si un micro existe', () => {
+    const inputs = [
+      { deviceId: 'default', label: 'Default - Stereo Mix (Realtek High Definition Audio)' },
+      { deviceId: 'mic', label: 'Microphone (Realtek)' },
+      { deviceId: 'stereo', label: 'Stereo Mix (Realtek High Definition Audio)' },
+    ];
+    expect(chooseMicrophone(inputs, '').deviceId).toBe('default');
+    expect(chooseMicrophone(inputs, 'stereo')).toEqual({
+      deviceId: 'stereo',
+      label: 'Stereo Mix (Realtek High Definition Audio)',
       loopback: true,
     });
-    expect(microphoneOptionLabel('Stereo Mix', true)).toBe('Stereo Mix — mixage, pas un micro');
+  });
+
+  it('retombe sur le défaut Windows si l’identifiant enregistré a disparu', () => {
+    expect(chooseMicrophone(GOXLR, 'parti').deviceId).toBe('mix');
+    expect(microphoneOptionLabel('Broadcast Stream Mix (TC-HELICON GoXLR Mini)', true)).toBe(
+      'Broadcast Stream Mix (TC-HELICON GoXLR Mini)',
+    );
   });
 });

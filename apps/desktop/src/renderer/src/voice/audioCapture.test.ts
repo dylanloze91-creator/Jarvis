@@ -34,8 +34,8 @@ describe('ouverture du micro', () => {
     expect(getUserMedia).toHaveBeenCalledTimes(1);
   });
 
-  it('ouvre le micro, pas Broadcast Stream Mix', async () => {
-    const stream = { id: 'chat' };
+  it('garde le mixage par défaut au lieu d’un autre micro', async () => {
+    const stream = { id: 'mix' };
     const getUserMedia = vi.fn().mockResolvedValue(stream);
     vi.stubGlobal('navigator', {
       mediaDevices: {
@@ -49,11 +49,11 @@ describe('ouverture du micro', () => {
 
     await expect(openMicrophone(undefined)).resolves.toBe(stream);
     expect(getUserMedia).toHaveBeenCalledWith({
-      audio: { deviceId: { exact: 'chat' }, channelCount: { ideal: 1 } },
+      audio: { deviceId: { exact: 'mix' }, channelCount: { ideal: 1 } },
     });
   });
 
-  it('garde le micro déjà choisi et refuse un mixage seul', async () => {
+  it('garde un choix explicite du mixage, et le micro déjà choisi', async () => {
     const stream = { id: 'usb' };
     const getUserMedia = vi.fn().mockResolvedValue(stream);
     const devices = [
@@ -68,13 +68,45 @@ describe('ouverture du micro', () => {
       audio: { deviceId: { exact: 'usb' }, channelCount: { ideal: 1 } },
     });
 
+    await openMicrophone('mix');
+    expect(getUserMedia).toHaveBeenLastCalledWith({
+      audio: { deviceId: { exact: 'mix' }, channelCount: { ideal: 1 } },
+    });
+
     vi.stubGlobal('navigator', {
       mediaDevices: {
         getUserMedia,
-        enumerateDevices: async () => [input('mix', 'What U Hear')],
+        enumerateDevices: async () => [
+          input('mix', 'Broadcast Stream Mix (TC-HELICON GoXLR Mini)'),
+          input('chat', 'Chat Mic (TC-HELICON GoXLR Mini)'),
+        ],
       },
     });
-    await expect(openMicrophone('mix')).rejects.toThrow(/mixage de la sortie/);
+    await expect(openMicrophone('mix')).resolves.toBe(stream);
+    expect(getUserMedia).toHaveBeenLastCalledWith({
+      audio: { deviceId: { exact: 'mix' }, channelCount: { ideal: 1 } },
+    });
+  });
+
+  it('ne remplace pas un mixage introuvable par un autre micro', async () => {
+    const fallback = { id: 'défaut' };
+    const getUserMedia = vi
+      .fn()
+      .mockRejectedValueOnce(domError('NotFoundError'))
+      .mockResolvedValueOnce(fallback);
+    vi.stubGlobal('navigator', {
+      mediaDevices: {
+        getUserMedia,
+        enumerateDevices: async () => [
+          input('mix', 'Broadcast Stream Mix (TC-HELICON GoXLR Mini)'),
+          input('chat', 'Chat Mic (TC-HELICON GoXLR Mini)'),
+        ],
+      },
+    });
+
+    await expect(openMicrophone('mix')).resolves.toBe(fallback);
+    expect(getUserMedia.mock.calls[1]?.[0]).toEqual({ audio: true });
+    expect(JSON.stringify(getUserMedia.mock.calls)).not.toContain('chat');
   });
 
   it('explique les erreurs en français, jamais une ligne vide', () => {

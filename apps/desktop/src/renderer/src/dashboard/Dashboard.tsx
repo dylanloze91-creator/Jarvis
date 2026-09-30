@@ -194,7 +194,7 @@ export function Dashboard({
           devices.map((device) => ({ deviceId: device.deviceId, label: device.label })),
           wanted,
         );
-        const label = choice && !choice.loopback ? choice.label.trim() : '';
+        const label = choice?.label.trim() ?? '';
         setMicLabel(label.length > 0 ? label : null);
         setMicResolved(true);
       })

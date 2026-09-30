@@ -5,13 +5,7 @@
  * niveau sonore) ; la détection du mot de réveil et la transcription sont
  * des couches séparées qui consomment ces trames.
  */
-import {
-  LoopbackInputError,
-  chooseMicrophone,
-  isLoopbackOrMixInput,
-  resampleLinear,
-  type AudioInputOption,
-} from '@jarvis/core';
+import { chooseMicrophone, resampleLinear, type AudioInputOption } from '@jarvis/core';
 
 export { computeRms } from '@jarvis/core';
 
@@ -31,7 +25,7 @@ export interface AudioCaptureHandlers {
 
 export interface AudioCaptureHandle {
   stop: () => void;
-  /** Périphérique réellement ouvert (après rejet des mixages). */
+  /** Périphérique réellement ouvert. */
   deviceId: string;
   label: string;
 }
@@ -192,26 +186,24 @@ export async function prepareMicrophoneList(): Promise<MediaDeviceInfo[]> {
 }
 
 /**
- * Ouvre un vrai micro. Un mixage (Broadcast Stream Mix, Stereo Mix, …) est
- * refusé dès qu'une autre entrée existe. Sans liste (tests, permission pas
- * encore lisible), on garde l'ancien repli : l'identifiant demandé, puis le
- * défaut du système.
+ * Ouvre l'entrée demandée, mixage compris. Sans identifiant, c'est le défaut
+ * Windows (même périphérique que les autres applications). Sans liste
+ * (tests, permission pas encore lisible) : l'identifiant demandé, puis le
+ * défaut du système. Un périphérique disparu ne bascule pas vers un autre
+ * micro de la liste.
  */
 export async function openMicrophone(deviceId: string | undefined): Promise<MediaStream> {
   const inputs = await listedInputs();
   if (inputs.length === 0) return openExactOrDefault(deviceId);
   const choice = chooseMicrophone(inputs, deviceId ?? '');
-  if (!choice || choice.loopback) throw new LoopbackInputError(choice?.label ?? '');
+  if (!choice) return openExactOrDefault(deviceId);
   try {
     return await requestInput(choice.deviceId);
   } catch (error) {
     const name = (error as { name?: string } | null)?.name;
     if (name !== 'OverconstrainedError' && name !== 'NotFoundError') throw error;
-    const alternate = inputs.find(
-      (input) => input.deviceId !== choice.deviceId && !isLoopbackOrMixInput(input.label),
-    );
-    if (!alternate) throw error;
-    return requestInput(alternate.deviceId);
+    if (!deviceId || choice.deviceId === 'default') throw error;
+    return navigator.mediaDevices.getUserMedia({ audio: true });
   }
 }
 
@@ -229,10 +221,6 @@ async function openExactOrDefault(deviceId: string | undefined): Promise<MediaSt
 /** Messages de `getUserMedia` en français (Chromium les donne en anglais, parfois vides). */
 export function describeMicrophoneError(error: unknown): string {
   const name = (error as { name?: string } | null)?.name;
-  if (name === 'LoopbackInputError') {
-    const message = error instanceof Error ? error.message.trim() : '';
-    return message || 'Ce périphérique est un mixage, pas un microphone. Choisis un vrai micro dans la liste.';
-  }
   switch (name) {
     case 'NotFoundError':
     case 'OverconstrainedError':

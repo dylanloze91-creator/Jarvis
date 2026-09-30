@@ -70,6 +70,29 @@ describe('confirmWakeWordCandidate', () => {
     expect(french).not.toHaveBeenCalled();
   });
 
+  it('confirme un Jarvis nu sans « hey », même réécrit en français', async () => {
+    for (const french of ["Jarvis?", "J'invise", "J'ai un vis", "J'en vis?", "j’invise"]) {
+      const result = await confirmWakeWordCandidate(
+        { pcm: new Float32Array([0.2]), sampleRate: 16000 },
+        vi.fn().mockResolvedValue('I envy'),
+        { word: 'jarvis' },
+        vi.fn().mockResolvedValue(french),
+      );
+      expect(result.confirmed).toBe(true);
+    }
+  });
+
+  it('ne confirme pas une queue de silence (« ... »)', async () => {
+    const result = await confirmWakeWordCandidate(
+      { pcm: new Float32Array([0.2]), sampleRate: 16000 },
+      vi.fn().mockResolvedValue('...'),
+      { word: 'jarvis' },
+      vi.fn().mockResolvedValue('…'),
+    );
+    expect(result.confirmed).toBe(false);
+    expect(result.transcript).toBe('... / …');
+  });
+
   it('ne confirme pas une hallucination (« you » / « Je vous invite à vous dire… »)', async () => {
     const result = await confirmWakeWordCandidate(
       { pcm: new Float32Array([0.2]), sampleRate: 16000 },
