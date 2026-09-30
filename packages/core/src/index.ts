@@ -207,6 +207,7 @@ export { OpenAISttProvider, openAISttDescriptor } from './speech/openai-stt.js';
 export { OpenAITtsProvider, openAITtsDescriptor, OPENAI_TTS_VOICES } from './speech/openai-tts.js';
 export { concatFloat32, encodeWav, decodeWav, type DecodedWav } from './speech/wav.js';
 export {
+  isWhisperHallucination,
   normalizeForWakeWordMatch,
   levenshteinDistance,
   defaultWakeWordVariants,
@@ -255,11 +256,28 @@ export {
 export {
   OPENWAKEWORD_FRAME_SIZE,
   OPENWAKEWORD_SAMPLE_RATE,
+  OPENWAKEWORD_INT16_SCALE,
   openWakeWordSensitivityToThreshold,
   describeOpenWakeWordLoadError,
   resampleLinear,
+  scaleOpenWakeWordPcm,
   takeFixedFrames,
 } from './speech/openWakeWord.js';
+export {
+  ATTENUATED_PEAK,
+  FULL_SCALE_PEAK,
+  attenuateClipping,
+  type AttenuatedPcm,
+} from './speech/voiceGain.js';
+export {
+  LoopbackInputError,
+  chooseMicrophone,
+  isLoopbackOrMixInput,
+  loopbackInputMessage,
+  microphoneOptionLabel,
+  type AudioInputOption,
+  type MicrophoneChoice,
+} from './speech/audioInput.js';
 export {
   CircularPcmBuffer,
   WakeTriggerGate,

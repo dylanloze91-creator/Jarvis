@@ -70,6 +70,17 @@ describe('confirmWakeWordCandidate', () => {
     expect(french).not.toHaveBeenCalled();
   });
 
+  it('ne confirme pas une hallucination (« you » / « Je vous invite à vous dire… »)', async () => {
+    const result = await confirmWakeWordCandidate(
+      { pcm: new Float32Array([0.2]), sampleRate: 16000 },
+      vi.fn().mockResolvedValue('you'),
+      { word: 'jarvis' },
+      vi.fn().mockResolvedValue('Je vous invite à vous dire que vous avez une question qui'),
+    );
+    expect(result.confirmed).toBe(false);
+    expect(result.transcript).toBe('you / Je vous invite à vous dire que vous avez une question qui');
+  });
+
   it('rejette toujours une autre phrase, même avec le second avis', async () => {
     const result = await confirmWakeWordCandidate(
       { pcm: new Float32Array([0.2]), sampleRate: 16000 },

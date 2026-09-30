@@ -1,3 +1,4 @@
+import { ATTENUATED_PEAK } from '@jarvis/core';
 import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('./onnxRuntime', () => ({ configureOnnxRuntime: vi.fn(), withOrtLock: <T>(task: () => Promise<T>) => task() }));
@@ -78,6 +79,34 @@ describe('OpenWakeWordEngine', () => {
     await vi.waitFor(() => expect(detected).toContain('jarvis'));
     expect(Math.max(...scores)).toBeCloseTo(0.92, 5);
     expect(controller.getLastAnalyzedWindow?.()?.sampleRate).toBe(16000);
+    controller.stop();
+  });
+
+  it('reçoit du 16 kHz mono (trames de 1280) et atténue une crête ≥ 1 avant l’échelle 16 bits', async () => {
+    const seen: Float32Array[] = [];
+    const engine = new OpenWakeWordEngine({ keyword: 'jarvis', sensitivity: 1 }, async () => ({
+      ort: { Tensor: FakeTensor },
+      mel: {
+        inputNames: ['input'],
+        outputNames: ['output'],
+        inputMetadata: [{ shape: [1, 16, 96] }],
+        run: async (feeds: { input: { data: Float32Array } }) => {
+          seen.push(feeds.input.data);
+          return { output: { data: new Float32Array(160).fill(0) } };
+        },
+      },
+      embedding: fakeSession(() => ({ output: { data: new Float32Array(96).fill(0) } })),
+      keyword: fakeSession(() => ({ output: { data: new Float32Array([0]) } })),
+    }) as never);
+    const controller = engine.start({ onDetected: () => {}, onError: () => {} });
+    const clipped = new Float32Array(7680);
+    clipped.fill(1.2);
+    controller.pushAudio?.(clipped, 48000);
+    await controller.idle();
+    expect(seen).toHaveLength(2);
+    expect(seen[0]).toHaveLength(1280);
+    expect(seen[0]![0]).toBeCloseTo(ATTENUATED_PEAK * 32767, 0);
+    expect(Math.max(...seen[0]!)).toBeLessThan(32767);
     controller.stop();
   });
 

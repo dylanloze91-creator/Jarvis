@@ -21,7 +21,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import type { Conversation, Settings } from '@jarvis/core';
+import { chooseMicrophone, type Conversation, type Settings } from '@jarvis/core';
 import { AuditPanel } from '@/components/AuditPanel';
 import { Composer } from '@/components/Composer';
 import { ConfirmationCard } from '@/components/ConfirmationCard';
@@ -190,8 +190,11 @@ export function Dashboard({
       .then((devices) => {
         if (cancelled) return;
         const wanted = settings?.voice.microphoneId ?? '';
-        const match = wanted ? devices.find((device) => device.deviceId === wanted) : devices[0];
-        const label = match?.label?.trim() ?? '';
+        const choice = chooseMicrophone(
+          devices.map((device) => ({ deviceId: device.deviceId, label: device.label })),
+          wanted,
+        );
+        const label = choice && !choice.loopback ? choice.label.trim() : '';
         setMicLabel(label.length > 0 ? label : null);
         setMicResolved(true);
       })

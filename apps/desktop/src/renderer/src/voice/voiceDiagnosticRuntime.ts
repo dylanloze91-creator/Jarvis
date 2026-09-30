@@ -75,12 +75,15 @@ async function openMicrophoneProbe(deviceId: string | undefined): Promise<Microp
     },
     onError: () => undefined,
   });
-  try {
-    const devices = await navigator.mediaDevices.enumerateDevices();
-    const inputs = devices.filter((device) => device.kind === 'audioinput');
-    label = (inputs.find((device) => device.deviceId === deviceId) ?? inputs[0])?.label ?? '';
-  } catch {
-    label = '';
+  label = handle.label;
+  if (!label) {
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const inputs = devices.filter((device) => device.kind === 'audioinput');
+      label = inputs.find((device) => device.deviceId === (handle.deviceId || deviceId))?.label ?? '';
+    } catch {
+      label = '';
+    }
   }
   return {
     label,
@@ -107,6 +110,7 @@ async function openMicrophoneProbe(deviceId: string | undefined): Promise<Microp
 export function createVoiceDiagnosticDeps(
   voice: VoiceSettings,
   onPrompt: (message: string | null) => void,
+  deviceId: () => string | undefined = () => voice.microphoneId || undefined,
 ): VoiceDiagnosticDeps {
   return {
     assetsReport: () => window.jarvis.voice.assetsReport(),
@@ -122,7 +126,7 @@ export function createVoiceDiagnosticDeps(
         await session.release();
       });
     },
-    scoreWakeWord: (pcm) => scoreWakeWordClip(pcm),
+    scoreWakeWord: (pcm, sampleRate) => scoreWakeWordClip(pcm, sampleRate),
     loadWhisper: async () => {
       try {
         await getWhisperPipeline({ force: true });
@@ -137,7 +141,7 @@ export function createVoiceDiagnosticDeps(
         throw new Error(describeWhisperLoadError(error));
       }
     },
-    openMicrophone: () => openMicrophoneProbe(voice.microphoneId || undefined),
+    openMicrophone: () => openMicrophoneProbe(deviceId()),
     now: () => performance.now(),
     stepTimeoutMs: 45_000,
     whisperTimeoutMs: WHISPER_LOAD_TIMEOUT_MS + 10_000,

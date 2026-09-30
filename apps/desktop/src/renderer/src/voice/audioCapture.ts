@@ -5,6 +5,14 @@
  * niveau sonore) ; la détection du mot de réveil et la transcription sont
  * des couches séparées qui consomment ces trames.
  */
+import {
+  LoopbackInputError,
+  chooseMicrophone,
+  isLoopbackOrMixInput,
+  resampleLinear,
+  type AudioInputOption,
+} from '@jarvis/core';
+
 export { computeRms } from '@jarvis/core';
 
 const FRAME_SIZE = 4096;
@@ -23,6 +31,9 @@ export interface AudioCaptureHandlers {
 
 export interface AudioCaptureHandle {
   stop: () => void;
+  /** Périphérique réellement ouvert (après rejet des mixages). */
+  deviceId: string;
+  label: string;
 }
 
 export async function listMicrophones(): Promise<MediaDeviceInfo[]> {
@@ -45,19 +56,24 @@ class JarvisCapture extends AudioWorkletProcessor {
     this.offset = 0;
   }
   process(inputs) {
-    const channel = inputs[0] && inputs[0][0];
-    if (channel) {
-      let index = 0;
-      while (index < channel.length) {
-        const count = Math.min(channel.length - index, this.size - this.offset);
-        this.buffer.set(channel.subarray(index, index + count), this.offset);
-        this.offset += count;
-        index += count;
-        if (this.offset === this.size) {
-          this.port.postMessage(this.buffer, [this.buffer.buffer]);
-          this.buffer = new Float32Array(this.size);
-          this.offset = 0;
-        }
+    const channels = (inputs[0] || []).filter(Boolean);
+    const first = channels[0];
+    if (!first || !first.length) return true;
+    const count = channels.length;
+    let index = 0;
+    while (index < first.length) {
+      const n = Math.min(first.length - index, this.size - this.offset);
+      for (let i = 0; i < n; i += 1) {
+        let sum = 0;
+        for (let c = 0; c < count; c += 1) sum += channels[c][index + i] || 0;
+        this.buffer[this.offset + i] = sum / count;
+      }
+      this.offset += n;
+      index += n;
+      if (this.offset === this.size) {
+        this.port.postMessage(this.buffer, [this.buffer.buffer]);
+        this.buffer = new Float32Array(this.size);
+        this.offset = 0;
       }
     }
     return true;
@@ -99,7 +115,8 @@ export async function startAudioCapture(
   const capture = new AudioWorkletNode(context, 'jarvis-capture', {
     numberOfInputs: 1,
     numberOfOutputs: 1,
-    channelCount: 1,
+    channelCountMode: 'max',
+    channelInterpretation: 'speakers',
     processorOptions: { frameSize: FRAME_SIZE },
   });
   // Relié à la destination par un gain nul : le nœud est bien traité, et
@@ -108,7 +125,9 @@ export async function startAudioCapture(
   mute.gain.value = 0;
 
   capture.port.onmessage = (event: MessageEvent<Float32Array>) => {
-    handlers.onFrame(event.data, context.sampleRate);
+    const rate = context.sampleRate;
+    const frame = rate === TARGET_SAMPLE_RATE ? event.data : resampleLinear(event.data, rate, TARGET_SAMPLE_RATE);
+    handlers.onFrame(frame, TARGET_SAMPLE_RATE);
   };
 
   source.connect(capture);
@@ -128,14 +147,78 @@ export async function startAudioCapture(
     void context.close();
   };
 
-  return { stop };
+  const actualId = stream.getAudioTracks()[0]?.getSettings?.().deviceId ?? deviceId ?? '';
+  let label = '';
+  try {
+    const devices = await listMicrophones();
+    label = devices.find((device) => device.deviceId === actualId)?.label ?? '';
+  } catch {
+    label = '';
+  }
+
+  return { stop, deviceId: actualId, label };
 }
 
-/** Micro choisi dans les réglages puis débranché : on reprend le micro par défaut. */
+function requestInput(deviceId: string | undefined): Promise<MediaStream> {
+  if (!deviceId) return navigator.mediaDevices.getUserMedia({ audio: true });
+  return navigator.mediaDevices.getUserMedia({
+    audio: { deviceId: { exact: deviceId }, channelCount: { ideal: 1 } },
+  });
+}
+
+async function listedInputs(): Promise<AudioInputOption[]> {
+  const devices = await prepareMicrophoneList();
+  return devices.map((device) => ({ deviceId: device.deviceId, label: device.label }));
+}
+
+/**
+ * Liste les entrées. Sans autorisation les libellés sont vides et un mixage
+ * est indiscernable d'un micro : on ouvre brièvement le défaut pour les lire,
+ * puis on le referme.
+ */
+export async function prepareMicrophoneList(): Promise<MediaDeviceInfo[]> {
+  if (!navigator.mediaDevices?.enumerateDevices) return [];
+  let devices = await listMicrophones();
+  if (devices.length > 0 && devices.every((device) => !device.label) && navigator.mediaDevices.getUserMedia) {
+    try {
+      const probe = await navigator.mediaDevices.getUserMedia({ audio: true });
+      for (const track of probe.getTracks()) track.stop();
+      devices = await listMicrophones();
+    } catch {
+      // Pas d'autorisation : la liste reste sans nom.
+    }
+  }
+  return devices;
+}
+
+/**
+ * Ouvre un vrai micro. Un mixage (Broadcast Stream Mix, Stereo Mix, …) est
+ * refusé dès qu'une autre entrée existe. Sans liste (tests, permission pas
+ * encore lisible), on garde l'ancien repli : l'identifiant demandé, puis le
+ * défaut du système.
+ */
 export async function openMicrophone(deviceId: string | undefined): Promise<MediaStream> {
+  const inputs = await listedInputs();
+  if (inputs.length === 0) return openExactOrDefault(deviceId);
+  const choice = chooseMicrophone(inputs, deviceId ?? '');
+  if (!choice || choice.loopback) throw new LoopbackInputError(choice?.label ?? '');
+  try {
+    return await requestInput(choice.deviceId);
+  } catch (error) {
+    const name = (error as { name?: string } | null)?.name;
+    if (name !== 'OverconstrainedError' && name !== 'NotFoundError') throw error;
+    const alternate = inputs.find(
+      (input) => input.deviceId !== choice.deviceId && !isLoopbackOrMixInput(input.label),
+    );
+    if (!alternate) throw error;
+    return requestInput(alternate.deviceId);
+  }
+}
+
+async function openExactOrDefault(deviceId: string | undefined): Promise<MediaStream> {
   if (!deviceId) return navigator.mediaDevices.getUserMedia({ audio: true });
   try {
-    return await navigator.mediaDevices.getUserMedia({ audio: { deviceId: { exact: deviceId } } });
+    return await requestInput(deviceId);
   } catch (error) {
     const name = (error as { name?: string } | null)?.name;
     if (name !== 'OverconstrainedError' && name !== 'NotFoundError') throw error;
@@ -146,6 +229,10 @@ export async function openMicrophone(deviceId: string | undefined): Promise<Medi
 /** Messages de `getUserMedia` en français (Chromium les donne en anglais, parfois vides). */
 export function describeMicrophoneError(error: unknown): string {
   const name = (error as { name?: string } | null)?.name;
+  if (name === 'LoopbackInputError') {
+    const message = error instanceof Error ? error.message.trim() : '';
+    return message || 'Ce périphérique est un mixage, pas un microphone. Choisis un vrai micro dans la liste.';
+  }
   switch (name) {
     case 'NotFoundError':
     case 'OverconstrainedError':

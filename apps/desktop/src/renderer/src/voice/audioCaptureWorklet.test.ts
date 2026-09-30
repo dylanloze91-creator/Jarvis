@@ -29,6 +29,14 @@ describe('capture audio (AudioWorklet)', () => {
     expect(posted[2]![4095]).toBe(3 * 4096);
   });
 
+  it('moyenne tous les canaux : le mixage stéréo ne garde pas seulement la gauche', () => {
+    const { processor, posted } = loadProcessor(4);
+    const left = new Float32Array([1, 1, 1, 1]);
+    const right = new Float32Array([-1, -1, -1, -1]);
+    expect(processor.process([[left, right]])).toBe(true);
+    expect(Array.from(posted[0]!)).toEqual([0, 0, 0, 0]);
+  });
+
   it('continue sans entrée (micro coupé) sans lever', () => {
     const { processor, posted } = loadProcessor(4096);
     expect(processor.process([[]])).toBe(true);

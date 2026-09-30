@@ -216,6 +216,31 @@ describe('analyzeRecording', () => {
     expect(transcribe).not.toHaveBeenCalled();
   });
 
+  it('ne confirme pas « Jarvis » nu sur une hallucination et n’envoie pas de commande', async () => {
+    const transcribe = vi.fn(async (_pcm: Float32Array, language: string) =>
+      language === 'english' ? 'you' : 'Je vous invite à vous dire que vous avez une question qui',
+    );
+    const analysis = await analyzeRecording(
+      { pcm: speech(3, 1.2), sampleRate: 16000 },
+      {
+        ...deps(),
+        scoreWakeWord: async (pcm, sampleRate) => {
+          expect(sampleRate).toBe(16000);
+          expect(pcm.some((value) => Math.abs(value) >= 1)).toBe(true);
+          return 0;
+        },
+        transcribe,
+      },
+    );
+    expect(transcribe).toHaveBeenCalled();
+    expect(analysis.peak).toBeGreaterThanOrEqual(1);
+    expect(analysis.bareJarvisConfirmed).toBe(false);
+    expect(analysis.bareJarvisText).toMatch(/Je vous invite/);
+    expect(analysis.detected).toBe(false);
+    expect(analysis.command).toBe('');
+    expect(analysis.transcript).toBe('');
+  });
+
   it('refuse une autre phrase même si elle déclenche le gabarit d’énergie', async () => {
     const analysis = await analyzeRecording(
       { pcm: speech(3), sampleRate: 16000 },

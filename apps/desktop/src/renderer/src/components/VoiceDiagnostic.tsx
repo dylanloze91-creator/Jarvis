@@ -1,4 +1,9 @@
-import type { VoiceSettings } from '@jarvis/core';
+import {
+  chooseMicrophone,
+  isLoopbackOrMixInput,
+  microphoneOptionLabel,
+  type VoiceSettings,
+} from '@jarvis/core';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -9,9 +14,11 @@ import {
   MinusCircle,
   XCircle,
 } from 'lucide-react';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { Select } from '@/components/ui/field';
 import { cn } from '@/lib/utils';
+import { prepareMicrophoneList } from '@/voice/audioCapture';
 import {
   DIAGNOSTIC_STEPS,
   formatDiagnosticReport,
@@ -34,7 +41,13 @@ const initialSteps = (): DiagnosticStep[] =>
  * WebAssembly, openWakeWord, Whisper, micro) et affiche la première étape
  * en échec. « Copier le détail » donne le texte à renvoyer.
  */
-export function VoiceDiagnostic({ voice }: { voice: VoiceSettings }) {
+export function VoiceDiagnostic({
+  voice,
+  onMicrophoneChange,
+}: {
+  voice: VoiceSettings;
+  onMicrophoneChange?: (microphoneId: string) => void;
+}) {
   const [steps, setSteps] = useState<DiagnosticStep[]>(initialSteps);
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<VoiceDiagnosticResult | null>(null);
@@ -45,6 +58,38 @@ export function VoiceDiagnostic({ voice }: { voice: VoiceSettings }) {
   const [fileError, setFileError] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement | null>(null);
   const runId = useRef(0);
+  const onPick = useRef(onMicrophoneChange);
+  onPick.current = onMicrophoneChange;
+  const deviceIdRef = useRef(voice.microphoneId);
+  const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
+  const [pickedId, setPickedId] = useState(voice.microphoneId);
+
+  useEffect(() => {
+    let cancelled = false;
+    void prepareMicrophoneList()
+      .then((list) => {
+        if (cancelled) return;
+        setDevices(list);
+        const choice = chooseMicrophone(
+          list.map((device) => ({ deviceId: device.deviceId, label: device.label })),
+          voice.microphoneId,
+        );
+        if (!choice || choice.loopback) return;
+        setPickedId(choice.deviceId);
+        deviceIdRef.current = choice.deviceId;
+        if (choice.deviceId !== voice.microphoneId) onPick.current?.(choice.deviceId);
+      })
+      .catch(() => {
+        if (!cancelled) setDevices([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [voice.microphoneId]);
+
+  const listenLocked = steps.some((step) => step.id === 'microphone' && step.status !== 'pending');
+  const picked = devices.find((device) => device.deviceId === pickedId);
+  const mixPresent = devices.some((device) => isLoopbackOrMixInput(device.label));
 
   const start = async (): Promise<void> => {
     const id = runId.current + 1;
@@ -55,9 +100,13 @@ export function VoiceDiagnostic({ voice }: { voice: VoiceSettings }) {
     setSteps(initialSteps());
     try {
       const outcome = await runVoiceDiagnostic(
-        createVoiceDiagnosticDeps(voice, (message) => {
-          if (runId.current === id) setPrompt(message);
-        }),
+        createVoiceDiagnosticDeps(
+          voice,
+          (message) => {
+            if (runId.current === id) setPrompt(message);
+          },
+          () => deviceIdRef.current || undefined,
+        ),
         (next) => {
           if (runId.current === id) setSteps(next);
         },
@@ -110,6 +159,40 @@ export function VoiceDiagnostic({ voice }: { voice: VoiceSettings }) {
           {running ? <Loader2 className="size-3.5 animate-spin" /> : null}
           {running ? 'Test en cours…' : result ? 'Relancer' : 'Tester la voix'}
         </Button>
+      </div>
+
+      <div className="flex flex-col gap-1.5" data-testid="voice-diagnostic-device">
+        <label className="text-xs text-slate-400" htmlFor="voice-diagnostic-mic">
+          Micro utilisé pour l’écoute
+        </label>
+        <Select
+          id="voice-diagnostic-mic"
+          value={pickedId}
+          disabled={running && listenLocked}
+          onChange={(event) => {
+            const id = event.target.value;
+            setPickedId(id);
+            deviceIdRef.current = id;
+            onMicrophoneChange?.(id);
+          }}
+        >
+          {pickedId === '' ? <option value="">Micro proposé automatiquement</option> : null}
+          {devices.map((device) => {
+            const loopback = isLoopbackOrMixInput(device.label);
+            return (
+              <option key={device.deviceId} value={device.deviceId} disabled={loopback}>
+                {microphoneOptionLabel(device.label, loopback)}
+              </option>
+            );
+          })}
+        </Select>
+        <p className="text-xs leading-snug text-slate-500">
+          {mixPresent
+            ? `Les mixages (Broadcast Stream Mix, mixage stéréo, Stereo Mix…) sont écartés. L’écoute prendra ${picked && !isLoopbackOrMixInput(picked.label) ? `« ${picked.label} »` : 'le premier vrai micro'}.`
+            : picked
+              ? `L’étape d’écoute ouvrira « ${picked.label || 'ce micro'} ». Tu peux en choisir un autre avant.`
+              : 'Choisis le micro avant l’étape d’écoute. Le choix est mémorisé avec les réglages.'}
+        </p>
       </div>
 
       {prompt ? (

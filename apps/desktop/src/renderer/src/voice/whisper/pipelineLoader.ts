@@ -3,6 +3,7 @@ import {
   WHISPER_DICTATION_LANGUAGE,
   WHISPER_LOCAL_MODEL_ROOT,
   WHISPER_MODEL_REPO,
+  attenuateClipping,
 } from '@jarvis/core';
 import { configureOnnxRuntime, withOrtLock } from '../onnxRuntime';
 
@@ -212,6 +213,7 @@ export function createWhisperLoader(deps: WhisperLoaderDeps) {
 
   const transcribe = async (pcm: Float32Array, options: TranscribeOptions = {}): Promise<string> => {
     const pipe = await getPipeline();
+    const leveled = attenuateClipping(pcm).pcm;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<never>((_, reject) => {
       timer = setTimeout(
@@ -222,7 +224,7 @@ export function createWhisperLoader(deps: WhisperLoaderDeps) {
     try {
       const output = await Promise.race([
         deps.runExclusive(() =>
-          pipe(pcm, {
+          pipe(leveled, {
             language: options.language ?? WHISPER_DICTATION_LANGUAGE,
             task: 'transcribe',
             chunk_length_s: 30,

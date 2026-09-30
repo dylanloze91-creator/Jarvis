@@ -1,4 +1,8 @@
-import { matchesWakeWord, type WakeWordTextMatchConfig } from './wakeWordTextMatch.js';
+import {
+  isWhisperHallucination,
+  matchesWakeWord,
+  type WakeWordTextMatchConfig,
+} from './wakeWordTextMatch.js';
 import type { TranscribeWindow } from './wakeWordFromTranscript.js';
 import { concatFloat32 } from './wav.js';
 import type {
@@ -40,12 +44,14 @@ export async function confirmWakeWordCandidate(
 ): Promise<ConfirmWakeWordCandidateResult> {
   try {
     const transcript = await transcribe(candidate.pcm, candidate.sampleRate);
-    if (matchesWakeWord(transcript, matchConfig) || !secondOpinion) {
-      return { confirmed: matchesWakeWord(transcript, matchConfig), transcript, transcriptionFailed: false };
+    const firstOk = !isWhisperHallucination(transcript) && matchesWakeWord(transcript, matchConfig);
+    if (firstOk || !secondOpinion) {
+      return { confirmed: firstOk, transcript, transcriptionFailed: false };
     }
     const second = await secondOpinion(candidate.pcm, candidate.sampleRate);
+    const secondOk = !isWhisperHallucination(second) && matchesWakeWord(second, matchConfig);
     return {
-      confirmed: matchesWakeWord(second, matchConfig),
+      confirmed: secondOk,
       transcript: `${transcript} / ${second}`,
       transcriptionFailed: false,
     };

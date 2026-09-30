@@ -6,6 +6,7 @@ import {
   normalizeForWakeWordMatch,
   stripLeadingWakeWord,
   commandAfterWakeWord,
+  isWhisperHallucination,
 } from './wakeWordTextMatch.js';
 
 describe('normalizeForWakeWordMatch', () => {
@@ -130,6 +131,18 @@ describe('commandAfterWakeWord', () => {
     expect(commandAfterWakeWord("J'arvie qu'elle aurait-il?", cfg)).toBe("qu'elle aurait-il?");
     expect(commandAfterWakeWord("J'avis ouf crôme", cfg)).toBe('ouf crôme');
     expect(commandAfterWakeWord('la vie ou recromb.', cfg)).toBe('la vie ou recromb.');
+  });
+
+  it('n’envoie pas une hallucination Whisper comme commande', () => {
+    expect(isWhisperHallucination('you')).toBe(true);
+    expect(isWhisperHallucination('M-')).toBe(true);
+    expect(isWhisperHallucination('Je vous invite à vous dire que vous avez une question qui')).toBe(true);
+    expect(isWhisperHallucination('la vie ou recromb.')).toBe(false);
+    expect(commandAfterWakeWord('you', cfg)).toBe('');
+    expect(commandAfterWakeWord('M-', cfg)).toBe('');
+    expect(commandAfterWakeWord('Je vous invite à vous dire que vous avez une question qui', cfg)).toBe('');
+    expect(commandAfterWakeWord('Jarvis, je vous invite à vous dire que vous avez une question qui', cfg)).toBe('');
+    expect(commandAfterWakeWord('Jarvis, quelle heure est-il ?', cfg)).toBe('quelle heure est-il ?');
   });
 });
 

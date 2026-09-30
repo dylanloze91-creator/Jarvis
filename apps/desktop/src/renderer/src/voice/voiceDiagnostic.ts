@@ -4,6 +4,7 @@ import {
   WHISPER_WAKE_WORD_LANGUAGE,
   confirmWakeWordCandidate,
   createLocalTemplateWakeWordEngine,
+  attenuateClipping,
   openWakeWordSensitivityToThreshold,
   peakEnergy,
   commandAfterWakeWord,
@@ -87,8 +88,8 @@ export interface VoiceDiagnosticDeps {
   runtimeVersion: () => string;
   /** Démarre le runtime ONNX et crée une première session (melspectrogram). */
   startRuntime: () => Promise<void>;
-  /** Charge openWakeWord et renvoie le meilleur score sur `pcm`. */
-  scoreWakeWord: (pcm: Float32Array) => Promise<number>;
+  /** Charge openWakeWord et renvoie le meilleur score sur `pcm` (même signal que `peak`, au débit indiqué). */
+  scoreWakeWord: (pcm: Float32Array, sampleRate: number) => Promise<number>;
   loadWhisper: () => Promise<void>;
   transcribe: (pcm: Float32Array, language: string, maxNewTokens: number) => Promise<string>;
   openMicrophone: () => Promise<MicrophoneProbe>;
@@ -182,8 +183,9 @@ export async function analyzeRecording(
 ): Promise<RecordingAnalysis> {
   const { pcm, sampleRate } = audio;
   const peak = peakEnergy(pcm);
+  const leveled = attenuateClipping(pcm).pcm;
   const wakeWordThreshold = openWakeWordSensitivityToThreshold(deps.sensitivity);
-  const wakeWordScore = await deps.scoreWakeWord(pcm);
+  const wakeWordScore = await deps.scoreWakeWord(pcm, sampleRate);
 
   const candidates: Float32Array[] = [];
   const trigger = createLocalTemplateWakeWordEngine({
@@ -198,8 +200,8 @@ export async function analyzeRecording(
     },
     onError: () => undefined,
   });
-  for (let offset = 0; offset < pcm.length; offset += 4096) {
-    controller.pushAudio?.(pcm.subarray(offset, Math.min(pcm.length, offset + 4096)), sampleRate);
+  for (let offset = 0; offset < leveled.length; offset += 4096) {
+    controller.pushAudio?.(leveled.subarray(offset, Math.min(leveled.length, offset + 4096)), sampleRate);
   }
   controller.stop();
 
@@ -220,14 +222,17 @@ export async function analyzeRecording(
     }
   }
 
-  const transcript = peak >= 0.02 ? await deps.transcribe(pcm, WHISPER_DICTATION_LANGUAGE, 96) : '';
+  const detected = wakeWordScore >= wakeWordThreshold || bareJarvisConfirmed;
+  // Whisper (dictée) seulement après un réveil. La confirmation du « Jarvis »
+  // nu, plus haut, reste le seul appel avant ça.
+  const transcript = detected ? await deps.transcribe(leveled, WHISPER_DICTATION_LANGUAGE, 96) : '';
   return {
     peak,
     wakeWordScore,
     wakeWordThreshold,
     bareJarvisConfirmed,
     bareJarvisText,
-    detected: wakeWordScore >= wakeWordThreshold || bareJarvisConfirmed,
+    detected,
     transcript,
     command: commandAfterWakeWord(transcript, match).trim(),
   };
@@ -358,7 +363,7 @@ export async function runVoiceDiagnostic(
   });
 
   await run('wakeword', async (step) => {
-    const score = await deps.scoreWakeWord(new Float32Array(16000 * 2));
+    const score = await deps.scoreWakeWord(new Float32Array(16000 * 2), 16000);
     step.summary = `Modèles chargés ; score sur 2 s de silence : ${score.toFixed(3)} (seuil ${openWakeWordSensitivityToThreshold(deps.sensitivity).toFixed(2)}).`;
     if (score >= openWakeWordSensitivityToThreshold(deps.sensitivity)) {
       step.status = 'warning';
@@ -393,7 +398,9 @@ export async function runVoiceDiagnostic(
       'live',
       async (step) => {
         const mic = microphone!;
-        deps.onPrompt?.('Parle maintenant : « Jarvis, quelle heure est-il ? »');
+        deps.onPrompt?.(
+          `Parle maintenant dans « ${mic.label || 'le micro choisi'} » : « Jarvis, quelle heure est-il ? »`,
+        );
         const audio = await mic.record(deps.liveRecordMs);
         deps.onPrompt?.(null);
         const analysis = await analyzeRecording(audio, deps);
@@ -428,6 +435,9 @@ const STATUS_TEXT: Record<DiagnosticStatus, string> = {
 
 export function describeAnalysis(analysis: RecordingAnalysis): string[] {
   return [
+    ...(analysis.peak >= 1
+      ? ['Crête ≥ 1 : signal atténué avant openWakeWord et Whisper (même forme, sous le plein échelle).']
+      : []),
     `Score openWakeWord max : ${analysis.wakeWordScore.toFixed(3)} (seuil ${analysis.wakeWordThreshold.toFixed(2)})`,
     `« Jarvis » nu confirmé par Whisper : ${analysis.bareJarvisConfirmed ? 'oui' : 'non'}${analysis.bareJarvisText !== null ? ` (« ${analysis.bareJarvisText} »)` : ''}`,
     `Réveil : ${analysis.detected ? 'oui' : 'non'}`,

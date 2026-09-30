@@ -1,4 +1,9 @@
-import { WHISPER_MODEL_REPO, openWakeWordSensitivityToThreshold } from '@jarvis/core';
+import {
+  WHISPER_MODEL_REPO,
+  isLoopbackOrMixInput,
+  microphoneOptionLabel,
+  openWakeWordSensitivityToThreshold,
+} from '@jarvis/core';
 import type { VoiceDescriptor, VoiceSettings } from '@jarvis/core';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Field, Input, Range, Select, Textarea, Toggle } from '@/components/ui/field';
@@ -184,7 +189,7 @@ export function VoiceSettingsSection({
         onChange={(enabled) => onChange({ enabled })}
       />
 
-      <VoiceDiagnostic voice={voice} />
+      <VoiceDiagnostic voice={voice} onMicrophoneChange={(microphoneId) => onChange({ microphoneId })} />
 
       <div className="rounded-lg border border-white/8 bg-white/[0.02] p-3">
         <p className="mb-3 text-[11px] font-medium tracking-wide text-slate-500 uppercase">
@@ -348,11 +353,14 @@ export function VoiceSettingsSection({
           onChange={(event) => onChange({ microphoneId: event.target.value })}
         >
           <option value="">Périphérique par défaut</option>
-          {microphones.map((mic) => (
-            <option key={mic.deviceId} value={mic.deviceId}>
-              {mic.label || 'Microphone'}
-            </option>
-          ))}
+          {microphones.map((mic) => {
+            const loopback = isLoopbackOrMixInput(mic.label);
+            return (
+              <option key={mic.deviceId} value={mic.deviceId} disabled={loopback}>
+                {microphoneOptionLabel(mic.label, loopback)}
+              </option>
+            );
+          })}
         </Select>
       </Field>
 

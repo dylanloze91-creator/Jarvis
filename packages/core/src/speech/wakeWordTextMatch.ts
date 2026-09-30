@@ -26,6 +26,20 @@ const DIACRITICS_REGEX = /[\u0300-\u036f]/g;
 const NON_ALPHANUMERIC_REGEX = /[^a-z0-9\s]/g;
 const WHITESPACE_REGEX = /\s+/g;
 
+/**
+ * Phrases que Whisper invente sur du bruit, un mixage saturé ou un clip
+ * trop court. Ce ne sont pas les mots de l'utilisateur : ni confirmation
+ * de « Jarvis », ni commande à envoyer.
+ */
+const WHISPER_HALLUCINATION =
+  /^(?:you|thank you|thanks for watching\b.*|please subscribe\b.*|sous titres\b.*|sous titrage\b.*|merci d avoir regarde\b.*|je vous invite a vous\b.*|m)$|amara org/;
+
+export function isWhisperHallucination(text: string): boolean {
+  const normalized = normalizeForWakeWordMatch(text);
+  if (!normalized) return false;
+  return WHISPER_HALLUCINATION.test(normalized);
+}
+
 /** Minuscules, sans accents, sans ponctuation, espaces normalisés. */
 export function normalizeForWakeWordMatch(text: string): string {
   return text
@@ -229,7 +243,9 @@ const MAX_LEADING_TOKENS = 3;
  */
 export function commandAfterWakeWord(transcript: string, config: WakeWordTextMatchConfig): string {
   const trimmed = transcript.trim();
+  if (isWhisperHallucination(trimmed)) return '';
   const command = stripLeadingWakeWord(trimmed, config);
+  if (!command || isWhisperHallucination(command)) return '';
   if (command === trimmed && tokenizeByWhitespace(trimmed).length <= 1) return '';
   return command;
 }

@@ -1,8 +1,8 @@
-# Jarvis 0.4.12 — contexte pour un autre développeur
+# Jarvis 0.4.13 — contexte pour un autre développeur
 
 Ce fichier est à la **racine du code**. Les chemins ci-dessous partent de ce dossier. Ce n’est pas un résumé marketing : c’est l’état réel de cet arbre. La voix a été refaite dans cet arbre (publiée en 0.4.11, section « Voix ») : la transcription restait « Chargement… 100 % » sur l’installateur Windows. La refonte du tableau de bord est dans cet arbre : fenêtre étroite = overlay, fenêtre large = tableau de bord.
 
-**Version confirmée :** `apps/desktop/package.json` → `"version": "0.4.12"`. Le `package.json` racine est encore à `0.3.0` : c’est le monorepo, pas l’appli. La version qui compte pour l’exe, l’updater et GitHub est celle de `@jarvis/desktop`. La voix corrigée en 0.4.11 (installateur Windows) est inchangée. Le modèle par défaut reste `qwen2.5:3b`. `qwen3.5:4b` est le modèle recommandé documenté ; le repli est réglable (`fallbackModel`, défaut `qwen2.5:3b`).
+**Version confirmée :** `apps/desktop/package.json` → `"version": "0.4.13"`. Le `package.json` racine est encore à `0.3.0` : c’est le monorepo, pas l’appli. La version qui compte pour l’exe, l’updater et GitHub est celle de `@jarvis/desktop`. La voix corrigée en 0.4.11 (installateur Windows) est inchangée. Le modèle par défaut reste `qwen2.5:3b`. `qwen3.5:4b` est le modèle recommandé documenté ; le repli est réglable (`fallbackModel`, défaut `qwen2.5:3b`).
 
 Lis ce fichier avant de modifier le code.
 
@@ -20,7 +20,7 @@ Utilisateur → Agent → Tool Manager → outils → Windows
 
 Le modèle ne touche jamais le système directement. TypeScript strict, Electron 44, React 19, Tailwind 4, Zod, Vitest, npm workspaces. **Aucune dépendance native à compiler.** Cible machine : Windows, 64 Go RAM, RTX 2060 6 Go, i7 10e gén. Beaucoup d’outils (PowerShell, journal d’événements, Spotify desktop, SiteBlock) n’ont de sens que sur Windows.
 
-Google Agenda / Gmail / Drive **n’est pas** dans cette 0.4.12.
+Google Agenda / Gmail / Drive **n’est pas** dans cette 0.4.13.
 
 ---
 
@@ -48,7 +48,7 @@ Scripts utiles (racine) :
 
 Le script `setup:voice` remplit `apps/desktop/voice-assets/` (runtime ONNX, Whisper, openWakeWord ; non commité, voir `.gitignore`). Premier `dev` / `build` : besoin de réseau.
 
-**Ne pas** packager ni publier depuis ce handoff. L’installateur publié est déjà `Jarvis-Setup-0.4.11.exe` (release GitHub `v0.4.11`).
+L’installateur publié est `Jarvis-Setup-0.4.13.exe` (release GitHub `v0.4.13`).
 
 Données utilisateur (Electron `userData`, typiquement `%APPDATA%\Jarvis`) :
 
@@ -80,7 +80,7 @@ Données utilisateur (Electron `userData`, typiquement `%APPDATA%\Jarvis`) :
     src/media/                 intent Spotify
     src/update/                lecture latest.yml GitHub
     src/history/  src/audit/
-  apps/desktop/                Electron (version 0.4.12)
+  apps/desktop/                Electron (version 0.4.13)
     electron-builder.yml       NSIS, extraResources, publish GitHub
     electron.vite.config.ts    aliases onnxruntime-web (wasm, pas JSEP)
     scripts/setup-whisper.mjs
@@ -177,6 +177,8 @@ Défauts (`packages/core/src/settings.ts`) : écoute **off** jusqu’à activati
 
 Barre vocale (`components/VoiceBar.tsx`) : aucun champ de saisie (l’ancien champ « simuler » se posait sur le composer). En veille, une erreur reste en détail sous « En veille — dis « Jarvis » ».
 
+**Périphérique et gain (0.4.13).** L’écoute ne prend pas un mixage (Broadcast Stream Mix, Stereo Mix, What U Hear, Wave Out, mixage stéréo) tant qu’un vrai micro est listé. Le choix tenu est `voice.microphoneId`. « Tester la voix » montre ce micro et permet d’en changer avant l’étape d’écoute. La capture est mono (moyenne des canaux) à 16 kHz, le même signal que le niveau crête. Une crête ≥ 1 est atténuée avant openWakeWord et avant Whisper. Le mel reçoit ce signal à l’échelle PCM 16 bits (× 32767) : des flottants [-1, 1] laissaient le score à 0. Le seuil (0,25 à sensibilité maximale) n’est pas abaissé. Une hallucination Whisper connue (« Je vous invite à vous dire… », « you », « M- ») ne confirme pas un « Jarvis » nu et n’est pas envoyée comme commande.
+
 Ne pas réintroduire `ort.min.mjs` (JSEP/WebGPU), un import CDN de transformers.js, ni un second onnxruntime-web.
 
 ---
@@ -211,7 +213,7 @@ L’overlay compact ci-dessus est celui de la 0.4.9, conservé pour la fenêtre 
 
 ## Updater / GitHub
 
-Dernière publication : **0.4.11** (`https://github.com/dylanloze91-creator/Jarvis/releases/tag/v0.4.11`).
+Dernière publication : **0.4.13** (`https://github.com/dylanloze91-creator/Jarvis/releases/tag/v0.4.13`).
 
 - `apps/desktop/electron-builder.yml` : `publish.provider: github`, owner `dylanloze91-creator`, repo `Jarvis`, `releaseType: release`, artifact `Jarvis-Setup-${version}.exe`
 - `apps/desktop/src/main/updater.ts` : contrôle 15 s après le démarrage puis toutes les 4 h ; téléchargement auto ; **installation seulement si l’utilisateur clique**
@@ -323,7 +325,7 @@ Corrections de la revue complète (détail : `docs/audit-0410.md` du store du pr
 
 Travaux **hors scope** de cet arbre (ne pas les reprendre ici) : Suite Google, publication GitHub.
 
-## Contrats 0.4.12
+## Contrats 0.4.13
 
 - **Outil** : `ToolResult.outcome` vaut `success`, `recoverable`, `definitive`, `timeout`, `cancelled` ou `missing_dependency`. `content` est une phrase française. `technicalDetail` est le journal. `ok` reste le booléen historique.
 - **Secrets** : `redactSecrets` / `redactValue` avant l’audit et `debugLog`. Le drapeau est `settings.debugLogging`.

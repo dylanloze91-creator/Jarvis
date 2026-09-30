@@ -4,9 +4,11 @@ import {
   OPENWAKEWORD_SAMPLE_RATE,
   CircularPcmBuffer,
   WakeTriggerGate,
+  attenuateClipping,
   describeOpenWakeWordLoadError,
   openWakeWordSensitivityToThreshold,
   resampleLinear,
+  scaleOpenWakeWordPcm,
   takeFixedFrames,
   voiceAssetUrl,
   type OpenWakeWordModelFile,
@@ -207,14 +209,17 @@ export class OpenWakeWordEngine implements WakeWordEngine {
       getLastAnalyzedWindow: () => lastAnalyzedWindow,
       pushAudio: (frame, sampleRate) => {
         if (stopped || failed) return;
-        const pcm =
+        const at16k =
           sampleRate === OPENWAKEWORD_SAMPLE_RATE
             ? frame
             : resampleLinear(frame, sampleRate, OPENWAKEWORD_SAMPLE_RATE);
+        // Même signal que le niveau crête (16 kHz mono), sous le plein échelle.
+        // Le mel reçoit ensuite l'échelle 16 bits, pas les flottants [-1, 1].
+        const leveled = attenuateClipping(at16k).pcm;
+        recentAudio.push(leveled);
+        const model = scaleOpenWakeWordPcm(leveled);
 
-        recentAudio.push(pcm);
-
-        const split = takeFixedFrames(remainder, pcm, OPENWAKEWORD_FRAME_SIZE);
+        const split = takeFixedFrames(remainder, model, OPENWAKEWORD_FRAME_SIZE);
         remainder = new Float32Array(split.remainder);
         for (const chunk of split.chunks) {
           processing = processing.then(() => runFrame(chunk)).catch(emitError);

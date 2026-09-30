@@ -1,6 +1,15 @@
+import { attenuateClipping } from './voiceGain.js';
+
 /** Trame attendue par les modèles officiels openWakeWord (80 ms à 16 kHz). */
 export const OPENWAKEWORD_FRAME_SIZE = 1280;
 export const OPENWAKEWORD_SAMPLE_RATE = 16000;
+
+/**
+ * Le mel ONNX officiel consomme du PCM 16 bits (entiers castés en float),
+ * pas des flottants Web Audio dans [-1, 1]. Sans ce facteur le score reste
+ * à 0 sur de la parole réelle. Voir openWakeWord `AudioFeatures`.
+ */
+export const OPENWAKEWORD_INT16_SCALE = 32767;
 
 /** Message court pour la barre vocale : « indisponible » + chiffres = ERROR_CODE ORT. */
 export function describeOpenWakeWordLoadError(error: unknown): string {
@@ -23,6 +32,21 @@ export function describeOpenWakeWordLoadError(error: unknown): string {
 export function openWakeWordSensitivityToThreshold(sensitivity: number): number {
   const clamped = Math.max(0, Math.min(1, sensitivity));
   return 0.55 - clamped * 0.3;
+}
+
+/**
+ * PCM prêt pour le mel : même signal que le niveau crête, atténué si la
+ * crête atteint le plein échelle, puis porté à l'échelle 16 bits. La
+ * longueur ne change pas (le 16 kHz est fait avant, par `resampleLinear`).
+ */
+export function scaleOpenWakeWordPcm(pcm: Float32Array): Float32Array {
+  const leveled = attenuateClipping(pcm).pcm;
+  const out = new Float32Array(leveled.length);
+  for (let index = 0; index < leveled.length; index += 1) {
+    const value = leveled[index]! * OPENWAKEWORD_INT16_SCALE;
+    out[index] = Math.max(-32768, Math.min(32767, value));
+  }
+  return out;
 }
 
 /** Rééchantillonnage linéaire — le micro Electron vise 16 kHz, mais le contexte peut diverger. */
