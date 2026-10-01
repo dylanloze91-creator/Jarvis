@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { AppWindow, Bot, Mic, Music, RefreshCw, Search, ShieldCheck, type LucideIcon } from 'lucide-react';
+import { AppWindow, Bot, Mail, Mic, Music, RefreshCw, Search, ShieldCheck, type LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export const SETTINGS_TABS = [
@@ -7,6 +7,7 @@ export const SETTINGS_TABS = [
   { id: 'model', label: 'Modèle IA', icon: Bot },
   { id: 'search', label: 'Recherche et mémoire', icon: Search },
   { id: 'spotify', label: 'Spotify', icon: Music },
+  { id: 'google', label: 'Google', icon: Mail },
   { id: 'tools', label: 'Outils et sécurité', icon: ShieldCheck },
   { id: 'general', label: 'Fenêtre et démarrage', icon: AppWindow },
   { id: 'updates', label: 'Mises à jour', icon: RefreshCw },

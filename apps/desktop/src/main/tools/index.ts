@@ -26,6 +26,8 @@ import type { PersonalizationStore } from '../personalization.js';
 import { createPersonalizationTools } from './personalization.js';
 import type { KnowledgeStore } from '../knowledge.js';
 import { createKnowledgeTools } from './knowledge.js';
+import type { GoogleRuntime } from '../google/runtime.js';
+import { createGoogleTools } from './google.js';
 
 export interface YoutubeSummarize {
   (
@@ -45,6 +47,8 @@ export interface ToolManagerDeps {
   knowledge: KnowledgeStore;
   /** Écoute YouTube. Absent dans les tests qui ne construisent pas le catalogue complet. */
   summarizeYoutube?: YoutubeSummarize;
+  /** Google Workspace. Ses outils ne sont proposés au modèle qu'une fois un compte connecté. */
+  google?: GoogleRuntime;
 }
 
 /**
@@ -86,5 +90,7 @@ export function createToolManager(deps: ToolManagerDeps): ToolManager {
     deleteFileTool,
     takeScreenshotTool,
     runCommandTool,
+    // Google Workspace — absents du catalogue tant qu'aucun compte n'est connecté
+    ...(deps.google ? createGoogleTools(deps.google) : []),
   ]);
 }

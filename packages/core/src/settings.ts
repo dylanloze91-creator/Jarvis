@@ -109,6 +109,22 @@ export const settingsSchema = z.object({
    */
   spotifyClientId: z.string().default(''),
   /**
+   * Identifiant client OAuth Google (type « Application de bureau ») de
+   * l'utilisateur, pour Gmail, Agenda, Drive, Docs et Sheets. Comme
+   * Spotify : dans `settings.json`, jamais une variable d'environnement.
+   * Vide = Google absent du catalogue d'outils.
+   */
+  googleClientId: z.string().default(''),
+  /**
+   * Secret du client « Application de bureau ». Google le délivre une seule
+   * fois à la création et l'exige encore à l'échange du code PKCE. Il n'est
+   * envoyé qu'à `oauth2.googleapis.com`. Les jetons, eux, sont chiffrés à
+   * part (`safeStorage`), jamais dans ce fichier.
+   */
+  googleClientSecret: z.string().default(''),
+  /** `readonly` : seules les autorisations de lecture sont demandées, les outils d'écriture disparaissent. */
+  googleAccess: z.enum(['full', 'readonly']).default('full'),
+  /**
    * URL loopback de l'API locale SiteBlock. Pas une variable
    * d'environnement : comme Spotify, elle vit dans `settings.json`.
    * Défaut : `http://127.0.0.1:18741`. Seules les adresses locales

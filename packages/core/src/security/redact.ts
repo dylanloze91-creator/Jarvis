@@ -5,7 +5,7 @@
  */
 
 const SECRET_KEY =
-  /^(api[_-]?key|access[_-]?token|refresh[_-]?token|id[_-]?token|client[_-]?secret|authorization|auth|token|siteblocktoken|site[_-]?block[_-]?token|spotifytoken|bearer)$/i;
+  /^(api[_-]?key|access[_-]?token|refresh[_-]?token|id[_-]?token|client[_-]?secret|authorization|auth|token|siteblocktoken|site[_-]?block[_-]?token|spotifytoken|bearer|google[_-]?client[_-]?secret|code[_-]?verifier)$/i;
 
 const INLINE_PATTERNS: Array<{ pattern: RegExp; replace: string }> = [
   { pattern: /\b(Bearer\s+)[A-Za-z0-9._~+/-]{8,}/gi, replace: '$1[REDACTED]' },
@@ -14,13 +14,17 @@ const INLINE_PATTERNS: Array<{ pattern: RegExp; replace: string }> = [
   { pattern: /\b(AIza[0-9A-Za-z_-]{10,})/g, replace: '[REDACTED]' },
   { pattern: /\b(ghp_[A-Za-z0-9]{8,})/g, replace: '[REDACTED]' },
   { pattern: /\b(xox[baprs]-[A-Za-z0-9-]{8,})/g, replace: '[REDACTED]' },
+  { pattern: /\bya29\.[A-Za-z0-9._~+/-]{8,}/g, replace: '[REDACTED]' },
+  { pattern: /(^|[^\w/])1\/\/[A-Za-z0-9._~+-]{16,}/g, replace: '$1[REDACTED]' },
+  { pattern: /\bGOCSPX-[A-Za-z0-9_-]{8,}/g, replace: '[REDACTED]' },
+  { pattern: /(^|[^\w/])4\/0[A-Za-z0-9._~+-]{16,}/g, replace: '$1[REDACTED]' },
   {
     pattern:
       /\b(api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|site[_-]?block[_-]?token|authorization|id[_-]?token)(\s*["']?\s*[:=]\s*["']?)([^\s"',}]+)(["']?)/gi,
     replace: '$1$2[REDACTED]$4',
   },
   {
-    pattern: /([?&](?:access_token|refresh_token|code|client_secret|api_key|token)=)[^&\s]+/gi,
+    pattern: /([?&](?:access_token|refresh_token|code|client_secret|api_key|token|code_verifier)=)[^&\s]+/gi,
     replace: '$1[REDACTED]',
   },
 ];

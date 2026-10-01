@@ -15,6 +15,7 @@ import { Button } from '@/components/ui/button';
 import { Field, Input, Select, Textarea, Toggle } from '@/components/ui/field';
 import { OllamaSettingsSection } from '@/components/OllamaSettings';
 import { SpotifySettingsSection } from '@/components/SpotifySettings';
+import { GoogleSettingsSection } from '@/components/GoogleSettings';
 import { SiteBlockSettingsSection } from '@/components/SiteBlockSettings';
 import { PersonalizationSettingsSection } from '@/components/PersonalizationSettings';
 import { KnowledgeSettingsSection } from '@/components/KnowledgeSettings';
@@ -26,13 +27,20 @@ import type { RuntimeStatus } from '../../../shared/ipc';
 /** Onglet rouvert à la prochaine visite des réglages (session en cours). */
 let lastSettingsTab: SettingsTabId = 'voice';
 
+/** Prochaine ouverture des réglages sur cet onglet (cartes Google du tableau de bord). */
+export function openSettingsOnTab(tab: SettingsTabId): void {
+  lastSettingsTab = tab;
+}
+
 interface SettingsPanelProps {
   settings: Settings;
   status: RuntimeStatus;
   onSaved: (payload: { settings: Settings; status: RuntimeStatus }) => void;
+  /** Bascule sur un onglet alors que le panneau est déjà ouvert (`at` change à chaque demande). */
+  requestedTab?: { tab: SettingsTabId; at: number };
 }
 
-export function SettingsPanel({ settings, status, onSaved }: SettingsPanelProps) {
+export function SettingsPanel({ settings, status, onSaved, requestedTab }: SettingsPanelProps) {
   const [draft, setDraft] = useState<Settings>(settings);
   const [providers, setProviders] = useState<ProviderDescriptor[]>([]);
   const [searchProviders, setSearchProviders] = useState<SearchProviderDescriptor[]>([]);
@@ -44,6 +52,9 @@ export function SettingsPanel({ settings, status, onSaved }: SettingsPanelProps)
   useEffect(() => {
     lastSettingsTab = tab;
   }, [tab]);
+  useEffect(() => {
+    if (requestedTab) setTab(requestedTab.tab);
+  }, [requestedTab]);
   const dirty = useRef(false);
 
   useEffect(() => {
@@ -282,6 +293,14 @@ export function SettingsPanel({ settings, status, onSaved }: SettingsPanelProps)
           <SpotifySettingsSection
             clientId={draft.spotifyClientId}
             onChange={(spotifyClientId) => patch({ spotifyClientId })}
+          />
+      </TabPanel>
+      <TabPanel id="google" active={tab}>
+          <GoogleSettingsSection
+            clientId={draft.googleClientId}
+            clientSecret={draft.googleClientSecret}
+            access={draft.googleAccess}
+            onChange={(values) => patch(values)}
           />
       </TabPanel>
       <TabPanel id="tools" active={tab}>

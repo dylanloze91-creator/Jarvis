@@ -105,6 +105,13 @@ export interface ToolDefinition<S extends z.ZodType> {
    * confirmation en plus du résumé (voir `ConfirmationRequest.command`).
    */
   describeCommand?: (input: z.infer<S>) => string;
+  /**
+   * Disponibilité au moment de l'appel (compte externe connecté…). Absent =
+   * toujours disponible. Indisponible : l'outil sort du catalogue du modèle,
+   * et un appel reçoit `unavailableMessage` sans confirmation ni exécution.
+   */
+  isAvailable?: () => boolean;
+  unavailableMessage?: string | (() => string);
   execute: (input: z.infer<S>, context: ToolContext) => Promise<ToolResult>;
 }
 
@@ -119,6 +126,9 @@ export interface RegisteredTool {
   jsonSchema: Record<string, unknown>;
   summarize: (input: unknown) => string;
   describeCommand: (input: unknown) => string | undefined;
+  /** Voir `ToolDefinition.isAvailable`. Absent = toujours disponible. */
+  isAvailable?: () => boolean;
+  unavailableMessage?: () => string;
   run: (input: unknown, context: ToolContext) => Promise<ToolResult>;
 }
 

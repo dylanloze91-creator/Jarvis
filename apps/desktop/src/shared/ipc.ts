@@ -3,6 +3,8 @@ import type {
   ChatMessage,
   Conversation,
   ConversationSummary,
+  GoogleAccessMode,
+  GoogleServiceAccess,
   MarketDataProviderDescriptor,
   OllamaDiagnosticResult,
   OllamaStatusResult,
@@ -71,6 +73,10 @@ export const IpcChannel = {
   settingsSpotifyConnect: 'settings:spotify-connect',
   settingsSpotifyDisconnect: 'settings:spotify-disconnect',
   settingsSiteBlockStatus: 'settings:siteblock-status',
+  settingsGoogleStatus: 'settings:google-status',
+  settingsGoogleConnect: 'settings:google-connect',
+  settingsGoogleCancel: 'settings:google-cancel',
+  settingsGoogleDisconnect: 'settings:google-disconnect',
   settingsPersonalizationGet: 'settings:personalization-get',
   settingsPersonalizationReset: 'settings:personalization-reset',
   settingsKnowledgeStats: 'settings:knowledge-stats',
@@ -145,6 +151,46 @@ export interface SiteBlockStatus {
 export interface SiteBlockCredentials {
   baseUrl?: string;
   token?: string;
+}
+
+/** Valeurs du formulaire Google pas encore enregistrées, pour se connecter avant « Enregistrer ». */
+export interface GoogleConfigDraft {
+  clientId?: string;
+  clientSecret?: string;
+  access?: GoogleAccessMode;
+}
+
+/** État Google vu par l'interface. Aucun jeton ne quitte le processus principal. */
+export interface GoogleStatus {
+  /** Un identifiant client est renseigné (réglages, brouillon ou connexion existante). */
+  configured: boolean;
+  /** Un compte a donné son accord et ses jetons sont sur ce PC. */
+  connected: boolean;
+  /** Google a retiré l'accès (7 jours en mode Test, révocation, mot de passe changé). */
+  needsReconsent: boolean;
+  /** Le navigateur est ouvert, Jarvis attend le retour de Google. */
+  connecting: boolean;
+  account: string | null;
+  /** Mode réellement appliqué : le plus prudent entre les réglages et le consentement. */
+  access: GoogleAccessMode | null;
+  requestedAccess: GoogleAccessMode;
+  services: GoogleServiceAccess[];
+  /** Jetons chiffrés sur le disque (faux : mémoire seulement, chiffrement Windows indisponible). */
+  persistent: boolean;
+  redirectUri: string;
+  /** L'identifiant client des réglages n'est pas celui qui a reçu le consentement. */
+  clientMismatch: boolean;
+  connectedAt: number | null;
+}
+
+export type GoogleConnectResult =
+  | { ok: true; status: GoogleStatus }
+  | { ok: false; error: string; status: GoogleStatus };
+
+export interface GoogleDisconnectResult {
+  revoked: boolean;
+  message: string;
+  status: GoogleStatus;
 }
 
 export interface ToolInfo {
@@ -322,6 +368,14 @@ export interface JarvisApi {
     spotifyDisconnect(clientId?: string): Promise<void>;
     /** Sonde l’API locale SiteBlock. Les champs optionnels testent un brouillon non encore enregistré. */
     siteBlockStatus(credentials?: SiteBlockCredentials): Promise<SiteBlockStatus>;
+    /** État de la connexion Google. Le brouillon teste des valeurs pas encore enregistrées. */
+    googleStatus(draft?: GoogleConfigDraft): Promise<GoogleStatus>;
+    /** Consentement Google dans le navigateur système (PKCE, retour sur 127.0.0.1:53125). */
+    googleConnect(draft?: GoogleConfigDraft): Promise<GoogleConnectResult>;
+    /** Abandonne l'attente du retour de Google. */
+    googleCancel(): Promise<void>;
+    /** Révoque l'accès chez Google et efface les jetons de ce PC. */
+    googleDisconnect(): Promise<GoogleDisconnectResult>;
     /** Lit la mémoire de personnalisation persistante (fichier local). */
     personalizationGet(): Promise<PersonalizationProfile>;
     /** Efface toute la mémoire de personnalisation persistante. */

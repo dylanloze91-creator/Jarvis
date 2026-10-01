@@ -9,7 +9,7 @@ import { useWideLayout } from '@/dashboard/useWideLayout';
 import { EmptyState } from '@/components/EmptyState';
 import { HistoryPanel } from '@/components/HistoryPanel';
 import { Messages } from '@/components/Messages';
-import { SettingsPanel } from '@/components/SettingsPanel';
+import { SettingsPanel, openSettingsOnTab } from '@/components/SettingsPanel';
 import { UpdateBadge } from '@/components/UpdateBadge';
 import { VoiceBar } from '@/components/VoiceBar';
 import { Button } from '@/components/ui/button';
@@ -90,8 +90,15 @@ export default function App() {
     } else if (scene === 'settings') {
       seeded.current = true;
       setView('settings');
+    } else if (scene === 'google') {
+      seeded.current = true;
+      openSettingsOnTab('google');
+      setView('settings');
+    } else if (scene === 'google-confirm' && !booting) {
+      seeded.current = true;
+      chat.send('Envoie à Marie un mail pour confirmer la réunion de jeudi à 10 h.');
     }
-  }, [chat.load]);
+  }, [chat.load, chat.send, booting]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {

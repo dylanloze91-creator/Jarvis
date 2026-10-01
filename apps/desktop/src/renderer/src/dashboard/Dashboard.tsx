@@ -27,7 +27,8 @@ import { Composer } from '@/components/Composer';
 import { ConfirmationCard } from '@/components/ConfirmationCard';
 import { HistoryPanel } from '@/components/HistoryPanel';
 import { Messages } from '@/components/Messages';
-import { SettingsPanel } from '@/components/SettingsPanel';
+import { SettingsPanel, openSettingsOnTab } from '@/components/SettingsPanel';
+import type { SettingsTabId } from '@/components/SettingsTabs';
 import { VoiceBar } from '@/components/VoiceBar';
 import { formatBytes, formatModelTemperature, formatPercent } from '@/dashboard/format';
 import { useMachineSnapshot } from '@/dashboard/useMachine';
@@ -48,6 +49,8 @@ interface FunctionCard {
   prompt: string | null;
   icon: LucideIcon;
   soon: boolean;
+  /** Demande un compte Google : sans connexion, ouvre Réglages → Google. */
+  google?: boolean;
 }
 
 const FUNCTIONS: FunctionCard[] = [
@@ -95,9 +98,10 @@ const FUNCTIONS: FunctionCard[] = [
     id: 'google',
     label: 'Google',
     hint: 'Agenda, Gmail, Drive',
-    prompt: null,
+    prompt: "Qu'est-ce que j'ai à l'agenda aujourd'hui ?",
     icon: Mail,
-    soon: true,
+    soon: false,
+    google: true,
   },
   {
     id: 'auto',
@@ -115,12 +119,13 @@ interface QuickAction {
   prompt: string | null;
   icon: LucideIcon;
   soon: boolean;
+  google?: boolean;
 }
 
 const QUICK: QuickAction[] = [
   { id: 'chrome', label: 'Ouvrir Chrome', prompt: 'Ouvre Google Chrome.', icon: AppWindow, soon: false },
   { id: 'note', label: 'Nouvelle note', prompt: 'Ouvre le Bloc-notes.', icon: StickyNote, soon: false },
-  { id: 'mail', label: 'Lire mes emails', prompt: null, icon: Mail, soon: true },
+  { id: 'mail', label: 'Lire mes emails', prompt: 'Lis mes derniers emails non lus.', icon: Mail, soon: false, google: true },
   { id: 'shot', label: 'Capture d’écran', prompt: 'Prends une capture de l’écran.', icon: Camera, soon: false },
 ];
 
@@ -182,9 +187,41 @@ export function Dashboard({
     };
   }, []);
 
+  const [googleReady, setGoogleReady] = useState(false);
+  const [settingsTab, setSettingsTab] = useState<{ tab: SettingsTabId; at: number } | undefined>(undefined);
+  useEffect(() => {
+    let cancelled = false;
+    void window.jarvis.settings
+      .googleStatus()
+      .then((google) => {
+        if (!cancelled) setGoogleReady(google.connected && !google.needsReconsent);
+      })
+      .catch(() => {
+        if (!cancelled) setGoogleReady(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [view, settings]);
+
+  useEffect(() => {
+    if (view !== 'settings') setSettingsTab(undefined);
+  }, [view]);
+
   const ask = (prompt: string): void => {
     setView('chat');
     chat.send(prompt);
+  };
+
+  const openGoogleSettings = (): void => {
+    openSettingsOnTab('google');
+    setSettingsTab({ tab: 'google', at: Date.now() });
+    setView('settings');
+  };
+
+  const runGoogle = (prompt: string | null): void => {
+    if (!googleReady) openGoogleSettings();
+    else if (prompt) ask(prompt);
   };
 
   const presence = presenceOf(status, booting, bootError);
@@ -207,7 +244,7 @@ export function Dashboard({
           <SideButton label="Accueil" icon={Home} active={view === 'chat' && chat.items.length === 0} onClick={() => setView('chat')} />
           <SideButton label="Discussion" icon={MessageSquare} active={view === 'chat' && chat.items.length > 0} onClick={() => setView('chat')} />
           <SideButton label="Historique" icon={History} active={view === 'history'} onClick={() => setView(view === 'history' ? 'chat' : 'history')} />
-          <SideButton label="Google" icon={CalendarClock} soon />
+          <SideButton label="Google" icon={CalendarClock} onClick={openGoogleSettings} />
           <SideButton label="Automatisation" icon={Workflow} soon />
           <SideButton label="Micro" icon={Mic} active={false} onClick={() => setView('settings')} />
           <SideButton label="Journal" icon={ScrollText} active={view === 'audit'} onClick={() => setView(view === 'audit' ? 'chat' : 'audit')} />
@@ -269,14 +306,15 @@ export function Dashboard({
                   type="button"
                   className="fn-card"
                   disabled={card.soon || chat.busy}
-                  title={card.soon ? 'Bientôt' : card.hint}
+                  title={card.soon ? 'Bientôt' : card.google && !googleReady ? 'À connecter dans Réglages → Google' : card.hint}
                   onClick={() => {
-                    if (card.prompt) ask(card.prompt);
+                    if (card.google) runGoogle(card.prompt);
+                    else if (card.prompt) ask(card.prompt);
                   }}
                 >
                   <card.icon className="size-4 text-cyan-200" />
                   <b>{card.label}</b>
-                  <small>{card.hint}</small>
+                  <small>{card.google && !googleReady ? 'À connecter' : card.hint}</small>
                   {card.soon ? <span className="soon-tag">Bientôt</span> : null}
                 </button>
               ))}
@@ -325,7 +363,7 @@ export function Dashboard({
               ) : bootError ? (
                 <div className="error-card m-4">Impossible de charger les réglages : {bootError}</div>
               ) : settings && status ? (
-                <SettingsPanel settings={settings} status={status} onSaved={onSaved} />
+                <SettingsPanel settings={settings} status={status} onSaved={onSaved} requestedTab={settingsTab} />
               ) : (
                 <div className="error-card m-4">Réglages indisponibles pour le moment.</div>
               )
@@ -392,9 +430,10 @@ export function Dashboard({
                 type="button"
                 className="quick-btn"
                 disabled={action.soon || chat.busy}
-                title={action.soon ? 'Bientôt' : action.label}
+                title={action.soon ? 'Bientôt' : action.google && !googleReady ? 'À connecter dans Réglages → Google' : action.label}
                 onClick={() => {
-                  if (action.prompt) ask(action.prompt);
+                  if (action.google) runGoogle(action.prompt);
+                  else if (action.prompt) ask(action.prompt);
                 }}
               >
                 <span className="flex items-center gap-2">

@@ -375,3 +375,4 @@ export {
   type ConversationPhase,
   type SpokenTurnDecision,
 } from './speech/conversationSession.js';
+export * from './google/index.js';

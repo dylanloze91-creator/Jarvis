@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 import {
   IpcChannel,
   type ChatEvent,
+  type GoogleConfigDraft,
   type JarvisApi,
   type SendChatInput,
   type UpdateState,
@@ -50,6 +51,10 @@ const api: JarvisApi = {
       ipcRenderer.invoke(IpcChannel.settingsSpotifyDisconnect, clientId),
     siteBlockStatus: (credentials?: { baseUrl?: string; token?: string }) =>
       ipcRenderer.invoke(IpcChannel.settingsSiteBlockStatus, credentials),
+    googleStatus: (draft?: GoogleConfigDraft) => ipcRenderer.invoke(IpcChannel.settingsGoogleStatus, draft),
+    googleConnect: (draft?: GoogleConfigDraft) => ipcRenderer.invoke(IpcChannel.settingsGoogleConnect, draft),
+    googleCancel: () => ipcRenderer.invoke(IpcChannel.settingsGoogleCancel),
+    googleDisconnect: () => ipcRenderer.invoke(IpcChannel.settingsGoogleDisconnect),
     personalizationGet: () => ipcRenderer.invoke(IpcChannel.settingsPersonalizationGet),
     personalizationReset: () => ipcRenderer.invoke(IpcChannel.settingsPersonalizationReset),
     knowledgeStats: () => ipcRenderer.invoke(IpcChannel.settingsKnowledgeStats),

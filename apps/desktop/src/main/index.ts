@@ -8,6 +8,7 @@ import {
   globalShortcut,
   ipcMain,
   nativeImage,
+  safeStorage,
   session as electronSession,
   shell,
 } from 'electron';
@@ -26,6 +27,7 @@ import {
 } from '@jarvis/core';
 import {
   IpcChannel,
+  type GoogleConfigDraft,
   type SendChatInput,
   type ToolInfo,
   type VoiceSpeakInput,
@@ -34,6 +36,7 @@ import {
 import { FileAuditLogStore } from './audit-store.js';
 import { SpotifyBridge } from './media/SpotifyBridge.js';
 import { SiteBlockBridge } from './siteblock/SiteBlockBridge.js';
+import { createGoogleRuntime } from './google/runtime.js';
 import { PersonalizationStore } from './personalization.js';
 import { KnowledgeStore } from './knowledge.js';
 import { ChatSession } from './session.js';
@@ -79,6 +82,14 @@ let listeningIndicator: ListeningIndicatorWindow | null = null;
 let settings: Settings = parseSettings({});
 const spotify = new SpotifyBridge(() => settings);
 const siteBlock = new SiteBlockBridge(() => settings);
+// Jetons chiffrés par safeStorage (DPAPI), consentement dans le navigateur système.
+const google = createGoogleRuntime({
+  userDataPath: () => app.getPath('userData'),
+  cipher: safeStorage,
+  openExternal: (url) => shell.openExternal(url),
+  getSettings: () => settings,
+  log: (line) => console.info(line),
+});
 let overlay: OverlayWindow | null = null;
 const tools = createToolManager({
   getSettings: () => settings,
@@ -88,6 +99,7 @@ const tools = createToolManager({
   siteBlock,
   personalization,
   knowledge,
+  google,
   summarizeYoutube: (url, onProgress, signal) =>
     summarizeYoutubeLink({
       url,
@@ -124,6 +136,8 @@ async function bootstrap(): Promise<void> {
   app.setName('Jarvis');
   const [loaded] = await Promise.all([readSettings(), app.whenReady()]);
   settings = loaded;
+  // Pas attendu : la fenêtre ne patiente pas pour lire les jetons Google.
+  void google.account.init();
   registerVoiceAssetsProtocol();
   voiceCaptureLog.append(
     `[démarrage] Jarvis ${app.getVersion()} · Electron ${process.versions.electron} · Chromium ${process.versions.chrome} · ${process.platform} ${process.arch} · écoute ${settings.voice.enabled ? 'activée' : 'coupée'}`,
@@ -288,6 +302,14 @@ function registerIpc(): void {
     (_event, credentials?: { baseUrl?: string; token?: string }) =>
       siteBlock.connectionStatus(credentials),
   );
+  ipcMain.handle(IpcChannel.settingsGoogleStatus, (_event, draft?: GoogleConfigDraft) =>
+    google.account.status(sanitizeGoogleDraft(draft)),
+  );
+  ipcMain.handle(IpcChannel.settingsGoogleConnect, (_event, draft?: GoogleConfigDraft) =>
+    google.account.connect(sanitizeGoogleDraft(draft)),
+  );
+  ipcMain.handle(IpcChannel.settingsGoogleCancel, () => google.account.cancelConnect());
+  ipcMain.handle(IpcChannel.settingsGoogleDisconnect, () => google.account.disconnect());
   ipcMain.handle(IpcChannel.settingsPersonalizationGet, () => personalization.get());
   ipcMain.handle(IpcChannel.settingsPersonalizationReset, () => personalization.reset());
   ipcMain.handle(IpcChannel.settingsKnowledgeStats, () => knowledge.stats());
@@ -301,7 +323,7 @@ function registerIpc(): void {
   ipcMain.handle(IpcChannel.historyClear, () => store.clear());
 
   ipcMain.handle(IpcChannel.toolsList, (): ToolInfo[] =>
-    tools.list().map(({ name, description, risk, category, forceConfirm }) => ({
+    tools.list().filter((tool) => tool.isAvailable?.() ?? true).map(({ name, description, risk, category, forceConfirm }) => ({
       name,
       description,
       risk,
@@ -378,6 +400,16 @@ function registerIpc(): void {
   ipcMain.handle(IpcChannel.updateGetState, () => updateManager.getState());
   ipcMain.handle(IpcChannel.updateCheck, () => updateManager.checkNow());
   ipcMain.handle(IpcChannel.updateInstall, () => updateManager.quitAndInstall());
+}
+
+function sanitizeGoogleDraft(draft: unknown): GoogleConfigDraft | undefined {
+  if (!draft || typeof draft !== 'object') return undefined;
+  const value = draft as Record<string, unknown>;
+  return {
+    clientId: typeof value.clientId === 'string' ? value.clientId.slice(0, 300) : undefined,
+    clientSecret: typeof value.clientSecret === 'string' ? value.clientSecret.slice(0, 300) : undefined,
+    access: value.access === 'readonly' || value.access === 'full' ? value.access : undefined,
+  };
 }
 
 app.on('window-all-closed', () => {

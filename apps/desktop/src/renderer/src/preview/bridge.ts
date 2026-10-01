@@ -1,10 +1,16 @@
 import {
+  GOOGLE_REDIRECT_URI,
   defaultSettings,
+  describeGoogleAccess,
   emptyPersonalization,
+  formatMailForConfirmation,
+  googleScopesFor,
+  summarizeMailSend,
   type Settings,
 } from '@jarvis/core';
 import type {
   ChatEvent,
+  GoogleStatus,
   JarvisApi,
   MachineSnapshot,
   ToolInfo,
@@ -37,6 +43,34 @@ export function installPreviewBridge(): void {
     voiceKeyConfigured: false,
   });
 
+  // Aperçu Google : `?google=connected` ou la scène de confirmation simulent un compte connecté.
+  const search = new URLSearchParams(window.location.search);
+  let googleConnected = search.get('google') === 'connected' || search.get('scene') === 'google-confirm';
+  if (googleConnected) {
+    settings = {
+      ...settings,
+      googleClientId: '123456789012-jarvisdesktop.apps.googleusercontent.com',
+      googleClientSecret: 'GOCSPX-apercu',
+    };
+  }
+  const googleStatus = (): GoogleStatus => ({
+    configured: Boolean(settings.googleClientId),
+    connected: googleConnected,
+    needsReconsent: false,
+    connecting: false,
+    account: googleConnected ? 'thedexios@gmail.com' : null,
+    access: googleConnected ? settings.googleAccess : null,
+    requestedAccess: settings.googleAccess,
+    services: describeGoogleAccess(googleConnected ? googleScopesFor(settings.googleAccess) : [], settings.googleAccess).map(
+      (service) => (googleConnected ? service : { ...service, read: false, write: false, readMissing: false, writeMissing: false }),
+    ),
+    persistent: true,
+    redirectUri: GOOGLE_REDIRECT_URI,
+    clientMismatch: false,
+    connectedAt: googleConnected ? Date.now() : null,
+  });
+  let pendingConfirmation: ((approved: boolean) => void) | null = null;
+
   const tools: ToolInfo[] = [
     { name: 'web_search', description: 'Recherche Internet', risk: 'safe', forceConfirm: false },
     { name: 'web_research', description: 'Recherche approfondie', risk: 'safe', forceConfirm: false },
@@ -48,6 +82,39 @@ export function installPreviewBridge(): void {
     chat: {
       send: async (input) => {
         const conversationId = input.conversationId ?? 'preview';
+        if (googleConnected && /^Envoie à Marie/.test(input.text)) {
+          const mail = {
+            to: 'marie.dupont@example.com',
+            subject: 'Réunion de jeudi',
+            body: 'Bonjour Marie,\n\nJe confirme la réunion de jeudi à 10 h au bureau.\n\nBonne journée,\nThedexios',
+          };
+          const emit = (event: ChatEvent): void => {
+            for (const listener of listeners) listener(event);
+          };
+          emit({
+            type: 'started',
+            conversationId,
+            message: { id: `u-${Date.now()}`, role: 'user', content: input.text, createdAt: Date.now() },
+          });
+          emit({ type: 'tool_start', callId: 'preview-send', toolName: 'google_gmail_send' });
+          emit({
+            type: 'confirm',
+            requestId: 'preview-confirm',
+            toolName: 'google_gmail_send',
+            details: summarizeMailSend(mail.to),
+            command: formatMailForConfirmation(mail),
+            forced: true,
+          });
+          pendingConfirmation = (approved) => {
+            const text = approved
+              ? `Mail envoyé et vérifié (présent dans « Messages envoyés ») : à ${mail.to} — « ${mail.subject} ».`
+              : "D'accord, je n'ai rien fait : tu as refusé « google_gmail_send ». Rien n'a été modifié.";
+            emit({ type: 'tool_result', callId: 'preview-send', toolName: 'google_gmail_send', status: approved ? 'ok' : 'denied', content: text });
+            emit({ type: 'delta', text });
+            emit({ type: 'done', conversationId, messages: [] });
+          };
+          return;
+        }
         for (const listener of listeners) {
           listener({
             type: 'started',
@@ -68,7 +135,11 @@ export function installPreviewBridge(): void {
         }
       },
       cancel: async () => undefined,
-      respondConfirmation: async () => undefined,
+      respondConfirmation: async (_requestId, approved) => {
+        const resolve = pendingConfirmation;
+        pendingConfirmation = null;
+        resolve?.(approved);
+      },
       onEvent: (listener) => {
         listeners.add(listener);
         return () => listeners.delete(listener);
@@ -121,6 +192,18 @@ export function installPreviewBridge(): void {
       spotifyConnect: async () => ({ ok: false, error: 'Aperçu hors Electron.' }),
       spotifyDisconnect: async () => undefined,
       siteBlockStatus: async () => ({ configured: false, reachable: false }),
+      googleStatus: async () => googleStatus(),
+      googleConnect: async () => {
+        googleConnected = Boolean(settings.googleClientId);
+        return googleConnected
+          ? { ok: true as const, status: googleStatus() }
+          : { ok: false as const, error: 'Aperçu hors Electron.', status: googleStatus() };
+      },
+      googleCancel: async () => undefined,
+      googleDisconnect: async () => {
+        googleConnected = false;
+        return { revoked: true, message: 'Accès révoqué chez Google et jetons effacés de ce PC.', status: googleStatus() };
+      },
       personalizationGet: async () => emptyPersonalization(),
       personalizationReset: async () => emptyPersonalization(),
       knowledgeStats: async () => ({ chunks: 0, sources: 0, embedded: 0 }),

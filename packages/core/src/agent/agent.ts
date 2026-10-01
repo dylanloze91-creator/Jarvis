@@ -2,6 +2,8 @@ import type { LLMProvider } from '../providers/types.js';
 import type { ToolManager } from '../tools/manager.js';
 import type { ToolContext } from '../tools/types.js';
 import { extractKnowledgeIntent } from '../knowledge/intent.js';
+import { isGoogleToolName, looksLikeGoogleIntent, recentlyUsedGoogleTools } from '../google/intent.js';
+import { googleTurnPrompt } from '../google/prompt.js';
 import { isCurrentTrackQuestion } from '../media/currentTrackIntent.js';
 import { extractSpotifyPlayQuery, isMusicIntent } from '../media/playIntent.js';
 import { extractYoutubeUrl } from '../youtube/url.js';
@@ -127,10 +129,16 @@ export class Agent {
     const youtubeTurn = extractYoutubeUrl(lastUser) !== null;
     const musicTurn = !youtubeTurn && isMusicIntent(lastUser);
     const webTurn = !youtubeTurn && looksLikeWebResearchIntent(lastUser);
-    const system = composeSystemPrompt(this.options.systemPrompt, musicTurn, webTurn, youtubeTurn);
+    const googleTurn = looksLikeGoogleIntent(lastUser) || recentlyUsedGoogleTools(conversation);
     const toolSchemas = this.tools
       .schemas()
-      .filter((tool) => musicTurn || !isSpotifyToolName(tool.name));
+      .filter((tool) => musicTurn || !isSpotifyToolName(tool.name))
+      .filter((tool) => googleTurn || !isGoogleToolName(tool.name));
+    // Sans compte Google connecté, aucun outil google_* n'est disponible :
+    // prompt et catalogue restent ceux d'avant.
+    const googleOffered = toolSchemas.some((tool) => isGoogleToolName(tool.name));
+    const composed = composeSystemPrompt(this.options.systemPrompt, musicTurn, webTurn, youtubeTurn);
+    const system = googleOffered ? `${composed} ${googleTurnPrompt()}` : composed;
 
     for (let round = 0; round <= maxRounds; round += 1) {
       const forcedYoutube =
@@ -194,7 +202,9 @@ export class Agent {
           messages: [...conversation],
           system,
           tools: toolSchemas,
-          temperature: temperatureForTurn(lastUser, this.options.temperature),
+          temperature: googleOffered
+            ? Math.min(temperatureForTurn(lastUser, this.options.temperature), 0.2)
+            : temperatureForTurn(lastUser, this.options.temperature),
           maxTokens: this.options.maxTokens,
           signal: context.signal,
         });

@@ -27,8 +27,15 @@ export function defineTool<S extends z.ZodType>(definition: ToolDefinition<S>): 
     return parsed.success ? parsed.data : input;
   };
   const isDestructive = normalizeDestructive(definition.isDestructive);
+  const availability = definition.isAvailable
+    ? {
+        isAvailable: definition.isAvailable,
+        unavailableMessage: () => resolveUnavailableMessage(definition.name, definition.unavailableMessage),
+      }
+    : {};
 
   return {
+    ...availability,
     name: definition.name,
     description: definition.description,
     risk: definition.risk,
@@ -53,6 +60,23 @@ export function defineTool<S extends z.ZodType>(definition: ToolDefinition<S>): 
       return definition.execute(parsed.data as z.infer<S>, context);
     },
   };
+}
+
+function resolveUnavailableMessage(
+  name: string,
+  message: string | (() => string) | undefined,
+): string {
+  const text = typeof message === 'function' ? message() : message;
+  return text?.trim() || `L'outil « ${name} » n'est pas disponible pour le moment. Aucune action n'a été effectuée.`;
+}
+
+function isToolAvailable(tool: RegisteredTool): boolean {
+  if (!tool.isAvailable) return true;
+  try {
+    return tool.isAvailable();
+  } catch {
+    return false;
+  }
 }
 
 function normalizeDestructive<S extends z.ZodType>(
@@ -107,10 +131,10 @@ export class ToolManager {
     return this.tools.get(name)?.risk;
   }
 
-  /** Catalogue transmis au modèle : les outils `denied` en sont exclus. */
+  /** Catalogue transmis au modèle : les outils `denied` et indisponibles en sont exclus. */
   schemas(): ToolSchema[] {
     return this.list()
-      .filter((tool) => tool.risk !== 'denied')
+      .filter((tool) => tool.risk !== 'denied' && isToolAvailable(tool))
       .map((tool) => ({
         name: tool.name,
         description: tool.description,
@@ -150,6 +174,20 @@ export class ToolManager {
         durationMs: Date.now() - startedAt,
         category: tool.category,
         outcome: 'definitive',
+      });
+    }
+
+    if (!isToolAvailable(tool)) {
+      return this.finish(events, {
+        callId: call.id,
+        name: call.name,
+        status: 'error',
+        content: tool.unavailableMessage?.() ?? resolveUnavailableMessage(call.name, undefined),
+        arguments: redactArguments(call.arguments),
+        decision: 'blocked',
+        durationMs: Date.now() - startedAt,
+        category: tool.category,
+        outcome: 'missing_dependency',
       });
     }
 

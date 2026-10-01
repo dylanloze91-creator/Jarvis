@@ -1,8 +1,8 @@
-# Jarvis 0.4.19 — contexte pour un autre développeur
+# Jarvis 0.4.20 — contexte pour un autre développeur
 
 Ce fichier est à la **racine du code**. Les chemins ci-dessous partent de ce dossier. Ce n’est pas un résumé marketing : c’est l’état réel de cet arbre. La voix a été refaite dans cet arbre (publiée en 0.4.11, section « Voix ») : la transcription restait « Chargement… 100 % » sur l’installateur Windows. La refonte du tableau de bord est dans cet arbre : fenêtre étroite = overlay, fenêtre large = tableau de bord.
 
-**Version confirmée :** `apps/desktop/package.json` → `"version": "0.4.19"`. Le `package.json` racine est encore à `0.3.0` : c’est le monorepo, pas l’appli. La version qui compte pour l’exe, l’updater et GitHub est celle de `@jarvis/desktop`. La voix corrigée en 0.4.11 (installateur Windows) est inchangée. Le modèle par défaut reste `qwen2.5:3b`. `qwen3.5:4b` est le modèle recommandé documenté ; le repli est réglable (`fallbackModel`, défaut `qwen2.5:3b`).
+**Version confirmée :** `apps/desktop/package.json` → `"version": "0.4.20"`. Le `package.json` racine est encore à `0.3.0` : c’est le monorepo, pas l’appli. La version qui compte pour l’exe, l’updater et GitHub est celle de `@jarvis/desktop`. La voix corrigée en 0.4.11 (installateur Windows) est inchangée. Le modèle par défaut reste `qwen2.5:3b`. `qwen3.5:4b` est le modèle recommandé documenté ; le repli est réglable (`fallbackModel`, défaut `qwen2.5:3b`).
 
 Lis ce fichier avant de modifier le code.
 
@@ -20,7 +20,7 @@ Utilisateur → Agent → Tool Manager → outils → Windows
 
 Le modèle ne touche jamais le système directement. TypeScript strict, Electron 44, React 19, Tailwind 4, Zod, Vitest, npm workspaces. **Aucune dépendance native à compiler.** Cible machine : Windows, 64 Go RAM, RTX 2060 6 Go, i7 10e gén. Beaucoup d’outils (PowerShell, journal d’événements, Spotify desktop, SiteBlock) n’ont de sens que sur Windows.
 
-Google Agenda / Gmail / Drive **n’est pas** dans cette 0.4.17.
+Google (Gmail, Agenda, Drive, Docs, Sheets) est arrivé en 0.4.20 : voir la section « 0.4.20 — Google Workspace ».
 
 ---
 
@@ -48,7 +48,7 @@ Scripts utiles (racine) :
 
 Le script `setup:voice` remplit `apps/desktop/voice-assets/` (runtime ONNX, Whisper, openWakeWord, modèle Vosk français ; non commité, voir `.gitignore`). Premier `dev` / `build` : besoin de réseau.
 
-L’installateur publié est `Jarvis-Setup-0.4.19.exe` (release GitHub `v0.4.19`).
+L’installateur publié est `Jarvis-Setup-0.4.20.exe` (release GitHub `v0.4.20`).
 
 Données utilisateur (Electron `userData`, typiquement `%APPDATA%\Jarvis`) :
 
@@ -58,6 +58,7 @@ Données utilisateur (Electron `userData`, typiquement `%APPDATA%\Jarvis`) :
 - `knowledge-index.json`
 - `audit-log.json`
 - `spotify-token.json` (PKCE, mode 0600)
+- `google-token.bin` (jetons Google chiffrés par `safeStorage`, jamais en clair)
 
 ---
 
@@ -80,7 +81,7 @@ Données utilisateur (Electron `userData`, typiquement `%APPDATA%\Jarvis`) :
     src/media/                 intent Spotify
     src/update/                lecture latest.yml GitHub
     src/history/  src/audit/
-  apps/desktop/                Electron (version 0.4.19)
+  apps/desktop/                Electron (version 0.4.20)
     electron-builder.yml       NSIS, extraResources, publish GitHub
     electron.vite.config.ts    aliases onnxruntime-web (wasm, pas JSEP)
     scripts/setup-whisper.mjs
@@ -203,7 +204,7 @@ Ne pas réintroduire `ort.min.mjs` (JSEP/WebGPU), un import CDN de transformers.
 
 Overlay compact (`apps/desktop/src/main/window.ts` + `App.tsx`) tant que la fenêtre fait moins de 1100 px : coins 22px, fond transparent, glows cyan (`index.css`). Quatre vues : **chat**, **historique**, **réglages**, **journal d’audit**. Bouton « Ouvrir le tableau de bord » (`window.setChrome('dashboard')`).
 
-Fenêtre large : `apps/desktop/src/renderer/src/dashboard/Dashboard.tsx`. Sidebar, orbe, cartes (Google et Automatisation désactivés, libellé « Bientôt », y compris « Lire mes emails »), discussion avec pastilles d’URL réellement citées, bloc système. CPU / RAM / version viennent de `system:snapshot` (`machineStats.ts`, `os`). Température affichée = `settings.temperature` (température du modèle, pas une sonde). Micro = réglage voix + libellé du périphérique s’il est connu, sinon « indisponible ». Mot de réveil : « Jarvis ».
+Fenêtre large : `apps/desktop/src/renderer/src/dashboard/Dashboard.tsx`. Sidebar, orbe, cartes (Automatisation désactivée, libellé « Bientôt » ; Google, « Lire mes emails » et le bouton Google : depuis 0.4.20, question au chat si Google est connecté, sinon Réglages → Google), discussion avec pastilles d’URL réellement citées, bloc système. CPU / RAM / version viennent de `system:snapshot` (`machineStats.ts`, `os`). Température affichée = `settings.temperature` (température du modèle, pas une sonde). Micro = réglage voix + libellé du périphérique s’il est connu, sinon « indisponible ». Mot de réveil : « Jarvis ».
 
 États : boot « Démarrage de Jarvis… », vide, erreur de chargement, confirmation, barre vocale sous le composer. Les actions rapides passent par le chat (donc par les confirmations), jamais par un appel direct d’outil.
 
@@ -237,9 +238,20 @@ Le réveil (Vosk, openWakeWord, vérificateur, seuils, choix du micro) est celui
 
 Même discussion qu’en 0.4.18, sauf la fenêtre après la fin de la réponse : 2 s, pas 8. Sans parole dans ces 2 s, veille (mot de réveil, orbe au repos, pastille cachée). Grâce de 3 s, micro chaud pendant la réponse, coupure si l’utilisateur parle, et les trois arrêts sont inchangés. Le réveil ne change pas.
 
+## 0.4.20 — Google Workspace
+
+Ajout pur : sans compte Google connecté, catalogue d’outils et prompt sont identiques à 0.4.19 (testé, `tools/catalog-google.test.ts`). Guide utilisateur : `docs/google-jarvis.md` du store.
+
+- **OAuth bureau** (`apps/desktop/src/main/google/oauth.ts`) : PKCE S256, navigateur système, retour `http://127.0.0.1:53125/callback` (port libre si 53125 est pris), `access_type=offline`, `prompt=consent`. Client ID + secret de l’utilisateur dans `settings.json` (`googleClientId`, `googleClientSecret`, `googleAccess: full|readonly`). Jetons chiffrés `safeStorage` (`tokenStore.ts`, `google-token.bin`) ; sans chiffrement disponible : mémoire seulement. « Se déconnecter » révoque puis efface. Mode Test Google = jeton de rafraîchissement de 7 jours : `invalid_grant` → `needsReconsent` + message français « Se reconnecter ».
+- **HTTP** (`http.ts`) : un rafraîchissement après 401 puis reconnexion ; 403 → autorisation décochée / API non activée / quota ; 429 suit `Retry-After` (≤ 8 s réessayé, sinon délai donné) ; POST jamais rejoué après 503.
+- **Services** (`gmail.ts`, `calendar.ts`, `drive.ts` (Drive + Docs), `sheets.ts`) : chaque écriture est relue (brouillon, « Envoyés », événement, absence après suppression, texte du Doc, cellules) ; sinon `verification_failed`, jamais « fait ». Modifier/supprimer un événement exige son titre actuel. Envoyer un brouillon exige qu’il soit identique à la carte.
+- **Core** : `packages/core/src/google/` (autorisations, dates françaises « demain 14h », intention, prompt du tour, liens, texte des cartes). `ToolDefinition.isAvailable` / `unavailableMessage` (optionnels ; absents = comportement d’avant). L’agent ne propose les `google_*` que sur un tour Google (ou un suivi) et ajoute alors la date du jour et les règles Google au prompt ; plafond `HARD_TOOL_ROUND_CAP` inchangé.
+- **UI** : onglet Réglages « Google » (`components/GoogleSettings.tsx`, guide en 6 étapes), cartes du tableau de bord branchées. Scènes de capture `?scene=google` et `?scene=google-confirm`.
+- **Tests** : faux Google en mémoire (`google/fakeGoogle.testkit.ts`) : OAuth + boucle locale réelle, rafraîchissement, 401, 403, 429, chaque outil, confirmations, vérification, secrets masqués.
+
 ## Updater / GitHub
 
-Dernière publication : **0.4.19** (`https://github.com/dylanloze91-creator/Jarvis/releases/tag/v0.4.19`) — exe, `.blockmap` et `latest.yml` publiés : l’updater intégré la propose.
+Dernière publication : **0.4.20** (`https://github.com/dylanloze91-creator/Jarvis/releases/tag/v0.4.20`) — exe, `.blockmap` et `latest.yml` publiés : l’updater intégré la propose.
 
 - `apps/desktop/electron-builder.yml` : `publish.provider: github`, owner `dylanloze91-creator`, repo `Jarvis`, `releaseType: release`, artifact `Jarvis-Setup-${version}.exe`
 - `apps/desktop/src/main/updater.ts` : contrôle 15 s après le démarrage puis toutes les 4 h ; téléchargement auto ; **installation seulement si l’utilisateur clique**
@@ -267,7 +279,7 @@ export const monOutil = defineTool({
 });
 ```
 
-`forceConfirm` seulement pour suppression, élévation, commande arbitraire, blocage de sites, indexation/effacement mémoire.
+`forceConfirm` seulement pour suppression, élévation, commande arbitraire, blocage de sites, indexation/effacement mémoire, envoi de mail, écrasement de cellules.
 
 ### Un provider LLM
 
@@ -308,6 +320,9 @@ Enregistrés dans `apps/desktop/src/main/tools/index.ts` :
 | `set/add/forget/reset_jarvis_personalization` | confirm |
 | `remember_jarvis` | confirm |
 | `index_jarvis_folder`, `clear_jarvis_memory` (force) | confirm |
+| `google_gmail_search/read`, `google_calendar_list`, `google_drive_search/read`, `google_docs_read`, `google_sheets_read` (0.4.20, si connecté) | safe |
+| `google_gmail_draft`, `google_calendar_create/update`, `google_docs_create/append`, `google_sheets_append` (0.4.20, sans catégorie) | confirm |
+| `google_gmail_send`, `google_calendar_delete`, `google_sheets_write` (force) | confirm |
 
 ---
 
@@ -338,7 +353,8 @@ Corrections de la revue complète (détail : `docs/audit-0410.md` du store du pr
 - **`forceConfirm`** sur `run_command`, `delete_file`, mutations SiteBlock, indexation/effacement mémoire. `ConfirmationCard` doit montrer `command` tel quel pour le shell.
 - **Protocole `jarvis-oww:` + extraResources** (`voice-assets/`) pour le runtime ONNX, Whisper, openWakeWord et Vosk. Ne pas remettre les ONNX dans asar ni charger transformers depuis jsDelivr. Ne pas bundler `onnxruntime-node` / `@huggingface/transformers` dans l’exe (`electron-builder.yml`).
 - **Whisper** : garder la configuration « modèle local » de transformers.js (`configureTransformersEnv`) et `preprocessor_config.json` / `tokenizer*.json` dans `REQUIRED_VOICE_ASSETS`.
-- **UI** : overlay compact sous 1100 px, tableau de bord au-dessus. Ne pas retirer les confirmations. Google / Automatisation / « Lire mes emails » restent « Bientôt ».
+- **UI** : overlay compact sous 1100 px, tableau de bord au-dessus. Ne pas retirer les confirmations. Automatisation reste « Bientôt ».
+- **Google** : outils absents du catalogue sans compte connecté ; écritures `confirm` **sans catégorie** (aucune politique ne les retire) ; envoi, suppression d’événement et écrasement de plage en `forceConfirm` ; relecture avant « fait » ; aucun outil de suppression de mail ; jetons via `safeStorage` seulement ; port 53125 (Spotify garde 53124).
 - **Spotify PKCE** sans secret ; URI de redirect exacte ; outils `safe`.
 - **SiteBlock loopback** uniquement.
 - **Embeddings mémoire** : Ollama local seulement.
@@ -349,7 +365,7 @@ Corrections de la revue complète (détail : `docs/audit-0410.md` du store du pr
 - **Version** : bump `apps/desktop/package.json`, pas seulement la racine.
 - **Modèles / voix réelles** : ne pas committer `voice-assets/**` (sauf son README), `test-fixtures/*.wav|mp3`.
 
-Travaux **hors scope** de cet arbre (ne pas les reprendre ici) : Suite Google, publication GitHub.
+Travaux **hors scope** de cet arbre (ne pas les reprendre ici) : publication GitHub.
 
 ## Contrats 0.4.14
 
