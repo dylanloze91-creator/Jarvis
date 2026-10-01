@@ -1,8 +1,9 @@
 import {
+  COMMAND_STARTED_SPEECH_MS,
+  ConversationSession,
   END_OF_SPEECH_RMS,
   EndOfSpeechDetector,
   captureFailureText,
-  commandAfterWakeWord,
   splitWakeWordWindow,
   type Settings,
   type SpeechToTextProvider,
@@ -65,6 +66,12 @@ export interface UseVoiceResult {
   stopSpeaking: () => void;
   /** Lit un texte à voix haute avec le moteur configuré (branché sur la fin d'un tour de conversation). */
   speak: (text: string) => void;
+  /**
+   * Fin du tour de l'agent. En discussion (après un réveil), garde le micro
+   * ouvert : la synthèse se termine, ou le texte seul si elle est coupée,
+   * puis 8 s de silence avant la veille.
+   */
+  noteAssistantReply: (text: string) => void;
   listMicrophones: typeof listMicrophones;
   /** Nouvelle tentative d'ouverture du micro. */
   retryMicrophone: () => void;
@@ -143,6 +150,11 @@ export function useVoice({
   const timingRef = useRef<{ wakeAt: number; endAt: number | null } | null>(null);
   const levelRef = useRef(0);
   const levelShownAtRef = useRef(0);
+  const conversationRef = useRef(new ConversationSession());
+  /** Transcription en cours : les trames suivantes ne relancent pas la fin de parole. */
+  const closingRef = useRef(false);
+  const hotTailRef = useRef(new FrameTail());
+  const ttsGenerationRef = useRef(0);
 
   useEffect(() => microphone.subscribe(setMic), []);
 
@@ -213,15 +225,55 @@ export function useVoice({
     }
   }, []);
 
+  const audioMs = useCallback(() => audioClockRef.current * 1000, []);
+
+  const wakeMatch = useCallback(() => {
+    const voice = settingsRef.current?.voice;
+    return { word: voice?.wakeWord ?? 'jarvis', variants: voice?.wakeWordVariants ?? [] };
+  }, []);
+
+  const stopPlayback = useCallback(() => {
+    ttsControllerRef.current?.stop();
+    ttsControllerRef.current = null;
+    if (audioElementRef.current) {
+      audioElementRef.current.pause();
+      audioElementRef.current.src = '';
+      audioElementRef.current = null;
+    }
+    setSpeakingText(null);
+  }, []);
+
+  const returnToStandby = useCallback(() => {
+    closingRef.current = false;
+    clearMaxDurationTimer();
+    sttControllerRef.current?.abort();
+    sttControllerRef.current = null;
+    endOfSpeechRef.current = null;
+    hotTailRef.current.clear();
+    pendingWakeWordStripRef.current = null;
+    conversationRef.current.standby();
+    setLiveTranscript('');
+    backToSleepOrIdle();
+  }, [backToSleepOrIdle, clearMaxDurationTimer]);
+
+  const armHot = useCallback(() => {
+    closingRef.current = false;
+    clearMaxDurationTimer();
+    sttControllerRef.current = null;
+    endOfSpeechRef.current = new EndOfSpeechDetector();
+    hotTailRef.current.clear();
+    setVoiceState('listening');
+  }, [clearMaxDurationTimer, setVoiceState]);
+
   const finalizeTranscript = useCallback(
     (text: string, failed = false) => {
       clearMaxDurationTimer();
       sttControllerRef.current = null;
       setLiveTranscript('');
-      const pendingStrip = pendingWakeWordStripRef.current;
       pendingWakeWordStripRef.current = null;
-      const command = pendingStrip ? commandAfterWakeWord(text, pendingStrip) : text;
-      const trimmed = command.trim();
+      closingRef.current = false;
+      const decision = conversationRef.current.deliver(text, wakeMatch());
+      const sent = decision.kind === 'send' ? decision.text : '';
       const timing = timingRef.current;
       timingRef.current = null;
       if (timing) {
@@ -231,15 +283,38 @@ export function useVoice({
             (timing.endAt !== null ? ` · ${Math.round(now - timing.endAt)} ms après la fin de parole` : ''),
         );
       }
-      microphoneLog(`dictée terminée : ${trimmed ? `commande de ${trimmed.length} caractères envoyée` : 'rien à envoyer'}`);
-      if (settingsRef.current?.voice.wakeLearning) wakeLearningSession.outcome(trimmed, failed);
-      if (trimmed) onTranscriptRef.current(trimmed);
-      backToSleepOrIdle();
+      microphoneLog(
+        `dictée terminée : ${decision.kind === 'send' ? `commande de ${sent.length} caractères envoyée` : decision.kind === 'stop' ? 'arrêt, retour en veille' : 'rien à envoyer'}`,
+      );
+      if (settingsRef.current?.voice.wakeLearning) {
+        wakeLearningSession.outcome(decision.kind === 'stop' ? 'stop' : sent, failed);
+      }
+      if (decision.kind === 'send') {
+        onTranscriptRef.current(sent);
+        armHot();
+        return;
+      }
+      if (decision.kind === 'stop') {
+        ttsGenerationRef.current += 1;
+        stopPlayback();
+        returnToStandby();
+        return;
+      }
+      if (conversationRef.current.phase === 'standby') {
+        returnToStandby();
+        return;
+      }
+      armHot();
+      if (conversationRef.current.pollHot(audioMs()) === 'standby') returnToStandby();
     },
-    [backToSleepOrIdle, clearMaxDurationTimer],
+    [armHot, audioMs, clearMaxDurationTimer, returnToStandby, stopPlayback, wakeMatch],
   );
 
   const finishListening = useCallback(() => {
+    if (closingRef.current) return;
+    const session = conversationRef.current;
+    if (session.phase === 'command' && audioMs() < session.graceDeadline) return;
+    closingRef.current = true;
     clearMaxDurationTimer();
     if (timingRef.current && timingRef.current.endAt === null) {
       timingRef.current.endAt = performance.now();
@@ -248,10 +323,11 @@ export function useVoice({
       );
     }
     sttControllerRef.current?.stop();
-  }, [clearMaxDurationTimer]);
+  }, [audioMs, clearMaxDurationTimer]);
 
   const beginListening = useCallback(() => {
-    if (stateRef.current !== 'sleeping') return;
+    if (conversationRef.current.acceptWake(audioMs()) !== 'started') return;
+    closingRef.current = false;
     microphoneLog(
       `[latence] réveil · audio ${audioClockRef.current.toFixed(2)} s · dernière parole ${Math.round((audioClockRef.current - lastVoiceClockRef.current) * 1000)} ms avant`,
     );
@@ -304,7 +380,36 @@ export function useVoice({
     }
 
     maxDurationTimerRef.current = window.setTimeout(() => finishListening(), MAX_UTTERANCE_MS);
-  }, [finalizeTranscript, finishListening, resolveStt, setVoiceError, setVoiceState]);
+  }, [audioMs, finalizeTranscript, finishListening, resolveStt, setVoiceError, setVoiceState]);
+
+  const beginFollowUp = useCallback(
+    (frames: Float32Array[], sampleRate: number) => {
+      closingRef.current = false;
+      setVoiceState('listening');
+      setLiveTranscript('');
+      const provider = resolveStt();
+      sttOwnsCaptureRef.current = provider.managesOwnCapture;
+      if (provider.id === 'local-whisper') void getWhisperPipeline().catch(() => undefined);
+      const controller = provider.start(
+        {
+          onPartial: (text) => setLiveTranscript(text),
+          onFinal: (text) => finalizeTranscript(text),
+          onError: (message) => {
+            setVoiceError(message);
+            finalizeTranscript('', true);
+          },
+        },
+        { language: 'fr-FR' },
+      );
+      sttControllerRef.current = controller;
+      pendingWakeWordStripRef.current = null;
+      if (!provider.managesOwnCapture) {
+        for (const frame of frames) controller.pushAudio?.(frame, sampleRate);
+      }
+      maxDurationTimerRef.current = window.setTimeout(() => finishListening(), MAX_UTTERANCE_MS);
+    },
+    [finalizeTranscript, finishListening, resolveStt, setVoiceError, setVoiceState],
+  );
 
   const startWakeWordEngine = useCallback(() => {
     wakeWordControllerRef.current?.stop();
@@ -346,15 +451,39 @@ export function useVoice({
       }
 
       if (stateRef.current === 'listening') {
-        if (!sttOwnsCaptureRef.current) sttControllerRef.current?.pushAudio?.(frame, sampleRate);
+        const session = conversationRef.current;
+        const at = audioMs();
 
-        if (endOfSpeechRef.current?.pushPcm(frame, sampleRate)) {
-          endOfSpeechRef.current = null;
-          finishListening();
+        if (session.phase === 'hot') {
+          hotTailRef.current.push(frame, sampleRate);
+          const detector = endOfSpeechRef.current ?? new EndOfSpeechDetector();
+          endOfSpeechRef.current = detector;
+          const started = detector.commandStarted;
+          detector.pushPcm(frame, sampleRate);
+          if (!started && detector.commandStarted) {
+            const decision = session.noteHotSpeech(at, COMMAND_STARTED_SPEECH_MS);
+            if (decision === 'capture') {
+              ttsGenerationRef.current += 1;
+              stopPlayback();
+              beginFollowUp(hotTailRef.current.drain(), sampleRate);
+            } else if (decision === 'standby') {
+              returnToStandby();
+            }
+          } else if (session.pollHot(at) === 'standby') {
+            returnToStandby();
+          }
+          return;
         }
+
+        if (closingRef.current) return;
+        if (session.phase !== 'command' && session.phase !== 'follow-up') return;
+        if (!sttOwnsCaptureRef.current) sttControllerRef.current?.pushAudio?.(frame, sampleRate);
+        const ended = endOfSpeechRef.current?.pushPcm(frame, sampleRate) ?? false;
+        const decision = session.phase === 'command' ? session.pollCommand(at, ended) : ended ? 'close' : 'hold';
+        if (decision === 'close') finishListening();
       }
     },
-    [finishListening],
+    [audioMs, beginFollowUp, finishListening, returnToStandby, stopPlayback],
   );
   const handleFrameRef = useRef(handleFrame);
   handleFrameRef.current = handleFrame;
@@ -366,6 +495,10 @@ export function useVoice({
     sttControllerRef.current = null;
     wakeWordControllerRef.current?.stop();
     wakeWordControllerRef.current = null;
+    endOfSpeechRef.current = null;
+    hotTailRef.current.clear();
+    closingRef.current = false;
+    conversationRef.current.standby();
     levelRef.current = 0;
     setLevel(0);
     setLiveTranscript('');
@@ -429,16 +562,19 @@ export function useVoice({
   }, [wakeWordConfigKey]);
 
   const stopSpeaking = useCallback(() => {
-    ttsControllerRef.current?.stop();
-    ttsControllerRef.current = null;
-    if (audioElementRef.current) {
-      audioElementRef.current.pause();
-      audioElementRef.current.src = '';
-      audioElementRef.current = null;
+    ttsGenerationRef.current += 1;
+    stopPlayback();
+    const session = conversationRef.current;
+    if (session.showListening) {
+      if (session.phase === 'hot') {
+        session.replyFinished(audioMs());
+        if (session.pollHot(audioMs()) === 'standby') returnToStandby();
+      }
+      if (stateRef.current !== 'listening') setVoiceState('listening');
+      return;
     }
-    setSpeakingText(null);
     if (stateRef.current === 'speaking') backToSleepOrIdle();
-  }, [backToSleepOrIdle]);
+  }, [audioMs, backToSleepOrIdle, returnToStandby, setVoiceState, stopPlayback]);
 
   const playClip = useCallback((data: Uint8Array, mimeType: string, onEnd: () => void) => {
     const blob = new Blob([data.buffer as ArrayBuffer], { type: mimeType });
@@ -484,6 +620,62 @@ export function useVoice({
     [backToSleepOrIdle, playClip, resolveTts, setVoiceError, setVoiceState, stopSpeaking],
   );
 
+  const speakInConversation = useCallback(
+    (text: string) => {
+      const current = settingsRef.current;
+      if (!current) return;
+      stopPlayback();
+      const generation = (ttsGenerationRef.current += 1);
+      const provider = resolveTts();
+      setSpeakingText(text);
+      if (stateRef.current !== 'listening') setVoiceState('listening');
+
+      const finished = (): void => {
+        if (generation !== ttsGenerationRef.current) return;
+        setSpeakingText(null);
+        const session = conversationRef.current;
+        if (session.phase !== 'hot') return;
+        session.replyFinished(audioMs());
+        if (session.pollHot(audioMs()) === 'standby') returnToStandby();
+      };
+
+      const controller = provider.speak(
+        text,
+        {
+          onAudio: (clip) => playClip(clip.data, clip.mimeType, finished),
+          onEnd: () => {
+            if (provider.managesOwnPlayback) finished();
+          },
+          onError: (message) => {
+            setVoiceError(message);
+            finished();
+          },
+        },
+        { voice: current.voice.ttsVoice || undefined },
+      );
+      ttsControllerRef.current = controller;
+    },
+    [audioMs, playClip, resolveTts, returnToStandby, setVoiceError, setVoiceState, stopPlayback],
+  );
+
+  const noteAssistantReply = useCallback(
+    (text: string) => {
+      const session = conversationRef.current;
+      if (!session.showListening || session.phase === 'command' || session.phase === 'follow-up') {
+        if (!session.showListening) speak(text);
+        return;
+      }
+      const current = settingsRef.current;
+      if (!current?.voice.ttsEnabled || !text.trim()) {
+        session.replyFinished(audioMs());
+        if (session.pollHot(audioMs()) === 'standby') returnToStandby();
+        return;
+      }
+      speakInConversation(text);
+    },
+    [audioMs, returnToStandby, speak, speakInConversation],
+  );
+
   useEffect(
     () => () => {
       stopEngines();
@@ -525,9 +717,37 @@ export function useVoice({
     speakingText,
     stopSpeaking,
     speak,
+    noteAssistantReply,
     listMicrophones,
     retryMicrophone,
   };
+}
+
+/** Dernières secondes du micro chaud, pour ne pas couper l'attaque d'un suivi. */
+class FrameTail {
+  private chunks: Float32Array[] = [];
+  private samples = 0;
+
+  push(frame: Float32Array, sampleRate: number): void {
+    this.chunks.push(frame);
+    this.samples += frame.length;
+    const max = Math.round(sampleRate * 2);
+    while (this.chunks.length > 1 && this.samples - this.chunks[0]!.length >= max) {
+      this.samples -= this.chunks.shift()!.length;
+    }
+  }
+
+  drain(): Float32Array[] {
+    const chunks = this.chunks;
+    this.chunks = [];
+    this.samples = 0;
+    return chunks;
+  }
+
+  clear(): void {
+    this.chunks = [];
+    this.samples = 0;
+  }
 }
 
 function microphoneLog(line: string): void {

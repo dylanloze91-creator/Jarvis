@@ -83,6 +83,8 @@ export class ChatSession {
     };
 
     let conversationId = input.conversationId ?? '';
+    const superseded = (): boolean =>
+      controller.signal.aborted && this.controller !== null && this.controller !== controller;
     try {
     const settings = this.deps.getSettings();
     const conversation = await this.loadConversation(input.conversationId);
@@ -145,10 +147,14 @@ export class ChatSession {
         }
       }
     } catch (error) {
-      emit({ type: 'error', message: error instanceof Error ? error.message : String(error) });
+      if (!superseded()) {
+        emit({ type: 'error', message: error instanceof Error ? error.message : String(error) });
+      }
     } finally {
       if (this.controller === controller) this.controller = null;
     }
+
+    if (superseded()) return;
 
     const updated = withMessages(conversation, messages);
     try {
@@ -173,6 +179,7 @@ export class ChatSession {
     emit({ type: 'done', conversationId: updated.id, messages: updated.messages });
     } catch {
       if (this.controller === controller) this.controller = null;
+      if (superseded()) return;
       emit({
         type: 'error',
         message: "Le message n'a pas pu être envoyé. Réessaie dans un instant.",

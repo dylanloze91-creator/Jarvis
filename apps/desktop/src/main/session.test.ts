@@ -120,6 +120,21 @@ describe('ChatSession', () => {
     expect(events.at(-1)?.type).toBe('done');
   });
 
+  it('un tour remplacé par le suivant ne renvoie pas « done »', async () => {
+    const events: ChatEvent[] = [];
+    const { chat } = session();
+    const first = chat.send(sender(events), {
+      conversationId: null,
+      text: 'Crée un dossier nommé "Projet"',
+    });
+    await waitFor(() => events.find((event) => event.type === 'confirm'));
+    const second = chat.send(sender(events), { conversationId: null, text: 'Bonjour' });
+    await Promise.all([first, second]);
+    const started = events.flatMap((event) => (event.type === 'started' ? [event.message.content] : []));
+    expect(started).toEqual(['Crée un dossier nommé "Projet"', 'Bonjour']);
+    expect(events.filter((event) => event.type === 'done')).toHaveLength(1);
+  });
+
   it('refuse la confirmation si la fenêtre disparaît', async () => {
     const events: ChatEvent[] = [];
     const { chat, executed } = session();

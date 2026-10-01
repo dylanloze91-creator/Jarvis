@@ -1,8 +1,8 @@
-# Jarvis 0.4.17 — contexte pour un autre développeur
+# Jarvis 0.4.18 — contexte pour un autre développeur
 
 Ce fichier est à la **racine du code**. Les chemins ci-dessous partent de ce dossier. Ce n’est pas un résumé marketing : c’est l’état réel de cet arbre. La voix a été refaite dans cet arbre (publiée en 0.4.11, section « Voix ») : la transcription restait « Chargement… 100 % » sur l’installateur Windows. La refonte du tableau de bord est dans cet arbre : fenêtre étroite = overlay, fenêtre large = tableau de bord.
 
-**Version confirmée :** `apps/desktop/package.json` → `"version": "0.4.17"`. Le `package.json` racine est encore à `0.3.0` : c’est le monorepo, pas l’appli. La version qui compte pour l’exe, l’updater et GitHub est celle de `@jarvis/desktop`. La voix corrigée en 0.4.11 (installateur Windows) est inchangée. Le modèle par défaut reste `qwen2.5:3b`. `qwen3.5:4b` est le modèle recommandé documenté ; le repli est réglable (`fallbackModel`, défaut `qwen2.5:3b`).
+**Version confirmée :** `apps/desktop/package.json` → `"version": "0.4.18"`. Le `package.json` racine est encore à `0.3.0` : c’est le monorepo, pas l’appli. La version qui compte pour l’exe, l’updater et GitHub est celle de `@jarvis/desktop`. La voix corrigée en 0.4.11 (installateur Windows) est inchangée. Le modèle par défaut reste `qwen2.5:3b`. `qwen3.5:4b` est le modèle recommandé documenté ; le repli est réglable (`fallbackModel`, défaut `qwen2.5:3b`).
 
 Lis ce fichier avant de modifier le code.
 
@@ -48,7 +48,7 @@ Scripts utiles (racine) :
 
 Le script `setup:voice` remplit `apps/desktop/voice-assets/` (runtime ONNX, Whisper, openWakeWord, modèle Vosk français ; non commité, voir `.gitignore`). Premier `dev` / `build` : besoin de réseau.
 
-L’installateur publié est `Jarvis-Setup-0.4.17.exe` (release GitHub `v0.4.17`).
+L’installateur publié est `Jarvis-Setup-0.4.18.exe` (release GitHub `v0.4.18`).
 
 Données utilisateur (Electron `userData`, typiquement `%APPDATA%\Jarvis`) :
 
@@ -80,7 +80,7 @@ Données utilisateur (Electron `userData`, typiquement `%APPDATA%\Jarvis`) :
     src/media/                 intent Spotify
     src/update/                lecture latest.yml GitHub
     src/history/  src/audit/
-  apps/desktop/                Electron (version 0.4.17)
+  apps/desktop/                Electron (version 0.4.18)
     electron-builder.yml       NSIS, extraResources, publish GitHub
     electron.vite.config.ts    aliases onnxruntime-web (wasm, pas JSEP)
     scripts/setup-whisper.mjs
@@ -224,9 +224,18 @@ L’overlay compact ci-dessus est celui de la 0.4.9, conservé pour la fenêtre 
 
 ---
 
+## 0.4.18 — discussion courte après le réveil
+
+Le réveil (Vosk, openWakeWord, vérificateur, seuils, choix du micro) est celui de 0.4.17. Seul l’après-réveil change (`packages/core/src/speech/conversationSession.ts`, branché dans `useVoice.ts`).
+
+- **Grâce 3 s.** Dès qu’un réveil est accepté, la captation ne peut pas se fermer avant 3 s d’audio, même si le silence ou la fin de parole l’aurait coupée. L’orbe et, fenêtre masquée, la pastille « Jarvis écoute » restent en écoute. Un second « Jarvis » dans cette fenêtre ne relance pas la commande.
+- **Suivi sans mot de réveil.** Après l’envoi, le micro reste chaud pendant que la réponse s’écrit et se dit, puis 8 s après la fin (fin de la synthèse, ou le texte si la synthèse est coupée). Une parole dans cette fenêtre est un nouveau tour, sans « Jarvis ». Parler pendant la synthèse la coupe. Passé 8 s de silence, retour en veille : mot de réveil à nouveau, orbe au repos, pastille cachée.
+- **Arrêt.** « stop », « tais-toi », « merci c’est bon » reviennent en veille tout de suite.
+- **Pas d’écoute infinie.** La veille entre deux discussions exige le mot de réveil. Un suivi utilise la même fin de parole qu’une commande (une toux trop courte n’en est pas un). `...`, le vide et les phrases hallucinées connues de Whisper ne sont pas un tour et ne prolongent pas les 8 s.
+
 ## Updater / GitHub
 
-Dernière publication : **0.4.17** (`https://github.com/dylanloze91-creator/Jarvis/releases/tag/v0.4.17`) — exe, `.blockmap` et `latest.yml` publiés : l’updater intégré la propose.
+Dernière publication : **0.4.18** (`https://github.com/dylanloze91-creator/Jarvis/releases/tag/v0.4.18`) — exe, `.blockmap` et `latest.yml` publiés : l’updater intégré la propose.
 
 - `apps/desktop/electron-builder.yml` : `publish.provider: github`, owner `dylanloze91-creator`, repo `Jarvis`, `releaseType: release`, artifact `Jarvis-Setup-${version}.exe`
 - `apps/desktop/src/main/updater.ts` : contrôle 15 s après le démarrage puis toutes les 4 h ; téléchargement auto ; **installation seulement si l’utilisateur clique**

@@ -111,7 +111,7 @@ export function useChat(options: UseChatOptions = {}) {
           const lastAssistant = [...event.messages]
             .reverse()
             .find((message) => message.role === 'assistant' && message.content.trim().length > 0);
-          if (lastAssistant) onAssistantFinal.current?.(lastAssistant.content);
+          onAssistantFinal.current?.(lastAssistant?.content ?? '');
           break;
         }
       }
@@ -121,7 +121,7 @@ export function useChat(options: UseChatOptions = {}) {
   const send = useCallback(
     (text: string, source: 'voice' | 'text' = 'text') => {
       const trimmed = text.trim();
-      if (trimmed.length === 0 || busy) return;
+      if (trimmed.length === 0 || (busy && source !== 'voice')) return;
       setBusy(true);
       void window.jarvis.chat.send({ conversationId, text: trimmed, source }).catch(() => {
         setItems((current) => [
@@ -134,6 +134,7 @@ export function useChat(options: UseChatOptions = {}) {
         ]);
         setConfirmation(null);
         setBusy(false);
+        onAssistantFinal.current?.('');
       });
     },
     [busy, conversationId],

@@ -29,6 +29,7 @@ function voice(overrides: Partial<UseVoiceResult>): UseVoiceResult {
     speakingText: null,
     stopSpeaking: () => undefined,
     speak: () => undefined,
+    noteAssistantReply: () => undefined,
     listMicrophones: async () => [],
     retryMicrophone: () => undefined,
     ...overrides,

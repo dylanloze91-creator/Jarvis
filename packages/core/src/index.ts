@@ -366,3 +366,12 @@ export {
 } from './speech/wakewordEngine.js';
 export * from './speech/wakeLearning/index.js';
 export * from './speech/endOfSpeech.js';
+export {
+  ConversationSession,
+  FOLLOW_UP_WINDOW_MS,
+  WAKE_GRACE_MS,
+  classifySpokenTurn,
+  isConversationStop,
+  type ConversationPhase,
+  type SpokenTurnDecision,
+} from './speech/conversationSession.js';

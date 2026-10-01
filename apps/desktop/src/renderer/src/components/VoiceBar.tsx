@@ -70,7 +70,7 @@ export function VoiceBar({ voice, voiceEnabled }: VoiceBarProps) {
           Réessayer
         </Button>
       ) : null}
-      {voice.state === 'speaking' ? (
+      {voice.state === 'speaking' || voice.speakingText ? (
         <Button size="icon" variant="subtle" title="Couper la réponse" onClick={voice.stopSpeaking}>
           <Square className="size-3 fill-current" />
         </Button>

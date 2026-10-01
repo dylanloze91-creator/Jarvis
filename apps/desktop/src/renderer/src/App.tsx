@@ -43,7 +43,7 @@ export default function App() {
   const seeded = useRef(false);
 
   const voiceRef = useRef<ReturnType<typeof useVoice> | null>(null);
-  const handleAssistantFinal = useCallback((text: string) => voiceRef.current?.speak(text), []);
+  const handleAssistantFinal = useCallback((text: string) => voiceRef.current?.noteAssistantReply(text), []);
   const chat = useChat({ onAssistantFinal: handleAssistantFinal });
   const update = useUpdate();
   // Marque explicitement l'origine vocale : le modèle en est averti côté
