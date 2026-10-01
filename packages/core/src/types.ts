@@ -41,6 +41,8 @@ export interface ToolCallOutcome {
     | 'missing_dependency';
   /** Détail technique déjà rédigé, réservé au journal. */
   technicalDetail?: string;
+  /** Charge utile structurée de l'outil (`ToolResult.data`), jamais envoyée au modèle ni au journal. */
+  data?: unknown;
 }
 
 export interface ChatMessage {

@@ -7,6 +7,15 @@ import { googleTurnPrompt } from '../google/prompt.js';
 import { isCurrentTrackQuestion } from '../media/currentTrackIntent.js';
 import { extractSpotifyPlayQuery, isMusicIntent } from '../media/playIntent.js';
 import { extractYoutubeUrl } from '../youtube/url.js';
+import { localTimeZone } from '../search/dates.js';
+import type { CurrentSearchResult } from '../search/currentSearch.js';
+import { detectCurrentInfoIntent, type CurrentInfoPlan } from './currentInfo.js';
+import {
+  CURRENT_INFO_TURN_PROMPT,
+  currentDatePrompt,
+  currentInfoFailureReply,
+  formatSourcesFooter,
+} from './citations.js';
 import {
   createMessage,
   randomId,
@@ -14,6 +23,10 @@ import {
   type ToolCall,
   type ToolCallOutcome,
 } from '../types.js';
+
+/** Outil interne exécuté avant le modèle pour une question d'actualité. */
+export const CURRENT_INFO_TOOL_NAME = 'web_search_current';
+const WEB_TOOL_NAMES = new Set(['web_search', 'web_research', 'fetch_page']);
 
 export type AgentEvent =
   | { type: 'assistant_delta'; delta: string }
@@ -45,6 +58,10 @@ export interface AgentOptions {
   maxToolRounds?: number;
   temperature?: number;
   maxTokens?: number;
+  /** Horloge du tour (tests). Défaut : l'heure du PC. */
+  now?: () => Date;
+  /** Fuseau d'affichage des dates. Défaut : celui du PC. */
+  timeZone?: string;
 }
 
 export const DEFAULT_SYSTEM_PROMPT = [
@@ -128,9 +145,14 @@ export class Agent {
     const lastUser = lastUserMessage(conversation);
     const youtubeTurn = extractYoutubeUrl(lastUser) !== null;
     const musicTurn = !youtubeTurn && isMusicIntent(lastUser);
-    const webTurn = !youtubeTurn && looksLikeWebResearchIntent(lastUser);
+    const now = this.options.now?.() ?? new Date();
+    const timeZone = this.options.timeZone ?? localTimeZone();
     const googleTurn = looksLikeGoogleIntent(lastUser) || recentlyUsedGoogleTools(conversation);
-    const toolSchemas = this.tools
+    // Gmail, Agenda, Drive (ou leur suivi) gardent les outils google_* : jamais déroutés vers le web.
+    const currentPlan =
+      youtubeTurn || musicTurn || googleTurn ? null : this.currentInfoPlan(conversation, now);
+    const webTurn = !youtubeTurn && currentPlan === null && looksLikeWebResearchIntent(lastUser);
+    let toolSchemas = this.tools
       .schemas()
       .filter((tool) => musicTurn || !isSpotifyToolName(tool.name))
       .filter((tool) => googleTurn || !isGoogleToolName(tool.name));
@@ -138,7 +160,10 @@ export class Agent {
     // prompt et catalogue restent ceux d'avant.
     const googleOffered = toolSchemas.some((tool) => isGoogleToolName(tool.name));
     const composed = composeSystemPrompt(this.options.systemPrompt, musicTurn, webTurn, youtubeTurn);
-    const system = googleOffered ? `${composed} ${googleTurnPrompt()}` : composed;
+    let system = googleOffered ? `${composed} ${googleTurnPrompt()}` : composed;
+    // Date et protocole seulement pour la recherche forcée : les autres tours gardent leur prompt.
+    if (currentPlan) system = `${system} ${currentDatePrompt(now, timeZone)} ${CURRENT_INFO_TURN_PROMPT}`;
+    let currentSearch: CurrentSearchResult | null = null;
 
     for (let round = 0; round <= maxRounds; round += 1) {
       const forcedYoutube =
@@ -193,6 +218,26 @@ export class Agent {
         return;
       }
 
+      if (round === 0 && currentPlan) {
+        const search = yield* this.forcedCurrentSearch(conversation, currentPlan, lastUser, context);
+        if (!search.result || search.result.sources.length === 0) {
+          if (context.signal?.aborted) {
+            yield { type: 'done' };
+            return;
+          }
+          // Pas de réponse de mémoire présentée comme actuelle : l'échec est dit.
+          const failure = currentInfoFailureReply(search.result, search.detail, timeZone);
+          yield { type: 'assistant_delta', delta: failure };
+          const reply = createMessage('assistant', failure);
+          conversation.push(reply);
+          yield { type: 'assistant_message', message: reply };
+          yield { type: 'done' };
+          return;
+        }
+        currentSearch = search.result;
+        toolSchemas = toolSchemas.filter((tool) => WEB_TOOL_NAMES.has(tool.name));
+      }
+
       let text = '';
       const calls: ToolCall[] = [];
       let failed = false;
@@ -202,9 +247,12 @@ export class Agent {
           messages: [...conversation],
           system,
           tools: toolSchemas,
-          temperature: googleOffered
-            ? Math.min(temperatureForTurn(lastUser, this.options.temperature), 0.2)
-            : temperatureForTurn(lastUser, this.options.temperature),
+          // Réponse tirée des sources : presque déterministe, pour ne pas glisser vers la mémoire.
+          temperature: currentSearch
+            ? Math.min(temperatureForTurn(lastUser, this.options.temperature), 0.1)
+            : googleOffered
+              ? Math.min(temperatureForTurn(lastUser, this.options.temperature), 0.2)
+              : temperatureForTurn(lastUser, this.options.temperature),
           maxTokens: this.options.maxTokens,
           signal: context.signal,
         });
@@ -231,6 +279,19 @@ export class Agent {
       }
 
       if (failed) return;
+
+      if (calls.length === 0 && currentSearch) {
+        if (!text.trim()) {
+          const lead = 'Voici ce que la recherche a trouvé ; je n’ai pas réussi à rédiger la réponse moi-même.';
+          text = lead;
+          yield { type: 'assistant_delta', delta: lead };
+        }
+        const footer = formatSourcesFooter(currentSearch, text, timeZone);
+        if (footer) {
+          text += footer;
+          yield { type: 'assistant_delta', delta: footer };
+        }
+      }
 
       const assistantMessage = createMessage(
         'assistant',
@@ -302,6 +363,85 @@ export class Agent {
       call,
       assistantMessage: createMessage('assistant', '', { toolCalls: [call] }),
     };
+  }
+
+  /**
+   * Question d'actualité dans le dernier message (et pas encore d'outil dans
+   * ce tour) : plan de recherche, seulement si l'outil interne est enregistré.
+   */
+  private currentInfoPlan(conversation: ChatMessage[], now: Date): CurrentInfoPlan | null {
+    const tool = this.tools.get(CURRENT_INFO_TOOL_NAME);
+    if (!tool || tool.risk === 'denied') return null;
+    const lastUserIndex = conversation.map((message) => message.role).lastIndexOf('user');
+    if (lastUserIndex < 0) return null;
+    if (conversation.slice(lastUserIndex).some((message) => message.role === 'tool')) return null;
+    return detectCurrentInfoIntent(conversation[lastUserIndex]?.content ?? '', now);
+  }
+
+  /**
+   * Recherche faite avant le modèle : `web_search_current` (actualité datée +
+   * web), puis `web_research` (2 à 4 requêtes, pages lues et comparées) si la
+   * question est complexe ou contestée.
+   */
+  private async *forcedCurrentSearch(
+    conversation: ChatMessage[],
+    plan: CurrentInfoPlan,
+    question: string,
+    context: ToolContext,
+  ): AsyncGenerator<AgentEvent, { result: CurrentSearchResult | null; detail?: string }> {
+    const outcome = yield* this.runForcedCall(
+      {
+        id: randomId(),
+        name: CURRENT_INFO_TOOL_NAME,
+        arguments: {
+          question: question.trim().slice(0, 400),
+          query: plan.query,
+          newsQuery: plan.newsQuery,
+          freshness: plan.freshness,
+          preferNews: plan.preferNews,
+          ...(plan.city ? { city: plan.city } : {}),
+        },
+      },
+      conversation,
+      context,
+    );
+    const result = isCurrentSearchResult(outcome.data) ? outcome.data : null;
+
+    if (result && result.sources.length > 0 && plan.complex && plan.researchQueries.length >= 2) {
+      const research = this.tools.get('web_research');
+      if (research && research.risk !== 'denied' && !context.signal?.aborted) {
+        yield* this.runForcedCall(
+          {
+            id: randomId(),
+            name: 'web_research',
+            arguments: { queries: plan.researchQueries, limitPerQuery: 4 },
+          },
+          conversation,
+          context,
+        );
+      }
+    }
+    return { result, detail: outcome.status === 'ok' ? undefined : outcome.content };
+  }
+
+  private async *runForcedCall(
+    call: ToolCall,
+    conversation: ChatMessage[],
+    context: ToolContext,
+  ): AsyncGenerator<AgentEvent, ToolCallOutcome> {
+    const assistantMessage = createMessage('assistant', '', { toolCalls: [call] });
+    yield { type: 'assistant_message', message: assistantMessage };
+    conversation.push(assistantMessage);
+    yield { type: 'tool_start', call };
+    const outcome = yield* this.executeReportingProgress(call, context);
+    const toolMessage = createMessage('tool', outcome.content, {
+      toolCallId: call.id,
+      toolName: call.name,
+      toolStatus: outcome.status,
+    });
+    conversation.push(toolMessage);
+    yield { type: 'tool_result', outcome, message: toolMessage };
+    return outcome;
   }
 
   private async *executeReportingProgress(
@@ -409,6 +549,16 @@ export function looksLikeWebResearchIntent(prompt: string): boolean {
   if (extractKnowledgeIntent(text)) return false;
   return /sur internet|sur le web|\bgoogle\b|actualit[ée]s?|\bnews\b|aujourd['’]hui|en ce moment|m[ée]t[ée]o|recherche approfondie|plusieurs sources|source officielle|v[ée]rifie(?:r)? (?:sur|avec|ça)/iu.test(
     text,
+  );
+}
+
+function isCurrentSearchResult(value: unknown): value is CurrentSearchResult {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    Array.isArray((value as CurrentSearchResult).sources) &&
+    Array.isArray((value as CurrentSearchResult).attempts) &&
+    typeof (value as CurrentSearchResult).searchedAt === 'string'
   );
 }
 

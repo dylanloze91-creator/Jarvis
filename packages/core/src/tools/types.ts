@@ -112,6 +112,11 @@ export interface ToolDefinition<S extends z.ZodType> {
    */
   isAvailable?: () => boolean;
   unavailableMessage?: string | (() => string);
+  /**
+   * Outil appelé par l'agent lui-même (intention forcée), absent du catalogue
+   * envoyé au modèle. Toujours exécuté par le Tool Manager, donc audité.
+   */
+  internal?: boolean;
   execute: (input: z.infer<S>, context: ToolContext) => Promise<ToolResult>;
 }
 
@@ -129,6 +134,8 @@ export interface RegisteredTool {
   /** Voir `ToolDefinition.isAvailable`. Absent = toujours disponible. */
   isAvailable?: () => boolean;
   unavailableMessage?: () => string;
+  /** Voir `ToolDefinition.internal`. */
+  internal?: boolean;
   run: (input: unknown, context: ToolContext) => Promise<ToolResult>;
 }
 

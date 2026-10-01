@@ -5,7 +5,14 @@ export interface SearchResultItem {
   snippet: string;
   /** Domaine d'origine, affiché comme source auprès de l'utilisateur. */
   source?: string;
+  /** Date de publication (ISO 8601), quand le fournisseur ou l'extrait la donne. */
+  publishedAt?: string;
+  /** Nom du média quand il diffère du domaine (« Le Parisien »). */
+  publisher?: string;
 }
+
+/** Fenêtre de fraîcheur demandée au fournisseur, quand il sait la respecter. */
+export type SearchFreshness = 'day' | 'week' | 'month';
 
 export interface SearchQuery {
   query: string;
@@ -13,6 +20,8 @@ export interface SearchQuery {
   limit?: number;
   /** Langue préférée, code ISO 639-1 (ex. « fr »). */
   language?: string;
+  /** Ignorée par les fournisseurs qui ne savent pas filtrer par date. */
+  freshness?: SearchFreshness;
   signal?: AbortSignal;
 }
 

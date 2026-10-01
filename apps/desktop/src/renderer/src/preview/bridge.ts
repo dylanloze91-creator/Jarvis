@@ -172,6 +172,11 @@ export function installPreviewBridge(): void {
         { id: 'google', label: 'Google (sans clé)', requiresApiKey: false },
         { id: 'wikipedia', label: 'Wikipédia', requiresApiKey: false },
         { id: 'brave', label: 'Brave Search', requiresApiKey: true },
+        { id: 'duckduckgo', label: 'DuckDuckGo (sans clé)', requiresApiKey: false },
+        { id: 'bing', label: 'Bing (sans clé)', requiresApiKey: false },
+        { id: 'google-news', label: 'Google Actualités (RSS, sans clé)', requiresApiKey: false },
+        { id: 'bing-news', label: 'Bing Actualités (RSS, sans clé)', requiresApiKey: false },
+        { id: 'tavily', label: 'Tavily (clé gratuite, sans carte)', requiresApiKey: true },
       ],
       marketDataProviders: async () => [
         { id: 'yahoo-finance', label: 'Yahoo Finance', requiresApiKey: false },

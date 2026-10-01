@@ -216,8 +216,14 @@ export function SettingsPanel({ settings, status, onSaved, requestedTab }: Setti
             </span>
             <p className="text-xs leading-snug text-slate-500">
               Utilisés par les outils « web_search », « web_research », « fetch_page » et
-              « get_stock_quote ». Google fonctionne sans clé. Brave Search (optionnel) demande une
-              clé gratuite dans le champ ci-dessous.
+              « get_stock_quote ». Pour une question d’actualité, Jarvis cherche sur Internet avant de
+              répondre et cite ses sources avec leur date.
+            </p>
+            <p className="text-xs leading-snug text-slate-500">
+              Sans clé ni compte : Google Actualités, Bing Actualités, DuckDuckGo, Bing, Google,
+              Wikipédia et la météo Open-Meteo, avec repli automatique si l’un ne répond pas.
+              Optionnel : une clé Brave Search ou Tavily (gratuite, sans carte, 1 000 recherches par
+              mois) passe en premier — choisis le fournisseur puis colle la clé.
             </p>
           </div>
 
@@ -237,12 +243,12 @@ export function SettingsPanel({ settings, status, onSaved, requestedTab }: Setti
           {searchDescriptor?.requiresApiKey ? (
             <Field
               label="Clé API — recherche"
-              hint="Stockée uniquement sur cette machine, jamais versionnée."
+              hint="Stockée uniquement sur cette machine, jamais versionnée ni écrite dans les journaux."
             >
               <Input
                 type="password"
                 value={draft.searchApiKey}
-                placeholder="Clé Brave Search…"
+                placeholder={draft.searchProvider === 'tavily' ? 'Clé Tavily (tvly-…)' : 'Clé Brave Search…'}
                 onChange={(event) => patch({ searchApiKey: event.target.value })}
               />
             </Field>

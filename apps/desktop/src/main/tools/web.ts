@@ -1,20 +1,31 @@
 import dns from 'node:dns/promises';
 import { z } from 'zod';
 import {
+  CURRENT_INFO_TOOL_NAME,
   assessHtml,
   checkUrlSafety,
   classifyThrownError,
   compareSources,
   dedupeHits,
   defineTool,
+  describeAttempts,
   extractReadableText,
   fetchPublicText,
   formatClaimLabels,
+  formatCurrentSearchForModel,
+  formatSourceDate,
   isPrivateIpAddress,
+  localTimeZone,
+  searchCurrentInfo,
+  searchWithFallback,
   selectSources,
+  webProviderOrder,
   type ReadSource,
   type ResearchHit,
+  type SearchProviderConfig,
   type SearchProviderRegistry,
+  type SearchResponse,
+  type SearchResultItem,
   type Settings,
 } from '@jarvis/core';
 
@@ -56,45 +67,127 @@ export function createWebSearchTool(deps: WebSearchDeps) {
     summarize: ({ query }) => `Rechercher « ${query} » sur Internet.`,
     execute: async ({ query, limit }) => {
       const settings = deps.getSettings();
-      const { provider, fellBack } = deps.searchRegistry.createOrFallback({
-        provider: settings.searchProvider,
-        apiKey: settings.searchApiKey,
-      });
+      const config = searchConfig(settings);
+      const { provider, fellBack } = deps.searchRegistry.createOrFallback(config);
 
+      let primaryError: unknown = null;
+      let primaryEmpty = false;
       try {
         const response = await provider.search({ query, limit });
-
-        if (response.results.length === 0) {
-          return {
-            ok: true,
-            content: `Aucun résultat trouvé pour « ${query} » via ${provider.label}.`,
-            data: response,
-          };
+        if (response.results.length > 0) {
+          const fallbackNote =
+            fellBack && settings.searchProvider !== provider.id
+              ? `(Fournisseur « ${settings.searchProvider} » indisponible sans clé, recherche effectuée via ${provider.label}.)\n\n`
+              : '';
+          return searchSuccess(query, provider.label, response, fallbackNote);
         }
+        primaryEmpty = true;
+      } catch (error) {
+        primaryError = error;
+      }
 
-        const lines = response.results.map(
-          (result, index) =>
-            `${index + 1}. ${result.title} — ${result.snippet || 'Pas de résumé disponible.'}\n   Source : ${result.url}`,
+      // Le fournisseur choisi n'a rien donné : les autres moteurs sans clé prennent le relais.
+      const fallback = await searchWithFallback(
+        deps.searchRegistry,
+        webProviderOrder(deps.searchRegistry, config).filter((id) => id !== provider.id),
+        config,
+        { query, limit },
+      );
+      if (fallback.results.length > 0) {
+        return searchSuccess(
+          query,
+          fallback.label,
+          fallback,
+          `(${provider.label} n'a pas répondu ; recherche effectuée via ${fallback.label}.)\n\n`,
         );
-        const fallbackNote =
-          fellBack && settings.searchProvider !== provider.id
-            ? `(Fournisseur « ${settings.searchProvider} » indisponible sans clé, recherche effectuée via ${provider.label}.)\n\n`
-            : '';
+      }
 
+      if (primaryEmpty) {
         return {
           ok: true,
-          content: `${fallbackNote}Résultats pour « ${query} » (via ${provider.label}) :\n\n${lines.join('\n')}\n\nLe premier résultat n'est pas une preuve. Distingue FAIT, SOURCE, INTERPRÉTATION et INCERTITUDE.`,
-          data: response,
-        };
-      } catch (error) {
-        const classified = classifyThrownError(error);
-        return {
-          ok: false,
-          outcome: classified.outcome,
-          content: `La recherche Internet n'a pas abouti pour « ${query} ». ${classified.userMessage}`,
-          technicalDetail: classified.technicalDetail,
+          content: `Aucun résultat trouvé pour « ${query} » via ${provider.label}.`,
+          data: { providerId: provider.id, results: [] } satisfies SearchResponse,
         };
       }
+      const classified = classifyThrownError(primaryError);
+      const others = fallback.attempts.length
+        ? ` Autres moteurs essayés — ${describeAttempts(fallback.attempts)}.`
+        : '';
+      return {
+        ok: false,
+        outcome: classified.outcome,
+        content: `La recherche Internet n'a pas abouti pour « ${query} ». ${classified.userMessage}${others}`,
+        technicalDetail: classified.technicalDetail,
+      };
+    },
+  });
+}
+
+function searchConfig(settings: Settings): SearchProviderConfig {
+  return { provider: settings.searchProvider, apiKey: settings.searchApiKey };
+}
+
+function publishedNote(result: SearchResultItem): string {
+  const date = formatSourceDate(result.publishedAt, new Date(), localTimeZone());
+  return date ? ` (publié le ${date})` : '';
+}
+
+function searchSuccess(query: string, label: string, response: SearchResponse, note: string) {
+  const lines = response.results.map(
+    (result, index) =>
+      `${index + 1}. ${result.title} — ${result.snippet || 'Pas de résumé disponible.'}${publishedNote(result)}\n   Source : ${result.url}`,
+  );
+  return {
+    ok: true,
+    content: `${note}Résultats pour « ${query} » (via ${label}) :\n\n${lines.join('\n')}\n\nLe premier résultat n'est pas une preuve. Distingue FAIT, SOURCE, INTERPRÉTATION et INCERTITUDE.`,
+    data: response,
+  };
+}
+
+/**
+ * Recherche faite par Jarvis avant le modèle pour une question d'actualité
+ * (règle `detectCurrentInfoIntent`). Outil interne : absent du catalogue du
+ * modèle, mais exécuté et audité par le Tool Manager comme les autres.
+ */
+export function createCurrentInfoSearchTool(deps: WebSearchDeps) {
+  return defineTool({
+    name: CURRENT_INFO_TOOL_NAME,
+    internal: true,
+    description:
+      "Recherche d'actualité faite par Jarvis avant de répondre : articles datés (Google Actualités, Bing Actualités), web (DuckDuckGo, Bing, Google, Wikipédia) et météo Open-Meteo.",
+    risk: 'safe',
+    schema: z.object({
+      question: z.string().min(1).max(400),
+      query: z.string().min(1).max(300),
+      newsQuery: z.string().min(1).max(300),
+      freshness: z.enum(['day', 'week', 'month']).default('week'),
+      preferNews: z.boolean().default(true),
+      city: z.string().min(1).max(80).optional(),
+    }),
+    summarize: ({ question }) => `Chercher sur Internet : « ${question} ».`,
+    execute: async (input, context) => {
+      const settings = deps.getSettings();
+      const result = await searchCurrentInfo(input, {
+        registry: deps.searchRegistry,
+        config: searchConfig(settings),
+        signal: context.signal,
+        readPage: deps.readPage ?? readPublicPage,
+      });
+      if (result.sources.length === 0) {
+        const reasons = describeAttempts(result.attempts) || 'aucun fournisseur n’a répondu.';
+        return {
+          ok: false,
+          outcome: 'recoverable',
+          content: `La recherche Internet n'a rien donné pour « ${input.question} ». ${reasons}`,
+          technicalDetail: reasons,
+          data: result,
+        };
+      }
+      return {
+        ok: true,
+        content: formatCurrentSearchForModel(result, { timeZone: localTimeZone() }),
+        data: result,
+      };
     },
   });
 }
@@ -124,10 +217,8 @@ export function createWebResearchTool(deps: WebSearchDeps) {
     summarize: ({ queries }) => `Recherche approfondie : ${queries.join(' | ')}`,
     execute: async ({ queries, limitPerQuery }) => {
       const settings = deps.getSettings();
-      const { provider, fellBack } = deps.searchRegistry.createOrFallback({
-        provider: settings.searchProvider,
-        apiKey: settings.searchApiKey,
-      });
+      const config = searchConfig(settings);
+      const { provider, fellBack } = deps.searchRegistry.createOrFallback(config);
 
       const settled = await Promise.allSettled(
         queries.map((query) =>
@@ -139,10 +230,30 @@ export function createWebResearchTool(deps: WebSearchDeps) {
         ),
       );
 
-      const merged: ResearchHit[] = settled.flatMap((item, index) =>
-        item.status === 'fulfilled'
-          ? item.value.results.map((result) => ({ ...result, query: queries[index] }))
-          : [],
+      // Requêtes sans résultat : repli une par une (DuckDuckGo limite les rafales).
+      const fallbackIds = webProviderOrder(deps.searchRegistry, config).filter((id) => id !== provider.id);
+      const fallbackLabels = new Set<string>();
+      const perQuery: SearchResultItem[][] = [];
+      for (const [index, item] of settled.entries()) {
+        if (item.status === 'fulfilled' && item.value.results.length > 0) {
+          perQuery.push(item.value.results);
+          continue;
+        }
+        if (fallbackIds.length === 0) {
+          perQuery.push([]);
+          continue;
+        }
+        const chained = await searchWithFallback(deps.searchRegistry, fallbackIds, config, {
+          query: queries[index] ?? '',
+          limit: limitPerQuery,
+          language: 'fr',
+        });
+        if (chained.results.length > 0) fallbackLabels.add(chained.label);
+        perQuery.push(chained.results);
+      }
+
+      const merged: ResearchHit[] = perQuery.flatMap((results, index) =>
+        results.map((result) => ({ ...result, query: queries[index] })),
       );
       const results = dedupeHits(merged);
       const selected = selectSources(results, 4);
@@ -164,19 +275,28 @@ export function createWebResearchTool(deps: WebSearchDeps) {
           `${index + 1}. ${result.title}\n` +
           `   Domaine : ${result.source || sourceDomain(result.url) || 'inconnu'}\n` +
           `   Extrait : ${result.snippet || 'Aucun extrait.'}\n` +
+          (dateOf(result) ? `   Date : ${dateOf(result)}\n` : '') +
           `   URL : ${result.url}`,
       );
 
       const fallbackNote =
-        fellBack && settings.searchProvider !== provider.id
+        (fellBack && settings.searchProvider !== provider.id
           ? `Fournisseur configuré indisponible ; recherche effectuée via ${provider.label}.\n\n`
-          : '';
+          : '') +
+        (fallbackLabels.size > 0
+          ? `${provider.label} n'a pas répondu pour certaines requêtes ; repli : ${[...fallbackLabels].join(', ')}.\n\n`
+          : '');
+      const primaryAnswered = settled.some(
+        (item) => item.status === 'fulfilled' && item.value.results.length > 0,
+      );
+      const usedLabel =
+        [...(primaryAnswered ? [provider.label] : []), ...fallbackLabels].join(', ') || provider.label;
       const brief = compareSources(reads);
 
       return {
         ok: true,
         content:
-          `${fallbackNote}Recherche multi-angle terminée via ${provider.label}.\n` +
+          `${fallbackNote}Recherche multi-angle terminée via ${usedLabel}.\n` +
           `Requêtes : ${queries.join(' | ')}\n\n` +
           `${lines.join('\n')}\n\n` +
           'Consigne de synthèse : vérifie les affirmations importantes dans les sources originales ; ' +
@@ -191,6 +311,32 @@ export function createWebResearchTool(deps: WebSearchDeps) {
       };
     },
   });
+}
+
+/** Lecture d'une page pour la recherche d'actualité : mêmes gardes que `fetch_page`. */
+async function readPublicPage(url: string, signal?: AbortSignal): Promise<PageRead> {
+  const fetched = await fetchPublicText(url, {
+    timeoutMs: 6_000,
+    maxRetries: 0,
+    maxRedirects: MAX_REDIRECTS,
+    readLimit: MAX_PAGE_BYTES,
+    signal,
+    guard: guardUrl,
+  });
+  if (!fetched.ok) throw new Error(fetched.technicalDetail);
+  // Seul un passage de 600 caractères part au modèle : on lit large pour atteindre l'infobox ou le corps.
+  const page = extractReadableText(fetched.text, 30_000);
+  if (pageLooksBlocked(fetched.text, page.text)) throw new Error('anti-robot');
+  return { title: page.title, text: page.text };
+}
+
+/** Un vrai mur anti-robot n'a presque pas de texte ; Wikipédia cite « captcha » dans ses scripts. */
+export function pageLooksBlocked(raw: string, text: string): boolean {
+  return text.length < 2_000 && assessHtml(raw, text).antiBot;
+}
+
+function dateOf(result: { publishedAt?: string }): string | undefined {
+  return formatSourceDate(result.publishedAt, new Date(), localTimeZone());
 }
 
 async function readSelectedSources(

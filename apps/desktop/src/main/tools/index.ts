@@ -15,7 +15,12 @@ import { openApplicationTool, closeApplicationTool } from './applications.js';
 import { moveFileTool, copyFileTool, deleteFileTool } from './filesystem.js';
 import { takeScreenshotTool } from './screenshot.js';
 import { runCommandTool } from './shell.js';
-import { createWebSearchTool, createWebResearchTool, fetchPageTool } from './web.js';
+import {
+  createCurrentInfoSearchTool,
+  createWebSearchTool,
+  createWebResearchTool,
+  fetchPageTool,
+} from './web.js';
 import { createGetStockQuoteTool } from './stocks.js';
 import { createSpotifyTools } from './spotify.js';
 import { createYoutubeTranscriptTool } from './youtube.js';
@@ -68,6 +73,7 @@ export function createToolManager(deps: ToolManagerDeps): ToolManager {
     createWebSearchTool(deps),
     createWebResearchTool(deps),
     fetchPageTool,
+    createCurrentInfoSearchTool(deps),
     createYoutubeTranscriptTool({
       summarize:
         deps.summarizeYoutube ??

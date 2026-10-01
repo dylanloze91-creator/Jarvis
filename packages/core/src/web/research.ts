@@ -4,6 +4,7 @@ export interface ResearchHit {
   snippet: string;
   source?: string;
   query?: string;
+  publishedAt?: string;
 }
 
 export interface PageAssessment {

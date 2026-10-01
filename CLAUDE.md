@@ -1,8 +1,8 @@
-# Jarvis 0.4.20 — contexte pour un autre développeur
+# Jarvis 0.4.21 — contexte pour un autre développeur
 
 Ce fichier est à la **racine du code**. Les chemins ci-dessous partent de ce dossier. Ce n’est pas un résumé marketing : c’est l’état réel de cet arbre. La voix a été refaite dans cet arbre (publiée en 0.4.11, section « Voix ») : la transcription restait « Chargement… 100 % » sur l’installateur Windows. La refonte du tableau de bord est dans cet arbre : fenêtre étroite = overlay, fenêtre large = tableau de bord.
 
-**Version confirmée :** `apps/desktop/package.json` → `"version": "0.4.20"`. Le `package.json` racine est encore à `0.3.0` : c’est le monorepo, pas l’appli. La version qui compte pour l’exe, l’updater et GitHub est celle de `@jarvis/desktop`. La voix corrigée en 0.4.11 (installateur Windows) est inchangée. Le modèle par défaut reste `qwen2.5:3b`. `qwen3.5:4b` est le modèle recommandé documenté ; le repli est réglable (`fallbackModel`, défaut `qwen2.5:3b`).
+**Version confirmée :** `apps/desktop/package.json` → `"version": "0.4.21"`. Le `package.json` racine est encore à `0.3.0` : c’est le monorepo, pas l’appli. La version qui compte pour l’exe, l’updater et GitHub est celle de `@jarvis/desktop`. La voix corrigée en 0.4.11 (installateur Windows) est inchangée. Le modèle par défaut reste `qwen2.5:3b`. `qwen3.5:4b` est le modèle recommandé documenté ; le repli est réglable (`fallbackModel`, défaut `qwen2.5:3b`).
 
 Lis ce fichier avant de modifier le code.
 
@@ -48,7 +48,7 @@ Scripts utiles (racine) :
 
 Le script `setup:voice` remplit `apps/desktop/voice-assets/` (runtime ONNX, Whisper, openWakeWord, modèle Vosk français ; non commité, voir `.gitignore`). Premier `dev` / `build` : besoin de réseau.
 
-L’installateur publié est `Jarvis-Setup-0.4.20.exe` (release GitHub `v0.4.20`).
+L’installateur publié est `Jarvis-Setup-0.4.21.exe` (release GitHub `v0.4.21`).
 
 Données utilisateur (Electron `userData`, typiquement `%APPDATA%\Jarvis`) :
 
@@ -81,7 +81,7 @@ Données utilisateur (Electron `userData`, typiquement `%APPDATA%\Jarvis`) :
     src/media/                 intent Spotify
     src/update/                lecture latest.yml GitHub
     src/history/  src/audit/
-  apps/desktop/                Electron (version 0.4.20)
+  apps/desktop/                Electron (version 0.4.21)
     electron-builder.yml       NSIS, extraResources, publish GitHub
     electron.vite.config.ts    aliases onnxruntime-web (wasm, pas JSEP)
     scripts/setup-whisper.mjs
@@ -196,7 +196,7 @@ Ne pas réintroduire `ort.min.mjs` (JSEP/WebGPU), un import CDN de transformers.
 
 **Mémoire / RAG local** — `apps/desktop/src/main/knowledge.ts`. Index `knowledge-index.json` : chunks fichiers / conversations / souvenirs. Embeddings **uniquement** via Ollama local, modèle `nomic-embed-text` (`/api/embed` puis `/api/embeddings`). Une `baseUrl` OpenAI/Anthropic/publique est refusée (`packages/core/src/knowledge/localUrl.ts`). Recherche hybride cosine + lexical. Outils : `search_jarvis_memory`, `remember_jarvis`, `index_jarvis_folder`, `get_jarvis_memory_stats`, `clear_jarvis_memory`. Les conversations sont indexées en fin de tour (`session.ts`). Distinct de la **personnalisation** (`personalization.json` : nom, ton, règles) — outils `*_jarvis_personalization`.
 
-**Recherche web sans clé** — défaut `searchProvider: 'google'` (`settings.ts`). HTML public, pas d’API (`packages/core/src/search/providers/google.ts`). Si Brave est choisi sans clé → repli Google (`search/registry.ts` `createOrFallback`). Outils : `web_search`, `web_research`, `fetch_page` (`apps/desktop/src/main/tools/web.ts`). `fetch_page` refuse les IP privées (`packages/core/src/web/urlSafety.ts`). Wikipédia et Brave restent dans le registre. Bourse : Yahoo Finance sans clé, Finnhub optionnel.
+**Recherche web sans clé** — voir « 0.4.21 » pour la recherche d’actualité et la chaîne de repli. Défaut `searchProvider: 'google'` (`settings.ts`). HTML public, pas d’API (`packages/core/src/search/providers/google.ts`). Si Brave est choisi sans clé → repli Google (`search/registry.ts` `createOrFallback`). Outils : `web_search`, `web_research`, `fetch_page` (`apps/desktop/src/main/tools/web.ts`). `fetch_page` refuse les IP privées (`packages/core/src/web/urlSafety.ts`). Wikipédia et Brave restent dans le registre. Bourse : Yahoo Finance sans clé, Finnhub optionnel.
 
 ---
 
@@ -249,9 +249,20 @@ Ajout pur : sans compte Google connecté, catalogue d’outils et prompt sont id
 - **UI** : onglet Réglages « Google » (`components/GoogleSettings.tsx`, guide en 6 étapes), cartes du tableau de bord branchées. Scènes de capture `?scene=google` et `?scene=google-confirm`.
 - **Tests** : faux Google en mémoire (`google/fakeGoogle.testkit.ts`) : OAuth + boucle locale réelle, rafraîchissement, 401, 403, 429, chaque outil, confirmations, vérification, secrets masqués.
 
+## 0.4.21 — recherche web à jour (ajout seul)
+
+Une question d’actualité part sur Internet **avant** le modèle. Rien d’autre ne change : voix, réveil, discussion, Spotify, Google, réglages, overlay, confirmations.
+
+- **Règle d’intention** `packages/core/src/agent/currentInfo.ts` (`detectCurrentInfoIntent`), à côté des intentions forcées YouTube / Spotify dans `agent.ts`. Actualité, météo, prix, sport, versions, « qui est le … actuel », chiffres (livret A, chômage), « cherche sur internet ». Jamais déroutés : horloge (« quelle heure est-il »), Spotify, Google (vocabulaire `looksLikeGoogleIntent` et suivi d’un tour Google : `googleTurn` dans `agent.ts`), mémoire, personnalisation, SiteBlock, possessifs (« mon », « ma », « mes »), état du PC, ordres (« ouvre », « mets »…), bourse (`get_stock_quote` garde la main), calcul, discussion, histoire (année passée).
+- **Outil interne** `web_search_current` (`apps/desktop/src/main/tools/web.ts`) : `internal: true` dans `defineTool` = exécuté et audité par le Tool Manager, **absent du catalogue envoyé au modèle** (le catalogue des autres tours est identique à 0.4.20). Recherche dans `packages/core/src/search/currentSearch.ts` : Google Actualités + Bing Actualités en parallèle (fusionnés : rang Google, lien direct et extrait Bing), web en chaîne, météo Open-Meteo si une ville est nommée, lecture des 2 premières pages à lien direct (mêmes gardes que `fetch_page`). Question complexe ou contestée : `web_research` forcé en plus (2 à 4 requêtes).
+- **Date et heure** du PC injectées seulement au tour de recherche forcée (`currentDatePrompt`), et en tête du résultat d’outil. Tous les autres tours, « PROTOCOLE RECHERCHE » et Google compris, gardent exactement leur prompt de 0.4.20 (test Google « Ouvre Google Chrome »).
+- **Citations** (`agent/citations.ts`) : bloc « Sources (recherche web du …) : » puis une liste Markdown « - [n] titre — média (domaine), date — lien » (la bulle est rendue en Markdown), passage clé lu sur la page en tête du résultat d’outil ajouté sous la réponse. **Retiré de la synthèse vocale** (`stripSourcesFooter` dans `App.tsx`) : la voix et la fenêtre de suivi de 2 s ne changent pas. Recherche vide : réponse fixe « Je n’ai pas pu faire la recherche sur Internet… je préfère ne pas répondre de mémoire », sans appeler le modèle.
+- **Fournisseurs** (`createWebSearchRegistry`, utilisé par `main/index.ts` ; `createDefaultSearchRegistry` inchangé) : `duckduckgo`, `bing`, `google-news`, `bing-news` (sans clé), `tavily` (clé gratuite sans carte). Chaîne web (`search/chain.ts`) : fournisseur choisi, puis DuckDuckGo → Bing → Google → Wikipédia ; filtre de pertinence (Bing renvoie des pages hors sujet à une IP jugée robotique). `web_search` / `web_research` : sortie identique si le fournisseur choisi répond, repli sinon. Google HTML ne répond plus sans JavaScript depuis janvier 2025 ; l’API Custom Search est fermée aux nouveaux clients (fin 1er janvier 2027) ; Bing Search API fermée le 11 août 2025. Clés : uniquement `settings.searchApiKey`, en-tête HTTP, jamais dans un message (masquées par la chaîne).
+- Mesure (`qwen2.5:3b`, CPU, 16 questions) et rapport : `docs/recherche-web-jarvis.md` et `internal/recherche-web.md` du store du projet.
+
 ## Updater / GitHub
 
-Dernière publication : **0.4.20** (`https://github.com/dylanloze91-creator/Jarvis/releases/tag/v0.4.20`) — exe, `.blockmap` et `latest.yml` publiés : l’updater intégré la propose.
+Dernière publication : **0.4.21** (`https://github.com/dylanloze91-creator/Jarvis/releases/tag/v0.4.21`) — exe, `.blockmap` et `latest.yml` publiés : l’updater intégré la propose.
 
 - `apps/desktop/electron-builder.yml` : `publish.provider: github`, owner `dylanloze91-creator`, repo `Jarvis`, `releaseType: release`, artifact `Jarvis-Setup-${version}.exe`
 - `apps/desktop/src/main/updater.ts` : contrôle 15 s après le démarrage puis toutes les 4 h ; téléchargement auto ; **installation seulement si l’utilisateur clique**
@@ -359,6 +370,7 @@ Corrections de la revue complète (détail : `docs/audit-0410.md` du store du pr
 - **SiteBlock loopback** uniquement.
 - **Embeddings mémoire** : Ollama local seulement.
 - **Recherche Google sans clé** comme repli. Ne pas rendre Brave obligatoire.
+- **Recherche d’actualité (0.4.21)** : l’outil `web_search_current` reste interne (hors catalogue du modèle) ; le bloc des sources reste retiré de la synthèse vocale ; une recherche vide se dit, jamais une réponse de mémoire présentée comme actuelle. Ne pas dérouter l’horloge, Spotify, Google, la mémoire, les possessifs, le PC ni la bourse.
 - **STT `browser-local`** : ne pas le réenregistrer.
 - **`ort.wasm.min.mjs`** (pas `ort.min.mjs`), un seul onnxruntime-web pour Whisper et le mot de réveil.
 - **Instance unique** (`requestSingleInstanceLock`), tray qui ne quitte pas à la fermeture de fenêtre, `stayVisibleOnBlur` par défaut.

@@ -47,6 +47,7 @@ export function defineTool<S extends z.ZodType>(definition: ToolDefinition<S>): 
       definition.summarize?.(withDefaults(input) as z.infer<S>) ??
       describeFallback(definition.name, input),
     describeCommand: (input) => definition.describeCommand?.(withDefaults(input) as z.infer<S>),
+    ...(definition.internal ? { internal: true } : {}),
     run: async (input, context) => {
       const parsed = definition.schema.safeParse(input ?? {});
       if (!parsed.success) {
@@ -131,10 +132,10 @@ export class ToolManager {
     return this.tools.get(name)?.risk;
   }
 
-  /** Catalogue transmis au modèle : les outils `denied` et indisponibles en sont exclus. */
+  /** Catalogue transmis au modèle : les outils `denied`, indisponibles et internes en sont exclus. */
   schemas(): ToolSchema[] {
     return this.list()
-      .filter((tool) => tool.risk !== 'denied' && isToolAvailable(tool))
+      .filter((tool) => tool.risk !== 'denied' && isToolAvailable(tool) && !tool.internal)
       .map((tool) => ({
         name: tool.name,
         description: tool.description,
@@ -264,6 +265,7 @@ export class ToolManager {
       category: tool.category,
       outcome: outcomeKind,
       technicalDetail,
+      ...(result.data !== undefined ? { data: result.data } : {}),
     });
   }
 

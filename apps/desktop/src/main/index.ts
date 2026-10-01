@@ -16,7 +16,7 @@ import {
   checkOllamaStatus,
   createDefaultMarketDataRegistry,
   createDefaultRegistry,
-  createDefaultSearchRegistry,
+  createWebSearchRegistry,
   ollamaDescriptor,
   parseSettings,
   testOllamaConnection,
@@ -67,7 +67,7 @@ app.commandLine.appendSwitch('enable-features', 'SharedArrayBuffer');
 
 const isDev = !app.isPackaged;
 const registry = createDefaultRegistry();
-const searchRegistry = createDefaultSearchRegistry();
+const searchRegistry = createWebSearchRegistry();
 const marketDataRegistry = createDefaultMarketDataRegistry();
 const store = new FileConversationStore();
 const personalization = new PersonalizationStore();
@@ -323,13 +323,16 @@ function registerIpc(): void {
   ipcMain.handle(IpcChannel.historyClear, () => store.clear());
 
   ipcMain.handle(IpcChannel.toolsList, (): ToolInfo[] =>
-    tools.list().filter((tool) => tool.isAvailable?.() ?? true).map(({ name, description, risk, category, forceConfirm }) => ({
-      name,
-      description,
-      risk,
-      category,
-      forceConfirm,
-    })),
+    tools
+      .list()
+      .filter((tool) => !tool.internal && (tool.isAvailable?.() ?? true))
+      .map(({ name, description, risk, category, forceConfirm }) => ({
+        name,
+        description,
+        risk,
+        category,
+        forceConfirm,
+      })),
   );
 
   ipcMain.handle(IpcChannel.auditList, (_event, limit?: number) => auditLog.list(limit));

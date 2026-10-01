@@ -1,6 +1,15 @@
 import { BraveSearchProvider, braveDescriptor } from './providers/brave.js';
 import { WikipediaSearchProvider, wikipediaDescriptor } from './providers/wikipedia.js';
 import { GoogleSearchProvider, googleDescriptor } from './providers/google.js';
+import { DuckDuckGoSearchProvider, duckDuckGoDescriptor } from './providers/duckduckgo.js';
+import { BingSearchProvider, bingDescriptor } from './providers/bing.js';
+import {
+  BingNewsRssProvider,
+  GoogleNewsRssProvider,
+  bingNewsDescriptor,
+  googleNewsDescriptor,
+} from './providers/newsRss.js';
+import { TavilySearchProvider, tavilyDescriptor } from './providers/tavily.js';
 import type {
   SearchProvider,
   SearchProviderConfig,
@@ -66,4 +75,18 @@ export function createDefaultSearchRegistry(): SearchProviderRegistry {
     .register(googleDescriptor, () => new GoogleSearchProvider())
     .register(wikipediaDescriptor, () => new WikipediaSearchProvider())
     .register(braveDescriptor, (config) => new BraveSearchProvider(config));
+}
+
+/**
+ * Registre de l'application : celui par défaut, plus les fournisseurs de la
+ * chaîne de repli (DuckDuckGo, Bing, Google Actualités, Bing Actualités) et
+ * Tavily (clé gratuite). Google reste le choix par défaut des réglages.
+ */
+export function createWebSearchRegistry(): SearchProviderRegistry {
+  return createDefaultSearchRegistry()
+    .register(duckDuckGoDescriptor, () => new DuckDuckGoSearchProvider())
+    .register(bingDescriptor, () => new BingSearchProvider())
+    .register(googleNewsDescriptor, () => new GoogleNewsRssProvider())
+    .register(bingNewsDescriptor, () => new BingNewsRssProvider())
+    .register(tavilyDescriptor, (config) => new TavilySearchProvider(config));
 }

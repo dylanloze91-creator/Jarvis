@@ -1,6 +1,6 @@
 import { History, Maximize2, Plus, ScrollText, Settings as SettingsIcon, X, Pin, PinOff } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import type { Conversation, Settings } from '@jarvis/core';
+import { stripSourcesFooter, type Conversation, type Settings } from '@jarvis/core';
 import { AuditPanel } from '@/components/AuditPanel';
 import { Composer } from '@/components/Composer';
 import { ConfirmationCard } from '@/components/ConfirmationCard';
@@ -43,7 +43,10 @@ export default function App() {
   const seeded = useRef(false);
 
   const voiceRef = useRef<ReturnType<typeof useVoice> | null>(null);
-  const handleAssistantFinal = useCallback((text: string) => voiceRef.current?.noteAssistantReply(text), []);
+  const handleAssistantFinal = useCallback(
+    (text: string) => voiceRef.current?.noteAssistantReply(stripSourcesFooter(text)),
+    [],
+  );
   const chat = useChat({ onAssistantFinal: handleAssistantFinal });
   const update = useUpdate();
   // Marque explicitement l'origine vocale : le modèle en est averti côté

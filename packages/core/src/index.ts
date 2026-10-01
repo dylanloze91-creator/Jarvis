@@ -69,6 +69,7 @@ export { buildAuditEntry, InMemoryAuditLogStore } from './audit/log.js';
 
 export {
   Agent,
+  CURRENT_INFO_TOOL_NAME,
   DEFAULT_SYSTEM_PROMPT,
   HARD_TOOL_ROUND_CAP,
   composeSystemPrompt,
@@ -88,7 +89,81 @@ export * from './search/types.js';
 export { WikipediaSearchProvider, wikipediaDescriptor } from './search/providers/wikipedia.js';
 export { GoogleSearchProvider, googleDescriptor } from './search/providers/google.js';
 export { BraveSearchProvider, braveDescriptor } from './search/providers/brave.js';
-export { SearchProviderRegistry, createDefaultSearchRegistry } from './search/registry.js';
+export {
+  SearchProviderRegistry,
+  createDefaultSearchRegistry,
+  createWebSearchRegistry,
+} from './search/registry.js';
+export {
+  DuckDuckGoSearchProvider,
+  duckDuckGoDescriptor,
+  isDuckDuckGoChallenge,
+  parseDuckDuckGoHtml,
+  parseDuckDuckGoLite,
+  unwrapDuckDuckGoHref,
+} from './search/providers/duckduckgo.js';
+export { BingSearchProvider, bingDescriptor, parseBingHtml, unwrapBingHref } from './search/providers/bing.js';
+export {
+  BingNewsRssProvider,
+  GoogleNewsRssProvider,
+  bingNewsDescriptor,
+  googleNewsDescriptor,
+  parseRssItems,
+  unwrapBingNewsLink,
+} from './search/providers/newsRss.js';
+export { TavilySearchProvider, tavilyDescriptor } from './search/providers/tavily.js';
+export {
+  OPEN_METEO_LABEL,
+  describeWeatherCode,
+  fetchOpenMeteoWeather,
+  localTimeToIso,
+} from './search/providers/openMeteo.js';
+export {
+  KEYLESS_NEWS_ORDER,
+  KEYLESS_WEB_ORDER,
+  dedupeResults,
+  describeAttempts,
+  newsProviderOrder,
+  searchWithFallback,
+  webProviderOrder,
+  type ChainSearchOptions,
+  type ChainedSearchResponse,
+  type SearchAttempt,
+} from './search/chain.js';
+export {
+  formatCurrentSearchForModel,
+  searchCurrentInfo,
+  sourceLabel,
+  type CurrentSearchDeps,
+  type CurrentSearchRequest,
+  type CurrentSearchResult,
+  type CurrentSource,
+} from './search/currentSearch.js';
+export {
+  ageInDays,
+  formatCurrentDateTime,
+  formatSourceDate,
+  leadingSnippetDate,
+  localTimeZone,
+  parseFeedDate,
+} from './search/dates.js';
+export { filterRelevant, relevanceScore, significantTokens } from './search/relevance.js';
+export {
+  NEWS_HEADLINES_QUERY,
+  detectCurrentInfoIntent,
+  extractCity,
+  isCurrentInfoQuestion,
+  type CurrentInfoKind,
+  type CurrentInfoPlan,
+} from './agent/currentInfo.js';
+export {
+  CURRENT_INFO_TURN_PROMPT,
+  citedSources,
+  currentDatePrompt,
+  currentInfoFailureReply,
+  formatSourcesFooter,
+  stripSourcesFooter,
+} from './agent/citations.js';
 
 export * from './media/types.js';
 export { extractSpotifyPlayQuery, isMusicIntent, searchQueryVariants } from './media/playIntent.js';
