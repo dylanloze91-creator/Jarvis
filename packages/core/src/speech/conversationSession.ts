@@ -6,11 +6,11 @@
  * - grâce de 3 s : la captation de la commande ne peut pas se fermer, même
  *   si l'audio ressemble à du silence ;
  * - une fois la commande envoyée, le micro reste chaud pendant la réponse
- *   et 8 s après sa fin. Une parole dans cette fenêtre est un nouveau tour,
+ *   et 2 s après sa fin. Une parole dans cette fenêtre est un nouveau tour,
  *   sans mot de réveil ;
  * - « stop », « tais-toi », « merci c'est bon » reviennent en veille ;
  * - une hallucination Whisper ne compte pas comme un tour et ne prolonge
- *   pas les 8 s.
+ *   pas les 2 s.
  *
  * Le temps est celui de l'audio (ms depuis le début de la capture), le même
  * que la fin de parole : les tests avancent ce temps sans horloge murale.
@@ -27,7 +27,7 @@ import {
 /** La captation ouverte par un réveil ne peut pas se fermer avant ça. */
 export const WAKE_GRACE_MS = 3_000;
 /** Silence après la fin de la réponse, puis le mot de réveil redevient obligatoire. */
-export const FOLLOW_UP_WINDOW_MS = 8_000;
+export const FOLLOW_UP_WINDOW_MS = 2_000;
 
 const STOP_PHRASES = new Set(['stop', 'tais toi', 'merci c est bon']);
 
@@ -134,7 +134,7 @@ export class ConversationSession {
   }
 
   /**
-   * Parole pendant que le micro est chaud (réponse en cours, ou 8 s après).
+   * Parole pendant que le micro est chaud (réponse en cours, ou 2 s après).
    * En dessous du seuil de début de commande, une toux ne lance pas un tour.
    */
   noteHotSpeech(atMs: number, speechMs: number): 'wait' | 'capture' | 'standby' {
@@ -148,7 +148,7 @@ export class ConversationSession {
     return 'capture';
   }
 
-  /** 8 s de silence après la fin de la réponse : retour en veille. */
+  /** 2 s de silence après la fin de la réponse : retour en veille. */
   pollHot(atMs: number): 'stay' | 'standby' {
     if (this.phase !== 'hot') return 'stay';
     if (!this.followUpExpired(atMs)) return 'stay';
@@ -158,7 +158,7 @@ export class ConversationSession {
 
   /**
    * La réponse est finie (fin de la synthèse, ou le texte si elle est
-   * coupée). Ouvre les 8 s. Ignoré si l'utilisateur a déjà repris la parole.
+   * coupée). Ouvre les 2 s. Ignoré si l'utilisateur a déjà repris la parole.
    */
   replyFinished(atMs: number): void {
     if (this.phase !== 'hot') return;

@@ -69,7 +69,7 @@ export interface UseVoiceResult {
   /**
    * Fin du tour de l'agent. En discussion (après un réveil), garde le micro
    * ouvert : la synthèse se termine, ou le texte seul si elle est coupée,
-   * puis 8 s de silence avant la veille.
+   * puis 2 s de silence avant la veille.
    */
   noteAssistantReply: (text: string) => void;
   listMicrophones: typeof listMicrophones;

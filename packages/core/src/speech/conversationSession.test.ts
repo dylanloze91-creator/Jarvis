@@ -84,7 +84,7 @@ describe('suivi sans mot de réveil', () => {
     expect(session.acceptsWakeWord).toBe(false);
   });
 
-  it('une parole dans les 8 s après la réponse part sans mot de réveil', () => {
+  it('une parole dans les 2 s après la réponse part sans mot de réveil', () => {
     const session = sent();
     session.replyFinished(4_000);
     expect(session.noteHotSpeech(4_000 + FOLLOW_UP_WINDOW_MS - 500, 200)).toBe('capture');
@@ -93,7 +93,8 @@ describe('suivi sans mot de réveil', () => {
     expect(session.showListening).toBe(true);
   });
 
-  it('le silence au-delà de 8 s exige à nouveau le mot de réveil', () => {
+  it('le silence au-delà de 2 s exige à nouveau le mot de réveil', () => {
+    expect(FOLLOW_UP_WINDOW_MS).toBe(2_000);
     const session = sent();
     session.replyFinished(4_000);
     expect(session.pollHot(4_000 + FOLLOW_UP_WINDOW_MS - 1)).toBe('stay');
@@ -116,7 +117,7 @@ describe('suivi sans mot de réveil', () => {
     }
   });
 
-  it('une hallucination ne lance pas de tour et ne prolonge pas les 8 s', () => {
+  it('une hallucination ne lance pas de tour et ne prolonge pas les 2 s', () => {
     const session = sent();
     session.replyFinished(0);
     expect(session.noteHotSpeech(1_000, 200)).toBe('capture');
