@@ -14,7 +14,46 @@ import type {
   Settings,
   ToolCategory,
   UpdateFailureKind,
+  WakeSampleSource,
+  WakeStatKind,
+  WakeStatsSummary,
+  WakeVerifierModel,
 } from '@jarvis/core';
+
+/** Exemple étiqueté envoyé au main : caractéristiques + extrait de 2 s (aucun extrait pour un fond sonore). */
+export interface WakeLearningSampleInput {
+  id: string;
+  label: 'positive' | 'negative';
+  source: WakeSampleSource;
+  features: number[];
+  clip?: Float32Array;
+}
+
+export interface WakeLearningStatus {
+  positives: number;
+  negatives: number;
+  clips: number;
+  clipBytes: number;
+  enrollment: number;
+  maxClips: number;
+  maxClipBytes: number;
+  stats: WakeStatsSummary;
+  model: {
+    trainedAt: number;
+    positives: number;
+    negatives: number;
+    vetoEnabled: boolean;
+    vetoThreshold: number;
+    rescueThreshold: number | null;
+    cvRecall: number;
+    cvRejection: number;
+  } | null;
+}
+
+/** Captation de la commande après un réveil : pour l'orbe et le petit indicateur hors fenêtre. */
+export interface ListeningIndicatorState {
+  active: boolean;
+}
 
 export const IpcChannel = {
   chatSend: 'chat:send',
@@ -55,6 +94,15 @@ export const IpcChannel = {
   voiceCopyReport: 'voice:copy-report',
   voiceCaptureLog: 'voice:capture-log',
   voiceOpenMicrophonePrivacy: 'voice:open-microphone-privacy',
+  wakeLearningStatus: 'wake-learning:status',
+  wakeLearningAddSample: 'wake-learning:add-sample',
+  wakeLearningStats: 'wake-learning:stats',
+  wakeLearningModel: 'wake-learning:model',
+  wakeLearningRetrain: 'wake-learning:retrain',
+  wakeLearningClear: 'wake-learning:clear',
+  wakeLearningReset: 'wake-learning:reset',
+  listeningIndicator: 'listening:indicator',
+  listeningLevel: 'listening:level',
   youtubeTranscribe: 'youtube:transcribe-audio',
   youtubeTranscribeProgress: 'youtube:transcribe-progress',
   youtubeTranscribeResult: 'youtube:transcribe-result',
@@ -320,6 +368,20 @@ export interface JarvisApi {
     log(line: string): void;
     /** Ouvre Paramètres Windows > Confidentialité > Microphone. Faux hors Windows. */
     openMicrophonePrivacy(): Promise<boolean>;
+    /** Début / fin de la captation d'une commande (indicateur hors fenêtre). */
+    setListening(active: boolean): void;
+    /** Niveau du micro (0–1) pendant la captation, pour l'indicateur. */
+    sendLevel(level: number): void;
+  };
+  /** Apprentissage du réveil : tout reste dans le dossier de données de l'appli. */
+  wakeLearning: {
+    status(): Promise<WakeLearningStatus>;
+    addSample(input: WakeLearningSampleInput): Promise<{ model: WakeVerifierModel | null; retrained: boolean } | null>;
+    recordStats(kinds: WakeStatKind[]): Promise<void>;
+    model(): Promise<WakeVerifierModel | null>;
+    retrain(): Promise<WakeVerifierModel | null>;
+    clear(): Promise<WakeLearningStatus>;
+    reset(): Promise<WakeLearningStatus>;
   };
   /** Écoute YouTube : le processus principal envoie l'audio, Whisper tourne ici. */
   youtube: {

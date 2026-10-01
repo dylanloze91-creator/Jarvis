@@ -2,6 +2,7 @@ import type {
   WakeWordEngine,
   WakeWordEngineController,
   WakeWordEngineHandlers,
+  WakeWordWindow,
 } from './wakewordEngine.js';
 
 const PARALLEL_DETECTION_COOLDOWN_MS = 1600;
@@ -62,6 +63,9 @@ export function wrapWakeWordEngineWithLoadFallback(
               if (primaryFailed) handlers.onScore?.(score);
             },
             onDetected: (keyword) => emitDetected(keyword, 'fallback'),
+            ...(handlers.onNearMiss
+              ? { onNearMiss: (keyword: string, window: WakeWordWindow) => handlers.onNearMiss?.(keyword, window) }
+              : {}),
             onError: (message) => {
               if (stopped) return;
               if (forwardErrors || primaryFailed) handlers.onError(message);
@@ -83,6 +87,13 @@ export function wrapWakeWordEngineWithLoadFallback(
           if (!primaryFailed) handlers.onScore?.(score);
         },
         onDetected: (keyword) => emitDetected(keyword, 'primary'),
+        ...(handlers.onNearMiss
+          ? {
+              onNearMiss: (keyword: string, window: WakeWordWindow) => {
+                if (!primaryFailed) handlers.onNearMiss?.(keyword, window);
+              },
+            }
+          : {}),
         onError: (message) => {
           if (stopped || primaryFailed) return;
           primaryFailed = true;

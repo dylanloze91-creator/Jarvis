@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'"
+    />
+    <title>Jarvis écoute</title>
+  </head>
+  <body>
+    <div class="pill" role="status" aria-live="polite">
+      <div class="dot" id="dot"></div>
+      <div class="bars" id="bars">
+        <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+      </div>
+      <div class="label">Jarvis écoute</div>
+    </div>
+    <script type="module" src="/src/indicator/main.ts"></script>
+  </body>
+</html>

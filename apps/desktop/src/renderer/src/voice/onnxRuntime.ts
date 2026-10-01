@@ -37,9 +37,11 @@ async function fetchOk(url: string, fetchImpl: typeof fetch): Promise<Response> 
  * alias Vite vers le même fichier) et par openWakeWord. Le `.wasm` est lu
  * une fois via `jarvis-oww:` et passé en `wasmBinary` ; le `.mjs` est servi
  * en blob (onnxruntime-web ≥ 1.24.3 gère ce couple, PR microsoft/onnxruntime#27411).
- * Un seul thread : la page `file://` n'est pas cross-origin isolated.
+ * Un seul thread dans la page (openWakeWord). Le worker de Whisper
+ * (`whisper/whisperWorker.ts`) charge le même module dans son propre
+ * contexte, avec plusieurs threads (SharedArrayBuffer activé par le main).
  */
-export function configureOnnxRuntime(fetchImpl: typeof fetch = fetch): Promise<OrtModule> {
+export function configureOnnxRuntime(fetchImpl: typeof fetch = fetch, numThreads = 1): Promise<OrtModule> {
   if (configured) return configured;
   configured = (async () => {
     const ort = await import('onnxruntime-web');
@@ -50,7 +52,7 @@ export function configureOnnxRuntime(fetchImpl: typeof fetch = fetch): Promise<O
       fetchOk(wasmUrl, fetchImpl).then((response) => response.arrayBuffer()),
     ]);
     loadedVersion = ort.env.versions?.web ?? 'inconnue';
-    ort.env.wasm.numThreads = 1;
+    ort.env.wasm.numThreads = numThreads;
     ort.env.wasm.proxy = false;
     ort.env.wasm.initTimeout = ORT_INIT_TIMEOUT_MS;
     ort.env.wasm.wasmBinary = wasmBinary;

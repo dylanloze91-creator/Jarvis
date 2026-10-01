@@ -3,7 +3,14 @@ import {
   emptyPersonalization,
   type Settings,
 } from '@jarvis/core';
-import type { ChatEvent, JarvisApi, MachineSnapshot, ToolInfo, WindowChrome } from '../../../shared/ipc';
+import type {
+  ChatEvent,
+  JarvisApi,
+  MachineSnapshot,
+  ToolInfo,
+  WakeLearningStatus,
+  WindowChrome,
+} from '../../../shared/ipc';
 import desktopPackage from '../../../../package.json' with { type: 'json' };
 
 /**
@@ -167,6 +174,17 @@ export function installPreviewBridge(): void {
       },
       log: (line: string) => console.debug(line),
       openMicrophonePrivacy: async () => false,
+      setListening: () => undefined,
+      sendLevel: () => undefined,
+    },
+    wakeLearning: {
+      status: async () => previewWakeLearningStatus,
+      addSample: async () => null,
+      recordStats: async () => undefined,
+      model: async () => null,
+      retrain: async () => null,
+      clear: async () => previewWakeLearningStatus,
+      reset: async () => previewWakeLearningStatus,
     },
     youtube: {
       onTranscribe: () => () => undefined,
@@ -187,6 +205,18 @@ export function installPreviewBridge(): void {
 
   window.jarvis = api;
 }
+
+const previewWakeLearningStatus: WakeLearningStatus = {
+  positives: 0,
+  negatives: 0,
+  clips: 0,
+  clipBytes: 0,
+  enrollment: 0,
+  maxClips: 300,
+  maxClipBytes: 20 * 1024 * 1024,
+  stats: { successes: 0, misses: 0, falseWakes: 0, days: 7 },
+  model: null,
+};
 
 const emptySnapshot = (): MachineSnapshot => ({
   cpuPercent: null,

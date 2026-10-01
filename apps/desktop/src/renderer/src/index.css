@@ -225,6 +225,45 @@
   opacity: 0.18;
 }
 
+/* Captation d'une commande : l'orbe suit le niveau du micro (--level, 0–1). */
+.hero-orb.is-listening .orb-core {
+  animation: none;
+  transform: scale(calc(1 + var(--level, 0) * 0.32));
+  transition: transform 90ms ease-out;
+  box-shadow:
+    0 0 calc(25px + var(--level, 0) * 30px) rgba(57, 225, 255, 0.55),
+    0 0 calc(70px + var(--level, 0) * 50px) rgba(86, 70, 255, 0.3);
+}
+
+.hero-orb.is-listening .orb-glow {
+  opacity: calc(0.22 + var(--level, 0) * 0.5);
+  transition: opacity 90ms ease-out;
+}
+
+.orb-wave {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.orb-wave span {
+  position: absolute;
+  left: calc(50% - 1px);
+  top: calc(50% - 9px);
+  width: 2px;
+  height: 18px;
+  border-radius: 99px;
+  background: linear-gradient(#9ff4ff, #6b7dff);
+  box-shadow: 0 0 6px rgba(80, 225, 255, 0.6);
+  transform-origin: 50% 50%;
+  transition: transform 90ms ease-out;
+}
+
+.brand-mark.is-listening span {
+  transition: height 80ms ease-out;
+  box-shadow: 0 0 10px rgba(57, 220, 255, 0.85);
+}
+
 @keyframes orb-breathe {
   50% {
     transform: scale(1.07);

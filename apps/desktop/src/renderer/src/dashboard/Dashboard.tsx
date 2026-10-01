@@ -36,6 +36,7 @@ import { cn } from '@/lib/utils';
 import type { UseVoiceResult } from '@/voice/useVoice';
 import type { RuntimeStatus, ToolInfo } from '../../../shared/ipc';
 import type { ChatItem, PendingConfirmation } from '@/hooks/useChat';
+import { JarvisOrb } from '@/components/JarvisOrb';
 import './dashboard.css';
 
 type View = 'chat' | 'history' | 'settings' | 'audit';
@@ -240,12 +241,7 @@ export function Dashboard({
         {view === 'chat' ? (
           <>
             <section className="dash-stage" aria-label="Assistant">
-              <div className="hero-orb" aria-hidden>
-                <div className="orb-core" />
-                <div className="orb-ring ring-one" />
-                <div className="orb-ring ring-two" />
-                <div className="orb-glow" />
-              </div>
+              <JarvisOrb listening={voice.state === 'listening'} level={voice.level} />
               <div className="temp-readout">
                 <svg className="temp-ring" viewBox="0 0 64 64" aria-hidden>
                   <circle cx="32" cy="32" r="26" fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="3" />

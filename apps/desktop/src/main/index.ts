@@ -46,6 +46,8 @@ import { VoiceBridge } from './voice.js';
 import { presentWindow } from './startup.js';
 import { allowPermissionCheck, allowPermissionRequest, originForLog } from './mediaPermissions.js';
 import { VoiceCaptureLog } from './voiceCaptureLog.js';
+import { WakeLearningStore } from './wakeLearningStore.js';
+import { ListeningIndicatorWindow } from './listeningIndicator.js';
 import { createOverlayWindow, type OverlayWindow } from './window.js';
 import {
   currentVoiceAssetsRoot,
@@ -55,6 +57,10 @@ import {
 } from './voiceAssetsProtocol.js';
 
 registerVoiceAssetsScheme();
+// Whisper tourne dans un worker sur plusieurs threads (onnxruntime-web) :
+// il faut SharedArrayBuffer, absent d'une page file:// non isolée. La
+// fenêtre ne charge que l'interface locale (navigation bloquée).
+app.commandLine.appendSwitch('enable-features', 'SharedArrayBuffer');
 
 const isDev = !app.isPackaged;
 const registry = createDefaultRegistry();
@@ -67,6 +73,8 @@ const auditLog = new FileAuditLogStore();
 const voice = new VoiceBridge(() => settings);
 const updateManager = new UpdateManager();
 const voiceCaptureLog = new VoiceCaptureLog(() => join(app.getPath('userData'), 'logs', 'voice-capture.log'));
+const wakeLearning = new WakeLearningStore(() => app.getPath('userData'), (line) => voiceCaptureLog.append(line));
+let listeningIndicator: ListeningIndicatorWindow | null = null;
 
 let settings: Settings = parseSettings({});
 const spotify = new SpotifyBridge(() => settings);
@@ -153,6 +161,11 @@ async function bootstrap(): Promise<void> {
   overlay = createOverlayWindow(!settings.stayVisibleOnBlur && !isDev);
   registerIpc();
   const window = overlay.browserWindow;
+  listeningIndicator = new ListeningIndicatorWindow(
+    () => overlay?.browserWindow ?? null,
+    (indicator) => loadRenderer(indicator, 'indicator.html'),
+  );
+  listeningIndicator.attachToMain(window);
   await presentWindow(
     {
       once: (event, listener) => window.once(event, listener),
@@ -176,12 +189,12 @@ async function bootstrap(): Promise<void> {
   });
 }
 
-async function loadRenderer(window: BrowserWindow): Promise<void> {
+async function loadRenderer(window: BrowserWindow, page = 'index.html'): Promise<void> {
   const devServer = process.env.ELECTRON_RENDERER_URL;
   if (isDev && devServer) {
-    await window.loadURL(devServer);
+    await window.loadURL(page === 'index.html' ? devServer : `${devServer.replace(/\/+$/, '')}/${page}`);
   } else {
-    await window.loadFile(join(__dirname, '../renderer/index.html'));
+    await window.loadFile(join(__dirname, `../renderer/${page}`));
   }
 }
 
@@ -336,6 +349,30 @@ function registerIpc(): void {
     if (process.platform !== 'win32') return false;
     await shell.openExternal('ms-settings:privacy-microphone');
     return true;
+  });
+
+  // Apprentissage du réveil : refusé tant que l'option n'est pas activée.
+  ipcMain.handle(IpcChannel.wakeLearningStatus, () => wakeLearning.status());
+  ipcMain.handle(IpcChannel.wakeLearningAddSample, (_event, input: unknown) =>
+    settings.voice.wakeLearning ? wakeLearning.addSample(input) : null,
+  );
+  ipcMain.handle(IpcChannel.wakeLearningStats, (_event, kinds: unknown) =>
+    settings.voice.wakeLearning ? wakeLearning.recordStats(kinds) : undefined,
+  );
+  ipcMain.handle(IpcChannel.wakeLearningModel, () => wakeLearning.model());
+  ipcMain.handle(IpcChannel.wakeLearningRetrain, () => wakeLearning.retrain());
+  ipcMain.handle(IpcChannel.wakeLearningClear, () => wakeLearning.clearSamples());
+  ipcMain.handle(IpcChannel.wakeLearningReset, () => wakeLearning.reset());
+
+  const fromMainWindow = (event: Electron.IpcMainEvent): boolean => event.sender === overlay?.browserWindow.webContents;
+  ipcMain.on(IpcChannel.listeningIndicator, (event, payload: unknown) => {
+    if (!fromMainWindow(event)) return;
+    const active = (payload as { active?: unknown } | null)?.active === true;
+    listeningIndicator?.setActive(active);
+  });
+  ipcMain.on(IpcChannel.listeningLevel, (event, level: unknown) => {
+    if (!fromMainWindow(event)) return;
+    if (typeof level === 'number' && Number.isFinite(level)) listeningIndicator?.setLevel(level);
   });
 
   ipcMain.handle(IpcChannel.updateGetState, () => updateManager.getState());

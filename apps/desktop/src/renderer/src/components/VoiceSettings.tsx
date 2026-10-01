@@ -5,6 +5,8 @@ import { Field, Input, Range, Select, Textarea, Toggle } from '@/components/ui/f
 import { Button } from '@/components/ui/button';
 import { MicrophonePanel } from '@/components/MicrophonePanel';
 import { VoiceDiagnostic } from '@/components/VoiceDiagnostic';
+import { WakeLearningSection } from '@/components/WakeLearningSettings';
+import { Disclosure } from '@/components/ui/disclosure';
 import { createSttRegistry, createTtsRegistry } from '@/voice/registries';
 import {
   importWakeWordProfilesFromAudioFile,
@@ -26,6 +28,8 @@ interface VoiceSettingsSectionProps {
   onChange: (patch: Partial<VoiceSettings>) => void;
   /** Choix du micro : appliqué et enregistré tout de suite, sans « Enregistrer ». */
   onMicrophoneChange: (microphoneId: string) => void;
+  /** Apprentissage du réveil tel qu'enregistré (pas le brouillon). */
+  learningSaved: boolean;
 }
 
 type RecordingState = 'idle' | 'recording' | 'error';
@@ -42,6 +46,7 @@ export function VoiceSettingsSection({
   voiceKeyConfigured,
   onChange,
   onMicrophoneChange,
+  learningSaved,
 }: VoiceSettingsSectionProps) {
   const sttRegistry = useMemo(() => createSttRegistry(), []);
   const ttsRegistry = useMemo(() => createTtsRegistry(), []);
@@ -168,11 +173,7 @@ export function VoiceSettingsSection({
   };
 
   return (
-    <div className="flex flex-col gap-4 border-t border-white/8 pt-4">
-      <p className="text-[11px] font-medium tracking-wide text-slate-500 uppercase">
-        Commande vocale
-      </p>
-
+    <div className="flex flex-col gap-4">
       <Toggle
         label="Écoute permanente"
         hint="Jarvis écoute en continu et n'envoie rien avant d'avoir détecté le mot de réveil, localement."
@@ -188,46 +189,19 @@ export function VoiceSettingsSection({
 
       <VoiceDiagnostic voice={voice} />
 
+      <WakeLearningSection
+        enabled={voice.wakeLearning}
+        savedEnabled={learningSaved}
+        wakeWord={voice.wakeWord}
+        onChange={(wakeLearning) => onChange({ wakeLearning })}
+      />
+
       <div className="rounded-lg border border-white/8 bg-white/[0.02] p-3">
         <p className="mb-3 text-[11px] font-medium tracking-wide text-slate-500 uppercase">
           Mot de réveil
         </p>
 
         <div className="flex flex-col gap-3">
-          <p className="text-xs leading-snug text-slate-500">
-            Local et gratuit : openWakeWord reconnaît « Hey Jarvis », et Vosk (modèle
-            français) reconnaît « Jarvis » tout court, dans un fil à part. Whisper ne sert
-            qu’après le réveil, pour la commande. Aucune clé, aucun compte, aucun audio ne
-            quitte le PC.
-          </p>
-
-          <WhisperModelStatus progress={whisperProgress} />
-
-          <Field label="Mot de réveil">
-            <Input
-              value={voice.wakeWord}
-              onChange={(event) => onChange({ wakeWord: event.target.value })}
-            />
-          </Field>
-
-          <Field
-            label="Variantes orthographiques supplémentaires (une par ligne)"
-            hint="En plus des variantes déjà connues (« jarviss », « djarvis », « j'avise »…) et de la tolérance automatique aux petites fautes de transcription."
-          >
-            <Textarea
-              rows={2}
-              value={voice.wakeWordVariants.join('\n')}
-              onChange={(event) =>
-                onChange({
-                  wakeWordVariants: event.target.value
-                    .split('\n')
-                    .map((line) => line.trim())
-                    .filter((line) => line.length > 0),
-                })
-              }
-            />
-          </Field>
-
           <div className="flex flex-col gap-1.5">
             <div className="flex items-center justify-between">
               <span className="text-[11px] font-medium tracking-wide text-slate-400 uppercase">
@@ -251,78 +225,6 @@ export function VoiceSettingsSection({
             </div>
           </div>
 
-          <Field label="Comparaison des échantillons">
-            <Select
-              value={voice.wakeWordMatchStrategy}
-              onChange={(event) =>
-                onChange({
-                  wakeWordMatchStrategy: event.target.value as VoiceSettings['wakeWordMatchStrategy'],
-                })
-              }
-            >
-              <option value="best">Meilleur gabarit (tolère la variabilité entre essais)</option>
-              <option value="average">Moyenne des gabarits (lisse le bruit)</option>
-            </Select>
-          </Field>
-
-          <div className="flex items-center justify-between gap-3 rounded-lg border border-white/8 bg-white/[0.03] px-3 py-2.5">
-            <div>
-              <p className="text-sm text-slate-200">
-                {sampleCount} échantillon{sampleCount === 1 ? '' : 's'} enregistré
-                {sampleCount === 1 ? '' : 's'}
-              </p>
-              <p className="text-xs text-slate-500">
-                {sampleCount === 0
-                  ? 'Dis « Jarvis » au micro, ou importe un WAV/MP3 : ça sert au déclencheur « Jarvis » tout court.'
-                  : sampleCount < MIN_SAMPLES_RECOMMENDED
-                    ? `Recommandé : au moins ${MIN_SAMPLES_RECOMMENDED} échantillons.`
-                    : 'Assez de prises pour le déclencheur « Jarvis ».'}
-              </p>
-            </div>
-            <div className="flex shrink-0 flex-wrap justify-end gap-2">
-              {sampleCount > 0 ? (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={resetSamples}
-                  disabled={recording === 'recording' || importing}
-                >
-                  Effacer
-                </Button>
-              ) : null}
-              <Button
-                size="sm"
-                variant="subtle"
-                onClick={() => importInputRef.current?.click()}
-                disabled={recording === 'recording' || importing}
-              >
-                {importing ? 'Import…' : 'Importer WAV / MP3'}
-              </Button>
-              <Button
-                size="sm"
-                variant="subtle"
-                onClick={() => void addSample()}
-                disabled={recording === 'recording' || importing}
-              >
-                {recording === 'recording' ? 'Dis « ' + voice.wakeWord + ' »…' : 'Ajouter un échantillon'}
-              </Button>
-            </div>
-          </div>
-          <input
-            ref={importInputRef}
-            type="file"
-            accept="audio/wav,audio/mpeg,audio/mp3,.wav,.mp3"
-            multiple
-            className="hidden"
-            onChange={(event) => void importSamples(event.target.files)}
-          />
-          {recording === 'error' ? (
-            <p className="text-xs text-rose-300">
-              Impossible d'accéder au microphone (normal sur une machine sans micro).
-            </p>
-          ) : null}
-          {importError ? <p className="text-xs text-rose-300">{importError}</p> : null}
-
           <div className="flex flex-col gap-2 rounded-lg border border-white/8 bg-white/[0.03] px-3 py-2.5">
             <div className="flex items-center justify-between gap-3">
               <div>
@@ -339,30 +241,110 @@ export function VoiceSettingsSection({
             {testing ? <ScoreMeter score={testScore} threshold={threshold} flash={testFlash} /> : null}
             {testError ? <p className="text-xs text-rose-300">{testError}</p> : null}
           </div>
+          <Disclosure title="Détails techniques du mot de réveil" hint="Vosk, openWakeWord, gabarits d’énergie, Whisper">
+            <p className="text-xs leading-snug text-slate-500">
+              Local et gratuit : openWakeWord reconnaît « Hey Jarvis », et Vosk (modèle
+              français) reconnaît « Jarvis » tout court, dans un fil à part. Whisper ne sert
+              qu’après le réveil, pour la commande. Aucune clé, aucun compte, aucun audio ne
+              quitte le PC.
+            </p>
+            <WhisperModelStatus progress={whisperProgress} />
+            <Field label="Mot de réveil">
+              <Input
+                value={voice.wakeWord}
+                onChange={(event) => onChange({ wakeWord: event.target.value })}
+              />
+            </Field>
+            <Field
+              label="Variantes orthographiques supplémentaires (une par ligne)"
+              hint="En plus des variantes déjà connues (« jarviss », « djarvis », « j'avise »…) et de la tolérance automatique aux petites fautes de transcription."
+            >
+              <Textarea
+                rows={2}
+                value={voice.wakeWordVariants.join('\n')}
+                onChange={(event) =>
+                  onChange({
+                    wakeWordVariants: event.target.value
+                      .split('\n')
+                      .map((line) => line.trim())
+                      .filter((line) => line.length > 0),
+                  })
+                }
+              />
+            </Field>
+            <Field label="Comparaison des échantillons">
+              <Select
+                value={voice.wakeWordMatchStrategy}
+                onChange={(event) =>
+                  onChange({
+                    wakeWordMatchStrategy: event.target.value as VoiceSettings['wakeWordMatchStrategy'],
+                  })
+                }
+              >
+                <option value="best">Meilleur gabarit (tolère la variabilité entre essais)</option>
+                <option value="average">Moyenne des gabarits (lisse le bruit)</option>
+              </Select>
+            </Field>
+            <div className="flex items-center justify-between gap-3 rounded-lg border border-white/8 bg-white/[0.03] px-3 py-2.5">
+              <div>
+                <p className="text-sm text-slate-200">
+                  {sampleCount} échantillon{sampleCount === 1 ? '' : 's'} enregistré
+                  {sampleCount === 1 ? '' : 's'}
+                </p>
+                <p className="text-xs text-slate-500">
+                  {sampleCount === 0
+                    ? 'Dis « Jarvis » au micro, ou importe un WAV/MP3 : ça sert au déclencheur « Jarvis » tout court.'
+                    : sampleCount < MIN_SAMPLES_RECOMMENDED
+                      ? `Recommandé : au moins ${MIN_SAMPLES_RECOMMENDED} échantillons.`
+                      : 'Assez de prises pour le déclencheur « Jarvis ».'}
+                </p>
+              </div>
+              <div className="flex shrink-0 flex-wrap justify-end gap-2">
+                {sampleCount > 0 ? (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={resetSamples}
+                    disabled={recording === 'recording' || importing}
+                  >
+                    Effacer
+                  </Button>
+                ) : null}
+                <Button
+                  size="sm"
+                  variant="subtle"
+                  onClick={() => importInputRef.current?.click()}
+                  disabled={recording === 'recording' || importing}
+                >
+                  {importing ? 'Import…' : 'Importer WAV / MP3'}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="subtle"
+                  onClick={() => void addSample()}
+                  disabled={recording === 'recording' || importing}
+                >
+                  {recording === 'recording' ? 'Dis « ' + voice.wakeWord + ' »…' : 'Ajouter un échantillon'}
+                </Button>
+              </div>
+            </div>
+            <input
+              ref={importInputRef}
+              type="file"
+              accept="audio/wav,audio/mpeg,audio/mp3,.wav,.mp3"
+              multiple
+              className="hidden"
+              onChange={(event) => void importSamples(event.target.files)}
+            />
+            {recording === 'error' ? (
+              <p className="text-xs text-rose-300">
+                Impossible d'accéder au microphone (normal sur une machine sans micro).
+              </p>
+            ) : null}
+            {importError ? <p className="text-xs text-rose-300">{importError}</p> : null}
+          </Disclosure>
         </div>
       </div>
-
-      <Field
-        label="Moteur de reconnaissance vocale (STT)"
-        hint="Whisper local est le moteur gratuit par défaut : whisper-base et son runtime WebAssembly sont embarqués dans l’installateur, hors ligne. Le même Whisper sert au mot de réveil et à l’écoute YouTube."
-      >
-        <Select
-          value={voice.sttProvider}
-          onChange={(event) => onChange({ sttProvider: event.target.value })}
-        >
-          {sttRegistry.list().map((descriptor) => (
-            <option key={descriptor.id} value={descriptor.id}>
-              {descriptor.label}
-              {descriptor.requiresApiKey && !voiceKeyConfigured ? ' — clé requise' : ''}
-            </option>
-          ))}
-        </Select>
-      </Field>
-      {!usingLocalWhisperStt ? (
-        <p className="-mt-2 text-xs text-slate-500">
-          Le mot de réveil et YouTube utilisent toujours le Whisper local.
-        </p>
-      ) : null}
 
       <Toggle
         label="Réponse vocale"
@@ -405,17 +387,40 @@ export function VoiceSettingsSection({
         </>
       ) : null}
 
-      <Field
-        label="Clé API OpenAI dédiée à la voix (optionnel)"
-        hint="Laisse vide pour réutiliser la clé du fournisseur OpenAI ci-dessus, si configuré. Facultative : toute la chaîne vocale par défaut fonctionne sans elle."
-      >
-        <Input
-          type="password"
-          value={voice.apiKey}
-          placeholder="sk-…"
-          onChange={(event) => onChange({ apiKey: event.target.value })}
-        />
-      </Field>
+      <Disclosure title="Détails techniques de la dictée" hint="Moteur de reconnaissance, clé dédiée">
+        <Field
+          label="Moteur de reconnaissance vocale (STT)"
+          hint="Whisper local est le moteur gratuit par défaut : whisper-base et son runtime WebAssembly sont embarqués dans l’installateur, hors ligne. Le même Whisper sert au mot de réveil et à l’écoute YouTube."
+        >
+          <Select
+            value={voice.sttProvider}
+            onChange={(event) => onChange({ sttProvider: event.target.value })}
+          >
+            {sttRegistry.list().map((descriptor) => (
+              <option key={descriptor.id} value={descriptor.id}>
+                {descriptor.label}
+                {descriptor.requiresApiKey && !voiceKeyConfigured ? ' — clé requise' : ''}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        {!usingLocalWhisperStt ? (
+          <p className="-mt-2 text-xs text-slate-500">
+            Le mot de réveil et YouTube utilisent toujours le Whisper local.
+          </p>
+        ) : null}
+        <Field
+          label="Clé API OpenAI dédiée à la voix (optionnel)"
+          hint="Laisse vide pour réutiliser la clé du fournisseur OpenAI (onglet Modèle IA), si configuré. Facultative : toute la chaîne vocale par défaut fonctionne sans elle."
+        >
+          <Input
+            type="password"
+            value={voice.apiKey}
+            placeholder="sk-…"
+            onChange={(event) => onChange({ apiKey: event.target.value })}
+          />
+        </Field>
+      </Disclosure>
     </div>
   );
 }

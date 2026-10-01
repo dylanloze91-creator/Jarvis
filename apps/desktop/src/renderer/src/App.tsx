@@ -19,6 +19,7 @@ import { isDemoRuntime } from '@/lib/runtimeStatus';
 import { cn } from '@/lib/utils';
 import { SAMPLE_CONVERSATION } from '@/preview/sampleConversation';
 import { useVoice } from '@/voice/useVoice';
+import { BrandMark, JarvisOrb } from '@/components/JarvisOrb';
 import type { RuntimeStatus, ToolInfo } from '../../shared/ipc';
 
 type View = 'chat' | 'history' | 'settings' | 'audit';
@@ -181,11 +182,7 @@ export default function App() {
       <div className="ambient ambient-a" />
       <div className="ambient ambient-b" />
       <header className="drag-region relative z-10 flex h-[52px] shrink-0 items-center gap-3 border-b border-white/[0.07] px-4">
-        <div className="brand-mark" aria-hidden>
-          <span />
-          <span />
-          <span />
-        </div>
+        <BrandMark listening={voice.state === 'listening'} level={voice.level} />
         <div className="flex min-w-0 items-center gap-2">
           <span className="text-[12px] font-bold tracking-[0.24em] text-white">JARVIS</span>
           {status ? (
@@ -291,7 +288,7 @@ export default function App() {
             ) : booting && chat.items.length === 0 ? (
               <BootStage label="Démarrage de Jarvis…" />
             ) : chat.items.length === 0 ? (
-              <EmptyState tools={tools} onPick={chat.send} />
+              <EmptyState tools={tools} onPick={chat.send} listening={voice.state === 'listening'} level={voice.level} />
             ) : (
               <Messages items={chat.items} />
             )
@@ -332,12 +329,7 @@ export default function App() {
 function BootStage({ label }: { label: string }) {
   return (
     <div className="boot-stage">
-      <div className="hero-orb" aria-hidden>
-        <div className="orb-core" />
-        <div className="orb-ring ring-one" />
-        <div className="orb-ring ring-two" />
-        <div className="orb-glow" />
-      </div>
+      <JarvisOrb />
       <p className="relative z-10 text-[13px] text-slate-400">{label}</p>
     </div>
   );

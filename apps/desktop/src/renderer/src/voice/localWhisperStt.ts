@@ -1,6 +1,7 @@
 import {
   WHISPER_DICTATION_LANGUAGE,
   concatFloat32,
+  extendTrailingSilence,
   peakEnergy,
   speechDurationMs,
   type SpeechToTextController,
@@ -111,7 +112,9 @@ export class LocalWhisperSttProvider implements SpeechToTextProvider {
       return;
     }
 
-    const pcm = concatFloat32(frames);
+    // Fin de parole détectée après 650 ms de silence ; Whisper en reçoit ~1 s comme en 0.4.16.
+    // Il complète de toute façon à 30 s (même coût) : couper le silence lui faisait perdre des mots.
+    const pcm = extendTrailingSilence(concatFloat32(frames), SAMPLE_RATE);
 
     handlers.onPartial?.('Transcription…');
     const unsubscribe = subscribeWhisperProgress((info) => {
@@ -119,9 +122,11 @@ export class LocalWhisperSttProvider implements SpeechToTextProvider {
     });
 
     try {
+      const started = performance.now();
       const text = await transcribeWithWhisper(pcm, {
         language: frenchNameOrDefault(options.language),
       });
+      latencyLog(`[latence] whisper ${Math.round(performance.now() - started)} ms pour ${(pcm.length / SAMPLE_RATE).toFixed(2)} s d’audio`);
       if (options.signal?.aborted) return;
       handlers.onFinal(text);
     } catch (error) {
@@ -130,6 +135,14 @@ export class LocalWhisperSttProvider implements SpeechToTextProvider {
     } finally {
       unsubscribe();
     }
+  }
+}
+
+function latencyLog(line: string): void {
+  try {
+    window.jarvis?.voice?.log?.(`[voix] ${line}`);
+  } catch {
+    // Journal seulement.
   }
 }
 

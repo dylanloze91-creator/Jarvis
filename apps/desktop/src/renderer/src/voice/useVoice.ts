@@ -1,4 +1,6 @@
 import {
+  END_OF_SPEECH_RMS,
+  EndOfSpeechDetector,
   captureFailureText,
   commandAfterWakeWord,
   splitWakeWordWindow,
@@ -10,20 +12,23 @@ import {
   type WakeWordDetectorConfig,
   type WakeWordEngine,
   type WakeWordEngineController,
+  wrapWakeWordEngineWithVerifier,
 } from '@jarvis/core';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { computeRms, listMicrophones, microphone } from './audioCapture';
 import type { MicrophoneStatus } from './microphone';
 import { createSttRegistry, createTtsRegistry, createWakeWordEngine } from './registries';
 import { startWakeWhenWindowVisible } from './voiceStartup';
-import { describeWhisperProgress, subscribeWhisperProgress } from './whisper/pipelineLoader';
+import { wakeLearningSession } from './wakeLearning/session';
+import { describeWhisperProgress, getWhisperPipeline, subscribeWhisperProgress } from './whisper/pipelineLoader';
 
 export type VoiceState = 'idle' | 'sleeping' | 'listening' | 'speaking' | 'error';
 
-const SILENCE_RMS = 0.012;
-const SILENCE_MS = 900;
+const SILENCE_RMS = END_OF_SPEECH_RMS;
 const MAX_UTTERANCE_MS = 12_000;
 const LEVEL_SMOOTHING = 0.35;
+/** Vumètre hors captation (réglages) : 4 rafraîchissements par seconde suffisent. */
+const IDLE_LEVEL_INTERVAL_MS = 250;
 /** Une erreur de Whisper, de la synthèse ou du réveil s'efface d'elle-même. */
 const VOICE_ERROR_TTL_MS = 20_000;
 
@@ -127,11 +132,17 @@ export function useVoice({
    * comme une commande.
    */
   const pendingWakeWordStripRef = useRef<{ word: string; variants: string[] } | null>(null);
-  const silenceMsRef = useRef<number | null>(null);
+  const endOfSpeechRef = useRef<EndOfSpeechDetector | null>(null);
   const maxDurationTimerRef = useRef<number | null>(null);
   const ttsControllerRef = useRef<TextToSpeechController | null>(null);
   const audioElementRef = useRef<HTMLAudioElement | null>(null);
   const voiceErrorTimerRef = useRef<number | null>(null);
+  /** Audio reçu depuis l'ouverture, en secondes : horloge des mesures de latence. */
+  const audioClockRef = useRef(0);
+  const lastVoiceClockRef = useRef(0);
+  const timingRef = useRef<{ wakeAt: number; endAt: number | null } | null>(null);
+  const levelRef = useRef(0);
+  const levelShownAtRef = useRef(0);
 
   useEffect(() => microphone.subscribe(setMic), []);
 
@@ -145,8 +156,10 @@ export function useVoice({
   }, []);
 
   const setVoiceState = useCallback((next: VoiceState) => {
+    const wasListening = stateRef.current === 'listening';
     stateRef.current = next;
     setState(next);
+    if (wasListening !== (next === 'listening')) window.jarvis.voice.setListening(next === 'listening');
   }, []);
 
   const resolveStt = useCallback((): SpeechToTextProvider => {
@@ -173,11 +186,19 @@ export function useVoice({
 
   const resolveWakeWordEngine = useCallback((): WakeWordEngine => {
     const voice = settingsRef.current?.voice;
-    return createWakeWordEngine({
+    const engine = createWakeWordEngine({
       keyword: voice?.wakeWord ?? 'jarvis',
       detectorConfig: buildWakeWordDetectorConfig(voice),
       sensitivity: voice?.wakeWordSensitivity ?? 0.7,
       variants: voice?.wakeWordVariants ?? [],
+    });
+    // Sans apprentissage : le détecteur tel quel (0.4.16).
+    if (!voice?.wakeLearning) return engine;
+    return wrapWakeWordEngineWithVerifier(engine, {
+      getModel: () => wakeLearningSession.model,
+      features: wakeLearningSession.computeFeatures,
+      onCandidate: wakeLearningSession.onCandidate,
+      log: (line) => microphoneLog(`[apprentissage] ${line}`),
     });
   }, []);
 
@@ -193,7 +214,7 @@ export function useVoice({
   }, []);
 
   const finalizeTranscript = useCallback(
-    (text: string) => {
+    (text: string, failed = false) => {
       clearMaxDurationTimer();
       sttControllerRef.current = null;
       setLiveTranscript('');
@@ -201,7 +222,17 @@ export function useVoice({
       pendingWakeWordStripRef.current = null;
       const command = pendingStrip ? commandAfterWakeWord(text, pendingStrip) : text;
       const trimmed = command.trim();
+      const timing = timingRef.current;
+      timingRef.current = null;
+      if (timing) {
+        const now = performance.now();
+        microphoneLog(
+          `[latence] texte prêt · audio ${audioClockRef.current.toFixed(2)} s · ${Math.round(now - timing.wakeAt)} ms après le réveil` +
+            (timing.endAt !== null ? ` · ${Math.round(now - timing.endAt)} ms après la fin de parole` : ''),
+        );
+      }
       microphoneLog(`dictée terminée : ${trimmed ? `commande de ${trimmed.length} caractères envoyée` : 'rien à envoyer'}`);
+      if (settingsRef.current?.voice.wakeLearning) wakeLearningSession.outcome(trimmed, failed);
       if (trimmed) onTranscriptRef.current(trimmed);
       backToSleepOrIdle();
     },
@@ -210,18 +241,30 @@ export function useVoice({
 
   const finishListening = useCallback(() => {
     clearMaxDurationTimer();
+    if (timingRef.current && timingRef.current.endAt === null) {
+      timingRef.current.endAt = performance.now();
+      microphoneLog(
+        `[latence] fin de parole · audio ${audioClockRef.current.toFixed(2)} s · dernière parole ${Math.round((audioClockRef.current - lastVoiceClockRef.current) * 1000)} ms avant · ${Math.round(timingRef.current.endAt - timingRef.current.wakeAt)} ms après le réveil`,
+      );
+    }
     sttControllerRef.current?.stop();
   }, [clearMaxDurationTimer]);
 
   const beginListening = useCallback(() => {
     if (stateRef.current !== 'sleeping') return;
-    microphoneLog('mot de réveil détecté : dictée');
+    microphoneLog(
+      `[latence] réveil · audio ${audioClockRef.current.toFixed(2)} s · dernière parole ${Math.round((audioClockRef.current - lastVoiceClockRef.current) * 1000)} ms avant`,
+    );
+    timingRef.current = { wakeAt: performance.now(), endAt: null };
     setVoiceState('listening');
     setLiveTranscript('');
-    silenceMsRef.current = null;
+    const endOfSpeech = new EndOfSpeechDetector();
+    endOfSpeechRef.current = endOfSpeech;
 
     const provider = resolveStt();
     sttOwnsCaptureRef.current = provider.managesOwnCapture;
+    // Le premier réveil charge Whisper pendant que l'utilisateur parle ; ensuite il reste prêt.
+    if (provider.id === 'local-whisper') void getWhisperPipeline().catch(() => undefined);
 
     const controller = provider.start(
       {
@@ -229,7 +272,7 @@ export function useVoice({
         onFinal: (text) => finalizeTranscript(text),
         onError: (message) => {
           setVoiceError(message);
-          finalizeTranscript('');
+          finalizeTranscript('', true);
         },
       },
       { language: 'fr-FR' },
@@ -247,6 +290,7 @@ export function useVoice({
     const lastWindow = wakeWordControllerRef.current?.getLastAnalyzedWindow?.();
     if (lastWindow && !provider.managesOwnCapture) {
       const { prefix, command } = splitWakeWordWindow(lastWindow);
+      endOfSpeech.primeWithCommandAudio(command, lastWindow.sampleRate);
       controller.pushAudio?.(prefix, lastWindow.sampleRate);
       controller.markPrefixEnd?.();
       if (command.length > 0) controller.pushAudio?.(command, lastWindow.sampleRate);
@@ -268,7 +312,9 @@ export function useVoice({
     wakeWordOwnsCaptureRef.current = engine.managesOwnCapture;
     microphoneLog('moteur du mot de réveil démarré');
     wakeWordControllerRef.current = engine.start({
-      onDetected: () => beginListening(),
+      onDetected: () => {
+        if (!wakeLearningSession.enrolling) beginListening();
+      },
       onScore: () => microphone.markWakeScore(),
       onError: (message) => setVoiceError(message),
     });
@@ -277,24 +323,34 @@ export function useVoice({
   const handleFrame = useCallback(
     (frame: Float32Array, sampleRate: number) => {
       const rms = computeRms(frame);
-      setLevel((previous) => previous + (rms - previous) * LEVEL_SMOOTHING);
+      audioClockRef.current += frame.length / sampleRate;
+      if (rms >= SILENCE_RMS) lastVoiceClockRef.current = audioClockRef.current;
+      const smoothed = levelRef.current + (rms - levelRef.current) * LEVEL_SMOOTHING;
+      levelRef.current = smoothed;
+      const listening = stateRef.current === 'listening';
+      // Hors captation, le niveau ne sert qu'au vumètre des réglages : pas besoin de 16 rendus par seconde.
+      const now = performance.now();
+      if (listening || now - levelShownAtRef.current >= IDLE_LEVEL_INTERVAL_MS) {
+        levelShownAtRef.current = now;
+        setLevel(smoothed);
+      }
+      if (listening) window.jarvis.voice.sendLevel(smoothed);
 
       if (stateRef.current === 'sleeping') {
         if (!wakeWordOwnsCaptureRef.current)
           wakeWordControllerRef.current?.pushAudio?.(frame, sampleRate);
+        if (settingsRef.current?.voice.wakeLearning && !wakeLearningSession.enrolling) {
+          wakeLearningSession.pushIdleAudio(frame, sampleRate);
+        }
         return;
       }
 
       if (stateRef.current === 'listening') {
         if (!sttOwnsCaptureRef.current) sttControllerRef.current?.pushAudio?.(frame, sampleRate);
 
-        // Durée mesurée en audio, pas à l'horloge : après une inférence
-        // Whisper, les trames retenues arrivent d'un coup.
-        if (rms < SILENCE_RMS) {
-          silenceMsRef.current = (silenceMsRef.current ?? 0) + (frame.length / sampleRate) * 1000;
-          if (silenceMsRef.current > SILENCE_MS) finishListening();
-        } else {
-          silenceMsRef.current = null;
+        if (endOfSpeechRef.current?.pushPcm(frame, sampleRate)) {
+          endOfSpeechRef.current = null;
+          finishListening();
         }
       }
     },
@@ -310,6 +366,7 @@ export function useVoice({
     sttControllerRef.current = null;
     wakeWordControllerRef.current?.stop();
     wakeWordControllerRef.current = null;
+    levelRef.current = 0;
     setLevel(0);
     setLiveTranscript('');
   }, [clearMaxDurationTimer]);
@@ -350,6 +407,12 @@ export function useVoice({
     // du mot de réveil sont appliqués par les autres effets.
   }, [settings?.voice.enabled]);
 
+  useEffect(() => {
+    if (!settings?.voice.enabled || !settings.voice.wakeLearning) return;
+    wakeLearningSession.start();
+    return () => wakeLearningSession.stop();
+  }, [settings?.voice.enabled, settings?.voice.wakeLearning]);
+
   // Reconfigure le mot de réveil (gabarits, sensibilité, stratégie,
   // variantes) sans redémarrer la capture audio.
   const wakeWordConfigKey = JSON.stringify({
@@ -358,6 +421,7 @@ export function useVoice({
     strategy: settings?.voice.wakeWordMatchStrategy,
     sensitivity: settings?.voice.wakeWordSensitivity,
     variants: settings?.voice.wakeWordVariants,
+    learning: settings?.voice.wakeLearning,
   });
   useEffect(() => {
     if (stateRef.current === 'sleeping' && wakeWordControllerRef.current) startWakeWordEngine();

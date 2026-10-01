@@ -27,7 +27,10 @@ export default defineConfig({
     plugins: [externalizeDepsPlugin()],
     build: {
       rollupOptions: {
-        input: { index: resolve(__dirname, 'src/preload/index.ts') },
+        input: {
+          index: resolve(__dirname, 'src/preload/index.ts'),
+          indicator: resolve(__dirname, 'src/preload/indicator.ts'),
+        },
       },
     },
   },
@@ -45,9 +48,14 @@ export default defineConfig({
       tailwindcss(),
       jarvisMachinePlugin(resolve(__dirname, 'package.json')),
     ],
+    // Worker de Whisper : module ES (imports dynamiques de transformers.js et du runtime).
+    worker: { format: 'es' },
     build: {
       rollupOptions: {
-        input: { index: resolve(__dirname, 'src/renderer/index.html') },
+        input: {
+          index: resolve(__dirname, 'src/renderer/index.html'),
+          indicator: resolve(__dirname, 'src/renderer/indicator.html'),
+        },
       },
     },
   },

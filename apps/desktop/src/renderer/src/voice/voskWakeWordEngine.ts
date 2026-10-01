@@ -19,6 +19,8 @@ const SAMPLE_RATE = 16000;
 const HISTORY_SECONDS = 15;
 /** Premier lancement : import du module (~6 Mo), WebAssembly, extraction du modèle (~43 Mo) dans IndexedDB. */
 export const VOSK_LOAD_TIMEOUT_MS = 120_000;
+/** « Jarvis » entendu avec moins d'assurance : candidat que seul le vérificateur personnel peut accepter. */
+export const VOSK_NEAR_MISS_CONFIDENCE = 0.5;
 
 export interface VoskRecognizerLike {
   on(event: 'result' | 'partialresult' | 'error', listener: (message: unknown) => void): void;
@@ -156,7 +158,20 @@ export class VoskWakeWordEngine implements WakeWordEngine {
       if (stopped) return;
       const hits = voskWakeHits(resultOf(message), word, minConfidence);
       const hit: VoskWord | undefined = hits.at(-1);
-      if (!hit) return;
+      if (!hit) {
+        const near = handlers.onNearMiss ? voskWakeHits(resultOf(message), word, VOSK_NEAR_MISS_CONFIDENCE).at(-1) : undefined;
+        if (near && handlers.onNearMiss) {
+          const heard = history.totalSamples - origin;
+          const { startSample, commandOffset } = voskWakeWindow(near, heard, SAMPLE_RATE);
+          log(`« ${near.word} » sous le seuil (confiance ${near.conf.toFixed(2)})`);
+          handlers.onNearMiss(word, {
+            pcm: history.slice(origin + startSample, history.totalSamples),
+            sampleRate: SAMPLE_RATE,
+            commandOffset,
+          });
+        }
+        return;
+      }
       const heard = history.totalSamples - origin;
       const { startSample, commandOffset } = voskWakeWindow(hit, heard, SAMPLE_RATE);
       lastWindow = {

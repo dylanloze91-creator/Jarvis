@@ -1,8 +1,8 @@
-# Jarvis 0.4.16 — contexte pour un autre développeur
+# Jarvis 0.4.17 — contexte pour un autre développeur
 
 Ce fichier est à la **racine du code**. Les chemins ci-dessous partent de ce dossier. Ce n’est pas un résumé marketing : c’est l’état réel de cet arbre. La voix a été refaite dans cet arbre (publiée en 0.4.11, section « Voix ») : la transcription restait « Chargement… 100 % » sur l’installateur Windows. La refonte du tableau de bord est dans cet arbre : fenêtre étroite = overlay, fenêtre large = tableau de bord.
 
-**Version confirmée :** `apps/desktop/package.json` → `"version": "0.4.16"`. Le `package.json` racine est encore à `0.3.0` : c’est le monorepo, pas l’appli. La version qui compte pour l’exe, l’updater et GitHub est celle de `@jarvis/desktop`. La voix corrigée en 0.4.11 (installateur Windows) est inchangée. Le modèle par défaut reste `qwen2.5:3b`. `qwen3.5:4b` est le modèle recommandé documenté ; le repli est réglable (`fallbackModel`, défaut `qwen2.5:3b`).
+**Version confirmée :** `apps/desktop/package.json` → `"version": "0.4.17"`. Le `package.json` racine est encore à `0.3.0` : c’est le monorepo, pas l’appli. La version qui compte pour l’exe, l’updater et GitHub est celle de `@jarvis/desktop`. La voix corrigée en 0.4.11 (installateur Windows) est inchangée. Le modèle par défaut reste `qwen2.5:3b`. `qwen3.5:4b` est le modèle recommandé documenté ; le repli est réglable (`fallbackModel`, défaut `qwen2.5:3b`).
 
 Lis ce fichier avant de modifier le code.
 
@@ -20,7 +20,7 @@ Utilisateur → Agent → Tool Manager → outils → Windows
 
 Le modèle ne touche jamais le système directement. TypeScript strict, Electron 44, React 19, Tailwind 4, Zod, Vitest, npm workspaces. **Aucune dépendance native à compiler.** Cible machine : Windows, 64 Go RAM, RTX 2060 6 Go, i7 10e gén. Beaucoup d’outils (PowerShell, journal d’événements, Spotify desktop, SiteBlock) n’ont de sens que sur Windows.
 
-Google Agenda / Gmail / Drive **n’est pas** dans cette 0.4.16.
+Google Agenda / Gmail / Drive **n’est pas** dans cette 0.4.17.
 
 ---
 
@@ -48,7 +48,7 @@ Scripts utiles (racine) :
 
 Le script `setup:voice` remplit `apps/desktop/voice-assets/` (runtime ONNX, Whisper, openWakeWord, modèle Vosk français ; non commité, voir `.gitignore`). Premier `dev` / `build` : besoin de réseau.
 
-L’installateur publié est `Jarvis-Setup-0.4.16.exe` (release GitHub `v0.4.16`).
+L’installateur publié est `Jarvis-Setup-0.4.17.exe` (release GitHub `v0.4.17`).
 
 Données utilisateur (Electron `userData`, typiquement `%APPDATA%\Jarvis`) :
 
@@ -80,7 +80,7 @@ Données utilisateur (Electron `userData`, typiquement `%APPDATA%\Jarvis`) :
     src/media/                 intent Spotify
     src/update/                lecture latest.yml GitHub
     src/history/  src/audit/
-  apps/desktop/                Electron (version 0.4.16)
+  apps/desktop/                Electron (version 0.4.17)
     electron-builder.yml       NSIS, extraResources, publish GitHub
     electron.vite.config.ts    aliases onnxruntime-web (wasm, pas JSEP)
     scripts/setup-whisper.mjs
@@ -213,11 +213,20 @@ Scènes de capture (`?scene=chat|settings`, `?layout=compact`) : `App.tsx` + `pr
 
 L’overlay compact ci-dessus est celui de la 0.4.9, conservé pour la fenêtre étroite.
 
+## 0.4.17 — écoute visible, latence, apprentissage du réveil, réglages en onglets
+
+- **Whisper dans un worker** (`voice/whisper/whisperWorker.ts`, `pipelineLoader.ts` = façade, `loaderCore.ts` = l’ancien chargeur). Même onnxruntime-web 1.31, même `.wasm` (`jarvis-oww://ort/`) ; le worker en charge sa propre instance (contexte JS séparé), multi-thread (moitié des cœurs, 4 au plus) grâce à `SharedArrayBuffer`, activé par `app.commandLine.appendSwitch('enable-features', 'SharedArrayBuffer')` dans le main (sans isolation cross-origin). Si le worker ne démarre pas ou plante : retour automatique au chargeur dans la page (0.4.16), la dictée en cours est rejouée. Whisper est préchargé au **premier réveil** (pas à l’activation de la voix), puis reste prêt.
+- **Fin de parole** (`packages/core/src/speech/endOfSpeech.ts`) : 650 ms de silence une fois la commande commencée (1,5 s avant), mesuré en audio par fenêtres de 16 ms ; trames du micro de 1024 échantillons (était 4096). Whisper reçoit ~1 s de silence de fin (`extendTrailingSilence` répète le silence capté) : **ne pas couper le silence de fin** — Whisper complète à 30 s (même coût) et la coupe faisait tomber l’exactitude de « quelle heure est-il ? » à 60 %. Mesures VM (« Jarvis, quelle heure est-il ? » en boucle) : fin de parole → texte à l’agent, médiane 4,09 s (0.4.16) → 2,97 s (0.4.17) ; fin de parole détectée 1 024 → 704 ms ; Whisper 3,06 → 2,27 s ; exactitude 19/26 → 52/73 (71 %). Détail : `internal/apprentissage-reglages-0417.md`.
+- **Orbe et logo** (`components/JarvisOrb.tsx`) : niveau du micro seulement pendant la captation d’une commande (`voice.state === 'listening'`), immobiles (respiration habituelle) en attente de « Jarvis ». Hors captation, `level` n’est rafraîchi que 4 fois par seconde.
+- **Indicateur hors fenêtre** (`main/listeningIndicator.ts`, page `renderer/indicator.html`, preload `preload/indicator.ts`) : pastille 184×48 en haut à droite de la zone de travail de l’écran du curseur, du réveil à la fin de la captation, seulement si la fenêtre principale est cachée, réduite ou sans le focus. `focusable: false`, `showInactive`, `setIgnoreMouseEvents(true)`, `skipTaskbar`, `type: 'toolbar'` sous Windows (ni barre des tâches ni Alt-Tab). IPC `listening:indicator` / `listening:level`, acceptés seulement depuis la fenêtre principale.
+- **Apprentissage du réveil** (option `voice.wakeLearning`, désactivée par défaut ; désactivée = détection 0.4.16 à l’identique). Core : `speech/wakeLearning/` (caractéristiques = moyenne/max/écart-type des embeddings openWakeWord sur 2 s ; régression logistique ; seuil du veto borné 0,05–0,5 et actif seulement si la validation croisée garde ≥ 97 % des vrais réveils ; rattrapage des quasi-réveils borné 0,8–0,98 ; étiquetage automatique ; un quasi-réveil < 1,5 s avant un réveil = même « Jarvis », pas un raté ; plafond). Renderer : `voice/wakeLearning/` (sessions mel+embedding à part, sous `withOrtLock`). Main : `main/wakeLearningStore.ts`, uniquement `userData/wake-learning/` (`index.json`, `clips/*.wav`, `verifier.json`), au plus 300 extraits / 20 Mo, journal sans audio ni texte. « Effacer » = extraits supprimés, modèle gardé ; « Réinitialiser » = dossier supprimé. Les détecteurs Vosk et openWakeWord ne changent pas ; Vosk et openWakeWord signalent des quasi-réveils seulement si la couche est active.
+- **Réglages en onglets** (`components/SettingsTabs.tsx`) : Voix et détection, Modèle IA, Recherche et mémoire, Spotify, Outils et sécurité, Fenêtre et démarrage, Mises à jour. Un seul brouillon et un seul « Enregistrer » ; les onglets inactifs restent montés (cachés). Détails techniques repliés (`ui/disclosure.tsx`).
+
 ---
 
 ## Updater / GitHub
 
-Dernière publication : **0.4.16** (`https://github.com/dylanloze91-creator/Jarvis/releases/tag/v0.4.16`).
+Dernière publication : **0.4.17** (`https://github.com/dylanloze91-creator/Jarvis/releases/tag/v0.4.17`) — exe, `.blockmap` et `latest.yml` publiés : l’updater intégré la propose.
 
 - `apps/desktop/electron-builder.yml` : `publish.provider: github`, owner `dylanloze91-creator`, repo `Jarvis`, `releaseType: release`, artifact `Jarvis-Setup-${version}.exe`
 - `apps/desktop/src/main/updater.ts` : contrôle 15 s après le démarrage puis toutes les 4 h ; téléchargement auto ; **installation seulement si l’utilisateur clique**
@@ -346,4 +355,4 @@ Travaux **hors scope** de cet arbre (ne pas les reprendre ici) : Suite Google, p
 - Le choix du micro s’applique tout de suite ; l’étape « Accès au micro » passe en premier dans « Tester la voix ».
 - Autorisations : `setPermissionRequestHandler` (micro seul, depuis l’interface) **et** `setPermissionCheckHandler` (audio accordé, caméra refusée), décisions journalisées (`main/mediaPermissions.ts`).
 - `backgroundThrottling: false` : la fenêtre masquée écoute toujours.
-- Whisper ne tourne qu’après un réveil (ou en repli si Vosk manque) : sur le fil principal (`ort.env.wasm.proxy = false`), chaque inférence bloque l’interface ; avec le déclencheur Whisper de 0.4.15, un son continu dans l’entrée retardait `getUserMedia` de 18 à 65 s (mesuré sur la VM).
+- Whisper ne tourne qu’après un réveil (ou en repli si Vosk manque). Depuis 0.4.17 il tourne dans un worker (voir « 0.4.17 ») ; s’il retombe dans la page, chaque inférence y bloque l’interface. Avec le déclencheur Whisper de 0.4.15, un son continu dans l’entrée retardait `getUserMedia` de 18 à 65 s (mesuré sur la VM).

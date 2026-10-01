@@ -364,3 +364,5 @@ export {
   type WakeWordEngineController,
   type WakeWordEngineHandlers,
 } from './speech/wakewordEngine.js';
+export * from './speech/wakeLearning/index.js';
+export * from './speech/endOfSpeech.js';

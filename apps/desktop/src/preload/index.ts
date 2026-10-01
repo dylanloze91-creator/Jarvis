@@ -7,12 +7,13 @@ import {
   type UpdateState,
   type VoiceSpeakInput,
   type VoiceTranscribeInput,
+  type WakeLearningSampleInput,
   type WindowChrome,
   type YoutubeTranscribeProgress,
   type YoutubeTranscribeRequest,
   type YoutubeTranscribeResult,
 } from '../shared/ipc.js';
-import type { Settings } from '@jarvis/core';
+import type { Settings, WakeStatKind } from '@jarvis/core';
 
 /**
  * Seule surface exposée au renderer. Elle est volontairement étroite : pas
@@ -89,6 +90,17 @@ const api: JarvisApi = {
     copyReport: (text: string) => ipcRenderer.invoke(IpcChannel.voiceCopyReport, text),
     log: (line: string) => ipcRenderer.send(IpcChannel.voiceCaptureLog, line),
     openMicrophonePrivacy: () => ipcRenderer.invoke(IpcChannel.voiceOpenMicrophonePrivacy),
+    setListening: (active: boolean) => ipcRenderer.send(IpcChannel.listeningIndicator, { active: active === true }),
+    sendLevel: (level: number) => ipcRenderer.send(IpcChannel.listeningLevel, Number.isFinite(level) ? level : 0),
+  },
+  wakeLearning: {
+    status: () => ipcRenderer.invoke(IpcChannel.wakeLearningStatus),
+    addSample: (input: WakeLearningSampleInput) => ipcRenderer.invoke(IpcChannel.wakeLearningAddSample, input),
+    recordStats: (kinds: WakeStatKind[]) => ipcRenderer.invoke(IpcChannel.wakeLearningStats, kinds),
+    model: () => ipcRenderer.invoke(IpcChannel.wakeLearningModel),
+    retrain: () => ipcRenderer.invoke(IpcChannel.wakeLearningRetrain),
+    clear: () => ipcRenderer.invoke(IpcChannel.wakeLearningClear),
+    reset: () => ipcRenderer.invoke(IpcChannel.wakeLearningReset),
   },
   youtube: {
     onTranscribe: (listener) => {

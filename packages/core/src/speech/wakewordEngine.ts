@@ -19,6 +19,12 @@ export interface WakeWordEngineHandlers {
   /** Score de confiance de la dernière trame analysée (0 à 1), pour un retour visuel pendant la calibration. */
   onScore?: (score: number) => void;
   onError: (message: string) => void;
+  /**
+   * « Jarvis » probable mais sous le seuil du détecteur. Appelé seulement
+   * si ce gestionnaire est fourni (apprentissage du réveil actif) ; sans
+   * lui, les moteurs se comportent exactement comme avant.
+   */
+  onNearMiss?: (keyword: string, window: WakeWordWindow) => void;
 }
 
 /** Audio qui a déclenché le mot de réveil, transmis en préfixe à la dictée. */

@@ -78,8 +78,15 @@ describe('démarrage vocal paresseux', () => {
     await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
   });
 
-  it('ne précharge pas Whisper à l’activation de la voix', () => {
+  it('ne précharge pas Whisper à l’activation de la voix, seulement au réveil', () => {
     const source = readFileSync(new URL('./useVoice.ts', import.meta.url), 'utf8');
-    expect(source).not.toContain('getWhisperPipeline');
+    const calls = [...source.matchAll(/getWhisperPipeline\(/g)].map((match) => match.index!);
+    const wake = source.indexOf('const beginListening');
+    const afterWake = source.indexOf('const startWakeWordEngine');
+    expect(calls.length).toBeGreaterThan(0);
+    for (const index of calls) {
+      expect(index).toBeGreaterThan(wake);
+      expect(index).toBeLessThan(afterWake);
+    }
   });
 });

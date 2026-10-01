@@ -19,7 +19,7 @@ import {
 
 export { computeRms } from '@jarvis/core';
 
-const FRAME_SIZE = 4096;
+const FRAME_SIZE = 1024;
 /**
  * 16 kHz : c'est ce qu'attendent Whisper et openWakeWord. Chromium
  * rééchantillonne l'entrée pour ce contexte (meilleure qualité qu'un

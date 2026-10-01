@@ -26,6 +26,8 @@ const DEFAULT_EMBEDDING_WINDOW = 16;
 const COOLDOWN_MS = 1800;
 /** Chargement des 3 modèles (~4 Mo) : au-delà, erreur et repli, jamais une attente sans fin. */
 export const OPENWAKEWORD_LOAD_TIMEOUT_MS = 30_000;
+/** Un pic au-dessus de 60 % du seuil est un quasi-réveil (vérificateur personnel seulement). */
+export const OPENWAKEWORD_NEAR_MISS_RATIO = 0.6;
 
 export interface OpenWakeWordOnnxModels {
   ort: typeof Ort;
@@ -109,6 +111,7 @@ export class OpenWakeWordEngine implements WakeWordEngine {
     let models: OpenWakeWordOnnxModels | null = null;
     let keywordWindowSize = DEFAULT_EMBEDDING_WINDOW;
     let embeddingHistory: Float32Array[] = [];
+    let nearMiss: { score: number; pcm: Float32Array } | null = null;
 
     const resetRuntime = (windowSize: number): void => {
       keywordWindowSize = windowSize;
@@ -193,11 +196,22 @@ export class OpenWakeWordEngine implements WakeWordEngine {
       const threshold = openWakeWordSensitivityToThreshold(this.config.sensitivity ?? 0.7);
       const now = performance.now();
       if (score >= threshold && triggerGate.allow(now)) {
+        nearMiss = null;
         lastAnalyzedWindow = {
           pcm: recentAudio.snapshot(),
           sampleRate: OPENWAKEWORD_SAMPLE_RATE,
         };
         handlers.onDetected(this.config.keyword ?? 'jarvis');
+      } else if (handlers.onNearMiss && score < threshold) {
+        // Pic sous le seuil : signalé quand le score retombe, avec l'audio du pic.
+        const floor = threshold * OPENWAKEWORD_NEAR_MISS_RATIO;
+        if (score >= floor && score > (nearMiss?.score ?? 0)) {
+          nearMiss = { score, pcm: recentAudio.snapshot() };
+        } else if (nearMiss && score < floor) {
+          const peak = nearMiss;
+          nearMiss = null;
+          handlers.onNearMiss(this.config.keyword ?? 'jarvis', { pcm: peak.pcm, sampleRate: OPENWAKEWORD_SAMPLE_RATE });
+        }
       }
     };
 

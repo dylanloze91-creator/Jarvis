@@ -41,6 +41,12 @@ export const voiceSettingsSchema = z.object({
    * dans les réglages.
    */
   wakeWordVariants: z.array(z.string()).default([]),
+  /**
+   * Apprentissage du réveil (opt-in) : courts extraits gardés dans le
+   * dossier de données de l'appli, vérificateur personnel entraîné sur ce
+   * PC. Coupé = détection exactement comme en 0.4.16.
+   */
+  wakeLearning: z.boolean().default(false),
   /** Identifiant du périphérique micro choisi ; vide = périphérique par défaut du système. */
   microphoneId: z.string().default(''),
   /**

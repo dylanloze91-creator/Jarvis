@@ -1,5 +1,6 @@
 import { BrainCircuit, Globe2, Mic, Search, Sparkles } from 'lucide-react';
 import type { ToolInfo } from '../../../shared/ipc';
+import { JarvisOrb } from '@/components/JarvisOrb';
 
 const suggestions = [
   { text: 'Cherche les dernières infos importantes', icon: Globe2 },
@@ -10,17 +11,15 @@ const suggestions = [
 interface EmptyStateProps {
   tools: ToolInfo[];
   onPick: (text: string) => void;
+  /** Captation d'une commande en cours : l'orbe suit la voix. */
+  listening?: boolean;
+  level?: number;
 }
 
-export function EmptyState({ tools, onPick }: EmptyStateProps) {
+export function EmptyState({ tools, onPick, listening = false, level = 0 }: EmptyStateProps) {
   return (
     <div className="empty-stage">
-      <div className="hero-orb" aria-hidden>
-        <div className="orb-core" />
-        <div className="orb-ring ring-one" />
-        <div className="orb-ring ring-two" />
-        <div className="orb-glow" />
-      </div>
+      <JarvisOrb listening={listening} level={level} />
       <div className="relative z-10 text-center">
         <div className="mb-2 flex items-center justify-center gap-2 text-[10px] font-semibold tracking-[0.3em] text-cyan-200/60 uppercase">
           <Sparkles className="size-3" /> Système prêt

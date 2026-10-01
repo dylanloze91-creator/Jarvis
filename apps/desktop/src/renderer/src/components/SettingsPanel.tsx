@@ -20,7 +20,11 @@ import { PersonalizationSettingsSection } from '@/components/PersonalizationSett
 import { KnowledgeSettingsSection } from '@/components/KnowledgeSettings';
 import { UpdateSettingsSection } from '@/components/UpdateSettings';
 import { VoiceSettingsSection } from '@/components/VoiceSettings';
+import { SettingsTabBar, TabPanel, type SettingsTabId } from '@/components/SettingsTabs';
 import type { RuntimeStatus } from '../../../shared/ipc';
+
+/** Onglet rouvert à la prochaine visite des réglages (session en cours). */
+let lastSettingsTab: SettingsTabId = 'voice';
 
 interface SettingsPanelProps {
   settings: Settings;
@@ -36,6 +40,10 @@ export function SettingsPanel({ settings, status, onSaved }: SettingsPanelProps)
     [],
   );
   const [saved, setSaved] = useState(false);
+  const [tab, setTab] = useState<SettingsTabId>(() => lastSettingsTab);
+  useEffect(() => {
+    lastSettingsTab = tab;
+  }, [tab]);
   const dirty = useRef(false);
 
   useEffect(() => {
@@ -93,264 +101,275 @@ export function SettingsPanel({ settings, status, onSaved }: SettingsPanelProps)
         </p>
       ) : null}
 
-      <Field label="Fournisseur de modèle">
-        <Select
-          value={draft.provider}
-          onChange={(event) => {
-            const next = providers.find((provider) => provider.id === event.target.value);
-            patch({
-              provider: event.target.value,
-              model: next?.defaultModel ?? draft.model,
-            });
-          }}
-        >
-          {providers.map((provider) => (
-            <option key={provider.id} value={provider.id}>
-              {provider.label}
-            </option>
-          ))}
-        </Select>
-      </Field>
+      <SettingsTabBar active={tab} onChange={setTab} />
 
-      <Field label="Modèle">
-        <Input
-          value={draft.model}
-          list="model-suggestions"
-          onChange={(event) => patch({ model: event.target.value })}
-        />
-        <datalist id="model-suggestions">
-          {(descriptor?.suggestedModels ?? []).map((model) => (
-            <option key={model} value={model} />
-          ))}
-        </datalist>
-      </Field>
-
-      {descriptor?.requiresApiKey ? (
-        <>
-          <Field label="Clé API" hint="Stockée uniquement sur cette machine, jamais versionnée.">
-            <Input
-              type="password"
-              value={draft.apiKey}
-              placeholder="sk-…"
-              onChange={(event) => patch({ apiKey: event.target.value })}
-            />
-          </Field>
-
-          <Field
-            label="URL de base"
-            hint="À renseigner pour un backend compatible OpenAI (LM Studio, OpenRouter…)."
-          >
-            <Input
-              value={draft.baseUrl}
-              placeholder={descriptor.defaultBaseUrl ?? ''}
-              onChange={(event) => patch({ baseUrl: event.target.value })}
-            />
-          </Field>
-        </>
-      ) : null}
-
-      {draft.provider === 'ollama' ? (
-        <OllamaSettingsSection
-          baseUrl={draft.baseUrl}
-          model={draft.model}
-          onChange={(values) => patch(values)}
-        />
-      ) : null}
-
-      <Field
-        label="Modèle de repli"
-        hint="Utilisé si le modèle choisi n’est pas disponible. Défaut : qwen2.5:3b. qwen3.5:4b est le modèle recommandé, pas le défaut."
-      >
-        <Input
-          value={draft.fallbackModel}
-          onChange={(event) => patch({ fallbackModel: event.target.value || 'qwen2.5:3b' })}
-        />
-      </Field>
-
-      <div className="mt-1 flex flex-col gap-1">
-        <span className="text-[11px] font-medium tracking-wide text-slate-400 uppercase">
-          Recherche &amp; données boursières
-        </span>
-        <p className="text-xs leading-snug text-slate-500">
-          Utilisés par les outils « web_search », « web_research », « fetch_page » et
-          « get_stock_quote ». Google fonctionne sans clé. Brave Search (optionnel) demande une
-          clé gratuite dans le champ ci-dessous.
-        </p>
-      </div>
-
-      <Field label="Fournisseur de recherche Internet">
-        <Select
-          value={draft.searchProvider}
-          onChange={(event) => patch({ searchProvider: event.target.value })}
-        >
-          {searchProviders.map((provider) => (
-            <option key={provider.id} value={provider.id}>
-              {provider.label}
-            </option>
-          ))}
-        </Select>
-      </Field>
-
-      {searchDescriptor?.requiresApiKey ? (
-        <Field
-          label="Clé API — recherche"
-          hint="Stockée uniquement sur cette machine, jamais versionnée."
-        >
-          <Input
-            type="password"
-            value={draft.searchApiKey}
-            placeholder="Clé Brave Search…"
-            onChange={(event) => patch({ searchApiKey: event.target.value })}
+      <TabPanel id="voice" active={tab}>
+          <VoiceSettingsSection
+            voice={draft.voice}
+            voiceKeyConfigured={status.voiceKeyConfigured}
+            onChange={patchVoice}
+            onMicrophoneChange={chooseMicrophone}
+            learningSaved={settings.voice.wakeLearning}
           />
-        </Field>
-      ) : null}
-
-      <Field label="Fournisseur de cours de bourse">
-        <Select
-          value={draft.marketDataProvider}
-          onChange={(event) => patch({ marketDataProvider: event.target.value })}
-        >
-          {marketDataProviders.map((provider) => (
-            <option key={provider.id} value={provider.id}>
-              {provider.label}
-            </option>
-          ))}
-        </Select>
-      </Field>
-
-      {marketDataDescriptor?.requiresApiKey ? (
-        <Field
-          label="Clé API — bourse"
-          hint="Stockée uniquement sur cette machine, jamais versionnée."
-        >
-          <Input
-            type="password"
-            value={draft.marketDataApiKey}
-            placeholder="Clé Finnhub…"
-            onChange={(event) => patch({ marketDataApiKey: event.target.value })}
-          />
-        </Field>
-      ) : null}
-
-      <div className="mt-1 flex flex-col gap-1">
-        <span className="text-[11px] font-medium tracking-wide text-slate-400 uppercase">
-          Musique
-        </span>
-        <p className="text-xs leading-snug text-slate-500">
-          Utilisé par les huit outils « spotify_* » : recherche et lecture, pause, reprise, morceau
-          suivant/précédent, volume, mode aléatoire, morceau en cours.
-        </p>
-      </div>
-
-      <SpotifySettingsSection
-        clientId={draft.spotifyClientId}
-        onChange={(spotifyClientId) => patch({ spotifyClientId })}
-      />
-
-      <div className="mt-1 flex flex-col gap-1">
-        <span className="text-[11px] font-medium tracking-wide text-slate-400 uppercase">
-          Blocage de sites
-        </span>
-        <p className="text-xs leading-snug text-slate-500">
-          Utilisé par les outils « siteblock_* » : mode travail, liste de sites, créneaux. Toute
-          modification de règle demande une confirmation, même si tu as mis Applications à « jamais
-          ».
-        </p>
-      </div>
-
-      <SiteBlockSettingsSection
-        baseUrl={draft.siteBlockBaseUrl}
-        token={draft.siteBlockToken}
-        onChange={(values) => patch(values)}
-      />
-
-      <Field label="Raccourci global" hint="Exemples : Control+Space, Alt+J, Super+K.">
-        <Input value={draft.hotkey} onChange={(event) => patch({ hotkey: event.target.value })} />
-      </Field>
-
-      <Field
-        label="Personnalité"
-        hint="Instructions envoyées au modèle à chaque conversation. Distinct de la mémoire persistante ci-dessous, qui survit aux conversations et au changement de modèle Ollama."
-      >
-        <Textarea
-          rows={4}
-          value={draft.systemPrompt}
-          onChange={(event) => patch({ systemPrompt: event.target.value })}
-        />
-      </Field>
-
-      <PersonalizationSettingsSection />
-
-      <KnowledgeSettingsSection />
-
-      <Toggle
-        label="Rester ouverte"
-        hint="La fenêtre reste visible si tu cliques dans une autre application. Masquage uniquement par Ctrl+Espace, Échap, ou le bouton fermer."
-        checked={draft.stayVisibleOnBlur}
-        onChange={(stayVisibleOnBlur) => patch({ stayVisibleOnBlur })}
-      />
-
-      <Toggle
-        label="Lancer au démarrage de Windows"
-        checked={draft.launchAtLogin}
-        onChange={(launchAtLogin) => patch({ launchAtLogin })}
-      />
-
-      <UpdateSettingsSection />
-
-      <div className="flex flex-col gap-3 border-t border-white/8 pt-4">
-        <div>
-          <p className="text-[11px] font-medium tracking-wide text-slate-400 uppercase">
-            Permissions
-          </p>
-          <p className="mt-1 text-xs leading-snug text-slate-500">
-            Choisis, par catégorie d’outils, si Jarvis doit te demander confirmation toujours, ou
-            seulement pour les actions destructrices, ou jamais.
-          </p>
-        </div>
-
-        {CONFIGURABLE_CATEGORIES.map((category) => (
-          <Field key={category} label={categoryLabels[category]}>
+      </TabPanel>
+      <TabPanel id="model" active={tab}>
+          <Field label="Fournisseur de modèle">
             <Select
-              value={draft.toolPolicies[category]}
-              onChange={(event) =>
+              value={draft.provider}
+              onChange={(event) => {
+                const next = providers.find((provider) => provider.id === event.target.value);
                 patch({
-                  toolPolicies: {
-                    ...draft.toolPolicies,
-                    [category]: event.target.value as ConfirmationPolicy,
-                  },
-                })
-              }
+                  provider: event.target.value,
+                  model: next?.defaultModel ?? draft.model,
+                });
+              }}
             >
-              {(['always', 'destructive-only', 'never'] as ConfirmationPolicy[]).map((policy) => (
-                <option key={policy} value={policy}>
-                  {policyLabels[policy]}
+              {providers.map((provider) => (
+                <option key={provider.id} value={provider.id}>
+                  {provider.label}
                 </option>
               ))}
             </Select>
           </Field>
-        ))}
 
-        <div className="flex items-start gap-2 rounded-lg border border-white/8 bg-white/[0.03] px-3 py-2.5">
-          <Lock className="mt-0.5 size-3.5 shrink-0 text-slate-500" />
-          <p className="text-xs leading-snug text-slate-500">
-            La suppression de fichiers, l’élévation administrateur, l’exécution de commandes (
-            <code className="text-slate-400">run_command</code>), les règles de blocage de sites,
-            l’indexation d’un dossier et l’effacement de la mémoire documentaire demandent toujours
-            une confirmation. Ce réglage n’est pas modifiable, quelle que soit la politique choisie
-            ci-dessus.
-          </p>
-        </div>
-      </div>
+          <Field label="Modèle">
+            <Input
+              value={draft.model}
+              list="model-suggestions"
+              onChange={(event) => patch({ model: event.target.value })}
+            />
+            <datalist id="model-suggestions">
+              {(descriptor?.suggestedModels ?? []).map((model) => (
+                <option key={model} value={model} />
+              ))}
+            </datalist>
+          </Field>
 
-      <VoiceSettingsSection
-        voice={draft.voice}
-        voiceKeyConfigured={status.voiceKeyConfigured}
-        onChange={patchVoice}
-        onMicrophoneChange={chooseMicrophone}
-      />
+          {descriptor?.requiresApiKey ? (
+            <>
+              <Field label="Clé API" hint="Stockée uniquement sur cette machine, jamais versionnée.">
+                <Input
+                  type="password"
+                  value={draft.apiKey}
+                  placeholder="sk-…"
+                  onChange={(event) => patch({ apiKey: event.target.value })}
+                />
+              </Field>
 
-      <div className="flex items-center justify-end gap-3 pt-1">
+              <Field
+                label="URL de base"
+                hint="À renseigner pour un backend compatible OpenAI (LM Studio, OpenRouter…)."
+              >
+                <Input
+                  value={draft.baseUrl}
+                  placeholder={descriptor.defaultBaseUrl ?? ''}
+                  onChange={(event) => patch({ baseUrl: event.target.value })}
+                />
+              </Field>
+            </>
+          ) : null}
+
+          {draft.provider === 'ollama' ? (
+            <OllamaSettingsSection
+              baseUrl={draft.baseUrl}
+              model={draft.model}
+              onChange={(values) => patch(values)}
+            />
+          ) : null}
+
+          <Field
+            label="Modèle de repli"
+            hint="Utilisé si le modèle choisi n’est pas disponible. Défaut : qwen2.5:3b. qwen3.5:4b est le modèle recommandé, pas le défaut."
+          >
+            <Input
+              value={draft.fallbackModel}
+              onChange={(event) => patch({ fallbackModel: event.target.value || 'qwen2.5:3b' })}
+            />
+          </Field>
+
+          <Field
+            label="Personnalité"
+            hint="Instructions envoyées au modèle à chaque conversation. Distinct de la mémoire persistante ci-dessous, qui survit aux conversations et au changement de modèle Ollama."
+          >
+            <Textarea
+              rows={4}
+              value={draft.systemPrompt}
+              onChange={(event) => patch({ systemPrompt: event.target.value })}
+            />
+          </Field>
+      </TabPanel>
+      <TabPanel id="search" active={tab}>
+          <div className="mt-1 flex flex-col gap-1">
+            <span className="text-[11px] font-medium tracking-wide text-slate-400 uppercase">
+              Recherche &amp; données boursières
+            </span>
+            <p className="text-xs leading-snug text-slate-500">
+              Utilisés par les outils « web_search », « web_research », « fetch_page » et
+              « get_stock_quote ». Google fonctionne sans clé. Brave Search (optionnel) demande une
+              clé gratuite dans le champ ci-dessous.
+            </p>
+          </div>
+
+          <Field label="Fournisseur de recherche Internet">
+            <Select
+              value={draft.searchProvider}
+              onChange={(event) => patch({ searchProvider: event.target.value })}
+            >
+              {searchProviders.map((provider) => (
+                <option key={provider.id} value={provider.id}>
+                  {provider.label}
+                </option>
+              ))}
+            </Select>
+          </Field>
+
+          {searchDescriptor?.requiresApiKey ? (
+            <Field
+              label="Clé API — recherche"
+              hint="Stockée uniquement sur cette machine, jamais versionnée."
+            >
+              <Input
+                type="password"
+                value={draft.searchApiKey}
+                placeholder="Clé Brave Search…"
+                onChange={(event) => patch({ searchApiKey: event.target.value })}
+              />
+            </Field>
+          ) : null}
+
+          <Field label="Fournisseur de cours de bourse">
+            <Select
+              value={draft.marketDataProvider}
+              onChange={(event) => patch({ marketDataProvider: event.target.value })}
+            >
+              {marketDataProviders.map((provider) => (
+                <option key={provider.id} value={provider.id}>
+                  {provider.label}
+                </option>
+              ))}
+            </Select>
+          </Field>
+
+          {marketDataDescriptor?.requiresApiKey ? (
+            <Field
+              label="Clé API — bourse"
+              hint="Stockée uniquement sur cette machine, jamais versionnée."
+            >
+              <Input
+                type="password"
+                value={draft.marketDataApiKey}
+                placeholder="Clé Finnhub…"
+                onChange={(event) => patch({ marketDataApiKey: event.target.value })}
+              />
+            </Field>
+          ) : null}
+
+          <PersonalizationSettingsSection />
+
+          <KnowledgeSettingsSection />
+      </TabPanel>
+      <TabPanel id="spotify" active={tab}>
+          <div className="mt-1 flex flex-col gap-1">
+            <span className="text-[11px] font-medium tracking-wide text-slate-400 uppercase">
+              Musique
+            </span>
+            <p className="text-xs leading-snug text-slate-500">
+              Utilisé par les huit outils « spotify_* » : recherche et lecture, pause, reprise, morceau
+              suivant/précédent, volume, mode aléatoire, morceau en cours.
+            </p>
+          </div>
+
+          <SpotifySettingsSection
+            clientId={draft.spotifyClientId}
+            onChange={(spotifyClientId) => patch({ spotifyClientId })}
+          />
+      </TabPanel>
+      <TabPanel id="tools" active={tab}>
+          <div className="flex flex-col gap-3">
+            <div>
+              <p className="text-[11px] font-medium tracking-wide text-slate-400 uppercase">
+                Permissions
+              </p>
+              <p className="mt-1 text-xs leading-snug text-slate-500">
+                Choisis, par catégorie d’outils, si Jarvis doit te demander confirmation toujours, ou
+                seulement pour les actions destructrices, ou jamais.
+              </p>
+            </div>
+
+            {CONFIGURABLE_CATEGORIES.map((category) => (
+              <Field key={category} label={categoryLabels[category]}>
+                <Select
+                  value={draft.toolPolicies[category]}
+                  onChange={(event) =>
+                    patch({
+                      toolPolicies: {
+                        ...draft.toolPolicies,
+                        [category]: event.target.value as ConfirmationPolicy,
+                      },
+                    })
+                  }
+                >
+                  {(['always', 'destructive-only', 'never'] as ConfirmationPolicy[]).map((policy) => (
+                    <option key={policy} value={policy}>
+                      {policyLabels[policy]}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+            ))}
+
+            <div className="flex items-start gap-2 rounded-lg border border-white/8 bg-white/[0.03] px-3 py-2.5">
+              <Lock className="mt-0.5 size-3.5 shrink-0 text-slate-500" />
+              <p className="text-xs leading-snug text-slate-500">
+                La suppression de fichiers, l’élévation administrateur, l’exécution de commandes (
+                <code className="text-slate-400">run_command</code>), les règles de blocage de sites,
+                l’indexation d’un dossier et l’effacement de la mémoire documentaire demandent toujours
+                une confirmation. Ce réglage n’est pas modifiable, quelle que soit la politique choisie
+                ci-dessus.
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-2 flex flex-col gap-1 border-t border-white/8 pt-4">
+            <span className="text-[11px] font-medium tracking-wide text-slate-400 uppercase">
+              Blocage de sites
+            </span>
+            <p className="text-xs leading-snug text-slate-500">
+              Utilisé par les outils « siteblock_* » : mode travail, liste de sites, créneaux. Toute
+              modification de règle demande une confirmation, même si tu as mis Applications à « jamais
+              ».
+            </p>
+          </div>
+
+          <SiteBlockSettingsSection
+            baseUrl={draft.siteBlockBaseUrl}
+            token={draft.siteBlockToken}
+            onChange={(values) => patch(values)}
+          />
+      </TabPanel>
+      <TabPanel id="general" active={tab}>
+          <Field label="Raccourci global" hint="Exemples : Control+Space, Alt+J, Super+K.">
+            <Input value={draft.hotkey} onChange={(event) => patch({ hotkey: event.target.value })} />
+          </Field>
+
+          <Toggle
+            label="Rester ouverte"
+            hint="La fenêtre reste visible si tu cliques dans une autre application. Masquage uniquement par Ctrl+Espace, Échap, ou le bouton fermer."
+            checked={draft.stayVisibleOnBlur}
+            onChange={(stayVisibleOnBlur) => patch({ stayVisibleOnBlur })}
+          />
+
+          <Toggle
+            label="Lancer au démarrage de Windows"
+            checked={draft.launchAtLogin}
+            onChange={(launchAtLogin) => patch({ launchAtLogin })}
+          />
+      </TabPanel>
+      <TabPanel id="updates" active={tab}>
+          <UpdateSettingsSection />
+      </TabPanel>
+
+      <div className="sticky bottom-0 z-10 -mx-4 -mb-4 flex items-center justify-end gap-3 border-t border-white/8 bg-[#070b14]/90 px-4 py-3 backdrop-blur">
         {saved ? <span className="text-xs text-accent">Réglages enregistrés</span> : null}
         <Button variant="default" onClick={save}>
           Enregistrer
