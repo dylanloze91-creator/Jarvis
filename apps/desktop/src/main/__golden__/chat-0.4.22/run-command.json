@@ -1,0 +1,183 @@
+{
+  "schema": [
+    {
+      "name": "run_command",
+      "description": "Exécute une commande shell arbitraire sur la machine de l'utilisateur, avec délai d'expiration, sortie tronquée et code de retour. Outil le plus puissant : à réserver aux cas où aucun outil dédié ne convient. Élévation administrateur disponible via `elevate`.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "command": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4000,
+            "description": "Exécutable ou commande à lancer (sans ses arguments si `args` est utilisé)."
+          },
+          "args": {
+            "default": [],
+            "description": "Arguments séparés — méthode recommandée, elle exclut toute interprétation shell.",
+            "maxItems": 64,
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "cwd": {
+            "description": "Dossier de travail. Par défaut, le dossier personnel.",
+            "type": "string"
+          },
+          "useShell": {
+            "default": false,
+            "description": "Interpréter `command` via le shell système (nécessaire pour les pipes `|`, redirections `>`, variables…). Laissé à `false` par défaut : aucune interprétation implicite.",
+            "type": "boolean"
+          },
+          "elevate": {
+            "default": false,
+            "description": "Exécuter avec les privilèges administrateur (UAC sur Windows, sudo non interactif ailleurs).",
+            "type": "boolean"
+          },
+          "timeoutMs": {
+            "default": 30000,
+            "description": "Délai maximal d'exécution en millisecondes avant interruption forcée.",
+            "type": "integer",
+            "minimum": 1000,
+            "maximum": 300000
+          }
+        },
+        "required": [
+          "command"
+        ]
+      }
+    }
+  ],
+  "meta": {
+    "risk": "confirm",
+    "category": "shell",
+    "forceConfirm": true
+  },
+  "asked": [
+    {
+      "callId": "refus",
+      "toolName": "run_command",
+      "title": "run_command",
+      "details": "Exécuter : git push --force",
+      "command": "git push --force",
+      "forced": true
+    },
+    {
+      "callId": "admin",
+      "toolName": "run_command",
+      "title": "run_command",
+      "details": "Exécuter : reg add HKLM\\X ⚠ Avec élévation administrateur.",
+      "command": "[ADMIN] reg add HKLM\\X",
+      "forced": true
+    },
+    {
+      "callId": "shell",
+      "toolName": "run_command",
+      "title": "run_command",
+      "details": "Exécuter : dir | findstr x (interprétée par le shell système)",
+      "command": "dir | findstr x",
+      "forced": true
+    },
+    {
+      "callId": "jamais",
+      "toolName": "run_command",
+      "title": "run_command",
+      "details": "Exécuter : echo ok",
+      "command": "echo ok",
+      "forced": true
+    },
+    {
+      "callId": "exec",
+      "toolName": "run_command",
+      "title": "run_command",
+      "details": "Exécuter : <node> -e process.stdout.write('jarvis')",
+      "command": "<node> -e process.stdout.write('jarvis')",
+      "forced": true
+    }
+  ],
+  "outcomes": [
+    {
+      "callId": "refus",
+      "name": "run_command",
+      "status": "denied",
+      "content": "L'utilisateur a refusé cette action. Ne la retente pas sans son accord.",
+      "arguments": {
+        "command": "git",
+        "args": [
+          "push",
+          "--force"
+        ]
+      },
+      "decision": "refused",
+      "category": "shell",
+      "outcome": "cancelled"
+    },
+    {
+      "callId": "admin",
+      "name": "run_command",
+      "status": "denied",
+      "content": "L'utilisateur a refusé cette action. Ne la retente pas sans son accord.",
+      "arguments": {
+        "command": "reg",
+        "args": [
+          "add",
+          "HKLM\\X"
+        ],
+        "elevate": true
+      },
+      "decision": "refused",
+      "category": "shell",
+      "outcome": "cancelled"
+    },
+    {
+      "callId": "shell",
+      "name": "run_command",
+      "status": "denied",
+      "content": "L'utilisateur a refusé cette action. Ne la retente pas sans son accord.",
+      "arguments": {
+        "command": "dir | findstr x",
+        "useShell": true
+      },
+      "decision": "refused",
+      "category": "shell",
+      "outcome": "cancelled"
+    },
+    {
+      "callId": "jamais",
+      "name": "run_command",
+      "status": "denied",
+      "content": "L'utilisateur a refusé cette action. Ne la retente pas sans son accord.",
+      "arguments": {
+        "command": "echo",
+        "args": [
+          "ok"
+        ]
+      },
+      "decision": "refused",
+      "category": "shell",
+      "outcome": "cancelled"
+    },
+    {
+      "callId": "exec",
+      "name": "run_command",
+      "status": "ok",
+      "content": "Code de retour : 0\n--- sortie standard ---\njarvis",
+      "arguments": {
+        "command": "<node>",
+        "args": [
+          "-e",
+          "process.stdout.write('jarvis')"
+        ]
+      },
+      "decision": "approved",
+      "category": "shell",
+      "outcome": "success",
+      "data": {
+        "code": 0,
+        "signal": null,
+        "timedOut": false
+      }
+    }
+  ]
+}

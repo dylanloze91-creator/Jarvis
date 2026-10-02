@@ -1,0 +1,352 @@
+[
+  {
+    "name": "get_system_info",
+    "risk": "safe",
+    "category": null,
+    "forceConfirm": false,
+    "internal": false
+  },
+  {
+    "name": "list_processes",
+    "risk": "safe",
+    "category": null,
+    "forceConfirm": false,
+    "internal": false
+  },
+  {
+    "name": "get_active_window",
+    "risk": "safe",
+    "category": null,
+    "forceConfirm": false,
+    "internal": false
+  },
+  {
+    "name": "search_files",
+    "risk": "safe",
+    "category": null,
+    "forceConfirm": false,
+    "internal": false
+  },
+  {
+    "name": "read_file",
+    "risk": "safe",
+    "category": null,
+    "forceConfirm": false,
+    "internal": false
+  },
+  {
+    "name": "get_system_errors",
+    "risk": "safe",
+    "category": null,
+    "forceConfirm": false,
+    "internal": false
+  },
+  {
+    "name": "web_search",
+    "risk": "safe",
+    "category": null,
+    "forceConfirm": false,
+    "internal": false
+  },
+  {
+    "name": "web_research",
+    "risk": "safe",
+    "category": null,
+    "forceConfirm": false,
+    "internal": false
+  },
+  {
+    "name": "fetch_page",
+    "risk": "safe",
+    "category": null,
+    "forceConfirm": false,
+    "internal": false
+  },
+  {
+    "name": "web_search_current",
+    "risk": "safe",
+    "category": null,
+    "forceConfirm": false,
+    "internal": true
+  },
+  {
+    "name": "youtube_transcript",
+    "risk": "safe",
+    "category": null,
+    "forceConfirm": false,
+    "internal": false
+  },
+  {
+    "name": "get_stock_quote",
+    "risk": "safe",
+    "category": null,
+    "forceConfirm": false,
+    "internal": false
+  },
+  {
+    "name": "spotify_play",
+    "risk": "safe",
+    "category": null,
+    "forceConfirm": false,
+    "internal": false
+  },
+  {
+    "name": "spotify_pause",
+    "risk": "safe",
+    "category": null,
+    "forceConfirm": false,
+    "internal": false
+  },
+  {
+    "name": "spotify_resume",
+    "risk": "safe",
+    "category": null,
+    "forceConfirm": false,
+    "internal": false
+  },
+  {
+    "name": "spotify_next",
+    "risk": "safe",
+    "category": null,
+    "forceConfirm": false,
+    "internal": false
+  },
+  {
+    "name": "spotify_previous",
+    "risk": "safe",
+    "category": null,
+    "forceConfirm": false,
+    "internal": false
+  },
+  {
+    "name": "spotify_set_volume",
+    "risk": "safe",
+    "category": null,
+    "forceConfirm": false,
+    "internal": false
+  },
+  {
+    "name": "spotify_set_shuffle",
+    "risk": "safe",
+    "category": null,
+    "forceConfirm": false,
+    "internal": false
+  },
+  {
+    "name": "spotify_current_track",
+    "risk": "safe",
+    "category": null,
+    "forceConfirm": false,
+    "internal": false
+  },
+  {
+    "name": "siteblock_get_status",
+    "risk": "safe",
+    "category": null,
+    "forceConfirm": false,
+    "internal": false
+  },
+  {
+    "name": "siteblock_set_blocking",
+    "risk": "confirm",
+    "category": "apps",
+    "forceConfirm": true,
+    "internal": false
+  },
+  {
+    "name": "siteblock_add_domain",
+    "risk": "confirm",
+    "category": "apps",
+    "forceConfirm": true,
+    "internal": false
+  },
+  {
+    "name": "siteblock_remove_domain",
+    "risk": "confirm",
+    "category": "apps",
+    "forceConfirm": true,
+    "internal": false
+  },
+  {
+    "name": "siteblock_start_focus",
+    "risk": "confirm",
+    "category": "apps",
+    "forceConfirm": true,
+    "internal": false
+  },
+  {
+    "name": "siteblock_stop_focus",
+    "risk": "confirm",
+    "category": "apps",
+    "forceConfirm": true,
+    "internal": false
+  },
+  {
+    "name": "siteblock_add_period",
+    "risk": "confirm",
+    "category": "apps",
+    "forceConfirm": true,
+    "internal": false
+  },
+  {
+    "name": "siteblock_remove_period",
+    "risk": "confirm",
+    "category": "apps",
+    "forceConfirm": true,
+    "internal": false
+  },
+  {
+    "name": "get_jarvis_personalization",
+    "risk": "safe",
+    "category": null,
+    "forceConfirm": false,
+    "internal": false
+  },
+  {
+    "name": "set_jarvis_personalization",
+    "risk": "confirm",
+    "category": "apps",
+    "forceConfirm": false,
+    "internal": false
+  },
+  {
+    "name": "add_jarvis_personalization_rule",
+    "risk": "confirm",
+    "category": "apps",
+    "forceConfirm": false,
+    "internal": false
+  },
+  {
+    "name": "forget_jarvis_personalization",
+    "risk": "confirm",
+    "category": "apps",
+    "forceConfirm": false,
+    "internal": false
+  },
+  {
+    "name": "reset_jarvis_personalization",
+    "risk": "confirm",
+    "category": "apps",
+    "forceConfirm": false,
+    "internal": false
+  },
+  {
+    "name": "search_jarvis_memory",
+    "risk": "safe",
+    "category": null,
+    "forceConfirm": false,
+    "internal": false
+  },
+  {
+    "name": "remember_jarvis",
+    "risk": "confirm",
+    "category": "apps",
+    "forceConfirm": false,
+    "internal": false
+  },
+  {
+    "name": "index_jarvis_folder",
+    "risk": "confirm",
+    "category": "files",
+    "forceConfirm": true,
+    "internal": false
+  },
+  {
+    "name": "get_jarvis_memory_stats",
+    "risk": "safe",
+    "category": null,
+    "forceConfirm": false,
+    "internal": false
+  },
+  {
+    "name": "clear_jarvis_memory",
+    "risk": "confirm",
+    "category": "apps",
+    "forceConfirm": true,
+    "internal": false
+  },
+  {
+    "name": "index_folder",
+    "risk": "confirm",
+    "category": "files",
+    "forceConfirm": true,
+    "internal": false
+  },
+  {
+    "name": "search_documents",
+    "risk": "safe",
+    "category": null,
+    "forceConfirm": false,
+    "internal": false
+  },
+  {
+    "name": "read_document",
+    "risk": "safe",
+    "category": null,
+    "forceConfirm": false,
+    "internal": false
+  },
+  {
+    "name": "remember_video",
+    "risk": "confirm",
+    "category": "apps",
+    "forceConfirm": false,
+    "internal": false
+  },
+  {
+    "name": "create_folder",
+    "risk": "confirm",
+    "category": "files",
+    "forceConfirm": false,
+    "internal": false
+  },
+  {
+    "name": "open_application",
+    "risk": "confirm",
+    "category": "apps",
+    "forceConfirm": false,
+    "internal": false
+  },
+  {
+    "name": "close_application",
+    "risk": "confirm",
+    "category": "apps",
+    "forceConfirm": false,
+    "internal": false
+  },
+  {
+    "name": "move_file",
+    "risk": "confirm",
+    "category": "files",
+    "forceConfirm": false,
+    "internal": false
+  },
+  {
+    "name": "copy_file",
+    "risk": "confirm",
+    "category": "files",
+    "forceConfirm": false,
+    "internal": false
+  },
+  {
+    "name": "delete_file",
+    "risk": "confirm",
+    "category": "files",
+    "forceConfirm": true,
+    "internal": false
+  },
+  {
+    "name": "take_screenshot",
+    "risk": "confirm",
+    "category": "capture",
+    "forceConfirm": false,
+    "internal": false
+  },
+  {
+    "name": "run_command",
+    "risk": "confirm",
+    "category": "shell",
+    "forceConfirm": true,
+    "internal": false
+  }
+]

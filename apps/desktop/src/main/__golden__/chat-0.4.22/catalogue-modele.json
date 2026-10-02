@@ -1,0 +1,964 @@
+[
+  {
+    "name": "get_system_info",
+    "description": "Retourne l'état de l'ordinateur : système, processeur, charge, mémoire vive et espace disque. À utiliser dès que l'utilisateur demande comment se porte sa machine ou pourquoi elle est lente.",
+    "parameters": {
+      "type": "object",
+      "properties": {}
+    }
+  },
+  {
+    "name": "list_processes",
+    "description": "Liste les processus en cours d'exécution avec leur consommation CPU et mémoire. Utilise `filter` pour chercher une application précise, `sortBy`/`limit` pour trier et restreindre la liste.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "filter": {
+          "description": "Sous-chaîne du nom de processus à rechercher (insensible à la casse).",
+          "type": "string",
+          "maxLength": 100
+        },
+        "sortBy": {
+          "default": "cpu",
+          "description": "Critère de tri : cpu, memory ou name.",
+          "type": "string",
+          "enum": [
+            "cpu",
+            "memory",
+            "name"
+          ]
+        },
+        "limit": {
+          "default": 20,
+          "description": "Nombre maximum de processus renvoyés.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 200
+        }
+      }
+    }
+  },
+  {
+    "name": "get_active_window",
+    "description": "Retourne le titre de la fenêtre active et la liste des applications qui ont une fenêtre ouverte. À utiliser quand l'utilisateur demande ce qu'il a d'ouvert ou sur quoi il travaille.",
+    "parameters": {
+      "type": "object",
+      "properties": {}
+    }
+  },
+  {
+    "name": "search_files",
+    "description": "Recherche des fichiers par nom (sous-chaîne ou motif avec `*`) à partir d'une racine donnée, sur tout le disque si nécessaire. `maxDepth` et `maxResults` bornent l'exploration pour rester rapide.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "description": "Nom ou motif à rechercher, par ex. \"rapport*.pdf\"."
+        },
+        "root": {
+          "description": "Dossier de départ. Par défaut, le dossier personnel de l'utilisateur.",
+          "type": "string",
+          "maxLength": 500
+        },
+        "maxDepth": {
+          "default": 8,
+          "description": "Profondeur maximale de sous-dossiers explorés.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 24
+        },
+        "maxResults": {
+          "default": 50,
+          "description": "Nombre maximum de résultats renvoyés.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 500
+        }
+      },
+      "required": [
+        "query"
+      ]
+    }
+  },
+  {
+    "name": "read_file",
+    "description": "Lit le contenu texte d'un fichier (chemin absolu) et le renvoie, tronqué au besoin. Ne convient pas aux fichiers binaires.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Chemin absolu du fichier à lire."
+        },
+        "maxChars": {
+          "default": 8000,
+          "description": "Nombre maximum de caractères renvoyés.",
+          "type": "integer",
+          "minimum": 200,
+          "maximum": 100000
+        }
+      },
+      "required": [
+        "path"
+      ]
+    }
+  },
+  {
+    "name": "get_system_errors",
+    "description": "Récupère les erreurs et avertissements récents du journal d'événements Windows (Système et Application). Fonctionnalité propre à Windows : renvoie un message clair sur les autres systèmes.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "maxEvents": {
+          "default": 15,
+          "description": "Nombre maximum d'événements renvoyés.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "logName": {
+          "default": "both",
+          "description": "Journal ciblé.",
+          "type": "string",
+          "enum": [
+            "System",
+            "Application",
+            "both"
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "web_search",
+    "description": "Recherche sur Internet et retourne des résultats synthétisés avec leurs sources. À utiliser pour toute question dont la réponse n'est pas connue avec certitude, ou qui porte sur une information récente, changeante ou factuelle précise.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300,
+          "description": "Termes de recherche."
+        },
+        "limit": {
+          "default": 5,
+          "description": "Nombre de résultats souhaité.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 8
+        }
+      },
+      "required": [
+        "query"
+      ]
+    }
+  },
+  {
+    "name": "web_research",
+    "description": "Recherche approfondie sur Internet. Utilise-la pour une question complexe, actuelle ou importante nécessitant plusieurs sources. Donne 2 à 4 requêtes complémentaires (faits, source officielle, contre-vérification). L'outil déduplique et classe les résultats ; utilise ensuite fetch_page sur les sources importantes si nécessaire.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "queries": {
+          "minItems": 2,
+          "maxItems": 4,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 220
+          },
+          "description": "2 à 4 requêtes complémentaires, indépendantes et précises."
+        },
+        "limitPerQuery": {
+          "default": 4,
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 6
+        }
+      },
+      "required": [
+        "queries"
+      ]
+    }
+  },
+  {
+    "name": "fetch_page",
+    "description": "Récupère une page web et en extrait le texte lisible, pour approfondir un résultat de recherche ou lire le contenu d'une URL donnée par l'utilisateur. Ne fonctionne que sur des adresses publiques (http/https).",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "description": "Adresse de la page à récupérer (http ou https)."
+        }
+      },
+      "required": [
+        "url"
+      ]
+    }
+  },
+  {
+    "name": "youtube_transcript",
+    "description": "Écoute une vidéo YouTube (lien watch, youtu.be, Shorts ou live) : télécharge seulement la piste audio, la transcrit avec Whisper local, l'efface, puis rédige un condensé en français des points importants. Ne télécharge pas la vidéo. Si l'écoute échoue, les sous-titres servent de repli et la réponse le dit.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000,
+          "description": "URL YouTube complète (watch, youtu.be, shorts ou live)."
+        }
+      },
+      "required": [
+        "url"
+      ]
+    }
+  },
+  {
+    "name": "get_stock_quote",
+    "description": "Donne le cours de bourse d'une ou plusieurs entreprises : prix, variation du jour, devise et horodatage. Accepte des noms d'entreprises en langage naturel (« Nvidia », « Apple ») ou des symboles boursiers (« NVDA », « AAPL »).",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "queries": {
+          "minItems": 1,
+          "maxItems": 5,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "description": "Noms d'entreprises ou symboles boursiers à interroger, ex. [\"Nvidia\", \"Apple\"]."
+        }
+      },
+      "required": [
+        "queries"
+      ]
+    }
+  },
+  {
+    "name": "spotify_play",
+    "description": "Recherche un morceau sur Spotify (requête libre, fautes d’orthographe acceptées) et le lance sur l'application de bureau Windows — pas le téléphone ni le lecteur web. Vérifie que ça joue vraiment (is_playing, appareil, volume). Nécessite Spotify Premium. Ne jamais inventer un échec ni annoncer une lecture s'il n'y a pas de son.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "description": "Morceau, artiste ou combinaison à rechercher."
+        }
+      },
+      "required": [
+        "query"
+      ]
+    }
+  },
+  {
+    "name": "spotify_pause",
+    "description": "Met la lecture Spotify en pause. Nécessite un abonnement Spotify Premium.",
+    "parameters": {
+      "type": "object",
+      "properties": {}
+    }
+  },
+  {
+    "name": "spotify_resume",
+    "description": "Reprend la lecture Spotify. Nécessite un abonnement Spotify Premium.",
+    "parameters": {
+      "type": "object",
+      "properties": {}
+    }
+  },
+  {
+    "name": "spotify_next",
+    "description": "Passe au morceau suivant sur Spotify. Nécessite un abonnement Spotify Premium.",
+    "parameters": {
+      "type": "object",
+      "properties": {}
+    }
+  },
+  {
+    "name": "spotify_previous",
+    "description": "Revient au morceau précédent sur Spotify. Nécessite un abonnement Spotify Premium.",
+    "parameters": {
+      "type": "object",
+      "properties": {}
+    }
+  },
+  {
+    "name": "spotify_set_volume",
+    "description": "Règle le volume Spotify de 0 à 100 pour cent. Nécessite un abonnement Spotify Premium.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "percent": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        }
+      },
+      "required": [
+        "percent"
+      ]
+    }
+  },
+  {
+    "name": "spotify_set_shuffle",
+    "description": "Active ou désactive le mode aléatoire Spotify. Nécessite un abonnement Spotify Premium.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "enabled"
+      ]
+    }
+  },
+  {
+    "name": "spotify_current_track",
+    "description": "Indique le morceau actuellement joué sur Spotify.",
+    "parameters": {
+      "type": "object",
+      "properties": {}
+    }
+  },
+  {
+    "name": "siteblock_get_status",
+    "description": "Donne l'état actuel de SiteBlock : blocage actif, domaines bloqués, périodes, focus et verrouillage.",
+    "parameters": {
+      "type": "object",
+      "properties": {}
+    }
+  },
+  {
+    "name": "siteblock_set_blocking",
+    "description": "Active ou désactive le blocage SiteBlock. Utiliser lorsque l’utilisateur demande de bloquer ou débloquer les sites.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "enabled"
+      ]
+    }
+  },
+  {
+    "name": "siteblock_add_domain",
+    "description": "Ajoute un domaine à la liste des sites bloqués. Accepte un domaine ou une URL.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "domain": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255
+        }
+      },
+      "required": [
+        "domain"
+      ]
+    }
+  },
+  {
+    "name": "siteblock_remove_domain",
+    "description": "Retire un domaine de la liste des sites bloqués.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "domain": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255
+        }
+      },
+      "required": [
+        "domain"
+      ]
+    }
+  },
+  {
+    "name": "siteblock_start_focus",
+    "description": "Démarre une session de concentration qui bloque les sites pendant une durée donnée. Des domaines peuvent être ajoutés à la volée. Correspond à « active mon mode travail ».",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "minutes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1440
+        },
+        "domains": {
+          "maxItems": 50,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          }
+        }
+      },
+      "required": [
+        "minutes"
+      ]
+    }
+  },
+  {
+    "name": "siteblock_stop_focus",
+    "description": "Arrête la session de concentration SiteBlock en cours.",
+    "parameters": {
+      "type": "object",
+      "properties": {}
+    }
+  },
+  {
+    "name": "siteblock_add_period",
+    "description": "Crée une période de blocage quotidienne récurrente au format HH:mm.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "start": {
+          "type": "string",
+          "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"
+        },
+        "end": {
+          "type": "string",
+          "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"
+        }
+      },
+      "required": [
+        "start",
+        "end"
+      ]
+    }
+  },
+  {
+    "name": "siteblock_remove_period",
+    "description": "Supprime une période SiteBlock à partir de son identifiant.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "id"
+      ]
+    }
+  },
+  {
+    "name": "get_jarvis_personalization",
+    "description": "Lit la personnalisation persistante de Jarvis et les préférences de l’utilisateur.",
+    "parameters": {
+      "type": "object",
+      "properties": {}
+    }
+  },
+  {
+    "name": "set_jarvis_personalization",
+    "description": "Enregistre durablement une préférence de l’utilisateur ou une caractéristique de la personnalité de Jarvis. À utiliser lorsque l’utilisateur demande explicitement de retenir, mémoriser ou adopter une préférence.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "scope": {
+          "type": "string",
+          "enum": [
+            "assistant",
+            "user"
+          ]
+        },
+        "key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "value": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000
+        }
+      },
+      "required": [
+        "scope",
+        "key",
+        "value"
+      ]
+    }
+  },
+  {
+    "name": "add_jarvis_personalization_rule",
+    "description": "Ajoute une règle comportementale persistante pour Jarvis. À utiliser uniquement lorsque l’utilisateur demande explicitement de la retenir pour les futures conversations.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "rule": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000
+        }
+      },
+      "required": [
+        "rule"
+      ]
+    }
+  },
+  {
+    "name": "forget_jarvis_personalization",
+    "description": "Supprime une préférence persistante précise de Jarvis.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "scope": {
+          "type": "string",
+          "enum": [
+            "assistant",
+            "user"
+          ]
+        },
+        "key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        }
+      },
+      "required": [
+        "scope",
+        "key"
+      ]
+    }
+  },
+  {
+    "name": "reset_jarvis_personalization",
+    "description": "Efface toute la personnalisation persistante de Jarvis.",
+    "parameters": {
+      "type": "object",
+      "properties": {}
+    }
+  },
+  {
+    "name": "search_jarvis_memory",
+    "description": "Recherche dans la mémoire locale, les documents indexés et les conversations précédentes de Jarvis. À utiliser quand une question concerne ce que Jarvis sait déjà de l'utilisateur ou d'un projet passé. Ne remplace pas web_search pour une information actuelle sur Internet.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 500
+        },
+        "limit": {
+          "default": 6,
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 8
+        }
+      },
+      "required": [
+        "query"
+      ]
+    }
+  },
+  {
+    "name": "remember_jarvis",
+    "description": "Enregistre une information explicitement demandée par l'utilisateur dans la mémoire longue durée locale de Jarvis. À utiliser seulement sur une demande claire (« souviens-toi que… »). Distinct de la personnalisation (ton, nom, règles).",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8000
+        },
+        "title": {
+          "default": "Mémoire Jarvis",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "section": {
+          "default": "projects",
+          "type": "string",
+          "enum": [
+            "profile",
+            "preferences",
+            "projects",
+            "conversations"
+          ]
+        }
+      },
+      "required": [
+        "text"
+      ]
+    }
+  },
+  {
+    "name": "index_jarvis_folder",
+    "description": "Indexe un dossier local de documents texte pour que Jarvis puisse ensuite les rechercher. Les dossiers système, node_modules et dist sont ignorés. Confirmation obligatoire.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Chemin absolu du dossier à indexer."
+        }
+      },
+      "required": [
+        "path"
+      ]
+    }
+  },
+  {
+    "name": "get_jarvis_memory_stats",
+    "description": "Donne les statistiques de la mémoire documentaire locale de Jarvis.",
+    "parameters": {
+      "type": "object",
+      "properties": {}
+    }
+  },
+  {
+    "name": "clear_jarvis_memory",
+    "description": "Efface entièrement l’index documentaire et la mémoire longue durée locale de Jarvis. N’efface pas la personnalisation (ton, nom, règles). Confirmation obligatoire.",
+    "parameters": {
+      "type": "object",
+      "properties": {}
+    }
+  },
+  {
+    "name": "index_folder",
+    "description": "Indexe un dossier choisi par l'utilisateur (txt, md, json, csv, code, html, css, yaml, xml, sql, pdf lisible). Confirmation obligatoire. N'indexe rien d'autre.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Chemin absolu du dossier à indexer."
+        }
+      },
+      "required": [
+        "path"
+      ]
+    }
+  },
+  {
+    "name": "search_documents",
+    "description": "Cherche dans les documents indexés par l'utilisateur, pas dans toute la mémoire. Renvoie seulement les passages pertinents.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 500
+        },
+        "limit": {
+          "default": 6,
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 8
+        }
+      },
+      "required": [
+        "query"
+      ]
+    }
+  },
+  {
+    "name": "read_document",
+    "description": "Lit un document déjà indexé, par son chemin ou son nom de fichier. Ne charge pas le reste de la mémoire.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "source": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000,
+          "description": "Chemin ou nom du document indexé."
+        }
+      },
+      "required": [
+        "source"
+      ]
+    }
+  },
+  {
+    "name": "remember_video",
+    "description": "Sur « garde cette vidéo en mémoire », indexe le résumé, les thèmes, concepts, chiffres, entreprises, risques, conclusions et timestamps. Ensuite une question retrouve les passages via search_jarvis_memory.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4000
+        },
+        "themes": {
+          "default": "",
+          "type": "string"
+        },
+        "concepts": {
+          "default": "",
+          "type": "string"
+        },
+        "figures": {
+          "default": "",
+          "type": "string"
+        },
+        "companies": {
+          "default": "",
+          "type": "string"
+        },
+        "risks": {
+          "default": "",
+          "type": "string"
+        },
+        "conclusions": {
+          "default": "",
+          "type": "string"
+        },
+        "timestamps": {
+          "default": "",
+          "type": "string"
+        }
+      },
+      "required": [
+        "summary"
+      ]
+    }
+  },
+  {
+    "name": "create_folder",
+    "description": "Crée un dossier dans un emplacement personnel de l'utilisateur (Documents, Bureau, Téléchargements ou dossier personnel).",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120,
+          "description": "Nom du dossier à créer."
+        },
+        "location": {
+          "default": "documents",
+          "description": "Emplacement parent du nouveau dossier.",
+          "type": "string",
+          "enum": [
+            "documents",
+            "desktop",
+            "downloads",
+            "home"
+          ]
+        },
+        "subPath": {
+          "description": "Sous-chemin relatif optionnel à l'intérieur de l'emplacement.",
+          "type": "string",
+          "maxLength": 200
+        }
+      },
+      "required": [
+        "name"
+      ]
+    }
+  },
+  {
+    "name": "open_application",
+    "description": "Ouvre une application par son nom courant (« Chrome », « Photoshop », « Bloc-notes »…), en la résolvant sur le système plutôt que de demander un chemin absolu.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120,
+          "description": "Nom courant de l'application à ouvrir."
+        }
+      },
+      "required": [
+        "name"
+      ]
+    }
+  },
+  {
+    "name": "close_application",
+    "description": "Ferme une application par son nom courant. Tente d'abord une fermeture propre ; `forceKill` termine le processus immédiatement (perte de travail non sauvegardé possible).",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120,
+          "description": "Nom courant de l'application ou du processus à fermer."
+        },
+        "forceKill": {
+          "default": false,
+          "description": "Terminer le processus immédiatement au lieu de demander une fermeture propre.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name"
+      ]
+    }
+  },
+  {
+    "name": "move_file",
+    "description": "Déplace ou renomme un fichier ou un dossier vers un nouveau chemin.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "source": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Chemin absolu du fichier ou dossier source."
+        },
+        "destination": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Chemin absolu de destination."
+        },
+        "overwrite": {
+          "default": false,
+          "description": "Écraser la destination si elle existe déjà.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "source",
+        "destination"
+      ]
+    }
+  },
+  {
+    "name": "copy_file",
+    "description": "Copie un fichier ou un dossier (récursivement) vers un nouveau chemin.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "source": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Chemin absolu du fichier ou dossier source."
+        },
+        "destination": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Chemin absolu de destination."
+        },
+        "overwrite": {
+          "default": false,
+          "description": "Écraser la destination si elle existe déjà.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "source",
+        "destination"
+      ]
+    }
+  },
+  {
+    "name": "delete_file",
+    "description": "Envoie un fichier ou un dossier à la corbeille (jamais un effacement définitif). Action irréversible sans passage par la corbeille du système : demande toujours confirmation.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Chemin absolu du fichier ou dossier à supprimer."
+        }
+      },
+      "required": [
+        "path"
+      ]
+    }
+  },
+  {
+    "name": "take_screenshot",
+    "description": "Capture l'écran principal et enregistre l'image sur disque. Appelle-le directement sans demander à l'utilisateur quel écran : sans `display`, c'est l'écran principal. Le chemin renvoyé peut être ouvert manuellement pour l'inspecter.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "display": {
+          "default": 0,
+          "description": "Optionnel. 0 ou absent = écran principal ; 1, 2… = autres écrans.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 15
+        }
+      }
+    }
+  },
+  {
+    "name": "run_command",
+    "description": "Exécute une commande shell arbitraire sur la machine de l'utilisateur, avec délai d'expiration, sortie tronquée et code de retour. Outil le plus puissant : à réserver aux cas où aucun outil dédié ne convient. Élévation administrateur disponible via `elevate`.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "command": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4000,
+          "description": "Exécutable ou commande à lancer (sans ses arguments si `args` est utilisé)."
+        },
+        "args": {
+          "default": [],
+          "description": "Arguments séparés — méthode recommandée, elle exclut toute interprétation shell.",
+          "maxItems": 64,
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "cwd": {
+          "description": "Dossier de travail. Par défaut, le dossier personnel.",
+          "type": "string"
+        },
+        "useShell": {
+          "default": false,
+          "description": "Interpréter `command` via le shell système (nécessaire pour les pipes `|`, redirections `>`, variables…). Laissé à `false` par défaut : aucune interprétation implicite.",
+          "type": "boolean"
+        },
+        "elevate": {
+          "default": false,
+          "description": "Exécuter avec les privilèges administrateur (UAC sur Windows, sudo non interactif ailleurs).",
+          "type": "boolean"
+        },
+        "timeoutMs": {
+          "default": 30000,
+          "description": "Délai maximal d'exécution en millisecondes avant interruption forcée.",
+          "type": "integer",
+          "minimum": 1000,
+          "maximum": 300000
+        }
+      },
+      "required": [
+        "command"
+      ]
+    }
+  }
+]
