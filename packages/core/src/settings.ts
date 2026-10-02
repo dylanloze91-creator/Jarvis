@@ -73,6 +73,18 @@ export const voiceSettingsSchema = z.object({
 
 export type VoiceSettings = z.infer<typeof voiceSettingsSchema>;
 
+/**
+ * Jarvis Développeur. Coupé par défaut : tant qu'il l'est, aucune session
+ * développeur n'existe et le chat reste celui de 0.4.22.
+ */
+export const developerSettingsSchema = z.object({
+  enabled: z.boolean().default(false),
+  /** Copie de travail Git de Jarvis (vide = pas encore choisie ; `C:\dev\Jarvis` est proposé). */
+  repoPath: z.string().max(400).default(''),
+});
+
+export type DeveloperSettings = z.infer<typeof developerSettingsSchema>;
+
 export const settingsSchema = z.object({
   provider: z.string().min(1).default('mock'),
   model: z.string().min(1).default('jarvis-demo'),
@@ -148,6 +160,7 @@ export const settingsSchema = z.object({
   /** Politique de confirmation par catégorie d'outils. Voir `packages/core/src/tools/permissions.ts`. */
   toolPolicies: toolPoliciesSchema,
   voice: voiceSettingsSchema.default(voiceSettingsSchema.parse({})),
+  developer: developerSettingsSchema.default(developerSettingsSchema.parse({})),
 });
 
 export type Settings = z.infer<typeof settingsSchema>;
