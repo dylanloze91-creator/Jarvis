@@ -1,4 +1,14 @@
 export { classifyCommand } from './commandSafety.js';
+export * from './repoCheck.js';
+export * from './environmentCheck.js';
+export { normalizeRepoRelative, protectedRepoPath } from './repoPaths.js';
+export {
+  ARCHITECTURE_LAYERS,
+  buildArchitectureReport,
+  layerOf,
+  type ArchitectureFacts,
+  type CodeLocation,
+} from './architecture.js';
 export {
   parseCommandLine,
   programName,
