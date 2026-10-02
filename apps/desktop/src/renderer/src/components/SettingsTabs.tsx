@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { AppWindow, Bot, Mail, Mic, Music, RefreshCw, Search, ShieldCheck, type LucideIcon } from 'lucide-react';
+import { AppWindow, Bot, Code2, Mail, Mic, Music, RefreshCw, Search, ShieldCheck, type LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export const SETTINGS_TABS = [
@@ -11,6 +11,7 @@ export const SETTINGS_TABS = [
   { id: 'tools', label: 'Outils et sécurité', icon: ShieldCheck },
   { id: 'general', label: 'Fenêtre et démarrage', icon: AppWindow },
   { id: 'updates', label: 'Mises à jour', icon: RefreshCw },
+  { id: 'developer', label: 'Développeur', icon: Code2 },
 ] as const satisfies ReadonlyArray<{ id: string; label: string; icon: LucideIcon }>;
 
 export type SettingsTabId = (typeof SETTINGS_TABS)[number]['id'];

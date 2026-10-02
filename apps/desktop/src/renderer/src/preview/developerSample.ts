@@ -24,6 +24,9 @@ for (const [dir, count, lines] of AREAS) {
     lineCounts[file] = Math.round(lines / count);
   }
 }
+for (let i = 0; files.length < 450; i += 1) files.push(`apps/desktop/resources/asset-${i}.png`);
+
+export const previewLineTotal = Object.values(lineCounts).reduce((sum, value) => sum + value, 0);
 
 export const previewArchitectureFacts: ArchitectureFacts = {
   version: '0.4.23',

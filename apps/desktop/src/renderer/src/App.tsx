@@ -97,6 +97,10 @@ export default function App() {
       seeded.current = true;
       openSettingsOnTab('google');
       setView('settings');
+    } else if (scene === 'developer') {
+      seeded.current = true;
+      openSettingsOnTab('developer');
+      setView('settings');
     } else if (scene === 'google-confirm' && !booting) {
       seeded.current = true;
       chat.send('Envoie à Marie un mail pour confirmer la réunion de jeudi à 10 h.');

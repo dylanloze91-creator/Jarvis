@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   CONFIGURABLE_CATEGORIES,
   categoryLabels,
   policyLabels,
   type ConfirmationPolicy,
+  type DeveloperSettings,
   type MarketDataProviderDescriptor,
   type ProviderDescriptor,
   type SearchProviderDescriptor,
@@ -22,6 +23,7 @@ import { KnowledgeSettingsSection } from '@/components/KnowledgeSettings';
 import { UpdateSettingsSection } from '@/components/UpdateSettings';
 import { VoiceSettingsSection } from '@/components/VoiceSettings';
 import { SettingsTabBar, TabPanel, type SettingsTabId } from '@/components/SettingsTabs';
+import { DeveloperSettingsSection } from '@/components/developer/DeveloperSettings';
 import type { RuntimeStatus } from '../../../shared/ipc';
 
 /** Onglet rouvert à la prochaine visite des réglages (session en cours). */
@@ -68,10 +70,18 @@ export function SettingsPanel({ settings, status, onSaved, requestedTab }: Setti
   useEffect(() => {
     setDraft((current) =>
       dirty.current
-        ? { ...current, voice: { ...current.voice, microphoneId: settings.voice.microphoneId } }
+        ? { ...current, developer: settings.developer, voice: { ...current.voice, microphoneId: settings.voice.microphoneId } }
         : settings,
     );
   }, [settings]);
+
+  // Comme le micro : enregistré tout de suite, les actions du mode Développeur en dépendent.
+  const onSavedRef = useRef(onSaved);
+  onSavedRef.current = onSaved;
+  const saveDeveloper = useCallback((developer: DeveloperSettings): void => {
+    setDraft((current) => ({ ...current, developer }));
+    void window.jarvis.settings.set({ developer }).then((payload) => onSavedRef.current(payload));
+  }, []);
 
   const descriptor = providers.find((provider) => provider.id === draft.provider);
   const searchDescriptor = searchProviders.find((provider) => provider.id === draft.searchProvider);
@@ -392,6 +402,9 @@ export function SettingsPanel({ settings, status, onSaved, requestedTab }: Setti
       </TabPanel>
       <TabPanel id="updates" active={tab}>
           <UpdateSettingsSection />
+      </TabPanel>
+      <TabPanel id="developer" active={tab}>
+          <DeveloperSettingsSection developer={draft.developer} onSave={saveDeveloper} />
       </TabPanel>
 
       <div className="sticky bottom-0 z-10 -mx-4 -mb-4 flex items-center justify-end gap-3 border-t border-white/8 bg-[#070b14]/90 px-4 py-3 backdrop-blur">

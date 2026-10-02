@@ -3,6 +3,7 @@ import {
   Camera,
   Clapperboard,
   CalendarClock,
+  Code2,
   Globe2,
   History,
   Home,
@@ -25,6 +26,7 @@ import { formatSeconds, type Conversation, type Settings } from '@jarvis/core';
 import { AuditPanel } from '@/components/AuditPanel';
 import { Composer } from '@/components/Composer';
 import { ConfirmationCard } from '@/components/ConfirmationCard';
+import { DeveloperPanel } from '@/components/developer/DeveloperPanel';
 import { HistoryPanel } from '@/components/HistoryPanel';
 import { Messages } from '@/components/Messages';
 import { SettingsPanel, openSettingsOnTab } from '@/components/SettingsPanel';
@@ -208,15 +210,32 @@ export function Dashboard({
     if (view !== 'settings') setSettingsTab(undefined);
   }, [view]);
 
+  // Jarvis Développeur : entrée visible seulement quand le mode est activé.
+  const [developerOpen, setDeveloperOpen] = useState(
+    () => typeof window !== 'undefined' && /^developer-(panel|confirm)$/.test(new URLSearchParams(window.location.search).get('scene') ?? ''),
+  );
+  const developerEnabled = settings?.developer.enabled ?? false;
+  const showDeveloper = developerOpen && developerEnabled;
+  const navigate = (next: View): void => {
+    setDeveloperOpen(false);
+    setView(next);
+  };
+
   const ask = (prompt: string): void => {
-    setView('chat');
+    navigate('chat');
     chat.send(prompt);
   };
 
   const openGoogleSettings = (): void => {
     openSettingsOnTab('google');
     setSettingsTab({ tab: 'google', at: Date.now() });
-    setView('settings');
+    navigate('settings');
+  };
+
+  const openDeveloperSettings = (): void => {
+    openSettingsOnTab('developer');
+    setSettingsTab({ tab: 'developer', at: Date.now() });
+    navigate('settings');
   };
 
   const runGoogle = (prompt: string | null): void => {
@@ -241,14 +260,15 @@ export function Dashboard({
           J
         </div>
         <nav className="side-nav" aria-label="Navigation">
-          <SideButton label="Accueil" icon={Home} active={view === 'chat' && chat.items.length === 0} onClick={() => setView('chat')} />
-          <SideButton label="Discussion" icon={MessageSquare} active={view === 'chat' && chat.items.length > 0} onClick={() => setView('chat')} />
-          <SideButton label="Historique" icon={History} active={view === 'history'} onClick={() => setView(view === 'history' ? 'chat' : 'history')} />
+          <SideButton label="Accueil" icon={Home} active={!showDeveloper && view === 'chat' && chat.items.length === 0} onClick={() => navigate('chat')} />
+          <SideButton label="Discussion" icon={MessageSquare} active={!showDeveloper && view === 'chat' && chat.items.length > 0} onClick={() => navigate('chat')} />
+          <SideButton label="Historique" icon={History} active={!showDeveloper && view === 'history'} onClick={() => navigate(view === 'history' ? 'chat' : 'history')} />
           <SideButton label="Google" icon={CalendarClock} onClick={openGoogleSettings} />
           <SideButton label="Automatisation" icon={Workflow} soon />
-          <SideButton label="Micro" icon={Mic} active={false} onClick={() => setView('settings')} />
-          <SideButton label="Journal" icon={ScrollText} active={view === 'audit'} onClick={() => setView(view === 'audit' ? 'chat' : 'audit')} />
-          <SideButton label="Réglages" icon={SettingsIcon} active={view === 'settings'} onClick={() => setView(view === 'settings' ? 'chat' : 'settings')} />
+          {developerEnabled ? <SideButton label="Développeur" icon={Code2} active={showDeveloper} onClick={() => setDeveloperOpen((open) => !open)} /> : null}
+          <SideButton label="Micro" icon={Mic} active={false} onClick={() => navigate('settings')} />
+          <SideButton label="Journal" icon={ScrollText} active={!showDeveloper && view === 'audit'} onClick={() => navigate(view === 'audit' ? 'chat' : 'audit')} />
+          <SideButton label="Réglages" icon={SettingsIcon} active={!showDeveloper && view === 'settings'} onClick={() => navigate(view === 'settings' ? 'chat' : 'settings')} />
         </nav>
         <div className="side-spacer" />
         <div className="side-profile" title={profileInitial ? 'Profil local' : 'Profil'} aria-label={profileInitial ? 'Profil local' : 'Profil'}>
@@ -275,7 +295,14 @@ export function Dashboard({
           </button>
         </header>
 
-        {view === 'chat' ? (
+        {showDeveloper ? (
+          <section className="dash-panel">
+            <button type="button" className="panel-back" onClick={() => setDeveloperOpen(false)}>
+              Retour à l’accueil
+            </button>
+            <DeveloperPanel onOpenSettings={openDeveloperSettings} />
+          </section>
+        ) : view === 'chat' ? (
           <>
             <section className="dash-stage" aria-label="Assistant">
               <JarvisOrb listening={voice.state === 'listening'} level={voice.level} />

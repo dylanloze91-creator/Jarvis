@@ -5,7 +5,7 @@ import {
   type DevCheck,
 } from '@jarvis/core';
 import type { DevStep, DeveloperApi, DeveloperState } from '../../../shared/developerIpc';
-import { previewArchitectureFacts } from './developerSample';
+import { previewArchitectureFacts, previewLineTotal } from './developerSample';
 
 const REPO_CHECKS: DevCheck[] = [
   { id: 'folder', label: 'Dossier', status: 'ok', detail: SUGGESTED_REPO_PATH },
@@ -39,8 +39,8 @@ const ENV_CHECKS: DevCheck[] = [
 ];
 const ANALYSIS: Array<[string, string, string]> = [
   ['status', 'État de la copie (git status)', 'branche main, 0 fichier(s) modifié(s)'],
-  ['files', 'Fichiers suivis par git', '450 fichiers'],
-  ['lines', 'Taille du code', '61 208 lignes de texte'],
+  ['files', 'Fichiers suivis par git', `${previewArchitectureFacts.files.length} fichiers`],
+  ['lines', 'Taille du code', `${previewLineTotal} lignes de texte`],
   ['packages', 'Paquets npm', '@jarvis/desktop, jarvis, @jarvis/core'],
   ['tools', 'Outils du chat', 'registre : apps/desktop/src/main/tools/index.ts'],
   ['core', 'Agent, confirmations, réglages, IPC', 'agent : packages/core/src/agent/agent.ts'],

@@ -646,3 +646,21 @@ html[data-jarvis-chrome='compact'] #root {
     opacity: 0;
   }
 }
+
+/* Rapport « Analyser mon architecture » (Jarvis Développeur). */
+.developer-report h1 {
+  font-size: 16px;
+  font-weight: 600;
+  color: #e6f8ff;
+}
+
+.developer-report h2 {
+  margin-top: 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #bfefff;
+}
+
+.developer-report table {
+  font-size: 12px;
+}
