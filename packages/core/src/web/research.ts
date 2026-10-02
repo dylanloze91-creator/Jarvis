@@ -79,6 +79,7 @@ export function assessHtml(raw: string, text: string): PageAssessment {
   const trimmed = raw.trim();
   const antiBot = ANTI_BOT.test(raw);
   const hasTag = /<[a-z!/]/i.test(trimmed);
+  // eslint-disable-next-line no-control-regex -- des octets de contrôle signalent une réponse binaire, pas du HTML.
   const invalidHtml = trimmed.length > 20 && !hasTag && /[\u0000-\u0008]/.test(trimmed);
   const empty = text.trim().length < 40;
   return { empty, antiBot, invalidHtml };

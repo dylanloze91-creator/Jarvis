@@ -90,7 +90,7 @@ describe('Tester la voix', () => {
     const withFile = formatDiagnosticReport(result, [
       { name: 'jarvis.mp3', durationS: 3.8, analysis: result.analysis! },
     ]);
-    expect(withFile).toMatch(/Fichier « jarvis\.mp3 » \(3\.8 s\)\n   Score openWakeWord max : 0\.810/);
+    expect(withFile).toMatch(/Fichier « jarvis\.mp3 » \(3\.8 s\)\n {3}Score openWakeWord max : 0\.810/);
   });
 
   it('attrape le « Chargement… 100 % » infini : Whisper bloqué après la lecture des fichiers', async () => {

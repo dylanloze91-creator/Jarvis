@@ -1,5 +1,6 @@
 import { ORT_WASM_BINARY, ORT_WASM_MJS, voiceAssetUrl } from '@jarvis/core';
 
+// eslint-disable-next-line @typescript-eslint/consistent-type-imports -- type du module chargé à la demande ; chemin voix à ne pas toucher.
 type OrtModule = typeof import('onnxruntime-web');
 
 /**

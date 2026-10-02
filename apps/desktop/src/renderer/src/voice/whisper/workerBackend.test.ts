@@ -1,12 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
+import type { WhisperBackend, WorkerLike } from './pipelineLoader';
+import type { WhisperWorkerRequest } from './workerProtocol';
 
 vi.mock('../onnxRuntime', () => ({ configureOnnxRuntime: vi.fn(async () => ({})), withOrtLock: <T,>(task: () => Promise<T>) => task() }));
 
 const { createWorkerWhisperBackend, WhisperLoadTimeoutError } = await import('./pipelineLoader');
 const { deserializeWhisperError, serializeWhisperError, whisperThreadCount } = await import('./workerProtocol');
-type WorkerLike = import('./pipelineLoader').WorkerLike;
-type WhisperBackend = import('./pipelineLoader').WhisperBackend;
-type WhisperWorkerRequest = import('./workerProtocol').WhisperWorkerRequest;
 
 function fakeFallback(text = 'repli'): WhisperBackend & { transcribe: ReturnType<typeof vi.fn> } {
   return {

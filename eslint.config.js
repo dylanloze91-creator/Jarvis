@@ -4,7 +4,16 @@ import tseslint from 'typescript-eslint';
 import prettier from 'eslint-config-prettier';
 
 export default tseslint.config(
-  { ignores: ['**/dist/**', '**/out/**', '**/release/**', '**/node_modules/**'] },
+  {
+    ignores: [
+      '**/dist/**',
+      '**/out/**',
+      '**/release/**',
+      '**/node_modules/**',
+      // Runtime ONNX, Whisper, openWakeWord et Vosk copiés par setup:voice : code tiers, non commité.
+      'apps/desktop/voice-assets/**',
+    ],
+  },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {

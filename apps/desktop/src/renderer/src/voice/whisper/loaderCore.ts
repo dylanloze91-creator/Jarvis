@@ -65,6 +65,7 @@ export class WhisperTranscribeTimeoutError extends Error {
   }
 }
 
+// eslint-disable-next-line @typescript-eslint/consistent-type-imports -- type du module chargé à la demande ; chemin voix à ne pas toucher.
 type Transformers = typeof import('@huggingface/transformers');
 type LoadedPipeline = AutomaticSpeechRecognitionPipeline & {
   tokenizer?: unknown;

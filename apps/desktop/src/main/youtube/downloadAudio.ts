@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
+import type { ReadableStream as NodeWebReadableStream } from 'node:stream/web';
 
 /** Environ 2 h d'audio à 128 kbit/s. Au-delà, on n'écoute pas et on passe aux sous-titres. */
 const MAX_AUDIO_BYTES = 150_000_000;
@@ -85,7 +86,7 @@ async function streamToFile(
   });
 
   await pipeline(
-    Readable.fromWeb(response.body as import('node:stream/web').ReadableStream),
+    Readable.fromWeb(response.body as NodeWebReadableStream),
     limiter,
     createWriteStream(file),
   );

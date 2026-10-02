@@ -139,6 +139,7 @@ function looksLikeBareTrackDeArtist(prompt: string): boolean {
   if (/^(?:le|la|les|l['’]|un|une|des|du|de la|cette?|mon|ma|mes|ton|ta|tes|quel(?:le)?s?)\b/iu.test(prompt)) {
     return false;
   }
+  // eslint-disable-next-line no-useless-escape -- motif Spotify validé sur le PC : laissé tel quel.
   return /^(?:\p{Lu}[\p{L}\p{N} «»"'’:,.\-]{1,79})\s+de\s+(?:\p{Lu}[\p{L}\p{N} «»"'’\-]{1,39})$/u.test(
     prompt,
   );

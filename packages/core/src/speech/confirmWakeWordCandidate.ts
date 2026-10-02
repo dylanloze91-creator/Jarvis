@@ -106,6 +106,7 @@ export function wrapWakeWordEngineWithTranscriptConfirmation(
       };
 
       let controller!: WakeWordEngineController;
+      // eslint-disable-next-line prefer-const -- les rappels ci-dessous lisent controller ; chemin du réveil laissé tel quel.
       controller = inner.start({
         onScore: handlers.onScore,
         onError: handlers.onError,

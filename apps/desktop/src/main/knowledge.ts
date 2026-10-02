@@ -477,6 +477,7 @@ export function extractPdfText(buffer: Buffer): string {
       .replace(/\\n/g, '\n')
       .replace(/\\r/g, '')
       .replace(/\\([()\\])/g, '$1')
+      // eslint-disable-next-line no-control-regex -- garde tabulation et retours à la ligne, efface les autres octets.
       .replace(/[^\x09\x0A\x0D\x20-\x7E\u00A0-\u00FF]/g, ' ')
       .replace(/\s+/g, ' ')
       .trim();
