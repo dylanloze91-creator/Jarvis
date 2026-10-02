@@ -1,7 +1,7 @@
 import type { ChatUsage, LLMProvider } from '../providers/types.js';
 import type { ToolManager } from '../tools/manager.js';
 import type { ConfirmationRequest } from '../tools/types.js';
-import { createMessage, type ChatMessage, type ToolCall } from '../types.js';
+import { createMessage, type ChatMessage, type ToolCall, type ToolCallOutcome } from '../types.js';
 
 /**
  * Boucle modèle → outils de Jarvis Développeur. Pas l'Agent du chat : ses
@@ -10,13 +10,16 @@ import { createMessage, type ChatMessage, type ToolCall } from '../types.js';
  */
 export interface ToolLoopInput {
   provider: LLMProvider;
-  tools: ToolManager;
+  /** Un gestionnaire d'outils, ou une vue filtrée (seuls les outils montrés au modèle). */
+  tools: Pick<ToolManager, 'schemas' | 'execute'>;
   system: string;
   prompt: string;
   maxRounds?: number;
   temperature?: number;
   signal?: AbortSignal;
   requestConfirmation?: (request: ConfirmationRequest) => Promise<boolean>;
+  /** Appelé avant chaque tour du modèle (le chat peut y reprendre la main). */
+  beforeRound?: (round: number) => Promise<void>;
 }
 
 export interface ToolLoopCall {
@@ -56,6 +59,32 @@ export function addUsage(a: ChatUsage, b: ChatUsage | undefined): ChatUsage {
   };
 }
 
+/** Vue d'un gestionnaire limitée à quelques outils : les autres restent invisibles et refusés. */
+export function toolView(
+  manager: Pick<ToolManager, 'schemas' | 'execute'>,
+  names: readonly string[],
+): Pick<ToolManager, 'schemas' | 'execute'> {
+  const allowed = new Set(names);
+  return {
+    schemas: () => manager.schemas().filter((schema) => allowed.has(schema.name)),
+    execute: async (call, context, events) => {
+      if (allowed.has(call.name)) return manager.execute(call, context, events);
+      const outcome: ToolCallOutcome = {
+        callId: call.id,
+        name: call.name,
+        status: 'error',
+        content: `Outil indisponible à cette étape : « ${call.name} ». Aucune action n'a été effectuée.`,
+        arguments: {},
+        decision: 'blocked',
+        durationMs: 0,
+        outcome: 'definitive',
+      };
+      events?.onFinish?.(outcome);
+      return outcome;
+    },
+  };
+}
+
 export async function runToolLoop(input: ToolLoopInput): Promise<ToolLoopResult> {
   const maxRounds = input.maxRounds ?? 6;
   const messages: ChatMessage[] = [createMessage('user', input.prompt)];
@@ -66,6 +95,7 @@ export async function runToolLoop(input: ToolLoopInput): Promise<ToolLoopResult>
     let text = '';
     const pending: ToolCall[] = [];
     try {
+      await input.beforeRound?.(round);
       for await (const event of input.provider.streamChat({
         system: input.system,
         messages,

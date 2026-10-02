@@ -11,6 +11,13 @@ export * from './benchmarkTasks.js';
 export * from './benchmarkTypes.js';
 export * from './repoCheck.js';
 export * from './environmentCheck.js';
+export * from './coreFiles.js';
+export * from './unifiedDiff.js';
+export * from './diffScan.js';
+export * from './testOutput.js';
+export * from './taskPlan.js';
+export * from './taskPolicy.js';
+export * from './taskPrompts.js';
 export { normalizeRepoRelative, protectedRepoPath } from './repoPaths.js';
 export {
   ARCHITECTURE_LAYERS,
