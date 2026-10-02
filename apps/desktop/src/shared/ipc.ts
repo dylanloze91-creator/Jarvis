@@ -21,6 +21,7 @@ import type {
   WakeStatsSummary,
   WakeVerifierModel,
 } from '@jarvis/core';
+import type { DeveloperApi } from './developerIpc.js';
 
 /** Exemple étiqueté envoyé au main : caractéristiques + extrait de 2 s (aucun extrait pour un fond sonore). */
 export interface WakeLearningSampleInput {
@@ -451,4 +452,6 @@ export interface JarvisApi {
     install(): Promise<void>;
     onEvent(listener: (state: UpdateState) => void): () => void;
   };
+  /** Jarvis Développeur (voir `developerIpc.ts`) : refusé tant que le mode est coupé. */
+  developer: DeveloperApi;
 }

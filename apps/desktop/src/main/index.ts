@@ -43,6 +43,7 @@ import { ChatSession } from './session.js';
 import { FileConversationStore, readSettings, writeSettings } from './store.js';
 import { readMachineSnapshot } from './machineStats.js';
 import { createToolManager } from './tools/index.js';
+import { registerDeveloperIpc } from './developer/ipc.js';
 import { summarizeYoutubeLink } from './youtube/runtime.js';
 import { UpdateManager } from './updater.js';
 import { VoiceBridge } from './voice.js';
@@ -403,6 +404,18 @@ function registerIpc(): void {
   ipcMain.handle(IpcChannel.updateGetState, () => updateManager.getState());
   ipcMain.handle(IpcChannel.updateCheck, () => updateManager.checkNow());
   ipcMain.handle(IpcChannel.updateInstall, () => updateManager.quitAndInstall());
+
+  // Jarvis Développeur : session séparée du chat, créée seulement si le mode est activé.
+  registerDeveloperIpc(ipcMain, {
+    getSettings: () => settings,
+    appVersion: () => app.getVersion(),
+    platform: process.platform,
+    home: app.getPath('home'),
+    logsDir: () => join(app.getPath('userData'), 'logs'),
+    oneDriveRoots: () => [process.env.OneDrive, process.env.OneDriveConsumer, process.env.OneDriveCommercial].filter((root): root is string => Boolean(root)),
+    auditLog,
+    target: () => overlay?.browserWindow.webContents ?? null,
+  });
 }
 
 function sanitizeGoogleDraft(draft: unknown): GoogleConfigDraft | undefined {

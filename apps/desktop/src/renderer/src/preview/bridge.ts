@@ -18,6 +18,7 @@ import type {
   WindowChrome,
 } from '../../../shared/ipc';
 import desktopPackage from '../../../../package.json' with { type: 'json' };
+import { createPreviewDeveloperApi } from './developerBridge';
 
 /**
  * Pont de prévisualisation : utilisé uniquement quand le preload Electron
@@ -52,6 +53,9 @@ export function installPreviewBridge(): void {
       googleClientId: '123456789012-jarvisdesktop.apps.googleusercontent.com',
       googleClientSecret: 'GOCSPX-apercu',
     };
+  }
+  if (search.get('scene')?.startsWith('developer')) {
+    settings = { ...settings, developer: { enabled: true, repoPath: 'C:\\dev\\Jarvis' } };
   }
   const googleStatus = (): GoogleStatus => ({
     configured: Boolean(settings.googleClientId),
@@ -289,6 +293,7 @@ export function installPreviewBridge(): void {
       install: async () => undefined,
       onEvent: () => () => undefined,
     },
+    developer: createPreviewDeveloperApi(search.get('scene'), () => settings.developer.enabled),
   };
 
   window.jarvis = api;

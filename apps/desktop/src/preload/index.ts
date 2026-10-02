@@ -15,6 +15,7 @@ import {
   type YoutubeTranscribeResult,
 } from '../shared/ipc.js';
 import type { Settings, WakeStatKind } from '@jarvis/core';
+import { createDeveloperApi } from './developer.js';
 
 /**
  * Seule surface exposée au renderer. Elle est volontairement étroite : pas
@@ -130,6 +131,7 @@ const api: JarvisApi = {
       return () => ipcRenderer.removeListener(IpcChannel.updateEvent, handler);
     },
   },
+  developer: createDeveloperApi(ipcRenderer),
 };
 
 contextBridge.exposeInMainWorld('jarvis', api);
