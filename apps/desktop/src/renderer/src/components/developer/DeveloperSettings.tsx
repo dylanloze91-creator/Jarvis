@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { DeveloperSettings } from '@jarvis/core';
+import { codeModelById, type DeveloperSettings } from '@jarvis/core';
 import {
   Download,
   FolderSearch,
@@ -114,6 +114,17 @@ export function DeveloperSettingsSection({ developer, onSave }: Props) {
                 <PackageOpen className="size-3.5" /> Installer les dépendances (npm ci)
               </Button>
             </div>
+          </div>
+
+          <div className="flex flex-col gap-1" data-developer-code-model>
+            <SectionTitle>Modèle de code</SectionTitle>
+            <p className="text-xs leading-snug text-slate-400">
+              {developer.codeModel
+                ? `Choisi : ${codeModelById(developer.codeModel)?.label ?? developer.codeModel}.`
+                : 'Pas encore choisi.'}{' '}
+              Matériel, estimations, téléchargement confirmé et banc : tableau de bord → Développeur
+              → onglet « Modèle de code ».
+            </p>
           </div>
 
           {state.confirmation ? (

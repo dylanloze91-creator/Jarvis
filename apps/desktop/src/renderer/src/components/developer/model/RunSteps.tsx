@@ -35,7 +35,7 @@ export function PullStep({
           <div className="flex flex-wrap items-center gap-2">
             <Button size="sm" disabled={busy} onClick={() => onPull(validated.spec.id)}>
               <Download className="size-3.5" /> Télécharger {validated.spec.label} ·{' '}
-              {gb(validated.spec.downloadBytes, 0)}
+              {gb(validated.spec.downloadBytes)}
             </Button>
             <span className="text-[11px] text-slate-400">
               Une carte montre la commande exacte ; rien ne part sans ton « Autoriser ».

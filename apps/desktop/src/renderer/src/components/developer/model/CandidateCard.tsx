@@ -41,7 +41,7 @@ export function CandidateCard({
           </span>
         ) : (
           <span className="flex items-center gap-1 text-[11px] text-slate-400">
-            <HardDriveDownload className="size-3" /> {gb(spec.downloadBytes, 0)} à télécharger
+            <HardDriveDownload className="size-3" /> {gb(spec.downloadBytes)} à télécharger
           </span>
         )}
       </div>
