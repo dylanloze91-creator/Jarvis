@@ -1,8 +1,8 @@
-# Jarvis 0.4.24 — contexte pour un autre développeur
+# Jarvis 0.4.25 — contexte pour un autre développeur
 
 Ce fichier est à la **racine du code**. Les chemins ci-dessous partent de ce dossier. Ce n’est pas un résumé marketing : c’est l’état réel de cet arbre. La voix a été refaite dans cet arbre (publiée en 0.4.11, section « Voix ») : la transcription restait « Chargement… 100 % » sur l’installateur Windows. La refonte du tableau de bord est dans cet arbre : fenêtre étroite = overlay, fenêtre large = tableau de bord.
 
-**Version confirmée :** `apps/desktop/package.json` → `"version": "0.4.24"`. Le `package.json` racine est encore à `0.3.0` : c’est le monorepo, pas l’appli. La version qui compte pour l’exe, l’updater et GitHub est celle de `@jarvis/desktop`. La voix corrigée en 0.4.11 (installateur Windows) est inchangée. Le modèle par défaut reste `qwen2.5:3b`. `qwen3.5:4b` est le modèle recommandé documenté ; le repli est réglable (`fallbackModel`, défaut `qwen2.5:3b`).
+**Version confirmée :** `apps/desktop/package.json` → `"version": "0.4.25"`. Le `package.json` racine est encore à `0.3.0` : c’est le monorepo, pas l’appli. La version qui compte pour l’exe, l’updater et GitHub est celle de `@jarvis/desktop`. La voix corrigée en 0.4.11 (installateur Windows) est inchangée. Le modèle par défaut reste `qwen2.5:3b`. `qwen3.5:4b` est le modèle recommandé documenté ; le repli est réglable (`fallbackModel`, défaut `qwen2.5:3b`).
 
 Lis ce fichier avant de modifier le code.
 
@@ -48,7 +48,7 @@ Scripts utiles (racine) :
 
 Le script `setup:voice` remplit `apps/desktop/voice-assets/` (runtime ONNX, Whisper, openWakeWord, modèle Vosk français ; non commité, voir `.gitignore`). Premier `dev` / `build` : besoin de réseau.
 
-L’installateur publié est `Jarvis-Setup-0.4.24.exe` (release GitHub `v0.4.24`).
+L’installateur publié est `Jarvis-Setup-0.4.25.exe` (release GitHub `v0.4.25`).
 
 Données utilisateur (Electron `userData`, typiquement `%APPDATA%\Jarvis`) :
 
@@ -81,7 +81,7 @@ Données utilisateur (Electron `userData`, typiquement `%APPDATA%\Jarvis`) :
     src/media/                 intent Spotify
     src/update/                lecture latest.yml GitHub
     src/history/  src/audit/
-  apps/desktop/                Electron (version 0.4.24)
+  apps/desktop/                Electron (version 0.4.25)
     electron-builder.yml       NSIS, extraResources, publish GitHub
     electron.vite.config.ts    aliases onnxruntime-web (wasm, pas JSEP)
     scripts/setup-whisper.mjs
@@ -296,9 +296,20 @@ Onglet « Modèle de code » du panneau Développeur (`components/developer/mode
 - **Choix** : `settings.developer.codeModel` (vide par défaut). Le chat garde son modèle. État persistant : `userData/developer/code-model.json`.
 - Tests : `workflow.test.ts` (faux serveur Ollama `fakeOllama.testkit.ts`, vrai `tsc`), `codeModels.test.ts`, `codeProvider.test.ts`, `benchmarkTasks.test.ts`, `ollama-code-options.test.ts`. Scènes `?scene=developer-model|developer-pull|developer-bench`.
 
+## 0.4.25 — Jarvis Développeur, phase 3 (copie isolée et boucle modification → tests → correction)
+
+Onglet « Tâche » du panneau Développeur (`components/developer/task/`). Déroulé (`main/developer/task/taskFlow.ts`) : plan (lecture seule de la copie de l’utilisateur) → validation du plan → copie isolée → dépendances → tests de référence → modification → revue du diff → tests → analyse et correction (3 essais au plus) → nouveaux tests → rapport. **La copie de travail de l’utilisateur n’est jamais modifiée** ; pas encore d’« appliquer ».
+
+- **Copie isolée** (`task/sandbox.ts`, décision 3) : un `git worktree` par tâche sur `jarvis-dev/<date>-<sujet>`, dans `developer.worktreeRoot` (vide = `<copie>-taches`, à côté de la copie), à partir du dernier commit. Place vérifiée avant (3 Go). Points de reprise = commits signés « Jarvis Développeur » (`--no-verify --no-gpg-sign`), diff depuis le départ, retour arrière (`reset --hard` + `clean -fd`), « jeter » depuis l’intérieur (branche puis dossier), liste et nettoyage des anciennes, `git worktree prune`. Dépendances : `npm ci --ignore-scripts` (aucun script d’installation).
+- **Outils** (`tools/fileTools.ts`, `tools/taskTools.ts`), sur un gestionnaire développeur propre à la tâche, jamais passé au chat : `dev_create_file`, `dev_edit_file` (remplacement exact et unique, CRLF respecté, relecture), `dev_delete_file` (`forceConfirm`), `dev_run_tests` (liste fixe : `npm run typecheck`, `npm run test --workspace …`, `npm test`, `npm run lint`), `dev_rollback` et `dev_discard_sandbox` (`forceConfirm`), `dev_create_branch`, `dev_install_sandbox` (`forceConfirm`). Écriture enfermée (`task/writeJail.ts`) : chemins relatifs, ni `.git`, ni `node_modules`, ni secrets, ni noms Windows réservés, flux NTFS ou lien qui sort. Le modèle ne voit que lecture + créer/modifier/supprimer (`TASK_MODEL_TOOLS`). Toute commande passe par le runner, donc par `classifyCommand` avec le contexte de la copie isolée.
+- **Décision 9** (`core/developer/taskPolicy.ts`, `planCoverage`) : la validation du plan couvre les fichiers hors cœur listés dans le plan, la branche de la tâche et les tests de la liste fixe (`MAX_TEST_SERIES` = 5 séries). Redemandent toujours, avec le diff exact ou la commande : fichier du cœur (`core/developer/coreFiles.ts`, sans casse), fichier hors plan, suppression, retour arrière, « jeter », dépendances (réseau). Revue du diff avant chaque série (`diffScan.ts`) : processus, suppression, réseau non local, code dynamique → carte. Journal : « Validé par le plan. » devant les actions faites sans clic.
+- **Décision 5** (`task/chatActivity.ts`) : `main/index.ts` entoure seulement l’appel IPC `chat:send` de `begin()`/`end()`. Entre deux étapes (tour du modèle, série de tests), si un tour de chat est en cours, la tâche libère le modèle de code (`keep_alive: 0`) et attend la fin du tour. `session.ts`, `agent.ts` et `ollama.ts` ne changent pas.
+- **Sorties de tests** (`testOutput.ts`) : tsc, Vitest, ESLint ; comparaison avec la référence, un échec d’avant n’est jamais imputé à la tâche. Plan (`taskPlan.ts`, `taskPrompts.ts`) en JSON français ou anglais, une relance si le format est faux.
+- Tests : `task/taskWorkflow.test.ts` (dépôt d’essai, vrai git, vrai npm, modèle scripté du faux serveur : plan refusé, réussite après une correction, pause pour le chat, cartes, journal, retour arrière, « jeter », modèle qui ne corrige pas), `sandbox.test.ts`, `fileTools.test.ts`, `coreFiles.test.ts`, `diffScan.test.ts`, `testOutput.test.ts`, `taskPlan.test.ts`, `toolLoop.test.ts`. Scènes `?scene=developer-task-plan|developer-task-run|developer-task-report`.
+
 ## Updater / GitHub
 
-Dernière publication : **0.4.24** (`https://github.com/dylanloze91-creator/Jarvis/releases/tag/v0.4.24`) — exe, `.blockmap` et `latest.yml` publiés : l’updater intégré la propose.
+Dernière publication : **0.4.25** (`https://github.com/dylanloze91-creator/Jarvis/releases/tag/v0.4.25`) — exe, `.blockmap` et `latest.yml` publiés : l’updater intégré la propose.
 
 - `apps/desktop/electron-builder.yml` : `publish.provider: github`, owner `dylanloze91-creator`, repo `Jarvis`, `releaseType: release`, artifact `Jarvis-Setup-${version}.exe`
 - `apps/desktop/src/main/updater.ts` : contrôle 15 s après le démarrage puis toutes les 4 h ; téléchargement auto ; **installation seulement si l’utilisateur clique**
@@ -414,6 +425,7 @@ Corrections de la revue complète (détail : `docs/audit-0410.md` du store du pr
 - **Modèles / voix réelles** : ne pas committer `voice-assets/**` (sauf son README), `test-fixtures/*.wav|mp3`.
 - **Jarvis Développeur** : coupé par défaut ; outils `dev_*` dans leur propre gestionnaire, jamais dans le catalogue du chat ; une commande refusée par `classifyCommand` ne démarre jamais (`runner.ts`) ; jamais de push ni de publication ; `chat-unchanged.test.ts` reste vert sans régénérer ses fichiers.
 - **Modèle de code (0.4.24)** : aucun téléchargement avant la validation de la configuration, et jamais sans la carte de confirmation ; Jarvis ne change jamais les variables du serveur Ollama (il les montre et attend la confirmation) ; `ollama-unchanged.test.ts` reste vert sans régénérer ses fichiers.
+- **Tâches de code (0.4.25)** : toute écriture dans une copie isolée `jarvis-dev/*`, jamais dans la copie de l’utilisateur ; cœur, hors plan, suppression, retour arrière, « jeter » et dépendances toujours confirmés ; revue du diff avant les tests ; liste fixe de tests ; jamais de push ni de publication ; le chat garde la priorité sans qu’aucun fichier du chat ne change.
 
 Travaux **hors scope** de cet arbre (ne pas les reprendre ici) : publication GitHub.
 
