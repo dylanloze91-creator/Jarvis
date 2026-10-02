@@ -4,7 +4,12 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { InMemoryAuditLogStore, parseSettings, type Settings } from '@jarvis/core';
+import {
+  InMemoryAuditLogStore,
+  createDefaultRegistry,
+  parseSettings,
+  type Settings,
+} from '@jarvis/core';
 import type { DeveloperState } from '../../shared/developerIpc.js';
 import { DeveloperController } from './controller.js';
 
@@ -99,6 +104,8 @@ function controller(settings: Partial<Settings['developer']> = {}, installed = '
     repoUrl: join(base, 'absent.git'),
     now: () => new Date(2026, 9, 2, 15, 0),
     freeBytes: async () => 100 * 1024 ** 3,
+    registry: createDefaultRegistry(),
+    userDataPath: () => join(base, 'userData'),
   });
   return {
     instance,

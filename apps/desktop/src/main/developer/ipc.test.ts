@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { InMemoryAuditLogStore, parseSettings, type Settings } from '@jarvis/core';
+import {
+  InMemoryAuditLogStore,
+  createDefaultRegistry,
+  parseSettings,
+  type Settings,
+} from '@jarvis/core';
 import { DeveloperChannel, type DeveloperState } from '../../shared/developerIpc.js';
 import { registerDeveloperIpc } from './ipc.js';
 
@@ -29,6 +34,8 @@ describe('canaux dev:*', () => {
       oneDriveRoots: () => [],
       auditLog: new InMemoryAuditLogStore(),
       target: () => null,
+      registry: createDefaultRegistry(),
+      userDataPath: () => 'C:\\Users\\dex\\AppData\\Roaming\\Jarvis',
     });
     expect([...ipc.handlers.keys()].every((channel) => channel.startsWith('dev:'))).toBe(true);
     expect((await ipc.invoke(DeveloperChannel.status)).enabled).toBe(false);
@@ -44,6 +51,22 @@ describe('canaux dev:*', () => {
       expect(state.notice).toMatch(/coupé/);
     }
     expect((await ipc.invoke(DeveloperChannel.clone, 'C:\\dev\\Jarvis')).notice).toMatch(/coupé/);
+    for (const [channel, ...args] of [
+      [DeveloperChannel.hardware],
+      [DeveloperChannel.calibrate, 'qwen2.5:3b'],
+      [DeveloperChannel.validateConfig, 'qwen3.6:35b-a3b-coding', true],
+      [DeveloperChannel.experts, true],
+      [DeveloperChannel.pull, 'qwen3.6:35b-a3b-coding'],
+      [DeveloperChannel.benchmark, 'qwen3.6:35b-a3b-coding'],
+    ] as const) {
+      const state = await ipc.invoke(channel, ...args);
+      expect(state.notice).toMatch(/coupé/);
+      expect(state.model.validation).toBeNull();
+      expect(state.model.experts.changes.map((change) => change.name)).toEqual([
+        'LLAMA_ARG_CPU_MOE',
+        'GGML_CUDA_NO_PINNED',
+      ]);
+    }
     expect(registered.current()).toBeNull();
 
     settings = parseSettings({ developer: { enabled: true } });

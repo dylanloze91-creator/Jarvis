@@ -415,6 +415,8 @@ function registerIpc(): void {
     oneDriveRoots: () => [process.env.OneDrive, process.env.OneDriveConsumer, process.env.OneDriveCommercial].filter((root): root is string => Boolean(root)),
     auditLog,
     target: () => overlay?.browserWindow.webContents ?? null,
+    registry,
+    userDataPath: () => app.getPath('userData'),
   });
 }
 

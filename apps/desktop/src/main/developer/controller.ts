@@ -5,14 +5,17 @@ import {
   classifyCommand,
   randomId,
   redactSecrets,
+  resolveLocalOllamaBase,
   validateRepo,
   type AuditLogStore,
+  type ProviderRegistry,
   type ConfirmationRequest,
   type RepoFacts,
   type Settings,
   type ToolCallOutcome,
   type ToolManager,
 } from '@jarvis/core';
+import { join } from 'node:path';
 import type {
   DevConfirmation,
   DevStep,
@@ -26,6 +29,10 @@ import { measureFree, probeEnvironment, type EnvironmentProbe } from './environm
 import { detectRepo, gatherRepoFacts } from './repo.js';
 import { runProcess, type Runner } from './runner.js';
 import { createDeveloperToolManager } from './tools/index.js';
+import { ollamaModelsDir } from './models/hardwareProbe.js';
+import { createOllamaApi, type OllamaApi } from './models/ollamaApi.js';
+import { CodeModelStore } from './models/store.js';
+import { CodeModelWorkflow, type WorkflowDeps } from './models/workflow.js';
 
 export interface ControllerDeps {
   getSettings(): Settings;
@@ -40,6 +47,12 @@ export interface ControllerDeps {
   repoUrl?: string;
   now?(): Date;
   freeBytes?(path: string): Promise<number | null>;
+  /** Registre des fournisseurs du chat, réutilisé pour le modèle de code (aucun nouveau client réseau). */
+  registry: ProviderRegistry;
+  userDataPath(): string;
+  env?: Record<string, string | undefined>;
+  fetch?: typeof fetch;
+  system?: WorkflowDeps['system'];
 }
 
 export const DEVELOPER_DISABLED_NOTICE =
@@ -63,11 +76,72 @@ export class DeveloperController {
   private notice: string | null = null;
   private controller: AbortController | null = null;
   private readonly pending = new Map<string, (approved: boolean) => void>();
+  private readonly models: CodeModelWorkflow;
+  private readonly env: Record<string, string | undefined>;
+
+  private ollama(): OllamaApi {
+    return createOllamaApi(resolveLocalOllamaBase(this.deps.getSettings()), this.deps.fetch);
+  }
 
   constructor(private readonly deps: ControllerDeps) {
     this.run = deps.run ?? runProcess;
+    this.env = deps.env ?? process.env;
     this.repoPath = deps.getSettings().developer.repoPath;
+    const freeBytes = (path: string) => (deps.freeBytes ?? measureFree)(path);
+    this.models = new CodeModelWorkflow(
+      {
+        runTask: (kind, title, steps, work) => this.runTask(kind, title, steps, work),
+        callTool: (name, args, step, workStep) => this.callTool(name, args, step, workStep),
+        emit: () => this.emit(),
+        notice: (message) => {
+          this.notice = message;
+          return this.emit();
+        },
+        audit: (name, args, content) => {
+          void deps.auditLog.append(
+            buildAuditEntry({
+              callId: randomId(),
+              name,
+              status: 'ok',
+              content,
+              arguments: args,
+              decision: 'approved',
+              durationMs: 0,
+            }),
+          );
+        },
+        repoRoot: () => (this.repo?.ok ? this.repoPath : null),
+        nodePath: async () => {
+          if (!this.environment) await this.probe();
+          return this.environment?.nodePath ?? null;
+        },
+      },
+      {
+        registry: deps.registry,
+        run: this.run,
+        ollama: () => this.ollama(),
+        store: new CodeModelStore(() => join(deps.userDataPath(), 'developer', 'code-model.json')),
+        home: deps.home,
+        platform: deps.platform,
+        env: this.env,
+        freeBytes,
+        benchDir: () => join(deps.userDataPath(), 'developer', 'bench'),
+        chatModel: () =>
+          deps.getSettings().provider === 'ollama' ? deps.getSettings().model : null,
+        system: deps.system,
+      },
+    );
     this.manager = createDeveloperToolManager({
+      models: {
+        ollama: () => this.ollama(),
+        modelsDir: () => ollamaModelsDir(this.env, deps.home),
+        freeBytes,
+        pullAllowed: (modelId) => this.models.pullAllowed(modelId),
+        onPullProgress: (modelId, status, completed, total) => {
+          this.models.onPullProgress(modelId, status, completed, total);
+          this.scheduleEmit();
+        },
+      },
       getRoot: () => (this.repo?.ok ? this.repoPath : null),
       run: this.run,
       logsDir: deps.logsDir,
@@ -107,6 +181,7 @@ export class DeveloperController {
       task: this.task,
       confirmation: this.confirmation,
       report: this.report,
+      model: this.models.state(),
       busy: this.controller !== null,
       notice: this.notice,
     };
@@ -407,14 +482,43 @@ export class DeveloperController {
 
   private logTimer: ReturnType<typeof setTimeout> | null = null;
 
-  private appendLog(line: string): void {
-    if (!this.task) return;
-    this.task.log = [...this.task.log, redactSecrets(line).slice(0, 400)].slice(-MAX_LOG_LINES);
+  /** Au plus quatre envois par seconde pour les sorties longues (npm, téléchargement). */
+  private scheduleEmit(): void {
     if (this.logTimer) return;
     this.logTimer = setTimeout(() => {
       this.logTimer = null;
       this.emit();
     }, 250);
+  }
+
+  private appendLog(line: string): void {
+    if (!this.task) return;
+    this.task.log = [...this.task.log, redactSecrets(line).slice(0, 400)].slice(-MAX_LOG_LINES);
+    this.scheduleEmit();
+  }
+
+  async checkHardware(): Promise<DeveloperState> {
+    return this.guard() ?? this.models.checkHardware();
+  }
+
+  async calibrate(model?: string): Promise<DeveloperState> {
+    return this.guard() ?? this.models.calibrate(model);
+  }
+
+  async validateConfig(modelId: string, expertsInRam: boolean): Promise<DeveloperState> {
+    return this.guard() ?? this.models.validate(modelId, expertsInRam);
+  }
+
+  async confirmExperts(applied: boolean): Promise<DeveloperState> {
+    return this.guard() ?? this.models.confirmExperts(applied);
+  }
+
+  async pull(modelId: string): Promise<DeveloperState> {
+    return this.guard() ?? this.models.pull(modelId);
+  }
+
+  async benchmark(modelId: string): Promise<DeveloperState> {
+    return this.guard() ?? this.models.benchmark(modelId);
   }
 
   cancel(): void {

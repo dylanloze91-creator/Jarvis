@@ -138,6 +138,11 @@ export const CODE_MODEL_CATALOG: CodeModelSpec[] = [
   },
 ];
 
+/** Tailles des modèles en gigaoctets décimaux, comme les affiche Ollama (23 Go, pas 21,4 Gio). */
+export function formatModelSize(bytes: number): string {
+  return `${(bytes / GB).toLocaleString('fr-FR', { maximumFractionDigits: 1 })} Go`;
+}
+
 export function codeModelById(id: string): CodeModelSpec | undefined {
   return CODE_MODEL_CATALOG.find((model) => model.id === id);
 }

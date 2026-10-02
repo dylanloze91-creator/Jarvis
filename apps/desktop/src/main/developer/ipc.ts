@@ -6,6 +6,7 @@ import {
   DeveloperController,
   type ControllerDeps,
 } from './controller.js';
+import { emptyCodeModelState } from './models/workflow.js';
 
 export interface DeveloperIpcDeps extends Omit<ControllerDeps, 'emit'> {
   /** Fenêtre principale, seule destinataire des événements. */
@@ -54,9 +55,36 @@ export function registerDeveloperIpc(
     report: null,
     busy: false,
     notice: null,
+    model: emptyCodeModelState(deps.env ?? process.env, deps.platform),
   });
 
   const refused = (): DeveloperState => ({ ...disabled(), notice: DEVELOPER_DISABLED_NOTICE });
+  const modelId = (value: unknown): string =>
+    typeof value === 'string' ? value.slice(0, 100) : '';
+
+  ipcMain.handle(DeveloperChannel.hardware, () => get()?.checkHardware() ?? refused());
+  ipcMain.handle(
+    DeveloperChannel.calibrate,
+    (_event, model: unknown) =>
+      get()?.calibrate(typeof model === 'string' ? modelId(model) : undefined) ?? refused(),
+  );
+  ipcMain.handle(
+    DeveloperChannel.validateConfig,
+    (_event, id: unknown, experts: unknown) =>
+      get()?.validateConfig(modelId(id), experts === true) ?? refused(),
+  );
+  ipcMain.handle(
+    DeveloperChannel.experts,
+    (_event, applied: unknown) => get()?.confirmExperts(applied === true) ?? refused(),
+  );
+  ipcMain.handle(
+    DeveloperChannel.pull,
+    (_event, id: unknown) => get()?.pull(modelId(id)) ?? refused(),
+  );
+  ipcMain.handle(
+    DeveloperChannel.benchmark,
+    (_event, id: unknown) => get()?.benchmark(modelId(id)) ?? refused(),
+  );
 
   ipcMain.handle(DeveloperChannel.status, () => get()?.state() ?? disabled());
   ipcMain.handle(DeveloperChannel.detect, () => get()?.detect() ?? refused());

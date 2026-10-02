@@ -18,6 +18,13 @@ export function createDeveloperApi(ipc: IpcRenderer): DeveloperApi {
     cancel: () => ipc.invoke(DeveloperChannel.cancel),
     respondConfirmation: (requestId: string, approved: boolean) =>
       ipc.invoke(DeveloperChannel.confirmRespond, requestId, approved),
+    checkHardware: () => ipc.invoke(DeveloperChannel.hardware),
+    calibrate: (model?: string) => ipc.invoke(DeveloperChannel.calibrate, model),
+    validateConfig: (modelId: string, expertsInRam: boolean) =>
+      ipc.invoke(DeveloperChannel.validateConfig, modelId, expertsInRam),
+    confirmExperts: (applied: boolean) => ipc.invoke(DeveloperChannel.experts, applied),
+    pull: (modelId: string) => ipc.invoke(DeveloperChannel.pull, modelId),
+    benchmark: (modelId: string) => ipc.invoke(DeveloperChannel.benchmark, modelId),
     onEvent: (listener) => {
       const handler = (_event: IpcRendererEvent, state: DeveloperState): void => listener(state);
       ipc.on(DeveloperChannel.event, handler);

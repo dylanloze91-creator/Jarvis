@@ -105,14 +105,12 @@ function setup(
 describe('gestionnaire d’outils développeur (séparé du chat)', () => {
   it('six outils de lecture safe, deux outils de préparation toujours confirmés', () => {
     const { manager } = setup();
-    const tools = manager
-      .list()
-      .map((tool) => ({
-        name: tool.name,
-        risk: tool.risk,
-        forceConfirm: tool.forceConfirm,
-        category: tool.category ?? null,
-      }));
+    const tools = manager.list().map((tool) => ({
+      name: tool.name,
+      risk: tool.risk,
+      forceConfirm: tool.forceConfirm,
+      category: tool.category ?? null,
+    }));
     expect(tools).toEqual([
       ...DEVELOPER_READ_TOOLS.map((name) => ({
         name,

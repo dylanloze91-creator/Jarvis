@@ -5,6 +5,7 @@ import {
   type DevCheck,
 } from '@jarvis/core';
 import type { DevStep, DeveloperApi, DeveloperState } from '../../../shared/developerIpc';
+import { previewModelState } from './developerModelSample';
 import { previewArchitectureFacts, previewLineTotal } from './developerSample';
 
 const REPO_CHECKS: DevCheck[] = [
@@ -67,7 +68,44 @@ export function createPreviewDeveloperApi(
     report: null,
     busy: false,
     notice: null,
+    model: previewModelState(scene),
   };
+  if (scene === 'developer-pull') {
+    const command =
+      'ollama pull qwen3.6:35b-a3b-coding\n(23 Go à télécharger dans C:\\Users\\dex\\.ollama\\models)';
+    state.busy = true;
+    state.task = {
+      id: 'apercu-pull',
+      kind: 'pull',
+      title: 'Télécharger Qwen3.6-35B-A3B (code)',
+      steps: [
+        {
+          id: 'validated',
+          label: 'Configuration validée',
+          status: 'done',
+          detail: 'validée à l’étape 3',
+        },
+        {
+          id: 'confirm',
+          label: 'Ta confirmation',
+          status: 'running',
+          detail: 'en attente de ta réponse',
+        },
+        { id: 'pull', label: 'Téléchargement (ollama pull)', status: 'pending' },
+        { id: 'verify', label: 'Présent dans Ollama', status: 'pending' },
+      ],
+      startedAt: Date.now(),
+      log: [],
+    };
+    state.confirmation = {
+      requestId: 'apercu-pull',
+      toolName: 'dev_pull_model',
+      details: 'Télécharger le modèle de code Qwen3.6-35B-A3B (code) (23 Go).',
+      command,
+      forced: true,
+      safety: classifyCommand(command.split('\n')[0]!),
+    };
+  }
   if (scene === 'developer-panel') {
     state.task = {
       id: 'apercu',
@@ -169,6 +207,12 @@ export function createPreviewDeveloperApi(
     respondConfirmation: async () => {
       set({ confirmation: null, busy: false, notice: 'Aperçu : rien n’est exécuté.' });
     },
+    checkHardware: async () => set({}),
+    calibrate: async () => set({ notice: 'Aperçu : l’étalonnage n’est pas simulé.' }),
+    validateConfig: async () => set({ notice: 'Aperçu : la validation n’est pas simulée.' }),
+    confirmExperts: async () => set({}),
+    pull: async () => set({ notice: 'Aperçu : rien n’est téléchargé.' }),
+    benchmark: async () => set({ notice: 'Aperçu : le banc n’est pas simulé.' }),
     onEvent: (listener) => {
       listeners.add(listener);
       return () => listeners.delete(listener);

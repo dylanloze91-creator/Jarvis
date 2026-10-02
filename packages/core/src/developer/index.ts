@@ -1,4 +1,5 @@
 export { classifyCommand } from './commandSafety.js';
+export { parseNDJSON } from '../providers/ndjson.js';
 export * from './codeModels.js';
 export * from './ollamaServer.js';
 export * from './hardware.js';
