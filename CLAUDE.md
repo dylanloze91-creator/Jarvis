@@ -1,8 +1,8 @@
-# Jarvis 0.4.23 — contexte pour un autre développeur
+# Jarvis 0.4.24 — contexte pour un autre développeur
 
 Ce fichier est à la **racine du code**. Les chemins ci-dessous partent de ce dossier. Ce n’est pas un résumé marketing : c’est l’état réel de cet arbre. La voix a été refaite dans cet arbre (publiée en 0.4.11, section « Voix ») : la transcription restait « Chargement… 100 % » sur l’installateur Windows. La refonte du tableau de bord est dans cet arbre : fenêtre étroite = overlay, fenêtre large = tableau de bord.
 
-**Version confirmée :** `apps/desktop/package.json` → `"version": "0.4.23"`. Le `package.json` racine est encore à `0.3.0` : c’est le monorepo, pas l’appli. La version qui compte pour l’exe, l’updater et GitHub est celle de `@jarvis/desktop`. La voix corrigée en 0.4.11 (installateur Windows) est inchangée. Le modèle par défaut reste `qwen2.5:3b`. `qwen3.5:4b` est le modèle recommandé documenté ; le repli est réglable (`fallbackModel`, défaut `qwen2.5:3b`).
+**Version confirmée :** `apps/desktop/package.json` → `"version": "0.4.24"`. Le `package.json` racine est encore à `0.3.0` : c’est le monorepo, pas l’appli. La version qui compte pour l’exe, l’updater et GitHub est celle de `@jarvis/desktop`. La voix corrigée en 0.4.11 (installateur Windows) est inchangée. Le modèle par défaut reste `qwen2.5:3b`. `qwen3.5:4b` est le modèle recommandé documenté ; le repli est réglable (`fallbackModel`, défaut `qwen2.5:3b`).
 
 Lis ce fichier avant de modifier le code.
 
@@ -48,7 +48,7 @@ Scripts utiles (racine) :
 
 Le script `setup:voice` remplit `apps/desktop/voice-assets/` (runtime ONNX, Whisper, openWakeWord, modèle Vosk français ; non commité, voir `.gitignore`). Premier `dev` / `build` : besoin de réseau.
 
-L’installateur publié est `Jarvis-Setup-0.4.23.exe` (release GitHub `v0.4.23`).
+L’installateur publié est `Jarvis-Setup-0.4.24.exe` (release GitHub `v0.4.24`).
 
 Données utilisateur (Electron `userData`, typiquement `%APPDATA%\Jarvis`) :
 
@@ -81,7 +81,7 @@ Données utilisateur (Electron `userData`, typiquement `%APPDATA%\Jarvis`) :
     src/media/                 intent Spotify
     src/update/                lecture latest.yml GitHub
     src/history/  src/audit/
-  apps/desktop/                Electron (version 0.4.23)
+  apps/desktop/                Electron (version 0.4.24)
     electron-builder.yml       NSIS, extraResources, publish GitHub
     electron.vite.config.ts    aliases onnxruntime-web (wasm, pas JSEP)
     scripts/setup-whisper.mjs
@@ -282,9 +282,23 @@ Coupé par défaut (`settings.developer.enabled = false`) : aucune session déve
 - **Interface** : onglet Réglages « Développeur » (`components/developer/DeveloperSettings.tsx`, enregistré tout de suite comme le micro), panneau du tableau de bord (`DeveloperPanel.tsx`), carte de confirmation développeur avec la classe du tri (`DeveloperConfirmationCard.tsx`) ; la carte du chat ne change pas. Scènes `?scene=developer|developer-panel|developer-confirm`.
 - **Pas encore** : modèle de code, banc d’essai, copie isolée, modifications (0.4.24 et suivantes). Aucun téléchargement de modèle.
 
+## 0.4.24 — Jarvis Développeur, phase 2 (modèle de code et banc d’essai)
+
+Onglet « Modèle de code » du panneau Développeur (`components/developer/model/`). Ordre imposé, revérifié par le processus principal (`main/developer/models/workflow.ts`) : matériel → étalonnage → configuration proposée (estimations) → validation → téléchargement confirmé → banc → choix. **Rien n’est téléchargé avant la validation**, et le téléchargement reste une action à part, derrière une carte « Toujours à confirmer ».
+
+- **Fournisseur** (`core/developer/codeProvider.ts`, `createCodeAIProvider`) : au-dessus du registre existant, Ollama local seulement (adresse de boucle locale, sinon `CodeProviderRefusedError`). Boucle d’outils `toolLoop.ts`, sorties JSON validées par Zod (`codeSchemas.ts`).
+- **Ollama** : `ProviderConfig.ollama` (`numCtx`, `numGpu`, `numThread`, `think`, `keepAlive`) et les mesures `usage` de l’événement `done` n’existent que si cette option est passée. Le corps envoyé par le chat est figé sur 0.4.23 : `providers/ollama-unchanged.test.ts` (`__golden__/ollama-0.4.23/`, ne pas régénérer).
+- **Catalogue** (`core/developer/codeModels.ts`) : `qwen3.6:35b-a3b-coding` (défaut, MoE), `qwen3-coder:30b` (repli), `qwen3.5:4b` (rapide), `qwen3.6:27b` (qualité), avec quantification, contexte, couches GPU, placement et chiffres publiés.
+- **Matériel** (`hardware.ts`, `main/developer/models/hardwareProbe.ts`) : RAM, processeur, `nvidia-smi` s’il existe, disque du dossier des modèles, Ollama et modèles installés. **Étalonnage** (`calibration.ts`) : deux réponses courtes d’un modèle déjà installé (normal, puis `num_gpu: 0`) donnent les débits utiles de la carte et de la RAM. **Estimations** (`estimate.ts`) : fourchettes ±25 %, toujours marquées « Estimation », chiffres publiés à côté.
+- **Experts en RAM** (`ollamaServer.ts`) : `LLAMA_ARG_CPU_MOE=1`, `GGML_CUDA_NO_PINNED=1`. Jarvis ne les modifie jamais : il montre l’avant/après et les commandes PowerShell (compte utilisateur), puis attend « J’ai appliqué ces réglages et redémarré Ollama » (journal `dev_variables_ollama`).
+- **Téléchargement** : outil `dev_pull_model` (`confirm` + `forceConfirm`), seulement pour le modèle validé (`dev_valider_configuration` au journal) ; commande `ollama pull <id>` et taille affichées.
+- **Banc** (`benchmarkTasks.ts`, `main/developer/models/benchRunner.ts`) : petit projet TypeScript jetable dans `userData/developer/bench/` ; 3 appels d’outils, une modification exacte vérifiée par `tsc`, une correction d’erreur de compilation ; jetons/s, chargement, RAM, carte graphique (`/api/ps`, `nvidia-smi`). `tsc` vient de la copie de travail (revérifiée après un redémarrage) ; sans lui, le banc est « incomplet ».
+- **Choix** : `settings.developer.codeModel` (vide par défaut). Le chat garde son modèle. État persistant : `userData/developer/code-model.json`.
+- Tests : `workflow.test.ts` (faux serveur Ollama `fakeOllama.testkit.ts`, vrai `tsc`), `codeModels.test.ts`, `codeProvider.test.ts`, `benchmarkTasks.test.ts`, `ollama-code-options.test.ts`. Scènes `?scene=developer-model|developer-pull|developer-bench`.
+
 ## Updater / GitHub
 
-Dernière publication : **0.4.23** (`https://github.com/dylanloze91-creator/Jarvis/releases/tag/v0.4.23`) — exe, `.blockmap` et `latest.yml` publiés : l’updater intégré la propose.
+Dernière publication : **0.4.24** (`https://github.com/dylanloze91-creator/Jarvis/releases/tag/v0.4.24`) — exe, `.blockmap` et `latest.yml` publiés : l’updater intégré la propose.
 
 - `apps/desktop/electron-builder.yml` : `publish.provider: github`, owner `dylanloze91-creator`, repo `Jarvis`, `releaseType: release`, artifact `Jarvis-Setup-${version}.exe`
 - `apps/desktop/src/main/updater.ts` : contrôle 15 s après le démarrage puis toutes les 4 h ; téléchargement auto ; **installation seulement si l’utilisateur clique**
@@ -399,6 +413,7 @@ Corrections de la revue complète (détail : `docs/audit-0410.md` du store du pr
 - **Version** : bump `apps/desktop/package.json`, pas seulement la racine.
 - **Modèles / voix réelles** : ne pas committer `voice-assets/**` (sauf son README), `test-fixtures/*.wav|mp3`.
 - **Jarvis Développeur** : coupé par défaut ; outils `dev_*` dans leur propre gestionnaire, jamais dans le catalogue du chat ; une commande refusée par `classifyCommand` ne démarre jamais (`runner.ts`) ; jamais de push ni de publication ; `chat-unchanged.test.ts` reste vert sans régénérer ses fichiers.
+- **Modèle de code (0.4.24)** : aucun téléchargement avant la validation de la configuration, et jamais sans la carte de confirmation ; Jarvis ne change jamais les variables du serveur Ollama (il les montre et attend la confirmation) ; `ollama-unchanged.test.ts` reste vert sans régénérer ses fichiers.
 
 Travaux **hors scope** de cet arbre (ne pas les reprendre ici) : publication GitHub.
 
