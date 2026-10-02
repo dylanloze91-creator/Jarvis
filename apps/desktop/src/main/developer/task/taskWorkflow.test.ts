@@ -144,6 +144,9 @@ describe('tâche de code : plan → validation → modification → tests → co
     const task = state.codeTask!;
     expect(state.task?.outcome).toBe('success');
     expect(task.report?.verdict).toBe('success');
+    expect(task.report?.markdown).toMatch(
+      /\| Série \| typecheck \| test \| Nouveaux échecs \|\n\| --- \| --- \| --- \| --- \|\n\| Référence \(avant\) \|/,
+    );
     expect(task.branch).toMatch(
       /^jarvis-dev\/\d{4}-\d{2}-\d{2}-ajoute-une-constante-version-exportee$/,
     );
