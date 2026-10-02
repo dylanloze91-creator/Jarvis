@@ -96,16 +96,31 @@ describe('réglages Jarvis Développeur', () => {
   });
 
   it('un settings.json de 0.4.22 (sans bloc developer) se lit sans rien perdre', () => {
-    const old = { provider: 'ollama', model: 'qwen2.5:3b', searchApiKey: 'tvly-x', voice: { enabled: true } };
+    const old = {
+      provider: 'ollama',
+      model: 'qwen2.5:3b',
+      searchApiKey: 'tvly-x',
+      voice: { enabled: true },
+    };
     const parsed = parseSettings(old);
     expect(parsed.developer.enabled).toBe(false);
-    expect(parsed).toMatchObject({ provider: 'ollama', model: 'qwen2.5:3b', searchApiKey: 'tvly-x' });
+    expect(parsed).toMatchObject({
+      provider: 'ollama',
+      model: 'qwen2.5:3b',
+      searchApiKey: 'tvly-x',
+    });
     expect(parsed.voice.enabled).toBe(true);
   });
 
   it('un bloc developer invalide reprend le précédent sans toucher au reste', () => {
-    const previous = parseSettings({ apiKey: 'sk-garde', developer: { enabled: true, repoPath: 'C:\\dev\\Jarvis' } });
-    const parsed = parseSettings({ ...previous, developer: { enabled: 'oui', repoPath: 42 } }, previous);
+    const previous = parseSettings({
+      apiKey: 'sk-garde',
+      developer: { enabled: true, repoPath: 'C:\\dev\\Jarvis' },
+    });
+    const parsed = parseSettings(
+      { ...previous, developer: { enabled: 'oui', repoPath: 42 } },
+      previous,
+    );
     expect(parsed.developer).toEqual({ enabled: true, repoPath: 'C:\\dev\\Jarvis' });
     expect(parsed.apiKey).toBe('sk-garde');
   });
