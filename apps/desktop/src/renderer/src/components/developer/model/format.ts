@@ -35,6 +35,12 @@ export function verdict(value: boolean | null): string {
   return value === null ? 'non vérifiable' : value ? 'réussie' : 'ratée';
 }
 
+/** « Incomplet » : rien de raté, mais la modification ou la correction n’a pas pu être vérifiée (pas de tsc). */
+export function benchStatus(bench: BenchResult): 'passed' | 'incomplete' | 'failed' {
+  if (bench.summary.passed) return 'passed';
+  return bench.tasks.some((task) => task.ok === false) ? 'failed' : 'incomplete';
+}
+
 export function benchFor(
   benches: BenchResult[],
   modelId: string,

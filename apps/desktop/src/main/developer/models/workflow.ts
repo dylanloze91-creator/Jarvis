@@ -46,7 +46,8 @@ export interface WorkflowHost {
   emit(): DeveloperState;
   notice(message: string): DeveloperState;
   audit(name: string, args: Record<string, unknown>, content: string): void;
-  repoRoot(): string | null;
+  /** Copie de travail vérifiée (revérifiée si Jarvis vient de démarrer), pour son tsc. */
+  repoRoot(): Promise<string | null>;
   nodePath(): Promise<string | null>;
 }
 
@@ -302,7 +303,7 @@ export class CodeModelWorkflow {
       );
     const expertsInRam =
       stored.validation?.modelId === modelId ? stored.validation.expertsInRam : false;
-    const root = this.host.repoRoot();
+    const root = await this.host.repoRoot();
     const nodePath = await this.host.nodePath();
     const tscPath = root ? join(root, 'node_modules', 'typescript', 'bin', 'tsc') : null;
     const tsc = nodePath && tscPath && existsSync(tscPath) ? { nodePath, tscPath } : null;

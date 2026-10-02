@@ -1,7 +1,7 @@
 import type { BenchResult } from '@jarvis/core';
 import { CheckCircle2, MinusCircle, XCircle } from 'lucide-react';
 import { codeModelById } from '@jarvis/core';
-import { dateTime, gb, tokValue, verdict } from './format';
+import { benchStatus, dateTime, gb, tokValue, verdict } from './format';
 import { MeasureBadge } from './StepCard';
 
 function Mark({ ok }: { ok: boolean | null }) {
@@ -13,9 +13,19 @@ function Mark({ ok }: { ok: boolean | null }) {
   );
 }
 
+const STATUS = {
+  passed: { label: 'Banc réussi', tone: 'bg-emerald-400/15 text-emerald-200' },
+  incomplete: {
+    label: 'Banc incomplet (tsc indisponible)',
+    tone: 'bg-amber-400/15 text-amber-200',
+  },
+  failed: { label: 'Banc raté', tone: 'bg-rose-500/15 text-rose-200' },
+} as const;
+
 /** Résultat mesuré d’un banc : les cinq tâches, puis vitesse, RAM et carte graphique. */
 export function BenchResults({ bench }: { bench: BenchResult }) {
   const label = codeModelById(bench.model)?.label ?? bench.model;
+  const status = benchStatus(bench);
   const m = bench.metrics;
   const metrics: Array<[string, string]> = [
     ['Écriture', tokValue(m.outputTokPerSec)],
@@ -46,14 +56,8 @@ export function BenchResults({ bench }: { bench: BenchResult }) {
           {bench.expertsInRam ? ' · experts en RAM' : ''}
         </span>
         <MeasureBadge />
-        <span
-          className={
-            bench.summary.passed
-              ? 'rounded-full bg-emerald-400/15 px-2 py-px text-[11px] text-emerald-200'
-              : 'rounded-full bg-rose-500/15 px-2 py-px text-[11px] text-rose-200'
-          }
-        >
-          {bench.summary.passed ? 'Banc réussi' : 'Banc raté'}
+        <span className={`rounded-full px-2 py-px text-[11px] ${STATUS[status].tone}`}>
+          {STATUS[status].label}
         </span>
         <span className="ml-auto text-[11px] text-slate-500">{dateTime(bench.finishedAt)}</span>
       </div>

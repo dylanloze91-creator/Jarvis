@@ -2,7 +2,7 @@ import { Star } from 'lucide-react';
 import { codeModelById } from '@jarvis/core';
 import { Button } from '@/components/ui/button';
 import type { CodeModelState } from '../../../../../shared/developerIpc';
-import { benchFor } from './format';
+import { benchFor, benchStatus } from './format';
 import { StepCard, type FlowStatus } from './StepCard';
 
 /** Étape 6 : il choisit le modèle de code par défaut parmi les modèles passés au banc. */
@@ -55,8 +55,13 @@ export function ChooseStep({
                 <Star className="size-3.5" />
                 {chosen ? `${label} est le modèle par défaut` : `Choisir ${label} par défaut`}
               </Button>
-              {bench && !bench.summary.passed ? (
+              {bench && benchStatus(bench) === 'failed' ? (
                 <span className="text-amber-200">Banc raté : possible, mais déconseillé.</span>
+              ) : bench && benchStatus(bench) === 'incomplete' ? (
+                <span className="text-amber-200">
+                  Banc incomplet : relance-le une fois les dépendances de la copie de travail
+                  installées.
+                </span>
               ) : null}
             </div>
           );

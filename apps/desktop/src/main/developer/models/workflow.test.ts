@@ -24,12 +24,12 @@ afterAll(async () => {
   rmSync(base, { recursive: true, force: true });
 });
 
-function setup() {
+function setup(repoPath = '') {
   const settings = parseSettings({
     provider: 'ollama',
     model: 'qwen2.5:3b',
     baseUrl: fake.url,
-    developer: { enabled: true },
+    developer: { enabled: true, repoPath },
   });
   const states: DeveloperState[] = [];
   const runs: RunSpec[] = [];
@@ -227,4 +227,22 @@ describe('modèle de code : ordre imposé, rien avant la validation', () => {
     await new Promise((r) => setTimeout(r, 50));
     expect(restarted.instance.state().model.validation?.modelId).toBe(DEFAULT);
   });
+
+  it('5. juste après un redémarrage, le banc revérifie la copie de travail enregistrée pour son tsc', async () => {
+    const restarted = setup(realRoot);
+    expect(restarted.instance.state().repo).toBeNull();
+    fake.behaviour.set('qwen3.5:4b', 'good');
+    const state = await restarted.instance.benchmark('qwen3.5:4b');
+    expect(state.repo).not.toBeNull();
+    const tscAvailable =
+      state.repo?.ok === true &&
+      existsSync(join(realRoot, 'node_modules', 'typescript', 'bin', 'tsc'));
+    const bench = state.model.benches.find((b) => b.model === 'qwen3.5:4b')!;
+    expect(bench.summary).toEqual({
+      toolCalls: '3/3',
+      edit: tscAvailable ? true : null,
+      fix: tscAvailable ? true : null,
+      passed: tscAvailable,
+    });
+  }, 120_000);
 });

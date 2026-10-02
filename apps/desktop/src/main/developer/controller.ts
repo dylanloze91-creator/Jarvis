@@ -110,7 +110,11 @@ export class DeveloperController {
             }),
           );
         },
-        repoRoot: () => (this.repo?.ok ? this.repoPath : null),
+        repoRoot: async () => {
+          const saved = deps.getSettings().developer.repoPath;
+          if (!this.repo && saved) this.setRepo(await gatherRepoFacts(saved, this.run));
+          return this.repo?.ok ? this.repoPath : null;
+        },
         nodePath: async () => {
           if (!this.environment) await this.probe();
           return this.environment?.nodePath ?? null;
