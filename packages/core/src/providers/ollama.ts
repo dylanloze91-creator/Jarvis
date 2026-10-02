@@ -7,7 +7,9 @@ import {
   type ChatRequest,
   type ChatStreamEvent,
   type FinishReason,
+  type ChatUsage,
   type LLMProvider,
+  type OllamaCodeOptions,
   type ProviderConfig,
   type ProviderDescriptor,
 } from './types.js';
@@ -49,6 +51,25 @@ interface OllamaChatChunk {
   done?: boolean;
   done_reason?: string;
   error?: string;
+  total_duration?: number;
+  load_duration?: number;
+  prompt_eval_count?: number;
+  prompt_eval_duration?: number;
+  eval_count?: number;
+  eval_duration?: number;
+}
+
+const NS_PER_MS = 1_000_000;
+
+function usageOf(chunk: OllamaChatChunk): ChatUsage {
+  return {
+    promptTokens: chunk.prompt_eval_count ?? 0,
+    promptMs: (chunk.prompt_eval_duration ?? 0) / NS_PER_MS,
+    outputTokens: chunk.eval_count ?? 0,
+    outputMs: (chunk.eval_duration ?? 0) / NS_PER_MS,
+    loadMs: (chunk.load_duration ?? 0) / NS_PER_MS,
+    totalMs: (chunk.total_duration ?? 0) / NS_PER_MS,
+  };
 }
 
 /** Nombre de caractères observés avant de trancher si un texte commence par une syntaxe d'appel d'outil échappée. */
@@ -75,26 +96,33 @@ export class OllamaProvider implements LLMProvider {
   readonly requiresApiKey = false;
   readonly model: string;
   private readonly baseUrl: string;
+  private readonly codeOptions: OllamaCodeOptions | undefined;
 
   constructor(config: ProviderConfig) {
     this.model = config.model || ollamaDescriptor.defaultModel;
     this.baseUrl = (config.baseUrl || ollamaDescriptor.defaultBaseUrl!).replace(/\/+$/, '');
+    this.codeOptions = config.ollama;
   }
 
   async *streamChat(request: ChatRequest): AsyncIterable<ChatStreamEvent> {
+    const code = this.codeOptions;
     const body: Record<string, unknown> = {
       model: this.model,
       stream: true,
       messages: toOllamaMessages(request),
       options: {
         temperature: request.temperature ?? 0.25,
-        num_ctx: OLLAMA_RECOMMENDED_NUM_CTX,
+        num_ctx: code?.numCtx ?? OLLAMA_RECOMMENDED_NUM_CTX,
         ...(request.maxTokens ? { num_predict: request.maxTokens } : {}),
+        ...(code?.numGpu !== undefined ? { num_gpu: code.numGpu } : {}),
+        ...(code?.numThread !== undefined ? { num_thread: code.numThread } : {}),
       },
     };
     if (request.tools?.length) {
       body.tools = request.tools.map(toOllamaTool);
     }
+    if (code?.think !== undefined) body.think = code.think;
+    if (code?.keepAlive !== undefined) body.keep_alive = code.keepAlive;
 
     let response: Response;
     try {
@@ -118,14 +146,18 @@ export class OllamaProvider implements LLMProvider {
       );
     }
 
-    yield* this.consume(response.body);
+    yield* this.consume(response.body, code !== undefined);
   }
 
-  private async *consume(body: ReadableStream<Uint8Array>): AsyncGenerator<ChatStreamEvent> {
+  private async *consume(
+    body: ReadableStream<Uint8Array>,
+    reportUsage: boolean,
+  ): AsyncGenerator<ChatStreamEvent> {
     const pending = new Map<number, ToolCall>();
     let sawStructuredToolCall = false;
     let malformedDetail: string | null = null;
     let doneReason: string | undefined;
+    let usage: ChatUsage | undefined;
 
     let fullText = '';
     let sniffed = false;
@@ -180,6 +212,7 @@ export class OllamaProvider implements LLMProvider {
 
       if (chunk.done) {
         doneReason = chunk.done_reason;
+        if (reportUsage) usage = usageOf(chunk);
         break;
       }
     }
@@ -190,7 +223,9 @@ export class OllamaProvider implements LLMProvider {
 
     if (sawStructuredToolCall) {
       for (const call of pending.values()) yield { type: 'tool_call', call };
-      yield { type: 'done', finishReason: 'tool_calls' };
+      yield usage
+        ? { type: 'done', finishReason: 'tool_calls', usage }
+        : { type: 'done', finishReason: 'tool_calls' };
       return;
     }
 
@@ -205,7 +240,7 @@ export class OllamaProvider implements LLMProvider {
     }
 
     const finishReason: FinishReason = doneReason === 'length' ? 'length' : 'stop';
-    yield { type: 'done', finishReason };
+    yield usage ? { type: 'done', finishReason, usage } : { type: 'done', finishReason };
   }
 }
 

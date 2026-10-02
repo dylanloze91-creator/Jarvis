@@ -18,10 +18,20 @@ export interface ChatRequest {
 
 export type FinishReason = 'stop' | 'tool_calls' | 'length' | 'error';
 
+/** Mesures d'Ollama en fin de réponse (modèle de code seulement). Durées en millisecondes. */
+export interface ChatUsage {
+  promptTokens: number;
+  promptMs: number;
+  outputTokens: number;
+  outputMs: number;
+  loadMs: number;
+  totalMs: number;
+}
+
 export type ChatStreamEvent =
   | { type: 'text'; delta: string }
   | { type: 'tool_call'; call: ToolCall }
-  | { type: 'done'; finishReason: FinishReason }
+  | { type: 'done'; finishReason: FinishReason; usage?: ChatUsage }
   | { type: 'error'; message: string };
 
 /**
@@ -43,6 +53,19 @@ export interface ProviderConfig {
   model: string;
   apiKey?: string;
   baseUrl?: string;
+  /** Réglages de requête du modèle de code (Jarvis Développeur). Absents : requête du chat inchangée. */
+  ollama?: OllamaCodeOptions;
+}
+
+/** Options de requête Ollama, jamais des variables du serveur. */
+export interface OllamaCodeOptions {
+  numCtx?: number;
+  /** Couches sur la carte graphique (`num_gpu`) : 0 = tout sur le processeur, 99 = tout ce qui peut aller sur la carte. */
+  numGpu?: number;
+  numThread?: number;
+  /** `false` coupe la « réflexion » des modèles qui la gèrent (Qwen3.5, Qwen3.6) ; absent = non envoyé. */
+  think?: boolean;
+  keepAlive?: string | number;
 }
 
 export interface ProviderDescriptor {
