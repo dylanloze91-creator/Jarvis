@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { get as httpGet } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   ToolManager,
   buildAuditEntry,
@@ -289,6 +289,26 @@ describe('Agenda', () => {
     expect(asked.at(-1)?.command).toContain('⚠ Je n\'ai pas compris la date de début');
     expect(result.content).toMatch(/Je n'ai pas compris la date de début/);
     expect(fake.writes()).toHaveLength(0);
+  });
+
+  it('carte et exécution lisent « demain » avec la même horloge, même si celle du PC a changé de jour', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date(2030, 0, 15, 0, 30));
+    try {
+      const { call, asked, fake } = await setup();
+      const created = await call('google_calendar_create', { title: 'Garage', start: 'demain 9h' });
+      expect(asked.at(-1)?.command).toBe('Titre : Garage\nQuand : vendredi 2 octobre 2026 de 09:00 à 10:00');
+      const sent = JSON.parse(fake.calls.find((c) => c.method === 'POST' && c.url.pathname.endsWith('/events'))!.body);
+      expect(sent.start).toEqual({ dateTime: '2026-10-02T09:00:00', timeZone: 'Europe/Paris' });
+
+      const id = (created.content.match(/id : (evt\d+)/) ?? [])[1]!;
+      await call('google_calendar_update', { eventId: id, eventTitle: 'Garage', start: 'demain 11h' });
+      expect(asked.at(-1)?.command).toContain('Nouvel horaire : vendredi 2 octobre 2026 de 11:00 à 12:00');
+      const patched = JSON.parse(fake.calls.find((c) => c.method === 'PATCH')!.body);
+      expect(patched.start).toEqual({ dateTime: '2026-10-02T11:00:00', timeZone: 'Europe/Paris' });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

@@ -32,6 +32,8 @@ export interface GoogleRuntime {
   drive: DriveService;
   docs: DocsService;
   sheets: SheetsService;
+  /** Horloge des services : les cartes de confirmation doivent résoudre « demain » avec la même. */
+  now: () => Date;
 }
 
 export const GOOGLE_TOKEN_FILE = 'google-token.bin';
@@ -83,5 +85,6 @@ export function createGoogleRuntime(deps: GoogleRuntimeDeps): GoogleRuntime {
     drive: new DriveService(ctx),
     docs: new DocsService(ctx),
     sheets: new SheetsService(ctx),
+    now: ctx.now,
   };
 }

@@ -47,8 +47,8 @@ const eventTimeFields = {
   durationMinutes: z.number().int().min(5).max(20_160).optional(),
 };
 
-function whenOf(input: { start: string; end?: string; durationMinutes?: number; allDay?: boolean }): string {
-  const timing = resolveEventTiming(input);
+function whenOf(input: { start: string; end?: string; durationMinutes?: number; allDay?: boolean }, now: Date): string {
+  const timing = resolveEventTiming(input, now);
   return timing.ok ? formatFrenchRange(timing.start, timing.end) : `⚠ ${timing.error}`;
 }
 
@@ -143,7 +143,7 @@ export function createGoogleTools(google: GoogleRuntime): RegisteredTool[] {
       }),
       summarize: ({ title }) => `Créer l'événement « ${title} » dans ton agenda Google.`,
       describeCommand: (input) =>
-        formatEventForConfirmation({ title: input.title, when: whenOf(input), location: input.location, description: input.description }),
+        formatEventForConfirmation({ title: input.title, when: whenOf(input, google.now()), location: input.location, description: input.description }),
       execute: (input) => run(() => google.calendar.create(input)),
     }),
     defineTool({
@@ -167,7 +167,7 @@ export function createGoogleTools(google: GoogleRuntime): RegisteredTool[] {
         [
           `Événement : ${input.eventTitle} (id ${input.eventId})`,
           input.title ? `Nouveau titre : ${input.title}` : '',
-          input.start ? `Nouvel horaire : ${whenOf({ start: input.start, end: input.end, durationMinutes: input.durationMinutes })}` : '',
+          input.start ? `Nouvel horaire : ${whenOf({ start: input.start, end: input.end, durationMinutes: input.durationMinutes }, google.now())}` : '',
           !input.start && input.end ? `Nouvelle fin : ${input.end}` : '',
           input.location !== undefined ? `Lieu : ${input.location || '(retiré)'}` : '',
           input.description !== undefined ? `Description : ${input.description.slice(0, 600) || '(retirée)'}` : '',
