@@ -42,7 +42,8 @@ export interface ControllerDeps {
   freeBytes?(path: string): Promise<number | null>;
 }
 
-const DISABLED = 'Le mode Développeur est coupé : active-le dans Réglages → Développeur.';
+export const DEVELOPER_DISABLED_NOTICE =
+  'Le mode Développeur est coupé : active-le dans Réglages → Développeur.';
 const MAX_LOG_LINES = 40;
 
 /**
@@ -119,7 +120,7 @@ export class DeveloperController {
 
   private guard(needsRepo = false): DeveloperState | null {
     if (!this.enabled()) {
-      this.notice = DISABLED;
+      this.notice = DEVELOPER_DISABLED_NOTICE;
       return this.state();
     }
     if (this.controller) {

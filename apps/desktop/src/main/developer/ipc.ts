@@ -1,7 +1,11 @@
 import type { IpcMain, WebContents } from 'electron';
 import { SUGGESTED_REPO_PATH, candidateRepoPaths } from '@jarvis/core';
 import { DeveloperChannel, type DeveloperState } from '../../shared/developerIpc.js';
-import { DeveloperController, type ControllerDeps } from './controller.js';
+import {
+  DEVELOPER_DISABLED_NOTICE,
+  DeveloperController,
+  type ControllerDeps,
+} from './controller.js';
 
 export interface DeveloperIpcDeps extends Omit<ControllerDeps, 'emit'> {
   /** Fenêtre principale, seule destinataire des événements. */
@@ -52,19 +56,21 @@ export function registerDeveloperIpc(
     notice: null,
   });
 
+  const refused = (): DeveloperState => ({ ...disabled(), notice: DEVELOPER_DISABLED_NOTICE });
+
   ipcMain.handle(DeveloperChannel.status, () => get()?.state() ?? disabled());
-  ipcMain.handle(DeveloperChannel.detect, () => get()?.detect() ?? disabled());
+  ipcMain.handle(DeveloperChannel.detect, () => get()?.detect() ?? refused());
   ipcMain.handle(
     DeveloperChannel.validate,
-    (_event, path: unknown) => get()?.validate(text(path)) ?? disabled(),
+    (_event, path: unknown) => get()?.validate(text(path)) ?? refused(),
   );
-  ipcMain.handle(DeveloperChannel.environment, () => get()?.checkEnvironment() ?? disabled());
+  ipcMain.handle(DeveloperChannel.environment, () => get()?.checkEnvironment() ?? refused());
   ipcMain.handle(
     DeveloperChannel.clone,
-    (_event, path: unknown) => get()?.clone(text(path)) ?? disabled(),
+    (_event, path: unknown) => get()?.clone(text(path)) ?? refused(),
   );
-  ipcMain.handle(DeveloperChannel.install, () => get()?.install() ?? disabled());
-  ipcMain.handle(DeveloperChannel.analyze, () => get()?.analyze() ?? disabled());
+  ipcMain.handle(DeveloperChannel.install, () => get()?.install() ?? refused());
+  ipcMain.handle(DeveloperChannel.analyze, () => get()?.analyze() ?? refused());
   ipcMain.handle(DeveloperChannel.cancel, () => controller?.cancel());
   ipcMain.handle(
     DeveloperChannel.confirmRespond,
