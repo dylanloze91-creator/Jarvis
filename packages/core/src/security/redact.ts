@@ -7,6 +7,9 @@
 const SECRET_KEY =
   /^(api[_-]?key|access[_-]?token|refresh[_-]?token|id[_-]?token|client[_-]?secret|authorization|auth|token|siteblocktoken|site[_-]?block[_-]?token|spotifytoken|bearer|google[_-]?client[_-]?secret|code[_-]?verifier)$/i;
 
+/** Noms préfixés de settings.json : `searchApiKey` (Tavily, Brave), `marketDataApiKey` (Finnhub)… */
+const SECRET_KEY_SUFFIX = /(api[_-]?key|client[_-]?secret)$/i;
+
 const INLINE_PATTERNS: Array<{ pattern: RegExp; replace: string }> = [
   { pattern: /\b(Bearer\s+)[A-Za-z0-9._~+/-]{8,}/gi, replace: '$1[REDACTED]' },
   { pattern: /\b(sk-[A-Za-z0-9]{8,})/g, replace: '[REDACTED]' },
@@ -18,9 +21,11 @@ const INLINE_PATTERNS: Array<{ pattern: RegExp; replace: string }> = [
   { pattern: /(^|[^\w/])1\/\/[A-Za-z0-9._~+-]{16,}/g, replace: '$1[REDACTED]' },
   { pattern: /\bGOCSPX-[A-Za-z0-9_-]{8,}/g, replace: '[REDACTED]' },
   { pattern: /(^|[^\w/])4\/0[A-Za-z0-9._~+-]{16,}/g, replace: '$1[REDACTED]' },
+  { pattern: /\btvly-[A-Za-z0-9_-]{8,}/g, replace: '[REDACTED]' },
   {
+    // Préfixe facultatif (`searchApiKey`, `marketDataApiKey`, `x-api-key`), borné à 40 caractères : le texte lu reste parcouru en temps linéaire.
     pattern:
-      /\b(api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|site[_-]?block[_-]?token|authorization|id[_-]?token)(\s*["']?\s*[:=]\s*["']?)([^\s"',}]+)(["']?)/gi,
+      /\b((?:[a-z][a-z0-9_-]{0,40}?)?(?:api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|site[_-]?block[_-]?token|authorization|id[_-]?token))(\s*["']?\s*[:=]\s*["']?)([^\s"',}]+)(["']?)/gi,
     replace: '$1$2[REDACTED]$4',
   },
   {
@@ -49,7 +54,7 @@ function walk(value: unknown, seen: WeakSet<object>): unknown {
   if (Array.isArray(value)) return value.map((item) => walk(item, seen));
   const out: Record<string, unknown> = {};
   for (const [key, child] of Object.entries(value)) {
-    if (SECRET_KEY.test(key)) {
+    if (SECRET_KEY.test(key) || SECRET_KEY_SUFFIX.test(key)) {
       out[key] = '[REDACTED]';
       continue;
     }
