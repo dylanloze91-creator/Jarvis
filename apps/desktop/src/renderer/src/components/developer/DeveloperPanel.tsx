@@ -1,14 +1,37 @@
+import { useState } from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Code2, FileSearch, GitBranch, Loader2, Square } from 'lucide-react';
+import { Bot, Code2, FolderGit2, GitBranch } from 'lucide-react';
+import { codeModelById, type Settings } from '@jarvis/core';
 import { Button } from '@/components/ui/button';
 import { useDeveloper } from '@/hooks/useDeveloper';
+import { cn } from '@/lib/utils';
+import type { RuntimeStatus } from '../../../../shared/ipc';
 import { DeveloperConfirmationCard } from './DeveloperConfirmationCard';
-import { StepTimeline } from './parts';
+import { ProjectActions, TaskSection } from './DeveloperSections';
+import { CodeModelPanel } from './model/CodeModelPanel';
 
-/** Panneau « Jarvis Développeur » du tableau de bord : projet, étapes, rapport. */
-export function DeveloperPanel({ onOpenSettings }: { onOpenSettings: () => void }) {
+export type DeveloperTab = 'project' | 'model';
+
+const TABS: Array<{ id: DeveloperTab; label: string; icon: typeof Bot }> = [
+  { id: 'project', label: 'Projet', icon: FolderGit2 },
+  { id: 'model', label: 'Modèle de code', icon: Bot },
+];
+
+/** Panneau « Jarvis Développeur » du tableau de bord : projet et modèle de code, étapes, rapport. */
+export function DeveloperPanel({
+  onOpenSettings,
+  settings,
+  onSaved,
+  initialTab = 'project',
+}: {
+  onOpenSettings: () => void;
+  settings: Settings | null;
+  onSaved: (payload: { settings: Settings; status: RuntimeStatus }) => void;
+  initialTab?: DeveloperTab;
+}) {
   const { state, error, act } = useDeveloper();
+  const [tab, setTab] = useState<DeveloperTab>(initialTab);
   if (!state) {
     return <div className="dash-loading">Chargement de Jarvis Développeur…</div>;
   }
@@ -22,8 +45,14 @@ export function DeveloperPanel({ onOpenSettings }: { onOpenSettings: () => void 
       </div>
     );
   }
-  const repoReady = state.repo?.ok ?? false;
-  const task = state.task;
+  const codeModel = settings?.developer.codeModel ?? '';
+  const chooseDefault = async (modelId: string): Promise<void> => {
+    if (!settings) return;
+    const payload = await window.jarvis.settings.set({
+      developer: { ...settings.developer, codeModel: modelId },
+    });
+    onSaved(payload);
+  };
   return (
     <div className="flex flex-col gap-4 p-4" data-developer-panel>
       <header className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl border border-cyan-300/15 bg-cyan-300/[0.04] px-3.5 py-2.5">
@@ -40,36 +69,43 @@ export function DeveloperPanel({ onOpenSettings }: { onOpenSettings: () => void 
           </span>
         ) : null}
         <span className="text-xs text-slate-500">
-          Lecture seule · aucun modèle de code (0.4.24)
+          Lecture seule · modèle de code :{' '}
+          {codeModel ? (codeModelById(codeModel)?.label ?? codeModel) : 'pas encore choisi'}
         </span>
       </header>
 
-      {!repoReady ? (
-        <div className="flex flex-col gap-2 rounded-xl border border-amber-400/25 bg-amber-400/10 px-3.5 py-3 text-xs text-amber-100">
-          Choisis et vérifie d’abord la copie de travail.
-          <div>
-            <Button size="sm" onClick={onOpenSettings}>
-              Réglages → Développeur
-            </Button>
-          </div>
-        </div>
-      ) : null}
-
-      <div className="flex flex-wrap items-center gap-2">
-        <Button
-          variant="default"
-          size="sm"
-          disabled={!repoReady || state.busy}
-          onClick={() => act((api) => api.analyze())}
-        >
-          <FileSearch className="size-3.5" /> Analyser mon architecture
-        </Button>
-        {state.busy ? (
-          <Button size="sm" variant="ghost" onClick={() => act((api) => api.cancel())}>
-            <Square className="size-3" /> Annuler
-          </Button>
-        ) : null}
+      <div role="tablist" aria-label="Jarvis Développeur" className="flex gap-1.5">
+        {TABS.map(({ id, label, icon: Icon }) => (
+          <button
+            key={id}
+            type="button"
+            role="tab"
+            aria-selected={tab === id}
+            data-developer-tab={id}
+            onClick={() => setTab(id)}
+            className={cn(
+              'no-drag flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors',
+              tab === id
+                ? 'bg-accent/15 text-accent shadow-[inset_0_0_0_1px_rgba(57,220,255,0.28)]'
+                : 'text-slate-400 hover:bg-white/[0.05] hover:text-slate-200',
+            )}
+          >
+            <Icon className="size-3.5" /> {label}
+          </button>
+        ))}
       </div>
+
+      {tab === 'project' ? (
+        <ProjectActions state={state} act={act} onOpenSettings={onOpenSettings} />
+      ) : (
+        <CodeModelPanel
+          state={state}
+          act={act}
+          codeModel={codeModel}
+          chatModel={settings?.model ?? ''}
+          onChooseDefault={chooseDefault}
+        />
+      )}
 
       {state.confirmation ? (
         <DeveloperConfirmationCard
@@ -78,46 +114,9 @@ export function DeveloperPanel({ onOpenSettings }: { onOpenSettings: () => void 
         />
       ) : null}
 
-      {task ? (
-        <section
-          className="flex flex-col gap-2 rounded-xl border border-white/8 bg-white/[0.03] px-3.5 py-3"
-          aria-label="Étapes"
-        >
-          <div className="flex items-center gap-2 text-[13px] font-medium text-slate-100">
-            {state.busy ? <Loader2 className="size-3.5 animate-spin text-cyan-300" /> : null}
-            {task.title}
-            {task.outcome ? (
-              <span className="ml-auto text-xs font-normal text-slate-400">
-                {task.outcome === 'success'
-                  ? 'Terminé'
-                  : task.outcome === 'cancelled'
-                    ? 'Annulé'
-                    : 'Échec'}
-                {task.finishedAt
-                  ? ` en ${((task.finishedAt - task.startedAt) / 1000).toLocaleString('fr-FR', { maximumFractionDigits: 1 })} s`
-                  : ''}
-              </span>
-            ) : null}
-          </div>
-          <StepTimeline steps={task.steps} />
-          {task.log.length ? (
-            <pre className="max-h-32 overflow-auto rounded bg-black/40 p-2 font-mono text-[10px] text-slate-400">
-              {task.log.slice(-8).join('\n')}
-            </pre>
-          ) : null}
-          {task.outcome === 'failed' && task.message ? (
-            <p className="text-xs text-rose-200">{task.message}</p>
-          ) : null}
-        </section>
-      ) : (
-        <p className="text-xs leading-snug text-slate-500">
-          « Analyser mon architecture » lit le dépôt sans rien modifier : outils, agent,
-          confirmations, réglages, IPC, couches et paquets, avec les vrais chemins. Chaque lecture
-          est inscrite au journal.
-        </p>
-      )}
+      <TaskSection state={state} act={act} showHelp={tab === 'project'} />
 
-      {state.report ? (
+      {tab === 'project' && state.report ? (
         <article className="markdown developer-report rounded-xl border border-white/8 bg-black/20 px-4 py-3 text-[13px] leading-relaxed text-slate-200">
           <Markdown remarkPlugins={[remarkGfm]}>{state.report.markdown}</Markdown>
         </article>

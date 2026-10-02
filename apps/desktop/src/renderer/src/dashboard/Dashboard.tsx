@@ -211,9 +211,8 @@ export function Dashboard({
   }, [view]);
 
   // Jarvis Développeur : entrée visible seulement quand le mode est activé.
-  const [developerOpen, setDeveloperOpen] = useState(
-    () => typeof window !== 'undefined' && /^developer-(panel|confirm)$/.test(new URLSearchParams(window.location.search).get('scene') ?? ''),
-  );
+  const [developerScene] = useState(() => (typeof window !== 'undefined' ? (new URLSearchParams(window.location.search).get('scene') ?? '') : ''));
+  const [developerOpen, setDeveloperOpen] = useState(() => /^developer-(panel|confirm|model|pull|bench)$/.test(developerScene));
   const developerEnabled = settings?.developer.enabled ?? false;
   const showDeveloper = developerOpen && developerEnabled;
   const navigate = (next: View): void => {
@@ -300,7 +299,12 @@ export function Dashboard({
             <button type="button" className="panel-back" onClick={() => setDeveloperOpen(false)}>
               Retour à l’accueil
             </button>
-            <DeveloperPanel onOpenSettings={openDeveloperSettings} />
+            <DeveloperPanel
+              onOpenSettings={openDeveloperSettings}
+              settings={settings}
+              onSaved={onSaved}
+              initialTab={/^developer-(model|pull|bench)$/.test(developerScene) ? 'model' : 'project'}
+            />
           </section>
         ) : view === 'chat' ? (
           <>
