@@ -1,8 +1,8 @@
-# Jarvis 0.4.21 — contexte pour un autre développeur
+# Jarvis 0.4.22 — contexte pour un autre développeur
 
 Ce fichier est à la **racine du code**. Les chemins ci-dessous partent de ce dossier. Ce n’est pas un résumé marketing : c’est l’état réel de cet arbre. La voix a été refaite dans cet arbre (publiée en 0.4.11, section « Voix ») : la transcription restait « Chargement… 100 % » sur l’installateur Windows. La refonte du tableau de bord est dans cet arbre : fenêtre étroite = overlay, fenêtre large = tableau de bord.
 
-**Version confirmée :** `apps/desktop/package.json` → `"version": "0.4.21"`. Le `package.json` racine est encore à `0.3.0` : c’est le monorepo, pas l’appli. La version qui compte pour l’exe, l’updater et GitHub est celle de `@jarvis/desktop`. La voix corrigée en 0.4.11 (installateur Windows) est inchangée. Le modèle par défaut reste `qwen2.5:3b`. `qwen3.5:4b` est le modèle recommandé documenté ; le repli est réglable (`fallbackModel`, défaut `qwen2.5:3b`).
+**Version confirmée :** `apps/desktop/package.json` → `"version": "0.4.22"`. Le `package.json` racine est encore à `0.3.0` : c’est le monorepo, pas l’appli. La version qui compte pour l’exe, l’updater et GitHub est celle de `@jarvis/desktop`. La voix corrigée en 0.4.11 (installateur Windows) est inchangée. Le modèle par défaut reste `qwen2.5:3b`. `qwen3.5:4b` est le modèle recommandé documenté ; le repli est réglable (`fallbackModel`, défaut `qwen2.5:3b`).
 
 Lis ce fichier avant de modifier le code.
 
@@ -48,7 +48,7 @@ Scripts utiles (racine) :
 
 Le script `setup:voice` remplit `apps/desktop/voice-assets/` (runtime ONNX, Whisper, openWakeWord, modèle Vosk français ; non commité, voir `.gitignore`). Premier `dev` / `build` : besoin de réseau.
 
-L’installateur publié est `Jarvis-Setup-0.4.21.exe` (release GitHub `v0.4.21`).
+L’installateur publié est `Jarvis-Setup-0.4.22.exe` (release GitHub `v0.4.22`).
 
 Données utilisateur (Electron `userData`, typiquement `%APPDATA%\Jarvis`) :
 
@@ -81,7 +81,7 @@ Données utilisateur (Electron `userData`, typiquement `%APPDATA%\Jarvis`) :
     src/media/                 intent Spotify
     src/update/                lecture latest.yml GitHub
     src/history/  src/audit/
-  apps/desktop/                Electron (version 0.4.21)
+  apps/desktop/                Electron (version 0.4.22)
     electron-builder.yml       NSIS, extraResources, publish GitHub
     electron.vite.config.ts    aliases onnxruntime-web (wasm, pas JSEP)
     scripts/setup-whisper.mjs
@@ -260,9 +260,19 @@ Une question d’actualité part sur Internet **avant** le modèle. Rien d’aut
 - **Fournisseurs** (`createWebSearchRegistry`, utilisé par `main/index.ts` ; `createDefaultSearchRegistry` inchangé) : `duckduckgo`, `bing`, `google-news`, `bing-news` (sans clé), `tavily` (clé gratuite sans carte). Chaîne web (`search/chain.ts`) : fournisseur choisi, puis DuckDuckGo → Bing → Google → Wikipédia ; filtre de pertinence (Bing renvoie des pages hors sujet à une IP jugée robotique). `web_search` / `web_research` : sortie identique si le fournisseur choisi répond, repli sinon. Google HTML ne répond plus sans JavaScript depuis janvier 2025 ; l’API Custom Search est fermée aux nouveaux clients (fin 1er janvier 2027) ; Bing Search API fermée le 11 août 2025. Clés : uniquement `settings.searchApiKey`, en-tête HTTP, jamais dans un message (masquées par la chaîne).
 - Mesure (`qwen2.5:3b`, CPU, 16 questions) et rapport : `docs/recherche-web-jarvis.md` et `internal/recherche-web.md` du store du projet.
 
+## 0.4.22 — base saine (correctifs P2, P3, P8 de l’audit)
+
+Préalable à Jarvis Développeur : une base verte et sans fuite de clé. Un commit et un test par correctif ; rien d’autre ne change.
+
+- **Agenda (P2)** : la carte de confirmation résout « demain » avec l’horloge du runtime Google (`GoogleRuntime.now`, passé à `whenOf` dans `tools/google.ts`), comme `CalendarService`. Test : `tools/google.test.ts` (horloge du PC sur un autre jour).
+- **Lint (P3)** : `npm run lint` = 0 erreur. `eslint.config.js` ignore `apps/desktop/voice-assets/**` (code tiers de `setup:voice`). Lignes sensibles gardées avec un `eslint-disable-next-line … -- raison` (regex Spotify, types voix chargés à la demande, contrôleur du réveil, regex de contrôle voulues). Test : `apps/desktop/scripts/lintBaseline.test.mjs`. Un nouveau commit ne doit pas réintroduire d’erreur.
+- **Secrets (P8)** : `redactSecrets` masque aussi les noms préfixés (`searchApiKey`, `marketDataApiKey`, `x-api-key`, préfixe ≤ 40 caractères) et les clés brutes `tvly-…` ; `redactValue` masque les champs finissant par `ApiKey` / `ClientSecret`. `read_file` sur `settings.json` ne renvoie plus aucune clé au modèle (`tools/read-file-secrets.test.ts`). `read_file` lui-même est inchangé.
+
+**Code source sur GitHub** : depuis le 2 octobre 2026, `main` porte le vrai code (un commit par version depuis 0.4.11) et chaque étiquette `v0.4.11`+ pointe sur son commit. `main` et l’arbre du store du projet (`files/source/`) restent identiques à chaque version.
+
 ## Updater / GitHub
 
-Dernière publication : **0.4.21** (`https://github.com/dylanloze91-creator/Jarvis/releases/tag/v0.4.21`) — exe, `.blockmap` et `latest.yml` publiés : l’updater intégré la propose.
+Dernière publication : **0.4.22** (`https://github.com/dylanloze91-creator/Jarvis/releases/tag/v0.4.22`) — exe, `.blockmap` et `latest.yml` publiés : l’updater intégré la propose.
 
 - `apps/desktop/electron-builder.yml` : `publish.provider: github`, owner `dylanloze91-creator`, repo `Jarvis`, `releaseType: release`, artifact `Jarvis-Setup-${version}.exe`
 - `apps/desktop/src/main/updater.ts` : contrôle 15 s après le démarrage puis toutes les 4 h ; téléchargement auto ; **installation seulement si l’utilisateur clique**
