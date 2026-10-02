@@ -44,6 +44,7 @@ import { FileConversationStore, readSettings, writeSettings } from './store.js';
 import { readMachineSnapshot } from './machineStats.js';
 import { createToolManager } from './tools/index.js';
 import { registerDeveloperIpc } from './developer/ipc.js';
+import { ChatActivity } from './developer/task/chatActivity.js';
 import { summarizeYoutubeLink } from './youtube/runtime.js';
 import { UpdateManager } from './updater.js';
 import { VoiceBridge } from './voice.js';
@@ -112,6 +113,7 @@ const tools = createToolManager({
 });
 let tray: Tray | null = null;
 
+const chatActivity = new ChatActivity();
 const session = new ChatSession({
   registry,
   tools,
@@ -245,7 +247,13 @@ function registerIpc(): void {
     if (input.source === 'voice') {
       voiceCaptureLog.append(`[commande] reçue par l'agent (${input.text.length} caractères)`);
     }
-    await session.send(event.sender, input);
+    // Jarvis Développeur (décision 5) : une tâche de code en cours cède la place pendant ce tour.
+    chatActivity.begin();
+    try {
+      await session.send(event.sender, input);
+    } finally {
+      chatActivity.end();
+    }
   });
   ipcMain.handle(IpcChannel.chatCancel, () => session.cancel());
   ipcMain.handle(IpcChannel.confirmRespond, (_event, requestId: string, approved: boolean) =>
@@ -417,6 +425,7 @@ function registerIpc(): void {
     target: () => overlay?.browserWindow.webContents ?? null,
     registry,
     userDataPath: () => app.getPath('userData'),
+    chat: chatActivity,
   });
 }
 

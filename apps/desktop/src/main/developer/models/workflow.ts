@@ -12,6 +12,7 @@ import {
   expertsInRamInstructions,
   predictModel,
   type HardwareFacts,
+  type OllamaCodeOptions,
   type ProviderRegistry,
   type ToolCallOutcome,
 } from '@jarvis/core';
@@ -146,6 +147,14 @@ export class CodeModelWorkflow {
   private async ensureStored(): Promise<NonNullable<CodeModelWorkflow['stored']>> {
     this.stored = await this.deps.store.load();
     return this.stored;
+  }
+
+  /** Réglages de requête du modèle de code choisi ; un modèle hors catalogue garde des valeurs neutres. */
+  optionsFor(modelId: string): OllamaCodeOptions {
+    const spec = codeModelById(modelId);
+    if (!spec) return { numCtx: 16_384, keepAlive: '30m' };
+    const validation = this.stored?.validation;
+    return codeModelOptions(spec, validation?.modelId === modelId && validation.expertsInRam);
   }
 
   /** Le téléchargement n'est permis que pour le modèle de la configuration validée. */

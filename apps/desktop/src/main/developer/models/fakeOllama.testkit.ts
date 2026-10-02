@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 
-interface ChatBody {
+export interface ChatBody {
   model: string;
   messages: Array<{ role: string; content: string; tool_calls?: unknown[] }>;
   tools?: unknown[];
@@ -23,6 +23,9 @@ export class FakeOllama {
     ['nomic-embed-text:latest', 0.27e9],
   ]);
   readonly behaviour = new Map<string, Behaviour>();
+  /** Modèle scripté (tests de bout en bout des tâches) : une réponse par tour, selon la conversation. */
+  readonly scripts = new Map<string, (body: ChatBody) => Reply>();
+  readonly unloaded: string[] = [];
   readonly requests: Array<{ method: string; path: string; body: unknown }> = [];
   readonly pulls: string[] = [];
   private running = new Map<string, { size: number; vram: number }>();
@@ -73,6 +76,11 @@ export class FakeOllama {
         })),
       });
     if (path === '/api/pull' && body) return this.pull(String(body.model), res);
+    if (path === '/api/generate' && body && body.keep_alive === 0) {
+      this.unloaded.push(String(body.model));
+      this.running.delete(String(body.model));
+      return json({ model: body.model, done: true, done_reason: 'unload' });
+    }
     if (path === '/api/chat' && body) return this.chat(body as unknown as ChatBody, res);
     res.writeHead(404);
     res.end('{"error":"not found"}');
@@ -119,6 +127,21 @@ export class FakeOllama {
       eval_count: isBench ? 50 : 160,
       eval_duration: isBench ? 2.5e9 : cpu ? 16e9 : 4.444e9,
     };
+    const script = this.scripts.get(body.model);
+    if (script) {
+      const reply = script(body);
+      const message =
+        'call' in reply
+          ? {
+              role: 'assistant',
+              content: '',
+              tool_calls: [
+                { function: { name: reply.call.name, arguments: reply.call.arguments } },
+              ],
+            }
+          : { role: 'assistant', content: reply.content };
+      return this.stream(res, [{ message }, final]);
+    }
     if (!isBench)
       return this.stream(res, [
         { message: { role: 'assistant', content: '1. Il fait beau.' } },
@@ -140,7 +163,8 @@ export class FakeOllama {
   }
 }
 
-type Reply = { call: { name: string; arguments: Record<string, unknown> } } | { content: string };
+export type Reply =
+  { call: { name: string; arguments: Record<string, unknown> } } | { content: string };
 
 /** Un modèle scripté qui fait chaque tâche du banc correctement, un appel d'outil par tour. */
 function goodModel(body: ChatBody): Reply {

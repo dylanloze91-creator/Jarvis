@@ -67,6 +67,20 @@ describe('canaux dev:*', () => {
         'GGML_CUDA_NO_PINNED',
       ]);
     }
+    for (const [channel, ...args] of [
+      [DeveloperChannel.taskStart, 'Ajoute un outil qui donne la version.'],
+      [DeveloperChannel.taskApprove, true],
+      [DeveloperChannel.taskRollback, 'abcdef1'],
+      [DeveloperChannel.taskDiscard],
+      [DeveloperChannel.taskKeep],
+      [DeveloperChannel.sandboxes],
+      [DeveloperChannel.sandboxesClean, ['C:\\dev\\Jarvis-taches\\x']],
+    ] as const) {
+      const state = await ipc.invoke(channel, ...args);
+      expect(state.notice).toMatch(/coupé/);
+      expect(state.codeTask).toBeNull();
+      expect(state.sandboxes).toBeNull();
+    }
     expect(registered.current()).toBeNull();
 
     settings = parseSettings({ developer: { enabled: true } });

@@ -25,6 +25,13 @@ export function createDeveloperApi(ipc: IpcRenderer): DeveloperApi {
     confirmExperts: (applied: boolean) => ipc.invoke(DeveloperChannel.experts, applied),
     pull: (modelId: string) => ipc.invoke(DeveloperChannel.pull, modelId),
     benchmark: (modelId: string) => ipc.invoke(DeveloperChannel.benchmark, modelId),
+    startTask: (request: string) => ipc.invoke(DeveloperChannel.taskStart, request),
+    approvePlan: (approved: boolean) => ipc.invoke(DeveloperChannel.taskApprove, approved),
+    rollbackTask: (checkpoint: string) => ipc.invoke(DeveloperChannel.taskRollback, checkpoint),
+    discardTask: () => ipc.invoke(DeveloperChannel.taskDiscard),
+    keepTask: () => ipc.invoke(DeveloperChannel.taskKeep),
+    listSandboxes: () => ipc.invoke(DeveloperChannel.sandboxes),
+    cleanSandboxes: (paths: string[]) => ipc.invoke(DeveloperChannel.sandboxesClean, paths),
     onEvent: (listener) => {
       const handler = (_event: IpcRendererEvent, state: DeveloperState): void => listener(state);
       ipc.on(DeveloperChannel.event, handler);

@@ -22,6 +22,8 @@ export interface OllamaApi {
     onProgress: (progress: PullProgress) => void,
     signal?: AbortSignal,
   ): Promise<void>;
+  /** Libère la carte graphique (`keep_alive: 0`) : le chat reprend la main (décision 5). */
+  unload(model: string): Promise<boolean>;
 }
 
 interface PullChunk {
@@ -75,6 +77,20 @@ export function createOllamaApi(baseUrl: string, fetchImpl: typeof fetch = fetch
         if (chunk.status === 'success') success = true;
       }
       if (!success) throw new Error('Téléchargement interrompu avant la fin.');
+    },
+    async unload(model) {
+      try {
+        const response = await fetchImpl(`${base}/api/generate`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ model, keep_alive: 0 }),
+          signal: AbortSignal.timeout(10_000),
+        });
+        await response.text().catch(() => '');
+        return response.ok;
+      } catch {
+        return false;
+      }
     },
   };
 }

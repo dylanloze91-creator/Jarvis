@@ -6,6 +6,7 @@ import {
   randomId,
   redactSecrets,
   resolveLocalOllamaBase,
+  toolView,
   validateRepo,
   type AuditLogStore,
   type ProviderRegistry,
@@ -33,6 +34,9 @@ import { ollamaModelsDir } from './models/hardwareProbe.js';
 import { createOllamaApi, type OllamaApi } from './models/ollamaApi.js';
 import { CodeModelStore } from './models/store.js';
 import { CodeModelWorkflow, type WorkflowDeps } from './models/workflow.js';
+import { ChatActivity } from './task/chatActivity.js';
+import type { AskExtra } from './task/taskRun.js';
+import { CodeTaskWorkflow } from './task/workflow.js';
 
 export interface ControllerDeps {
   getSettings(): Settings;
@@ -53,6 +57,9 @@ export interface ControllerDeps {
   env?: Record<string, string | undefined>;
   fetch?: typeof fetch;
   system?: WorkflowDeps['system'];
+  /** Tours de chat en cours (décision 5) : la tâche de code cède la place. */
+  chat?: ChatActivity;
+  chatGraceMs?: number;
 }
 
 export const DEVELOPER_DISABLED_NOTICE =
@@ -77,6 +84,7 @@ export class DeveloperController {
   private controller: AbortController | null = null;
   private readonly pending = new Map<string, (approved: boolean) => void>();
   private readonly models: CodeModelWorkflow;
+  private readonly tasks: CodeTaskWorkflow;
   private readonly env: Record<string, string | undefined>;
 
   private ollama(): OllamaApi {
@@ -159,6 +167,59 @@ export class DeveloperController {
       },
       freeBytes: (path) => (deps.freeBytes ?? measureFree)(path),
     });
+    this.tasks = new CodeTaskWorkflow(
+      {
+        runTask: (kind, title, steps, work) => this.runTask(kind, title, steps, work),
+        ask: (request, extra, signal) => this.askUser(request, signal, extra),
+        emit: () => this.emit(),
+        notice: (message) => {
+          this.notice = message;
+          return this.emit();
+        },
+        audit: (outcome, note) =>
+          void deps.auditLog.append(
+            buildAuditEntry(
+              note ? { ...outcome, content: `${note}. ${outcome.content}` } : outcome,
+            ),
+          ),
+        log: (line) => this.appendLog(line),
+        node: async () => {
+          if (!this.environment) await this.probe();
+          const { nodePath, npmCli } = this.environment ?? { nodePath: null, npmCli: null };
+          return nodePath && npmCli ? { nodePath, npmCli } : null;
+        },
+        readTools: () => this.auditedReadTools(),
+        repoRoot: async () => {
+          const saved = deps.getSettings().developer.repoPath;
+          if (!this.repo && saved) this.setRepo(await gatherRepoFacts(saved, this.run));
+          return this.repo?.ok ? this.repoPath : null;
+        },
+      },
+      {
+        registry: deps.registry,
+        run: this.run,
+        ollama: () => this.ollama(),
+        chat: deps.chat ?? new ChatActivity(),
+        modelOptions: (model) => this.models.optionsFor(model),
+        settings: () => deps.getSettings(),
+        logsDir: deps.logsDir,
+        freeBytes,
+        graceMs: deps.chatGraceMs,
+      },
+    );
+  }
+
+  /** Lecture de la copie de l'utilisateur pour le plan : outils `safe`, inscrits au journal. */
+  private auditedReadTools(): Pick<ToolManager, 'schemas' | 'execute'> {
+    const view = toolView(this.manager, ['dev_read_file', 'dev_search_code', 'dev_search_files']);
+    return {
+      schemas: () => view.schemas(),
+      execute: async (call, context, events) => {
+        const outcome = await view.execute(call, context, events);
+        void this.deps.auditLog.append(buildAuditEntry(outcome));
+        return outcome;
+      },
+    };
   }
 
   /** Pour les tests : jamais passé au chat. */
@@ -186,6 +247,7 @@ export class DeveloperController {
       confirmation: this.confirmation,
       report: this.report,
       model: this.models.state(),
+      ...this.tasks.view(),
       busy: this.controller !== null,
       notice: this.notice,
     };
@@ -382,6 +444,7 @@ export class DeveloperController {
     work: (
       step: (id: string, status: DevStepStatus, detail?: string) => void,
       signal: AbortSignal,
+      addStep: (id: string, label: string, beforeId?: string) => void,
     ) => Promise<string>,
   ): Promise<DeveloperState> {
     const controller = new AbortController();
@@ -403,8 +466,16 @@ export class DeveloperController {
       if (detail !== undefined) target.detail = detail;
       this.emit();
     };
+    const addStep = (id: string, label: string, beforeId?: string): void => {
+      if (task.steps.some((item) => item.id === id)) return;
+      const index = beforeId ? task.steps.findIndex((item) => item.id === beforeId) : -1;
+      const entry: DevStep = { id, label, status: 'pending' };
+      if (index >= 0) task.steps.splice(index, 0, entry);
+      else task.steps.push(entry);
+      this.emit();
+    };
     try {
-      task.message = await work(step, controller.signal);
+      task.message = await work(step, controller.signal, addStep);
       task.outcome = 'success';
     } catch (error) {
       const cancelled = controller.signal.aborted;
@@ -454,9 +525,14 @@ export class DeveloperController {
     return outcome;
   }
 
-  private askUser(request: ConfirmationRequest, signal?: AbortSignal): Promise<boolean> {
+  private askUser(
+    request: ConfirmationRequest,
+    signal?: AbortSignal,
+    extra?: AskExtra,
+  ): Promise<boolean> {
     const requestId = randomId();
-    const safety = classifyCommand((request.command ?? '').split('\n')[0] || request.toolName);
+    const safety =
+      extra?.safety ?? classifyCommand((request.command ?? '').split('\n')[0] || request.toolName);
     if (safety.level === 'denied') {
       this.notice = `Refusé par le tri de sécurité : ${safety.reasons[0]}`;
       return Promise.resolve(false);
@@ -468,6 +544,7 @@ export class DeveloperController {
       command: request.command,
       forced: request.forced,
       safety,
+      ...(extra ? { reason: extra.reason, diff: extra.diff, findings: extra.findings } : {}),
     };
     this.emit();
     return new Promise<boolean>((resolve) => {
@@ -523,6 +600,37 @@ export class DeveloperController {
 
   async benchmark(modelId: string): Promise<DeveloperState> {
     return this.guard() ?? this.models.benchmark(modelId);
+  }
+
+  async startTask(request: string): Promise<DeveloperState> {
+    return this.guard() ?? this.tasks.start(request);
+  }
+
+  /** Répond au plan en attente : la tâche en cours attend justement cette réponse. */
+  approvePlan(approved: boolean): DeveloperState {
+    if (!this.enabled()) return this.guard() ?? this.state();
+    return this.tasks.approve(approved);
+  }
+
+  async rollbackTask(checkpoint: string): Promise<DeveloperState> {
+    return this.guard() ?? this.tasks.rollback(checkpoint);
+  }
+
+  async discardTask(): Promise<DeveloperState> {
+    return this.guard() ?? this.tasks.discard();
+  }
+
+  keepTask(): DeveloperState {
+    return this.guard() ?? this.tasks.keep();
+  }
+
+  async listSandboxes(): Promise<DeveloperState> {
+    if (!this.enabled()) return this.guard() ?? this.state();
+    return this.tasks.listSandboxes();
+  }
+
+  async cleanSandboxes(paths: string[]): Promise<DeveloperState> {
+    return this.guard() ?? this.tasks.cleanSandboxes(paths);
   }
 
   cancel(): void {

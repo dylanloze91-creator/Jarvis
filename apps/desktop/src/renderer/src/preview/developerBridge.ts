@@ -6,6 +6,7 @@ import {
 } from '@jarvis/core';
 import type { DevStep, DeveloperApi, DeveloperState } from '../../../shared/developerIpc';
 import { previewModelState } from './developerModelSample';
+import { applyTaskScene, previewTaskState } from './developerTaskSample';
 import { previewArchitectureFacts, previewLineTotal } from './developerSample';
 
 const REPO_CHECKS: DevCheck[] = [
@@ -69,7 +70,9 @@ export function createPreviewDeveloperApi(
     busy: false,
     notice: null,
     model: previewModelState(scene),
+    ...previewTaskState(scene),
   };
+  applyTaskScene(scene, state);
   if (scene === 'developer-pull') {
     const command =
       'ollama pull qwen3.6:35b-a3b-coding\n(23 Go à télécharger dans C:\\Users\\dex\\.ollama\\models)';
@@ -213,6 +216,13 @@ export function createPreviewDeveloperApi(
     confirmExperts: async () => set({}),
     pull: async () => set({ notice: 'Aperçu : rien n’est téléchargé.' }),
     benchmark: async () => set({ notice: 'Aperçu : le banc n’est pas simulé.' }),
+    startTask: async () => set({ notice: 'Aperçu : aucune tâche n’est lancée.' }),
+    approvePlan: async () => set({ notice: 'Aperçu : rien n’est écrit.' }),
+    rollbackTask: async () => set({ notice: 'Aperçu : aucun retour arrière.' }),
+    discardTask: async () => set({ notice: 'Aperçu : rien n’est supprimé.' }),
+    keepTask: async () => set({ notice: 'Aperçu : branche gardée (simulé).' }),
+    listSandboxes: async () => set({}),
+    cleanSandboxes: async () => set({ notice: 'Aperçu : rien n’est supprimé.' }),
     onEvent: (listener) => {
       listeners.add(listener);
       return () => listeners.delete(listener);

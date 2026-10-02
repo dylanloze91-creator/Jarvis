@@ -5,11 +5,91 @@ import type {
   CodeModelSpec,
   CommandClassification,
   DevCheck,
+  DiffFile,
   HardwareFacts,
   Prediction,
+  ScanFinding,
   ServerInstructions,
+  TestRunSummary,
+  TestSuiteId,
   VariableChange,
 } from '@jarvis/core';
+
+export interface CodeTaskPlanFile {
+  path: string;
+  action: 'create' | 'edit' | 'delete';
+  reason: string;
+  /** Fichier du cœur : redemande toujours, même après la validation du plan. */
+  core: string | null;
+  problem: string | null;
+  exists: boolean;
+}
+
+export interface CodeTaskRun {
+  label: string;
+  at: number;
+  results: TestRunSummary[];
+  newFailures: string[];
+  fixed: string[];
+  ok: boolean;
+}
+
+/** Tâche de code (0.4.25) : plan → validation → modification → tests → corrections → rapport. */
+export interface CodeTaskState {
+  id: string;
+  request: string;
+  model: string;
+  status:
+    | 'planning'
+    | 'awaiting-approval'
+    | 'running'
+    | 'paused'
+    | 'finished'
+    | 'failed'
+    | 'refused'
+    | 'cancelled';
+  branch: string;
+  worktreePath: string;
+  baseCommit: string | null;
+  plan: {
+    summary: string;
+    criteria: string[];
+    files: CodeTaskPlanFile[];
+    tests: TestSuiteId[];
+    testCommands: string[];
+    maxTestSeries: number;
+    /** Fichiers du plan modifiés mais non enregistrés dans la copie de l'utilisateur. */
+    dirtyFiles: string[];
+    branchCommand: string;
+    installCommand: string;
+  } | null;
+  approvedAt: number | null;
+  checkpoints: Array<{ sha: string; label: string; at: number }>;
+  diff: DiffFile[];
+  baseline: TestRunSummary[] | null;
+  runs: CodeTaskRun[];
+  attempts: number;
+  maxAttempts: number;
+  testSeriesUsed: number;
+  findings: ScanFinding[];
+  pauses: Array<{ startedAt: number; endedAt: number | null }>;
+  /** Actions faites sans clic parce que le plan validé les couvrait (décision 9). */
+  planApproved: Array<{ tool: string; target: string; at: number }>;
+  asked: number;
+  report: { markdown: string; verdict: 'success' | 'failed' | 'stopped' } | null;
+  closed: null | 'kept' | 'discarded';
+  startedAt: number;
+  finishedAt: number | null;
+}
+
+export interface SandboxView {
+  path: string;
+  branch: string;
+  head: string | null;
+  modifiedAt: number | null;
+  missing: boolean;
+  current: boolean;
+}
 
 export interface CodeModelCandidate {
   spec: CodeModelSpec;
@@ -59,6 +139,13 @@ export const DeveloperChannel = {
   experts: 'dev:experts',
   pull: 'dev:pull',
   benchmark: 'dev:benchmark',
+  taskStart: 'dev:task-start',
+  taskApprove: 'dev:task-approve',
+  taskRollback: 'dev:task-rollback',
+  taskDiscard: 'dev:task-discard',
+  taskKeep: 'dev:task-keep',
+  sandboxes: 'dev:sandboxes',
+  sandboxesClean: 'dev:sandboxes-clean',
 } as const;
 
 export type DevStepStatus = 'pending' | 'running' | 'done' | 'failed' | 'skipped';
@@ -70,7 +157,17 @@ export interface DevStep {
   detail?: string;
 }
 
-export type DevTaskKind = 'analyze' | 'clone' | 'install' | 'calibrate' | 'pull' | 'benchmark';
+export type DevTaskKind =
+  | 'analyze'
+  | 'clone'
+  | 'install'
+  | 'calibrate'
+  | 'pull'
+  | 'benchmark'
+  | 'code'
+  | 'rollback'
+  | 'discard'
+  | 'cleanup';
 
 export interface DevTask {
   id: string;
@@ -93,6 +190,12 @@ export interface DevConfirmation {
   forced?: boolean;
   /** Tri de sécurité de la commande affichée. */
   safety: CommandClassification;
+  /** Pourquoi Jarvis redemande malgré le plan validé (décision 9). */
+  reason?: string;
+  /** Diff exact de la modification demandée. */
+  diff?: DiffFile[];
+  /** Revue du diff avant les tests : code sensible trouvé. */
+  findings?: ScanFinding[];
 }
 
 export interface DeveloperState {
@@ -108,6 +211,10 @@ export interface DeveloperState {
   /** Dernier message à montrer (erreur ou information). */
   notice: string | null;
   model: CodeModelState;
+  codeTask: CodeTaskState | null;
+  /** Copies isolées jarvis-dev/* trouvées (null : pas encore listées). */
+  sandboxes: SandboxView[] | null;
+  worktreeRoot: string;
 }
 
 export interface DeveloperApi {
@@ -128,4 +235,11 @@ export interface DeveloperApi {
   confirmExperts(applied: boolean): Promise<DeveloperState>;
   pull(modelId: string): Promise<DeveloperState>;
   benchmark(modelId: string): Promise<DeveloperState>;
+  startTask(request: string): Promise<DeveloperState>;
+  approvePlan(approved: boolean): Promise<DeveloperState>;
+  rollbackTask(checkpoint: string): Promise<DeveloperState>;
+  discardTask(): Promise<DeveloperState>;
+  keepTask(): Promise<DeveloperState>;
+  listSandboxes(): Promise<DeveloperState>;
+  cleanSandboxes(paths: string[]): Promise<DeveloperState>;
 }

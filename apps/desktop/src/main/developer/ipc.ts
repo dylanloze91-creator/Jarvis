@@ -56,6 +56,9 @@ export function registerDeveloperIpc(
     busy: false,
     notice: null,
     model: emptyCodeModelState(deps.env ?? process.env, deps.platform),
+    codeTask: null,
+    sandboxes: null,
+    worktreeRoot: '',
   });
 
   const refused = (): DeveloperState => ({ ...disabled(), notice: DEVELOPER_DISABLED_NOTICE });
@@ -84,6 +87,37 @@ export function registerDeveloperIpc(
   ipcMain.handle(
     DeveloperChannel.benchmark,
     (_event, id: unknown) => get()?.benchmark(modelId(id)) ?? refused(),
+  );
+
+  ipcMain.handle(
+    DeveloperChannel.taskStart,
+    (_event, request: unknown) =>
+      get()?.startTask(typeof request === 'string' ? request.slice(0, 2_000) : '') ?? refused(),
+  );
+  ipcMain.handle(
+    DeveloperChannel.taskApprove,
+    (_event, approved: unknown) => get()?.approvePlan(approved === true) ?? refused(),
+  );
+  ipcMain.handle(
+    DeveloperChannel.taskRollback,
+    (_event, checkpoint: unknown) =>
+      get()?.rollbackTask(typeof checkpoint === 'string' ? checkpoint.slice(0, 40) : '') ??
+      refused(),
+  );
+  ipcMain.handle(DeveloperChannel.taskDiscard, () => get()?.discardTask() ?? refused());
+  ipcMain.handle(DeveloperChannel.taskKeep, () => get()?.keepTask() ?? refused());
+  ipcMain.handle(DeveloperChannel.sandboxes, () => get()?.listSandboxes() ?? refused());
+  ipcMain.handle(
+    DeveloperChannel.sandboxesClean,
+    (_event, paths: unknown) =>
+      get()?.cleanSandboxes(
+        Array.isArray(paths)
+          ? paths
+              .filter((p): p is string => typeof p === 'string')
+              .map(text)
+              .slice(0, 50)
+          : [],
+      ) ?? refused(),
   );
 
   ipcMain.handle(DeveloperChannel.status, () => get()?.state() ?? disabled());
