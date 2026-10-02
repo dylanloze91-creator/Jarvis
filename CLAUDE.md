@@ -1,4 +1,4 @@
-# Jarvis 0.4.22 — contexte pour un autre développeur
+# Jarvis 0.4.23 — contexte pour un autre développeur
 
 Ce fichier est à la **racine du code**. Les chemins ci-dessous partent de ce dossier. Ce n’est pas un résumé marketing : c’est l’état réel de cet arbre. La voix a été refaite dans cet arbre (publiée en 0.4.11, section « Voix ») : la transcription restait « Chargement… 100 % » sur l’installateur Windows. La refonte du tableau de bord est dans cet arbre : fenêtre étroite = overlay, fenêtre large = tableau de bord.
 
