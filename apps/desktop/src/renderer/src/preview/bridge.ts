@@ -55,7 +55,8 @@ export function installPreviewBridge(): void {
     };
   }
   if (search.get('scene')?.startsWith('developer')) {
-    settings = { ...settings, developer: { enabled: true, repoPath: 'C:\\dev\\Jarvis', codeModel: '', worktreeRoot: '' } };
+    const codeModel = search.get('scene')?.startsWith('developer-task') ? 'qwen3.6:35b-a3b-coding' : '';
+    settings = { ...settings, developer: { enabled: true, repoPath: 'C:\\dev\\Jarvis', codeModel, worktreeRoot: '' } };
   }
   const googleStatus = (): GoogleStatus => ({
     configured: Boolean(settings.googleClientId),

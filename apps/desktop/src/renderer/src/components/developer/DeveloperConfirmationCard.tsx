@@ -1,7 +1,9 @@
 import { Lock, ShieldAlert } from 'lucide-react';
+import { SCAN_LABELS } from '@jarvis/core';
 import { Button } from '@/components/ui/button';
 import type { DevConfirmation } from '../../../../shared/developerIpc';
 import { SafetyBadge, SafetyReasons } from './parts';
+import { DiffView } from './task/DiffView';
 
 /**
  * Carte de confirmation de Jarvis Développeur : la commande exacte, telle
@@ -36,7 +38,30 @@ export function DeveloperConfirmationCard({
             <SafetyBadge safety={confirmation.safety} />
           </div>
           <p className="mt-0.5 text-sm leading-snug text-amber-50/85">{confirmation.details}</p>
-          {confirmation.command ? (
+          {confirmation.reason ? (
+            <p className="mt-1 text-xs text-amber-200" data-confirmation-reason>
+              Pourquoi Jarvis redemande : {confirmation.reason}.
+            </p>
+          ) : null}
+          {confirmation.diff?.length ? (
+            <div className="mt-2">
+              <DiffView files={confirmation.diff} openFirst={confirmation.diff.length} />
+            </div>
+          ) : null}
+          {confirmation.findings?.length ? (
+            <ul className="mt-2 flex flex-col gap-0.5 text-[11px] text-amber-100/90">
+              {confirmation.findings.map((f) => (
+                <li key={`${f.file}:${f.line}:${f.category}`}>
+                  • {SCAN_LABELS[f.category]} —{' '}
+                  <span className="font-mono">
+                    {f.file}:{f.line}
+                  </span>{' '}
+                  <span className="font-mono text-amber-200/70">{f.text}</span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          {confirmation.command && !confirmation.diff?.length && !confirmation.findings?.length ? (
             <pre className="mt-2 overflow-x-auto rounded-lg border border-amber-400/20 bg-black/40 px-2.5 py-2 font-mono text-[11px] leading-relaxed whitespace-pre-wrap text-amber-100/90">
               {confirmation.command}
             </pre>

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Bot, Code2, FolderGit2, GitBranch } from 'lucide-react';
+import { Bot, Code2, FolderGit2, GitBranch, Wrench } from 'lucide-react';
 import { codeModelById, type Settings } from '@jarvis/core';
 import { Button } from '@/components/ui/button';
 import { useDeveloper } from '@/hooks/useDeveloper';
@@ -10,12 +10,14 @@ import type { RuntimeStatus } from '../../../../shared/ipc';
 import { DeveloperConfirmationCard } from './DeveloperConfirmationCard';
 import { ProjectActions, TaskSection } from './DeveloperSections';
 import { CodeModelPanel } from './model/CodeModelPanel';
+import { TaskPanel } from './task/TaskPanel';
 
-export type DeveloperTab = 'project' | 'model';
+export type DeveloperTab = 'project' | 'model' | 'task';
 
 const TABS: Array<{ id: DeveloperTab; label: string; icon: typeof Bot }> = [
   { id: 'project', label: 'Projet', icon: FolderGit2 },
   { id: 'model', label: 'Modèle de code', icon: Bot },
+  { id: 'task', label: 'Tâche', icon: Wrench },
 ];
 
 /** Panneau « Jarvis Développeur » du tableau de bord : projet et modèle de code, étapes, rapport. */
@@ -69,7 +71,7 @@ export function DeveloperPanel({
           </span>
         ) : null}
         <span className="text-xs text-slate-500">
-          Lecture seule · modèle de code :{' '}
+          Ta copie n’est jamais modifiée · modèle de code :{' '}
           {codeModel ? (codeModelById(codeModel)?.label ?? codeModel) : 'pas encore choisi'}
         </span>
       </header>
@@ -95,8 +97,23 @@ export function DeveloperPanel({
         ))}
       </div>
 
+      {tab === 'task' && state.confirmation ? (
+        <DeveloperConfirmationCard
+          confirmation={state.confirmation}
+          onRespond={(id, ok) => act((api) => api.respondConfirmation(id, ok))}
+        />
+      ) : null}
+
       {tab === 'project' ? (
         <ProjectActions state={state} act={act} onOpenSettings={onOpenSettings} />
+      ) : tab === 'task' ? (
+        <TaskPanel
+          state={state}
+          act={act}
+          codeModel={codeModel}
+          onOpenModelTab={() => setTab('model')}
+          timeline={<TaskSection state={state} act={act} showHelp={false} />}
+        />
       ) : (
         <CodeModelPanel
           state={state}
@@ -107,14 +124,14 @@ export function DeveloperPanel({
         />
       )}
 
-      {state.confirmation ? (
+      {tab !== 'task' && state.confirmation ? (
         <DeveloperConfirmationCard
           confirmation={state.confirmation}
           onRespond={(id, ok) => act((api) => api.respondConfirmation(id, ok))}
         />
       ) : null}
 
-      <TaskSection state={state} act={act} showHelp={tab === 'project'} />
+      {tab !== 'task' ? <TaskSection state={state} act={act} showHelp={tab === 'project'} /> : null}
 
       {tab === 'project' && state.report ? (
         <article className="markdown developer-report rounded-xl border border-white/8 bg-black/20 px-4 py-3 text-[13px] leading-relaxed text-slate-200">

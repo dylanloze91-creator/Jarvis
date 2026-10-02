@@ -25,6 +25,7 @@ interface Props {
 export function DeveloperSettingsSection({ developer, onSave }: Props) {
   const { state, error, act } = useDeveloper(developer.enabled);
   const [path, setPath] = useState(developer.repoPath);
+  const [worktreeRoot, setWorktreeRoot] = useState(developer.worktreeRoot);
   useEffect(() => {
     if (state && !path) setPath(state.repoPath || state.suggestedPath);
   }, [state, path]);
@@ -125,6 +126,25 @@ export function DeveloperSettingsSection({ developer, onSave }: Props) {
               Matériel, estimations, téléchargement confirmé et banc : tableau de bord → Développeur
               → onglet « Modèle de code ».
             </p>
+          </div>
+
+          <div className="flex flex-col gap-2" data-developer-worktrees>
+            <SectionTitle>Copies isolées des tâches</SectionTitle>
+            <Field
+              label="Dossier"
+              hint="Une copie par tâche (environ 1,1 Go avec ses dépendances), sur une branche jarvis-dev/*. Ta copie de travail n’est jamais modifiée."
+            >
+              <Input
+                value={worktreeRoot}
+                placeholder={state.worktreeRoot}
+                onChange={(event) => setWorktreeRoot(event.target.value)}
+                onBlur={() => {
+                  if (worktreeRoot.trim() !== developer.worktreeRoot)
+                    onSave({ ...developer, worktreeRoot: worktreeRoot.trim() });
+                }}
+                spellCheck={false}
+              />
+            </Field>
           </div>
 
           {state.confirmation ? (
