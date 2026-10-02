@@ -149,7 +149,7 @@ export function buildArchitectureReport(facts: ArchitectureFacts, now: Date): st
     `- ${facts.packages.length} paquets npm : ${facts.packages.map((pkg) => `\`${pkg.name}\``).join(', ') || 'aucun'}.`,
   );
   out.push(
-    `- ${facts.toolDefinitions.reduce((sum, item) => sum + item.count, 0)} déclarations d’outils (\`defineTool\`) dans ${facts.toolDefinitions.length} fichiers.`,
+    `- ${facts.toolDefinitions.reduce((sum, item) => sum + item.count, 0)} déclarations d’outils du chat (\`defineTool\`) dans ${facts.toolDefinitions.length} fichiers.`,
   );
   if (facts.dirtyFiles > 0)
     out.push(`- ${facts.dirtyFiles} fichier(s) modifié(s) et pas encore enregistrés dans git.`);

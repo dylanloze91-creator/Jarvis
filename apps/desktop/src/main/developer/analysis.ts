@@ -54,8 +54,15 @@ export async function analyzeArchitecture(deps: AnalysisDeps): Promise<string> {
     if (outcome.status !== 'ok') throw new AnalysisError(outcome.content);
     return outcome.data as T;
   };
+  // Expressions ancrées en début de ligne : les chaînes de recherche citées dans le code (ce fichier compris) ne comptent pas.
   const find = async (pattern: string): Promise<Match[]> =>
-    (await data<{ matches: Match[] }>('dev_search_code', { pattern, maxResults: 2_000 })).matches;
+    (
+      await data<{ matches: Match[] }>('dev_search_code', {
+        pattern,
+        regex: true,
+        maxResults: 2_000,
+      })
+    ).matches;
   const first = (matches: Match[]): CodeLocation | null => {
     const hit = matches.find((match) => !/\.test\.[a-z]+$/.test(match.file));
     return hit ? { file: hit.file, line: hit.line } : null;
@@ -108,11 +115,13 @@ export async function analyzeArchitecture(deps: AnalysisDeps): Promise<string> {
     return { value, detail: value.map((pkg) => pkg.name).join(', ') };
   });
   const tools = await run('tools', async () => {
-    const registry = first(await find('export function createToolManager'));
+    const registry = first(await find('^export function createToolManager\\('));
+    const toolsDir = registry
+      ? registry.file.slice(0, registry.file.lastIndexOf('/') + 1)
+      : 'apps/desktop/src/main/tools/';
     const perFile = new Map<string, number>();
-    for (const match of await find('defineTool(')) {
-      if (/\.test\.[a-z]+$/.test(match.file) || /export function defineTool/.test(match.text))
-        continue;
+    for (const match of await find('defineTool\\(\\{')) {
+      if (/\.test\.[a-z]+$/.test(match.file) || !match.file.startsWith(toolsDir)) continue;
       perFile.set(match.file, (perFile.get(match.file) ?? 0) + 1);
     }
     const value = { registry, definitions: [...perFile].map(([file, count]) => ({ file, count })) };
@@ -128,9 +137,9 @@ export async function analyzeArchitecture(deps: AnalysisDeps): Promise<string> {
       channels = (text.match(/^\s+[A-Za-z0-9]+: '[a-z0-9-]+:[a-z0-9-]+',?\s*$/gm) ?? []).length;
     }
     const value = {
-      agent: first(await find('export class Agent')),
-      settings: first(await find('export const settingsSchema')),
-      toolManager: first(await find('export class ToolManager')),
+      agent: first(await find('^export class Agent ')),
+      settings: first(await find('^export const settingsSchema ')),
+      toolManager: first(await find('^export class ToolManager ')),
       confirmationCard: files.find((file) => file.endsWith('/ConfirmationCard.tsx')) ?? null,
       ipc: ipcFile ? { file: ipcFile, channels } : null,
     };
