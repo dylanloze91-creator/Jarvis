@@ -92,7 +92,16 @@ describe('parseSettings', () => {
 
 describe('réglages Jarvis Développeur', () => {
   it('coupé par défaut, sans copie de travail choisie', () => {
-    expect(parseSettings({}).developer).toEqual({ enabled: false, repoPath: '' });
+    expect(parseSettings({}).developer).toEqual({ enabled: false, repoPath: '', codeModel: '' });
+  });
+
+  it('un bloc developer de 0.4.23 (sans modèle de code) se lit sans rien perdre', () => {
+    const parsed = parseSettings({ developer: { enabled: true, repoPath: 'C:\\dev\\Jarvis' } });
+    expect(parsed.developer).toEqual({
+      enabled: true,
+      repoPath: 'C:\\dev\\Jarvis',
+      codeModel: '',
+    });
   });
 
   it('un settings.json de 0.4.22 (sans bloc developer) se lit sans rien perdre', () => {
@@ -121,7 +130,11 @@ describe('réglages Jarvis Développeur', () => {
       { ...previous, developer: { enabled: 'oui', repoPath: 42 } },
       previous,
     );
-    expect(parsed.developer).toEqual({ enabled: true, repoPath: 'C:\\dev\\Jarvis' });
+    expect(parsed.developer).toEqual({
+      enabled: true,
+      repoPath: 'C:\\dev\\Jarvis',
+      codeModel: '',
+    });
     expect(parsed.apiKey).toBe('sk-garde');
   });
 });

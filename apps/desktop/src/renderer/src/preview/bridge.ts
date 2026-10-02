@@ -55,7 +55,7 @@ export function installPreviewBridge(): void {
     };
   }
   if (search.get('scene')?.startsWith('developer')) {
-    settings = { ...settings, developer: { enabled: true, repoPath: 'C:\\dev\\Jarvis' } };
+    settings = { ...settings, developer: { enabled: true, repoPath: 'C:\\dev\\Jarvis', codeModel: '' } };
   }
   const googleStatus = (): GoogleStatus => ({
     configured: Boolean(settings.googleClientId),

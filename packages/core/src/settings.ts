@@ -81,6 +81,8 @@ export const developerSettingsSchema = z.object({
   enabled: z.boolean().default(false),
   /** Copie de travail Git de Jarvis (vide = pas encore choisie ; `C:\dev\Jarvis` est proposé). */
   repoPath: z.string().max(400).default(''),
+  /** Modèle de code choisi après le banc (vide = pas encore choisi). Jamais utilisé par le chat. */
+  codeModel: z.string().max(200).default(''),
 });
 
 export type DeveloperSettings = z.infer<typeof developerSettingsSchema>;
