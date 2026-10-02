@@ -1,0 +1,56 @@
+{
+  "calls": [
+    {
+      "url": "http://192.168.1.20:11434/api/chat",
+      "method": "POST",
+      "headers": {
+        "content-type": "application/json"
+      },
+      "body": {
+        "model": "qwen3.5:4b",
+        "stream": true,
+        "messages": [
+          {
+            "role": "system",
+            "content": "Tu es Jarvis."
+          },
+          {
+            "role": "user",
+            "content": "Quelle heure ?"
+          },
+          {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+              {
+                "function": {
+                  "name": "get_system_info",
+                  "arguments": {}
+                }
+              }
+            ]
+          },
+          {
+            "role": "tool",
+            "content": "14:02"
+          }
+        ],
+        "options": {
+          "temperature": 0.2,
+          "num_ctx": 8192,
+          "num_predict": 256
+        }
+      }
+    }
+  ],
+  "events": [
+    {
+      "type": "text",
+      "delta": "Il est 14 h 02."
+    },
+    {
+      "type": "done",
+      "finishReason": "length"
+    }
+  ]
+}

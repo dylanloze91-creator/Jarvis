@@ -1,0 +1,70 @@
+{
+  "calls": [
+    {
+      "url": "http://127.0.0.1:11434/api/chat",
+      "method": "POST",
+      "headers": {
+        "content-type": "application/json"
+      },
+      "body": {
+        "model": "qwen2.5:3b",
+        "stream": true,
+        "messages": [
+          {
+            "role": "system",
+            "content": "Tu es Jarvis."
+          },
+          {
+            "role": "user",
+            "content": "Bonjour"
+          }
+        ],
+        "options": {
+          "temperature": 0.4,
+          "num_ctx": 8192
+        },
+        "tools": [
+          {
+            "type": "function",
+            "function": {
+              "name": "get_system_info",
+              "description": "Infos système.",
+              "parameters": {
+                "type": "object",
+                "properties": {}
+              }
+            }
+          },
+          {
+            "type": "function",
+            "function": {
+              "name": "read_file",
+              "description": "Lit un fichier.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "path": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "path"
+                ]
+              }
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "events": [
+    {
+      "type": "text",
+      "delta": "Bonjour ! Comment puis-je t’aider aujourd’hui ?"
+    },
+    {
+      "type": "done",
+      "finishReason": "stop"
+    }
+  ]
+}
