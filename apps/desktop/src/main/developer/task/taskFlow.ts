@@ -290,13 +290,15 @@ export class TaskRun extends TaskRunBase {
   private finish(step: StepFn, verdict: 'success' | 'failed' | 'stopped', reason?: string): string {
     this.state.finishedAt = Date.now();
     if (this.state.status !== 'cancelled' && this.state.status !== 'refused')
-      this.state.status = verdict === 'stopped' ? 'failed' : 'finished';
+      this.state.status = verdict === 'success' ? 'finished' : 'failed';
     this.state.report = { markdown: buildTaskReport(this.state, verdict, reason), verdict };
     step('report', 'done');
     this.host.emit();
-    return verdict === 'success'
-      ? 'Tâche réussie : vois le rapport. Ta copie de travail n’a pas été touchée.'
-      : `Tâche terminée sans succès${reason ? ` : ${reason}` : ''}.`;
+    if (verdict === 'success')
+      return 'Tâche réussie : vois le rapport. Ta copie de travail n’a pas été touchée.';
+    if (verdict === 'failed')
+      return `Des tests échouent encore après ${this.state.attempts} correction(s) : vois le rapport. Ta copie de travail n’a pas été touchée.`;
+    return `Tâche arrêtée${reason ? ` : ${reason}` : ''}.`;
   }
 
   /** Déroulé complet. Toute écriture a lieu dans la copie isolée ; la copie de l'utilisateur n'est jamais modifiée. */
@@ -311,6 +313,7 @@ export class TaskRun extends TaskRunBase {
         : error instanceof Error
           ? error.message
           : String(error);
+      if (this.state.report) throw error;
       if (this.state.approvedAt !== null || cancelled) this.finish(step, 'stopped', reason);
       else this.state.status = 'failed';
       throw error;
@@ -397,7 +400,7 @@ export class TaskRun extends TaskRunBase {
     await this.checkpoint('Modification (plan validé)', signal);
     if (state.diff.length === 0) {
       step('edit', 'failed', 'aucune modification');
-      return this.finish(step, 'stopped', 'Le modèle n’a rien modifié.');
+      throw new TaskStopped(this.finish(step, 'stopped', 'Le modèle n’a rien modifié.'));
     }
     step('edit', 'done', `${state.diff.length} fichier(s) modifié(s)`);
 
@@ -431,6 +434,8 @@ export class TaskRun extends TaskRunBase {
       await this.scanGate(step, signal);
       run = await this.testRun(`Correction ${n}`, `retest-${n}`, step, signal, pause);
     }
-    return this.finish(step, run.ok ? 'success' : 'failed');
+    const message = this.finish(step, run.ok ? 'success' : 'failed');
+    if (!run.ok) throw new TaskStopped(message);
+    return message;
   }
 }

@@ -67,6 +67,8 @@ process.exit(1);
 export interface ScriptOptions {
   /** Appelé au deuxième tour de la modification : le test y simule un tour de chat. */
   onEditRound?: (round: number) => void;
+  /** Le modèle ne corrige jamais : la tâche doit s'arrêter après trois essais. */
+  neverFix?: boolean;
 }
 
 /** Modèle de code scripté : lit, planifie, crée un fichier avec une erreur de type, puis la corrige. */
@@ -121,6 +123,7 @@ export function taskScript(options: ScriptOptions = {}) {
       return next ? { call: next } : { content: 'Modifications faites.' };
     }
     if (system.includes(FIX_MARKER)) {
+      if (options.neverFix) return { content: 'Je ne vois pas le problème.' };
       const steps = [
         { name: 'dev_read_file', arguments: { path: 'src/version.ts' } },
         {

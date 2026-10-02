@@ -236,6 +236,25 @@ describe('tâche de code : plan → validation → modification → tests → co
     expect(success.ran.some((r) => /\b(push|publish)\b/.test(r.display))).toBe(false);
   });
 
+  it('un modèle qui ne corrige pas : trois essais, cinq séries de tests au plus, verdict « échec » honnête', async () => {
+    fake.scripts.set(MODEL, taskScript({ neverFix: true }));
+    const h = setup(expected);
+    const state = await h.instance.startTask(
+      'Ajoute une constante VERSION, essai sans correction.',
+    );
+    const task = state.codeTask!;
+    expect(state.task?.outcome).toBe('failed');
+    expect(state.task?.message).toMatch(/échouent encore après 3 correction/);
+    expect(task.status).toBe('failed');
+    expect(task.report?.verdict).toBe('failed');
+    expect(task.attempts).toBe(3);
+    expect(task.testSeriesUsed).toBe(5);
+    expect(h.ran.filter((r) => r.display === 'npm run typecheck')).toHaveLength(5);
+    expect(task.report?.markdown).toContain('Échecs restants');
+    const cleaned = await h.instance.discardTask();
+    expect(cleaned.codeTask?.closed).toBe('discarded');
+  }, 120_000);
+
   it('retour arrière puis « jeter » : toujours confirmés ; la branche et le dossier disparaissent', async () => {
     const { instance } = success;
     const before = instance.state().codeTask!;
