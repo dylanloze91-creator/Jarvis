@@ -92,7 +92,12 @@ describe('parseSettings', () => {
 
 describe('réglages Jarvis Développeur', () => {
   it('coupé par défaut, sans copie de travail choisie', () => {
-    expect(parseSettings({}).developer).toEqual({ enabled: false, repoPath: '', codeModel: '' });
+    expect(parseSettings({}).developer).toEqual({
+      enabled: false,
+      repoPath: '',
+      codeModel: '',
+      worktreeRoot: '',
+    });
   });
 
   it('un bloc developer de 0.4.23 (sans modèle de code) se lit sans rien perdre', () => {
@@ -101,6 +106,7 @@ describe('réglages Jarvis Développeur', () => {
       enabled: true,
       repoPath: 'C:\\dev\\Jarvis',
       codeModel: '',
+      worktreeRoot: '',
     });
   });
 
@@ -134,6 +140,7 @@ describe('réglages Jarvis Développeur', () => {
       enabled: true,
       repoPath: 'C:\\dev\\Jarvis',
       codeModel: '',
+      worktreeRoot: '',
     });
     expect(parsed.apiKey).toBe('sk-garde');
   });
