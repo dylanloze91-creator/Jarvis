@@ -20,6 +20,12 @@ export type SpotifyConnectResult = { ok: true } | { ok: false; error: string };
  */
 export class SpotifyBridge {
   private cached: { clientId: string; provider: SpotifyProvider } | null = null;
+  private linked = false;
+
+  /** Vrai après une connexion réussie. Le profil modeste s’en sert pour ne rien proposer avant. */
+  connectedNow(): boolean {
+    return this.linked;
+  }
 
   constructor(private readonly getSettings: () => Settings) {}
 
@@ -36,8 +42,13 @@ export class SpotifyBridge {
 
   async status(clientIdOverride?: string): Promise<SpotifyStatus> {
     const clientId = this.resolveClientId(clientIdOverride);
-    if (!clientId) return { configured: false, connected: false };
-    return { configured: true, connected: await this.providerFor(clientId).isConnected() };
+    if (!clientId) {
+      if (!clientIdOverride) this.linked = false;
+      return { configured: false, connected: false };
+    }
+    const connected = await this.providerFor(clientId).isConnected();
+    if (!clientIdOverride) this.linked = connected;
+    return { configured: true, connected };
   }
 
   async connect(clientIdOverride?: string): Promise<SpotifyConnectResult> {
@@ -50,6 +61,7 @@ export class SpotifyBridge {
     }
     try {
       await this.providerFor(clientId).connect();
+      this.linked = true;
       return { ok: true };
     } catch (error) {
       return { ok: false, error: describeError(error) };
@@ -60,6 +72,7 @@ export class SpotifyBridge {
     const clientId = this.resolveClientId(clientIdOverride);
     if (!clientId) return;
     await this.providerFor(clientId).disconnect();
+    if (!clientIdOverride) this.linked = false;
   }
 
   private resolveClientId(clientIdOverride?: string): string {

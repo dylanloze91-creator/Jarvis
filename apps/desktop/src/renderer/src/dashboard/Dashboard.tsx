@@ -151,6 +151,7 @@ export interface DashboardProps {
   onSaved: (payload: { settings: Settings; status: RuntimeStatus }) => void;
   onOpenConversation: (conversation: Conversation) => void;
   onNew: () => void;
+  onAnalyzeMachine?: () => void;
 }
 
 export function Dashboard({
@@ -166,6 +167,7 @@ export function Dashboard({
   onSaved,
   onOpenConversation,
   onNew,
+  onAnalyzeMachine,
 }: DashboardProps) {
   const machine = useMachineSnapshot();
   const [profileInitial, setProfileInitial] = useState<string | null>(null);
@@ -331,7 +333,7 @@ export function Dashboard({
             </section>
 
             <div className="fn-row">
-              {FUNCTIONS.map((card) => (
+              {FUNCTIONS.filter((card) => card.id !== 'video' || settings?.videoAnalysis !== false).map((card) => (
                 <button
                   key={card.id}
                   type="button"
@@ -394,7 +396,13 @@ export function Dashboard({
               ) : bootError ? (
                 <div className="error-card m-4">Impossible de charger les réglages : {bootError}</div>
               ) : settings && status ? (
-                <SettingsPanel settings={settings} status={status} onSaved={onSaved} requestedTab={settingsTab} />
+                <SettingsPanel
+                  settings={settings}
+                  status={status}
+                  onSaved={onSaved}
+                  requestedTab={settingsTab}
+                  onAnalyzeMachine={onAnalyzeMachine}
+                />
               ) : (
                 <div className="error-card m-4">Réglages indisponibles pour le moment.</div>
               )

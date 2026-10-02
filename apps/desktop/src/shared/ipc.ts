@@ -117,7 +117,46 @@ export const IpcChannel = {
   updateCheck: 'update:check',
   updateInstall: 'update:install',
   updateEvent: 'update:event',
+  machineStatus: 'machine:status',
+  machineAnalyze: 'machine:analyze',
+  machinePull: 'machine:pull',
+  machinePullCancel: 'machine:pull-cancel',
+  machinePullEvent: 'machine:pull-event',
+  machineApply: 'machine:apply',
 } as const;
+
+export interface MachineSetupStatus {
+  /** Vrai seulement au premier lancement, tant que le profil n’est pas enregistré. */
+  setupRequired: boolean;
+  /** Faux si un fichier de réglages existait déjà : aucun téléchargement. */
+  downloadAllowed: boolean;
+}
+
+export interface MachineAnalysis {
+  detected: string;
+  chosen: string;
+  profile: 'modest' | 'standard' | 'full';
+  chatModel: string;
+  cpuOnly: boolean;
+  measureFailed: boolean;
+  download: {
+    allowed: boolean;
+    alreadyInstalled: boolean;
+    ollamaPresent: boolean;
+  };
+}
+
+export interface MachinePullProgress {
+  status: string;
+  completed: number;
+  total: number;
+}
+
+export interface MachinePullResult {
+  ok: boolean;
+  cancelled?: boolean;
+  error?: string;
+}
 
 export interface SendChatInput {
   conversationId: string | null;
@@ -454,4 +493,13 @@ export interface JarvisApi {
   };
   /** Jarvis Développeur (voir `developerIpc.ts`) : refusé tant que le mode est coupé. */
   developer: DeveloperApi;
+  /** Premier lancement : mesure de la machine, puis profil. Aucun téléchargement si des réglages existent déjà. */
+  machine: {
+    status(): Promise<MachineSetupStatus>;
+    analyze(): Promise<MachineAnalysis>;
+    pull(): Promise<MachinePullResult>;
+    cancelPull(): Promise<void>;
+    apply(): Promise<{ settings: Settings; status: RuntimeStatus }>;
+    onPull(listener: (progress: MachinePullProgress) => void): () => void;
+  };
 }

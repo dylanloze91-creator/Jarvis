@@ -40,9 +40,11 @@ interface SettingsPanelProps {
   onSaved: (payload: { settings: Settings; status: RuntimeStatus }) => void;
   /** Bascule sur un onglet alors que le panneau est déjà ouvert (`at` change à chaque demande). */
   requestedTab?: { tab: SettingsTabId; at: number };
+  /** Relance la mesure et applique le profil. Ne part pas tout seul si des réglages existent. */
+  onAnalyzeMachine?: () => void;
 }
 
-export function SettingsPanel({ settings, status, onSaved, requestedTab }: SettingsPanelProps) {
+export function SettingsPanel({ settings, status, onSaved, requestedTab, onAnalyzeMachine }: SettingsPanelProps) {
   const [draft, setDraft] = useState<Settings>(settings);
   const [providers, setProviders] = useState<ProviderDescriptor[]>([]);
   const [searchProviders, setSearchProviders] = useState<SearchProviderDescriptor[]>([]);
@@ -383,6 +385,27 @@ export function SettingsPanel({ settings, status, onSaved, requestedTab }: Setti
           />
       </TabPanel>
       <TabPanel id="general" active={tab}>
+          <div className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-3">
+            <p className="text-[11px] font-medium tracking-wide text-slate-400 uppercase">Cette machine</p>
+            {settings.machine ? (
+              <>
+                <p className="mt-2 text-xs leading-relaxed text-slate-200">{settings.machine.detected}</p>
+                <p className="mt-1 text-xs leading-relaxed text-cyan-100/90">{settings.machine.chosen}</p>
+              </>
+            ) : (
+              <p className="mt-2 text-xs leading-relaxed text-slate-400">
+                Aucun profil enregistré : Jarvis garde tes réglages actuels.
+              </p>
+            )}
+            <Button className="mt-3" variant="subtle" size="sm" onClick={() => onAnalyzeMachine?.()}>
+              Analyser à nouveau
+            </Button>
+            <p className="mt-2 text-[11px] leading-snug text-slate-500">
+              Au démarrage, Jarvis ne mesure la machine que s’il n’y a pas encore de réglages. Ce bouton
+              relance la mesure et applique le profil : modèle, voix et mode développeur peuvent changer.
+            </p>
+          </div>
+
           <Field label="Raccourci global" hint="Exemples : Control+Space, Alt+J, Super+K.">
             <Input value={draft.hotkey} onChange={(event) => patch({ hotkey: event.target.value })} />
           </Field>

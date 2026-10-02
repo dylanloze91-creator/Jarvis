@@ -10,6 +10,7 @@ import {
   withSiteBlockPrompt,
   withKnowledgePrompt,
   withVoiceOriginNotice,
+  chatProviderConfig,
   type AuditLogStore,
   type ChatMessage,
   type ConfirmationRequest,
@@ -49,7 +50,7 @@ export class ChatSession {
 
   status(): RuntimeStatus {
     const settings = this.deps.getSettings();
-    const { provider, fellBack } = this.deps.registry.createOrFallback(settings);
+    const { provider, fellBack } = this.deps.registry.createOrFallback(chatProviderConfig(settings));
     return {
       providerId: provider.id,
       providerLabel: provider.label,
@@ -94,7 +95,7 @@ export class ChatSession {
 
     emit({ type: 'started', conversationId: conversation.id, message: userMessage });
 
-    const { provider } = this.deps.registry.createOrFallback(settings);
+    const { provider } = this.deps.registry.createOrFallback(chatProviderConfig(settings));
     const agent = new Agent(provider, this.deps.tools, {
       // La note d'origine vocale ne vit que dans ce prompt système, transmis
       // au modèle pour ce tour : elle n'est jamais écrite dans `userMessage`

@@ -1,5 +1,21 @@
 export * from './types.js';
 export * from './settings.js';
+export {
+  applyMachineProfile,
+  assertChatModelDownload,
+  chatOllamaOptions,
+  chatProviderConfig,
+  modelIsInstalled,
+  modestChatModel,
+  offeredCodeModels,
+  planStartup,
+  selectMachineProfile,
+  shouldDownloadChatModel,
+  videoAnalysisEnabled,
+  type MachineMeasure,
+  type MachineProfileId,
+  type ProfileDecision,
+} from './machine/profile.js';
 export * from './personalization/index.js';
 export * from './knowledge/index.js';
 

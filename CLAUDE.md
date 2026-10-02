@@ -1,8 +1,8 @@
-# Jarvis 0.4.25 — contexte pour un autre développeur
+# Jarvis 0.4.26 — contexte pour un autre développeur
 
 Ce fichier est à la **racine du code**. Les chemins ci-dessous partent de ce dossier. Ce n’est pas un résumé marketing : c’est l’état réel de cet arbre. La voix a été refaite dans cet arbre (publiée en 0.4.11, section « Voix ») : la transcription restait « Chargement… 100 % » sur l’installateur Windows. La refonte du tableau de bord est dans cet arbre : fenêtre étroite = overlay, fenêtre large = tableau de bord.
 
-**Version confirmée :** `apps/desktop/package.json` → `"version": "0.4.25"`. Le `package.json` racine est encore à `0.3.0` : c’est le monorepo, pas l’appli. La version qui compte pour l’exe, l’updater et GitHub est celle de `@jarvis/desktop`. La voix corrigée en 0.4.11 (installateur Windows) est inchangée. Le modèle par défaut reste `qwen2.5:3b`. `qwen3.5:4b` est le modèle recommandé documenté ; le repli est réglable (`fallbackModel`, défaut `qwen2.5:3b`).
+**Version confirmée :** `apps/desktop/package.json` → `"version": "0.4.26"`. Le `package.json` racine est encore à `0.3.0` : c’est le monorepo, pas l’appli. La version qui compte pour l’exe, l’updater et GitHub est celle de `@jarvis/desktop`. La voix corrigée en 0.4.11 (installateur Windows) est inchangée. Le modèle par défaut reste `qwen2.5:3b`. `qwen3.5:4b` est le modèle recommandé documenté ; le repli est réglable (`fallbackModel`, défaut `qwen2.5:3b`).
 
 Lis ce fichier avant de modifier le code.
 
@@ -48,7 +48,7 @@ Scripts utiles (racine) :
 
 Le script `setup:voice` remplit `apps/desktop/voice-assets/` (runtime ONNX, Whisper, openWakeWord, modèle Vosk français ; non commité, voir `.gitignore`). Premier `dev` / `build` : besoin de réseau.
 
-L’installateur publié est `Jarvis-Setup-0.4.25.exe` (release GitHub `v0.4.25`).
+L’installateur publié est `Jarvis-Setup-0.4.26.exe` (release GitHub `v0.4.26`).
 
 Données utilisateur (Electron `userData`, typiquement `%APPDATA%\Jarvis`) :
 
@@ -81,7 +81,7 @@ Données utilisateur (Electron `userData`, typiquement `%APPDATA%\Jarvis`) :
     src/media/                 intent Spotify
     src/update/                lecture latest.yml GitHub
     src/history/  src/audit/
-  apps/desktop/                Electron (version 0.4.25)
+  apps/desktop/                Electron (version 0.4.26)
     electron-builder.yml       NSIS, extraResources, publish GitHub
     electron.vite.config.ts    aliases onnxruntime-web (wasm, pas JSEP)
     scripts/setup-whisper.mjs
@@ -307,9 +307,18 @@ Onglet « Tâche » du panneau Développeur (`components/developer/task/`). Dér
 - **Sorties de tests** (`testOutput.ts`) : tsc, Vitest, ESLint ; comparaison avec la référence, un échec d’avant n’est jamais imputé à la tâche. Plan (`taskPlan.ts`, `taskPrompts.ts`) en JSON français ou anglais, une relance si le format est faux.
 - Tests : `task/taskWorkflow.test.ts` (dépôt d’essai, vrai git, vrai npm, modèle scripté du faux serveur : plan refusé, réussite après une correction, pause pour le chat, cartes, journal, retour arrière, « jeter », modèle qui ne corrige pas), `sandbox.test.ts`, `fileTools.test.ts`, `coreFiles.test.ts`, `diffScan.test.ts`, `testOutput.test.ts`, `taskPlan.test.ts`, `toolLoop.test.ts`. Scènes `?scene=developer-task-plan|developer-task-run|developer-task-report`.
 
+## 0.4.26 — profil matériel au premier lancement
+
+Seulement s’il n’y a pas encore de `settings.json`. Un fichier déjà présent (modèle, voix, développeur) n’est ni relu pour être réécrit, ni téléchargé. Réglages → Fenêtre et démarrage → « Analyser à nouveau » relance la mesure et, là seulement, applique le profil.
+
+- **Modeste** (environ 8 Go de RAM, ou carte ≤ 4 Go) : `qwen2.5:1.5b`, `ollamaNumCtx` 4096, réveil coupé, synthèse Windows (`browser-local`), Whisper local inchangé (pas de plus petit modèle ni de reconnaissance Windows sélectionnable), analyse vidéo coupée, développeur coupé et modèles de code non proposés. Outils du modèle : `get_current_time`, `remember_jarvis`, `search_jarvis_memory`, `open_application`, `web_search`. Spotify et Google restent branchables dans Réglages, absents du prompt tant qu’ils ne sont pas connectés.
+- **Standard** (environ 16 Go et environ 6 Go de VRAM) : `qwen2.5:3b`, voix et contexte 8192 comme en 0.4.25, développeur coupé.
+- **Complet** (32 Go ou plus et 6 Go de VRAM ou plus) : `qwen2.5:3b`, voix, contexte, catalogue et prompt identiques à 0.4.25. Le modèle de code de 23 Go n’est pas téléchargé.
+- Sans carte NVIDIA : le même choix selon la RAM, `num_gpu` 0, phrase « réglé pour le processeur ». Mesure en échec : profil modeste, phrase « La mesure de la machine a échoué. »
+
 ## Updater / GitHub
 
-Dernière publication : **0.4.25** (`https://github.com/dylanloze91-creator/Jarvis/releases/tag/v0.4.25`) — exe, `.blockmap` et `latest.yml` publiés : l’updater intégré la propose.
+Dernière publication : **0.4.26** (`https://github.com/dylanloze91-creator/Jarvis/releases/tag/v0.4.26`) — exe, `.blockmap` et `latest.yml` publiés : l’updater intégré la propose.
 
 - `apps/desktop/electron-builder.yml` : `publish.provider: github`, owner `dylanloze91-creator`, repo `Jarvis`, `releaseType: release`, artifact `Jarvis-Setup-${version}.exe`
 - `apps/desktop/src/main/updater.ts` : contrôle 15 s après le démarrage puis toutes les 4 h ; téléchargement auto ; **installation seulement si l’utilisateur clique**

@@ -40,9 +40,10 @@ import { createGoogleRuntime } from './google/runtime.js';
 import { PersonalizationStore } from './personalization.js';
 import { KnowledgeStore } from './knowledge.js';
 import { ChatSession } from './session.js';
-import { FileConversationStore, readSettings, writeSettings } from './store.js';
+import { FileConversationStore, readSettings, settingsFileExists, writeSettings } from './store.js';
 import { readMachineSnapshot } from './machineStats.js';
 import { createToolManager } from './tools/index.js';
+import { registerMachineIpc } from './machine/ipc.js';
 import { registerDeveloperIpc } from './developer/ipc.js';
 import { ChatActivity } from './developer/task/chatActivity.js';
 import { summarizeYoutubeLink } from './youtube/runtime.js';
@@ -82,6 +83,7 @@ const wakeLearning = new WakeLearningStore(() => app.getPath('userData'), (line)
 let listeningIndicator: ListeningIndicatorWindow | null = null;
 
 let settings: Settings = parseSettings({});
+let settingsFileExisted = false;
 const spotify = new SpotifyBridge(() => settings);
 const siteBlock = new SiteBlockBridge(() => settings);
 // Jetons chiffrés par safeStorage (DPAPI), consentement dans le navigateur système.
@@ -93,30 +95,53 @@ const google = createGoogleRuntime({
   log: (line) => console.info(line),
 });
 let overlay: OverlayWindow | null = null;
-const tools = createToolManager({
-  getSettings: () => settings,
-  searchRegistry,
-  marketDataRegistry,
-  spotify,
-  siteBlock,
-  personalization,
-  knowledge,
-  google,
-  summarizeYoutube: (url, onProgress, signal) =>
-    summarizeYoutubeLink({
-      url,
-      getSettings: () => settings,
-      getWebContents: () => overlay?.browserWindow.webContents ?? null,
-      onProgress,
-      signal,
-    }),
-});
+let googleStarted = false;
+
+function buildTools() {
+  return createToolManager({
+    getSettings: () => settings,
+    searchRegistry,
+    marketDataRegistry,
+    spotify,
+    siteBlock,
+    personalization,
+    knowledge,
+    google,
+    spotifyConnected: () => spotify.connectedNow(),
+    summarizeYoutube: (url, onProgress, signal) =>
+      summarizeYoutubeLink({
+        url,
+        getSettings: () => settings,
+        getWebContents: () => overlay?.browserWindow.webContents ?? null,
+        onProgress,
+        signal,
+      }),
+  });
+}
+
+let tools = buildTools();
+
+function startGoogleIfAllowed(): void {
+  if (googleStarted) return;
+  if (!settingsFileExisted) return;
+  if (settings.machine?.profile === 'modest') return;
+  googleStarted = true;
+  void google.account.init();
+}
+
+function ensureGoogleLoaded(): void {
+  if (googleStarted) return;
+  googleStarted = true;
+  void google.account.init();
+}
 let tray: Tray | null = null;
 
 const chatActivity = new ChatActivity();
 const session = new ChatSession({
   registry,
-  tools,
+  get tools() {
+    return tools;
+  },
   store,
   auditLog,
   voice,
@@ -137,10 +162,19 @@ if (!app.requestSingleInstanceLock()) {
 
 async function bootstrap(): Promise<void> {
   app.setName('Jarvis');
-  const [loaded] = await Promise.all([readSettings(), app.whenReady()]);
+  settingsFileExisted = await settingsFileExists();
+  const [loaded] = await Promise.all([
+    settingsFileExisted ? readSettings() : Promise.resolve(parseSettings({})),
+    app.whenReady(),
+  ]);
   settings = loaded;
+  tools = buildTools();
+  if (settings.machine?.profile === 'modest' && settings.spotifyClientId.trim()) {
+    void spotify.status();
+  }
   // Pas attendu : la fenêtre ne patiente pas pour lire les jetons Google.
-  void google.account.init();
+  // Profil modeste et premier lancement : Google n’est chargé qu’à l’ouverture des réglages.
+  startGoogleIfAllowed();
   registerVoiceAssetsProtocol();
   voiceCaptureLog.append(
     `[démarrage] Jarvis ${app.getVersion()} · Electron ${process.versions.electron} · Chromium ${process.versions.chrome} · ${process.platform} ${process.arch} · écoute ${settings.voice.enabled ? 'activée' : 'coupée'}`,
@@ -243,6 +277,28 @@ function createTray(): void {
 }
 
 function registerIpc(): void {
+  registerMachineIpc({
+    getSettings: () => settings,
+    setSettings: (next) => {
+      settings = next;
+    },
+    fileExistedAtStart: () => settingsFileExisted,
+    refreshTools: () => {
+      tools = buildTools();
+    },
+    onApplied: (next) => {
+      settingsFileExisted = true;
+      if (next.machine?.profile === 'modest' && next.spotifyClientId.trim()) {
+        void spotify.status();
+      }
+      if (next.machine?.profile !== 'modest') {
+        googleStarted = false;
+        startGoogleIfAllowed();
+      }
+    },
+    status: () => ({ settings, status: session.status() }),
+  });
+
   ipcMain.handle(IpcChannel.chatSend, async (event, input: SendChatInput) => {
     if (input.source === 'voice') {
       voiceCaptureLog.append(`[commande] reçue par l'agent (${input.text.length} caractères)`);
@@ -311,12 +367,14 @@ function registerIpc(): void {
     (_event, credentials?: { baseUrl?: string; token?: string }) =>
       siteBlock.connectionStatus(credentials),
   );
-  ipcMain.handle(IpcChannel.settingsGoogleStatus, (_event, draft?: GoogleConfigDraft) =>
-    google.account.status(sanitizeGoogleDraft(draft)),
-  );
-  ipcMain.handle(IpcChannel.settingsGoogleConnect, (_event, draft?: GoogleConfigDraft) =>
-    google.account.connect(sanitizeGoogleDraft(draft)),
-  );
+  ipcMain.handle(IpcChannel.settingsGoogleStatus, (_event, draft?: GoogleConfigDraft) => {
+    ensureGoogleLoaded();
+    return google.account.status(sanitizeGoogleDraft(draft));
+  });
+  ipcMain.handle(IpcChannel.settingsGoogleConnect, (_event, draft?: GoogleConfigDraft) => {
+    ensureGoogleLoaded();
+    return google.account.connect(sanitizeGoogleDraft(draft));
+  });
   ipcMain.handle(IpcChannel.settingsGoogleCancel, () => google.account.cancelConnect());
   ipcMain.handle(IpcChannel.settingsGoogleDisconnect, () => google.account.disconnect());
   ipcMain.handle(IpcChannel.settingsPersonalizationGet, () => personalization.get());

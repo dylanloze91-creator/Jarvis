@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   BENCH_TASKS,
-  CODE_MODEL_CATALOG,
+  codeModelsOffered,
   calibrate,
   checkHardware,
   codeModelById,
@@ -63,6 +63,8 @@ export interface WorkflowDeps {
   freeBytes: (path: string) => Promise<number | null>;
   benchDir: () => string;
   chatModel: () => string | null;
+  /** Absent : catalogue de code complet (0.4.25). `modest` : aucun gros modèle. */
+  machineProfile?: () => 'modest' | 'standard' | 'full' | undefined;
   now?: () => number;
   /** RAM et processeur (os par défaut ; remplaçable dans les tests). */
   system?: HardwareProbeDeps['os'];
@@ -128,7 +130,7 @@ export class CodeModelWorkflow {
       calibrationModel: facts
         ? (pickCalibrationModel(facts.ollama.models, this.deps.chatModel())?.name ?? null)
         : null,
-      candidates: CODE_MODEL_CATALOG.map((spec) => ({
+      candidates: codeModelsOffered(this.deps.machineProfile?.()).map((spec) => ({
         spec,
         installed: this.installed().some((model) => model.name === spec.id),
         auto: facts ? predictModel(spec, facts, calibration, false) : null,
@@ -159,6 +161,7 @@ export class CodeModelWorkflow {
 
   /** Le téléchargement n'est permis que pour le modèle de la configuration validée. */
   pullAllowed(modelId: string): boolean {
+    if (this.deps.machineProfile?.() === 'modest') return false;
     return this.stored?.validation?.modelId === modelId;
   }
 
@@ -239,6 +242,9 @@ export class CodeModelWorkflow {
   }
 
   async validate(modelId: string, expertsInRam: boolean): Promise<DeveloperState> {
+    if (!codeModelsOffered(this.deps.machineProfile?.()).some((spec) => spec.id === modelId)) {
+      return this.host.notice('Ce modèle de code n’est pas proposé sur ce profil de machine.');
+    }
     const stored = await this.ensureStored();
     const spec = codeModelById(modelId);
     if (!spec) return this.host.notice(`« ${modelId} » n’est pas dans le catalogue.`);
@@ -269,6 +275,11 @@ export class CodeModelWorkflow {
   }
 
   async pull(modelId: string): Promise<DeveloperState> {
+    if (this.deps.machineProfile?.() === 'modest') {
+      return this.host.notice(
+        'Profil modeste : les modèles de code ne sont pas proposés, et rien n’est téléchargé.',
+      );
+    }
     await this.ensureStored();
     if (!this.pullAllowed(modelId))
       return this.host.notice(

@@ -57,6 +57,12 @@ export function CodeModelPanel({
 
   return (
     <div className="flex flex-col gap-3" data-code-model-panel>
+      {model.candidates.length === 0 ? (
+        <p className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-xs leading-relaxed text-slate-300">
+          Profil modeste : les gros modèles de code ne sont pas proposés, et le modèle de 23 Go n’est pas
+          téléchargé. Le modèle de discussion reste celui du chat.
+        </p>
+      ) : null}
       <HardwareStep
         model={model}
         busy={busy}

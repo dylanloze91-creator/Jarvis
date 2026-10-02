@@ -147,6 +147,17 @@ export function codeModelById(id: string): CodeModelSpec | undefined {
   return CODE_MODEL_CATALOG.find((model) => model.id === id);
 }
 
+/**
+ * Profil modeste : aucun gros modèle de code n’est proposé (le 23 Go non plus).
+ * Profil absent, standard ou complet : le catalogue de 0.4.25.
+ */
+export function codeModelsOffered(
+  profile: 'modest' | 'standard' | 'full' | undefined,
+): CodeModelSpec[] {
+  if (profile === 'modest') return [];
+  return CODE_MODEL_CATALOG;
+}
+
 /** Réglages de requête envoyés à Ollama pour ce modèle (jamais des variables du serveur). */
 export function codeModelOptions(spec: CodeModelSpec, expertsInRam: boolean): OllamaCodeOptions {
   const numGpu = expertsInRam && spec.expertsInRam.supported ? 99 : spec.gpuLayers;

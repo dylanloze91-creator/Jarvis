@@ -20,6 +20,8 @@ import { cn } from '@/lib/utils';
 import { SAMPLE_CONVERSATION } from '@/preview/sampleConversation';
 import { useVoice } from '@/voice/useVoice';
 import { BrandMark, JarvisOrb } from '@/components/JarvisOrb';
+import { MachineSetupFlow } from '@/components/MachineSetupFlow';
+import { MachineSetupScreen, previewMachineDecision } from '@/components/MachineSetupScreen';
 import type { RuntimeStatus, ToolInfo } from '../../shared/ipc';
 
 type View = 'chat' | 'history' | 'settings' | 'audit';
@@ -38,6 +40,7 @@ export default function App() {
   const [tools, setTools] = useState<ToolInfo[]>([]);
   const [bootError, setBootError] = useState<string | null>(null);
   const [booting, setBooting] = useState(true);
+  const [showSetup, setShowSetup] = useState(false);
   const content = useRef<HTMLDivElement>(null);
   const footer = useRef<HTMLDivElement>(null);
   const seeded = useRef(false);
@@ -63,12 +66,17 @@ export default function App() {
 
   useEffect(() => {
     let cancelled = false;
-    void Promise.all([window.jarvis.settings.get(), window.jarvis.tools.list()])
-      .then(([payload, listed]) => {
+    void Promise.all([
+      window.jarvis.settings.get(),
+      window.jarvis.tools.list(),
+      window.jarvis.machine.status(),
+    ])
+      .then(([payload, listed, machine]) => {
         if (cancelled) return;
         setSettings(payload.settings);
         setStatus(payload.status);
         setTools(listed);
+        if (machine.setupRequired) setShowSetup(true);
       })
       .catch((error) => {
         if (cancelled) return;
@@ -163,6 +171,48 @@ export default function App() {
           : 'Assistant';
 
   const fallback = status ? isDemoRuntime(status) : false;
+  const previewKind =
+    sceneFromLocation() === 'profil-modeste'
+      ? 'modest'
+      : sceneFromLocation() === 'profil-complet'
+        ? 'full'
+        : null;
+
+  const finishSetup = (payload: { settings: Settings; status: RuntimeStatus }): void => {
+    setSettings(payload.settings);
+    setStatus(payload.status);
+    setShowSetup(false);
+    void window.jarvis.tools.list().then(setTools);
+  };
+
+  if (previewKind || showSetup) {
+    const decision = previewKind ? previewMachineDecision(previewKind) : null;
+    return (
+      <div
+        className="jarvis-shell flex h-screen flex-col overflow-hidden rounded-[22px] border border-white/[0.09] shadow-2xl"
+        data-ui-ready="yes"
+        data-machine-profile={decision?.profile ?? 'live'}
+      >
+        <div className="ambient ambient-a" />
+        <div className="ambient ambient-b" />
+        {decision ? (
+          <MachineSetupScreen
+            measuring={false}
+            detected={decision.detected}
+            chosen={decision.chosen}
+            model={decision.chatModel}
+            percent={previewKind === 'modest' ? 42 : 18}
+            downloadLabel="Téléchargement du modèle de discussion. Tu peux l’annuler."
+            cancellable
+            continueEnabled
+            note=""
+          />
+        ) : (
+          <MachineSetupFlow onDone={finishSetup} />
+        )}
+      </div>
+    );
+  }
 
   if (wide) {
     return (
@@ -182,6 +232,7 @@ export default function App() {
         }}
         onOpenConversation={openConversation}
         onNew={startNew}
+        onAnalyzeMachine={() => setShowSetup(true)}
       />
     );
   }
@@ -287,6 +338,7 @@ export default function App() {
               <SettingsPanel
                 settings={settings}
                 status={status}
+                onAnalyzeMachine={() => setShowSetup(true)}
                 onSaved={(payload) => {
                   setSettings(payload.settings);
                   setStatus(payload.status);
@@ -320,7 +372,7 @@ export default function App() {
               ['Recherche', 'Cherche les dernières infos importantes'],
               ['Mémoire', 'Rappelle-moi ce que tu sais de mes projets'],
               ['Outils', 'Quels outils peux-tu utiliser sur ce PC ?'],
-              ['Vidéo', 'Analyse cette vidéo YouTube : '],
+              ...(settings?.videoAnalysis === false ? [] : [['Vidéo', 'Analyse cette vidéo YouTube : '] as const]),
             ].map(([label, prompt]) => (
               <button
                 key={label}

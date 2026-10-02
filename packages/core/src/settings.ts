@@ -165,6 +165,30 @@ export const settingsSchema = z.object({
   toolPolicies: toolPoliciesSchema,
   voice: voiceSettingsSchema.default(voiceSettingsSchema.parse({})),
   developer: developerSettingsSchema.default(developerSettingsSchema.parse({})),
+  /**
+   * Analyse vidéo (YouTube, mémoire vidéo). Absente : comme en 0.4.25, activée.
+   * Seul `false` (profil modeste) la coupe. Pas de défaut Zod : un ancien
+   * `settings.json` relu ne gagne pas de clé.
+   */
+  videoAnalysis: z.boolean().optional(),
+  /**
+   * Fenêtre de contexte du chat Ollama. Absente : 8192, comme en 0.4.25.
+   * Le profil modeste enregistre 4096.
+   */
+  ollamaNumCtx: z.number().int().min(512).max(32768).optional(),
+  /**
+   * Profil matériel enregistré au premier lancement. Absent : installation
+   * déjà configurée, le comportement reste celui d’avant ce réglage.
+   */
+  machine: z
+    .object({
+      profile: z.enum(['modest', 'standard', 'full']),
+      cpuOnly: z.boolean(),
+      measureFailed: z.boolean(),
+      detected: z.string().max(500),
+      chosen: z.string().max(500),
+    })
+    .optional(),
 });
 
 export type Settings = z.infer<typeof settingsSchema>;

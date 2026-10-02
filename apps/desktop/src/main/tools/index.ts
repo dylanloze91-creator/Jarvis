@@ -5,6 +5,7 @@ import {
   type Settings,
 } from '@jarvis/core';
 import { getSystemInfoTool } from './system.js';
+import { getCurrentTimeTool } from './time.js';
 import { createFolderTool } from './files.js';
 import { listProcessesTool } from './processes.js';
 import { getActiveWindowTool } from './active-window.js';
@@ -54,6 +55,11 @@ export interface ToolManagerDeps {
   summarizeYoutube?: YoutubeSummarize;
   /** Google Workspace. Ses outils ne sont proposés au modèle qu'une fois un compte connecté. */
   google?: GoogleRuntime;
+  /**
+   * Profil modeste seulement : Spotify reste enregistré mais absent du prompt
+   * tant que le compte n’est pas connecté. Ignoré sur les autres profils.
+   */
+  spotifyConnected?: () => boolean;
 }
 
 /**
@@ -62,6 +68,15 @@ export interface ToolManagerDeps {
  * n'est à modifier — ni l'agent, ni l'IPC, ni l'interface.
  */
 export function createToolManager(deps: ToolManagerDeps): ToolManager {
+  if (deps.getSettings().machine?.profile === 'modest') return createModestToolManager(deps);
+  return createFullToolManager(deps);
+}
+
+/**
+ * Catalogue 0.4.25. Ne pas y ajouter d’outil : le test de référence compare
+ * cette liste, profil complet ou réglages déjà présents.
+ */
+function createFullToolManager(deps: ToolManagerDeps): ToolManager {
   return new ToolManager().registerAll([
     // Lecture — niveau safe
     getSystemInfoTool,
@@ -97,6 +112,28 @@ export function createToolManager(deps: ToolManagerDeps): ToolManager {
     takeScreenshotTool,
     runCommandTool,
     // Google Workspace — absents du catalogue tant qu'aucun compte n'est connecté
+    ...(deps.google ? createGoogleTools(deps.google) : []),
+  ]);
+}
+
+/** Liste courte : heure, notes, ouvrir une application, recherche web. */
+function createModestToolManager(deps: ToolManagerDeps): ToolManager {
+  const notes = createKnowledgeTools(deps.knowledge, deps.getSettings).filter(
+    (tool) => tool.name === 'remember_jarvis' || tool.name === 'search_jarvis_memory',
+  );
+  const spotify = createSpotifyTools(deps).map((tool) => ({
+    ...tool,
+    isAvailable: () => deps.spotifyConnected?.() ?? false,
+    unavailableMessage: () =>
+      'Spotify n’est pas connecté. Le compte se branche dans Réglages ; rien n’est chargé avant.',
+  }));
+  return new ToolManager().registerAll([
+    getCurrentTimeTool,
+    ...notes,
+    openApplicationTool,
+    createWebSearchTool(deps),
+    createCurrentInfoSearchTool(deps),
+    ...spotify,
     ...(deps.google ? createGoogleTools(deps.google) : []),
   ]);
 }

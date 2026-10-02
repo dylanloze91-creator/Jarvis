@@ -1,4 +1,4 @@
-import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { access, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { app } from 'electron';
 import {
@@ -15,6 +15,15 @@ const HISTORY_DIR = 'conversations';
 
 function userDataPath(...segments: string[]): string {
   return join(app.getPath('userData'), ...segments);
+}
+
+export async function settingsFileExists(): Promise<boolean> {
+  try {
+    await access(userDataPath(SETTINGS_FILE));
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export async function readSettings(): Promise<Settings> {

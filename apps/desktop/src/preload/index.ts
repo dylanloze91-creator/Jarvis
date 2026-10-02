@@ -4,6 +4,7 @@ import {
   type ChatEvent,
   type GoogleConfigDraft,
   type JarvisApi,
+  type MachinePullProgress,
   type SendChatInput,
   type UpdateState,
   type VoiceSpeakInput,
@@ -132,6 +133,19 @@ const api: JarvisApi = {
     },
   },
   developer: createDeveloperApi(ipcRenderer),
+  machine: {
+    status: () => ipcRenderer.invoke(IpcChannel.machineStatus),
+    analyze: () => ipcRenderer.invoke(IpcChannel.machineAnalyze),
+    pull: () => ipcRenderer.invoke(IpcChannel.machinePull),
+    cancelPull: () => ipcRenderer.invoke(IpcChannel.machinePullCancel),
+    apply: () => ipcRenderer.invoke(IpcChannel.machineApply),
+    onPull: (listener) => {
+      const handler = (_event: Electron.IpcRendererEvent, payload: MachinePullProgress): void =>
+        listener(payload);
+      ipcRenderer.on(IpcChannel.machinePullEvent, handler);
+      return () => ipcRenderer.removeListener(IpcChannel.machinePullEvent, handler);
+    },
+  },
 };
 
 contextBridge.exposeInMainWorld('jarvis', api);

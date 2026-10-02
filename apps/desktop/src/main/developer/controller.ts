@@ -140,6 +140,7 @@ export class DeveloperController {
         benchDir: () => join(deps.userDataPath(), 'developer', 'bench'),
         chatModel: () =>
           deps.getSettings().provider === 'ollama' ? deps.getSettings().model : null,
+        machineProfile: () => deps.getSettings().machine?.profile,
         system: deps.system,
       },
     );

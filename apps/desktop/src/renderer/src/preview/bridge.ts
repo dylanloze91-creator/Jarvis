@@ -295,6 +295,22 @@ export function installPreviewBridge(): void {
       onEvent: () => () => undefined,
     },
     developer: createPreviewDeveloperApi(search.get('scene'), () => settings.developer.enabled),
+    machine: {
+      status: async () => ({ setupRequired: false, downloadAllowed: false }),
+      analyze: async () => ({
+        detected: 'Aperçu.',
+        chosen: 'Aperçu.',
+        profile: 'full' as const,
+        chatModel: 'qwen2.5:3b',
+        cpuOnly: false,
+        measureFailed: false,
+        download: { allowed: false, alreadyInstalled: true, ollamaPresent: true },
+      }),
+      pull: async () => ({ ok: true }),
+      cancelPull: async () => undefined,
+      apply: async () => ({ settings, status: status() }),
+      onPull: () => () => undefined,
+    },
   };
 
   window.jarvis = api;
