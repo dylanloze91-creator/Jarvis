@@ -2,7 +2,7 @@
 
 Ce fichier est à la **racine du code**. Les chemins ci-dessous partent de ce dossier. Ce n’est pas un résumé marketing : c’est l’état réel de cet arbre. La voix a été refaite dans cet arbre (publiée en 0.4.11, section « Voix ») : la transcription restait « Chargement… 100 % » sur l’installateur Windows. La refonte du tableau de bord est dans cet arbre : fenêtre étroite = overlay, fenêtre large = tableau de bord.
 
-**Version confirmée :** `apps/desktop/package.json` → `"version": "0.4.22"`. Le `package.json` racine est encore à `0.3.0` : c’est le monorepo, pas l’appli. La version qui compte pour l’exe, l’updater et GitHub est celle de `@jarvis/desktop`. La voix corrigée en 0.4.11 (installateur Windows) est inchangée. Le modèle par défaut reste `qwen2.5:3b`. `qwen3.5:4b` est le modèle recommandé documenté ; le repli est réglable (`fallbackModel`, défaut `qwen2.5:3b`).
+**Version confirmée :** `apps/desktop/package.json` → `"version": "0.4.23"`. Le `package.json` racine est encore à `0.3.0` : c’est le monorepo, pas l’appli. La version qui compte pour l’exe, l’updater et GitHub est celle de `@jarvis/desktop`. La voix corrigée en 0.4.11 (installateur Windows) est inchangée. Le modèle par défaut reste `qwen2.5:3b`. `qwen3.5:4b` est le modèle recommandé documenté ; le repli est réglable (`fallbackModel`, défaut `qwen2.5:3b`).
 
 Lis ce fichier avant de modifier le code.
 
@@ -48,7 +48,7 @@ Scripts utiles (racine) :
 
 Le script `setup:voice` remplit `apps/desktop/voice-assets/` (runtime ONNX, Whisper, openWakeWord, modèle Vosk français ; non commité, voir `.gitignore`). Premier `dev` / `build` : besoin de réseau.
 
-L’installateur publié est `Jarvis-Setup-0.4.22.exe` (release GitHub `v0.4.22`).
+L’installateur publié est `Jarvis-Setup-0.4.23.exe` (release GitHub `v0.4.23`).
 
 Données utilisateur (Electron `userData`, typiquement `%APPDATA%\Jarvis`) :
 
@@ -81,7 +81,7 @@ Données utilisateur (Electron `userData`, typiquement `%APPDATA%\Jarvis`) :
     src/media/                 intent Spotify
     src/update/                lecture latest.yml GitHub
     src/history/  src/audit/
-  apps/desktop/                Electron (version 0.4.22)
+  apps/desktop/                Electron (version 0.4.23)
     electron-builder.yml       NSIS, extraResources, publish GitHub
     electron.vite.config.ts    aliases onnxruntime-web (wasm, pas JSEP)
     scripts/setup-whisper.mjs
@@ -270,9 +270,21 @@ Préalable à Jarvis Développeur : une base verte et sans fuite de clé. Un com
 
 **Code source sur GitHub** : depuis le 2 octobre 2026, `main` porte le vrai code (un commit par version depuis 0.4.11) et chaque étiquette `v0.4.11`+ pointe sur son commit. `main` et l’arbre du store du projet (`files/source/`) restent identiques à chaque version.
 
+## 0.4.23 — Jarvis Développeur, phase 1 (lecture seule)
+
+Coupé par défaut (`settings.developer.enabled = false`) : aucune session développeur, entrée « Développeur » du tableau de bord cachée, chaque canal `dev:*` répond « coupé ». Chat, prompts et `run_command` identiques à 0.4.22 : `apps/desktop/src/main/chat-unchanged.test.ts` compare, mode coupé et activé, à des fichiers produits sur l’arbre 0.4.22 (`__golden__/chat-0.4.22/`). Ne jamais régénérer ces fichiers pour faire passer un test.
+
+- **Tri de sécurité** (`packages/core/src/developer/commandSafety.ts`, `classifyCommand`) : `auto` (test / lint / typecheck sous forme exacte, seulement dans une copie isolée `jarvis-dev/*`), `confirm`, `always-confirm`, `denied`. Refusés : `git push` et sous-commandes git inconnues (alias), `publish`, scripts *publish* / *release* / *deploy*, `electron-builder --publish`, suppressions récursives (rm, Remove-Item et alias, `del`/`rd /s`, rimraf), `reset --hard` / `clean -f` / discards hors `jarvis-dev/*`, réécriture d’historique, disque, registre, services, arrêt, élévation, téléchargement exécuté, envoi de fichiers, secrets. Ruses gérées : enchaînements, guillemets, `^`, backtick, variables, préfixes d’environnement, `cmd /c`, `powershell -c`, `-EncodedCommand`, `bash -c`, `wsl`, `npx`, caractères invisibles, homoglyphes, corps des scripts npm. Le `run_command` du chat n’utilise pas ce tri.
+- **Lanceur** (`apps/desktop/src/main/developer/runner.ts`) : sans shell, arguments fixes, arrêt de toute l’arborescence (`taskkill /T /F`), sortie bornée. Refait le tri avant de lancer ; l’affichage ne peut pas cacher la vraie commande. npm = `node npm-cli.js` (jamais `npm.cmd`), trouvé à côté de node ou par le PATH.
+- **Gestionnaire d’outils développeur** (`main/developer/tools/`), jamais passé au chat : `dev_read_file`, `dev_search_code`, `dev_search_files`, `dev_git_status`, `dev_git_diff`, `dev_inspect_logs` (`safe`, chemins relatifs à la copie, jamais `.git/`, `node_modules` ni fichiers secrets, liens symboliques vérifiés) ; `dev_clone_repository`, `dev_install_dependencies` (`confirm` + `forceConfirm`, sans catégorie, commande exacte).
+- **Copie de travail** : `developer.repoPath`, `C:\dev\Jarvis` proposé. Validation (`core/developer/repoCheck.ts`) : `.git`, paquets `jarvis` et `@jarvis/desktop`, version ≥ Jarvis installé (piège 0.3.0), origine GitHub, OneDrive, `node_modules`. Environnement (`environmentCheck.ts`) : Git, Node ≥ 20.19, npm, 5 Go libres, chemins longs ; `winget` affiché, jamais lancé.
+- **« Analyser mon architecture »** (`main/developer/analysis.ts`, `core/developer/architecture.ts`) : rapport sans modèle IA, recherches ancrées sur les vraies déclarations ; chaque lecture passe par le gestionnaire développeur et va au journal d’audit.
+- **Interface** : onglet Réglages « Développeur » (`components/developer/DeveloperSettings.tsx`, enregistré tout de suite comme le micro), panneau du tableau de bord (`DeveloperPanel.tsx`), carte de confirmation développeur avec la classe du tri (`DeveloperConfirmationCard.tsx`) ; la carte du chat ne change pas. Scènes `?scene=developer|developer-panel|developer-confirm`.
+- **Pas encore** : modèle de code, banc d’essai, copie isolée, modifications (0.4.24 et suivantes). Aucun téléchargement de modèle.
+
 ## Updater / GitHub
 
-Dernière publication : **0.4.22** (`https://github.com/dylanloze91-creator/Jarvis/releases/tag/v0.4.22`) — exe, `.blockmap` et `latest.yml` publiés : l’updater intégré la propose.
+Dernière publication : **0.4.23** (`https://github.com/dylanloze91-creator/Jarvis/releases/tag/v0.4.23`) — exe, `.blockmap` et `latest.yml` publiés : l’updater intégré la propose.
 
 - `apps/desktop/electron-builder.yml` : `publish.provider: github`, owner `dylanloze91-creator`, repo `Jarvis`, `releaseType: release`, artifact `Jarvis-Setup-${version}.exe`
 - `apps/desktop/src/main/updater.ts` : contrôle 15 s après le démarrage puis toutes les 4 h ; téléchargement auto ; **installation seulement si l’utilisateur clique**
@@ -386,6 +398,7 @@ Corrections de la revue complète (détail : `docs/audit-0410.md` du store du pr
 - **Instance unique** (`requestSingleInstanceLock`), tray qui ne quitte pas à la fermeture de fenêtre, `stayVisibleOnBlur` par défaut.
 - **Version** : bump `apps/desktop/package.json`, pas seulement la racine.
 - **Modèles / voix réelles** : ne pas committer `voice-assets/**` (sauf son README), `test-fixtures/*.wav|mp3`.
+- **Jarvis Développeur** : coupé par défaut ; outils `dev_*` dans leur propre gestionnaire, jamais dans le catalogue du chat ; une commande refusée par `classifyCommand` ne démarre jamais (`runner.ts`) ; jamais de push ni de publication ; `chat-unchanged.test.ts` reste vert sans régénérer ses fichiers.
 
 Travaux **hors scope** de cet arbre (ne pas les reprendre ici) : publication GitHub.
 
