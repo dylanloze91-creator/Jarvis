@@ -6,6 +6,7 @@ import type {
   MissionKind,
   MissionState,
   MissionSummary,
+  ProjectTemplateId,
   RealBenchResult,
   CodeModelSpec,
   CommandClassification,
@@ -87,6 +88,38 @@ export interface CodeTaskState {
   closed: null | 'kept' | 'discarded';
   startedAt: number;
   finishedAt: number | null;
+  /** Projet de la tâche (0.5.3) ; absent = Jarvis. */
+  projectId?: string;
+  /** Fusion dans la copie de l'utilisateur après sa carte (0.5.3), et son annulation éventuelle. */
+  applied?: {
+    at: number;
+    root: string;
+    branch: string;
+    preHead: string;
+    merge: string;
+    revertedAt: number | null;
+    revert: string | null;
+  } | null;
+}
+
+/** Un projet de Jarvis Développeur (0.5.3) : Jarvis lui-même, ou un projet Node importé ou créé. */
+export interface ProjectView {
+  id: string;
+  name: string;
+  path: string;
+  kind: 'jarvis' | 'node';
+  origin: 'jarvis' | 'imported' | 'created';
+  template: ProjectTemplateId | null;
+  description: string;
+  /** Prêt pour une mission (vérifications sans échec). */
+  ok: boolean;
+  checks: DevCheck[];
+  branch: string | null;
+  /** Mémoire du projet donnée aux spécialistes ; `memoryDefault` : jamais modifiée. */
+  memory: string;
+  memoryDefault: boolean;
+  /** Ce que « Construire » lance, ou null. */
+  build: { command: string; artifact: string | null } | null;
 }
 
 export interface SandboxView {
@@ -175,6 +208,13 @@ export const DeveloperChannel = {
   missionAnswer: 'dev:mission-answer',
   missions: 'dev:missions',
   missionOpen: 'dev:mission-open',
+  projects: 'dev:projects',
+  projectImport: 'dev:project-import',
+  projectForget: 'dev:project-forget',
+  projectMemory: 'dev:project-memory',
+  projectBuild: 'dev:project-build',
+  taskApply: 'dev:task-apply',
+  taskRevert: 'dev:task-revert',
 } as const;
 
 export type DevStepStatus = 'pending' | 'running' | 'done' | 'failed' | 'skipped';
@@ -199,7 +239,11 @@ export type DevTaskKind =
   | 'cleanup'
   | 'ask'
   | 'real-benchmark'
-  | 'mission';
+  | 'mission'
+  | 'apply'
+  | 'revert'
+  | 'build'
+  | 'project';
 
 export interface DevTask {
   id: string;
@@ -253,6 +297,12 @@ export interface DeveloperState {
   mission: MissionState | null;
   /** Historique des missions du projet (null : pas encore lu). */
   missions: MissionSummary[] | null;
+  /** Projet de l'historique affiché. */
+  missionsProject: string;
+  /** Projets connus, Jarvis en premier (null : pas encore lus). */
+  projects: ProjectView[] | null;
+  /** Dossier des nouveaux projets (décision D2). */
+  projectsRoot: string;
 }
 
 export interface DeveloperApi {
@@ -282,8 +332,21 @@ export interface DeveloperApi {
   cleanSandboxes(paths: string[]): Promise<DeveloperState>;
   ask(question: string): Promise<DeveloperState>;
   realBenchmark(modelId: string): Promise<DeveloperState>;
-  startMission(kind: MissionKind, request: string, skipQuestions: boolean): Promise<DeveloperState>;
+  /** `projectId` absent : Jarvis. Ignoré pour « Nouveau projet ». */
+  startMission(
+    kind: MissionKind,
+    request: string,
+    skipQuestions: boolean,
+    projectId?: string,
+  ): Promise<DeveloperState>;
   answerMission(answers: string[]): Promise<DeveloperState>;
-  listMissions(): Promise<DeveloperState>;
-  openMission(id: string): Promise<DeveloperState>;
+  listMissions(projectId?: string): Promise<DeveloperState>;
+  openMission(id: string, projectId?: string): Promise<DeveloperState>;
+  listProjects(): Promise<DeveloperState>;
+  importProject(path: string): Promise<DeveloperState>;
+  forgetProject(id: string): Promise<DeveloperState>;
+  saveProjectMemory(id: string, notes: string): Promise<DeveloperState>;
+  buildProject(id: string): Promise<DeveloperState>;
+  applyTask(): Promise<DeveloperState>;
+  revertTask(): Promise<DeveloperState>;
 }

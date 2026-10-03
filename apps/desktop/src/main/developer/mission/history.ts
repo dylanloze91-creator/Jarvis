@@ -1,4 +1,4 @@
-import { mkdir, readFile, readdir, rename, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   isMissionState,
@@ -40,6 +40,17 @@ export class MissionStore {
     });
     this.queue = next.catch(() => undefined);
     return next;
+  }
+
+  /** Une mission « Nouveau projet » rejoint son projet une fois créé. */
+  async move(mission: MissionState, from: string): Promise<void> {
+    await this.save(mission);
+    if (from === mission.projectId || !ID.test(mission.id)) return;
+    const next = this.queue.then(() =>
+      rm(join(this.dir(from), `${mission.id}.json`), { force: true }),
+    );
+    this.queue = next.catch(() => undefined);
+    await next;
   }
 
   async load(projectId: string, id: string): Promise<MissionState | null> {

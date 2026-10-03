@@ -1,4 +1,5 @@
 import {
+  JARVIS_DEFAULT_MEMORY,
   SUGGESTED_REPO_PATH,
   buildArchitectureReport,
   classifyCommand,
@@ -6,7 +7,13 @@ import {
   type DevCheck,
   type MissionState,
 } from '@jarvis/core';
-import type { AskView, DevStep, DeveloperApi, DeveloperState } from '../../../shared/developerIpc';
+import type {
+  AskView,
+  DevStep,
+  DeveloperApi,
+  DeveloperState,
+  ProjectView,
+} from '../../../shared/developerIpc';
 import { previewModelState } from './developerModelSample';
 import { applyTaskScene, previewTaskState } from './developerTaskSample';
 import { previewArchitectureFacts, previewLineTotal } from './developerSample';
@@ -152,6 +159,44 @@ function previewMission(): MissionState {
   return mission;
 }
 
+function previewProjects(): ProjectView[] {
+  return [
+    {
+      id: 'jarvis',
+      name: 'Jarvis',
+      path: SUGGESTED_REPO_PATH,
+      kind: 'jarvis',
+      origin: 'jarvis',
+      template: null,
+      description: 'Jarvis lui-même (copie de travail des réglages).',
+      ok: true,
+      checks: [],
+      branch: 'main',
+      memory: JARVIS_DEFAULT_MEMORY,
+      memoryDefault: true,
+      build: {
+        command: 'npm run package:win',
+        artifact: 'apps\\desktop\\release\\Jarvis-Setup-0.5.3.exe',
+      },
+    },
+    {
+      id: 'photos-par-date',
+      name: 'Photos par date',
+      path: 'C:\\dev\\Projets\\photos-par-date',
+      kind: 'node',
+      origin: 'created',
+      template: 'node-cli',
+      description: 'Renomme les photos d’un dossier selon leur date de prise de vue.',
+      ok: true,
+      checks: [],
+      branch: 'main',
+      memory: '',
+      memoryDefault: true,
+      build: { command: 'npm run build', artifact: null },
+    },
+  ];
+}
+
 /** Pont de prévisualisation de Jarvis Développeur (captures d'écran, Vite seul). */
 export function createPreviewDeveloperApi(
   scene: string | null,
@@ -177,6 +222,9 @@ export function createPreviewDeveloperApi(
     ask: scene === 'developer-ask' ? PREVIEW_ASK : null,
     mission: scene === 'developer-mission' ? previewMission() : null,
     missions: [],
+    missionsProject: 'jarvis',
+    projects: developerScene ? previewProjects() : null,
+    projectsRoot: 'C:\\dev\\Projets',
   };
   applyTaskScene(scene, state);
   if (scene === 'developer-pull') {
@@ -335,6 +383,13 @@ export function createPreviewDeveloperApi(
     answerMission: async () => set({ notice: 'Aperçu : rien n’est envoyé.' }),
     listMissions: async () => set({}),
     openMission: async () => set({}),
+    listProjects: async () => set({}),
+    importProject: async () => set({ notice: 'Aperçu : aucun dossier n’est importé.' }),
+    forgetProject: async () => set({ notice: 'Aperçu : rien n’est retiré.' }),
+    saveProjectMemory: async () => set({ notice: 'Aperçu : mémoire non enregistrée.' }),
+    buildProject: async () => set({ notice: 'Aperçu : rien n’est construit.' }),
+    applyTask: async () => set({ notice: 'Aperçu : ta copie n’est pas modifiée.' }),
+    revertTask: async () => set({ notice: 'Aperçu : rien n’est annulé.' }),
     onEvent: (listener) => {
       listeners.add(listener);
       return () => listeners.delete(listener);

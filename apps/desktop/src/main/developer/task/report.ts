@@ -89,7 +89,7 @@ export function buildTaskReport(
     );
   add('### Et maintenant');
   add(
-    'Ta copie de travail n’a pas été touchée. Tu peux garder la branche, revenir à un point de reprise ou jeter la tâche. Appliquer à ta copie arrivera dans une prochaine version.',
+    'Ta copie de travail n’a pas été touchée. Tu peux appliquer la tâche à ta copie (« Appliquer », après ta confirmation, si les tests n’ont aucun nouvel échec), garder la branche, revenir à un point de reprise ou jeter la tâche.',
   );
   return blocks.join('\n\n');
 }

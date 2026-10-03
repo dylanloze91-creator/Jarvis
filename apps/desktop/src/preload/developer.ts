@@ -34,11 +34,20 @@ export function createDeveloperApi(ipc: IpcRenderer): DeveloperApi {
     cleanSandboxes: (paths: string[]) => ipc.invoke(DeveloperChannel.sandboxesClean, paths),
     ask: (question: string) => ipc.invoke(DeveloperChannel.ask, question),
     realBenchmark: (modelId: string) => ipc.invoke(DeveloperChannel.realBenchmark, modelId),
-    startMission: (kind, request, skipQuestions) =>
-      ipc.invoke(DeveloperChannel.missionStart, kind, request, skipQuestions),
+    startMission: (kind, request, skipQuestions, projectId) =>
+      ipc.invoke(DeveloperChannel.missionStart, kind, request, skipQuestions, projectId),
     answerMission: (answers: string[]) => ipc.invoke(DeveloperChannel.missionAnswer, answers),
-    listMissions: () => ipc.invoke(DeveloperChannel.missions),
-    openMission: (id: string) => ipc.invoke(DeveloperChannel.missionOpen, id),
+    listMissions: (projectId?: string) => ipc.invoke(DeveloperChannel.missions, projectId),
+    openMission: (id: string, projectId?: string) =>
+      ipc.invoke(DeveloperChannel.missionOpen, id, projectId),
+    listProjects: () => ipc.invoke(DeveloperChannel.projects),
+    importProject: (path: string) => ipc.invoke(DeveloperChannel.projectImport, path),
+    forgetProject: (id: string) => ipc.invoke(DeveloperChannel.projectForget, id),
+    saveProjectMemory: (id: string, notes: string) =>
+      ipc.invoke(DeveloperChannel.projectMemory, id, notes),
+    buildProject: (id: string) => ipc.invoke(DeveloperChannel.projectBuild, id),
+    applyTask: () => ipc.invoke(DeveloperChannel.taskApply),
+    revertTask: () => ipc.invoke(DeveloperChannel.taskRevert),
     onEvent: (listener) => {
       const handler = (_event: IpcRendererEvent, state: DeveloperState): void => listener(state);
       ipc.on(DeveloperChannel.event, handler);

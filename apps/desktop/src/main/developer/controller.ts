@@ -10,6 +10,7 @@ import {
   resolveLocalOllamaBase,
   toolView,
   validateRepo,
+  ToolManager as DevToolManager,
   type AuditLogStore,
   type MissionKind,
   type ProviderRegistry,
@@ -33,10 +34,14 @@ import { ANALYSIS_STEPS, analyzeArchitecture } from './analysis.js';
 import { repoReader, runAsk } from './ask/askFlow.js';
 import { MissionStore } from './mission/history.js';
 import { MissionWorkflow } from './mission/missionWorkflow.js';
+import { ProjectStore } from './project/projectStore.js';
+import { ProjectsWorkflow } from './project/projectsWorkflow.js';
 import { measureFree, probeEnvironment, type EnvironmentProbe } from './environment.js';
 import { detectRepo, gatherRepoFacts } from './repo.js';
 import { runProcess, type Runner } from './runner.js';
 import { createDeveloperToolManager } from './tools/index.js';
+import { createReadTools } from './tools/readTools.js';
+import { samePath } from './task/sandbox.js';
 import { ollamaModelsDir } from './models/hardwareProbe.js';
 import { createOllamaApi, type OllamaApi } from './models/ollamaApi.js';
 import { CodeModelStore } from './models/store.js';
@@ -94,6 +99,9 @@ export class DeveloperController {
   private readonly models: CodeModelWorkflow;
   private readonly tasks: CodeTaskWorkflow;
   private readonly missions: MissionWorkflow;
+  private readonly projects: ProjectsWorkflow;
+  /** Outils de lecture d'un projet autre que Jarvis (0.5.3), un gestionnaire par dossier. */
+  private readonly projectReaders = new Map<string, ToolManager>();
   private readonly env: Record<string, string | undefined>;
 
   private ollama(): OllamaApi {
@@ -201,12 +209,8 @@ export class DeveloperController {
           const { nodePath, npmCli } = this.environment ?? { nodePath: null, npmCli: null };
           return nodePath && npmCli ? { nodePath, npmCli } : null;
         },
-        readTools: () => this.auditedReadTools(),
-        repoRoot: async () => {
-          const saved = deps.getSettings().developer.repoPath;
-          if (!this.repo && saved) this.setRepo(await gatherRepoFacts(saved, this.run));
-          return this.repo?.ok ? this.repoPath : null;
-        },
+        readTools: (root) => this.auditedReadTools(undefined, root),
+        repoRoot: () => this.jarvisRoot(),
       },
       {
         registry: deps.registry,
@@ -220,6 +224,34 @@ export class DeveloperController {
         graceMs: deps.chatGraceMs,
       },
     );
+    this.projects = new ProjectsWorkflow(
+      {
+        runTask: (kind, title, steps, work) => this.runTask(kind, title, steps, work),
+        ask: (request, extra, signal) => this.askUser(request, signal, extra),
+        emit: () => this.emit(),
+        notice: (message) => {
+          this.notice = message;
+          return this.emit();
+        },
+        audit: (outcome) =>
+          void deps.auditLog.append(buildAuditEntry(outcome, this.missions?.scope())),
+        log: (line) => this.appendLog(line),
+        node: async () => {
+          if (!this.environment) await this.probe();
+          const { nodePath, npmCli } = this.environment ?? { nodePath: null, npmCli: null };
+          return nodePath && npmCli ? { nodePath, npmCli } : null;
+        },
+        jarvisRoot: () => this.jarvisRoot(),
+        jarvisChecks: () => this.repo?.checks ?? [],
+      },
+      {
+        run: this.run,
+        store: new ProjectStore(() => join(deps.userDataPath(), 'developer', 'projects')),
+        settings: () => deps.getSettings(),
+        home: deps.home,
+        now: deps.now ? () => deps.now!().getTime() : undefined,
+      },
+    );
     this.missions = new MissionWorkflow(
       {
         runTask: (kind, title, steps, work) => this.runTask(kind, title, steps, work),
@@ -228,12 +260,7 @@ export class DeveloperController {
           this.notice = message;
           return this.emit();
         },
-        repoRoot: async () => {
-          const saved = deps.getSettings().developer.repoPath;
-          if (!this.repo && saved) this.setRepo(await gatherRepoFacts(saved, this.run));
-          return this.repo?.ok ? this.repoPath : null;
-        },
-        readTools: () => this.auditedReadTools(ASK_TOOLS),
+        readTools: (root) => this.auditedReadTools(ASK_TOOLS, root),
         pause: (model, signal) => this.yieldToChat(model, signal),
         startTask: (request, options) => this.tasks.start(request, options),
         currentTask: () => this.tasks.view().codeTask,
@@ -245,16 +272,37 @@ export class DeveloperController {
         settings: () => deps.getSettings(),
         modelOptions: (model) => this.models.optionsFor(model),
         store: new MissionStore(() => join(deps.userDataPath(), 'developer', 'projects')),
+        projects: this.projects,
         now: deps.now ? () => deps.now!().getTime() : undefined,
       },
     );
   }
 
-  /** Lecture de la copie de l'utilisateur : outils `safe`, inscrits au journal. */
+  /** Copie de Jarvis vérifiée (revérifiée après un redémarrage), ou null. */
+  private async jarvisRoot(): Promise<string | null> {
+    const saved = this.deps.getSettings().developer.repoPath;
+    if (!this.repo && saved) this.setRepo(await gatherRepoFacts(saved, this.run));
+    return this.repo?.ok ? this.repoPath : null;
+  }
+
+  private readerFor(root: string | undefined): ToolManager {
+    if (!root || (this.repoPath && samePath(root, this.repoPath))) return this.manager;
+    let reader = this.projectReaders.get(root);
+    if (!reader) {
+      reader = new DevToolManager().registerAll(
+        createReadTools({ getRoot: () => root, run: this.run, logsDir: this.deps.logsDir }),
+      );
+      this.projectReaders.set(root, reader);
+    }
+    return reader;
+  }
+
+  /** Lecture de la copie de l'utilisateur (ou d'un projet) : outils `safe`, inscrits au journal. */
   private auditedReadTools(
     names: readonly string[] = ['dev_read_file', 'dev_search_code', 'dev_search_files'],
+    root?: string,
   ): Pick<ToolManager, 'schemas' | 'execute'> {
-    const view = toolView(this.manager, names);
+    const view = toolView(this.readerFor(root), names);
     return {
       schemas: () => view.schemas(),
       execute: async (call, context, events) => {
@@ -292,6 +340,7 @@ export class DeveloperController {
       notice: this.notice,
       ask: this.askView,
       ...this.missions.view(),
+      ...this.projects.view(),
     };
   }
 
@@ -377,21 +426,52 @@ export class DeveloperController {
     kind: MissionKind,
     request: string,
     skipQuestions: boolean,
+    projectId?: string,
   ): Promise<DeveloperState> {
-    return this.guard(true) ?? this.missions.start(kind, request, skipQuestions);
+    const needsJarvis = kind !== 'new-project' && (projectId ?? 'jarvis') === 'jarvis';
+    return this.guard(needsJarvis) ?? this.missions.start(kind, request, skipQuestions, projectId);
   }
 
   async answerMission(answers: string[]): Promise<DeveloperState> {
     return this.guard(true) ?? this.missions.answer(answers);
   }
 
-  async listMissions(): Promise<DeveloperState> {
+  async listMissions(projectId?: string): Promise<DeveloperState> {
     if (!this.enabled()) return this.guard() ?? this.state();
-    return this.missions.listMissions();
+    return this.missions.listMissions(projectId);
   }
 
-  async openMission(id: string): Promise<DeveloperState> {
-    return this.guard() ?? this.missions.openMission(id);
+  async openMission(id: string, projectId?: string): Promise<DeveloperState> {
+    return this.guard() ?? this.missions.openMission(id, projectId);
+  }
+
+  async listProjects(): Promise<DeveloperState> {
+    if (!this.enabled()) return this.guard() ?? this.state();
+    return this.projects.list();
+  }
+
+  async importProject(path: string): Promise<DeveloperState> {
+    return this.guard() ?? this.projects.import(path);
+  }
+
+  async forgetProject(id: string): Promise<DeveloperState> {
+    return this.guard() ?? this.projects.forget(id);
+  }
+
+  async saveProjectMemory(id: string, notes: string): Promise<DeveloperState> {
+    return this.guard() ?? this.projects.saveMemory(id, notes);
+  }
+
+  async buildProject(id: string): Promise<DeveloperState> {
+    return this.guard() ?? this.projects.build(id);
+  }
+
+  async applyTask(): Promise<DeveloperState> {
+    return this.guard() ?? this.tasks.apply();
+  }
+
+  async revertTask(): Promise<DeveloperState> {
+    return this.guard() ?? this.tasks.revertApply();
   }
 
   async realBenchmark(modelId: string): Promise<DeveloperState> {

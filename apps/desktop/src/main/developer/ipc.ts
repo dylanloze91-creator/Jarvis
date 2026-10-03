@@ -59,11 +59,16 @@ export function registerDeveloperIpc(
     ask: null,
     mission: null,
     missions: null,
+    missionsProject: 'jarvis',
+    projects: null,
+    projectsRoot: '',
   });
 
   const refused = (): DeveloperState => ({ ...disabled(), notice: DEVELOPER_DISABLED_NOTICE });
   const modelId = (value: unknown): string =>
     typeof value === 'string' ? value.slice(0, 100) : '';
+  const projectId = (value: unknown): string | undefined =>
+    typeof value === 'string' && value ? value.slice(0, 40) : undefined;
 
   ipcMain.handle(DeveloperChannel.hardware, () => get()?.checkHardware() ?? refused());
   ipcMain.handle(
@@ -114,13 +119,14 @@ export function registerDeveloperIpc(
   );
   ipcMain.handle(
     DeveloperChannel.missionStart,
-    (_event, kind: unknown, request: unknown, skip: unknown) =>
+    (_event, kind: unknown, request: unknown, skip: unknown, project: unknown) =>
       get()?.startMission(
         (MISSION_KINDS as readonly string[]).includes(String(kind))
           ? (kind as MissionKind)
           : 'modify',
         typeof request === 'string' ? request.slice(0, 2_000) : '',
         skip === true,
+        projectId(project),
       ) ?? refused(),
   );
   ipcMain.handle(
@@ -132,12 +138,39 @@ export function registerDeveloperIpc(
           : [],
       ) ?? refused(),
   );
-  ipcMain.handle(DeveloperChannel.missions, () => get()?.listMissions() ?? refused());
+  ipcMain.handle(
+    DeveloperChannel.missions,
+    (_event, project: unknown) => get()?.listMissions(projectId(project)) ?? refused(),
+  );
   ipcMain.handle(
     DeveloperChannel.missionOpen,
-    (_event, id: unknown) =>
-      get()?.openMission(typeof id === 'string' ? id.slice(0, 80) : '') ?? refused(),
+    (_event, id: unknown, project: unknown) =>
+      get()?.openMission(typeof id === 'string' ? id.slice(0, 80) : '', projectId(project)) ??
+      refused(),
   );
+  ipcMain.handle(DeveloperChannel.projects, () => get()?.listProjects() ?? refused());
+  ipcMain.handle(
+    DeveloperChannel.projectImport,
+    (_event, path: unknown) => get()?.importProject(text(path)) ?? refused(),
+  );
+  ipcMain.handle(
+    DeveloperChannel.projectForget,
+    (_event, id: unknown) => get()?.forgetProject(projectId(id) ?? '') ?? refused(),
+  );
+  ipcMain.handle(
+    DeveloperChannel.projectMemory,
+    (_event, id: unknown, notes: unknown) =>
+      get()?.saveProjectMemory(
+        projectId(id) ?? '',
+        typeof notes === 'string' ? notes.slice(0, 4_000) : '',
+      ) ?? refused(),
+  );
+  ipcMain.handle(
+    DeveloperChannel.projectBuild,
+    (_event, id: unknown) => get()?.buildProject(projectId(id) ?? '') ?? refused(),
+  );
+  ipcMain.handle(DeveloperChannel.taskApply, () => get()?.applyTask() ?? refused());
+  ipcMain.handle(DeveloperChannel.taskRevert, () => get()?.revertTask() ?? refused());
   ipcMain.handle(
     DeveloperChannel.realBenchmark,
     (_event, id: unknown) => get()?.realBenchmark(modelId(id)) ?? refused(),

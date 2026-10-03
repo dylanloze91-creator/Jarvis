@@ -11,7 +11,7 @@ export const SANDBOX_MIN_FREE_BYTES = 3e9;
 export const SANDBOX_BRANCH_PATTERN = /^jarvis-dev\/[A-Za-z0-9._-]+$/;
 
 /** Les points de reprise sont signés « Jarvis Développeur », jamais avec l'identité de l'utilisateur. */
-const IDENTITY = {
+export const JARVIS_GIT_IDENTITY = {
   GIT_AUTHOR_NAME: 'Jarvis Développeur',
   GIT_AUTHOR_EMAIL: 'jarvis-dev@localhost',
   GIT_COMMITTER_NAME: 'Jarvis Développeur',
@@ -86,7 +86,7 @@ export class Sandbox {
       args: [...GIT_SAFE, ...args],
       cwd: this.path,
       display,
-      env: { ...process.env, ...IDENTITY },
+      env: { ...process.env, ...JARVIS_GIT_IDENTITY },
       timeoutMs: 120_000,
       maxBytes: 4_000_000,
       context: { insideSandbox: true, branch: this.branch },
@@ -189,7 +189,7 @@ export async function discardWorktree(
       args: [...GIT_SAFE, ...args],
       cwd: path,
       display,
-      env: { ...process.env, ...IDENTITY },
+      env: { ...process.env, ...JARVIS_GIT_IDENTITY },
       timeoutMs: 300_000,
       context: { insideSandbox: true, branch: ctxBranch },
       signal,

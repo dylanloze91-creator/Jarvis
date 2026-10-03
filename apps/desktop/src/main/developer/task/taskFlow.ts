@@ -22,6 +22,7 @@ import {
   toolView,
   trimDiffFiles,
   type CodeAIProvider,
+  type ProjectProfile,
   type TaskPlan,
   type TestRunSummary,
   type ToolManager,
@@ -87,8 +88,18 @@ export class TaskRun extends TaskRunBase {
     manager: ToolManager,
     private readonly repo: TaskRepo,
     private readonly hooks: TaskHooks = {},
+    profile?: ProjectProfile,
   ) {
-    super(host, deps, state, manager);
+    super(host, deps, state, manager, profile);
+  }
+
+  /** Copie de l'utilisateur d'où part la tâche (Jarvis ou le projet). */
+  get repoRoot(): string {
+    return this.repo.root;
+  }
+
+  get tasksRoot(): string {
+    return this.repo.worktreeRoot;
   }
 
   private planRequest(): string {
@@ -128,10 +139,10 @@ export class TaskRun extends TaskRunBase {
     signal: AbortSignal,
     pause: () => Promise<void>,
   ): Promise<TaskPlan> {
-    const tools = this.host.readTools();
+    const tools = this.host.readTools(this.repo.root);
     const first = await code.runTools({
       tools,
-      system: planSystemPrompt(),
+      system: planSystemPrompt(this.profile),
       prompt: this.planRequest(),
       maxRounds: 10,
       signal,
@@ -140,7 +151,7 @@ export class TaskRun extends TaskRunBase {
     if (first.stoppedBy === 'error')
       throw new Error(`Le modèle de code n’a pas répondu : ${first.error}`);
     try {
-      return parsePlanReply(first.finalText);
+      return parsePlanReply(first.finalText, this.profile);
     } catch (error) {
       if (!(error instanceof CodeModelFormatError)) throw error;
       const read = first.calls
@@ -150,7 +161,7 @@ export class TaskRun extends TaskRunBase {
         .join('\n');
       const retry = await code.runTools({
         tools: toolView(tools, []),
-        system: planSystemPrompt(),
+        system: planSystemPrompt(this.profile),
         prompt: `${this.planRequest()}\n\nDéjà consulté :\n${read || '—'}\n\nTa réponse précédente n’était pas un plan valide (${error.message}). Réponds seulement par le bloc JSON du plan.`,
         maxRounds: 1,
         signal,
@@ -158,7 +169,7 @@ export class TaskRun extends TaskRunBase {
       });
       if (retry.stoppedBy === 'error')
         throw new Error(`Le modèle de code n’a pas répondu : ${retry.error}`);
-      return parsePlanReply(retry.finalText);
+      return parsePlanReply(retry.finalText, this.profile);
     }
   }
 
@@ -341,7 +352,7 @@ export class TaskRun extends TaskRunBase {
     return `Tâche arrêtée${reason ? ` : ${reason}` : ''}.`;
   }
 
-  /** Déroulé complet. Toute écriture a lieu dans la copie isolée ; la copie de l'utilisateur n'est jamais modifiée. */
+  /** Déroulé complet. Toute écriture a lieu dans la copie isolée ; la copie de l'utilisateur n'est pas modifiée. */
   async run(step: StepFn, signal: AbortSignal, addStep: AddStepFn): Promise<string> {
     try {
       return await this.flow(step, signal, addStep);
@@ -374,7 +385,11 @@ export class TaskRun extends TaskRunBase {
     step('plan', 'running', 'lecture du dépôt');
     this.hooks.onPhase?.('plan', 'running', 'lecture du dépôt, plan de modification');
     const plan = await this.makePlan(code, signal, pause);
-    const checked = reviewPlan(plan, (path) => this.repo.tracked.has(path));
+    const checked = reviewPlan(
+      plan,
+      (path) => this.repo.tracked.has(path),
+      this.profile.protectedFileReason,
+    );
     this.reviewed = this.hooks.docsOnly
       ? {
           ...checked,
@@ -446,7 +461,7 @@ export class TaskRun extends TaskRunBase {
     const tools = this.modelTools(toolView(this.manager, TASK_MODEL_TOOLS), signal);
     const edit = await code.runTools({
       tools,
-      system: editSystemPrompt(reviewed),
+      system: editSystemPrompt(reviewed, this.profile),
       prompt: editPrompt(state.request),
       maxRounds: 24,
       signal,
@@ -505,7 +520,7 @@ export class TaskRun extends TaskRunBase {
       this.hooks.onPhase?.('fix', 'running', `correction ${n} sur ${state.maxAttempts}`);
       const fix = await code.runTools({
         tools,
-        system: fixSystemPrompt(reviewed, n, state.maxAttempts),
+        system: fixSystemPrompt(reviewed, n, state.maxAttempts, this.profile),
         prompt: `${fixPrompt(run.newFailures, excerpts)}${diagnosis ? `\n\nDiagnostic du débogueur :\n${diagnosis}` : ''}`,
         maxRounds: 16,
         signal,

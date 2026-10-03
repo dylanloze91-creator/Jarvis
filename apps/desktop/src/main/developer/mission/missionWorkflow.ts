@@ -1,11 +1,16 @@
+import { homedir } from 'node:os';
 import {
+  JARVIS_PROJECT_ID,
   JARVIS_PROJECT_PROFILE,
   LOOP_ACTORS,
+  NEW_PROJECT_SCOPE,
+  PROJECT_TEMPLATES,
   MISSION_LABELS,
   MAX_GOAL_QUESTIONS,
   ROLE_LABELS,
   architectSchema,
   blockingIssues,
+  briefBlock,
   createCodeAIProvider,
   createMission,
   debuggerSchema,
@@ -16,9 +21,13 @@ import {
   diagnoseSystem,
   diagnosisText,
   documentationSchema,
+  factoryPrompt,
+  factorySchema,
+  factorySystem,
   goalPrompt,
   goalSchema,
   goalSystem,
+  memoryBlock,
   patchStep,
   randomId,
   resolveRoleModel,
@@ -46,6 +55,8 @@ import {
   type ArchitectOutput,
   type DebuggerOutput,
   type DocumentationOutput,
+  type ProjectProfile,
+  type ProjectTemplateId,
   parseNvidiaSmi,
 } from '@jarvis/core';
 import type {
@@ -58,7 +69,9 @@ import { repoReader, runAsk } from '../ask/askFlow.js';
 import { readGpuMemory } from '../models/hardwareProbe.js';
 import type { OllamaApi } from '../models/ollamaApi.js';
 import type { Runner } from '../runner.js';
+import type { ResolvedProject } from '../project/projectsWorkflow.js';
 import type { TaskHooks, TaskPhase } from '../task/taskRun.js';
+import type { TaskProject } from '../task/workflow.js';
 import type { MissionStore } from './history.js';
 
 type Step = (id: string, status: DevStepStatus, detail?: string) => void;
@@ -72,13 +85,26 @@ export interface MissionHost {
   ): Promise<DeveloperState>;
   emit(): DeveloperState;
   notice(message: string): DeveloperState;
-  repoRoot(): Promise<string | null>;
-  /** Outils de lecture de la copie, inscrits au journal. */
-  readTools(): Pick<ToolManager, 'schemas' | 'execute'>;
+  /** Outils de lecture de la copie (ou de celle du projet `root`), inscrits au journal. */
+  readTools(root?: string): Pick<ToolManager, 'schemas' | 'execute'>;
   pause(model: string, signal: AbortSignal): Promise<void>;
   /** Boucle de modification existante (plan → validation → copie isolée → tests → corrections). */
-  startTask(request: string, options: { model: string; hooks: TaskHooks }): Promise<DeveloperState>;
+  startTask(
+    request: string,
+    options: { model: string; hooks: TaskHooks; project?: TaskProject },
+  ): Promise<DeveloperState>;
   currentTask(): CodeTaskState | null;
+}
+
+/** Projets (0.5.3) : copie et profil d'un projet, sa mémoire, la Project Factory. */
+export interface MissionProjects {
+  resolve(id: string): Promise<ResolvedProject | string>;
+  memoryNotes(id: string): Promise<string>;
+  create(
+    input: { template: ProjectTemplateId; name: string; description: string },
+    step: Step,
+    signal: AbortSignal,
+  ): Promise<ResolvedProject | null>;
 }
 
 export interface MissionDeps {
@@ -88,6 +114,7 @@ export interface MissionDeps {
   settings(): Settings;
   modelOptions(model: string): OllamaCodeOptions;
   store: MissionStore;
+  projects: MissionProjects;
   now?(): number;
 }
 
@@ -109,14 +136,19 @@ const PHASE_LABELS: Record<TaskPhase, string> = {
 };
 
 /**
- * Missions sur Jarvis : objectif et questions (REASONER), conception
- * (ARCHITECT, DEBUGGER ou DOCUMENTATION), puis la boucle de modification
- * existante, avec REVIEWER et DEBUGGER branchés dessus. Le routeur est fait
- * de règles fixes ; chaque rôle prend le modèle choisi par l'utilisateur.
+ * Missions sur Jarvis ou sur un projet : objectif et questions (REASONER),
+ * conception (ARCHITECT, DEBUGGER ou DOCUMENTATION) ou création du projet,
+ * puis la boucle de modification existante, avec REVIEWER et DEBUGGER
+ * branchés dessus. Le routeur est fait de règles fixes ; chaque rôle prend
+ * le modèle choisi par l'utilisateur.
  */
 export class MissionWorkflow {
   private current: MissionState | null = null;
   private history: MissionSummary[] | null = null;
+  private historyProject: string = MISSION_PROJECT_ID;
+  /** Projet de la mission en cours (null pour « Nouveau projet » avant sa création). */
+  private project: ResolvedProject | null = null;
+  private memory = '';
   private lastModel: string | null = null;
   private activeRole: SpecialistRole | null = null;
   private counters = new Map<TaskPhase, number>();
@@ -131,8 +163,12 @@ export class MissionWorkflow {
     return this.deps.now ? this.deps.now() : Date.now();
   }
 
-  view(): Pick<DeveloperState, 'mission' | 'missions'> {
-    return { mission: this.current, missions: this.history };
+  view(): Pick<DeveloperState, 'mission' | 'missions' | 'missionsProject'> {
+    return { mission: this.current, missions: this.history, missionsProject: this.historyProject };
+  }
+
+  private get profile(): ProjectProfile {
+    return this.project?.profile ?? JARVIS_PROJECT_PROFILE;
   }
 
   /** Rattachement des entrées du journal à la mission en cours. */
@@ -158,6 +194,7 @@ export class MissionWorkflow {
     if (!this.current) return;
     this.current.updatedAt = this.now;
     await this.deps.store.save(this.current);
+    this.historyProject = this.current.projectId;
     this.history = await this.deps.store.list(this.current.projectId);
     this.host.emit();
   }
@@ -238,21 +275,37 @@ export class MissionWorkflow {
     }
   }
 
-  async listMissions(): Promise<DeveloperState> {
-    this.history = await this.deps.store.list(MISSION_PROJECT_ID);
+  async listMissions(projectId: string = MISSION_PROJECT_ID): Promise<DeveloperState> {
+    this.historyProject = projectId;
+    this.history = await this.deps.store.list(projectId);
     return this.host.emit();
   }
 
-  async openMission(id: string): Promise<DeveloperState> {
+  async openMission(id: string, projectId: string = MISSION_PROJECT_ID): Promise<DeveloperState> {
     if (this.current && (this.current.status === 'running' || this.current.status === 'task'))
       return this.host.notice('Une mission est en cours : attends sa fin ou annule-la.');
-    const mission = await this.deps.store.load(MISSION_PROJECT_ID, id);
+    const mission = await this.deps.store.load(projectId, id);
     if (!mission) return this.host.notice('Mission introuvable.');
     this.current = mission;
+    this.project = null;
     return this.host.emit();
   }
 
-  async start(kind: MissionKind, request: string, skipQuestions: boolean): Promise<DeveloperState> {
+  /** Mémoire du projet et missions récentes, données aux spécialistes. */
+  private async loadMemory(projectId: string): Promise<string> {
+    const notes = await this.deps.projects.memoryNotes(projectId);
+    const history = (await this.deps.store.list(projectId)).filter(
+      (m) => m.id !== this.current?.id,
+    );
+    return memoryBlock(notes, history);
+  }
+
+  async start(
+    kind: MissionKind,
+    request: string,
+    skipQuestions: boolean,
+    projectId: string = MISSION_PROJECT_ID,
+  ): Promise<DeveloperState> {
     const text = request.trim();
     if (text.length < (kind === 'question' ? 4 : 8))
       return this.host.notice('Décris la mission en une phrase au moins.');
@@ -281,14 +334,17 @@ export class MissionWorkflow {
       return this.host.notice(
         `Modèle absent d’Ollama : ${absent.join(', ')}. Rien n’est téléchargé.`,
       );
-    const root = await this.host.repoRoot();
-    if (!root)
-      return this.host.notice(
-        'Choisis et vérifie d’abord la copie de travail (Réglages → Développeur).',
-      );
+    let project: ResolvedProject | null = null;
+    if (kind !== 'new-project') {
+      const resolved = await this.deps.projects.resolve(projectId);
+      if (typeof resolved === 'string') return this.host.notice(resolved);
+      project = resolved;
+    }
+    this.project = project;
+    this.memory = project ? await this.loadMemory(project.id) : '';
     this.current = createMission({
       id: `${new Date(this.now).toISOString().slice(0, 10)}-${randomId().slice(0, 8)}`,
-      projectId: MISSION_PROJECT_ID,
+      projectId: project?.id ?? NEW_PROJECT_SCOPE,
       kind,
       request: text,
       skipQuestions,
@@ -297,10 +353,11 @@ export class MissionWorkflow {
     this.counters.clear();
     this.open.clear();
     await this.persist();
-    if (kind === 'question') return this.answerQuestion(root);
-    const state = await this.goalPhase(root);
+    const cwd = project?.root ?? homedir();
+    if (kind === 'question') return this.answerQuestion(cwd);
+    const state = await this.goalPhase(cwd);
     if (this.current.status !== 'running') return state;
-    return this.designAndTask(root);
+    return kind === 'new-project' ? this.factoryAndTask() : this.designAndTask(cwd);
   }
 
   /** Réponses de l'utilisateur aux questions de l'objectif ; vides = continuer sans répondre. */
@@ -308,15 +365,21 @@ export class MissionWorkflow {
     const mission = this.current;
     if (!mission || mission.status !== 'waiting-answers')
       return this.host.notice('Aucune mission n’attend de réponse.');
-    const root = await this.host.repoRoot();
-    if (!root) return this.host.notice('Choisis et vérifie d’abord la copie de travail.');
+    if (mission.kind !== 'new-project' && this.project?.id !== mission.projectId) {
+      const resolved = await this.deps.projects.resolve(mission.projectId);
+      if (typeof resolved === 'string') return this.host.notice(resolved);
+      this.project = resolved;
+      this.memory = await this.loadMemory(resolved.id);
+    }
     mission.answers = (mission.goal?.questions ?? []).map((question, i) => ({
       question,
       answer: (answers[i] ?? '').slice(0, 1_000),
     }));
     mission.status = 'running';
     this.patch('goal', { status: 'done', detail: 'réponses reçues' });
-    return this.designAndTask(root);
+    return mission.kind === 'new-project'
+      ? this.factoryAndTask()
+      : this.designAndTask(this.project!.root);
   }
 
   private fail(message: string, signal?: AbortSignal): void {
@@ -343,9 +406,9 @@ export class MissionWorkflow {
           const result = await runAsk(
             {
               code: this.code(model),
-              tools: this.host.readTools(),
+              tools: this.host.readTools(root),
               read: repoReader(root),
-              profile: JARVIS_PROJECT_PROFILE,
+              profile: this.profile,
               signal,
               beforeRound: () => this.host.pause(model, signal),
             },
@@ -390,11 +453,10 @@ export class MissionWorkflow {
             'goal',
             'REASONER',
             {
-              system: goalSystem(
-                JARVIS_PROJECT_PROFILE,
-                mission.skipQuestions ? 0 : MAX_GOAL_QUESTIONS,
-              ),
-              prompt: goalPrompt(mission.request),
+              system: goalSystem(this.profile, mission.skipQuestions ? 0 : MAX_GOAL_QUESTIONS),
+              prompt: this.memory
+                ? `${goalPrompt(mission.request)}\n\nMémoire du projet :\n${this.memory}`
+                : goalPrompt(mission.request),
               schema: goalSchema,
             },
             signal,
@@ -429,7 +491,12 @@ export class MissionWorkflow {
 
   private brief(): MissionBrief {
     const mission = this.current!;
-    return { request: mission.request, goal: mission.goal, answers: mission.answers };
+    return {
+      request: mission.request,
+      goal: mission.goal,
+      answers: mission.answers,
+      ...(this.memory ? { memory: this.memory } : {}),
+    };
   }
 
   private async designAndTask(root: string): Promise<DeveloperState> {
@@ -459,10 +526,10 @@ export class MissionWorkflow {
             'design',
             role,
             {
-              system: designSystem(role, JARVIS_PROJECT_PROFILE),
+              system: designSystem(role, this.profile),
               prompt: designPrompt(this.brief()),
               schema: schema as never,
-              tools: this.host.readTools(),
+              tools: this.host.readTools(root),
               maxRounds: 10,
             },
             signal,
@@ -485,6 +552,101 @@ export class MissionWorkflow {
     await this.host.startTask(mission.request, {
       model: coder,
       hooks: this.loopHooks(root, coder, context),
+      ...(this.project && this.project.id !== JARVIS_PROJECT_ID
+        ? { project: { id: this.project.id, root, profile: this.project.profile } }
+        : {}),
+    });
+    await this.finishFromTask();
+    return this.host.emit();
+  }
+
+  /**
+   * « Nouveau projet » : l'ARCHITECTE choisit un gabarit et un nom, l'utilisateur
+   * valide la création (carte), puis la boucle de modification travaille sur le
+   * projet neuf, dans sa propre copie isolée.
+   */
+  private async factoryAndTask(): Promise<DeveloperState> {
+    const mission = this.current!;
+    const result: { project: ResolvedProject | null; template: ProjectTemplateId | null } = {
+      project: null,
+      template: null,
+    };
+    const done = await this.host.runTask(
+      'mission',
+      `Mission : ${MISSION_LABELS['new-project']}`,
+      [
+        { id: 'design', label: 'Architecte : gabarit et nom du projet' },
+        { id: 'create', label: 'Création du projet (ta confirmation)' },
+      ],
+      async (step, signal) => {
+        step('design', 'running');
+        try {
+          const run = await this.specialist(
+            'design',
+            'ARCHITECT',
+            {
+              system: factorySystem(),
+              prompt: factoryPrompt(this.brief()),
+              schema: factorySchema,
+            },
+            signal,
+            homedir(),
+          );
+          result.template = run.output.template;
+          step(
+            'design',
+            'done',
+            `${PROJECT_TEMPLATES[run.output.template].label} · ${run.output.name}`,
+          );
+          this.patch('create', { status: 'waiting', detail: 'ta confirmation' });
+          const from = mission.projectId;
+          try {
+            result.project = await this.deps.projects.create(run.output, step, signal);
+          } catch (error) {
+            this.patch('create', {
+              status: 'failed',
+              error: error instanceof Error ? error.message : String(error),
+            });
+            throw error;
+          }
+          const project = result.project;
+          if (!project) {
+            this.patch('create', { status: 'failed', detail: 'refusée' });
+            mission.status = 'cancelled';
+            mission.verdict = 'stopped';
+            mission.summary = 'Création refusée : rien n’a été écrit.';
+            await this.persist();
+            step('create', 'failed', 'refusée');
+            return mission.summary;
+          }
+          this.patch('create', { status: 'done', detail: project.root, files: [project.root] });
+          mission.projectId = project.id;
+          await this.deps.store.move(mission, from);
+          await this.persist();
+          return `Projet créé : ${project.root}.`;
+        } catch (error) {
+          if (mission.status === 'running')
+            this.fail(error instanceof Error ? error.message : String(error), signal);
+          throw error;
+        }
+      },
+    );
+    const { project, template } = result;
+    if (!project || mission.status !== 'running') return done;
+    this.project = project;
+    mission.status = 'task';
+    await this.persist();
+    const coder = this.modelFor('CODER');
+    await this.switchModel(coder);
+    const context = [
+      'Contexte de la mission (préparé par les spécialistes, à respecter) :',
+      briefBlock(this.brief()),
+      `Projet neuf, créé depuis le gabarit « ${template ? PROJECT_TEMPLATES[template].label : '?'} » : lis ses fichiers avant de planifier, garde sa structure, ajoute des tests.`,
+    ].join('\n');
+    await this.host.startTask(mission.request, {
+      model: coder,
+      hooks: this.loopHooks(project.root, coder, context),
+      project: { id: project.id, root: project.root, profile: project.profile },
     });
     await this.finishFromTask();
     return this.host.emit();
@@ -546,7 +708,7 @@ export class MissionWorkflow {
           id,
           'REVIEWER',
           {
-            system: reviewSystem(JARVIS_PROJECT_PROFILE),
+            system: reviewSystem(this.profile),
             prompt: reviewPrompt(diff, brief),
             schema: reviewerSchema,
           },
@@ -567,7 +729,7 @@ export class MissionWorkflow {
           id,
           'DEBUGGER',
           {
-            system: diagnoseSystem(JARVIS_PROJECT_PROFILE),
+            system: diagnoseSystem(this.profile),
             prompt: diagnosePrompt(failures, excerpts),
             schema: debuggerSchema,
             tools,

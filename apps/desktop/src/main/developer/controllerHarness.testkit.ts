@@ -10,7 +10,15 @@ import {
 import type { DevConfirmation, DeveloperState } from '../../shared/developerIpc.js';
 import { DeveloperController } from './controller.js';
 import type { FakeOllama } from './models/fakeOllama.testkit.js';
-import { displayCommand, runProcess, type Runner } from './runner.js';
+import {
+  CommandRefusedError,
+  displayCommand,
+  refusalOf,
+  runProcess,
+  type RunOutcome,
+  type RunSpec,
+  type Runner,
+} from './runner.js';
 import { ChatActivity } from './task/chatActivity.js';
 
 export interface Harness {
@@ -32,6 +40,22 @@ export interface HarnessOptions {
   answer?: (card: DevConfirmation) => boolean;
   approvePlan?: boolean;
   appVersion?: string;
+  /** Remplace une commande (npm hors ligne) ; null = la vraie. Le tri de sécurité s'applique quand même. */
+  intercept?: (spec: RunSpec, display: string) => RunOutcome | null;
+}
+
+/** Résultat de commande simulé, pour `intercept`. */
+export function fakeOutcome(display: string, stdout = '', code = 0): RunOutcome {
+  return {
+    display,
+    code,
+    stdout,
+    stderr: '',
+    timedOut: false,
+    cancelled: false,
+    truncated: false,
+    error: null,
+  };
 }
 
 /** Contrôleur Développeur réel, faux Ollama scripté, vraies commandes git et npm. */
@@ -50,6 +74,13 @@ export function createHarness(options: HarnessOptions): Harness {
   const run: Runner = (spec) => {
     const display = spec.display ?? displayCommand(spec.program, spec.args);
     ran.push({ display, level: classifyCommand(display, spec.context ?? {}).level });
+    const faked = options.intercept?.(spec, display);
+    if (faked) {
+      const refusal = refusalOf(spec, display);
+      return refusal
+        ? Promise.reject(new CommandRefusedError(display, refusal))
+        : Promise.resolve(faked);
+    }
     return runProcess(spec);
   };
   const seen = new Set<string>();

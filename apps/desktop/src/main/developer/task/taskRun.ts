@@ -1,4 +1,5 @@
 import {
+  JARVIS_PROJECT_PROFILE,
   SAFETY_LABELS,
   classifyCommand,
   planCoverage,
@@ -9,6 +10,7 @@ import {
   type DiffFile,
   type OllamaCodeOptions,
   type PlanApproval,
+  type ProjectProfile,
   type ProviderRegistry,
   type ReviewedPlan,
   type ScanFinding,
@@ -73,8 +75,8 @@ export interface TaskHost {
   audit(outcome: ToolCallOutcome, note?: string): void;
   log(line: string): void;
   node(): Promise<NodeTools | null>;
-  /** Outils de lecture (dev_read_file…) dans la copie de l'utilisateur, pour le plan. */
-  readTools(): Pick<ToolManager, 'schemas' | 'execute'>;
+  /** Outils de lecture (dev_read_file…) dans la copie de l'utilisateur (ou celle du projet `root`), pour le plan. */
+  readTools(root?: string): Pick<ToolManager, 'schemas' | 'execute'>;
 }
 
 export interface TaskDeps {
@@ -102,6 +104,8 @@ export class TaskRunBase {
     protected readonly deps: TaskDeps,
     readonly state: CodeTaskState,
     protected readonly manager: ToolManager,
+    /** Projet de la tâche : ses tests, ses fichiers protégés, son contexte. Jarvis par défaut. */
+    protected readonly profile: ProjectProfile = JARVIS_PROJECT_PROFILE,
   ) {}
 
   protected coverageRequest(name: string, args: Record<string, unknown>): CoverageRequest {
@@ -130,7 +134,11 @@ export class TaskRunBase {
   /** Décision 9 : couvert par le plan → sans clic (noté au journal) ; sinon carte avec diff ou commande. */
   protected async decide(request: ConfirmationRequest, signal?: AbortSignal): Promise<boolean> {
     const call = this.calls.get(request.callId) ?? { name: request.toolName, arguments: {} };
-    const coverage = planCoverage(this.approval, this.coverageRequest(call.name, call.arguments));
+    const coverage = planCoverage(
+      this.approval,
+      this.coverageRequest(call.name, call.arguments),
+      this.profile.protectedFileReason,
+    );
     if (coverage.covered && !request.forced) {
       this.state.planApproved.push({
         tool: call.name,
