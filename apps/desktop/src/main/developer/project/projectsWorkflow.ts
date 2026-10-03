@@ -427,7 +427,12 @@ export class ProjectsWorkflow {
    * Aucun dépôt distant.
    */
   async create(
-    input: { template: ProjectTemplateId; name: string; description: string },
+    input: {
+      template: ProjectTemplateId;
+      name: string;
+      description: string;
+      skillTools?: Array<{ name: string; description: string }>;
+    },
     step: Step,
     signal: AbortSignal,
   ): Promise<ResolvedProject | null> {
@@ -454,6 +459,7 @@ export class ProjectsWorkflow {
       title: input.name,
       description: input.description,
       ...(tfm ? { tfm } : {}),
+      ...(input.skillTools ? { skillTools: input.skillTools } : {}),
     });
     const target = toolchain === 'dotnet' ? `${dotnetIdentifier(input.name)}.sln` : null;
     const commands = factoryCommands(

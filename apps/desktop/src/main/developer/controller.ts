@@ -445,6 +445,12 @@ export class DeveloperController {
     return this.guard() ?? this.missions.openMission(id, projectId);
   }
 
+  async startProposal(missionId: string, index: number, projectId: string): Promise<DeveloperState> {
+    return (
+      this.guard(projectId === 'jarvis') ?? this.missions.startProposal(missionId, index, projectId)
+    );
+  }
+
   async listProjects(): Promise<DeveloperState> {
     if (!this.enabled()) return this.guard() ?? this.state();
     return this.projects.list();

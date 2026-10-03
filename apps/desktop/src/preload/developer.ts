@@ -48,6 +48,8 @@ export function createDeveloperApi(ipc: IpcRenderer): DeveloperApi {
     buildProject: (id: string) => ipc.invoke(DeveloperChannel.projectBuild, id),
     applyTask: () => ipc.invoke(DeveloperChannel.taskApply),
     revertTask: () => ipc.invoke(DeveloperChannel.taskRevert),
+    startProposal: (missionId: string, index: number, projectId: string) =>
+      ipc.invoke(DeveloperChannel.missionProposal, missionId, index, projectId),
     onEvent: (listener) => {
       const handler = (_event: IpcRendererEvent, state: DeveloperState): void => listener(state);
       ipc.on(DeveloperChannel.event, handler);

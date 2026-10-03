@@ -24,6 +24,23 @@ import {
   factoryPrompt,
   factorySchema,
   factorySystem,
+  computeMetrics,
+  improvePrompt,
+  improveSchema,
+  improveSystem,
+  metricIds,
+  proposalMissionKind,
+  proposalRequest,
+  researchSystem,
+  researcherSchema,
+  skillPrompt,
+  skillSchema,
+  skillSystem,
+  skillTaskContext,
+  verifyProposals,
+  SKILL_TEMPLATE_ID,
+  type ResearcherOutput,
+  type SkillDesign,
   goalPrompt,
   goalSchema,
   goalSystem,
@@ -66,6 +83,7 @@ import type {
   DeveloperState,
 } from '../../../shared/developerIpc.js';
 import { repoReader, runAsk } from '../ask/askFlow.js';
+import { gatherCodeFiles } from '../improve/measure.js';
 import { readGpuMemory } from '../models/hardwareProbe.js';
 import type { OllamaApi } from '../models/ollamaApi.js';
 import type { Runner } from '../runner.js';
@@ -101,7 +119,12 @@ export interface MissionProjects {
   resolve(id: string): Promise<ResolvedProject | string>;
   memoryNotes(id: string): Promise<string>;
   create(
-    input: { template: ProjectTemplateId; name: string; description: string },
+    input: {
+      template: ProjectTemplateId;
+      name: string;
+      description: string;
+      skillTools?: Array<{ name: string; description: string }>;
+    },
     step: Step,
     signal: AbortSignal,
   ): Promise<ResolvedProject | null>;
@@ -310,6 +333,7 @@ export class MissionWorkflow {
     request: string,
     skipQuestions: boolean,
     projectId: string = MISSION_PROJECT_ID,
+    link?: { missionId: string; index: number },
   ): Promise<DeveloperState> {
     const text = request.trim();
     if (text.length < (kind === 'question' ? 4 : 8))
@@ -330,6 +354,7 @@ export class MissionWorkflow {
           'ARCHITECT',
           'DEBUGGER',
           'DOCUMENTATION',
+          ...(kind === 'skill' ? (['RESEARCHER'] as const) : []),
           ...Object.values(LOOP_ACTORS),
         ] as SpecialistRole[]
       ).map((role) => resolveRoleModel(role, this.developer())),
@@ -339,8 +364,9 @@ export class MissionWorkflow {
       return this.host.notice(
         `Modèle absent d’Ollama : ${absent.join(', ')}. Rien n’est téléchargé.`,
       );
+    const creates = kind === 'new-project' || kind === 'skill';
     let project: ResolvedProject | null = null;
-    if (kind !== 'new-project') {
+    if (!creates) {
       const resolved = await this.deps.projects.resolve(projectId);
       if (typeof resolved === 'string') return this.host.notice(resolved);
       project = resolved;
@@ -355,14 +381,24 @@ export class MissionWorkflow {
       skipQuestions,
       now: this.now,
     });
+    if (link) this.current.fromProposal = link;
     this.counters.clear();
     this.open.clear();
     await this.persist();
+    if (link && project) {
+      const source = await this.deps.store.load(project.id, link.missionId);
+      const proposal = source?.proposals?.[link.index];
+      if (source && proposal) {
+        proposal.missionId = this.current.id;
+        await this.deps.store.save(source);
+      }
+    }
     const cwd = project?.root ?? homedir();
     if (kind === 'question') return this.answerQuestion(cwd);
+    if (kind === 'improve') return this.improveFlow(cwd);
     const state = await this.goalPhase(cwd);
     if (this.current.status !== 'running') return state;
-    return kind === 'new-project' ? this.factoryAndTask() : this.designAndTask(cwd);
+    return creates ? this.factoryAndTask() : this.designAndTask(cwd);
   }
 
   /** Réponses de l'utilisateur aux questions de l'objectif ; vides = continuer sans répondre. */
@@ -370,7 +406,8 @@ export class MissionWorkflow {
     const mission = this.current;
     if (!mission || mission.status !== 'waiting-answers')
       return this.host.notice('Aucune mission n’attend de réponse.');
-    if (mission.kind !== 'new-project' && this.project?.id !== mission.projectId) {
+    const creates = mission.kind === 'new-project' || mission.kind === 'skill';
+    if (!creates && this.project?.id !== mission.projectId) {
       const resolved = await this.deps.projects.resolve(mission.projectId);
       if (typeof resolved === 'string') return this.host.notice(resolved);
       this.project = resolved;
@@ -382,9 +419,7 @@ export class MissionWorkflow {
     }));
     mission.status = 'running';
     this.patch('goal', { status: 'done', detail: 'réponses reçues' });
-    return mission.kind === 'new-project'
-      ? this.factoryAndTask()
-      : this.designAndTask(this.project!.root);
+    return creates ? this.factoryAndTask() : this.designAndTask(this.project!.root);
   }
 
   private fail(message: string, signal?: AbortSignal): void {
@@ -566,47 +601,111 @@ export class MissionWorkflow {
   }
 
   /**
-   * « Nouveau projet » : l'ARCHITECTE choisit un gabarit et un nom, l'utilisateur
-   * valide la création (carte), puis la boucle de modification travaille sur le
+   * « Nouveau projet » : l'ARCHITECTE choisit un gabarit et un nom ; « Compétence »
+   * (0.5.5) : le RESEARCHER propose des technologies locales, l'ARCHITECTE conçoit
+   * les outils, le gabarit est `node-skill` (hors du chat). Puis l'utilisateur
+   * valide la création (carte) et la boucle de modification travaille sur le
    * projet neuf, dans sa propre copie isolée.
    */
   private async factoryAndTask(): Promise<DeveloperState> {
     const mission = this.current!;
-    const result: { project: ResolvedProject | null; template: ProjectTemplateId | null } = {
-      project: null,
-      template: null,
-    };
+    const skill = mission.kind === 'skill';
+    const result: {
+      project: ResolvedProject | null;
+      template: ProjectTemplateId | null;
+      research: ResearcherOutput | null;
+      design: SkillDesign | null;
+    } = { project: null, template: null, research: null, design: null };
     const done = await this.host.runTask(
       'mission',
-      `Mission : ${MISSION_LABELS['new-project']}`,
+      `Mission : ${MISSION_LABELS[mission.kind]}`,
       [
-        { id: 'design', label: 'Architecte : gabarit et nom du projet' },
+        ...(skill
+          ? [{ id: 'research', label: 'Recherche : technologies locales (sans web)' }]
+          : []),
+        {
+          id: 'design',
+          label: skill
+            ? 'Architecte : outils de la compétence'
+            : 'Architecte : gabarit et nom du projet',
+        },
         { id: 'create', label: 'Création du projet (ta confirmation)' },
       ],
       async (step, signal) => {
-        step('design', 'running');
         try {
-          const run = await this.specialist(
-            'design',
-            'ARCHITECT',
-            {
-              system: factorySystem(),
-              prompt: factoryPrompt(this.brief()),
-              schema: factorySchema,
-            },
-            signal,
-            homedir(),
-          );
-          result.template = run.output.template;
-          step(
-            'design',
-            'done',
-            `${PROJECT_TEMPLATES[run.output.template].label} · ${run.output.name}`,
-          );
+          let input: {
+            template: ProjectTemplateId;
+            name: string;
+            description: string;
+            skillTools?: Array<{ name: string; description: string }>;
+          };
+          if (skill) {
+            step('research', 'running');
+            const research = await this.specialist(
+              'research',
+              'RESEARCHER',
+              {
+                system: researchSystem(),
+                prompt: briefBlock(this.brief()),
+                schema: researcherSchema,
+              },
+              signal,
+              homedir(),
+            );
+            result.research = research.output;
+            step('research', 'done', `${research.output.findings.length} piste(s), à vérifier`);
+            step('design', 'running');
+            const design = await this.specialist(
+              'design',
+              'ARCHITECT',
+              {
+                system: skillSystem(),
+                prompt: skillPrompt(this.brief(), result.research),
+                schema: skillSchema,
+              },
+              signal,
+              homedir(),
+            );
+            result.design = design.output;
+            step(
+              'design',
+              'done',
+              `${design.output.skill} · ${design.output.tools.length} outil(s)`,
+            );
+            input = {
+              template: SKILL_TEMPLATE_ID,
+              name: design.output.skill,
+              description: design.output.description,
+              skillTools: design.output.tools.map((tool) => ({
+                name: tool.name,
+                description: tool.description,
+              })),
+            };
+          } else {
+            step('design', 'running');
+            const run = await this.specialist(
+              'design',
+              'ARCHITECT',
+              {
+                system: factorySystem(),
+                prompt: factoryPrompt(this.brief()),
+                schema: factorySchema,
+              },
+              signal,
+              homedir(),
+            );
+            step(
+              'design',
+              'done',
+              `${PROJECT_TEMPLATES[run.output.template].label} · ${run.output.name}`,
+            );
+            input = run.output;
+          }
+          result.template = input.template;
           this.patch('create', { status: 'waiting', detail: 'ta confirmation' });
           const from = mission.projectId;
           try {
-            result.project = await this.deps.projects.create(run.output, step, signal);
+            result.project = await this.deps.projects.create(input, step, signal);
           } catch (error) {
             this.patch('create', {
               status: 'failed',
@@ -636,7 +735,7 @@ export class MissionWorkflow {
         }
       },
     );
-    const { project, template } = result;
+    const { project, template, design, research } = result;
     if (!project || mission.status !== 'running') return done;
     this.project = project;
     mission.status = 'task';
@@ -647,6 +746,7 @@ export class MissionWorkflow {
       'Contexte de la mission (préparé par les spécialistes, à respecter) :',
       briefBlock(this.brief()),
       `Projet neuf, créé depuis le gabarit « ${template ? PROJECT_TEMPLATES[template].label : '?'} » : lis ses fichiers avant de planifier, garde sa structure, ajoute des tests.`,
+      ...(design ? [skillTaskContext(design, research)] : []),
     ].join('\n');
     await this.host.startTask(mission.request, {
       model: coder,
@@ -655,6 +755,101 @@ export class MissionWorkflow {
     });
     await this.finishFromTask();
     return this.host.emit();
+  }
+
+  /**
+   * « Améliorer » (0.5.5) : mesures fixes par Jarvis, propositions de
+   * l'ARCHITECTE en lecture seule, puis chaque preuve relue. Rien n'est modifié ;
+   * une proposition retenue devient une mission sur demande de l'utilisateur.
+   */
+  private async improveFlow(root: string): Promise<DeveloperState> {
+    const mission = this.current!;
+    return this.host.runTask(
+      'mission',
+      `Mission : ${MISSION_LABELS.improve}`,
+      [
+        { id: 'measure', label: 'Mesures fixes (sans modèle)' },
+        { id: 'proposals', label: 'Architecte : propositions avec preuves (lecture seule)' },
+        { id: 'verify', label: 'Preuves relues dans les fichiers (sans modèle)' },
+      ],
+      async (step, signal) => {
+        try {
+          step('measure', 'running');
+          this.patch('measure', { status: 'running' });
+          const metrics = computeMetrics(await gatherCodeFiles(this.deps.run, root));
+          this.patch('measure', {
+            status: 'done',
+            detail: `${metrics.files} fichiers de code, ${metrics.lines} lignes, ${metrics.tests} fichiers de test, ${metrics.todos.length} TODO, ${metrics.untested.length} sans test`,
+            output: metrics,
+          });
+          step('measure', 'done', `${metrics.files} fichiers de code`);
+          step('proposals', 'running');
+          const run = await this.specialist(
+            'proposals',
+            'ARCHITECT',
+            {
+              system: improveSystem(this.profile),
+              prompt: improvePrompt(this.brief(), metrics),
+              schema: improveSchema,
+              tools: this.host.readTools(root),
+              maxRounds: 10,
+            },
+            signal,
+            root,
+          );
+          step('proposals', 'done', `${run.output.proposals.length} proposition(s)`);
+          step('verify', 'running');
+          this.patch('verify', { status: 'running' });
+          const checked = await verifyProposals(
+            run.output.proposals,
+            repoReader(root),
+            metricIds(metrics),
+          );
+          const retained = checked.filter((p) => p.retained).length;
+          mission.proposals = checked;
+          this.patch('verify', {
+            status: 'done',
+            detail: `${retained} retenue(s) sur ${checked.length} ; sans preuve vérifiée : « avis non retenu »`,
+          });
+          mission.status = 'finished';
+          mission.verdict = retained > 0 ? 'success' : 'failed';
+          mission.summary =
+            retained > 0
+              ? `${retained} proposition(s) retenue(s) sur ${checked.length}, chacune avec une preuve relue. Choisis celles qui deviennent des missions.`
+              : 'Aucune proposition n’a de preuve vérifiable : rien n’est retenu.';
+          await this.persist();
+          step('verify', 'done', `${retained}/${checked.length} retenue(s)`);
+          return mission.summary;
+        } catch (error) {
+          if (mission.status === 'running')
+            this.fail(error instanceof Error ? error.message : String(error), signal);
+          throw error;
+        }
+      },
+    );
+  }
+
+  /** Une proposition retenue d'une mission « Améliorer » devient une mission sur le même projet. */
+  async startProposal(
+    missionId: string,
+    index: number,
+    projectId: string,
+  ): Promise<DeveloperState> {
+    if (this.current && (this.current.status === 'running' || this.current.status === 'task'))
+      return this.host.notice('Une mission est en cours : attends sa fin ou annule-la.');
+    const source = await this.deps.store.load(projectId, missionId);
+    const proposal = source?.proposals?.[index];
+    if (!source || source.kind !== 'improve' || !proposal)
+      return this.host.notice('Proposition introuvable.');
+    if (!proposal.retained)
+      return this.host.notice(
+        'Avis non retenu : sans preuve vérifiée, il ne devient pas une mission.',
+      );
+    if (proposal.missionId) return this.host.notice('Cette proposition a déjà sa mission.');
+    return this.start(proposalMissionKind(proposal), proposalRequest(proposal), false, projectId, {
+      missionId,
+      index,
+    });
   }
 
   private loopHooks(root: string, coder: string, planContext: string): TaskHooks {

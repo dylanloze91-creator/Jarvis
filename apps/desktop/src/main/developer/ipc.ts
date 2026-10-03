@@ -170,6 +170,15 @@ export function registerDeveloperIpc(
     DeveloperChannel.projectBuild,
     (_event, id: unknown) => get()?.buildProject(projectId(id) ?? '') ?? refused(),
   );
+  ipcMain.handle(
+    DeveloperChannel.missionProposal,
+    (_event, id: unknown, index: unknown, project: unknown) =>
+      get()?.startProposal(
+        typeof id === 'string' ? id.slice(0, 80) : '',
+        typeof index === 'number' && Number.isInteger(index) ? index : -1,
+        projectId(project) ?? 'jarvis',
+      ) ?? refused(),
+  );
   ipcMain.handle(DeveloperChannel.taskApply, () => get()?.applyTask() ?? refused());
   ipcMain.handle(DeveloperChannel.taskRevert, () => get()?.revertTask() ?? refused());
   ipcMain.handle(

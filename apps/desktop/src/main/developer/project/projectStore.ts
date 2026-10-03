@@ -4,8 +4,8 @@ import {
   PROJECT_ID_PATTERN,
   JARVIS_PROJECT_ID,
   emptyRegistry,
+  projectEntrySchema,
   projectMemorySchema,
-  projectRegistrySchema,
   type ProjectEntry,
   type ProjectMemory,
   type ProjectRegistry,
@@ -40,16 +40,34 @@ export class ProjectStore {
     return join(this.root(), 'registry.json');
   }
 
+  /** Entrées d'une autre version de Jarvis, illisibles ici : gardées telles quelles à la réécriture. */
+  private foreign: unknown[] = [];
+
   async registry(): Promise<ProjectRegistry> {
     await this.queue;
+    this.foreign = [];
+    let raw: unknown;
     try {
-      const parsed = projectRegistrySchema.safeParse(
-        JSON.parse(await readFile(this.registryPath(), 'utf8')),
-      );
-      return parsed.success ? parsed.data : emptyRegistry();
+      raw = JSON.parse(await readFile(this.registryPath(), 'utf8'));
     } catch {
       return emptyRegistry();
     }
+    const entries = (raw as { projects?: unknown })?.projects;
+    if (!Array.isArray(entries)) return emptyRegistry();
+    const projects: ProjectEntry[] = [];
+    for (const entry of entries) {
+      const parsed = projectEntrySchema.safeParse(entry);
+      if (parsed.success) projects.push(parsed.data);
+      else this.foreign.push(entry);
+    }
+    return { version: 1, projects };
+  }
+
+  private saveRegistry(registry: ProjectRegistry): Promise<void> {
+    return this.write(this.registryPath(), {
+      version: 1,
+      projects: [...registry.projects, ...this.foreign],
+    });
   }
 
   async list(): Promise<ProjectEntry[]> {
@@ -60,8 +78,8 @@ export class ProjectStore {
     const registry = await this.registry();
     if (registry.projects.some((p) => p.id === entry.id))
       throw new Error(`Projet déjà enregistré : ${entry.id}`);
-    registry.projects.push(entry);
-    await this.write(this.registryPath(), projectRegistrySchema.parse(registry));
+    registry.projects.push(projectEntrySchema.parse(entry));
+    await this.saveRegistry(registry);
   }
 
   /** Retire le projet de la liste ; son dossier et ses missions restent sur le disque. */
@@ -69,7 +87,7 @@ export class ProjectStore {
     const registry = await this.registry();
     const kept = registry.projects.filter((p) => p.id !== id);
     if (kept.length === registry.projects.length) return false;
-    await this.write(this.registryPath(), { ...registry, projects: kept });
+    await this.saveRegistry({ ...registry, projects: kept });
     return true;
   }
 

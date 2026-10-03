@@ -215,6 +215,7 @@ export const DeveloperChannel = {
   projectBuild: 'dev:project-build',
   taskApply: 'dev:task-apply',
   taskRevert: 'dev:task-revert',
+  missionProposal: 'dev:mission-proposal',
 } as const;
 
 export type DevStepStatus = 'pending' | 'running' | 'done' | 'failed' | 'skipped';
@@ -351,4 +352,6 @@ export interface DeveloperApi {
   buildProject(id: string): Promise<DeveloperState>;
   applyTask(): Promise<DeveloperState>;
   revertTask(): Promise<DeveloperState>;
+  /** Proposition retenue d'une mission « Améliorer » → nouvelle mission sur le même projet (0.5.5). */
+  startProposal(missionId: string, index: number, projectId: string): Promise<DeveloperState>;
 }
