@@ -15,6 +15,7 @@ import {
 import { Button } from '@/components/ui/button';
 import type { DeveloperApi, DeveloperState } from '../../../../../shared/developerIpc';
 import { TaskPanel } from '../task/TaskPanel';
+import { ProposalList } from './ProposalList';
 import { SpecialistRow } from './SpecialistRow';
 
 type Act = (action: (api: DeveloperApi) => Promise<DeveloperState | void>) => void;
@@ -53,7 +54,8 @@ export function MissionPanel({
   const [projectId, setProjectId] = useState(JARVIS_PROJECT_ID);
   const mission = state.mission;
   const [answers, setAnswers] = useState<string[]>([]);
-  const scope = kind === 'new-project' ? NEW_PROJECT_SCOPE : projectId;
+  const creates = kind === 'new-project' || kind === 'skill';
+  const scope = creates ? NEW_PROJECT_SCOPE : projectId;
   useEffect(() => {
     if (state.projects === null) act((api) => api.listProjects());
   }, []);
@@ -64,12 +66,11 @@ export function MissionPanel({
   const developer = settings?.developer ?? { codeModel: '' };
   const active = mission && (mission.status === 'running' || mission.status === 'task');
   const project = state.projects?.find((p) => p.id === projectId);
-  const repoReady =
-    kind === 'new-project'
-      ? true
-      : projectId === JARVIS_PROJECT_ID
-        ? (state.repo?.ok ?? Boolean(state.repoPath))
-        : (project?.ok ?? false);
+  const repoReady = creates
+    ? true
+    : projectId === JARVIS_PROJECT_ID
+      ? (state.repo?.ok ?? Boolean(state.repoPath))
+      : (project?.ok ?? false);
   const models = SPECIALIST_ROLES.map(
     (role) => `${ROLE_LABELS[role]} → ${resolveRoleModel(role, developer) ?? 'aucun'}`,
   );
@@ -79,11 +80,13 @@ export function MissionPanel({
         <section className="flex flex-col gap-2 rounded-xl border border-white/8 bg-white/[0.02] px-3.5 py-3">
           <div className="flex flex-wrap items-center gap-2">
             <label htmlFor="dev-mission-request" className="text-[13px] font-medium text-slate-100">
-              {kind === 'new-project'
-                ? `Nouveau projet, dans ${state.projectsRoot || '—'}`
-                : `Nouvelle mission sur ${project?.name ?? 'Jarvis'}`}
+              {kind === 'skill'
+                ? `Nouvelle compétence (projet à part, hors du chat), dans ${state.projectsRoot || '—'}`
+                : creates
+                  ? `Nouveau projet, dans ${state.projectsRoot || '—'}`
+                  : `Nouvelle mission sur ${project?.name ?? 'Jarvis'}`}
             </label>
-            {kind !== 'new-project' && (state.projects?.length ?? 0) > 1 ? (
+            {!creates && (state.projects?.length ?? 0) > 1 ? (
               <select
                 className="no-drag rounded-md border border-white/10 bg-black/40 px-2 py-1 text-xs text-slate-200"
                 value={projectId}
@@ -142,12 +145,7 @@ export function MissionPanel({
               }
               onClick={() =>
                 act((api) =>
-                  api.startMission(
-                    kind,
-                    request,
-                    skipQuestions,
-                    kind === 'new-project' ? undefined : projectId,
-                  ),
+                  api.startMission(kind, request, skipQuestions, creates ? undefined : projectId),
                 )
               }
             >
@@ -160,9 +158,11 @@ export function MissionPanel({
               Changer (onglet Modèle de code)
             </button>
             .{' '}
-            {kind === 'new-project'
+            {creates
               ? 'Le dossier n’est créé qu’après ta confirmation ; ensuite, le plan de modification attend ta validation.'
-              : 'Rien n’est écrit avant ta validation du plan ; ta copie ne change qu’avec « Appliquer », après ta confirmation.'}
+              : kind === 'improve'
+                ? 'Rien n’est modifié : des propositions dont chaque preuve est relue ; tu choisis celles qui deviennent des missions.'
+                : 'Rien n’est écrit avant ta validation du plan ; ta copie ne change qu’avec « Appliquer », après ta confirmation.'}
           </p>
         </section>
       ) : null}
@@ -224,6 +224,7 @@ export function MissionPanel({
             ))}
           </ul>
           {mission.summary ? <p className="text-xs text-slate-200">{mission.summary}</p> : null}
+          <ProposalList mission={mission} busy={state.busy} act={act} />
         </section>
       ) : null}
 

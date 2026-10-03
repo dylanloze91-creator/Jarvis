@@ -34,7 +34,13 @@ function ProjectRow({
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
         <span className="font-medium text-slate-100">{project.name}</span>
         <span className="text-[11px] text-slate-500">
-          {project.kind === 'dotnet' ? '.NET · ' : project.kind === 'node' ? 'Node · ' : ''}
+          {project.template === 'node-skill'
+            ? 'Compétence, hors du chat · '
+            : project.kind === 'dotnet'
+              ? '.NET · '
+              : project.kind === 'node'
+                ? 'Node · '
+                : ''}
           {ORIGIN[project.origin]}
           {project.template ? ` · ${PROJECT_TEMPLATES[project.template].label}` : ''}
         </span>
