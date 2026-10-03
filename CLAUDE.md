@@ -1,8 +1,8 @@
-# Jarvis 0.5.1 — contexte pour un autre développeur
+# Jarvis 0.5.2 — contexte pour un autre développeur
 
 Ce fichier est à la **racine du code**. Les chemins ci-dessous partent de ce dossier. Ce n’est pas un résumé marketing : c’est l’état réel de cet arbre. La voix a été refaite dans cet arbre (publiée en 0.4.11, section « Voix ») : la transcription restait « Chargement… 100 % » sur l’installateur Windows. La refonte du tableau de bord est dans cet arbre : fenêtre étroite = overlay, fenêtre large = tableau de bord.
 
-**Version confirmée :** `apps/desktop/package.json` → `"version": "0.5.1"`. Le `package.json` racine est aligné sur la même version depuis 0.5.0 (il était resté à `0.3.0`), mais il n’est lu par rien : la version qui compte pour l’exe, l’updater et GitHub est celle de `@jarvis/desktop`. `@jarvis/core` reste à `0.1.0`. La voix corrigée en 0.4.11 (installateur Windows) est inchangée. Le modèle par défaut reste `qwen2.5:3b`. `qwen3.5:4b` est le modèle recommandé documenté ; le repli est réglable (`fallbackModel`, défaut `qwen2.5:3b`).
+**Version confirmée :** `apps/desktop/package.json` → `"version": "0.5.2"`. Le `package.json` racine est aligné sur la même version depuis 0.5.0 (il était resté à `0.3.0`), mais il n’est lu par rien : la version qui compte pour l’exe, l’updater et GitHub est celle de `@jarvis/desktop`. `@jarvis/core` reste à `0.1.0`. La voix corrigée en 0.4.11 (installateur Windows) est inchangée. Le modèle par défaut reste `qwen2.5:3b`. `qwen3.5:4b` est le modèle recommandé documenté ; le repli est réglable (`fallbackModel`, défaut `qwen2.5:3b`).
 
 Lis ce fichier avant de modifier le code.
 
@@ -48,7 +48,7 @@ Scripts utiles (racine) :
 
 Le script `setup:voice` remplit `apps/desktop/voice-assets/` (runtime ONNX, Whisper, openWakeWord, modèle Vosk français ; non commité, voir `.gitignore`). Premier `dev` / `build` : besoin de réseau.
 
-L’installateur publié est `Jarvis-Setup-0.5.1.exe` (release GitHub `v0.5.1`).
+L’installateur publié est `Jarvis-Setup-0.5.2.exe` (release GitHub `v0.5.2`).
 
 Données utilisateur (Electron `userData`, typiquement `%APPDATA%\Jarvis`) :
 
@@ -81,7 +81,7 @@ Données utilisateur (Electron `userData`, typiquement `%APPDATA%\Jarvis`) :
     src/media/                 intent Spotify
     src/update/                lecture latest.yml GitHub
     src/history/  src/audit/
-  apps/desktop/                Electron (version 0.5.1)
+  apps/desktop/                Electron (version 0.5.2)
     electron-builder.yml       NSIS, extraResources, publish GitHub
     electron.vite.config.ts    aliases onnxruntime-web (wasm, pas JSEP)
     scripts/setup-whisper.mjs
@@ -339,9 +339,23 @@ Palier « comprendre » du plan Jarvis 5.0. Mode Développeur coupé par défaut
 - **« Anciennes tâches »** : une copie gardée (« Garder la branche ») n’est plus marquée comme la tâche affichée et la liste est rafraîchie tout de suite (`task/workflow.ts`, observation 2 du test 0.5.0).
 - Tests : `engine/ask.test.ts`, `engine/realBench.test.ts`, `ask/askFlow.test.ts`, `models/realBench.test.ts` (vrais fichiers de Jarvis, vrai `tsc`), `task/keptSandbox.test.ts`, `platform/platform.test.ts` ; utilitaire `controllerHarness.testkit.ts`. Scènes d’aperçu `?scene=developer-ask` et `?scene=developer-real-bench`.
 
+## 0.5.2 — spécialistes et missions sur Jarvis
+
+Palier « spécialistes et missions ». Mode Développeur coupé par défaut ; chat, catalogue, profils inchangés.
+
+- **Spécialistes** (`core/developer/engine/specialist.ts`, `specialistSchemas.ts`) : `runSpecialist(code, { role, system, prompt, schema, tools? })` — consigne, outils autorisés, sortie JSON validée par le schéma du rôle (`ROLE_SCHEMAS` : ARCHITECT `{architecture, modules, technologies, risks, questions}`, CODER `{filesChanged, implementation, testsAdded, notes}`, REVIEWER `{verdict, issues[{severity, file, line, message}], recommendations}` avec `findings` accepté, DEBUGGER `{hypotheses, chosen, filesToRead}`, etc.), une relance sans outils si hors format, sinon `SpecialistError`. Le rôle ne porte aucun modèle : c'est le `CodeAIProvider` passé.
+- **Routeur sans modèle** (`engine/router.ts`) : `MISSION_KINDS` question / modify / fix / document, `MISSION_CHAINS` (question : REASONER ; modify : REASONER → ARCHITECT ; fix : REASONER → DEBUGGER ; document : REASONER → DOCUMENTATION), puis la boucle `LOOP_ACTORS` (plan et modification : CODER, tests : TESTER, revue : REVIEWER, diagnostic : DEBUGGER, correction : CODER). `suggestMissionKind` propose seulement, l'utilisateur choisit.
+- **Modèle par rôle** : `developer.roleModels` (facultatif, sans défaut Zod, rôles inconnus refusés) ; `resolveRoleModel` = choix de l'utilisateur, sinon `codeModel`, sinon aucun (la mission est refusée, rien n'est choisi par Jarvis). Onglet Modèle de code → « Modèle par rôle (ton choix) », avec le score du banc réel pour chaque rôle. Changer de modèle entre deux rôles libère le précédent (`keep_alive: 0`) : un seul modèle chargé.
+- **Missions** (`main/developer/mission/missionWorkflow.ts`) : onglet « Missions » du panneau Développeur. Objectif, critères et au plus 5 questions (REASONER, case « Sans questions ») → réponses → conception en lecture seule (ARCHITECT, DEBUGGER ou DOCUMENTATION) → **la boucle de tâche existante** (`CodeTaskWorkflow.start(request, { model, hooks })`), jamais une seconde boucle. Points d'accroche facultatifs de `TaskRun` (`task/taskRun.ts`, `TaskHooks`) : `planContext` (objectif, réponses, conception ajoutés au plan), `docsOnly` (un fichier non `.md` du plan n'est pas couvert par la validation), `review` (REVIEWER après des tests verts ; un point bloquant devient un échec à corriger, dans la limite des essais), `diagnose` (DEBUGGER avant chaque correction, avec les outils de lecture de la copie isolée), `onPhase` (une ligne par étape). Sans hooks, la tâche est exactement celle d'avant.
+- **Vue de mission** (`components/developer/mission/`) : une ligne par spécialiste — état, modèle, tours, jetons/s, fichiers lus ou modifiés, erreur, ressources mesurées sur Ollama en fin d'étape (`/api/ps`, nvidia-smi), sortie JSON dépliable ; plan, diffs, tests et rapport de la tâche en dessous ; historique.
+- **Enregistrement** (`mission/history.ts`) : `userData/developer/projects/jarvis/missions/<id>.json` (décision D3), écritures en file et atomiques ; rien dans le dépôt.
+- **Journal** : pendant une mission, chaque entrée porte `projectId`, `missionId` et `role` (ARCHITECT pour ses lectures, CODER pour les écritures, TESTER pour les tests…).
+- Pas encore : recherche web pendant une mission (décision D11 en attente) ; le RESEARCHER n'a que la lecture du dépôt.
+- Tests : `engine/missions.test.ts`, `mission/missionWorkflow.test.ts` (vrai contrôleur, vrais git et npm : questions, réponses, conception, plan, échec, diagnostic, correction, revue bloquante, correction, revue ok ; journal ; historique après redémarrage ; mission « question » ; refus sans modèle). Scène `?scene=developer-mission`.
+
 ## Updater / GitHub
 
-Dernière publication : **0.5.1** (`https://github.com/dylanloze91-creator/Jarvis/releases/tag/v0.5.1`) — exe, `.blockmap` et `latest.yml` publiés : l’updater intégré la propose.
+Dernière publication : **0.5.2** (`https://github.com/dylanloze91-creator/Jarvis/releases/tag/v0.5.2`) — exe, `.blockmap` et `latest.yml` publiés : l’updater intégré la propose.
 
 - `apps/desktop/electron-builder.yml` : `publish.provider: github`, owner `dylanloze91-creator`, repo `Jarvis`, `releaseType: release`, artifact `Jarvis-Setup-${version}.exe`
 - `apps/desktop/src/main/updater.ts` : contrôle 15 s après le démarrage puis toutes les 4 h ; téléchargement auto ; **installation seulement si l’utilisateur clique**
@@ -460,6 +474,7 @@ Corrections de la revue complète (détail : `docs/audit-0410.md` du store du pr
 - **Tâches de code (0.4.25)** : toute écriture dans une copie isolée `jarvis-dev/*`, jamais dans la copie de l’utilisateur ; cœur, hors plan, suppression, retour arrière, « jeter » et dépendances toujours confirmés ; revue du diff avant les tests ; liste fixe de tests ; jamais de push ni de publication ; le chat garde la priorité sans qu’aucun fichier du chat ne change.
 - **Profil Jarvis (0.5.0)** : valeurs identiques à 0.4.26, vérifiées par `engine/profiles/jarvis.test.ts` sans régénération ; `maxFixAttempts` absent = 3 ; aucune clé de rattachement vide dans le journal ; aucun modèle de code choisi d’avance.
 - **Moteur (0.5.1)** : tout ce qui est propre à Windows dans `main/developer/` passe par `platform/` (garde : `platform/platform.test.ts`) ; une citation n’est « vérifiée » que relue dans le fichier ; le banc réel ne télécharge et ne choisit aucun modèle, et une tâche dont le fait de référence a disparu est « non mesurable », jamais réussie.
+- **Missions (0.5.2)** : une seule boucle de modification (`TaskRun`), les spécialistes s’y branchent par `TaskHooks` ; aucun modèle choisi par Jarvis (rôle sans modèle = mission refusée) ; un seul modèle chargé à la fois ; un point bloquant du REVIEWER ne passe jamais pour une réussite.
 
 Travaux **hors scope** de cet arbre (ne pas les reprendre ici) : publication GitHub.
 
