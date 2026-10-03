@@ -1,8 +1,8 @@
-# Jarvis 0.5.0 — contexte pour un autre développeur
+# Jarvis 0.5.1 — contexte pour un autre développeur
 
 Ce fichier est à la **racine du code**. Les chemins ci-dessous partent de ce dossier. Ce n’est pas un résumé marketing : c’est l’état réel de cet arbre. La voix a été refaite dans cet arbre (publiée en 0.4.11, section « Voix ») : la transcription restait « Chargement… 100 % » sur l’installateur Windows. La refonte du tableau de bord est dans cet arbre : fenêtre étroite = overlay, fenêtre large = tableau de bord.
 
-**Version confirmée :** `apps/desktop/package.json` → `"version": "0.5.0"`. Le `package.json` racine est aligné sur la même version depuis 0.5.0 (il était resté à `0.3.0`), mais il n’est lu par rien : la version qui compte pour l’exe, l’updater et GitHub est celle de `@jarvis/desktop`. `@jarvis/core` reste à `0.1.0`. La voix corrigée en 0.4.11 (installateur Windows) est inchangée. Le modèle par défaut reste `qwen2.5:3b`. `qwen3.5:4b` est le modèle recommandé documenté ; le repli est réglable (`fallbackModel`, défaut `qwen2.5:3b`).
+**Version confirmée :** `apps/desktop/package.json` → `"version": "0.5.1"`. Le `package.json` racine est aligné sur la même version depuis 0.5.0 (il était resté à `0.3.0`), mais il n’est lu par rien : la version qui compte pour l’exe, l’updater et GitHub est celle de `@jarvis/desktop`. `@jarvis/core` reste à `0.1.0`. La voix corrigée en 0.4.11 (installateur Windows) est inchangée. Le modèle par défaut reste `qwen2.5:3b`. `qwen3.5:4b` est le modèle recommandé documenté ; le repli est réglable (`fallbackModel`, défaut `qwen2.5:3b`).
 
 Lis ce fichier avant de modifier le code.
 
@@ -48,7 +48,7 @@ Scripts utiles (racine) :
 
 Le script `setup:voice` remplit `apps/desktop/voice-assets/` (runtime ONNX, Whisper, openWakeWord, modèle Vosk français ; non commité, voir `.gitignore`). Premier `dev` / `build` : besoin de réseau.
 
-L’installateur publié est `Jarvis-Setup-0.5.0.exe` (release GitHub `v0.5.0`).
+L’installateur publié est `Jarvis-Setup-0.5.1.exe` (release GitHub `v0.5.1`).
 
 Données utilisateur (Electron `userData`, typiquement `%APPDATA%\Jarvis`) :
 
@@ -81,7 +81,7 @@ Données utilisateur (Electron `userData`, typiquement `%APPDATA%\Jarvis`) :
     src/media/                 intent Spotify
     src/update/                lecture latest.yml GitHub
     src/history/  src/audit/
-  apps/desktop/                Electron (version 0.5.0)
+  apps/desktop/                Electron (version 0.5.1)
     electron-builder.yml       NSIS, extraResources, publish GitHub
     electron.vite.config.ts    aliases onnxruntime-web (wasm, pas JSEP)
     scripts/setup-whisper.mjs
@@ -328,9 +328,20 @@ Premier palier du plan Jarvis 5.0 (moteur de développement multi-spécialistes)
 - **Modèles** : aucun modèle de code n’est choisi ni « par défaut ». Les libellés « Par défaut », « Repli », « Rapide », « Qualité » de `codeModels.ts` sont d’anciens libellés ; seul le banc réel (0.5.2) désignera un modèle par rôle, validé par l’utilisateur.
 - Hors 0.5.0 : P12 (écriture sûre de `settings.json`), Block / SiteBlock et AI Editor comme projets.
 
+## 0.5.1 — comprendre : couche plateforme, questions sur le code, banc réel
+
+Palier « comprendre » du plan Jarvis 5.0. Mode Développeur coupé par défaut ; chat, prompts, catalogue d’outils et profils matériel inchangés (tests figés verts sans régénération).
+
+- **Couche plateforme** (`apps/desktop/src/main/developer/platform/`) : `DevPlatform` (`killTree`, `spawnDetached`, `gpuQuery` nvidia-smi, `installHint` winget, `pathKey`, `examplePath`, `defaultProjectsRoot`, `installer` NSIS, npm-cli, séparateur du PATH, `core.longpaths`). `windows.ts` est la seule implémentation propre à un système ; `posix.ts` range tel quel le comportement non-Windows d’avant (Linux de la machine de test), **ce n’est pas une implémentation macOS**. `runner.ts`, `task/sandbox.ts`, `models/hardwareProbe.ts`, `environment.ts`, `tools/setupTools.ts`, `ipc.ts` et `controller.ts` passent par elle. `platform/platform.test.ts` échoue si un fichier de `main/developer/` hors de `platform/` contient `taskkill`, `winget`, un lancement de `nvidia-smi`, PowerShell, `APPDATA`, `'win32'`, `path.win32` ou un chemin `C:\` écrit en dur. Le relevé du profil matériel du démarrage (`main/machine/probe.ts`) n’est pas touché.
+- **Questions sur le code** (`core/developer/engine/ask.ts`, `main/developer/ask/askFlow.ts`) : onglet Projet → « Poser une question ». Modèle : `developer.codeModel` (aucun choisi d’avance ; vide = message, rien n’est envoyé). Outils montrés : les six de lecture (`ASK_TOOLS`), y compris `dev_git_status`, `dev_git_diff`, `dev_inspect_logs`, chaque lecture au journal. Réponse JSON `{reponse, fichiers, citations[{chemin, extrait}]}` (français ou anglais), une relance si hors format. **Chaque citation est relue dans le fichier** (`checkAnswer`) : vérifiée, introuvable, fichier absent, ou refusée (`..`, `.git`, secrets). La discussion garde la priorité (le modèle est libéré pendant un tour de chat).
+- **Banc réel** (`core/developer/engine/realBench.ts`, `main/developer/models/realBenchRunner.ts`) : onglet Modèle de code → « Banc réel : <modèle> », **seulement sur un modèle déjà installé** (rien n’est téléchargé, aucun modèle n’est choisi). 13 tâches tirées de la copie de travail (lue sans être modifiée) : 4 questions à réponse connue, un plan, une revue piégée (`forceConfirm` retiré de `shell.ts`) et une revue saine, une correction (comparaison inversée dans le vrai `repoCheck.ts`) et une génération dans un dossier jetable vérifiées par `tsc` puis `node check.mjs`, un contexte long (8 vrais fichiers), une explication, un test Vitest, une recherche sur pages données. Un fait de référence absent de la copie rend la tâche « non mesurable », jamais réussie. Les lignes ajoutées par le modèle sont passées à `scanLine` avant toute exécution. Résultat : un score par rôle (`scoreRoles`), enregistré dans `userData/developer/code-model.json` (`realBenches`). Un seul passage par modèle ; pondérations et passages multiples reportés (optimisation).
+- **Rôles** (`core/developer/engine/roles.ts`) : ARCHITECT, CODER, REASONER, REVIEWER, DEBUGGER, TESTER, RESEARCHER, DOCUMENTATION, liés à aucun modèle.
+- **« Anciennes tâches »** : une copie gardée (« Garder la branche ») n’est plus marquée comme la tâche affichée et la liste est rafraîchie tout de suite (`task/workflow.ts`, observation 2 du test 0.5.0).
+- Tests : `engine/ask.test.ts`, `engine/realBench.test.ts`, `ask/askFlow.test.ts`, `models/realBench.test.ts` (vrais fichiers de Jarvis, vrai `tsc`), `task/keptSandbox.test.ts`, `platform/platform.test.ts` ; utilitaire `controllerHarness.testkit.ts`. Scènes d’aperçu `?scene=developer-ask` et `?scene=developer-real-bench`.
+
 ## Updater / GitHub
 
-Dernière publication : **0.5.0** (`https://github.com/dylanloze91-creator/Jarvis/releases/tag/v0.5.0`) — exe, `.blockmap` et `latest.yml` publiés : l’updater intégré la propose.
+Dernière publication : **0.5.1** (`https://github.com/dylanloze91-creator/Jarvis/releases/tag/v0.5.1`) — exe, `.blockmap` et `latest.yml` publiés : l’updater intégré la propose.
 
 - `apps/desktop/electron-builder.yml` : `publish.provider: github`, owner `dylanloze91-creator`, repo `Jarvis`, `releaseType: release`, artifact `Jarvis-Setup-${version}.exe`
 - `apps/desktop/src/main/updater.ts` : contrôle 15 s après le démarrage puis toutes les 4 h ; téléchargement auto ; **installation seulement si l’utilisateur clique**
@@ -448,6 +459,7 @@ Corrections de la revue complète (détail : `docs/audit-0410.md` du store du pr
 - **Modèle de code (0.4.24)** : aucun téléchargement avant la validation de la configuration, et jamais sans la carte de confirmation ; Jarvis ne change jamais les variables du serveur Ollama (il les montre et attend la confirmation) ; `ollama-unchanged.test.ts` reste vert sans régénérer ses fichiers.
 - **Tâches de code (0.4.25)** : toute écriture dans une copie isolée `jarvis-dev/*`, jamais dans la copie de l’utilisateur ; cœur, hors plan, suppression, retour arrière, « jeter » et dépendances toujours confirmés ; revue du diff avant les tests ; liste fixe de tests ; jamais de push ni de publication ; le chat garde la priorité sans qu’aucun fichier du chat ne change.
 - **Profil Jarvis (0.5.0)** : valeurs identiques à 0.4.26, vérifiées par `engine/profiles/jarvis.test.ts` sans régénération ; `maxFixAttempts` absent = 3 ; aucune clé de rattachement vide dans le journal ; aucun modèle de code choisi d’avance.
+- **Moteur (0.5.1)** : tout ce qui est propre à Windows dans `main/developer/` passe par `platform/` (garde : `platform/platform.test.ts`) ; une citation n’est « vérifiée » que relue dans le fichier ; le banc réel ne télécharge et ne choisit aucun modèle, et une tâche dont le fait de référence a disparu est « non mesurable », jamais réussie.
 
 Travaux **hors scope** de cet arbre (ne pas les reprendre ici) : publication GitHub.
 
