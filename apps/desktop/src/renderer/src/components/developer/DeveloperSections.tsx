@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button';
 import type { DeveloperApi, DeveloperState } from '../../../../shared/developerIpc';
 import { StepTimeline } from './parts';
 import { AskPanel } from './ask/AskPanel';
+import { DeveloperGuide } from './DeveloperGuide';
 import { ProjectsSection } from './project/ProjectsSection';
 
 type Act = (action: (api: DeveloperApi) => Promise<DeveloperState | void>) => void;
@@ -44,6 +45,7 @@ export function ProjectActions({
       </div>
       <AskPanel state={state} act={act} codeModel={codeModel} />
       <ProjectsSection state={state} act={act} />
+      <DeveloperGuide />
     </>
   );
 }

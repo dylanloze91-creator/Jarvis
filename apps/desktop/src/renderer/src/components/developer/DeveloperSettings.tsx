@@ -40,9 +40,10 @@ export function DeveloperSettingsSection({ developer, onSave }: Props) {
   return (
     <div className="flex flex-col gap-4" data-developer-settings>
       <p className="text-xs leading-snug text-slate-400">
-        Jarvis Développeur lit le code de Jarvis dans une copie de travail sur ton PC, pour
-        l’analyser (et plus tard le modifier, toujours avec ta validation). Coupé, rien ne change :
-        discussion, voix, Spotify, Google et recherche restent identiques.
+        Jarvis Développeur travaille sur le code de Jarvis et sur tes projets, dans des copies
+        isolées sur ton PC : questions, missions, modifications testées, toujours avec ta
+        validation. Coupé, rien ne change : discussion, voix, Spotify, Google et recherche restent
+        identiques.
       </p>
       <Toggle
         label="Activer Jarvis Développeur"
