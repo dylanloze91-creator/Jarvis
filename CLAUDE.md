@@ -1,8 +1,8 @@
-# Jarvis 0.4.26 — contexte pour un autre développeur
+# Jarvis 0.5.0 — contexte pour un autre développeur
 
 Ce fichier est à la **racine du code**. Les chemins ci-dessous partent de ce dossier. Ce n’est pas un résumé marketing : c’est l’état réel de cet arbre. La voix a été refaite dans cet arbre (publiée en 0.4.11, section « Voix ») : la transcription restait « Chargement… 100 % » sur l’installateur Windows. La refonte du tableau de bord est dans cet arbre : fenêtre étroite = overlay, fenêtre large = tableau de bord.
 
-**Version confirmée :** `apps/desktop/package.json` → `"version": "0.4.26"`. Le `package.json` racine est encore à `0.3.0` : c’est le monorepo, pas l’appli. La version qui compte pour l’exe, l’updater et GitHub est celle de `@jarvis/desktop`. La voix corrigée en 0.4.11 (installateur Windows) est inchangée. Le modèle par défaut reste `qwen2.5:3b`. `qwen3.5:4b` est le modèle recommandé documenté ; le repli est réglable (`fallbackModel`, défaut `qwen2.5:3b`).
+**Version confirmée :** `apps/desktop/package.json` → `"version": "0.5.0"`. Le `package.json` racine est aligné sur la même version depuis 0.5.0 (il était resté à `0.3.0`), mais il n’est lu par rien : la version qui compte pour l’exe, l’updater et GitHub est celle de `@jarvis/desktop`. `@jarvis/core` reste à `0.1.0`. La voix corrigée en 0.4.11 (installateur Windows) est inchangée. Le modèle par défaut reste `qwen2.5:3b`. `qwen3.5:4b` est le modèle recommandé documenté ; le repli est réglable (`fallbackModel`, défaut `qwen2.5:3b`).
 
 Lis ce fichier avant de modifier le code.
 
@@ -48,7 +48,7 @@ Scripts utiles (racine) :
 
 Le script `setup:voice` remplit `apps/desktop/voice-assets/` (runtime ONNX, Whisper, openWakeWord, modèle Vosk français ; non commité, voir `.gitignore`). Premier `dev` / `build` : besoin de réseau.
 
-L’installateur publié est `Jarvis-Setup-0.4.26.exe` (release GitHub `v0.4.26`).
+L’installateur publié est `Jarvis-Setup-0.5.0.exe` (release GitHub `v0.5.0`).
 
 Données utilisateur (Electron `userData`, typiquement `%APPDATA%\Jarvis`) :
 
@@ -81,7 +81,7 @@ Données utilisateur (Electron `userData`, typiquement `%APPDATA%\Jarvis`) :
     src/media/                 intent Spotify
     src/update/                lecture latest.yml GitHub
     src/history/  src/audit/
-  apps/desktop/                Electron (version 0.4.26)
+  apps/desktop/                Electron (version 0.5.0)
     electron-builder.yml       NSIS, extraResources, publish GitHub
     electron.vite.config.ts    aliases onnxruntime-web (wasm, pas JSEP)
     scripts/setup-whisper.mjs
@@ -316,9 +316,21 @@ Seulement s’il n’y a pas encore de `settings.json`. Un fichier déjà prése
 - **Complet** (32 Go ou plus et 6 Go de VRAM ou plus) : `qwen2.5:3b`, voix, contexte, catalogue et prompt identiques à 0.4.25. Le modèle de code de 23 Go n’est pas téléchargé.
 - Sans carte NVIDIA : le même choix selon la RAM, `num_gpu` 0, phrase « réglé pour le processeur ». Mesure en échec : profil modeste, phrase « La mesure de la machine a échoué. »
 
+## 0.5.0 — socle « projet » de Jarvis 5.0 (invisible)
+
+Premier palier du plan Jarvis 5.0 (moteur de développement multi-spécialistes). Rien de visible : chat, voix, réveil, Spotify, Google, recherche, profils matériel et déroulé « Tâche » se comportent comme en 0.4.26. Ajouts seulement.
+
+- **Profil de projet** (`packages/core/src/developer/engine/projectProfile.ts`) : ce que Jarvis Développeur sait d’un type de projet (validation de la copie, liste fixe de tests, essais, fichiers du cœur, espaces de travail et scripts automatiques, contexte des consignes, consigne système du fournisseur de code, préfixe `jarvis-dev/`). **Profil Jarvis** (`engine/profiles/jarvis.ts`) : il reprend les constantes existantes (`TEST_SUITES`, `coreFileReason`, `validateRepo`, `KNOWN_WORKSPACES`, `AUTO_SCRIPTS`…). Les textes « Dépôt : Jarvis… » (`taskPrompts.ts`) et « Tu es le modèle de code de Jarvis Développeur… » (`codeProvider.ts`) vivent maintenant dans ce profil. `engine/profiles/jarvis.test.ts` compare chaque valeur à celles relevées sur l’arbre 0.4.26 (consignes au caractère près, tri des commandes de test, raisons du cœur chemin par chemin, rapports de validation, scripts npm racine). **Ne jamais régénérer ces valeurs pour faire passer le test.**
+- **Journal d’audit** : `projectId`, `missionId`, `role` facultatifs dans `AuditEntry` ; `buildAuditEntry(outcome, scope?)`. Sans rattachement, aucune de ces clés n’est écrite (`audit/scope.test.ts`, `main/audit-store-scope.test.ts`). Rien ne les remplit encore : les missions arriveront plus tard.
+- **Réglage `developer.maxFixAttempts`** (1 à 5) : facultatif, **sans défaut Zod** (un bloc `developer` déjà enregistré ne gagne pas de clé). Absent : 3. `resolveMaxFixAttempts`, `maxTestSeriesFor(n) = n + 2`, `approvalFromPlan(plan, branche, essais)` ; la tâche lit le réglage au démarrage (`task/workflow.ts`). Pas de contrôle dans l’interface en 0.5.0. Tests : `developer/fixAttempts.test.ts`, `task/fixAttemptsTask.test.ts` (1 correction → 3 séries).
+- **`OllamaCodeOptions.numBatch`** : `num_batch` envoyé seulement s’il est fourni. Le chat n’en passe jamais : `ollama-unchanged.test.ts` reste vert sans régénération (`providers/ollama-num-batch.test.ts`).
+- **`zod` déclaré** dans `apps/desktop/package.json` (P11), en `devDependencies` comme les autres bibliothèques empaquetées par electron-vite : le paquet du processus principal reste construit comme avant (seules les `dependencies` sont externalisées).
+- **Modèles** : aucun modèle de code n’est choisi ni « par défaut ». Les libellés « Par défaut », « Repli », « Rapide », « Qualité » de `codeModels.ts` sont d’anciens libellés ; seul le banc réel (0.5.2) désignera un modèle par rôle, validé par l’utilisateur.
+- Hors 0.5.0 : P12 (écriture sûre de `settings.json`), Block / SiteBlock et AI Editor comme projets.
+
 ## Updater / GitHub
 
-Dernière publication : **0.4.26** (`https://github.com/dylanloze91-creator/Jarvis/releases/tag/v0.4.26`) — exe, `.blockmap` et `latest.yml` publiés : l’updater intégré la propose.
+Dernière publication : **0.5.0** (`https://github.com/dylanloze91-creator/Jarvis/releases/tag/v0.5.0`) — exe, `.blockmap` et `latest.yml` publiés : l’updater intégré la propose.
 
 - `apps/desktop/electron-builder.yml` : `publish.provider: github`, owner `dylanloze91-creator`, repo `Jarvis`, `releaseType: release`, artifact `Jarvis-Setup-${version}.exe`
 - `apps/desktop/src/main/updater.ts` : contrôle 15 s après le démarrage puis toutes les 4 h ; téléchargement auto ; **installation seulement si l’utilisateur clique**
@@ -435,6 +447,7 @@ Corrections de la revue complète (détail : `docs/audit-0410.md` du store du pr
 - **Jarvis Développeur** : coupé par défaut ; outils `dev_*` dans leur propre gestionnaire, jamais dans le catalogue du chat ; une commande refusée par `classifyCommand` ne démarre jamais (`runner.ts`) ; jamais de push ni de publication ; `chat-unchanged.test.ts` reste vert sans régénérer ses fichiers.
 - **Modèle de code (0.4.24)** : aucun téléchargement avant la validation de la configuration, et jamais sans la carte de confirmation ; Jarvis ne change jamais les variables du serveur Ollama (il les montre et attend la confirmation) ; `ollama-unchanged.test.ts` reste vert sans régénérer ses fichiers.
 - **Tâches de code (0.4.25)** : toute écriture dans une copie isolée `jarvis-dev/*`, jamais dans la copie de l’utilisateur ; cœur, hors plan, suppression, retour arrière, « jeter » et dépendances toujours confirmés ; revue du diff avant les tests ; liste fixe de tests ; jamais de push ni de publication ; le chat garde la priorité sans qu’aucun fichier du chat ne change.
+- **Profil Jarvis (0.5.0)** : valeurs identiques à 0.4.26, vérifiées par `engine/profiles/jarvis.test.ts` sans régénération ; `maxFixAttempts` absent = 3 ; aucune clé de rattachement vide dans le journal ; aucun modèle de code choisi d’avance.
 
 Travaux **hors scope** de cet arbre (ne pas les reprendre ici) : publication GitHub.
 
