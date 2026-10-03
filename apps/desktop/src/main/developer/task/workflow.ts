@@ -1,8 +1,8 @@
 import { existsSync } from 'node:fs';
 import {
-  MAX_FIX_ATTEMPTS,
   classifyCommand,
   randomId,
+  resolveMaxFixAttempts,
   sandboxBranch,
   type Settings,
   type ToolManager,
@@ -161,7 +161,7 @@ export class CodeTaskWorkflow {
       baseline: null,
       runs: [],
       attempts: 0,
-      maxAttempts: MAX_FIX_ATTEMPTS,
+      maxAttempts: resolveMaxFixAttempts(this.deps.settings().developer.maxFixAttempts),
       testSeriesUsed: 0,
       findings: [],
       pauses: [],

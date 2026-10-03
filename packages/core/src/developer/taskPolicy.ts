@@ -1,6 +1,12 @@
 import { coreFileReason } from './coreFiles.js';
 import { normalizeRepoRelative, protectedRepoPath } from './repoPaths.js';
-import { MAX_TEST_SERIES, type PlanAction, type TaskPlan, type TestSuiteId } from './taskPlan.js';
+import {
+  MAX_FIX_ATTEMPTS,
+  maxTestSeriesFor,
+  type PlanAction,
+  type TaskPlan,
+  type TestSuiteId,
+} from './taskPlan.js';
 
 export interface ReviewedPlanFile {
   path: string;
@@ -77,7 +83,11 @@ export interface PlanApproval {
   maxTestSeries: number;
 }
 
-export function approvalFromPlan(plan: ReviewedPlan, branch: string): PlanApproval {
+export function approvalFromPlan(
+  plan: ReviewedPlan,
+  branch: string,
+  maxFixAttempts: number = MAX_FIX_ATTEMPTS,
+): PlanApproval {
   return {
     branch,
     files: new Set(
@@ -86,7 +96,7 @@ export function approvalFromPlan(plan: ReviewedPlan, branch: string): PlanApprov
         .map((file) => file.path.toLowerCase()),
     ),
     tests: plan.tests,
-    maxTestSeries: MAX_TEST_SERIES,
+    maxTestSeries: maxTestSeriesFor(maxFixAttempts),
   };
 }
 

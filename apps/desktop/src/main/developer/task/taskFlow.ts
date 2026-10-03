@@ -1,6 +1,5 @@
 import {
   CodeModelFormatError,
-  MAX_TEST_SERIES,
   SCAN_LABELS,
   approvalFromPlan,
   compareRuns,
@@ -10,6 +9,7 @@ import {
   findingKey,
   fixPrompt,
   fixSystemPrompt,
+  maxTestSeriesFor,
   parsePlanReply,
   parseUnifiedDiff,
   planPrompt,
@@ -341,7 +341,7 @@ export class TaskRun extends TaskRunBase {
       files: reviewed.files,
       tests: reviewed.tests,
       testCommands: reviewed.tests.map(suiteCommand),
-      maxTestSeries: MAX_TEST_SERIES,
+      maxTestSeries: maxTestSeriesFor(state.maxAttempts),
       dirtyFiles: reviewed.files.map((f) => f.path).filter((p) => this.repo.dirty.has(p)),
       branchCommand: `git worktree add -b ${state.branch} "${join(this.repo.worktreeRoot, this.repo.folder)}" HEAD`,
       installCommand: `npm ${SANDBOX_NPM_CI_ARGS.join(' ')}`,
@@ -361,7 +361,7 @@ export class TaskRun extends TaskRunBase {
     }
     state.approvedAt = Date.now();
     state.status = 'running';
-    this.approval = approvalFromPlan(reviewed, state.branch);
+    this.approval = approvalFromPlan(reviewed, state.branch, state.maxAttempts);
     step('approval', 'done', 'validé');
 
     step('sandbox', 'running');

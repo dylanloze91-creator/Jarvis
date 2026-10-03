@@ -16,8 +16,25 @@ export type TestSuiteId = keyof typeof TEST_SUITES;
 export const TEST_SUITE_IDS = Object.keys(TEST_SUITES) as TestSuiteId[];
 export const DEFAULT_TEST_SUITES: TestSuiteId[] = ['typecheck', 'test-core'];
 export const MAX_FIX_ATTEMPTS = 3;
+/** Bornes du réglage `developer.maxFixAttempts`. */
+export const FIX_ATTEMPTS_MIN = 1;
+export const FIX_ATTEMPTS_MAX = 5;
 /** Référence + premier essai + une série par correction (décision 9 : maxFixAttempts + 2). */
 export const MAX_TEST_SERIES = MAX_FIX_ATTEMPTS + 2;
+
+export function maxTestSeriesFor(maxFixAttempts: number): number {
+  return maxFixAttempts + 2;
+}
+
+/** Réglage absent ou hors bornes : `MAX_FIX_ATTEMPTS`. */
+export function resolveMaxFixAttempts(value: number | undefined): number {
+  return value !== undefined &&
+    Number.isInteger(value) &&
+    value >= FIX_ATTEMPTS_MIN &&
+    value <= FIX_ATTEMPTS_MAX
+    ? value
+    : MAX_FIX_ATTEMPTS;
+}
 
 export function suiteCommand(suite: TestSuiteId): string {
   return `npm ${TEST_SUITES[suite].npmArgs.join(' ')}`;

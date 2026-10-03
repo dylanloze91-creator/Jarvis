@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { DEFAULT_SYSTEM_PROMPT } from './agent/agent.js';
+import { FIX_ATTEMPTS_MAX, FIX_ATTEMPTS_MIN } from './developer/taskPlan.js';
 import { DEFAULT_SITEBLOCK_BASE_URL } from './siteblock/url.js';
 import { defaultCategoryPolicies } from './tools/permissions.js';
 
@@ -85,6 +86,11 @@ export const developerSettingsSchema = z.object({
   codeModel: z.string().max(200).default(''),
   /** Dossier des copies isolées (vide = à côté de la copie de travail : `<copie>-taches`). */
   worktreeRoot: z.string().max(400).default(''),
+  /**
+   * Corrections tentées après un échec de tests. Absent : 3. Pas de défaut
+   * Zod : un bloc developer déjà enregistré ne gagne pas de clé.
+   */
+  maxFixAttempts: z.number().int().min(FIX_ATTEMPTS_MIN).max(FIX_ATTEMPTS_MAX).optional(),
 });
 
 export type DeveloperSettings = z.infer<typeof developerSettingsSchema>;
