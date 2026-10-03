@@ -617,7 +617,7 @@ export class DeveloperController {
     return this.guard() ?? this.tasks.discard();
   }
 
-  keepTask(): DeveloperState {
+  async keepTask(): Promise<DeveloperState> {
     return this.guard() ?? this.tasks.keep();
   }
 

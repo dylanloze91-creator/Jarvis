@@ -77,7 +77,9 @@ export class CodeTaskWorkflow {
   }
 
   view(): Pick<DeveloperState, 'codeTask' | 'sandboxes' | 'worktreeRoot'> {
-    const path = this.current?.sandbox?.path ?? null;
+    // Une copie gardée n'appartient plus à la tâche affichée : elle rejoint les anciennes tâches.
+    const open = this.current && !this.current.state.closed ? this.current : null;
+    const path = open?.sandbox?.path ?? null;
     return {
       codeTask: this.current?.state ?? null,
       sandboxes:
@@ -230,10 +232,15 @@ export class CodeTaskWorkflow {
     );
   }
 
-  keep(): DeveloperState {
+  async keep(): Promise<DeveloperState> {
     const run = this.finished();
     if (!run) return this.host.notice('Aucune tâche terminée à garder.');
     run.state.closed = 'kept';
+    if (this.repoRootValue) {
+      this.sandboxes = (
+        await listSandboxes(this.deps.run, this.repoRootValue, this.worktreeRoot())
+      ).map((s) => ({ ...s, current: false }));
+    }
     return this.host.notice(
       `Branche ${run.state.branch} gardée dans ${run.state.worktreePath}. Tu pourras la jeter plus tard (Anciennes tâches).`,
     );
