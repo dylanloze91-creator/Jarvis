@@ -142,6 +142,8 @@ export function TaskPanel({
           onKeep={() => act((api) => api.keepTask())}
           onRollback={(sha) => act((api) => api.rollbackTask(sha))}
           onDiscard={() => act((api) => api.discardTask())}
+          onApply={() => act((api) => api.applyTask())}
+          onRevert={() => act((api) => api.revertTask())}
         />
       ) : null}
 

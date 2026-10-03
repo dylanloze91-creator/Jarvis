@@ -1,8 +1,10 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { History, Rocket } from 'lucide-react';
 import {
+  JARVIS_PROJECT_ID,
   MISSION_KINDS,
   MISSION_LABELS,
+  NEW_PROJECT_SCOPE,
   ROLE_LABELS,
   SPECIALIST_ROLES,
   resolveRoleModel,
@@ -48,15 +50,26 @@ export function MissionPanel({
   const [kind, setKind] = useState<MissionKind>('modify');
   const [kindTouched, setKindTouched] = useState(false);
   const [skipQuestions, setSkipQuestions] = useState(false);
+  const [projectId, setProjectId] = useState(JARVIS_PROJECT_ID);
   const mission = state.mission;
   const [answers, setAnswers] = useState<string[]>([]);
+  const scope = kind === 'new-project' ? NEW_PROJECT_SCOPE : projectId;
   useEffect(() => {
-    if (state.missions === null) act((api) => api.listMissions());
+    if (state.projects === null) act((api) => api.listProjects());
   }, []);
+  useEffect(() => {
+    act((api) => api.listMissions(scope));
+  }, [scope]);
   useEffect(() => setAnswers([]), [mission?.id]);
   const developer = settings?.developer ?? { codeModel: '' };
   const active = mission && (mission.status === 'running' || mission.status === 'task');
-  const repoReady = state.repo?.ok ?? Boolean(state.repoPath);
+  const project = state.projects?.find((p) => p.id === projectId);
+  const repoReady =
+    kind === 'new-project'
+      ? true
+      : projectId === JARVIS_PROJECT_ID
+        ? (state.repo?.ok ?? Boolean(state.repoPath))
+        : (project?.ok ?? false);
   const models = SPECIALIST_ROLES.map(
     (role) => `${ROLE_LABELS[role]} → ${resolveRoleModel(role, developer) ?? 'aucun'}`,
   );
@@ -64,13 +77,32 @@ export function MissionPanel({
     <div className="flex flex-col gap-3" data-mission-panel>
       {!active ? (
         <section className="flex flex-col gap-2 rounded-xl border border-white/8 bg-white/[0.02] px-3.5 py-3">
-          <label htmlFor="dev-mission-request" className="text-[13px] font-medium text-slate-100">
-            Nouvelle mission sur Jarvis
-          </label>
+          <div className="flex flex-wrap items-center gap-2">
+            <label htmlFor="dev-mission-request" className="text-[13px] font-medium text-slate-100">
+              {kind === 'new-project'
+                ? `Nouveau projet, dans ${state.projectsRoot || '—'}`
+                : `Nouvelle mission sur ${project?.name ?? 'Jarvis'}`}
+            </label>
+            {kind !== 'new-project' && (state.projects?.length ?? 0) > 1 ? (
+              <select
+                className="no-drag rounded-md border border-white/10 bg-black/40 px-2 py-1 text-xs text-slate-200"
+                value={projectId}
+                aria-label="Projet de la mission"
+                onChange={(event) => setProjectId(event.target.value)}
+              >
+                {state.projects!.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                    {p.ok ? '' : ' (à vérifier)'}
+                  </option>
+                ))}
+              </select>
+            ) : null}
+          </div>
           <textarea
             id="dev-mission-request"
             className="no-drag min-h-20 rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-[13px] text-slate-100 outline-none placeholder:text-slate-500 focus:border-cyan-300/40"
-            placeholder="Ajoute un réglage pour… / Corrige… / Où est… ?"
+            placeholder="Ajoute un réglage pour… / Corrige… / Où est… ? / Crée une petite CLI qui…"
             value={request}
             maxLength={2000}
             onChange={(event) => {
@@ -108,7 +140,16 @@ export function MissionPanel({
               disabled={
                 state.busy || !repoReady || request.trim().length < (kind === 'question' ? 4 : 8)
               }
-              onClick={() => act((api) => api.startMission(kind, request, skipQuestions))}
+              onClick={() =>
+                act((api) =>
+                  api.startMission(
+                    kind,
+                    request,
+                    skipQuestions,
+                    kind === 'new-project' ? undefined : projectId,
+                  ),
+                )
+              }
             >
               <Rocket className="size-3.5" /> Lancer la mission
             </Button>
@@ -118,7 +159,10 @@ export function MissionPanel({
             <button type="button" className="no-drag underline" onClick={onOpenModelTab}>
               Changer (onglet Modèle de code)
             </button>
-            . Rien n’est écrit avant ta validation du plan ; ta copie n’est jamais modifiée.
+            .{' '}
+            {kind === 'new-project'
+              ? 'Le dossier n’est créé qu’après ta confirmation ; ensuite, le plan de modification attend ta validation.'
+              : 'Rien n’est écrit avant ta validation du plan ; ta copie ne change qu’avec « Appliquer », après ta confirmation.'}
           </p>
         </section>
       ) : null}
@@ -215,7 +259,7 @@ export function MissionPanel({
                   variant="ghost"
                   className="ml-auto"
                   disabled={state.busy}
-                  onClick={() => act((api) => api.openMission(m.id))}
+                  onClick={() => act((api) => api.openMission(m.id, state.missionsProject))}
                 >
                   Ouvrir
                 </Button>

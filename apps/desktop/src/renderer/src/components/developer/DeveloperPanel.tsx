@@ -83,7 +83,7 @@ export function DeveloperPanel({
           </span>
         ) : null}
         <span className="text-xs text-slate-500">
-          Ta copie n’est jamais modifiée · modèle de code :{' '}
+          Ta copie ne change qu’avec « Appliquer », après ta confirmation · modèle de code :{' '}
           {codeModel ? (codeModelById(codeModel)?.label ?? codeModel) : 'pas encore choisi'}
         </span>
       </header>

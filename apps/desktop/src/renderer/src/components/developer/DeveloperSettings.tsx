@@ -132,7 +132,7 @@ export function DeveloperSettingsSection({ developer, onSave }: Props) {
             <SectionTitle>Copies isolées des tâches</SectionTitle>
             <Field
               label="Dossier"
-              hint="Une copie par tâche (environ 1,1 Go avec ses dépendances), sur une branche jarvis-dev/*. Ta copie de travail n’est jamais modifiée."
+              hint="Une copie par tâche (environ 1,1 Go avec ses dépendances), sur une branche jarvis-dev/*. Ta copie de travail ne change qu’avec « Appliquer », après ta confirmation."
             >
               <Input
                 value={worktreeRoot}
