@@ -34,6 +34,7 @@ function ProjectRow({
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
         <span className="font-medium text-slate-100">{project.name}</span>
         <span className="text-[11px] text-slate-500">
+          {project.kind === 'dotnet' ? '.NET · ' : project.kind === 'node' ? 'Node · ' : ''}
           {ORIGIN[project.origin]}
           {project.template ? ` · ${PROJECT_TEMPLATES[project.template].label}` : ''}
         </span>
@@ -128,6 +129,24 @@ export function ProjectsSection({ state, act }: { state: DeveloperState; act: Ac
         », onglet Missions). Chaque projet a sa mémoire, ses missions et ses copies isolées ; rien
         de Jarvis n’est écrit dans leurs dépôts.
       </p>
+      {state.dotnet ? (
+        <p className="text-[11px] leading-snug text-slate-400" data-dotnet-sdk>
+          {state.dotnet.sdks.length ? (
+            <>SDK .NET : {state.dotnet.sdks.join(', ')} (applis Windows WinForms, WPF, services).</>
+          ) : (
+            <>
+              SDK .NET absent : nécessaire seulement pour les applis Windows. À installer toi-même
+              {state.dotnet.hint ? (
+                <>
+                  {' '}
+                  : <code className="font-mono text-slate-300">{state.dotnet.hint}</code>
+                </>
+              ) : null}
+              . Jarvis ne l’installe jamais.
+            </>
+          )}
+        </p>
+      ) : null}
       {state.projects === null ? (
         <p className="text-xs text-slate-500">Lecture des projets…</p>
       ) : (
@@ -140,7 +159,7 @@ export function ProjectsSection({ state, act }: { state: DeveloperState; act: Ac
       <div className="flex flex-wrap items-center gap-2">
         <input
           className="no-drag min-w-64 flex-1 rounded-md border border-white/10 bg-black/30 px-2 py-1 font-mono text-[12px] text-slate-100"
-          placeholder="Chemin complet d’un projet Node existant (dépôt git)"
+          placeholder="Chemin complet d’un projet Node ou .NET existant (dépôt git)"
           aria-label="Dossier du projet à importer"
           value={path}
           maxLength={400}
