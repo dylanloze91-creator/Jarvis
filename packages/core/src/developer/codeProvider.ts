@@ -21,6 +21,7 @@ import {
   type SourceFile,
 } from './codeSchemas.js';
 import { runToolLoop, type ToolLoopInput, type ToolLoopResult } from './toolLoop.js';
+import { JARVIS_PROJECT_PROFILE } from './engine/profiles/jarvis.js';
 
 /**
  * Fournisseur IA de code, interchangeable, posé sur le registre existant
@@ -72,10 +73,7 @@ export class CodeProviderRefusedError extends Error {
 
 export const DEFAULT_OLLAMA_URL = 'http://127.0.0.1:11434';
 
-const SYSTEM = [
-  'Tu es le modèle de code de Jarvis Développeur, un assistant qui travaille sur le code de l’application Jarvis (TypeScript, Electron, React).',
-  'Réponds en français. N’invente aucun fichier ni aucune fonction : appuie-toi seulement sur ce qu’on te montre.',
-].join(' ');
+const SYSTEM = JARVIS_PROJECT_PROFILE.codeSystemPrompt;
 
 function filesBlock(files: SourceFile[]): string {
   return files.map((file) => `--- ${file.path}\n${file.content}`).join('\n\n');

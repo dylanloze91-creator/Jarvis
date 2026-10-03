@@ -18,6 +18,8 @@ export * from './testOutput.js';
 export * from './taskPlan.js';
 export * from './taskPolicy.js';
 export * from './taskPrompts.js';
+export * from './engine/projectProfile.js';
+export * from './engine/profiles/jarvis.js';
 export { normalizeRepoRelative, protectedRepoPath } from './repoPaths.js';
 export {
   ARCHITECTURE_LAYERS,

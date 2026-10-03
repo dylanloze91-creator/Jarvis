@@ -7,15 +7,13 @@ import {
   type TaskPlan,
 } from './taskPlan.js';
 import type { ReviewedPlan } from './taskPolicy.js';
+import { JARVIS_PROJECT_PROFILE } from './engine/profiles/jarvis.js';
 
 /**
  * Consignes du modèle de code pour une tâche. Indépendantes du modèle :
  * appels d'outils natifs d'Ollama, plan en JSON validé par Zod.
  */
-const PROJECT = `Dépôt : Jarvis, monorepo TypeScript (npm workspaces).
-- packages/core : logique sans Electron (agent, outils, fournisseurs, réglages Zod, développeur).
-- apps/desktop : application Electron (main, preload, renderer React).
-Tests : Vitest à côté des fichiers (*.test.ts). Code et messages en français.`;
+const PROJECT = JARVIS_PROJECT_PROFILE.promptContext;
 
 export const PLAN_MARKER = 'ÉTAPE : PLAN';
 export const EDIT_MARKER = 'ÉTAPE : MODIFICATION';
