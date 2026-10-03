@@ -28,6 +28,9 @@ export * from './engine/specialist.js';
 export * from './engine/router.js';
 export * from './engine/missionPrompts.js';
 export * from './engine/mission.js';
+export * from './engine/profiles/node.js';
+export * from './engine/templates.js';
+export * from './engine/project.js';
 export { normalizeRepoRelative, protectedRepoPath } from './repoPaths.js';
 export {
   ARCHITECTURE_LAYERS,

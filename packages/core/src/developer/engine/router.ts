@@ -4,7 +4,7 @@ import { SPECIALIST_ROLES, type SpecialistRole } from './roles.js';
  * Routeur du moteur : des règles fixes, sans modèle. Le type de mission vient
  * d'un choix de l'utilisateur ; `suggestMissionKind` ne fait que proposer.
  */
-export const MISSION_KINDS = ['question', 'modify', 'fix', 'document'] as const;
+export const MISSION_KINDS = ['question', 'modify', 'fix', 'document', 'new-project'] as const;
 export type MissionKind = (typeof MISSION_KINDS)[number];
 
 export const MISSION_LABELS: Record<MissionKind, string> = {
@@ -12,6 +12,7 @@ export const MISSION_LABELS: Record<MissionKind, string> = {
   modify: 'Modifier ou ajouter',
   fix: 'Corriger un bug',
   document: 'Documenter',
+  'new-project': 'Nouveau projet',
 };
 
 export type ChainActor = SpecialistRole | 'USER';
@@ -39,9 +40,14 @@ export const MISSION_CHAINS: Record<MissionKind, ChainStep[]> = {
     { id: 'goal', actor: 'REASONER', label: 'Objectif, critères et questions' },
     { id: 'design', actor: 'DOCUMENTATION', label: 'Plan de la documentation (lecture seule)' },
   ],
+  'new-project': [
+    { id: 'goal', actor: 'REASONER', label: 'Objectif, critères et questions' },
+    { id: 'design', actor: 'ARCHITECT', label: 'Gabarit et nom du projet' },
+    { id: 'create', actor: 'USER', label: 'Création du projet (ta confirmation)' },
+  ],
 };
 
-/** Étapes de la boucle de modification partagée par modify, fix et document. */
+/** Étapes de la boucle de modification partagée par modify, fix, document et new-project. */
 export const LOOP_ACTORS = {
   plan: 'CODER',
   edit: 'CODER',
@@ -59,6 +65,13 @@ export function missionUsesTask(kind: MissionKind): boolean {
 
 export function suggestMissionKind(text: string): MissionKind {
   const value = text.trim().toLowerCase();
+  if (
+    /\b(nouveau projet|nouvelle (appli|application))\b/.test(value) ||
+    /^(crée|cree|créer|creer|fais|fabrique|génère|genere)(-moi)? (moi )?(un|une) (petit |petite |nouveau |nouvelle )?(appli|application|cli|outil en ligne de commande|programme|site|page web|bibliothèque|bibliotheque|librairie|projet)\b/.test(
+      value,
+    )
+  )
+    return 'new-project';
   if (/\b(corrige|répare|repare|bug|erreur|plante|échoue|echoue|cassé|casse|ne marche)/.test(value))
     return 'fix';
   if (/\b(documente|documentation|readme|explique dans|rédige la doc)/.test(value))

@@ -97,6 +97,8 @@ export const developerSettingsSchema = z.object({
    * absent : le modèle de code. Jamais rempli par Jarvis ; pas de défaut Zod.
    */
   roleModels: z.partialRecord(z.enum(SPECIALIST_ROLES), z.string().max(200)).optional(),
+  /** Dossier des nouveaux projets (absent ou vide : `C:\dev\Projets` sous Windows, décision D2). */
+  projectsRoot: z.string().max(400).optional(),
 });
 
 export type DeveloperSettings = z.infer<typeof developerSettingsSchema>;

@@ -92,7 +92,27 @@ export const rawPlanSchema = z
     message: 'le plan doit lister au moins un fichier (« fichiers »)',
   });
 
-export function normalizePlan(raw: z.infer<typeof rawPlanSchema>): TaskPlan {
+/** Tests d'un projet : sous-ensemble de la liste fixe, et ceux lancés quand le plan n'en cite aucun. */
+export interface SuiteSet {
+  ids: readonly TestSuiteId[];
+  defaults: readonly TestSuiteId[];
+}
+
+export const JARVIS_SUITES: SuiteSet = { ids: TEST_SUITE_IDS, defaults: DEFAULT_TEST_SUITES };
+
+/** Tests d'un profil de projet, dans l'ordre de la liste fixe. */
+export function suiteSetOf(profile: {
+  testSuites: Readonly<Record<string, unknown>>;
+  defaultTestSuites: readonly string[];
+}): SuiteSet {
+  const ids = TEST_SUITE_IDS.filter((id) => id in profile.testSuites);
+  return { ids, defaults: ids.filter((id) => profile.defaultTestSuites.includes(id)) };
+}
+
+export function normalizePlan(
+  raw: z.infer<typeof rawPlanSchema>,
+  suites: SuiteSet = JARVIS_SUITES,
+): TaskPlan {
   const files = (raw.fichiers ?? raw.files ?? []).map((file) => ({
     path: (file.chemin ?? file.path ?? '').trim(),
     action: ACTIONS[(file.action ?? 'edit').trim().toLowerCase()] ?? 'edit',
@@ -100,14 +120,14 @@ export function normalizePlan(raw: z.infer<typeof rawPlanSchema>): TaskPlan {
   }));
   const tests = (raw.tests ?? [])
     .map((value) => value.trim().toLowerCase())
-    .filter((value): value is TestSuiteId => (TEST_SUITE_IDS as string[]).includes(value));
+    .filter((value): value is TestSuiteId => (suites.ids as string[]).includes(value));
   return {
     summary: (raw.resume ?? raw.résumé ?? raw.summary ?? '').trim().slice(0, 600),
     criteria: (raw.criteres ?? raw.critères ?? raw.criteria ?? [])
       .map((c) => c.slice(0, 200))
       .slice(0, 8),
     files: files.filter((file) => file.path).slice(0, 30),
-    tests: orderSuites(tests.length ? tests : DEFAULT_TEST_SUITES),
+    tests: orderSuites(tests.length ? tests : [...suites.defaults], suites.ids),
   };
 }
 
@@ -115,11 +135,17 @@ export function normalizePlan(raw: z.infer<typeof rawPlanSchema>): TaskPlan {
  * La vérification des types passe toujours en premier : elle compile le cœur,
  * dont les tests de l'application ont besoin. « test » couvre les deux espaces.
  */
-export function orderSuites(suites: TestSuiteId[]): TestSuiteId[] {
-  const set = new Set<TestSuiteId>(['typecheck', ...suites]);
+export function orderSuites(
+  suites: TestSuiteId[],
+  ids: readonly TestSuiteId[] = TEST_SUITE_IDS,
+): TestSuiteId[] {
+  const set = new Set<TestSuiteId>([
+    ...(ids.includes('typecheck') ? (['typecheck'] as const) : []),
+    ...suites,
+  ]);
   if (set.has('test')) {
     set.delete('test-core');
     set.delete('test-desktop');
   }
-  return TEST_SUITE_IDS.filter((id) => set.has(id));
+  return ids.filter((id) => set.has(id));
 }

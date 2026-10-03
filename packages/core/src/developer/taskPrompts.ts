@@ -1,32 +1,28 @@
 import { CodeModelFormatError, extractJson } from './codeSchemas.js';
-import {
-  normalizePlan,
-  rawPlanSchema,
-  TEST_SUITES,
-  TEST_SUITE_IDS,
-  type TaskPlan,
-} from './taskPlan.js';
+import { normalizePlan, rawPlanSchema, suiteSetOf, type TaskPlan } from './taskPlan.js';
 import type { ReviewedPlan } from './taskPolicy.js';
+import type { ProjectProfile } from './engine/projectProfile.js';
 import { JARVIS_PROJECT_PROFILE } from './engine/profiles/jarvis.js';
 
 /**
  * Consignes du modèle de code pour une tâche. Indépendantes du modèle :
- * appels d'outils natifs d'Ollama, plan en JSON validé par Zod.
+ * appels d'outils natifs d'Ollama, plan en JSON validé par Zod. Sans profil,
+ * celles de Jarvis (figées par `jarvis.test.ts`).
  */
-const PROJECT = JARVIS_PROJECT_PROFILE.promptContext;
-
 export const PLAN_MARKER = 'ÉTAPE : PLAN';
 export const EDIT_MARKER = 'ÉTAPE : MODIFICATION';
 export const FIX_MARKER = 'ÉTAPE : CORRECTION';
 
-export function planSystemPrompt(): string {
-  const suites = TEST_SUITE_IDS.map((id) => `"${id}" (${TEST_SUITES[id].label})`).join(', ');
+export function planSystemPrompt(project: ProjectProfile = JARVIS_PROJECT_PROFILE): string {
+  const { ids, defaults } = suiteSetOf(project);
+  const suites = ids.map((id) => `"${id}" (${project.testSuites[id]!.label})`).join(', ');
+  const example = defaults.map((id) => `"${id}"`).join(', ');
   return `Tu es Jarvis Développeur. ${PLAN_MARKER}.
-${PROJECT}
+${project.promptContext}
 Tu prépares un plan de modification. Tu ne modifies rien à cette étape.
 Utilise les outils de lecture (dev_search_files, dev_search_code, dev_read_file) pour trouver les vrais fichiers, en peu d'appels.
 Termine par un seul bloc JSON, sans autre texte après :
-{"resume": "ce qui va changer", "criteres": ["comment on saura que c'est réussi"], "fichiers": [{"chemin": "chemin/relatif.ts", "action": "creer|modifier|supprimer", "pourquoi": "..."}], "tests": ["typecheck", "test-core"]}
+{"resume": "ce qui va changer", "criteres": ["comment on saura que c'est réussi"], "fichiers": [{"chemin": "chemin/relatif.ts", "action": "creer|modifier|supprimer", "pourquoi": "..."}], "tests": [${example}]}
 Tests possibles : ${suites}.
 Liste tous les fichiers à créer ou modifier, tests compris. Garde le plan petit.`;
 }
@@ -36,7 +32,10 @@ export function planPrompt(request: string): string {
 }
 
 /** Plan extrait de la réponse ; lève CodeModelFormatError avec un message à renvoyer au modèle. */
-export function parsePlanReply(text: string): TaskPlan {
+export function parsePlanReply(
+  text: string,
+  project: ProjectProfile = JARVIS_PROJECT_PROFILE,
+): TaskPlan {
   const raw = extractJson(text);
   const parsed = rawPlanSchema.safeParse(raw);
   if (!parsed.success) {
@@ -45,7 +44,7 @@ export function parsePlanReply(text: string): TaskPlan {
       text,
     );
   }
-  return normalizePlan(parsed.data);
+  return normalizePlan(parsed.data, suiteSetOf(project));
 }
 
 function planBlock(plan: ReviewedPlan): string {
@@ -71,9 +70,12 @@ const EDIT_RULES = `Règles :
 - Jamais de secret, jamais de réseau, jamais de lancement de processus sans nécessité.
 Quand tout est fait, réponds par un court résumé, sans appel d'outil.`;
 
-export function editSystemPrompt(plan: ReviewedPlan): string {
+export function editSystemPrompt(
+  plan: ReviewedPlan,
+  project: ProjectProfile = JARVIS_PROJECT_PROFILE,
+): string {
   return `Tu es Jarvis Développeur. ${EDIT_MARKER}.
-${PROJECT}
+${project.promptContext}
 Tu travailles dans une copie isolée du dépôt, sur une branche jarvis-dev/*.
 ${planBlock(plan)}
 ${EDIT_RULES}`;
@@ -83,9 +85,14 @@ export function editPrompt(request: string): string {
   return `Fais les modifications du plan pour cette demande :\n${request.trim()}`;
 }
 
-export function fixSystemPrompt(plan: ReviewedPlan, attempt: number, max: number): string {
+export function fixSystemPrompt(
+  plan: ReviewedPlan,
+  attempt: number,
+  max: number,
+  project: ProjectProfile = JARVIS_PROJECT_PROFILE,
+): string {
   return `Tu es Jarvis Développeur. ${FIX_MARKER} (essai ${attempt} sur ${max}).
-${PROJECT}
+${project.promptContext}
 Tes modifications ont fait échouer des tests. Corrige-les dans la copie isolée.
 ${planBlock(plan)}
 ${EDIT_RULES}`;

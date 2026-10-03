@@ -23,7 +23,11 @@ export interface ReviewedPlan extends Omit<TaskPlan, 'files'> {
 }
 
 /** Contrôle du plan par Jarvis : chemins, cœur, existence. Le modèle ne décide pas de ce qui est « cœur ». */
-export function reviewPlan(plan: TaskPlan, exists: (path: string) => boolean): ReviewedPlan {
+export function reviewPlan(
+  plan: TaskPlan,
+  exists: (path: string) => boolean,
+  protectedReason: (path: string) => string | null = coreFileReason,
+): ReviewedPlan {
   const seen = new Set<string>();
   const files: ReviewedPlanFile[] = [];
   for (const file of plan.files) {
@@ -43,7 +47,7 @@ export function reviewPlan(plan: TaskPlan, exists: (path: string) => boolean): R
       path,
       action: file.action === 'create' && present ? 'edit' : file.action,
       reason: file.reason,
-      core: rel ? coreFileReason(rel) : 'chemin invalide',
+      core: rel ? protectedReason(rel) : 'chemin invalide',
       exists: present,
       problem,
     });
@@ -119,13 +123,17 @@ export interface Coverage {
  * Décision 9 : une validation du plan couvre les fichiers hors cœur listés
  * dans le plan et les tests de la liste fixe ; tout le reste redemande.
  */
-export function planCoverage(approval: PlanApproval | null, request: CoverageRequest): Coverage {
+export function planCoverage(
+  approval: PlanApproval | null,
+  request: CoverageRequest,
+  protectedReason: (path: string) => string | null = coreFileReason,
+): Coverage {
   if (!approval) return { covered: false, reason: 'aucun plan validé' };
   switch (request.kind) {
     case 'write': {
       const rel = normalizeRepoRelative(request.path);
       if (!rel) return { covered: false, reason: 'chemin invalide' };
-      const core = coreFileReason(rel);
+      const core = protectedReason(rel);
       if (core) return { covered: false, reason: `fichier du cœur (${core}) : toujours confirmé` };
       return approval.files.has(rel.toLowerCase())
         ? { covered: true, reason: 'validé par le plan' }
