@@ -5,6 +5,8 @@ import { ChooseStep } from './ChooseStep';
 import { ProposalStep, ValidateStep } from './ConfigSteps';
 import { HardwareStep } from './HardwareStep';
 import { RealBenchSection } from './RealBenchSection';
+import { RoleModelsSection } from './RoleModelsSection';
+import type { RoleModels, SpecialistRole } from '@jarvis/core';
 import { BenchStep, PullStep } from './RunSteps';
 import type { FlowStatus } from './StepCard';
 
@@ -25,12 +27,16 @@ export function CodeModelPanel({
   codeModel,
   chatModel,
   onChooseDefault,
+  roleModels,
+  onChooseRole,
 }: {
   state: DeveloperState;
   act: Act;
   codeModel: string;
   chatModel: string;
   onChooseDefault: (modelId: string) => Promise<void>;
+  roleModels: RoleModels;
+  onChooseRole: (role: SpecialistRole, model: string | null) => Promise<void>;
 }) {
   const model = state.model;
   const [selection, setSelection] = useState<Selection>(() => ({
@@ -107,6 +113,16 @@ export function CodeModelPanel({
         onChoose={(id) => {
           setSaving(true);
           void onChooseDefault(id).finally(() => setSaving(false));
+        }}
+      />
+      <RoleModelsSection
+        state={state}
+        codeModel={codeModel}
+        roleModels={roleModels}
+        saving={saving}
+        onChange={(role, model) => {
+          setSaving(true);
+          void onChooseRole(role, model).finally(() => setSaving(false));
         }}
       />
       <RealBenchSection state={state} onRun={(id) => act((api) => api.realBenchmark(id))} />

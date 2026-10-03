@@ -11,6 +11,7 @@ import {
   toolView,
   validateRepo,
   type AuditLogStore,
+  type MissionKind,
   type ProviderRegistry,
   type ConfirmationRequest,
   type RepoFacts,
@@ -30,6 +31,8 @@ import type {
 } from '../../shared/developerIpc.js';
 import { ANALYSIS_STEPS, analyzeArchitecture } from './analysis.js';
 import { repoReader, runAsk } from './ask/askFlow.js';
+import { MissionStore } from './mission/history.js';
+import { MissionWorkflow } from './mission/missionWorkflow.js';
 import { measureFree, probeEnvironment, type EnvironmentProbe } from './environment.js';
 import { detectRepo, gatherRepoFacts } from './repo.js';
 import { runProcess, type Runner } from './runner.js';
@@ -90,6 +93,7 @@ export class DeveloperController {
   private readonly pending = new Map<string, (approved: boolean) => void>();
   private readonly models: CodeModelWorkflow;
   private readonly tasks: CodeTaskWorkflow;
+  private readonly missions: MissionWorkflow;
   private readonly env: Record<string, string | undefined>;
 
   private ollama(): OllamaApi {
@@ -188,6 +192,7 @@ export class DeveloperController {
           void deps.auditLog.append(
             buildAuditEntry(
               note ? { ...outcome, content: `${note}. ${outcome.content}` } : outcome,
+              this.missions?.scope(),
             ),
           ),
         log: (line) => this.appendLog(line),
@@ -215,6 +220,34 @@ export class DeveloperController {
         graceMs: deps.chatGraceMs,
       },
     );
+    this.missions = new MissionWorkflow(
+      {
+        runTask: (kind, title, steps, work) => this.runTask(kind, title, steps, work),
+        emit: () => this.emit(),
+        notice: (message) => {
+          this.notice = message;
+          return this.emit();
+        },
+        repoRoot: async () => {
+          const saved = deps.getSettings().developer.repoPath;
+          if (!this.repo && saved) this.setRepo(await gatherRepoFacts(saved, this.run));
+          return this.repo?.ok ? this.repoPath : null;
+        },
+        readTools: () => this.auditedReadTools(ASK_TOOLS),
+        pause: (model, signal) => this.yieldToChat(model, signal),
+        startTask: (request, options) => this.tasks.start(request, options),
+        currentTask: () => this.tasks.view().codeTask,
+      },
+      {
+        registry: deps.registry,
+        ollama: () => this.ollama(),
+        run: this.run,
+        settings: () => deps.getSettings(),
+        modelOptions: (model) => this.models.optionsFor(model),
+        store: new MissionStore(() => join(deps.userDataPath(), 'developer', 'projects')),
+        now: deps.now ? () => deps.now!().getTime() : undefined,
+      },
+    );
   }
 
   /** Lecture de la copie de l'utilisateur : outils `safe`, inscrits au journal. */
@@ -226,7 +259,7 @@ export class DeveloperController {
       schemas: () => view.schemas(),
       execute: async (call, context, events) => {
         const outcome = await view.execute(call, context, events);
-        void this.deps.auditLog.append(buildAuditEntry(outcome));
+        void this.deps.auditLog.append(buildAuditEntry(outcome, this.missions?.scope()));
         return outcome;
       },
     };
@@ -258,6 +291,7 @@ export class DeveloperController {
       busy: this.controller !== null,
       notice: this.notice,
       ask: this.askView,
+      ...this.missions.view(),
     };
   }
 
@@ -337,6 +371,27 @@ export class DeveloperController {
           : 'Réponse prête, mais aucune citation n’a pu être vérifiée : prends-la avec prudence.';
       },
     );
+  }
+
+  async startMission(
+    kind: MissionKind,
+    request: string,
+    skipQuestions: boolean,
+  ): Promise<DeveloperState> {
+    return this.guard(true) ?? this.missions.start(kind, request, skipQuestions);
+  }
+
+  async answerMission(answers: string[]): Promise<DeveloperState> {
+    return this.guard(true) ?? this.missions.answer(answers);
+  }
+
+  async listMissions(): Promise<DeveloperState> {
+    if (!this.enabled()) return this.guard() ?? this.state();
+    return this.missions.listMissions();
+  }
+
+  async openMission(id: string): Promise<DeveloperState> {
+    return this.guard() ?? this.missions.openMission(id);
   }
 
   async realBenchmark(modelId: string): Promise<DeveloperState> {

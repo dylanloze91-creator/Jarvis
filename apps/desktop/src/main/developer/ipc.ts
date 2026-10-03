@@ -1,5 +1,5 @@
 import type { IpcMain, WebContents } from 'electron';
-import { candidateRepoPaths } from '@jarvis/core';
+import { MISSION_KINDS, candidateRepoPaths, type MissionKind } from '@jarvis/core';
 import { DeveloperChannel, type DeveloperState } from '../../shared/developerIpc.js';
 import {
   DEVELOPER_DISABLED_NOTICE,
@@ -57,6 +57,8 @@ export function registerDeveloperIpc(
     sandboxes: null,
     worktreeRoot: '',
     ask: null,
+    mission: null,
+    missions: null,
   });
 
   const refused = (): DeveloperState => ({ ...disabled(), notice: DEVELOPER_DISABLED_NOTICE });
@@ -109,6 +111,32 @@ export function registerDeveloperIpc(
     DeveloperChannel.ask,
     (_event, question: unknown) =>
       get()?.ask(typeof question === 'string' ? question.slice(0, 2_000) : '') ?? refused(),
+  );
+  ipcMain.handle(
+    DeveloperChannel.missionStart,
+    (_event, kind: unknown, request: unknown, skip: unknown) =>
+      get()?.startMission(
+        (MISSION_KINDS as readonly string[]).includes(String(kind))
+          ? (kind as MissionKind)
+          : 'modify',
+        typeof request === 'string' ? request.slice(0, 2_000) : '',
+        skip === true,
+      ) ?? refused(),
+  );
+  ipcMain.handle(
+    DeveloperChannel.missionAnswer,
+    (_event, answers: unknown) =>
+      get()?.answerMission(
+        Array.isArray(answers)
+          ? answers.slice(0, 10).map((a) => (typeof a === 'string' ? a.slice(0, 1_000) : ''))
+          : [],
+      ) ?? refused(),
+  );
+  ipcMain.handle(DeveloperChannel.missions, () => get()?.listMissions() ?? refused());
+  ipcMain.handle(
+    DeveloperChannel.missionOpen,
+    (_event, id: unknown) =>
+      get()?.openMission(typeof id === 'string' ? id.slice(0, 80) : '') ?? refused(),
   );
   ipcMain.handle(
     DeveloperChannel.realBenchmark,

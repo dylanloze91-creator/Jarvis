@@ -2,7 +2,9 @@ import {
   SUGGESTED_REPO_PATH,
   buildArchitectureReport,
   classifyCommand,
+  createMission,
   type DevCheck,
+  type MissionState,
 } from '@jarvis/core';
 import type { AskView, DevStep, DeveloperApi, DeveloperState } from '../../../shared/developerIpc';
 import { previewModelState } from './developerModelSample';
@@ -73,6 +75,83 @@ const PREVIEW_ASK: AskView = {
   },
 };
 
+/** Exemple de mission pour les captures (scène `developer-mission`) : pas une vraie exécution. */
+function previewMission(): MissionState {
+  const now = Date.now();
+  const mission = createMission({
+    id: 'apercu-mission',
+    projectId: 'jarvis',
+    kind: 'modify',
+    request: 'Ajoute un outil qui donne la version de Jarvis, avec son test.',
+    skipQuestions: false,
+    now: now - 600_000,
+  });
+  mission.status = 'task';
+  mission.goal = {
+    goal: 'Un outil get_jarvis_version enregistré, avec un test qui passe.',
+    questions: [],
+    criteria: ['aucun nouvel échec de test'],
+    constraints: ['ne pas toucher au catalogue figé du chat'],
+  };
+  const model = 'exemple:modele';
+  mission.steps = [
+    {
+      id: 'goal',
+      actor: 'REASONER',
+      label: 'Objectif, critères et questions',
+      status: 'done',
+      model,
+      rounds: 1,
+      tokPerSec: 14.2,
+      startedAt: now - 590_000,
+      finishedAt: now - 560_000,
+      output: mission.goal,
+    },
+    {
+      id: 'design',
+      actor: 'ARCHITECT',
+      label: 'Conception (lecture seule)',
+      status: 'done',
+      model,
+      rounds: 4,
+      tokPerSec: 12.8,
+      files: ['apps/desktop/src/main/tools/index.ts'],
+      resources: { vramBytes: 3.1e9, ramBytes: 20e9, gpuUsedMiB: 4800 },
+      startedAt: now - 560_000,
+      finishedAt: now - 420_000,
+    },
+    {
+      id: 'plan-1',
+      actor: 'CODER',
+      label: 'Plan de modification',
+      status: 'done',
+      model,
+      detail: '3 fichier(s)',
+      startedAt: now - 420_000,
+      finishedAt: now - 300_000,
+    },
+    {
+      id: 'test-1',
+      actor: 'TESTER',
+      label: 'Série de tests (liste fixe, sans modèle)',
+      status: 'done',
+      detail: 'typecheck : OK · test-desktop : 425 réussis',
+      startedAt: now - 280_000,
+      finishedAt: now - 240_000,
+    },
+    {
+      id: 'edit-1',
+      actor: 'CODER',
+      label: 'Modification dans la copie isolée',
+      status: 'running',
+      model,
+      detail: 'modification dans la copie isolée',
+      startedAt: now - 240_000,
+    },
+  ];
+  return mission;
+}
+
 /** Pont de prévisualisation de Jarvis Développeur (captures d'écran, Vite seul). */
 export function createPreviewDeveloperApi(
   scene: string | null,
@@ -96,6 +175,8 @@ export function createPreviewDeveloperApi(
     model: previewModelState(scene),
     ...previewTaskState(scene),
     ask: scene === 'developer-ask' ? PREVIEW_ASK : null,
+    mission: scene === 'developer-mission' ? previewMission() : null,
+    missions: [],
   };
   applyTaskScene(scene, state);
   if (scene === 'developer-pull') {
@@ -250,6 +331,10 @@ export function createPreviewDeveloperApi(
     cleanSandboxes: async () => set({ notice: 'Aperçu : rien n’est supprimé.' }),
     ask: async () => set({ notice: 'Aperçu : aucune question n’est envoyée au modèle.' }),
     realBenchmark: async () => set({ notice: 'Aperçu : le banc réel n’est pas simulé.' }),
+    startMission: async () => set({ notice: 'Aperçu : aucune mission n’est lancée.' }),
+    answerMission: async () => set({ notice: 'Aperçu : rien n’est envoyé.' }),
+    listMissions: async () => set({}),
+    openMission: async () => set({}),
     onEvent: (listener) => {
       listeners.add(listener);
       return () => listeners.delete(listener);

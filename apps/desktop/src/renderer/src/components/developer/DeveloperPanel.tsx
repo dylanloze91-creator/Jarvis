@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Bot, Code2, FolderGit2, GitBranch, Wrench } from 'lucide-react';
-import { codeModelById, type Settings } from '@jarvis/core';
+import { Bot, Code2, FolderGit2, GitBranch, Rocket, Wrench } from 'lucide-react';
+import { codeModelById, type RoleModels, type Settings, type SpecialistRole } from '@jarvis/core';
 import { Button } from '@/components/ui/button';
 import { useDeveloper } from '@/hooks/useDeveloper';
 import { cn } from '@/lib/utils';
@@ -10,12 +10,14 @@ import type { RuntimeStatus } from '../../../../shared/ipc';
 import { DeveloperConfirmationCard } from './DeveloperConfirmationCard';
 import { ProjectActions, TaskSection } from './DeveloperSections';
 import { CodeModelPanel } from './model/CodeModelPanel';
+import { MissionPanel } from './mission/MissionPanel';
 import { TaskPanel } from './task/TaskPanel';
 
-export type DeveloperTab = 'project' | 'model' | 'task';
+export type DeveloperTab = 'project' | 'missions' | 'model' | 'task';
 
 const TABS: Array<{ id: DeveloperTab; label: string; icon: typeof Bot }> = [
   { id: 'project', label: 'Projet', icon: FolderGit2 },
+  { id: 'missions', label: 'Missions', icon: Rocket },
   { id: 'model', label: 'Modèle de code', icon: Bot },
   { id: 'task', label: 'Tâche', icon: Wrench },
 ];
@@ -52,6 +54,16 @@ export function DeveloperPanel({
     if (!settings) return;
     const payload = await window.jarvis.settings.set({
       developer: { ...settings.developer, codeModel: modelId },
+    });
+    onSaved(payload);
+  };
+  const chooseRole = async (role: SpecialistRole, model: string | null): Promise<void> => {
+    if (!settings) return;
+    const next: RoleModels = { ...settings.developer.roleModels };
+    if (model) next[role] = model;
+    else delete next[role];
+    const payload = await window.jarvis.settings.set({
+      developer: { ...settings.developer, roleModels: next },
     });
     onSaved(payload);
   };
@@ -97,7 +109,7 @@ export function DeveloperPanel({
         ))}
       </div>
 
-      {tab === 'task' && state.confirmation ? (
+      {(tab === 'task' || tab === 'missions') && state.confirmation ? (
         <DeveloperConfirmationCard
           confirmation={state.confirmation}
           onRespond={(id, ok) => act((api) => api.respondConfirmation(id, ok))}
@@ -110,6 +122,14 @@ export function DeveloperPanel({
           act={act}
           onOpenSettings={onOpenSettings}
           codeModel={codeModel}
+        />
+      ) : tab === 'missions' ? (
+        <MissionPanel
+          state={state}
+          act={act}
+          settings={settings}
+          onOpenModelTab={() => setTab('model')}
+          timeline={<TaskSection state={state} act={act} showHelp={false} />}
         />
       ) : tab === 'task' ? (
         <TaskPanel
@@ -126,17 +146,21 @@ export function DeveloperPanel({
           codeModel={codeModel}
           chatModel={settings?.model ?? ''}
           onChooseDefault={chooseDefault}
+          roleModels={settings?.developer.roleModels ?? {}}
+          onChooseRole={chooseRole}
         />
       )}
 
-      {tab !== 'task' && state.confirmation ? (
+      {tab !== 'task' && tab !== 'missions' && state.confirmation ? (
         <DeveloperConfirmationCard
           confirmation={state.confirmation}
           onRespond={(id, ok) => act((api) => api.respondConfirmation(id, ok))}
         />
       ) : null}
 
-      {tab !== 'task' ? <TaskSection state={state} act={act} showHelp={tab === 'project'} /> : null}
+      {tab !== 'task' && tab !== 'missions' ? (
+        <TaskSection state={state} act={act} showHelp={tab === 'project'} />
+      ) : null}
 
       {tab === 'project' && state.report ? (
         <article className="markdown developer-report rounded-xl border border-white/8 bg-black/20 px-4 py-3 text-[13px] leading-relaxed text-slate-200">

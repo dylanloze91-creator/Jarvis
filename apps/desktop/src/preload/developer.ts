@@ -34,6 +34,11 @@ export function createDeveloperApi(ipc: IpcRenderer): DeveloperApi {
     cleanSandboxes: (paths: string[]) => ipc.invoke(DeveloperChannel.sandboxesClean, paths),
     ask: (question: string) => ipc.invoke(DeveloperChannel.ask, question),
     realBenchmark: (modelId: string) => ipc.invoke(DeveloperChannel.realBenchmark, modelId),
+    startMission: (kind, request, skipQuestions) =>
+      ipc.invoke(DeveloperChannel.missionStart, kind, request, skipQuestions),
+    answerMission: (answers: string[]) => ipc.invoke(DeveloperChannel.missionAnswer, answers),
+    listMissions: () => ipc.invoke(DeveloperChannel.missions),
+    openMission: (id: string) => ipc.invoke(DeveloperChannel.missionOpen, id),
     onEvent: (listener) => {
       const handler = (_event: IpcRendererEvent, state: DeveloperState): void => listener(state);
       ipc.on(DeveloperChannel.event, handler);

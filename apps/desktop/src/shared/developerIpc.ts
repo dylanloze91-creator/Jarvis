@@ -3,6 +3,9 @@ import type {
   Calibration,
   CheckReport,
   CheckedAnswer,
+  MissionKind,
+  MissionState,
+  MissionSummary,
   RealBenchResult,
   CodeModelSpec,
   CommandClassification,
@@ -168,6 +171,10 @@ export const DeveloperChannel = {
   sandboxesClean: 'dev:sandboxes-clean',
   ask: 'dev:ask',
   realBenchmark: 'dev:real-benchmark',
+  missionStart: 'dev:mission-start',
+  missionAnswer: 'dev:mission-answer',
+  missions: 'dev:missions',
+  missionOpen: 'dev:mission-open',
 } as const;
 
 export type DevStepStatus = 'pending' | 'running' | 'done' | 'failed' | 'skipped';
@@ -191,7 +198,8 @@ export type DevTaskKind =
   | 'discard'
   | 'cleanup'
   | 'ask'
-  | 'real-benchmark';
+  | 'real-benchmark'
+  | 'mission';
 
 export interface DevTask {
   id: string;
@@ -241,6 +249,10 @@ export interface DeveloperState {
   worktreeRoot: string;
   /** Dernière question sur le code. */
   ask: AskView | null;
+  /** Mission affichée (en cours ou rouverte depuis l'historique). */
+  mission: MissionState | null;
+  /** Historique des missions du projet (null : pas encore lu). */
+  missions: MissionSummary[] | null;
 }
 
 export interface DeveloperApi {
@@ -270,4 +282,8 @@ export interface DeveloperApi {
   cleanSandboxes(paths: string[]): Promise<DeveloperState>;
   ask(question: string): Promise<DeveloperState>;
   realBenchmark(modelId: string): Promise<DeveloperState>;
+  startMission(kind: MissionKind, request: string, skipQuestions: boolean): Promise<DeveloperState>;
+  answerMission(answers: string[]): Promise<DeveloperState>;
+  listMissions(): Promise<DeveloperState>;
+  openMission(id: string): Promise<DeveloperState>;
 }

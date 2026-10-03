@@ -34,6 +34,7 @@ export function TaskPanel({
   codeModel,
   onOpenModelTab,
   timeline,
+  showRequest = true,
 }: {
   state: DeveloperState;
   act: Act;
@@ -41,6 +42,8 @@ export function TaskPanel({
   onOpenModelTab: () => void;
   /** Étapes de la tâche en cours, affichées sous le plan. */
   timeline: ReactNode;
+  /** Faux dans l'onglet Missions : la demande vient de la mission. */
+  showRequest?: boolean;
 }) {
   const [request, setRequest] = useState('');
   const task = state.codeTask;
@@ -57,7 +60,7 @@ export function TaskPanel({
       coreTags[file.path.toLowerCase()] = 'hors plan';
   return (
     <div className="flex flex-col gap-3" data-task-panel>
-      {!active ? (
+      {showRequest && !active ? (
         <section className="flex flex-col gap-2 rounded-xl border border-white/8 bg-white/[0.02] px-3.5 py-3">
           <label htmlFor="dev-task-request" className="text-[13px] font-medium text-slate-100">
             Que dois-je modifier dans Jarvis ?
