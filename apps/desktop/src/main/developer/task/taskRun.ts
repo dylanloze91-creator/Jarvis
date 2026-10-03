@@ -26,6 +26,39 @@ import type { NodeTools } from './suites.js';
 export type StepFn = (id: string, status: DevStepStatus, detail?: string) => void;
 export type AddStepFn = (id: string, label: string, beforeId?: string) => void;
 
+/** Avancement de la boucle de modification, pour la vue de mission. */
+export type TaskPhase = 'plan' | 'edit' | 'test' | 'review' | 'diagnose' | 'fix';
+export type TaskPhaseStatus = 'running' | 'done' | 'failed';
+
+/**
+ * Points d'accroche d'une mission sur la tâche de code. Tous facultatifs :
+ * sans eux, la tâche se déroule exactement comme avant.
+ */
+export interface TaskHooks {
+  /** Contexte ajouté à la demande pour le plan (objectif, réponses, conception). */
+  planContext?: string;
+  /** Mission de documentation : un fichier non Markdown du plan n'est pas couvert par la validation. */
+  docsOnly?: boolean;
+  /** REVIEWER, une fois les tests verts : des points bloquants comptent comme des échecs à corriger. */
+  review?: (
+    diff: string,
+    signal: AbortSignal,
+  ) => Promise<{ blocking: string[]; summary: string; model: string }>;
+  /** DEBUGGER, avant chaque correction : diagnostic ajouté à la consigne ; `tools` lit la copie isolée. */
+  diagnose?: (
+    failures: string[],
+    excerpts: string[],
+    signal: AbortSignal,
+    tools: Pick<ToolManager, 'schemas' | 'execute'>,
+  ) => Promise<string>;
+  onPhase?: (
+    phase: TaskPhase,
+    status: TaskPhaseStatus,
+    detail?: string,
+    extra?: { files?: string[]; tokPerSec?: number | null; rounds?: number },
+  ) => void;
+}
+
 export interface AskExtra {
   safety: CommandClassification;
   reason: string;

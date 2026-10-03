@@ -12,6 +12,7 @@ import {
   maxTestSeriesFor,
   parsePlanReply,
   parseUnifiedDiff,
+  tokensPerSecond,
   planPrompt,
   planSystemPrompt,
   randomId,
@@ -35,6 +36,7 @@ import {
   type AddStepFn,
   type StepFn,
   type TaskDeps,
+  type TaskHooks,
   type TaskHost,
 } from './taskRun.js';
 
@@ -50,6 +52,12 @@ export const TASK_STEPS = [
   { id: 'test', label: 'Tests' },
   { id: 'report', label: 'Rapport' },
 ] as const;
+
+function speed(usage: { outputTokens: number; outputMs: number }): number | null {
+  return usage.outputMs > 0
+    ? Math.round(tokensPerSecond(usage.outputTokens, usage.outputMs) * 10) / 10
+    : null;
+}
 
 export class TaskStopped extends Error {
   constructor(message: string) {
@@ -78,8 +86,14 @@ export class TaskRun extends TaskRunBase {
     state: CodeTaskState,
     manager: ToolManager,
     private readonly repo: TaskRepo,
+    private readonly hooks: TaskHooks = {},
   ) {
     super(host, deps, state, manager);
+  }
+
+  private planRequest(): string {
+    const prompt = planPrompt(this.state.request);
+    return this.hooks.planContext ? `${prompt}\n\n${this.hooks.planContext}` : prompt;
   }
 
   get awaitingApproval(): boolean {
@@ -118,7 +132,7 @@ export class TaskRun extends TaskRunBase {
     const first = await code.runTools({
       tools,
       system: planSystemPrompt(),
-      prompt: planPrompt(this.state.request),
+      prompt: this.planRequest(),
       maxRounds: 10,
       signal,
       beforeRound: pause,
@@ -137,7 +151,7 @@ export class TaskRun extends TaskRunBase {
       const retry = await code.runTools({
         tools: toolView(tools, []),
         system: planSystemPrompt(),
-        prompt: `${planPrompt(this.state.request)}\n\nDéjà consulté :\n${read || '—'}\n\nTa réponse précédente n’était pas un plan valide (${error.message}). Réponds seulement par le bloc JSON du plan.`,
+        prompt: `${this.planRequest()}\n\nDéjà consulté :\n${read || '—'}\n\nTa réponse précédente n’était pas un plan valide (${error.message}). Réponds seulement par le bloc JSON du plan.`,
         maxRounds: 1,
         signal,
         beforeRound: pause,
@@ -222,13 +236,23 @@ export class TaskRun extends TaskRunBase {
     this.series += 1;
     this.state.testSeriesUsed = this.series;
     const results: TestRunSummary[] = [];
+    this.hooks.onPhase?.('test', 'running', this.reviewed!.tests.map(suiteCommand).join(' · '));
     for (const suite of this.reviewed!.tests) {
       await pause();
       step(stepId, 'running', `${suiteCommand(suite)}…`);
       const outcome = await this.call('dev_run_tests', { suite }, signal);
-      if (outcome.status !== 'ok') throw new TaskStopped(outcome.content);
+      if (outcome.status !== 'ok') {
+        this.hooks.onPhase?.('test', 'failed', outcome.content.split('\n')[0]);
+        throw new TaskStopped(outcome.content);
+      }
       results.push(outcome.data as TestRunSummary);
     }
+    const failing = results.reduce((n, r) => n + r.failures.length, 0);
+    this.hooks.onPhase?.(
+      'test',
+      'done',
+      `${results.map((r) => `${r.suite} : ${r.summary}`).join(' · ')}${failing ? ` (${failing} échec(s) au total)` : ''}`,
+    );
     return results;
   }
 
@@ -257,6 +281,22 @@ export class TaskRun extends TaskRunBase {
         ? results.map((r) => `${r.suite} : ${r.summary}`).join(' · ')
         : `${run.newFailures.length} nouvel(s) échec(s)`,
     );
+    return run;
+  }
+
+  /** REVIEWER d'une mission, une fois les tests verts : un point bloquant compte comme un échec. */
+  private async reviewGate(run: CodeTaskRun, signal: AbortSignal): Promise<CodeTaskRun> {
+    if (!run.ok || !this.hooks.review) return run;
+    this.hooks.onPhase?.('review', 'running', 'revue du diff testé');
+    const result = await this.hooks.review(await this.sandbox!.diff(signal), signal);
+    this.state.review = { ...result, at: Date.now() };
+    if (result.blocking.length === 0) {
+      this.hooks.onPhase?.('review', 'done', result.summary);
+      return run;
+    }
+    this.hooks.onPhase?.('review', 'failed', `${result.blocking.length} point(s) bloquant(s)`);
+    run.ok = false;
+    run.newFailures = result.blocking.map((issue) => `revue : ${issue}`);
     return run;
   }
 
@@ -332,9 +372,26 @@ export class TaskRun extends TaskRunBase {
     step('model', 'done', state.model);
 
     step('plan', 'running', 'lecture du dépôt');
+    this.hooks.onPhase?.('plan', 'running', 'lecture du dépôt, plan de modification');
     const plan = await this.makePlan(code, signal, pause);
-    this.reviewed = reviewPlan(plan, (path) => this.repo.tracked.has(path));
+    const checked = reviewPlan(plan, (path) => this.repo.tracked.has(path));
+    this.reviewed = this.hooks.docsOnly
+      ? {
+          ...checked,
+          files: checked.files.map((f) =>
+            /\.md$/i.test(f.path) || f.problem
+              ? f
+              : {
+                  ...f,
+                  problem: 'mission de documentation : seulement des fichiers Markdown (.md)',
+                },
+          ),
+        }
+      : checked;
     const reviewed = this.reviewed;
+    this.hooks.onPhase?.('plan', 'done', reviewed.summary, {
+      files: reviewed.files.map((f) => f.path),
+    });
     state.plan = {
       summary: reviewed.summary,
       criteria: reviewed.criteria,
@@ -385,6 +442,7 @@ export class TaskRun extends TaskRunBase {
     step('baseline', 'done', state.baseline.map((r) => `${r.suite} : ${r.summary}`).join(' · '));
 
     step('edit', 'running', 'le modèle modifie la copie isolée');
+    this.hooks.onPhase?.('edit', 'running', 'modification dans la copie isolée');
     const tools = this.modelTools(toolView(this.manager, TASK_MODEL_TOOLS), signal);
     const edit = await code.runTools({
       tools,
@@ -400,39 +458,80 @@ export class TaskRun extends TaskRunBase {
     await this.checkpoint('Modification (plan validé)', signal);
     if (state.diff.length === 0) {
       step('edit', 'failed', 'aucune modification');
+      this.hooks.onPhase?.('edit', 'failed', 'aucune modification');
       throw new TaskStopped(this.finish(step, 'stopped', 'Le modèle n’a rien modifié.'));
     }
     step('edit', 'done', `${state.diff.length} fichier(s) modifié(s)`);
+    this.hooks.onPhase?.('edit', 'done', `${state.diff.length} fichier(s) modifié(s)`, {
+      files: state.diff.map((f) => f.path),
+      tokPerSec: speed(edit.usage),
+      rounds: edit.rounds,
+    });
 
     await this.scanGate(step, signal);
-    let run = await this.testRun('Après modification', 'test', step, signal, pause);
+    let run = await this.reviewGate(
+      await this.testRun('Après modification', 'test', step, signal, pause),
+      signal,
+    );
     while (!run.ok && state.attempts < state.maxAttempts) {
       const n = (state.attempts += 1);
       addStep(`fix-${n}`, `Correction ${n}/${state.maxAttempts} : analyse des erreurs`, 'report');
       addStep(`retest-${n}`, `Tests après la correction ${n}`, 'report');
       step(`fix-${n}`, 'running', `${run.newFailures.length} échec(s) à corriger`);
+      const excerpts = run.results.filter((r) => r.failures.length).map((r) => r.excerpt);
+      let diagnosis = '';
+      if (this.hooks.diagnose) {
+        this.hooks.onPhase?.('diagnose', 'running', `${run.newFailures.length} échec(s)`);
+        try {
+          diagnosis = await this.hooks.diagnose(
+            run.newFailures,
+            excerpts,
+            signal,
+            this.modelTools(
+              toolView(this.manager, ['dev_read_file', 'dev_search_code', 'dev_search_files']),
+              signal,
+            ),
+          );
+          this.hooks.onPhase?.('diagnose', 'done', diagnosis.split('\n')[0]);
+        } catch (error) {
+          if (signal.aborted) throw error;
+          this.hooks.onPhase?.(
+            'diagnose',
+            'failed',
+            error instanceof Error ? error.message : String(error),
+          );
+        }
+      }
+      this.hooks.onPhase?.('fix', 'running', `correction ${n} sur ${state.maxAttempts}`);
       const fix = await code.runTools({
         tools,
         system: fixSystemPrompt(reviewed, n, state.maxAttempts),
-        prompt: fixPrompt(
-          run.newFailures,
-          run.results.filter((r) => r.failures.length).map((r) => r.excerpt),
-        ),
+        prompt: `${fixPrompt(run.newFailures, excerpts)}${diagnosis ? `\n\nDiagnostic du débogueur :\n${diagnosis}` : ''}`,
         maxRounds: 16,
         signal,
         requestConfirmation: (request) => this.decide(request, signal),
         beforeRound: pause,
       });
-      if (fix.stoppedBy === 'error')
+      if (fix.stoppedBy === 'error') {
+        this.hooks.onPhase?.('fix', 'failed', fix.error ?? 'erreur du modèle');
         throw new TaskStopped(`Le modèle de code a échoué : ${fix.error}`);
+      }
       await this.checkpoint(`Correction ${n}`, signal);
+      this.hooks.onPhase?.('fix', 'done', `${fix.calls.length} action(s)`, {
+        files: state.diff.map((f) => f.path),
+        tokPerSec: speed(fix.usage),
+        rounds: fix.rounds,
+      });
       step(
         `fix-${n}`,
         'done',
         fix.calls.length ? `${fix.calls.length} action(s)` : 'aucune action',
       );
       await this.scanGate(step, signal);
-      run = await this.testRun(`Correction ${n}`, `retest-${n}`, step, signal, pause);
+      run = await this.reviewGate(
+        await this.testRun(`Correction ${n}`, `retest-${n}`, step, signal, pause),
+        signal,
+      );
     }
     const message = this.finish(step, run.ok ? 'success' : 'failed');
     if (!run.ok) throw new TaskStopped(message);

@@ -60,6 +60,12 @@ export function buildTaskReport(
     if (last?.fixed.length) add(`Échecs d’avant corrigés au passage : ${last.fixed.length}.`);
   } else add('Pas lancés.');
   add(`Corrections : ${state.attempts} sur ${state.maxAttempts} au plus.`);
+  if (state.review) {
+    add('### Revue (REVIEWER)');
+    add(`Modèle \`${state.review.model}\` : ${state.review.summary}`);
+    if (state.review.blocking.length)
+      add(...state.review.blocking.slice(0, 10).map((b) => `- bloquant : ${b.replace(/\|/g, '/')}`));
+  }
   if (state.checkpoints.length) {
     add('### Points de reprise');
     add(...state.checkpoints.map((c) => `- \`${c.sha.slice(0, 7)}\` ${c.label}`));

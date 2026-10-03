@@ -79,6 +79,8 @@ export interface CodeTaskState {
   planApproved: Array<{ tool: string; target: string; at: number }>;
   asked: number;
   report: { markdown: string; verdict: 'success' | 'failed' | 'stopped' } | null;
+  /** Revue du diff par le REVIEWER d'une mission (0.5.2). */
+  review?: { summary: string; blocking: string[]; model: string; at: number } | null;
   closed: null | 'kept' | 'discarded';
   startedAt: number;
   finishedAt: number | null;

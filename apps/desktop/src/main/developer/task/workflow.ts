@@ -18,7 +18,7 @@ import { createTaskToolManager } from '../tools/taskTools.js';
 import { GIT_SAFE } from '../tools/common.js';
 import { defaultWorktreeRoot, listSandboxes, pruneWorktrees, samePath } from './sandbox.js';
 import { TASK_STEPS, TaskRun } from './taskFlow.js';
-import type { AddStepFn, TaskDeps, TaskHost } from './taskRun.js';
+import type { AddStepFn, TaskDeps, TaskHooks, TaskHost } from './taskRun.js';
 
 export interface CodeTaskHost extends TaskHost {
   runTask(
@@ -116,12 +116,16 @@ export class CodeTaskWorkflow {
     throw new Error('Trop de tâches du même nom aujourd’hui : jette les anciennes.');
   }
 
-  async start(request: string): Promise<DeveloperState> {
+  /** `options` : tâche lancée par une mission (modèle du CODER, points d'accroche des spécialistes). */
+  async start(
+    request: string,
+    options: { model?: string; hooks?: TaskHooks } = {},
+  ): Promise<DeveloperState> {
     const text = request.trim();
     if (text.length < 8) return this.host.notice('Décris la modification en une phrase au moins.');
     if (text.length > 2_000)
       return this.host.notice('Demande trop longue (2 000 caractères au plus).');
-    const model = this.deps.settings().developer.codeModel;
+    const model = options.model ?? this.deps.settings().developer.codeModel;
     if (!model)
       return this.host.notice(
         'Choisis d’abord un modèle de code (onglet « Modèle de code », étape 6).',
@@ -174,13 +178,14 @@ export class CodeTaskWorkflow {
       startedAt: Date.now(),
       finishedAt: null,
     };
-    const run = new TaskRun(this.host, this.deps, state, this.manager, {
-      root,
-      worktreeRoot: this.worktreeRoot(),
-      folder,
-      tracked,
-      dirty,
-    });
+    const run = new TaskRun(
+      this.host,
+      this.deps,
+      state,
+      this.manager,
+      { root, worktreeRoot: this.worktreeRoot(), folder, tracked, dirty },
+      options.hooks,
+    );
     this.current = run;
     const title = text.length > 60 ? `${text.slice(0, 57)}…` : text;
     return this.host.runTask('code', `Tâche : ${title}`, TASK_STEPS, (step, signal, addStep) =>
