@@ -203,7 +203,7 @@ export function buildArchitectureReport(facts: ArchitectureFacts, now: Date): st
   out.push('## Limites');
   out.push('');
   out.push(
-    '- Analyse fixe et vérifiable ; les questions libres sur le code arriveront avec le modèle de code (0.4.24).',
+    '- Analyse fixe et vérifiable. Pour une question libre sur le code : « Poser une question », dans le même onglet.',
   );
   out.push('- Les fichiers secrets, `.git/` et `node_modules/` ne sont jamais lus.');
   return `${out.join('\n')}\n`;
