@@ -61,7 +61,17 @@ process.exit(1);
   git('init', '-q', '-b', 'main');
   git('remote', 'add', 'origin', 'https://github.com/dylanloze91-creator/Jarvis.git');
   git('add', '-A');
-  git('-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'départ');
+  git(
+    '-c',
+    'user.name=t',
+    '-c',
+    'user.email=t@t',
+    '-c',
+    'commit.gpgsign=false',
+    'commit',
+    '-qm',
+    'départ',
+  );
 }
 
 export interface ScriptOptions {

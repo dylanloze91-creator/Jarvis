@@ -45,7 +45,7 @@ describe('« Appliquer » une tâche réussie (0.5.3)', () => {
     expect(applied.task?.outcome, applied.task?.message).toBe('success');
     const card = h.cards.find((c) => c.toolName === 'dev_apply_task')!;
     expect(card.safety.level).toBe('always-confirm');
-    expect(card.command).toContain('git merge --no-ff --no-verify --no-edit');
+    expect(card.command).toContain('git merge --no-ff --no-verify --no-edit --no-gpg-sign');
     expect(card.diff?.map((f) => f.path)).toEqual(
       expect.arrayContaining(['src/version.ts', 'src/index.ts']),
     );
@@ -61,6 +61,7 @@ describe('« Appliquer » une tâche réussie (0.5.3)', () => {
       /^Jarvis Développeur\|Jarvis Développeur : Ajoute une constante VERSION/,
     );
     expect(existsSync(join(repo, 'src/version.ts'))).toBe(true);
+    expect(git('log', '-1', '--format=%G?')).toBe('N');
     expect(git('status', '--porcelain')).toBe('');
     expect(applied.codeTask?.report?.markdown).toContain('### Application');
     expect(h.ran.some((r) => /\bgit push\b/.test(r.display))).toBe(false);
@@ -96,7 +97,17 @@ describe('« Appliquer » une tâche réussie (0.5.3)', () => {
   it('conflit : fusion annulée (git merge --abort), copie intacte', async () => {
     const h = await finishedTask();
     writeFileSync(join(repo, 'src/index.ts'), 'export const AUTRE = 1;\n');
-    git('-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qam', 'changement à moi');
+    git(
+      '-c',
+      'user.name=t',
+      '-c',
+      'user.email=t@t',
+      '-c',
+      'commit.gpgsign=false',
+      'commit',
+      '-qam',
+      'changement à moi',
+    );
     const head = git('rev-parse', 'HEAD');
     const state = await h.instance.applyTask();
     expect(state.task?.outcome).toBe('failed');

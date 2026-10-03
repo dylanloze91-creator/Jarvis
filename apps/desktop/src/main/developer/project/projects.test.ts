@@ -105,7 +105,18 @@ beforeAll(async () => {
     join(photos, 'package.json'),
     `${JSON.stringify({ ...pkg, name: 'photos', description: 'Tri de photos' }, null, 2)}\n`,
   );
-  git(photos, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qam', 'nom');
+  git(
+    photos,
+    '-c',
+    'user.name=t',
+    '-c',
+    'user.email=t@t',
+    '-c',
+    'commit.gpgsign=false',
+    'commit',
+    '-qam',
+    'nom',
+  );
   await fake.start();
   fake.installed.set(CODE, 3e9);
   fake.scripts.set(CODE, script);
@@ -124,7 +135,18 @@ describe('projets (0.5.3)', () => {
     writeFileSync(join(bare, 'package.json'), '{"name": "x", "scripts": {"test": "x"}}\n');
     git(bare, 'init', '-q', '-b', 'main');
     git(bare, 'add', '-A');
-    git(bare, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'x');
+    git(
+      bare,
+      '-c',
+      'user.name=t',
+      '-c',
+      'user.email=t@t',
+      '-c',
+      'commit.gpgsign=false',
+      'commit',
+      '-qm',
+      'x',
+    );
     expect((await h.instance.importProject(bare)).notice).toMatch(/package-lock\.json/);
     expect((await h.instance.importProject(jarvis)).notice).toMatch(/copie de Jarvis/);
     expect((await h.instance.importProject('relatif/x')).notice).toMatch(/chemin complet/);

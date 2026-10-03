@@ -90,7 +90,7 @@ export function mergeMessage(request: string, taskBranch: string): string {
 
 export function applyCommands(taskBranch: string, message: string): string[] {
   return [
-    `git merge --no-ff --no-verify --no-edit -m "${message}" ${taskBranch}`,
+    `git merge --no-ff --no-verify --no-edit --no-gpg-sign -m "${message}" ${taskBranch}`,
     'si conflit : git merge --abort (ta copie revient telle quelle)',
   ];
 }
@@ -106,8 +106,8 @@ export async function mergeTask(
   const merge = await git(
     run,
     root,
-    ['merge', '--no-ff', '--no-verify', '--no-edit', '-m', message, taskBranch],
-    `git merge --no-ff --no-verify --no-edit -m "${message}" ${taskBranch}`,
+    ['merge', '--no-ff', '--no-verify', '--no-edit', '--no-gpg-sign', '-m', message, taskBranch],
+    `git merge --no-ff --no-verify --no-edit --no-gpg-sign -m "${message}" ${taskBranch}`,
     signal,
   );
   if (merge.code !== 0) {
@@ -120,7 +120,7 @@ export async function mergeTask(
 
 export function revertCommands(merge: string): string[] {
   return [
-    `git revert -m 1 --no-edit ${merge.slice(0, 12)}`,
+    `git revert -m 1 --no-edit --no-gpg-sign ${merge.slice(0, 12)}`,
     'si conflit : git revert --abort (ta copie revient telle quelle)',
   ];
 }
@@ -136,8 +136,8 @@ export async function revertMerge(
   const outcome = await git(
     run,
     root,
-    ['revert', '-m', '1', '--no-edit', merge],
-    `git revert -m 1 --no-edit ${merge.slice(0, 12)}`,
+    ['revert', '-m', '1', '--no-edit', '--no-gpg-sign', merge],
+    `git revert -m 1 --no-edit --no-gpg-sign ${merge.slice(0, 12)}`,
     signal,
   );
   if (outcome.code !== 0) {
