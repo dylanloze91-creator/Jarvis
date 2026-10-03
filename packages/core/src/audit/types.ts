@@ -27,7 +27,16 @@ export interface AuditEntry {
     | 'missing_dependency';
   /** Détail technique rédigé, absent quand l'outil n'en a pas fourni. */
   technicalDetail?: string;
+  /** Projet de Jarvis Développeur concerné (0.5.0). Absent : chat, ou journal plus ancien. */
+  projectId?: string;
+  /** Mission du moteur de développement qui a demandé l'action. */
+  missionId?: string;
+  /** Spécialiste qui a demandé l'action (ARCHITECT, CODER…). */
+  role?: string;
 }
+
+/** Rattachement facultatif d'une entrée à un projet, une mission ou un spécialiste. */
+export type AuditScope = Partial<Pick<AuditEntry, 'projectId' | 'missionId' | 'role'>>;
 
 export interface AuditLogStore {
   append(entry: AuditEntry): Promise<void>;

@@ -1,9 +1,11 @@
 import { redactSecrets, redactValue } from '../security/redact.js';
 import { randomId } from '../types.js';
 import type { ToolCallOutcome } from '../types.js';
-import type { AuditEntry, AuditLogStore } from './types.js';
+import type { AuditEntry, AuditLogStore, AuditScope } from './types.js';
 
 const SUMMARY_MAX_LENGTH = 400;
+const SCOPE_MAX_LENGTH = 120;
+const SCOPE_KEYS = ['projectId', 'missionId', 'role'] as const;
 
 /**
  * Construit l'entrée d'audit à partir du résultat d'exécution d'un outil. Le
@@ -11,8 +13,8 @@ const SUMMARY_MAX_LENGTH = 400;
  * décision, durée) : cette fonction se limite à l'horodatage et à la
  * troncature du résultat pour l'affichage.
  */
-export function buildAuditEntry(outcome: ToolCallOutcome): AuditEntry {
-  return {
+export function buildAuditEntry(outcome: ToolCallOutcome, scope?: AuditScope): AuditEntry {
+  const entry: AuditEntry = {
     id: randomId(),
     timestamp: Date.now(),
     toolName: outcome.name,
@@ -27,6 +29,12 @@ export function buildAuditEntry(outcome: ToolCallOutcome): AuditEntry {
       ? truncate(redactSecrets(outcome.technicalDetail), SUMMARY_MAX_LENGTH)
       : undefined,
   };
+  // Aucune clé vide : une entrée sans rattachement reste lisible telle quelle par les versions précédentes.
+  for (const key of SCOPE_KEYS) {
+    const value = scope?.[key]?.trim();
+    if (value) entry[key] = truncate(redactSecrets(value), SCOPE_MAX_LENGTH);
+  }
+  return entry;
 }
 
 function truncate(text: string, max: number): string {
