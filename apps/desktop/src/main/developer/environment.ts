@@ -1,8 +1,9 @@
 import { existsSync, realpathSync } from 'node:fs';
 import { statfs } from 'node:fs/promises';
-import { dirname, join, parse, win32 } from 'node:path';
+import { dirname, join, parse } from 'node:path';
 import { checkEnvironment, type CheckReport, type EnvironmentFacts } from '@jarvis/core';
 import type { Runner } from './runner.js';
+import { devPlatform } from './platform/index.js';
 
 export interface EnvironmentProbe {
   facts: EnvironmentFacts;
@@ -39,13 +40,7 @@ export async function measureFree(path: string): Promise<number | null> {
 
 /** npm-cli.js à côté du node.exe de l'utilisateur : npm.cmd ne se lance pas sans shell (Node ≥ 18.20.2). */
 export function npmCliCandidates(nodePath: string, platform: NodeJS.Platform): string[] {
-  if (platform === 'win32')
-    return [win32.join(win32.dirname(nodePath), 'node_modules', 'npm', 'bin', 'npm-cli.js')];
-  const dir = dirname(nodePath);
-  return [
-    join(dir, '..', 'lib', 'node_modules', 'npm', 'bin', 'npm-cli.js'),
-    join(dir, 'node_modules', 'npm', 'bin', 'npm-cli.js'),
-  ];
+  return devPlatform(platform).npmCliCandidates(nodePath);
 }
 
 /** Repli : le npm trouvé dans le PATH (gestionnaires de versions, Volta, nvm…), lien suivi jusqu'à npm-cli.js. */
@@ -53,12 +48,13 @@ export function findNpmCliOnPath(
   pathEnv: string | undefined,
   platform: NodeJS.Platform,
 ): string | null {
-  for (const dir of (pathEnv ?? '').split(platform === 'win32' ? ';' : ':').filter(Boolean)) {
+  const system = devPlatform(platform);
+  for (const dir of (pathEnv ?? '').split(system.pathListSeparator).filter(Boolean)) {
     const candidates = [
       join(dir, 'node_modules', 'npm', 'bin', 'npm-cli.js'),
       join(dir, '..', 'lib', 'node_modules', 'npm', 'bin', 'npm-cli.js'),
     ];
-    if (platform !== 'win32' && existsSync(join(dir, 'npm'))) {
+    if (system.npmOnPathIsLink && existsSync(join(dir, 'npm'))) {
       try {
         candidates.unshift(realpathSync(join(dir, 'npm')));
       } catch {
@@ -109,7 +105,7 @@ export async function probeEnvironment(deps: ProbeDeps): Promise<EnvironmentProb
     }
   }
   let longPaths: boolean | null = null;
-  if (ok(git) && deps.platform === 'win32') {
+  if (ok(git) && devPlatform(deps.platform).checksGitLongPaths) {
     const config = await deps.run({
       ...base,
       program: 'git',

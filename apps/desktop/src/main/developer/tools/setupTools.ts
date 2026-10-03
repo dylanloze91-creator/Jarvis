@@ -12,6 +12,7 @@ import {
 } from '@jarvis/core';
 import type { Runner } from '../runner.js';
 import { fail } from './common.js';
+import { devPlatform } from '../platform/index.js';
 
 export interface SetupToolDeps {
   run: Runner;
@@ -45,7 +46,7 @@ export function createSetupTools(deps: SetupToolDeps): RegisteredTool[] {
         if (!isAbsolute(targetPath))
           return fail(
             'definitive',
-            `Chemin complet attendu (par exemple C:\\dev\\Jarvis), pas « ${targetPath} ».`,
+            `Chemin complet attendu (par exemple ${devPlatform().examplePath('Jarvis')}), pas « ${targetPath} ».`,
           );
         if (existsSync(targetPath) && (await readdir(targetPath)).length > 0) {
           return fail(

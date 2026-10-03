@@ -3,6 +3,9 @@ import { join } from 'node:path';
 import { parseNvidiaSmi, type HardwareFacts } from '@jarvis/core';
 import type { Runner } from '../runner.js';
 import type { OllamaApi } from './ollamaApi.js';
+import { devPlatform, NVIDIA_SMI_ARGS, type DevPlatform } from '../platform/index.js';
+
+export { NVIDIA_SMI_ARGS };
 
 export interface HardwareProbeDeps {
   run: Runner;
@@ -14,11 +17,6 @@ export interface HardwareProbeDeps {
   os?: Pick<typeof os, 'totalmem' | 'freemem' | 'cpus'>;
 }
 
-export const NVIDIA_SMI_ARGS = [
-  '--query-gpu=name,memory.total,memory.used,memory.free,driver_version',
-  '--format=csv,noheader,nounits',
-];
-
 /** Dossier des modèles d'Ollama : OLLAMA_MODELS s'il est défini, sinon ~/.ollama/models. */
 export function ollamaModelsDir(env: Record<string, string | undefined>, home: string): string {
   return env.OLLAMA_MODELS?.trim() || join(home, '.ollama', 'models');
@@ -27,14 +25,17 @@ export function ollamaModelsDir(env: Record<string, string | undefined>, home: s
 export async function readGpuMemory(
   run: Runner,
   cwd: string,
+  platform: DevPlatform = devPlatform(),
 ): Promise<{ probe: HardwareFacts['gpuProbe']; output: string }> {
+  const query = platform.gpuQuery;
+  if (!query) return { probe: 'absent', output: '' };
   try {
     const outcome = await run({
-      program: 'nvidia-smi',
-      args: NVIDIA_SMI_ARGS,
+      program: query.program,
+      args: [...query.args],
       cwd,
       timeoutMs: 10_000,
-      display: 'nvidia-smi',
+      display: query.program,
     });
     if (outcome.error)
       return { probe: /ENOENT/.test(outcome.error) ? 'absent' : 'error', output: '' };

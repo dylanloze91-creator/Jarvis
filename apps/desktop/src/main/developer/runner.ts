@@ -1,5 +1,6 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { classifyCommand, type CommandSafetyContext } from '@jarvis/core';
+import { devPlatform } from './platform/index.js';
 
 export interface RunSpec {
   program: string;
@@ -47,21 +48,9 @@ export function displayCommand(program: string, args: string[]): string {
     .join(' ');
 }
 
-/** Toute l'arborescence : sous Windows, npm.cmd → node → vitest survivraient à un simple kill. */
+/** Toute l'arborescence du processus, selon le système (voir `platform/`). */
 export function killTree(child: ChildProcess, platform: NodeJS.Platform = process.platform): void {
-  if (!child.pid || child.exitCode !== null) return;
-  if (platform === 'win32') {
-    spawn('taskkill', ['/PID', String(child.pid), '/T', '/F'], {
-      windowsHide: true,
-      stdio: 'ignore',
-    }).on('error', () => child.kill());
-    return;
-  }
-  try {
-    process.kill(-child.pid, 'SIGKILL');
-  } catch {
-    child.kill('SIGKILL');
-  }
+  devPlatform(platform).killTree(child);
 }
 
 function gitSubcommand(args: string[]): string {
@@ -131,7 +120,7 @@ export const runProcess: Runner = (spec) => {
       env: spec.env ?? process.env,
       shell: false,
       windowsHide: true,
-      detached: process.platform !== 'win32',
+      detached: devPlatform().spawnDetached,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     const lines = (chunk: string): void => {

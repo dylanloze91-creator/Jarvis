@@ -4,6 +4,7 @@ import { basename, dirname, join, resolve, sep } from 'node:path';
 import type { CommandSafetyContext } from '@jarvis/core';
 import { GIT_SAFE } from '../tools/common.js';
 import type { RunOutcome, Runner } from '../runner.js';
+import { devPlatform } from '../platform/index.js';
 
 /** 1,1 Go de dépendances (mesuré, décision 3) plus une marge pour les tests et les caches. */
 export const SANDBOX_MIN_FREE_BYTES = 3e9;
@@ -23,8 +24,7 @@ export function defaultWorktreeRoot(repoPath: string): string {
 }
 
 function comparable(path: string): string {
-  const value = resolve(path);
-  return process.platform === 'win32' ? value.toLowerCase() : value;
+  return devPlatform().pathKey(path);
 }
 
 export function isInside(root: string, path: string): boolean {
