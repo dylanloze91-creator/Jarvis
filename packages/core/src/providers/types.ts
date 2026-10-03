@@ -63,6 +63,8 @@ export interface OllamaCodeOptions {
   /** Couches sur la carte graphique (`num_gpu`) : 0 = tout sur le processeur, 99 = tout ce qui peut aller sur la carte. */
   numGpu?: number;
   numThread?: number;
+  /** Jetons lus par lot (`num_batch`) ; absent = valeur d'Ollama, rien n'est envoyé. */
+  numBatch?: number;
   /** `false` coupe la « réflexion » des modèles qui la gèrent (Qwen3.5, Qwen3.6) ; absent = non envoyé. */
   think?: boolean;
   keepAlive?: string | number;

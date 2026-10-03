@@ -116,6 +116,7 @@ export class OllamaProvider implements LLMProvider {
         ...(request.maxTokens ? { num_predict: request.maxTokens } : {}),
         ...(code?.numGpu !== undefined ? { num_gpu: code.numGpu } : {}),
         ...(code?.numThread !== undefined ? { num_thread: code.numThread } : {}),
+        ...(code?.numBatch !== undefined ? { num_batch: code.numBatch } : {}),
       },
     };
     if (request.tools?.length) {
