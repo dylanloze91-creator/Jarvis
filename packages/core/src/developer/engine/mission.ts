@@ -1,4 +1,5 @@
 import { MISSION_CHAINS, type ChainActor, type MissionKind } from './router.js';
+import type { CheckedProposal } from './improve.js';
 import type { GoalOutput } from './specialistSchemas.js';
 
 export type MissionStepStatus = 'pending' | 'running' | 'done' | 'failed' | 'skipped' | 'waiting';
@@ -43,6 +44,10 @@ export interface MissionState {
   summary: string | null;
   createdAt: number;
   updatedAt: number;
+  /** Mission « Améliorer » (0.5.5) : propositions et leurs preuves relues. */
+  proposals?: CheckedProposal[];
+  /** Mission née d'une proposition retenue (0.5.5). */
+  fromProposal?: { missionId: string; index: number };
 }
 
 export interface MissionSummary {

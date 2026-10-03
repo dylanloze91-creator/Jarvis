@@ -4,7 +4,15 @@ import { SPECIALIST_ROLES, type SpecialistRole } from './roles.js';
  * Routeur du moteur : des règles fixes, sans modèle. Le type de mission vient
  * d'un choix de l'utilisateur ; `suggestMissionKind` ne fait que proposer.
  */
-export const MISSION_KINDS = ['question', 'modify', 'fix', 'document', 'new-project'] as const;
+export const MISSION_KINDS = [
+  'question',
+  'modify',
+  'fix',
+  'document',
+  'new-project',
+  'improve',
+  'skill',
+] as const;
 export type MissionKind = (typeof MISSION_KINDS)[number];
 
 export const MISSION_LABELS: Record<MissionKind, string> = {
@@ -13,9 +21,12 @@ export const MISSION_LABELS: Record<MissionKind, string> = {
   fix: 'Corriger un bug',
   document: 'Documenter',
   'new-project': 'Nouveau projet',
+  improve: 'Améliorer le projet',
+  skill: 'Nouvelle compétence',
 };
 
-export type ChainActor = SpecialistRole | 'USER';
+/** `JARVIS` : étape faite par Jarvis lui-même, sans modèle (mesures, vérifications). */
+export type ChainActor = SpecialistRole | 'USER' | 'JARVIS';
 
 export interface ChainStep {
   id: string;
@@ -45,6 +56,17 @@ export const MISSION_CHAINS: Record<MissionKind, ChainStep[]> = {
     { id: 'design', actor: 'ARCHITECT', label: 'Gabarit et nom du projet' },
     { id: 'create', actor: 'USER', label: 'Création du projet (ta confirmation)' },
   ],
+  improve: [
+    { id: 'measure', actor: 'JARVIS', label: 'Mesures fixes (sans modèle)' },
+    { id: 'proposals', actor: 'ARCHITECT', label: 'Propositions avec preuves (lecture seule)' },
+    { id: 'verify', actor: 'JARVIS', label: 'Preuves relues dans les fichiers (sans modèle)' },
+  ],
+  skill: [
+    { id: 'goal', actor: 'REASONER', label: 'Objectif, critères et questions' },
+    { id: 'research', actor: 'RESEARCHER', label: 'Technologies locales (sans web)' },
+    { id: 'design', actor: 'ARCHITECT', label: 'Outils de la compétence' },
+    { id: 'create', actor: 'USER', label: 'Création du projet (ta confirmation)' },
+  ],
 };
 
 /** Étapes de la boucle de modification partagée par modify, fix, document et new-project. */
@@ -60,11 +82,17 @@ export const LOOP_ACTORS = {
 export type LoopPhase = keyof typeof LOOP_ACTORS;
 
 export function missionUsesTask(kind: MissionKind): boolean {
-  return kind !== 'question';
+  return kind !== 'question' && kind !== 'improve';
 }
 
 export function suggestMissionKind(text: string): MissionKind {
   const value = text.trim().toLowerCase();
+  if (/\b(compétence|competence)\b/.test(value)) return 'skill';
+  if (
+    /^(analyse|améliore|ameliore|audite)\b/.test(value) ||
+    /\bpropose(-moi)? des améliorations\b/.test(value)
+  )
+    return 'improve';
   if (
     /\b(nouveau projet|nouvelle (appli|application))\b/.test(value) ||
     /^(crée|cree|créer|creer|fais|fabrique|génère|genere)(-moi)? (moi )?(un|une) (petit |petite |nouveau |nouvelle )?(appli|application|cli|outil en ligne de commande|programme|site|page web|bibliothèque|bibliotheque|librairie|projet)\b/.test(
@@ -105,7 +133,8 @@ export function rolesWithoutModel(
   developer: { codeModel: string; roleModels?: RoleModels },
 ): SpecialistRole[] {
   const roles = new Set<SpecialistRole>();
-  for (const step of MISSION_CHAINS[kind]) if (step.actor !== 'USER') roles.add(step.actor);
+  for (const step of MISSION_CHAINS[kind])
+    if (step.actor !== 'USER' && step.actor !== 'JARVIS') roles.add(step.actor);
   if (missionUsesTask(kind)) for (const role of Object.values(LOOP_ACTORS)) roles.add(role);
   return SPECIALIST_ROLES.filter((role) => roles.has(role) && !resolveRoleModel(role, developer));
 }

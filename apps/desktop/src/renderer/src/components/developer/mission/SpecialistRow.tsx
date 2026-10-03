@@ -29,7 +29,8 @@ function gb(bytes: number | null | undefined): string | null {
 /** Une ligne de mission : spécialiste, état, modèle, tâche, fichiers, erreur, ressources, résultat JSON. */
 export function SpecialistRow({ step }: { step: MissionStep }) {
   const status = STATUS[step.status];
-  const actor = step.actor === 'USER' ? 'Toi' : ROLE_LABELS[step.actor];
+  const actor =
+    step.actor === 'USER' ? 'Toi' : step.actor === 'JARVIS' ? 'Jarvis' : ROLE_LABELS[step.actor];
   const seconds =
     step.startedAt && step.finishedAt
       ? Math.round((step.finishedAt - step.startedAt) / 1000)

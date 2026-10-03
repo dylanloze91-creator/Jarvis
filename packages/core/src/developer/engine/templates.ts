@@ -13,7 +13,7 @@ import { briefBlock, type MissionBrief } from './missionPrompts.js';
  * réseau. Les versions suivent celles de Jarvis (déjà installées et vérifiées
  * sur le PC de l'utilisateur). Seul `npm install`, confirmé, va sur le réseau.
  */
-export const NODE_TEMPLATE_IDS = ['node-cli', 'ts-lib', 'vite-react'] as const;
+export const NODE_TEMPLATE_IDS = ['node-cli', 'ts-lib', 'vite-react', 'node-skill'] as const;
 export const PROJECT_TEMPLATE_IDS = [...NODE_TEMPLATE_IDS, ...DOTNET_TEMPLATE_IDS] as const;
 export type ProjectTemplateId = (typeof PROJECT_TEMPLATE_IDS)[number];
 
@@ -36,6 +36,10 @@ export const PROJECT_TEMPLATES: Record<ProjectTemplateId, { label: string; descr
       label: 'Application web (Vite, React, TypeScript)',
       description: 'une interface dans le navigateur, servie en local par Vite',
     },
+    'node-skill': {
+      label: 'Compétence de Jarvis (outils TypeScript, hors du chat)',
+      description: 'un module d’outils testés, que le chat n’utilise pas sans ta décision',
+    },
   };
 
 export const TEMPLATE_VERSIONS = {
@@ -57,6 +61,8 @@ export interface TemplateInput {
   description: string;
   /** Gabarits .NET : cible tirée du SDK installé (`net10.0`…). */
   tfm?: string;
+  /** Compétence : outils prévus par l'ARCHITECTE, listés dans `jarvis-skill.json`. */
+  skillTools?: ReadonlyArray<{ name: string; description: string }>;
 }
 
 export interface TemplateFile {
@@ -412,6 +418,156 @@ main {
   ];
 }
 
+function skillReadme(input: TemplateInput, planned: string[]): string {
+  const tick = '`';
+  const code = (s: string) => `${tick}${s}${tick}`;
+  const lines = [
+    `# ${input.title}`,
+    '',
+    `${input.description || PROJECT_TEMPLATES['node-skill'].description}.`,
+    '',
+    `Compétence de Jarvis Développeur : des outils TypeScript testés, dans ${code('src/tools/')}. **Hors du chat** : ${code('jarvis-skill.json')} garde ${code('"chat": false')}. Pour qu'elle entre dans le chat, il faudra ta décision (D15) et une mise à jour validée des tests figés du catalogue.`,
+    '',
+    '## Commandes',
+    '',
+    `- ${code('npm install')}`,
+    `- ${code('npm test')}`,
+    `- ${code('npm run build')}`,
+  ];
+  if (planned.length) lines.push('', '## Outils prévus', '', ...planned.map((n) => `- ${code(n)}`));
+  return `${lines.join('\n')}\n`;
+}
+
+function nodeSkill(input: TemplateInput): TemplateFile[] {
+  const id = input.packageName;
+  const planned = (input.skillTools ?? []).map((t) => t.name);
+  return [
+    {
+      path: 'package.json',
+      content: json({
+        name: id,
+        version: '0.1.0',
+        description: input.description,
+        private: true,
+        type: 'module',
+        main: 'dist/index.js',
+        types: 'dist/index.d.ts',
+        scripts: {
+          build: 'tsc -p tsconfig.build.json',
+          typecheck: 'tsc --noEmit',
+          test: 'vitest run',
+        },
+        devDependencies: pick('@types/node', 'typescript', 'vitest'),
+        engines: { node: '>=20' },
+      }),
+    },
+    { path: 'tsconfig.json', content: json(NODE_TSCONFIG) },
+    {
+      path: 'tsconfig.build.json',
+      content: json({ extends: './tsconfig.json', exclude: ['src/**/*.test.ts'] }),
+    },
+    {
+      path: 'jarvis-skill.json',
+      content: json({
+        id,
+        name: input.title,
+        description: input.description,
+        version: '0.1.0',
+        chat: false,
+        tools: ['bonjour'],
+        planned,
+      }),
+    },
+    {
+      path: 'src/skill.ts',
+      content: `/** Une entrée d'outil : un nom, un type simple, une description. */
+export interface ToolInput {
+  name: string;
+  type: 'string' | 'number' | 'boolean';
+  description: string;
+}
+
+/**
+ * Un outil de la compétence. Le chat de Jarvis ne l'utilise pas : il faudra
+ * ta décision (D15) pour qu'il y entre.
+ */
+export interface SkillTool {
+  name: string;
+  description: string;
+  inputs: ToolInput[];
+  run(input: Record<string, unknown>): Promise<string> | string;
+}
+
+export interface Skill {
+  id: string;
+  name: string;
+  description: string;
+  tools: SkillTool[];
+}
+`,
+    },
+    {
+      path: 'src/tools/bonjour.ts',
+      content: `import type { SkillTool } from '../skill.js';
+
+/** Exemple : chaque outil a cette forme (nom, description, entrées, run). */
+export const bonjour: SkillTool = {
+  name: 'bonjour',
+  description: 'Salue une personne par son prénom.',
+  inputs: [{ name: 'prenom', type: 'string', description: 'Prénom à saluer' }],
+  run: ({ prenom }) => (typeof prenom === 'string' && prenom.trim() ? \`Bonjour, \${prenom.trim()} !\` : 'Bonjour !'),
+};
+`,
+    },
+    {
+      path: 'src/index.ts',
+      content: `import type { Skill } from './skill.js';
+import { bonjour } from './tools/bonjour.js';
+
+export type { Skill, SkillTool, ToolInput } from './skill.js';
+
+export const skill: Skill = {
+  id: ${JSON.stringify(id)},
+  name: ${JSON.stringify(input.title)},
+  description: ${JSON.stringify(input.description)},
+  tools: [bonjour],
+};
+`,
+    },
+    {
+      path: 'src/index.test.ts',
+      content: `import { readFileSync } from 'node:fs';
+import { describe, expect, it } from 'vitest';
+import { skill } from './index.js';
+
+describe('compétence', () => {
+  it('des outils aux noms uniques en snake_case, décrits', () => {
+    const names = skill.tools.map((t) => t.name);
+    expect(new Set(names).size).toBe(names.length);
+    for (const tool of skill.tools) {
+      expect(tool.name).toMatch(/^[a-z][a-z0-9_]{1,40}$/);
+      expect(tool.description.length).toBeGreaterThan(3);
+    }
+  });
+
+  it('jarvis-skill.json liste les outils et reste hors du chat', () => {
+    const manifest = JSON.parse(readFileSync(new URL('../jarvis-skill.json', import.meta.url), 'utf8'));
+    expect(manifest.chat).toBe(false);
+    expect(manifest.tools).toEqual(skill.tools.map((t) => t.name));
+  });
+
+  it('bonjour salue', async () => {
+    const tool = skill.tools.find((t) => t.name === 'bonjour')!;
+    expect(await tool.run({ prenom: ' Dylan ' })).toBe('Bonjour, Dylan !');
+  });
+});
+`,
+    },
+    { path: 'README.md', content: skillReadme(input, planned) },
+    { path: '.gitignore', content: GITIGNORE },
+  ];
+}
+
 export function renderTemplate(id: ProjectTemplateId, input: TemplateInput): TemplateFile[] {
   const clean: TemplateInput = {
     packageName: input.packageName,
@@ -427,6 +583,7 @@ export function renderTemplate(id: ProjectTemplateId, input: TemplateInput): Tem
       tfm: input.tfm,
     });
   }
+  if (id === 'node-skill') return nodeSkill({ ...clean, skillTools: input.skillTools });
   if (id === 'node-cli') return nodeCli(clean);
   if (id === 'ts-lib') return tsLib(clean);
   return viteReact(clean);
@@ -477,15 +634,15 @@ export const factorySchema = z.object({
 export type FactoryOutput = z.infer<typeof factorySchema>;
 
 export function factorySystem(): string {
-  const list = PROJECT_TEMPLATE_IDS.map(
-    (id) => `- "${id}" : ${PROJECT_TEMPLATES[id].label}, ${PROJECT_TEMPLATES[id].description}`,
-  ).join('\n');
+  const list = PROJECT_TEMPLATE_IDS.filter((id) => id !== 'node-skill')
+    .map((id) => `- "${id}" : ${PROJECT_TEMPLATES[id].label}, ${PROJECT_TEMPLATES[id].description}`)
+    .join('\n');
   return `Tu es le spécialiste ARCHITECT de Jarvis Développeur. ${FACTORY_MARKER}.
 L'utilisateur veut un nouveau projet, indépendant de Jarvis. Choisis le gabarit local le plus simple qui convient, un nom court et une phrase de description. Une « appli Windows » (fenêtre) est un gabarit .NET ; un outil sans interface peut rester en Node.js. Réponds en français.
 Gabarits :
 ${list}
 Le format attendu est :
-{"template": "${PROJECT_TEMPLATE_IDS.join('" | "')}", "name": "Nom du projet", "description": "une phrase"}`;
+{"template": "${PROJECT_TEMPLATE_IDS.filter((id) => id !== 'node-skill').join('" | "')}", "name": "Nom du projet", "description": "une phrase"}`;
 }
 
 export function factoryPrompt(brief: MissionBrief): string {
