@@ -1,5 +1,4 @@
 import {
-  SUGGESTED_REPO_PATH,
   buildAuditEntry,
   candidateRepoPaths,
   classifyCommand,
@@ -235,10 +234,7 @@ export class DeveloperController {
   state(): DeveloperState {
     return {
       enabled: this.enabled(),
-      suggestedPath:
-        this.deps.platform === 'win32'
-          ? SUGGESTED_REPO_PATH
-          : candidateRepoPaths({ platform: this.deps.platform, home: this.deps.home })[0]!,
+      suggestedPath: candidateRepoPaths({ platform: this.deps.platform, home: this.deps.home })[0]!,
       repoPath: this.repoPath,
       repo: this.repo,
       environment: this.environment

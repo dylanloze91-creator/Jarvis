@@ -1,5 +1,5 @@
 import type { IpcMain, WebContents } from 'electron';
-import { SUGGESTED_REPO_PATH, candidateRepoPaths } from '@jarvis/core';
+import { candidateRepoPaths } from '@jarvis/core';
 import { DeveloperChannel, type DeveloperState } from '../../shared/developerIpc.js';
 import {
   DEVELOPER_DISABLED_NOTICE,
@@ -43,10 +43,7 @@ export function registerDeveloperIpc(
   };
   const disabled = (): DeveloperState => ({
     enabled: false,
-    suggestedPath:
-      deps.platform === 'win32'
-        ? SUGGESTED_REPO_PATH
-        : candidateRepoPaths({ platform: deps.platform, home: deps.home })[0]!,
+    suggestedPath: candidateRepoPaths({ platform: deps.platform, home: deps.home })[0]!,
     repoPath: deps.getSettings().developer.repoPath,
     repo: null,
     environment: null,
