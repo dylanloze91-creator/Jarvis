@@ -1,8 +1,8 @@
-# Jarvis 0.5.4 — contexte pour un autre développeur
+# Jarvis 0.5.5 — contexte pour un autre développeur
 
 Ce fichier est à la **racine du code**. Les chemins ci-dessous partent de ce dossier. Ce n’est pas un résumé marketing : c’est l’état réel de cet arbre. La voix a été refaite dans cet arbre (publiée en 0.4.11, section « Voix ») : la transcription restait « Chargement… 100 % » sur l’installateur Windows. La refonte du tableau de bord est dans cet arbre : fenêtre étroite = overlay, fenêtre large = tableau de bord.
 
-**Version confirmée :** `apps/desktop/package.json` → `"version": "0.5.4"`. Le `package.json` racine est aligné sur la même version depuis 0.5.0 (il était resté à `0.3.0`), mais il n’est lu par rien : la version qui compte pour l’exe, l’updater et GitHub est celle de `@jarvis/desktop`. `@jarvis/core` reste à `0.1.0`. La voix corrigée en 0.4.11 (installateur Windows) est inchangée. Le modèle par défaut reste `qwen2.5:3b`. `qwen3.5:4b` est le modèle recommandé documenté ; le repli est réglable (`fallbackModel`, défaut `qwen2.5:3b`).
+**Version confirmée :** `apps/desktop/package.json` → `"version": "0.5.5"`. Le `package.json` racine est aligné sur la même version depuis 0.5.0 (il était resté à `0.3.0`), mais il n’est lu par rien : la version qui compte pour l’exe, l’updater et GitHub est celle de `@jarvis/desktop`. `@jarvis/core` reste à `0.1.0`. La voix corrigée en 0.4.11 (installateur Windows) est inchangée. Le modèle par défaut reste `qwen2.5:3b`. `qwen3.5:4b` est le modèle recommandé documenté ; le repli est réglable (`fallbackModel`, défaut `qwen2.5:3b`).
 
 Lis ce fichier avant de modifier le code.
 
@@ -48,7 +48,7 @@ Scripts utiles (racine) :
 
 Le script `setup:voice` remplit `apps/desktop/voice-assets/` (runtime ONNX, Whisper, openWakeWord, modèle Vosk français ; non commité, voir `.gitignore`). Premier `dev` / `build` : besoin de réseau.
 
-L’installateur publié est `Jarvis-Setup-0.5.4.exe` (release GitHub `v0.5.4`).
+L’installateur publié est `Jarvis-Setup-0.5.5.exe` (release GitHub `v0.5.5`).
 
 Données utilisateur (Electron `userData`, typiquement `%APPDATA%\Jarvis`) :
 
@@ -82,7 +82,7 @@ Données utilisateur (Electron `userData`, typiquement `%APPDATA%\Jarvis`) :
     src/media/                 intent Spotify
     src/update/                lecture latest.yml GitHub
     src/history/  src/audit/
-  apps/desktop/                Electron (version 0.5.4)
+  apps/desktop/                Electron (version 0.5.5)
     electron-builder.yml       NSIS, extraResources, publish GitHub
     electron.vite.config.ts    aliases onnxruntime-web (wasm, pas JSEP)
     scripts/setup-whisper.mjs
@@ -382,9 +382,20 @@ Palier « appli Windows ». Mode Développeur coupé par défaut ; chat, catalog
 - « Appliquer » et son annulation passent `--no-gpg-sign` (comme les points de reprise) : la clé de signature de l'utilisateur n'est jamais utilisée.
 - Tests : `engine/dotnet.test.ts` (tri, sorties réelles, revue C#, profil, gabarits), `project/dotnetProject.test.ts` (« Nouveau projet » WinForms de bout en bout avec dotnet simulé, import d'un dossier .NET, SDK absent). Les dépôts d'essai désactivent la signature des commits (`commit.gpgsign=false`).
 
+## 0.5.5 — s'améliorer et apprendre : missions « Améliorer » et « Compétence »
+
+Palier « s'améliorer et apprendre ». Mode Développeur coupé par défaut ; chat, catalogue d'outils du chat, profils matériel inchangés.
+
+- **« Améliorer le projet »** (`engine/improve.ts`, `mission/missionWorkflow.ts` `improveFlow`) sur Jarvis ou un projet : (1) **mesures fixes sans modèle** (`computeMetrics` sur les fichiers de code suivis par git, `improve/measure.ts` : nombre de fichiers et de lignes, fichiers de test, 8 plus gros fichiers, TODO/FIXME, fichiers sans test du même nom, chacune avec un identifiant `largest:…`, `todo:…`, `untested:…`) ; (2) l'ARCHITECTE, en lecture seule, rend au plus 8 propositions JSON (`improveSchema`, clés françaises acceptées) avec preuves (extrait de fichier ou identifiant de mesure), gain, risque, tests de preuve ; (3) **chaque preuve est relue par Jarvis** (`verifyProposals`) : extrait retrouvé dans le fichier, ou mesure de la liste. Sans preuve vérifiée : « avis non retenu », jamais transformé en mission. Rien n'est modifié.
+- **Proposition → mission** (`startProposal`, canal `dev:mission-proposal`) : sur ta demande, une proposition retenue devient une mission « Corriger » (bogue), « Documenter » (doc) ou « Modifier » sur le même projet, avec ses preuves dans la demande ; la mission garde `fromProposal`, la proposition garde `missionId`. Le rapport de la tâche montre les tests avant et après.
+- **« Nouvelle compétence »** (`engine/skill.ts`) : REASONER (objectif) → RESEARCHER (technologies locales, **sans web** : D11 non décidée, tout est « à vérifier ») → ARCHITECTE (`skillSchema` : la compétence et 1 à 6 outils en snake_case ; clé `skill`, jamais `name` en tête, car le fournisseur Ollama retire un texte qui commence par `{"name":`) → carte de création → la boucle de tâche sur le projet neuf. Gabarit `node-skill` : `src/skill.ts` (interface `SkillTool`), `src/tools/bonjour.ts`, `jarvis-skill.json` avec **`"chat": false`**, tests. La compétence est un projet à part : **le chat ne la voit pas** ; l'y intégrer demandera ta décision (D15) et une mise à jour validée des tests figés du catalogue.
+- Acteur de mission `JARVIS` : étape faite par Jarvis sans modèle (mesures, vérification) ; aucun modèle n'est exigé pour elle.
+- **Registre des projets tolérant** (`project/projectStore.ts`) : une entrée qu'une version ne comprend pas (par exemple un projet .NET lu par une version plus ancienne) est ignorée à la lecture et réécrite telle quelle.
+- Tests : `engine/improve.test.ts` (mesures, schéma, preuves relues, routeur, compétence), `mission/improveSkill.test.ts` (« Améliorer » de bout en bout avec une proposition qui devient une mission liée, « Compétence » de bout en bout, registre tolérant).
+
 ## Updater / GitHub
 
-Dernière publication : **0.5.4** (`https://github.com/dylanloze91-creator/Jarvis/releases/tag/v0.5.4`) — exe, `.blockmap` et `latest.yml` publiés : l’updater intégré la propose.
+Dernière publication : **0.5.5** (`https://github.com/dylanloze91-creator/Jarvis/releases/tag/v0.5.5`) — exe, `.blockmap` et `latest.yml` publiés : l’updater intégré la propose.
 
 - `apps/desktop/electron-builder.yml` : `publish.provider: github`, owner `dylanloze91-creator`, repo `Jarvis`, `releaseType: release`, artifact `Jarvis-Setup-${version}.exe`
 - `apps/desktop/src/main/updater.ts` : contrôle 15 s après le démarrage puis toutes les 4 h ; téléchargement auto ; **installation seulement si l’utilisateur clique**
@@ -503,6 +514,7 @@ Corrections de la revue complète (détail : `docs/audit-0410.md` du store du pr
 - **Tâches de code (0.4.25)** : toute écriture dans une copie isolée `jarvis-dev/*`, jamais dans la copie de l’utilisateur ; cœur, hors plan, suppression, retour arrière, « jeter » et dépendances toujours confirmés ; revue du diff avant les tests ; liste fixe de tests ; jamais de push ni de publication ; le chat garde la priorité sans qu’aucun fichier du chat ne change.
 - **Profil Jarvis (0.5.0)** : valeurs identiques à 0.4.26, vérifiées par `engine/profiles/jarvis.test.ts` sans régénération ; `maxFixAttempts` absent = 3 ; aucune clé de rattachement vide dans le journal ; aucun modèle de code choisi d’avance.
 - **Moteur (0.5.1)** : tout ce qui est propre à Windows dans `main/developer/` passe par `platform/` (garde : `platform/platform.test.ts`) ; une citation n’est « vérifiée » que relue dans le fichier ; le banc réel ne télécharge et ne choisit aucun modèle, et une tâche dont le fait de référence a disparu est « non mesurable », jamais réussie.
+- **Améliorer et compétences (0.5.5)** : une proposition sans preuve relue par Jarvis n'est jamais retenue ni transformée en mission ; « Améliorer » ne modifie rien ; une compétence reste un projet à part avec `"chat": false`, le catalogue du chat ne change pas.
 - **.NET (0.5.4)** : seules `dotnet build|test <solution> --no-restore` sont automatiques, et seulement dans la copie isolée ; tout ce qui télécharge, lance ou installe redemande ; jamais de publication NuGet ni de MSBuild direct ; jamais de droits administrateur ni de vrai fichier hosts dans les tests ; le SDK n'est jamais installé par Jarvis.
 - **Projets (0.5.3)** : la copie de l’utilisateur ne change qu’avec « Appliquer » (ou « Annuler l’application »), toujours après une carte, copie propre exigée, conflit annulé ; « Construire » jamais publié ; rien de Jarvis dans les dépôts des projets ; un projet n’a ni la mémoire, ni les missions, ni les copies isolées de Jarvis.
 - **Missions (0.5.2)** : une seule boucle de modification (`TaskRun`), les spécialistes s’y branchent par `TaskHooks` ; aucun modèle choisi par Jarvis (rôle sans modèle = mission refusée) ; un seul modèle chargé à la fois ; un point bloquant du REVIEWER ne passe jamais pour une réussite.
