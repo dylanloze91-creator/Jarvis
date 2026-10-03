@@ -199,9 +199,14 @@ export class MissionWorkflow {
     this.host.emit();
   }
 
+  /** Écriture sans attente (ligne de mission, échec) : une erreur de disque ne casse pas la mission. */
+  private persistLater(): void {
+    this.persist().catch(() => undefined);
+  }
+
   private patch(id: string, patch: Partial<MissionStep>): void {
     if (this.current) patchStep(this.current, id, patch, this.now);
-    void this.persist();
+    this.persistLater();
   }
 
   /** Un seul gros modèle chargé : le précédent est libéré quand un rôle change de modèle. */
@@ -387,7 +392,7 @@ export class MissionWorkflow {
     this.current.status = signal?.aborted ? 'cancelled' : 'failed';
     this.current.verdict = 'stopped';
     this.current.summary = message;
-    void this.persist();
+    this.persistLater();
   }
 
   private async answerQuestion(root: string): Promise<DeveloperState> {
@@ -681,7 +686,7 @@ export class MissionWorkflow {
           },
           this.now,
         );
-        void this.persist();
+        this.persistLater();
         return;
       }
       const id = this.open.get(phase);
