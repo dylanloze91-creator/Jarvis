@@ -23,6 +23,11 @@ export * from './engine/profiles/jarvis.js';
 export * from './engine/roles.js';
 export * from './engine/ask.js';
 export * from './engine/realBench.js';
+export * from './engine/specialistSchemas.js';
+export * from './engine/specialist.js';
+export * from './engine/router.js';
+export * from './engine/missionPrompts.js';
+export * from './engine/mission.js';
 export { normalizeRepoRelative, protectedRepoPath } from './repoPaths.js';
 export {
   ARCHITECTURE_LAYERS,

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { DEFAULT_SYSTEM_PROMPT } from './agent/agent.js';
 import { FIX_ATTEMPTS_MAX, FIX_ATTEMPTS_MIN } from './developer/taskPlan.js';
+import { SPECIALIST_ROLES } from './developer/engine/roles.js';
 import { DEFAULT_SITEBLOCK_BASE_URL } from './siteblock/url.js';
 import { defaultCategoryPolicies } from './tools/permissions.js';
 
@@ -91,6 +92,11 @@ export const developerSettingsSchema = z.object({
    * Zod : un bloc developer déjà enregistré ne gagne pas de clé.
    */
   maxFixAttempts: z.number().int().min(FIX_ATTEMPTS_MIN).max(FIX_ATTEMPTS_MAX).optional(),
+  /**
+   * Modèle choisi par l'utilisateur pour un rôle, après le banc réel. Rôle
+   * absent : le modèle de code. Jamais rempli par Jarvis ; pas de défaut Zod.
+   */
+  roleModels: z.partialRecord(z.enum(SPECIALIST_ROLES), z.string().max(200)).optional(),
 });
 
 export type DeveloperSettings = z.infer<typeof developerSettingsSchema>;
