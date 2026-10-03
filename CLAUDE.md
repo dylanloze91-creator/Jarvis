@@ -1,8 +1,8 @@
-# Jarvis 0.5.2 — contexte pour un autre développeur
+# Jarvis 0.5.3 — contexte pour un autre développeur
 
 Ce fichier est à la **racine du code**. Les chemins ci-dessous partent de ce dossier. Ce n’est pas un résumé marketing : c’est l’état réel de cet arbre. La voix a été refaite dans cet arbre (publiée en 0.4.11, section « Voix ») : la transcription restait « Chargement… 100 % » sur l’installateur Windows. La refonte du tableau de bord est dans cet arbre : fenêtre étroite = overlay, fenêtre large = tableau de bord.
 
-**Version confirmée :** `apps/desktop/package.json` → `"version": "0.5.2"`. Le `package.json` racine est aligné sur la même version depuis 0.5.0 (il était resté à `0.3.0`), mais il n’est lu par rien : la version qui compte pour l’exe, l’updater et GitHub est celle de `@jarvis/desktop`. `@jarvis/core` reste à `0.1.0`. La voix corrigée en 0.4.11 (installateur Windows) est inchangée. Le modèle par défaut reste `qwen2.5:3b`. `qwen3.5:4b` est le modèle recommandé documenté ; le repli est réglable (`fallbackModel`, défaut `qwen2.5:3b`).
+**Version confirmée :** `apps/desktop/package.json` → `"version": "0.5.3"`. Le `package.json` racine est aligné sur la même version depuis 0.5.0 (il était resté à `0.3.0`), mais il n’est lu par rien : la version qui compte pour l’exe, l’updater et GitHub est celle de `@jarvis/desktop`. `@jarvis/core` reste à `0.1.0`. La voix corrigée en 0.4.11 (installateur Windows) est inchangée. Le modèle par défaut reste `qwen2.5:3b`. `qwen3.5:4b` est le modèle recommandé documenté ; le repli est réglable (`fallbackModel`, défaut `qwen2.5:3b`).
 
 Lis ce fichier avant de modifier le code.
 
@@ -48,7 +48,7 @@ Scripts utiles (racine) :
 
 Le script `setup:voice` remplit `apps/desktop/voice-assets/` (runtime ONNX, Whisper, openWakeWord, modèle Vosk français ; non commité, voir `.gitignore`). Premier `dev` / `build` : besoin de réseau.
 
-L’installateur publié est `Jarvis-Setup-0.5.2.exe` (release GitHub `v0.5.2`).
+L’installateur publié est `Jarvis-Setup-0.5.3.exe` (release GitHub `v0.5.3`).
 
 Données utilisateur (Electron `userData`, typiquement `%APPDATA%\Jarvis`) :
 
@@ -59,6 +59,7 @@ Données utilisateur (Electron `userData`, typiquement `%APPDATA%\Jarvis`) :
 - `audit-log.json`
 - `spotify-token.json` (PKCE, mode 0600)
 - `google-token.bin` (jetons Google chiffrés par `safeStorage`, jamais en clair)
+- `developer/` — mode Développeur : `code-model.json`, `projects/registry.json` (projets importés ou créés), `projects/<projet>/memory.json` et `projects/<projet>/missions/` (décision D3 : rien dans les dépôts)
 
 ---
 
@@ -81,7 +82,7 @@ Données utilisateur (Electron `userData`, typiquement `%APPDATA%\Jarvis`) :
     src/media/                 intent Spotify
     src/update/                lecture latest.yml GitHub
     src/history/  src/audit/
-  apps/desktop/                Electron (version 0.5.2)
+  apps/desktop/                Electron (version 0.5.3)
     electron-builder.yml       NSIS, extraResources, publish GitHub
     electron.vite.config.ts    aliases onnxruntime-web (wasm, pas JSEP)
     scripts/setup-whisper.mjs
@@ -353,9 +354,23 @@ Palier « spécialistes et missions ». Mode Développeur coupé par défaut ; c
 - Pas encore : recherche web pendant une mission (décision D11 en attente) ; le RESEARCHER n'a que la lecture du dépôt.
 - Tests : `engine/missions.test.ts`, `mission/missionWorkflow.test.ts` (vrai contrôleur, vrais git et npm : questions, réponses, conception, plan, échec, diagnostic, correction, revue bloquante, correction, revue ok ; journal ; historique après redémarrage ; mission « question » ; refus sans modèle). Scène `?scene=developer-mission`.
 
+## 0.5.3 — projets : appliquer, construire, mémoire, Project Factory
+
+Palier « projets ». Mode Développeur coupé par défaut ; chat, catalogue, profils matériel inchangés ; déroulé d’une tâche sur Jarvis inchangé (consignes figées par `engine/profiles/jarvis.test.ts`).
+
+- **Appliquer** (`main/developer/task/apply.ts`, `CodeTaskWorkflow.apply/revertApply`) : bouton du rapport d’une tâche **réussie**. Contrôles (copie sans modification suivie non enregistrée, sur une branche, contient encore le commit de départ, au moins un commit à fusionner), puis **carte toujours confirmée** avec le diff, puis `git merge --no-ff --no-verify --no-edit` signé « Jarvis Développeur » ; conflit = `git merge --abort`, la copie ne change pas. « Annuler l’application » = `git revert -m 1` après une carte (conflit = `git revert --abort`). Jamais de push. La tête d’avant et le commit de fusion sont notés dans la tâche et dans le rapport.
+- **Construire** (`project/projectsWorkflow.ts`, `build`) : pour Jarvis, l’installateur local par `devPlatform().installer` (`npm run package:win`, jamais `publish`, null hors Windows) dans la copie de l’utilisateur, après une carte ; Jarvis vérifie que `apps/desktop/release/Jarvis-Setup-<version>.exe` existe et ne le lance pas. Pour un projet : `npm run build` s’il existe.
+- **Projets** (`engine/project.ts`, `project/projectStore.ts`) : registre `userData/developer/projects/registry.json` (Jarvis vient de `developer.repoPath`, identifiants `jarvis` et `nouveau` réservés), import d’un dossier existant (`project/inspect.ts` : dépôt git avec un commit, `package-lock.json`, un script `typecheck` ou `test`), retrait de la liste sans rien supprimer. **Mémoire** par projet (`memory.json`, 4 000 caractères ; Jarvis a un texte par défaut qui renvoie à CLAUDE.md), donnée aux spécialistes avec les 5 dernières missions du projet (`memoryBlock`).
+- **Profil Node générique** (`engine/profiles/node.ts`) : tests = scripts `typecheck`, `test`, `lint` présents (même liste fixe, mêmes commandes), fichiers protégés = dépendances et configuration (`package.json`, verrous, `tsconfig*`, `vite/vitest/eslint.config`, `.gitignore`, `.github/`). Les consignes et la politique de tâche prennent le profil en paramètre (`planSystemPrompt(profile)`, `parsePlanReply(text, profile)`, `reviewPlan(…, protectedReason)`, `planCoverage(…, protectedReason)`), Jarvis par défaut.
+- **Tâches sur un projet** : `CodeTaskWorkflow.start(request, { project })` — copie isolée dans `<projet>-taches`, profil du projet ; les « Anciennes tâches » restent celles de Jarvis.
+- **Project Factory** (`engine/templates.ts`, `project/factory.ts`) : gabarits locaux `node-cli`, `ts-lib`, `vite-react` (versions de Jarvis : TypeScript 5.9, Vitest 3, Vite 7, React 19), écrits sans réseau dans `developer.projectsRoot` (absent : `devPlatform().defaultProjectsRoot`, `C:\dev\Projets` sous Windows, décision D2) ; une carte montre le dossier et les commandes exactes, puis `npm install --ignore-scripts --no-audit --no-fund`, `git init -b main`, premier commit « Jarvis Développeur ». Aucun dépôt distant.
+- **Mission « Nouveau projet »** (`new-project`) : REASONER (objectif) → ARCHITECT (`factorySchema` : gabarit de la liste, nom, description) → carte de création (USER) → la boucle de tâche sur le projet neuf. La mission est enregistrée sous `projects/nouveau/` jusqu’à la création, puis rejoint `projects/<projet>/`. « Appliquer » fusionne dans `main` du projet (recommandation D14).
+- Interface : section « Projets » de l’onglet Projet (mémoire, construire, importer, retirer), choix du projet dans l’onglet Missions, boutons « Appliquer à ta copie » et « Annuler l’application » dans le rapport.
+- Tests : `engine/projects.test.ts`, `task/apply.test.ts` (fusion, refus, conflit, copie modifiée, annulation), `project/projects.test.ts` (import, mémoire, mission sur un projet importé avec Jarvis intact, « Nouveau projet » de bout en bout avec npm simulé, création refusée). `controllerHarness.testkit.ts` accepte `intercept` (commande simulée, tri de sécurité appliqué).
+
 ## Updater / GitHub
 
-Dernière publication : **0.5.2** (`https://github.com/dylanloze91-creator/Jarvis/releases/tag/v0.5.2`) — exe, `.blockmap` et `latest.yml` publiés : l’updater intégré la propose.
+Dernière publication : **0.5.3** (`https://github.com/dylanloze91-creator/Jarvis/releases/tag/v0.5.3`) — exe, `.blockmap` et `latest.yml` publiés : l’updater intégré la propose.
 
 - `apps/desktop/electron-builder.yml` : `publish.provider: github`, owner `dylanloze91-creator`, repo `Jarvis`, `releaseType: release`, artifact `Jarvis-Setup-${version}.exe`
 - `apps/desktop/src/main/updater.ts` : contrôle 15 s après le démarrage puis toutes les 4 h ; téléchargement auto ; **installation seulement si l’utilisateur clique**
@@ -474,6 +489,7 @@ Corrections de la revue complète (détail : `docs/audit-0410.md` du store du pr
 - **Tâches de code (0.4.25)** : toute écriture dans une copie isolée `jarvis-dev/*`, jamais dans la copie de l’utilisateur ; cœur, hors plan, suppression, retour arrière, « jeter » et dépendances toujours confirmés ; revue du diff avant les tests ; liste fixe de tests ; jamais de push ni de publication ; le chat garde la priorité sans qu’aucun fichier du chat ne change.
 - **Profil Jarvis (0.5.0)** : valeurs identiques à 0.4.26, vérifiées par `engine/profiles/jarvis.test.ts` sans régénération ; `maxFixAttempts` absent = 3 ; aucune clé de rattachement vide dans le journal ; aucun modèle de code choisi d’avance.
 - **Moteur (0.5.1)** : tout ce qui est propre à Windows dans `main/developer/` passe par `platform/` (garde : `platform/platform.test.ts`) ; une citation n’est « vérifiée » que relue dans le fichier ; le banc réel ne télécharge et ne choisit aucun modèle, et une tâche dont le fait de référence a disparu est « non mesurable », jamais réussie.
+- **Projets (0.5.3)** : la copie de l’utilisateur ne change qu’avec « Appliquer » (ou « Annuler l’application »), toujours après une carte, copie propre exigée, conflit annulé ; « Construire » jamais publié ; rien de Jarvis dans les dépôts des projets ; un projet n’a ni la mémoire, ni les missions, ni les copies isolées de Jarvis.
 - **Missions (0.5.2)** : une seule boucle de modification (`TaskRun`), les spécialistes s’y branchent par `TaskHooks` ; aucun modèle choisi par Jarvis (rôle sans modèle = mission refusée) ; un seul modèle chargé à la fois ; un point bloquant du REVIEWER ne passe jamais pour une réussite.
 
 Travaux **hors scope** de cet arbre (ne pas les reprendre ici) : publication GitHub.
