@@ -22,7 +22,7 @@ export const projectEntrySchema = z.object({
     .refine((id) => !RESERVED_IDS.has(id), 'identifiant réservé'),
   name: z.string().trim().min(1).max(80),
   path: z.string().min(1).max(400),
-  kind: z.literal('node'),
+  kind: z.enum(['node', 'dotnet']),
   origin: z.enum(['imported', 'created']),
   template: z.enum(PROJECT_TEMPLATE_IDS).optional(),
   description: z.string().max(400).default(''),

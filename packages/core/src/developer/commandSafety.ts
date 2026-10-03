@@ -1,4 +1,5 @@
 import { parseCommandLine, programName } from './commandParse.js';
+import { dotnetRules } from './commandRulesDotnet.js';
 import { gitRules } from './commandRulesGit.js';
 import { npmRules, npxRules, packageBinaryRules } from './commandRulesNode.js';
 import {
@@ -174,6 +175,7 @@ function programFindings(
   if (program === 'git') return gitRules(args, ctx);
   if (['npm', 'pnpm', 'yarn', 'bun'].includes(program)) return npmRules(program, args, ctx);
   if (['npx', 'bunx', 'pnpx'].includes(program)) return npxRules(args, ctx);
+  if (program === 'dotnet') return dotnetRules(args, ctx);
   const binary = packageBinaryRules(program, args, ctx);
   if (binary) return binary;
   if (INTERPRETERS.has(program)) return interpreterRules(program, args);

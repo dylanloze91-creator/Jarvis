@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { profileSuiteCommand, type ProjectTestSuite } from './engine/projectProfile.js';
 
 /** Liste fixe des tests (décision 9) : automatiques seulement dans la copie isolée. */
 export const TEST_SUITES = {
@@ -38,6 +39,15 @@ export function resolveMaxFixAttempts(value: number | undefined): number {
 
 export function suiteCommand(suite: TestSuiteId): string {
   return `npm ${TEST_SUITES[suite].npmArgs.join(' ')}`;
+}
+
+/** Commande d'un test pour un projet : celle de son profil s'il la définit, sinon la liste fixe npm. */
+export function suiteCommandFor(
+  profile: { testSuites: Readonly<Record<string, ProjectTestSuite>> },
+  suite: TestSuiteId,
+): string {
+  const own = profile.testSuites[suite];
+  return own ? profileSuiteCommand(own) : suiteCommand(suite);
 }
 
 export type PlanAction = 'create' | 'edit' | 'delete';

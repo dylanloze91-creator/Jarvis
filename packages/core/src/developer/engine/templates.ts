@@ -1,4 +1,11 @@
 import { z } from 'zod';
+import {
+  DOTNET_TEMPLATES,
+  DOTNET_TEMPLATE_IDS,
+  dotnetIdentifier,
+  renderDotnetTemplate,
+  type DotnetTemplateId,
+} from './dotnetTemplates.js';
 import { briefBlock, type MissionBrief } from './missionPrompts.js';
 
 /**
@@ -6,11 +13,17 @@ import { briefBlock, type MissionBrief } from './missionPrompts.js';
  * réseau. Les versions suivent celles de Jarvis (déjà installées et vérifiées
  * sur le PC de l'utilisateur). Seul `npm install`, confirmé, va sur le réseau.
  */
-export const PROJECT_TEMPLATE_IDS = ['node-cli', 'ts-lib', 'vite-react'] as const;
+export const NODE_TEMPLATE_IDS = ['node-cli', 'ts-lib', 'vite-react'] as const;
+export const PROJECT_TEMPLATE_IDS = [...NODE_TEMPLATE_IDS, ...DOTNET_TEMPLATE_IDS] as const;
 export type ProjectTemplateId = (typeof PROJECT_TEMPLATE_IDS)[number];
+
+export function templateToolchain(id: ProjectTemplateId): 'node' | 'dotnet' {
+  return (DOTNET_TEMPLATE_IDS as readonly string[]).includes(id) ? 'dotnet' : 'node';
+}
 
 export const PROJECT_TEMPLATES: Record<ProjectTemplateId, { label: string; description: string }> =
   {
+    ...DOTNET_TEMPLATES,
     'node-cli': {
       label: 'Outil en ligne de commande (Node.js, TypeScript)',
       description: 'un programme lancé dans un terminal, avec ses options et ses tests',
@@ -42,6 +55,8 @@ export interface TemplateInput {
   packageName: string;
   title: string;
   description: string;
+  /** Gabarits .NET : cible tirée du SDK installé (`net10.0`…). */
+  tfm?: string;
 }
 
 export interface TemplateFile {
@@ -403,6 +418,15 @@ export function renderTemplate(id: ProjectTemplateId, input: TemplateInput): Tem
     title: input.title.trim().slice(0, 80) || input.packageName,
     description: input.description.trim().replace(/\s+/g, ' ').slice(0, 300),
   };
+  if (templateToolchain(id) === 'dotnet') {
+    if (!input.tfm) throw new Error('Gabarit .NET sans version du SDK.');
+    return renderDotnetTemplate(id as DotnetTemplateId, {
+      name: dotnetIdentifier(clean.title),
+      title: clean.title,
+      description: clean.description,
+      tfm: input.tfm,
+    });
+  }
   if (id === 'node-cli') return nodeCli(clean);
   if (id === 'ts-lib') return tsLib(clean);
   return viteReact(clean);
@@ -425,6 +449,16 @@ const TEMPLATE_ALIASES: Record<string, ProjectTemplateId> = {
   react: 'vite-react',
   vite: 'vite-react',
   app: 'vite-react',
+  winforms: 'dotnet-winforms',
+  windows: 'dotnet-winforms',
+  'windows-forms': 'dotnet-winforms',
+  wpf: 'dotnet-wpf',
+  dotnet: 'dotnet-console',
+  '.net': 'dotnet-console',
+  csharp: 'dotnet-console',
+  'c#': 'dotnet-console',
+  worker: 'dotnet-worker',
+  service: 'dotnet-worker',
 };
 
 /** Choix de l'ARCHITECTE pour un nouveau projet : un gabarit de la liste, un nom, une phrase. */
@@ -447,7 +481,7 @@ export function factorySystem(): string {
     (id) => `- "${id}" : ${PROJECT_TEMPLATES[id].label}, ${PROJECT_TEMPLATES[id].description}`,
   ).join('\n');
   return `Tu es le spécialiste ARCHITECT de Jarvis Développeur. ${FACTORY_MARKER}.
-L'utilisateur veut un nouveau projet, indépendant de Jarvis. Choisis le gabarit local le plus simple qui convient, un nom court et une phrase de description. Réponds en français.
+L'utilisateur veut un nouveau projet, indépendant de Jarvis. Choisis le gabarit local le plus simple qui convient, un nom court et une phrase de description. Une « appli Windows » (fenêtre) est un gabarit .NET ; un outil sans interface peut rester en Node.js. Réponds en français.
 Gabarits :
 ${list}
 Le format attendu est :

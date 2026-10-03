@@ -1,12 +1,15 @@
 import type { CheckReport, RepoFacts } from '../repoCheck.js';
 
 /** Outils de construction d'un projet : ils décident quelles règles de commandes s'appliquent. */
-export type ProjectToolchain = 'node';
+export type ProjectToolchain = 'node' | 'dotnet';
 
 export interface ProjectTestSuite {
   label: string;
   /** Arguments passés à npm, sans shell : la liste est fixe. */
   npmArgs: readonly string[];
+  /** Autre programme que npm (0.5.4) : `dotnet` et ses arguments fixes ; `npmArgs` est alors ignoré. */
+  program?: 'dotnet';
+  args?: readonly string[];
 }
 
 /**
@@ -39,4 +42,13 @@ export interface ProjectProfile {
   /** Seules branches sur lesquelles Jarvis écrit. */
   sandboxBranchPrefix: string;
   sandboxBranch(date: Date, subject: string): string;
+  /** Dépendances de la copie isolée (0.5.4) ; absent : `npm ci --ignore-scripts`. */
+  install?: { program: 'dotnet'; args: readonly string[] };
+}
+
+/** Commande affichée et classée d'un test du profil. */
+export function profileSuiteCommand(suite: ProjectTestSuite): string {
+  return suite.program === 'dotnet'
+    ? `dotnet ${(suite.args ?? []).join(' ')}`
+    : `npm ${suite.npmArgs.join(' ')}`;
 }

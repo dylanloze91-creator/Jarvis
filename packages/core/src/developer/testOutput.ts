@@ -1,5 +1,5 @@
 /**
- * Lecture des sorties de tests (tsc, Vitest, ESLint) pour comparer à la
+ * Lecture des sorties de tests (tsc, Vitest, ESLint, dotnet) pour comparer à la
  * référence prise avant toute modification : un échec qui existait déjà
  * n'est jamais attribué à la tâche.
  */
@@ -88,6 +88,64 @@ export function parseTestOutput(
         : `${vitestTotal} tests réussis`,
     );
   if (eslint) parts.push(`${eslint} erreur(s) de lint`);
+  if (options.exitCode !== 0 && failures.size === 0) {
+    failures.add(`sortie ${options.exitCode ?? 'interrompue'}`);
+    parts.push(`échec (code ${options.exitCode ?? 'aucun'})`);
+  }
+  if (parts.length === 0) parts.push(options.exitCode === 0 ? 'réussi' : 'échec');
+  return { failures: [...failures].sort(), summary: parts.join(', ') };
+}
+
+const DOTNET_ERROR = /^(.+?)\((\d+),(\d+)\): error ([A-Z]{2,}\d+): (.+?)(?:\s+\[[^\]]+\])?$/;
+const DOTNET_TOOL_ERROR = /^(?:.+? : )?error ((?:MSB|NU|NETSDK)\d+): (.+?)(?:\s+\[[^\]]+\])?$/;
+const DOTNET_FAILED_TEST = /^\s+Failed (\S+) \[[^\]]*\]$/;
+const DOTNET_SUMMARY =
+  /^(?:Failed|Passed)!\s+-\s+Failed:\s+(\d+),\s+Passed:\s+(\d+),\s+Skipped:\s+(\d+),\s+Total:\s+(\d+)/;
+
+/**
+ * Sorties de `dotnet build` et `dotnet test` (0.5.4, sortie en anglais) :
+ * erreurs de compilation (fichier + code, sans la ligne) et noms des tests
+ * échoués, stables d'une série à l'autre.
+ */
+export function parseDotnetOutput(
+  output: string,
+  options: { exitCode: number | null; root?: string } = { exitCode: null },
+): { failures: string[]; summary: string } {
+  const failures = new Set<string>();
+  const errors = new Set<string>();
+  let failed: number | null = null;
+  let total: number | null = null;
+  for (const raw of stripAnsi(output).split(/\r?\n/)) {
+    const line = raw.trimEnd();
+    const compile = DOTNET_ERROR.exec(line.trim());
+    if (compile) {
+      const id = `build ${relativeTo(compile[1]!, options.root)} ${compile[4]} ${compile[5]!.slice(0, 120)}`;
+      errors.add(id);
+      failures.add(id);
+      continue;
+    }
+    const tool = DOTNET_TOOL_ERROR.exec(line.trim());
+    if (tool) {
+      const id = `build ${tool[1]} ${tool[2]!.slice(0, 120)}`;
+      errors.add(id);
+      failures.add(id);
+      continue;
+    }
+    const test = DOTNET_FAILED_TEST.exec(line);
+    if (test) {
+      failures.add(`test ${test[1]}`);
+      continue;
+    }
+    const summary = DOTNET_SUMMARY.exec(line.trim());
+    if (summary) {
+      failed = (failed ?? 0) + Number(summary[1]);
+      total = (total ?? 0) + Number(summary[4]);
+    }
+  }
+  const parts: string[] = [];
+  if (errors.size) parts.push(`${errors.size} erreur(s) de compilation`);
+  if (total !== null)
+    parts.push(failed ? `${failed} test(s) échoué(s) sur ${total}` : `${total} tests réussis`);
   if (options.exitCode !== 0 && failures.size === 0) {
     failures.add(`sortie ${options.exitCode ?? 'interrompue'}`);
     parts.push(`échec (code ${options.exitCode ?? 'aucun'})`);

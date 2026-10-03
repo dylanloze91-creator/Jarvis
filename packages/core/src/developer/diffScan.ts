@@ -5,7 +5,7 @@ import { parseUnifiedDiff } from './unifiedDiff.js';
  * c'est exécuter du code écrit par le modèle. Ces familles imposent une
  * confirmation. « dynamic » couvre ce qui peut cacher les trois autres.
  */
-export type ScanCategory = 'process' | 'delete' | 'network' | 'dynamic';
+export type ScanCategory = 'process' | 'delete' | 'network' | 'dynamic' | 'system';
 
 export interface ScanFinding {
   category: ScanCategory;
@@ -20,9 +20,62 @@ export const SCAN_LABELS: Record<ScanCategory, string> = {
   delete: 'suppression de fichiers',
   network: 'accès réseau non local',
   dynamic: 'code dynamique (peut cacher un des cas précédents)',
+  system: 'fichier système, registre ou droits administrateur',
 };
 
 const CODE_FILE = /\.(c|m)?(j|t)sx?$|\.(ps1|psm1|sh|bash|bat|cmd|py)$/i;
+/** C#, XAML et MSBuild (0.5.4) : leurs propres règles, le JavaScript garde les siennes. */
+const DOTNET_FILE = /\.(cs|csx|vb|xaml|csproj|vbproj|props|targets|manifest)$/i;
+
+const DOTNET_RULES: ReadonlyArray<{ category: ScanCategory; pattern: RegExp; reason: string }> = [
+  {
+    category: 'process',
+    pattern:
+      /\bProcess\.Start\b|\bnew\s+Process(StartInfo)?\b|\bUseShellExecute\b|\bPowerShell\.Create\b/,
+    reason: 'lance un processus',
+  },
+  {
+    category: 'process',
+    pattern: /<\s*Exec\b|<\s*Target\b[^>]*\b(Before|After)Targets\s*=/i,
+    reason: 'tâche MSBuild qui lance une commande à la compilation',
+  },
+  {
+    category: 'delete',
+    pattern:
+      /\b(File|Directory)\.Delete\s*\(|\bFileSystem\.Delete(File|Directory)\b|\.Delete\s*\(\s*(true)?\s*\)/,
+    reason: 'supprime un fichier ou un dossier',
+  },
+  {
+    category: 'network',
+    pattern:
+      /\b(HttpClient|WebClient|WebRequest|HttpWebRequest|TcpClient|UdpClient|TcpListener|ClientWebSocket|SmtpClient)\b|\bnew\s+Socket\s*\(/,
+    reason: 'client réseau',
+  },
+  {
+    category: 'dynamic',
+    pattern:
+      /\bAssembly\.(Load|LoadFrom|LoadFile)\s*\(|\bActivator\.CreateInstance\b|\[\s*(DllImport|LibraryImport)\b|\bMarshal\.GetDelegateForFunctionPointer\b|\bCSharpScript\b/,
+    reason: 'charge ou exécute du code à l’exécution',
+  },
+  {
+    category: 'system',
+    pattern:
+      /drivers[\\/]+etc[\\/]+hosts|(^|[^\w.])\/etc\/hosts\b|\bSystem32\b|\bSpecialFolder\.(System|Windows)\b/i,
+    reason:
+      'fichier du système (hosts, System32) : utilise un chemin réglable et un faux fichier dans les tests',
+  },
+  {
+    category: 'system',
+    pattern: /\bRegistry(Key)?\.|\bMicrosoft\.Win32\.Registry\b|\bRegistryKey\b/,
+    reason: 'registre Windows',
+  },
+  {
+    category: 'system',
+    pattern:
+      /requireAdministrator|highestAvailable|\bVerb\s*=\s*"runas"|\bWindowsBuiltInRole\.Administrator\b|\bWindowsPrincipal\b/i,
+    reason: 'droits administrateur (élévation, UAC)',
+  },
+];
 
 const RULES: ReadonlyArray<{ category: ScanCategory; pattern: RegExp; reason: string }> = [
   {
@@ -100,6 +153,13 @@ export function scanLine(file: string, line: number, text: string): ScanFinding[
     seen.add(category);
     out.push({ category, file, line, text: trimmed.slice(0, 200), reason });
   };
+  if (DOTNET_FILE.test(file)) {
+    for (const rule of DOTNET_RULES) if (rule.pattern.test(text)) add(rule.category, rule.reason);
+    if (!/\bxmlns(:\w+)?\s*=/.test(text))
+      for (const match of text.matchAll(URL_IN_TEXT))
+        if (!isLoopbackHost(match[1]!)) add('network', `adresse externe ${match[1]}`);
+    return out;
+  }
   for (const rule of RULES) if (rule.pattern.test(text)) add(rule.category, rule.reason);
   if (/\bfetch\s*\(/.test(text)) {
     const literal = /\bfetch\s*\(\s*['"`](https?:\/\/[^'"`]+)/.exec(text);
@@ -120,7 +180,7 @@ export function scanLine(file: string, line: number, text: string): ScanFinding[
 export function scanDiff(diff: string): ScanFinding[] {
   const findings: ScanFinding[] = [];
   for (const file of parseUnifiedDiff(diff)) {
-    if (!CODE_FILE.test(file.path)) continue;
+    if (!CODE_FILE.test(file.path) && !DOTNET_FILE.test(file.path)) continue;
     for (const hunk of file.hunks)
       for (const line of hunk.lines)
         if (line.kind === 'add')

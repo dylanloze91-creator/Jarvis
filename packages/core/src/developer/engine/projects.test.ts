@@ -15,7 +15,7 @@ import {
 import { MISSION_CHAINS, rolesWithoutModel, suggestMissionKind } from './router.js';
 import {
   FACTORY_MARKER,
-  PROJECT_TEMPLATE_IDS,
+  NODE_TEMPLATE_IDS,
   factorySchema,
   factorySystem,
   renderTemplate,
@@ -144,7 +144,7 @@ describe('registre et mémoire des projets', () => {
 });
 
 describe('Project Factory : gabarits locaux', () => {
-  it.each(PROJECT_TEMPLATE_IDS)('%s : package.json avec typecheck et test, chemins sûrs', (id) => {
+  it.each(NODE_TEMPLATE_IDS)('%s : package.json avec typecheck et test, chemins sûrs', (id) => {
     const files = renderTemplate(id, {
       packageName: 'photos-par-date',
       title: 'Photos <par> date',
