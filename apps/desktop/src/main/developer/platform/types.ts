@@ -33,4 +33,6 @@ export interface DevPlatform {
   npmOnPathIsLink: boolean;
   /** Le réglage git `core.longpaths` compte sur ce système. */
   checksGitLongPaths: boolean;
+  /** Programme `dotnet` du SDK .NET (0.5.4), trouvé dans le PATH. */
+  dotnetProgram: string;
 }

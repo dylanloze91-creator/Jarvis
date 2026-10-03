@@ -33,4 +33,5 @@ export const posixPlatform: DevPlatform = {
   pathListSeparator: ':',
   npmOnPathIsLink: true,
   checksGitLongPaths: false,
+  dotnetProgram: 'dotnet',
 };

@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs';
 import {
+  JARVIS_PROJECT_PROFILE,
   classifyCommand,
   randomId,
   resolveMaxFixAttempts,
@@ -95,6 +96,7 @@ export class CodeTaskWorkflow {
         const repo = this.toolRepo ?? this.jarvisRepo();
         return repo ? listSandboxes(deps.run, repo.root, repo.worktreeRoot) : [];
       },
+      profile: () => this.current?.profile ?? JARVIS_PROJECT_PROFILE,
     });
   }
 

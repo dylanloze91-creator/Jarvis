@@ -62,6 +62,7 @@ export function registerDeveloperIpc(
     missionsProject: 'jarvis',
     projects: null,
     projectsRoot: '',
+    dotnet: null,
   });
 
   const refused = (): DeveloperState => ({ ...disabled(), notice: DEVELOPER_DISABLED_NOTICE });

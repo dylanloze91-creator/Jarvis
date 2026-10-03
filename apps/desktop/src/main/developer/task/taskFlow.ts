@@ -18,7 +18,7 @@ import {
   randomId,
   reviewPlan,
   scanDiff,
-  suiteCommand,
+  suiteCommandFor,
   toolView,
   trimDiffFiles,
   type CodeAIProvider,
@@ -247,10 +247,14 @@ export class TaskRun extends TaskRunBase {
     this.series += 1;
     this.state.testSeriesUsed = this.series;
     const results: TestRunSummary[] = [];
-    this.hooks.onPhase?.('test', 'running', this.reviewed!.tests.map(suiteCommand).join(' · '));
+    this.hooks.onPhase?.(
+      'test',
+      'running',
+      this.reviewed!.tests.map((s) => suiteCommandFor(this.profile, s)).join(' · '),
+    );
     for (const suite of this.reviewed!.tests) {
       await pause();
-      step(stepId, 'running', `${suiteCommand(suite)}…`);
+      step(stepId, 'running', `${suiteCommandFor(this.profile, suite)}…`);
       const outcome = await this.call('dev_run_tests', { suite }, signal);
       if (outcome.status !== 'ok') {
         this.hooks.onPhase?.('test', 'failed', outcome.content.split('\n')[0]);
@@ -412,11 +416,13 @@ export class TaskRun extends TaskRunBase {
       criteria: reviewed.criteria,
       files: reviewed.files,
       tests: reviewed.tests,
-      testCommands: reviewed.tests.map(suiteCommand),
+      testCommands: reviewed.tests.map((s) => suiteCommandFor(this.profile, s)),
       maxTestSeries: maxTestSeriesFor(state.maxAttempts),
       dirtyFiles: reviewed.files.map((f) => f.path).filter((p) => this.repo.dirty.has(p)),
       branchCommand: `git worktree add -b ${state.branch} "${join(this.repo.worktreeRoot, this.repo.folder)}" HEAD`,
-      installCommand: `npm ${SANDBOX_NPM_CI_ARGS.join(' ')}`,
+      installCommand: this.profile.install
+        ? `dotnet ${this.profile.install.args.join(' ')}`
+        : `npm ${SANDBOX_NPM_CI_ARGS.join(' ')}`,
     };
     step('plan', 'done', `${reviewed.files.length} fichier(s)`);
 
@@ -447,11 +453,21 @@ export class TaskRun extends TaskRunBase {
     state.baseCommit = this.sandbox.baseCommit;
     step('sandbox', 'done', this.sandbox.path);
 
-    step('install', 'running', 'ta confirmation (réseau : registre npm)');
+    step(
+      'install',
+      'running',
+      this.profile.install
+        ? 'ta confirmation (réseau : NuGet)'
+        : 'ta confirmation (réseau : registre npm)',
+    );
     const installed = await this.call('dev_install_sandbox', {}, signal);
     if (installed.status !== 'ok')
       throw new TaskStopped(`Dépendances non installées : ${installed.content}`);
-    step('install', 'done', 'npm ci --ignore-scripts');
+    step(
+      'install',
+      'done',
+      this.profile.install ? state.plan!.installCommand : 'npm ci --ignore-scripts',
+    );
 
     state.baseline = await this.testSeries('baseline', step, signal, pause);
     step('baseline', 'done', state.baseline.map((r) => `${r.suite} : ${r.summary}`).join(' · '));

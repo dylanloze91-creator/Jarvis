@@ -35,4 +35,5 @@ export const windowsPlatform: DevPlatform = {
   pathListSeparator: ';',
   npmOnPathIsLink: false,
   checksGitLongPaths: true,
+  dotnetProgram: 'dotnet',
 };

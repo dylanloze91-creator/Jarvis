@@ -107,7 +107,7 @@ export interface ProjectView {
   id: string;
   name: string;
   path: string;
-  kind: 'jarvis' | 'node';
+  kind: 'jarvis' | 'node' | 'dotnet';
   origin: 'jarvis' | 'imported' | 'created';
   template: ProjectTemplateId | null;
   description: string;
@@ -303,6 +303,8 @@ export interface DeveloperState {
   projects: ProjectView[] | null;
   /** Dossier des nouveaux projets (décision D2). */
   projectsRoot: string;
+  /** SDK .NET trouvé (0.5.4) et commande d'installation à lancer soi-même ; null : pas encore cherché. */
+  dotnet: { sdks: string[]; hint: string | null } | null;
 }
 
 export interface DeveloperApi {

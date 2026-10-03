@@ -105,7 +105,7 @@ export class TaskRunBase {
     readonly state: CodeTaskState,
     protected readonly manager: ToolManager,
     /** Projet de la tâche : ses tests, ses fichiers protégés, son contexte. Jarvis par défaut. */
-    protected readonly profile: ProjectProfile = JARVIS_PROJECT_PROFILE,
+    readonly profile: ProjectProfile = JARVIS_PROJECT_PROFILE,
   ) {}
 
   protected coverageRequest(name: string, args: Record<string, unknown>): CoverageRequest {

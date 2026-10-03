@@ -225,6 +225,7 @@ export function createPreviewDeveloperApi(
     missionsProject: 'jarvis',
     projects: developerScene ? previewProjects() : null,
     projectsRoot: 'C:\\dev\\Projets',
+    dotnet: developerScene ? { sdks: ['10.0.112'], hint: null } : null,
   };
   applyTaskScene(scene, state);
   if (scene === 'developer-pull') {

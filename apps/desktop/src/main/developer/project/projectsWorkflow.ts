@@ -2,16 +2,20 @@ import { existsSync } from 'node:fs';
 import { readFile, stat } from 'node:fs/promises';
 import { basename, isAbsolute, join, resolve } from 'node:path';
 import {
+  DOTNET_ENV,
   JARVIS_DEFAULT_MEMORY,
   JARVIS_PROJECT_ID,
   JARVIS_PROJECT_PROFILE,
   PROJECT_TEMPLATES,
   SAFETY_LABELS,
   classifyCommand,
+  createDotnetProfile,
   createNodeProfile,
+  dotnetIdentifier,
   projectIdFor,
   randomId,
   renderTemplate,
+  templateToolchain,
   type ConfirmationRequest,
   type DevCheck,
   type ProjectEntry,
@@ -31,11 +35,13 @@ import type { Runner } from '../runner.js';
 import type { AskExtra } from '../task/taskRun.js';
 import { isInside, samePath } from '../task/sandbox.js';
 import type { NodeTools } from '../task/suites.js';
+import { detectDotnet, type DotnetSdk } from './dotnet.js';
 import {
   FactoryError,
   factoryCommands,
   initProjectRepo,
   installProject,
+  restoreDotnetProject,
   writeProjectFiles,
 } from './factory.js';
 import { inspectProject } from './inspect.js';
@@ -88,6 +94,7 @@ const JARVIS_RELEASE_DIR = join('apps', 'desktop', 'release');
  */
 export class ProjectsWorkflow {
   private views: ProjectView[] | null = null;
+  private dotnet: DotnetSdk | null = null;
 
   constructor(
     private readonly host: ProjectsHost,
@@ -105,8 +112,12 @@ export class ProjectsWorkflow {
     );
   }
 
-  view(): Pick<DeveloperState, 'projects' | 'projectsRoot'> {
-    return { projects: this.views, projectsRoot: this.projectsRoot() };
+  view(): Pick<DeveloperState, 'projects' | 'projectsRoot' | 'dotnet'> {
+    return {
+      projects: this.views,
+      projectsRoot: this.projectsRoot(),
+      dotnet: this.dotnet ? { sdks: this.dotnet.sdks, hint: this.dotnet.hint } : null,
+    };
   }
 
   private async jarvisVersion(root: string): Promise<string | null> {
@@ -150,11 +161,19 @@ export class ProjectsWorkflow {
   private async nodeView(entry: ProjectEntry): Promise<ProjectView> {
     const check = await inspectProject(entry.path, this.deps.run);
     const memory = await this.deps.store.memory(entry.id);
+    const build =
+      entry.kind === 'dotnet'
+        ? check.target
+          ? { command: `dotnet build ${check.target} -c Release`, artifact: null }
+          : null
+        : check.scripts.build
+          ? { command: 'npm run build', artifact: null }
+          : null;
     return {
       id: entry.id,
       name: entry.name,
       path: entry.path,
-      kind: 'node',
+      kind: entry.kind,
       origin: entry.origin,
       template: entry.template ?? null,
       description: entry.description,
@@ -163,12 +182,13 @@ export class ProjectsWorkflow {
       branch: check.branch,
       memory: memory?.notes ?? '',
       memoryDefault: memory === null,
-      build: check.scripts.build ? { command: 'npm run build', artifact: null } : null,
+      build,
     };
   }
 
   async refresh(): Promise<ProjectView[]> {
     const entries = await this.deps.store.list();
+    this.dotnet ??= await detectDotnet(this.deps.run, this.deps.home);
     this.views = [
       await this.jarvisView(),
       ...(await Promise.all(entries.map((e) => this.nodeView(e)))),
@@ -214,7 +234,7 @@ export class ProjectsWorkflow {
       id: projectIdFor(name, new Set(entries.map((e) => e.id))),
       name,
       path: dir,
-      kind: 'node',
+      kind: check.toolchain === 'dotnet' ? 'dotnet' : 'node',
       origin: 'imported',
       description: check.description,
       createdAt: this.now,
@@ -269,12 +289,20 @@ export class ProjectsWorkflow {
       id,
       name: entry.name,
       root: entry.path,
-      profile: createNodeProfile({
-        id,
-        name: entry.name,
-        description: entry.description,
-        scripts: check.scripts,
-      }),
+      profile:
+        entry.kind === 'dotnet' && check.target
+          ? createDotnetProfile({
+              id,
+              name: entry.name,
+              description: entry.description,
+              target: check.target,
+            })
+          : createNodeProfile({
+              id,
+              name: entry.name,
+              description: entry.description,
+              scripts: check.scripts,
+            }),
     };
   }
 
@@ -309,21 +337,22 @@ export class ProjectsWorkflow {
     const resolved = await this.resolve(id);
     if (typeof resolved === 'string') return this.host.notice(resolved);
     const build = view.build;
-    const npmArgs = build.command.replace(/^npm /, '').split(' ');
+    const [tool, ...buildArgs] = build.command.split(' ');
+    const dotnet = tool === 'dotnet';
     return this.host.runTask(
       'build',
       `Construire ${view.name}`,
       [
-        { id: 'environment', label: 'Node.js et npm' },
+        { id: 'environment', label: dotnet ? 'SDK .NET' : 'Node.js et npm' },
         { id: 'confirm', label: 'Ta confirmation (toujours demandée)' },
         { id: 'build', label: `${build.command} dans ta copie (rien n’est publié)` },
         { id: 'artifact', label: 'Résultat' },
       ],
       async (step, signal) => {
         step('environment', 'running');
-        const node = await this.host.node();
-        if (!node) throw new Error('Node.js et npm sont introuvables.');
-        step('environment', 'done', node.nodePath);
+        const node = dotnet ? null : await this.host.node();
+        if (!dotnet && !node) throw new Error('Node.js et npm sont introuvables.');
+        step('environment', 'done', dotnet ? devPlatform().dotnetProgram : node!.nodePath);
         step('confirm', 'running', 'ta confirmation');
         const safety = classifyCommand(build.command);
         const approved = await this.host.ask(
@@ -334,7 +363,9 @@ export class ProjectsWorkflow {
             details:
               view.kind === 'jarvis'
                 ? 'Construit l’installateur de Jarvis dans ta copie, en local. Il n’est ni publié ni lancé : tu l’installes toi-même si tu veux. Plusieurs minutes ; peut télécharger les fichiers de la voix s’ils manquent.'
-                : 'Lance le script « build » du projet dans ta copie. Rien n’est publié.',
+                : dotnet
+                  ? 'Compile la solution en Release dans ta copie. Rien n’est publié ni lancé.'
+                  : 'Lance le script « build » du projet dans ta copie. Rien n’est publié.',
             command: `${build.command}\n(dans ${resolved.root})`,
             forced: true,
           },
@@ -354,11 +385,13 @@ export class ProjectsWorkflow {
         step('confirm', 'done', 'acceptée');
         step('build', 'running');
         const outcome = await this.deps.run({
-          program: node.nodePath,
-          args: [node.npmCli, ...npmArgs],
+          program: dotnet ? devPlatform().dotnetProgram : node!.nodePath,
+          args: dotnet ? buildArgs : [node!.npmCli, ...buildArgs],
           cwd: resolved.root,
           display: build.command,
-          env: { ...process.env, FORCE_COLOR: '0', NO_COLOR: '1' },
+          env: dotnet
+            ? { ...process.env, ...DOTNET_ENV }
+            : { ...process.env, FORCE_COLOR: '0', NO_COLOR: '1' },
           timeoutMs: 60 * 60_000,
           maxBytes: 400_000,
           signal,
@@ -398,8 +431,18 @@ export class ProjectsWorkflow {
     step: Step,
     signal: AbortSignal,
   ): Promise<ResolvedProject | null> {
-    const node = await this.host.node();
-    if (!node) throw new FactoryError('Node.js et npm sont introuvables.');
+    const toolchain = templateToolchain(input.template);
+    const node = toolchain === 'node' ? await this.host.node() : null;
+    if (toolchain === 'node' && !node) throw new FactoryError('Node.js et npm sont introuvables.');
+    let tfm: string | undefined;
+    if (toolchain === 'dotnet') {
+      this.dotnet = await detectDotnet(this.deps.run, this.deps.home);
+      if (!this.dotnet.tfm)
+        throw new FactoryError(
+          `Le SDK .NET (8 ou plus) est introuvable : installe-le toi-même${this.dotnet.hint ? ` (${this.dotnet.hint})` : ''}, puis relance la mission. Rien n’a été écrit.`,
+        );
+      tfm = this.dotnet.tfm;
+    }
     const entries = await this.deps.store.list();
     const id = projectIdFor(input.name, new Set(entries.map((e) => e.id)));
     const root = this.projectsRoot();
@@ -410,15 +453,21 @@ export class ProjectsWorkflow {
       packageName: id,
       title: input.name,
       description: input.description,
+      ...(tfm ? { tfm } : {}),
     });
-    const commands = factoryCommands(dir, files.length);
+    const target = toolchain === 'dotnet' ? `${dotnetIdentifier(input.name)}.sln` : null;
+    const commands = factoryCommands(
+      dir,
+      files.length,
+      target ? `dotnet restore ${target}` : undefined,
+    );
     step('create', 'running', 'ta confirmation');
     const approved = await this.host.ask(
       {
         callId: randomId(),
         toolName: 'dev_create_project',
         title: `Créer le projet « ${input.name} »`,
-        details: `Gabarit « ${PROJECT_TEMPLATES[input.template].label} » dans ${dir}. Nouveau dépôt git local sur « main », sans dépôt distant ; npm install télécharge les dépendances (réseau, sans script d’installation). Rien n’est publié.`,
+        details: `Gabarit « ${PROJECT_TEMPLATES[input.template].label} » dans ${dir}${tfm ? ` (${tfm})` : ''}. Nouveau dépôt git local sur « main », sans dépôt distant ; ${target ? 'dotnet restore télécharge les paquets NuGet (réseau)' : 'npm install télécharge les dépendances (réseau, sans script d’installation)'}. Rien n’est publié.`,
         command: `${commands.join('\n')}\n\nFichiers : ${files.map((f) => f.path).join(', ')}`,
         forced: true,
       },
@@ -429,7 +478,9 @@ export class ProjectsWorkflow {
           label: SAFETY_LABELS['always-confirm'],
           reasons: [
             'écrit un nouveau dossier hors de Jarvis',
-            'réseau : npm install (sans script d’installation)',
+            target
+              ? 'réseau : dotnet restore (paquets NuGet)'
+              : 'réseau : npm install (sans script d’installation)',
             'aucun dépôt distant, aucun push',
           ],
           runsWithoutAsking: false,
@@ -447,15 +498,23 @@ export class ProjectsWorkflow {
     if (!approved) return null;
     step('create', 'running', 'fichiers du gabarit');
     await writeProjectFiles(dir, files);
-    step('create', 'running', 'npm install (réseau)');
-    await installProject(this.deps.run, dir, node, { signal, onLine: (l) => this.host.log(l) });
+    if (target) {
+      step('create', 'running', `dotnet restore ${target} (réseau)`);
+      await restoreDotnetProject(this.deps.run, dir, target, {
+        signal,
+        onLine: (l) => this.host.log(l),
+      });
+    } else {
+      step('create', 'running', 'npm install (réseau)');
+      await installProject(this.deps.run, dir, node!, { signal, onLine: (l) => this.host.log(l) });
+    }
     step('create', 'running', 'git init et premier commit');
     const head = await initProjectRepo(this.deps.run, dir, signal);
     const entry: ProjectEntry = {
       id,
       name: input.name,
       path: dir,
-      kind: 'node',
+      kind: toolchain,
       origin: 'created',
       template: input.template,
       description: input.description.slice(0, 400),

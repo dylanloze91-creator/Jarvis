@@ -1,7 +1,8 @@
 import { existsSync } from 'node:fs';
 import { mkdir, readdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { normalizeRepoRelative, type TemplateFile } from '@jarvis/core';
+import { DOTNET_ENV, normalizeRepoRelative, type TemplateFile } from '@jarvis/core';
+import { devPlatform } from '../platform/index.js';
 import { GIT_SAFE } from '../tools/common.js';
 import type { RunOutcome, Runner } from '../runner.js';
 import { JARVIS_GIT_IDENTITY, isInside } from '../task/sandbox.js';
@@ -18,10 +19,14 @@ export class FactoryError extends Error {
 }
 
 /** Commandes exactes montrées sur la carte de création, dans l'ordre. */
-export function factoryCommands(dir: string, files: number): string[] {
+export function factoryCommands(
+  dir: string,
+  files: number,
+  install = `npm ${FACTORY_NPM_ARGS.join(' ')}`,
+): string[] {
   return [
     `écrire ${files} fichier(s) du gabarit dans "${dir}"`,
-    `npm ${FACTORY_NPM_ARGS.join(' ')}`,
+    install,
     'git init -b main',
     'git add -A',
     `git commit --no-verify --no-gpg-sign -m "${FIRST_COMMIT_MESSAGE}"`,
@@ -69,6 +74,29 @@ export async function installProject(
   if (outcome.code !== 0) throw failed(outcome, 'npm install');
   if (!existsSync(join(dir, 'package-lock.json')))
     throw new FactoryError('npm install n’a pas créé package-lock.json.');
+}
+
+/** `dotnet restore` de la solution du gabarit : paquets NuGet (réseau, confirmé avant). */
+export async function restoreDotnetProject(
+  run: Runner,
+  dir: string,
+  target: string,
+  options: { signal?: AbortSignal; onLine?: (line: string) => void } = {},
+): Promise<void> {
+  const outcome = await run({
+    program: devPlatform().dotnetProgram,
+    args: ['restore', target],
+    cwd: dir,
+    display: `dotnet restore ${target}`,
+    env: { ...process.env, ...DOTNET_ENV },
+    timeoutMs: 15 * 60_000,
+    maxBytes: 400_000,
+    signal: options.signal,
+    onLine: options.onLine,
+  });
+  if (outcome.cancelled) throw new FactoryError('Restauration annulée.');
+  if (outcome.error) throw new FactoryError(`dotnet introuvable : ${outcome.error}`);
+  if (outcome.code !== 0) throw failed(outcome, 'dotnet restore');
 }
 
 /** Dépôt local sur `main`, premier commit signé « Jarvis Développeur ». Aucun dépôt distant. */

@@ -1,11 +1,13 @@
 import { join } from 'node:path';
 import { z } from 'zod';
 import {
+  JARVIS_PROJECT_PROFILE,
   ToolManager,
   TEST_SUITE_IDS,
   defineTool,
-  suiteCommand,
+  suiteCommandFor,
   toolSuccess,
+  type ProjectProfile,
   type RegisteredTool,
   type TestSuiteId,
 } from '@jarvis/core';
@@ -19,7 +21,15 @@ import {
   type Sandbox,
   type SandboxSummary,
 } from '../task/sandbox.js';
-import { SANDBOX_NPM_CI_ARGS, installSandbox, runSuite, type NodeTools } from '../task/suites.js';
+import {
+  SANDBOX_NPM_CI_ARGS,
+  dotnetSuite,
+  installDotnetSandbox,
+  installSandbox,
+  runDotnetSuite,
+  runSuite,
+  type NodeTools,
+} from '../task/suites.js';
 import { fail } from './common.js';
 import { createFileTools } from './fileTools.js';
 import { createReadTools } from './readTools.js';
@@ -34,6 +44,8 @@ export interface TaskToolDeps {
   node: () => Promise<NodeTools | null>;
   freeBytes: (path: string) => Promise<number | null>;
   listSandboxes: () => Promise<SandboxSummary[]>;
+  /** Profil du projet de la tâche (0.5.4 : npm ou dotnet) ; absent = Jarvis. */
+  profile?: () => ProjectProfile;
 }
 
 /** Outils montrés au modèle pendant une tâche : lecture et écriture dans la copie isolée. */
@@ -49,6 +61,7 @@ export const TASK_MODEL_TOOLS = [
 const suiteSchema = z.enum(TEST_SUITE_IDS as [TestSuiteId, ...TestSuiteId[]]);
 
 function sandboxTools(deps: TaskToolDeps): RegisteredTool[] {
+  const profile = (): ProjectProfile => deps.profile?.() ?? JARVIS_PROJECT_PROFILE;
   return [
     defineTool({
       name: 'dev_create_branch',
@@ -85,11 +98,33 @@ function sandboxTools(deps: TaskToolDeps): RegisteredTool[] {
       forceConfirm: true,
       schema: z.object({}),
       summarize: () =>
-        'Installer les dépendances de la copie isolée (registre npm, environ 1,1 Go).',
-      describeCommand: () =>
-        `npm ${SANDBOX_NPM_CI_ARGS.join(' ')}\n(dans ${deps.sandbox()?.path ?? '?'} ; aucun script d’installation)`,
+        profile().install
+          ? 'Installer les dépendances de la copie isolée (paquets NuGet, réseau).'
+          : 'Installer les dépendances de la copie isolée (registre npm, environ 1,1 Go).',
+      describeCommand: () => {
+        const install = profile().install;
+        return install
+          ? `dotnet ${install.args.join(' ')}\n(dans ${deps.sandbox()?.path ?? '?'} ; paquets NuGet, réseau)`
+          : `npm ${SANDBOX_NPM_CI_ARGS.join(' ')}\n(dans ${deps.sandbox()?.path ?? '?'} ; aucun script d’installation)`;
+      },
       execute: async (_input, context) => {
         const sandbox = deps.sandbox();
+        const install = profile().install;
+        if (sandbox && install) {
+          const restored = await installDotnetSandbox(deps.run, sandbox, install.args, {
+            signal: context.signal,
+            onLine: (line) => context.onProgress?.(line),
+          });
+          if (restored.cancelled) return fail('recoverable', 'Installation annulée.');
+          if (restored.error)
+            return fail('missing_dependency', `dotnet introuvable : ${restored.error}`);
+          if (restored.code !== 0)
+            return fail(
+              'recoverable',
+              `dotnet restore a échoué : ${(restored.stdout + restored.stderr).slice(-600)}`,
+            );
+          return toolSuccess('Dépendances NuGet de la copie isolée restaurées.');
+        }
         const node = await deps.node();
         if (!sandbox) return fail('recoverable', 'Pas de copie isolée.');
         if (!node) return fail('missing_dependency', 'Node.js et npm sont introuvables.');
@@ -111,11 +146,19 @@ function sandboxTools(deps: TaskToolDeps): RegisteredTool[] {
       description: 'Lance un test de la liste fixe dans la copie isolée.',
       risk: 'confirm',
       schema: z.object({ suite: suiteSchema }),
-      summarize: ({ suite }) => `Lancer ${suiteCommand(suite)} dans la copie isolée.`,
+      summarize: ({ suite }) => `Lancer ${suiteCommandFor(profile(), suite)} dans la copie isolée.`,
       describeCommand: ({ suite }) =>
-        `${suiteCommand(suite)}\n(dans ${deps.sandbox()?.path ?? '?'})`,
+        `${suiteCommandFor(profile(), suite)}\n(dans ${deps.sandbox()?.path ?? '?'})`,
       execute: async ({ suite }, context) => {
         const sandbox = deps.sandbox();
+        const dotnet = dotnetSuite(profile(), suite);
+        if (sandbox && dotnet) {
+          const summary = await runDotnetSuite(deps.run, sandbox, suite, dotnet, {
+            signal: context.signal,
+            onLine: (line) => context.onProgress?.(line),
+          });
+          return toolSuccess(`${summary.command} : ${summary.summary}`, summary);
+        }
         const node = await deps.node();
         if (!sandbox) return fail('recoverable', 'Pas de copie isolée.');
         if (!node) return fail('missing_dependency', 'Node.js et npm sont introuvables.');
