@@ -32,6 +32,8 @@ export function createDeveloperApi(ipc: IpcRenderer): DeveloperApi {
     keepTask: () => ipc.invoke(DeveloperChannel.taskKeep),
     listSandboxes: () => ipc.invoke(DeveloperChannel.sandboxes),
     cleanSandboxes: (paths: string[]) => ipc.invoke(DeveloperChannel.sandboxesClean, paths),
+    ask: (question: string) => ipc.invoke(DeveloperChannel.ask, question),
+    realBenchmark: (modelId: string) => ipc.invoke(DeveloperChannel.realBenchmark, modelId),
     onEvent: (listener) => {
       const handler = (_event: IpcRendererEvent, state: DeveloperState): void => listener(state);
       ipc.on(DeveloperChannel.event, handler);

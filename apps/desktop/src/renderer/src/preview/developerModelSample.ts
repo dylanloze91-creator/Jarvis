@@ -7,7 +7,10 @@ import {
   parseNvidiaSmi,
   predictModel,
   summarizeBench,
+  REAL_BENCH_TASKS,
+  scoreRoles,
   type BenchResult,
+  type RealBenchResult,
   type BenchTaskResult,
   type HardwareFacts,
 } from '@jarvis/core';
@@ -139,6 +142,38 @@ const BENCH_TASKS: BenchTaskResult[] = [
   ),
 ];
 
+/** Exemple de banc réel pour les captures (scène `developer-real-bench`) : pas une mesure. */
+function sampleRealBench(): RealBenchResult {
+  const failed = new Set(['fix-mutation', 'review-clean', 'context-needle']);
+  const tasks = REAL_BENCH_TASKS.map((task) => ({
+    id: task.id,
+    label: task.label,
+    roles: [...task.roles],
+    ok: failed.has(task.id) ? false : true,
+    detail: failed.has(task.id) ? 'exemple : réponse refusée' : 'exemple : réussi',
+    durationMs: 30_000,
+    outputTokPerSec: 12.4,
+    calls: 3,
+  }));
+  return {
+    model: 'exemple:modele',
+    startedAt: Date.now() - 900_000,
+    finishedAt: Date.now() - 60_000,
+    commit: 'babe220a7280bcaab84f2ae1b9b34f93ad9f99f3',
+    tasks,
+    roles: scoreRoles(tasks),
+    metrics: {
+      outputTokPerSec: 12.4,
+      promptTokPerSec: 180,
+      loadMs: 9_000,
+      sizeBytes: 24e9,
+      sizeVramBytes: 4e9,
+      gpuUsedMiB: 4800,
+      ramUsedBytes: 20e9,
+    },
+  };
+}
+
 const SAMPLE_BENCH: BenchResult = {
   model: 'qwen3.6:35b-a3b-coding',
   expertsInRam: true,
@@ -205,5 +240,7 @@ export function previewModelState(scene: string | null): CodeModelState {
         ? { modelId: def.id, status: 'success', completed: 23e9, total: 23e9, done: true }
         : null,
     benches: scene === 'developer-bench' ? [SAMPLE_BENCH] : [],
+    realBenches: scene === 'developer-real-bench' ? [sampleRealBench()] : [],
+    installedModels: models.filter((m) => m.supportsTools).map((m) => m.name),
   };
 }

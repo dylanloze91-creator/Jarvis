@@ -105,7 +105,12 @@ export function DeveloperPanel({
       ) : null}
 
       {tab === 'project' ? (
-        <ProjectActions state={state} act={act} onOpenSettings={onOpenSettings} />
+        <ProjectActions
+          state={state}
+          act={act}
+          onOpenSettings={onOpenSettings}
+          codeModel={codeModel}
+        />
       ) : tab === 'task' ? (
         <TaskPanel
           state={state}

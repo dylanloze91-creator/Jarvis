@@ -4,7 +4,7 @@ import {
   classifyCommand,
   type DevCheck,
 } from '@jarvis/core';
-import type { DevStep, DeveloperApi, DeveloperState } from '../../../shared/developerIpc';
+import type { AskView, DevStep, DeveloperApi, DeveloperState } from '../../../shared/developerIpc';
 import { previewModelState } from './developerModelSample';
 import { applyTaskScene, previewTaskState } from './developerTaskSample';
 import { previewArchitectureFacts, previewLineTotal } from './developerSample';
@@ -49,6 +49,30 @@ const ANALYSIS: Array<[string, string, string]> = [
   ['report', 'Rapport', 'prêt'],
 ];
 
+/** Exemple de question pour les captures (scène `developer-ask`) : pas une vraie réponse de modèle. */
+const PREVIEW_ASK: AskView = {
+  question: 'Où sont enregistrés les outils proposés au modèle du chat ?',
+  model: 'exemple:modele',
+  at: Date.now() - 20_000,
+  durationMs: 41_000,
+  rounds: 3,
+  calls: 2,
+  retried: false,
+  checked: {
+    answer:
+      'Dans `apps/desktop/src/main/tools/index.ts` : `createToolManager()` enregistre chaque outil du chat.',
+    files: [{ path: 'apps/desktop/src/main/tools/index.ts', exists: true }],
+    citations: [
+      {
+        path: 'apps/desktop/src/main/tools/index.ts',
+        excerpt: 'export function createToolManager(deps: ToolManagerDeps): ToolManager {',
+        status: 'verified',
+      },
+    ],
+    verified: 1,
+  },
+};
+
 /** Pont de prévisualisation de Jarvis Développeur (captures d'écran, Vite seul). */
 export function createPreviewDeveloperApi(
   scene: string | null,
@@ -71,6 +95,7 @@ export function createPreviewDeveloperApi(
     notice: null,
     model: previewModelState(scene),
     ...previewTaskState(scene),
+    ask: scene === 'developer-ask' ? PREVIEW_ASK : null,
   };
   applyTaskScene(scene, state);
   if (scene === 'developer-pull') {
@@ -223,6 +248,8 @@ export function createPreviewDeveloperApi(
     keepTask: async () => set({ notice: 'Aperçu : branche gardée (simulé).' }),
     listSandboxes: async () => set({}),
     cleanSandboxes: async () => set({ notice: 'Aperçu : rien n’est supprimé.' }),
+    ask: async () => set({ notice: 'Aperçu : aucune question n’est envoyée au modèle.' }),
+    realBenchmark: async () => set({ notice: 'Aperçu : le banc réel n’est pas simulé.' }),
     onEvent: (listener) => {
       listeners.add(listener);
       return () => listeners.delete(listener);

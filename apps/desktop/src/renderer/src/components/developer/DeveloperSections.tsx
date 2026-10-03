@@ -2,6 +2,7 @@ import { FileSearch, Loader2, Square } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { DeveloperApi, DeveloperState } from '../../../../shared/developerIpc';
 import { StepTimeline } from './parts';
+import { AskPanel } from './ask/AskPanel';
 
 type Act = (action: (api: DeveloperApi) => Promise<DeveloperState | void>) => void;
 
@@ -10,10 +11,12 @@ export function ProjectActions({
   state,
   act,
   onOpenSettings,
+  codeModel,
 }: {
   state: DeveloperState;
   act: Act;
   onOpenSettings: () => void;
+  codeModel: string;
 }) {
   const repoReady = state.repo?.ok ?? false;
   return (
@@ -38,6 +41,7 @@ export function ProjectActions({
           <FileSearch className="size-3.5" /> Analyser mon architecture
         </Button>
       </div>
+      <AskPanel state={state} act={act} codeModel={codeModel} />
     </>
   );
 }

@@ -56,6 +56,7 @@ export function registerDeveloperIpc(
     codeTask: null,
     sandboxes: null,
     worktreeRoot: '',
+    ask: null,
   });
 
   const refused = (): DeveloperState => ({ ...disabled(), notice: DEVELOPER_DISABLED_NOTICE });
@@ -104,6 +105,15 @@ export function registerDeveloperIpc(
   ipcMain.handle(DeveloperChannel.taskDiscard, () => get()?.discardTask() ?? refused());
   ipcMain.handle(DeveloperChannel.taskKeep, () => get()?.keepTask() ?? refused());
   ipcMain.handle(DeveloperChannel.sandboxes, () => get()?.listSandboxes() ?? refused());
+  ipcMain.handle(
+    DeveloperChannel.ask,
+    (_event, question: unknown) =>
+      get()?.ask(typeof question === 'string' ? question.slice(0, 2_000) : '') ?? refused(),
+  );
+  ipcMain.handle(
+    DeveloperChannel.realBenchmark,
+    (_event, id: unknown) => get()?.realBenchmark(modelId(id)) ?? refused(),
+  );
   ipcMain.handle(
     DeveloperChannel.sandboxesClean,
     (_event, paths: unknown) =>

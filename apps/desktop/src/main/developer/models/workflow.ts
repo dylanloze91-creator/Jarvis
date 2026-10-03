@@ -2,6 +2,8 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   BENCH_TASKS,
+  REAL_BENCH_TASKS,
+  ROLE_LABELS,
   codeModelsOffered,
   calibrate,
   checkHardware,
@@ -15,6 +17,7 @@ import {
   type OllamaCodeOptions,
   type ProviderRegistry,
   type ToolCallOutcome,
+  type ToolManager,
 } from '@jarvis/core';
 import type {
   CodeModelState,
@@ -23,7 +26,9 @@ import type {
   DeveloperState,
 } from '../../../shared/developerIpc.js';
 import type { Runner } from '../runner.js';
+import { GIT_SAFE } from '../tools/common.js';
 import { runCodeBenchmark } from './benchRunner.js';
+import { runRealBenchmark } from './realBenchRunner.js';
 import { pickCalibrationModel, runCalibration } from './calibration.js';
 import { probeHardware, type HardwareProbeDeps } from './hardwareProbe.js';
 import type { OllamaApi } from './ollamaApi.js';
@@ -50,6 +55,10 @@ export interface WorkflowHost {
   /** Copie de travail vérifiée (revérifiée si Jarvis vient de démarrer), pour son tsc. */
   repoRoot(): Promise<string | null>;
   nodePath(): Promise<string | null>;
+  /** Outils de lecture de la copie, inscrits au journal (banc réel). */
+  readTools(): Pick<ToolManager, 'schemas' | 'execute'>;
+  /** La discussion garde la priorité : libère le modèle et attend la fin du tour. */
+  pause(model: string, signal: AbortSignal): Promise<void>;
 }
 
 export interface WorkflowDeps {
@@ -87,6 +96,8 @@ export function emptyCodeModelState(
     validation: null,
     pull: null,
     benches: [],
+    realBenches: [],
+    installedModels: [],
   };
 }
 
@@ -143,6 +154,10 @@ export class CodeModelWorkflow {
       validation: stored?.validation ?? null,
       pull: this.pullState,
       benches: stored?.benches ?? [],
+      realBenches: stored?.realBenches ?? [],
+      installedModels: this.installed()
+        .filter((model) => model.supportsTools)
+        .map((model) => model.name),
     };
   }
 
@@ -308,6 +323,84 @@ export class CodeModelWorkflow {
         await this.checkHardware();
         step('verify', 'done', 'listé par Ollama');
         return `${spec.label} est téléchargé. Lance maintenant le banc de code (étape 5).`;
+      },
+    );
+  }
+
+  /**
+   * Banc réel sur le code de Jarvis, sur un modèle déjà installé : rien n'est
+   * téléchargé, rien n'est choisi. Le résultat donne un score par rôle.
+   */
+  async realBenchmark(modelId: string): Promise<DeveloperState> {
+    const stored = await this.ensureStored();
+    const status = await this.deps.ollama().status();
+    if (!status.models.some((model) => model.name === modelId))
+      return this.host.notice(
+        `« ${modelId} » n’est pas installé dans Ollama : le banc réel n’utilise que des modèles déjà présents, rien n’est téléchargé.`,
+      );
+    const root = await this.host.repoRoot();
+    if (!root)
+      return this.host.notice(
+        'Choisis et vérifie d’abord la copie de travail (Réglages → Développeur).',
+      );
+    const nodePath = await this.host.nodePath();
+    const tscPath = join(root, 'node_modules', 'typescript', 'bin', 'tsc');
+    const tsc = nodePath && existsSync(tscPath) ? { nodePath, tscPath } : null;
+    const head = await this.deps.run({
+      program: 'git',
+      args: [...GIT_SAFE, 'rev-parse', 'HEAD'],
+      cwd: root,
+      timeoutMs: 15_000,
+      display: 'git rev-parse HEAD',
+    });
+    const commit = head.code === 0 ? head.stdout.trim() : null;
+    return this.host.runTask(
+      'real-benchmark',
+      `Banc réel sur le code de Jarvis : ${modelId}`,
+      [
+        ...REAL_BENCH_TASKS.map((task) => ({ id: task.id, label: task.label })),
+        { id: 'metrics', label: 'Vitesse, RAM et carte graphique' },
+      ],
+      async (step, signal) => {
+        const provider = createCodeAIProvider(this.deps.registry, {
+          model: modelId,
+          baseUrl: this.deps.ollama().baseUrl,
+          options: this.optionsFor(modelId),
+        });
+        const result = await runRealBenchmark({
+          provider,
+          readTools: this.host.readTools(),
+          repoRoot: root,
+          commit,
+          run: this.deps.run,
+          ollama: this.deps.ollama(),
+          tsc,
+          nodePath,
+          workDir: join(
+            this.deps.benchDir(),
+            `reel-${modelId.replace(/[^\w.-]+/g, '_')}-${this.now}`,
+          ),
+          signal,
+          pause: () => this.host.pause(modelId, signal),
+          onTask: (task, taskStatus, detail) => step(task.id, taskStatus, detail),
+          now: this.deps.now,
+        });
+        const m = result.metrics;
+        step(
+          'metrics',
+          'done',
+          `${m.outputTokPerSec ?? '?'} jetons/s écrits, ${m.promptTokPerSec ?? '?'} lus${m.sizeVramBytes !== null ? `, ${(m.sizeVramBytes / 1e9).toFixed(1)} Go sur la carte` : ''}${m.ramUsedBytes !== null ? `, ${(m.ramUsedBytes / 1e9).toFixed(1)} Go en RAM` : ''}`,
+        );
+        const realBenches = [
+          ...(stored.realBenches ?? []).filter((bench) => bench.model !== modelId),
+          result,
+        ];
+        this.stored = await this.deps.store.update({ realBenches });
+        const roles = result.roles
+          .filter((role) => role.measured > 0)
+          .map((role) => `${ROLE_LABELS[role.role]} ${role.passed}/${role.measured}`)
+          .join(', ');
+        return `Banc réel terminé pour ${modelId} : ${roles || 'rien de mesurable'}. Aucun modèle n’est choisi : c’est toi qui décides.`;
       },
     );
   }

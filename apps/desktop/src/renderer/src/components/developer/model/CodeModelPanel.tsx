@@ -4,6 +4,7 @@ import type { Selection } from './CandidateCard';
 import { ChooseStep } from './ChooseStep';
 import { ProposalStep, ValidateStep } from './ConfigSteps';
 import { HardwareStep } from './HardwareStep';
+import { RealBenchSection } from './RealBenchSection';
 import { BenchStep, PullStep } from './RunSteps';
 import type { FlowStatus } from './StepCard';
 
@@ -59,8 +60,8 @@ export function CodeModelPanel({
     <div className="flex flex-col gap-3" data-code-model-panel>
       {model.candidates.length === 0 ? (
         <p className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-xs leading-relaxed text-slate-300">
-          Profil modeste : les gros modèles de code ne sont pas proposés, et le modèle de 23 Go n’est pas
-          téléchargé. Le modèle de discussion reste celui du chat.
+          Profil modeste : les gros modèles de code ne sont pas proposés, et le modèle de 23 Go
+          n’est pas téléchargé. Le modèle de discussion reste celui du chat.
         </p>
       ) : null}
       <HardwareStep
@@ -108,6 +109,7 @@ export function CodeModelPanel({
           void onChooseDefault(id).finally(() => setSaving(false));
         }}
       />
+      <RealBenchSection state={state} onRun={(id) => act((api) => api.realBenchmark(id))} />
     </div>
   );
 }

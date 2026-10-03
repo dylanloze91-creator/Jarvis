@@ -1,6 +1,9 @@
 import {
+  ASK_TOOLS,
+  JARVIS_PROJECT_PROFILE,
   buildAuditEntry,
   candidateRepoPaths,
+  createCodeAIProvider,
   classifyCommand,
   randomId,
   redactSecrets,
@@ -17,6 +20,7 @@ import {
 } from '@jarvis/core';
 import { join } from 'node:path';
 import type {
+  AskView,
   DevConfirmation,
   DevStep,
   DevStepStatus,
@@ -25,6 +29,7 @@ import type {
   DeveloperState,
 } from '../../shared/developerIpc.js';
 import { ANALYSIS_STEPS, analyzeArchitecture } from './analysis.js';
+import { repoReader, runAsk } from './ask/askFlow.js';
 import { measureFree, probeEnvironment, type EnvironmentProbe } from './environment.js';
 import { detectRepo, gatherRepoFacts } from './repo.js';
 import { runProcess, type Runner } from './runner.js';
@@ -79,6 +84,7 @@ export class DeveloperController {
   private task: DevTask | null = null;
   private confirmation: DevConfirmation | null = null;
   private report: DeveloperState['report'] = null;
+  private askView: AskView | null = null;
   private notice: string | null = null;
   private controller: AbortController | null = null;
   private readonly pending = new Map<string, (approved: boolean) => void>();
@@ -126,6 +132,8 @@ export class DeveloperController {
           if (!this.environment) await this.probe();
           return this.environment?.nodePath ?? null;
         },
+        readTools: () => this.auditedReadTools(ASK_TOOLS),
+        pause: (model, signal) => this.yieldToChat(model, signal),
       },
       {
         registry: deps.registry,
@@ -209,9 +217,11 @@ export class DeveloperController {
     );
   }
 
-  /** Lecture de la copie de l'utilisateur pour le plan : outils `safe`, inscrits au journal. */
-  private auditedReadTools(): Pick<ToolManager, 'schemas' | 'execute'> {
-    const view = toolView(this.manager, ['dev_read_file', 'dev_search_code', 'dev_search_files']);
+  /** Lecture de la copie de l'utilisateur : outils `safe`, inscrits au journal. */
+  private auditedReadTools(
+    names: readonly string[] = ['dev_read_file', 'dev_search_code', 'dev_search_files'],
+  ): Pick<ToolManager, 'schemas' | 'execute'> {
+    const view = toolView(this.manager, names);
     return {
       schemas: () => view.schemas(),
       execute: async (call, context, events) => {
@@ -247,7 +257,90 @@ export class DeveloperController {
       ...this.tasks.view(),
       busy: this.controller !== null,
       notice: this.notice,
+      ask: this.askView,
     };
+  }
+
+  /** Décision 5 : la discussion garde la priorité, le modèle de code est libéré pendant son tour. */
+  private async yieldToChat(model: string, signal: AbortSignal): Promise<void> {
+    const chat = this.deps.chat;
+    if (!chat?.busy) return;
+    await this.ollama().unload(model);
+    await chat.whenIdle(this.deps.chatGraceMs ?? 3_000, signal);
+  }
+
+  /** Question sur le code de la copie de travail : lecture seule, citations relues dans les fichiers. */
+  async ask(question: string): Promise<DeveloperState> {
+    const refused = this.guard(true);
+    if (refused) return refused;
+    const text = question.trim();
+    if (text.length < 4) {
+      this.notice = 'Pose une question d’au moins quelques mots.';
+      return this.emit();
+    }
+    const model = this.deps.getSettings().developer.codeModel;
+    if (!model) {
+      this.notice =
+        'Choisis d’abord un modèle de code (onglet « Modèle de code », étape 6) : aucun n’est choisi d’avance.';
+      return this.emit();
+    }
+    const status = await this.ollama().status();
+    if (!status.models.some((m) => m.name === model)) {
+      this.notice = `Le modèle de code « ${model} » n’est pas installé dans Ollama.`;
+      return this.emit();
+    }
+    const root = this.repoPath;
+    return this.runTask(
+      'ask',
+      `Question : ${text.length > 60 ? `${text.slice(0, 57)}…` : text}`,
+      [
+        { id: 'model', label: 'Modèle de code' },
+        { id: 'read', label: 'Lecture du dépôt (rien n’est modifié)' },
+        { id: 'check', label: 'Citations relues dans les fichiers' },
+      ],
+      async (step, signal) => {
+        step('model', 'done', model);
+        step('read', 'running');
+        const started = Date.now();
+        const code = createCodeAIProvider(this.deps.registry, {
+          model,
+          baseUrl: this.ollama().baseUrl,
+          options: this.models.optionsFor(model),
+        });
+        const result = await runAsk(
+          {
+            code,
+            tools: this.auditedReadTools(ASK_TOOLS),
+            read: repoReader(root),
+            profile: JARVIS_PROJECT_PROFILE,
+            signal,
+            beforeRound: () => this.yieldToChat(model, signal),
+          },
+          text,
+        );
+        step('read', 'done', `${result.calls} lecture(s), ${result.rounds} tour(s)`);
+        const { verified, citations } = result.checked;
+        step(
+          'check',
+          verified > 0 ? 'done' : 'failed',
+          `${verified}/${citations.length} citation(s) vérifiée(s)`,
+        );
+        this.askView = {
+          question: text,
+          model,
+          at: Date.now(),
+          durationMs: Date.now() - started,
+          ...result,
+        };
+        return verified > 0
+          ? 'Réponse prête, appuyée sur des extraits relus dans les fichiers.'
+          : 'Réponse prête, mais aucune citation n’a pu être vérifiée : prends-la avec prudence.';
+      },
+    );
+  }
+
+  async realBenchmark(modelId: string): Promise<DeveloperState> {
+    return this.guard(true) ?? this.models.realBenchmark(modelId);
   }
 
   private emit(): DeveloperState {

@@ -2,6 +2,8 @@ import type {
   BenchResult,
   Calibration,
   CheckReport,
+  CheckedAnswer,
+  RealBenchResult,
   CodeModelSpec,
   CommandClassification,
   DevCheck,
@@ -119,6 +121,22 @@ export interface CodeModelState {
   } | null;
   pull: { modelId: string; status: string; completed: number; total: number; done: boolean } | null;
   benches: BenchResult[];
+  /** Banc réel sur le code de Jarvis (0.5.1) : scores par rôle, aucun choix. */
+  realBenches: RealBenchResult[];
+  /** Modèles présents dans Ollama, pour lancer le banc réel sans rien télécharger. */
+  installedModels: string[];
+}
+
+/** Question sur le code (0.5.1) : réponse et citations relues dans les fichiers. */
+export interface AskView {
+  question: string;
+  model: string;
+  at: number;
+  durationMs: number;
+  checked: CheckedAnswer;
+  rounds: number;
+  calls: number;
+  retried: boolean;
 }
 
 /** Canaux de Jarvis Développeur. Refusés (sauf l'état) tant que le mode est coupé. */
@@ -146,6 +164,8 @@ export const DeveloperChannel = {
   taskKeep: 'dev:task-keep',
   sandboxes: 'dev:sandboxes',
   sandboxesClean: 'dev:sandboxes-clean',
+  ask: 'dev:ask',
+  realBenchmark: 'dev:real-benchmark',
 } as const;
 
 export type DevStepStatus = 'pending' | 'running' | 'done' | 'failed' | 'skipped';
@@ -167,7 +187,9 @@ export type DevTaskKind =
   | 'code'
   | 'rollback'
   | 'discard'
-  | 'cleanup';
+  | 'cleanup'
+  | 'ask'
+  | 'real-benchmark';
 
 export interface DevTask {
   id: string;
@@ -215,6 +237,8 @@ export interface DeveloperState {
   /** Copies isolées jarvis-dev/* trouvées (null : pas encore listées). */
   sandboxes: SandboxView[] | null;
   worktreeRoot: string;
+  /** Dernière question sur le code. */
+  ask: AskView | null;
 }
 
 export interface DeveloperApi {
@@ -242,4 +266,6 @@ export interface DeveloperApi {
   keepTask(): Promise<DeveloperState>;
   listSandboxes(): Promise<DeveloperState>;
   cleanSandboxes(paths: string[]): Promise<DeveloperState>;
+  ask(question: string): Promise<DeveloperState>;
+  realBenchmark(modelId: string): Promise<DeveloperState>;
 }
