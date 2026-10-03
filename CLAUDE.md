@@ -1,8 +1,8 @@
-# Jarvis 0.5.3 — contexte pour un autre développeur
+# Jarvis 0.5.4 — contexte pour un autre développeur
 
 Ce fichier est à la **racine du code**. Les chemins ci-dessous partent de ce dossier. Ce n’est pas un résumé marketing : c’est l’état réel de cet arbre. La voix a été refaite dans cet arbre (publiée en 0.4.11, section « Voix ») : la transcription restait « Chargement… 100 % » sur l’installateur Windows. La refonte du tableau de bord est dans cet arbre : fenêtre étroite = overlay, fenêtre large = tableau de bord.
 
-**Version confirmée :** `apps/desktop/package.json` → `"version": "0.5.3"`. Le `package.json` racine est aligné sur la même version depuis 0.5.0 (il était resté à `0.3.0`), mais il n’est lu par rien : la version qui compte pour l’exe, l’updater et GitHub est celle de `@jarvis/desktop`. `@jarvis/core` reste à `0.1.0`. La voix corrigée en 0.4.11 (installateur Windows) est inchangée. Le modèle par défaut reste `qwen2.5:3b`. `qwen3.5:4b` est le modèle recommandé documenté ; le repli est réglable (`fallbackModel`, défaut `qwen2.5:3b`).
+**Version confirmée :** `apps/desktop/package.json` → `"version": "0.5.4"`. Le `package.json` racine est aligné sur la même version depuis 0.5.0 (il était resté à `0.3.0`), mais il n’est lu par rien : la version qui compte pour l’exe, l’updater et GitHub est celle de `@jarvis/desktop`. `@jarvis/core` reste à `0.1.0`. La voix corrigée en 0.4.11 (installateur Windows) est inchangée. Le modèle par défaut reste `qwen2.5:3b`. `qwen3.5:4b` est le modèle recommandé documenté ; le repli est réglable (`fallbackModel`, défaut `qwen2.5:3b`).
 
 Lis ce fichier avant de modifier le code.
 
@@ -48,7 +48,7 @@ Scripts utiles (racine) :
 
 Le script `setup:voice` remplit `apps/desktop/voice-assets/` (runtime ONNX, Whisper, openWakeWord, modèle Vosk français ; non commité, voir `.gitignore`). Premier `dev` / `build` : besoin de réseau.
 
-L’installateur publié est `Jarvis-Setup-0.5.3.exe` (release GitHub `v0.5.3`).
+L’installateur publié est `Jarvis-Setup-0.5.4.exe` (release GitHub `v0.5.4`).
 
 Données utilisateur (Electron `userData`, typiquement `%APPDATA%\Jarvis`) :
 
@@ -82,7 +82,7 @@ Données utilisateur (Electron `userData`, typiquement `%APPDATA%\Jarvis`) :
     src/media/                 intent Spotify
     src/update/                lecture latest.yml GitHub
     src/history/  src/audit/
-  apps/desktop/                Electron (version 0.5.3)
+  apps/desktop/                Electron (version 0.5.4)
     electron-builder.yml       NSIS, extraResources, publish GitHub
     electron.vite.config.ts    aliases onnxruntime-web (wasm, pas JSEP)
     scripts/setup-whisper.mjs
@@ -358,7 +358,7 @@ Palier « spécialistes et missions ». Mode Développeur coupé par défaut ; c
 
 Palier « projets ». Mode Développeur coupé par défaut ; chat, catalogue, profils matériel inchangés ; déroulé d’une tâche sur Jarvis inchangé (consignes figées par `engine/profiles/jarvis.test.ts`).
 
-- **Appliquer** (`main/developer/task/apply.ts`, `CodeTaskWorkflow.apply/revertApply`) : bouton du rapport d’une tâche **réussie**. Contrôles (copie sans modification suivie non enregistrée, sur une branche, contient encore le commit de départ, au moins un commit à fusionner), puis **carte toujours confirmée** avec le diff, puis `git merge --no-ff --no-verify --no-edit` signé « Jarvis Développeur » ; conflit = `git merge --abort`, la copie ne change pas. « Annuler l’application » = `git revert -m 1` après une carte (conflit = `git revert --abort`). Jamais de push. La tête d’avant et le commit de fusion sont notés dans la tâche et dans le rapport.
+- **Appliquer** (`main/developer/task/apply.ts`, `CodeTaskWorkflow.apply/revertApply`) : bouton du rapport d’une tâche **réussie**. Contrôles (copie sans modification suivie non enregistrée, sur une branche, contient encore le commit de départ, au moins un commit à fusionner), puis **carte toujours confirmée** avec le diff, puis `git merge --no-ff --no-verify --no-edit --no-gpg-sign` au nom de « Jarvis Développeur » (jamais avec la clé de signature de l’utilisateur) ; conflit = `git merge --abort`, la copie ne change pas. « Annuler l’application » = `git revert -m 1` après une carte (conflit = `git revert --abort`). Jamais de push. La tête d’avant et le commit de fusion sont notés dans la tâche et dans le rapport.
 - **Construire** (`project/projectsWorkflow.ts`, `build`) : pour Jarvis, l’installateur local par `devPlatform().installer` (`npm run package:win`, jamais `publish`, null hors Windows) dans la copie de l’utilisateur, après une carte ; Jarvis vérifie que `apps/desktop/release/Jarvis-Setup-<version>.exe` existe et ne le lance pas. Pour un projet : `npm run build` s’il existe.
 - **Projets** (`engine/project.ts`, `project/projectStore.ts`) : registre `userData/developer/projects/registry.json` (Jarvis vient de `developer.repoPath`, identifiants `jarvis` et `nouveau` réservés), import d’un dossier existant (`project/inspect.ts` : dépôt git avec un commit, `package-lock.json`, un script `typecheck` ou `test`), retrait de la liste sans rien supprimer. **Mémoire** par projet (`memory.json`, 4 000 caractères ; Jarvis a un texte par défaut qui renvoie à CLAUDE.md), donnée aux spécialistes avec les 5 dernières missions du projet (`memoryBlock`).
 - **Profil Node générique** (`engine/profiles/node.ts`) : tests = scripts `typecheck`, `test`, `lint` présents (même liste fixe, mêmes commandes), fichiers protégés = dépendances et configuration (`package.json`, verrous, `tsconfig*`, `vite/vitest/eslint.config`, `.gitignore`, `.github/`). Les consignes et la politique de tâche prennent le profil en paramètre (`planSystemPrompt(profile)`, `parsePlanReply(text, profile)`, `reviewPlan(…, protectedReason)`, `planCoverage(…, protectedReason)`), Jarvis par défaut.
@@ -368,9 +368,23 @@ Palier « projets ». Mode Développeur coupé par défaut ; chat, catalogue, pr
 - Interface : section « Projets » de l’onglet Projet (mémoire, construire, importer, retirer), choix du projet dans l’onglet Missions, boutons « Appliquer à ta copie » et « Annuler l’application » dans le rapport.
 - Tests : `engine/projects.test.ts`, `task/apply.test.ts` (fusion, refus, conflit, copie modifiée, annulation), `project/projects.test.ts` (import, mémoire, mission sur un projet importé avec Jarvis intact, « Nouveau projet » de bout en bout avec npm simulé, création refusée). `controllerHarness.testkit.ts` accepte `intercept` (commande simulée, tri de sécurité appliqué).
 
+## 0.5.4 — applis Windows (.NET)
+
+Palier « appli Windows ». Mode Développeur coupé par défaut ; chat, catalogue, profils matériel inchangés ; tâches Jarvis et Node inchangées.
+
+- **Tri des commandes `dotnet`** (`core/developer/commandRulesDotnet.ts`, branché dans `commandSafety.ts`) : `dotnet build|test <solution> --no-restore` automatiques dans la copie isolée sous cette forme exacte seulement (sinon « Toujours à confirmer ») ; `restore`, `add/remove package`, `new`, `sln`, `run`, `publish`, `pack`, `tool`, `workload` toujours confirmés ; `dotnet nuget push|delete`, `dotnet msbuild` et `user-secrets` refusés ; `msbuild` reste refusé. Avant 0.5.4, tout `dotnet` était « programme inconnu » (toujours confirmé).
+- **Profil .NET** (`engine/profiles/dotnet.ts`) : tests `typecheck` = `dotnet build <solution> --no-restore`, `test` = `dotnet test <solution> --no-restore` (`ProjectTestSuite.program/args`, `suiteCommandFor`), dépendances de la copie isolée = `dotnet restore` (`ProjectProfile.install`), fichiers protégés = projets, solutions, `.props/.targets`, NuGet, `global.json`, manifeste. Consignes : logique dans une bibliothèque testée, aucun droit administrateur, aucun chemin système en dur (hosts, System32, registre) : un paramètre, et un faux fichier dans les tests. `DOTNET_ENV` : sans télémétrie, sortie en anglais, sans serveur MSBuild ni compilateur partagé (rien ne verrouille la copie isolée).
+- **Sorties** (`testOutput.ts`, `parseDotnetOutput`) : erreurs de compilation (fichier relatif + code, sans la ligne) et tests échoués par nom complet ; formats relevés sur le SDK 10.
+- **Revue du diff** (`diffScan.ts`) : règles propres aux fichiers C#, XAML et MSBuild (processus, `<Exec>`, suppression, réseau, chargement dynamique) et nouvelle catégorie **`system`** (fichier hosts, System32, registre, élévation). Les règles JavaScript/TypeScript n'ont pas changé.
+- **Gabarits .NET** (`engine/dotnetTemplates.ts`) : `dotnet-winforms`, `dotnet-wpf`, `dotnet-console`, `dotnet-worker` — solution `.sln` classique, `src/<Nom>.Core` (logique), `src/<Nom>.App` (WinForms/WPF en `net<N>.0-windows` avec `EnableWindowsTargeting`, donc compilables hors Windows), `tests/<Nom>.Tests` (xUnit 2.9.3, runner 3.1.4, Test SDK 17.14.1). Cible tirée du SDK installé (`dotnetTargetFramework`, 8 au moins). Nom C# par `dotnetIdentifier`. Aucun manifeste d'élévation.
+- **Plateforme** : `DevPlatform.dotnetProgram` ; détection du SDK (`project/dotnet.ts`, `dotnet --list-sdks`) ; sans SDK, l'installation reste à faire soi-même (`installHint('dotnet')` : winget sous Windows), Jarvis ne l'installe jamais. Projets .NET importés : une solution (ou un seul `.csproj`) à la racine. « Construire » d'un projet .NET : `dotnet build <solution> -c Release`, après une carte.
+- **Exemple « bloqueur de sites »** : la mission « Crée une appli Windows qui bloque des sites dans le fichier hosts » donne un projet WinForms ; la classe écrit dans un fichier hosts **dont le chemin est un paramètre**, les tests utilisent un fichier temporaire ; le chemin réel de Windows dans le code déclenche la carte de revue (`system`). Jarvis ne lance jamais l'application et ne demande jamais de droits administrateur.
+- « Appliquer » et son annulation passent `--no-gpg-sign` (comme les points de reprise) : la clé de signature de l'utilisateur n'est jamais utilisée.
+- Tests : `engine/dotnet.test.ts` (tri, sorties réelles, revue C#, profil, gabarits), `project/dotnetProject.test.ts` (« Nouveau projet » WinForms de bout en bout avec dotnet simulé, import d'un dossier .NET, SDK absent). Les dépôts d'essai désactivent la signature des commits (`commit.gpgsign=false`).
+
 ## Updater / GitHub
 
-Dernière publication : **0.5.3** (`https://github.com/dylanloze91-creator/Jarvis/releases/tag/v0.5.3`) — exe, `.blockmap` et `latest.yml` publiés : l’updater intégré la propose.
+Dernière publication : **0.5.4** (`https://github.com/dylanloze91-creator/Jarvis/releases/tag/v0.5.4`) — exe, `.blockmap` et `latest.yml` publiés : l’updater intégré la propose.
 
 - `apps/desktop/electron-builder.yml` : `publish.provider: github`, owner `dylanloze91-creator`, repo `Jarvis`, `releaseType: release`, artifact `Jarvis-Setup-${version}.exe`
 - `apps/desktop/src/main/updater.ts` : contrôle 15 s après le démarrage puis toutes les 4 h ; téléchargement auto ; **installation seulement si l’utilisateur clique**
@@ -489,6 +503,7 @@ Corrections de la revue complète (détail : `docs/audit-0410.md` du store du pr
 - **Tâches de code (0.4.25)** : toute écriture dans une copie isolée `jarvis-dev/*`, jamais dans la copie de l’utilisateur ; cœur, hors plan, suppression, retour arrière, « jeter » et dépendances toujours confirmés ; revue du diff avant les tests ; liste fixe de tests ; jamais de push ni de publication ; le chat garde la priorité sans qu’aucun fichier du chat ne change.
 - **Profil Jarvis (0.5.0)** : valeurs identiques à 0.4.26, vérifiées par `engine/profiles/jarvis.test.ts` sans régénération ; `maxFixAttempts` absent = 3 ; aucune clé de rattachement vide dans le journal ; aucun modèle de code choisi d’avance.
 - **Moteur (0.5.1)** : tout ce qui est propre à Windows dans `main/developer/` passe par `platform/` (garde : `platform/platform.test.ts`) ; une citation n’est « vérifiée » que relue dans le fichier ; le banc réel ne télécharge et ne choisit aucun modèle, et une tâche dont le fait de référence a disparu est « non mesurable », jamais réussie.
+- **.NET (0.5.4)** : seules `dotnet build|test <solution> --no-restore` sont automatiques, et seulement dans la copie isolée ; tout ce qui télécharge, lance ou installe redemande ; jamais de publication NuGet ni de MSBuild direct ; jamais de droits administrateur ni de vrai fichier hosts dans les tests ; le SDK n'est jamais installé par Jarvis.
 - **Projets (0.5.3)** : la copie de l’utilisateur ne change qu’avec « Appliquer » (ou « Annuler l’application »), toujours après une carte, copie propre exigée, conflit annulé ; « Construire » jamais publié ; rien de Jarvis dans les dépôts des projets ; un projet n’a ni la mémoire, ni les missions, ni les copies isolées de Jarvis.
 - **Missions (0.5.2)** : une seule boucle de modification (`TaskRun`), les spécialistes s’y branchent par `TaskHooks` ; aucun modèle choisi par Jarvis (rôle sans modèle = mission refusée) ; un seul modèle chargé à la fois ; un point bloquant du REVIEWER ne passe jamais pour une réussite.
 
