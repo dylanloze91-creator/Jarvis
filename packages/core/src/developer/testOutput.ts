@@ -155,6 +155,29 @@ export function parseDotnetOutput(
 }
 
 /** Fin de sortie utile : lignes d'erreur d'abord, puis la fin, sans couleurs. */
+export interface TscError {
+  path: string;
+  line: number;
+  code: string;
+  message: string;
+}
+
+/** Erreurs `tsc` d'une sortie : fichier, ligne, code et message. */
+export function tscErrors(output: string, root?: string): TscError[] {
+  const errors: TscError[] = [];
+  for (const line of stripAnsi(output).split(/\r?\n/)) {
+    const ts = TSC_ERROR.exec(line.trim());
+    if (ts)
+      errors.push({
+        path: relativeTo(ts[1]!, root),
+        line: Number(ts[2]),
+        code: ts[4]!,
+        message: ts[5]!.trim(),
+      });
+  }
+  return errors;
+}
+
 export function testExcerpt(output: string, maxLines = 60): string {
   const lines = stripAnsi(output)
     .split(/\r?\n/)

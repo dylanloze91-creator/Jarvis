@@ -44,7 +44,16 @@ export interface ProjectProfile {
   sandboxBranch(date: Date, subject: string): string;
   /** Dépendances de la copie isolée (0.5.4) ; absent : `npm ci --ignore-scripts`. */
   install?: { program: 'dotnet'; args: readonly string[] };
+  /**
+   * Consignes de modification propres au projet (5.0.1), avant les règles
+   * communes ; avec elles, l'outil `dev_write_file` (fichier réécrit en entier).
+   * Absent pour Jarvis : ses consignes sont figées.
+   */
+  editHints?: string;
 }
+
+export const WHOLE_FILE_HINT =
+  '- dev_write_file réécrit un fichier EXISTANT en entier (donne le contenu complet) : plus sûr qu’un remplacement pour un petit fichier.';
 
 /** Commande affichée et classée d'un test du profil. */
 export function profileSuiteCommand(suite: ProjectTestSuite): string {

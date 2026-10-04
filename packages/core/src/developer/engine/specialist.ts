@@ -4,6 +4,7 @@ import { CodeModelFormatError, extractJson } from '../codeSchemas.js';
 import type { ChatUsage } from '../../providers/types.js';
 import type { ToolManager } from '../../tools/manager.js';
 import { addUsage, toolView, type ToolLoopCall } from '../toolLoop.js';
+import { limitText, retryLimit, withDeadline, type StepLimit } from './limits.js';
 import type { SpecialistRole } from './roles.js';
 
 export interface SpecialistCall<T> {
@@ -14,6 +15,8 @@ export interface SpecialistCall<T> {
   /** Outils montrés au modèle ; absent = réponse directe, sans outil. */
   tools?: Pick<ToolManager, 'schemas' | 'execute'>;
   maxRounds?: number;
+  /** Plafond de jetons par réponse et durée de l'étape (5.0.1, `STEP_LIMITS`). */
+  limit?: StepLimit;
   signal?: AbortSignal;
   beforeRound?: (round: number) => Promise<void>;
 }
@@ -28,10 +31,14 @@ export interface SpecialistRun<T> {
   retried: boolean;
 }
 
+/** `format` : réponse hors format après la relance ; `timeout` : durée de l'étape dépassée. */
+export type SpecialistFailure = 'format' | 'timeout' | 'model';
+
 export class SpecialistError extends Error {
   constructor(
     readonly role: SpecialistRole,
     message: string,
+    readonly kind: SpecialistFailure = 'model',
   ) {
     super(message);
     this.name = 'SpecialistError';
@@ -63,36 +70,71 @@ async function turn(
   system: string,
   prompt: string,
   withTools: boolean,
+  limit: StepLimit | undefined,
 ): Promise<{ text: string; rounds: number; calls: ToolLoopCall[]; usage: ChatUsage }> {
-  if (call.tools) {
-    const loop = await code.runTools({
-      tools: withTools ? call.tools : toolView(call.tools, []),
-      system,
-      prompt,
-      maxRounds: withTools ? (call.maxRounds ?? 10) : 1,
-      signal: call.signal,
-      beforeRound: call.beforeRound,
-    });
-    if (loop.stoppedBy === 'error')
-      throw new SpecialistError(call.role, `Le modèle n’a pas répondu : ${loop.error}`);
-    return { text: loop.finalText, rounds: loop.rounds, calls: loop.calls, usage: loop.usage };
+  const deadline = limit ? withDeadline(call.signal, limit.timeoutMs) : null;
+  const signal = deadline?.signal ?? call.signal;
+  const timedOut = (): SpecialistError =>
+    new SpecialistError(
+      call.role,
+      `délai dépassé (${limitText(limit!)}) : le modèle n’a pas fini à temps`,
+      'timeout',
+    );
+  try {
+    if (call.tools) {
+      const loop = await code.runTools({
+        tools: withTools ? call.tools : toolView(call.tools, []),
+        system,
+        prompt,
+        maxRounds: withTools ? (call.maxRounds ?? 10) : 1,
+        ...(limit ? { maxTokens: limit.maxTokens } : {}),
+        signal,
+        beforeRound: call.beforeRound,
+      });
+      if (loop.stoppedBy === 'error') {
+        if (deadline?.expired()) throw timedOut();
+        if (call.signal?.aborted) throw new Error(loop.error ?? 'Annulé.');
+        throw new SpecialistError(call.role, `Le modèle n’a pas répondu : ${loop.error}`);
+      }
+      return { text: loop.finalText, rounds: loop.rounds, calls: loop.calls, usage: loop.usage };
+    }
+    await call.beforeRound?.(1);
+    try {
+      const { text, usage } = await code.complete({
+        system,
+        prompt,
+        ...(limit ? { maxTokens: limit.maxTokens } : {}),
+        signal,
+      });
+      return { text, rounds: 1, calls: [], usage: usage ?? EMPTY_USAGE };
+    } catch (error) {
+      if (deadline?.expired()) throw timedOut();
+      throw error;
+    }
+  } finally {
+    deadline?.dispose();
   }
-  await call.beforeRound?.(1);
-  const { text, usage } = await code.complete({ system, prompt, signal: call.signal });
-  return { text, rounds: 1, calls: [], usage: usage ?? EMPTY_USAGE };
 }
 
 /**
  * Un spécialiste : consigne, outils autorisés, sortie JSON validée par son
- * schéma, une relance au plus si le format est faux. Le rôle ne dépend
- * d'aucun modèle : c'est le fournisseur passé qui porte le modèle.
+ * schéma, une relance courte au plus si le format est faux. Avec `limit`,
+ * chaque réponse est plafonnée en jetons et l'étape en durée. Le rôle ne
+ * dépend d'aucun modèle : c'est le fournisseur passé qui porte le modèle.
  */
 export async function runSpecialist<T>(
   code: CodeAIProvider,
   call: SpecialistCall<T>,
 ): Promise<SpecialistRun<T>> {
   const system = `${call.system}\nTermine par un seul bloc JSON, sans texte après.`;
-  const first = await turn(code, call as SpecialistCall<unknown>, system, call.prompt, true);
+  const first = await turn(
+    code,
+    call as SpecialistCall<unknown>,
+    system,
+    call.prompt,
+    true,
+    call.limit,
+  );
   try {
     return {
       role: call.role,
@@ -109,8 +151,9 @@ export async function runSpecialist<T>(
       code,
       call as SpecialistCall<unknown>,
       system,
-      `${call.prompt}\n\nTa réponse précédente n’était pas au bon format (${error.message}). Réponds seulement par le bloc JSON demandé.`,
+      `${call.prompt}\n\nTa réponse précédente n’était pas au bon format (${error.message}). Réponds seulement par le bloc JSON demandé, court, sans explication.`,
       false,
+      call.limit ? retryLimit(call.limit) : undefined,
     );
     try {
       return {
@@ -127,6 +170,7 @@ export async function runSpecialist<T>(
         throw new SpecialistError(
           call.role,
           `Réponse hors format après une relance : ${again.message}`,
+          'format',
         );
       throw again;
     }

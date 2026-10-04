@@ -45,6 +45,7 @@ export interface CodeAIProvider {
     system: string;
     prompt: string;
     schema: z.ZodType<T>;
+    maxTokens?: number;
     signal?: AbortSignal;
   }): Promise<T>;
   analyzeCode(input: { files: SourceFile[]; question: string }): Promise<CodeAnalysis>;
@@ -52,7 +53,12 @@ export interface CodeAIProvider {
   generatePlan(input: { request: string; context: string; rules: string[] }): Promise<DevPlan>;
   generateCode(input: { plan: DevPlan; files: SourceFile[] }): Promise<CodeEdit[]>;
   modifyCode(input: { file: SourceFile; instruction: string }): Promise<CodeEdit[]>;
-  reviewCode(input: { diff: string; rules: string[] }): Promise<ReviewReport>;
+  reviewCode(input: {
+    diff: string;
+    rules: string[];
+    maxTokens?: number;
+    signal?: AbortSignal;
+  }): Promise<ReviewReport>;
   debug(input: { failures: string; files: SourceFile[] }): Promise<DebugHypothesis[]>;
   explainError(input: { output: string }): Promise<string>;
 }
@@ -62,6 +68,8 @@ export interface CodeAIProviderConfig {
   provider?: string;
   baseUrl?: string;
   options?: OllamaCodeOptions;
+  /** Transport sans délai d'en-têtes (5.0.1), fourni par l'application. */
+  fetch?: typeof fetch;
 }
 
 export class CodeProviderRefusedError extends Error {
@@ -100,6 +108,7 @@ export function createCodeAIProvider(
     model: config.model,
     baseUrl,
     ollama: config.options ?? {},
+    ...(config.fetch ? { fetch: config.fetch } : {}),
   });
 
   const complete: CodeAIProvider['complete'] = async ({ system, prompt, maxTokens, signal }) => {
@@ -123,11 +132,13 @@ export function createCodeAIProvider(
     system,
     prompt,
     schema,
+    maxTokens,
     signal,
   }) => {
     const { text } = await complete({
       system: `${system}\nRéponds uniquement par du JSON valide, sans texte autour.`,
       prompt,
+      ...(maxTokens ? { maxTokens } : {}),
       signal,
     });
     const parsed = schema.safeParse(extractJson(text));
@@ -178,8 +189,10 @@ export function createCodeAIProvider(
         prompt: `Consigne : ${instruction}\n${filesBlock([file])}\nFormat : [{"path": "${file.path}", "search": "texte exact", "replace": "..."}]`,
         schema: z.array(codeEditSchema),
       }),
-    reviewCode: ({ diff, rules }) =>
+    reviewCode: ({ diff, rules, maxTokens, signal }) =>
       completeJson({
+        ...(maxTokens ? { maxTokens } : {}),
+        ...(signal ? { signal } : {}),
         system: SYSTEM,
         prompt: `Relis ce diff. Signale tout retrait de confirmation, secret en clair, dépendance ajoutée, chemin du cœur.\nRègles :\n- ${rules.join('\n- ')}\nDiff :\n${diff}\nFormat : {"verdict": "ok" | "à revoir" | "refusé", "findings": [{"severity": "info" | "avertissement" | "bloquant", "file": "...", "message": "..."}]}`,
         schema: reviewReportSchema,

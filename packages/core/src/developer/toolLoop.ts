@@ -16,10 +16,17 @@ export interface ToolLoopInput {
   prompt: string;
   maxRounds?: number;
   temperature?: number;
+  /** Jetons au plus par réponse du modèle (5.0.1) ; absent : pas de plafond. */
+  maxTokens?: number;
   signal?: AbortSignal;
   requestConfirmation?: (request: ConfirmationRequest) => Promise<boolean>;
   /** Appelé avant chaque tour du modèle (le chat peut y reprendre la main). */
   beforeRound?: (round: number) => Promise<void>;
+  /**
+   * Réponse sans appel d'outil (5.0.1) : un message pour relancer le modèle
+   * (par exemple « écris maintenant ce fichier »), ou null pour s'arrêter.
+   */
+  nudge?: (answer: string, calls: readonly ToolLoopCall[]) => string | null;
 }
 
 export interface ToolLoopCall {
@@ -101,6 +108,7 @@ export async function runToolLoop(input: ToolLoopInput): Promise<ToolLoopResult>
         messages,
         tools: input.tools.schemas(),
         temperature: input.temperature ?? 0,
+        ...(input.maxTokens ? { maxTokens: input.maxTokens } : {}),
         signal: input.signal,
       })) {
         if (event.type === 'text') text += event.delta;
@@ -119,6 +127,12 @@ export async function runToolLoop(input: ToolLoopInput): Promise<ToolLoopResult>
       };
     }
     if (pending.length === 0) {
+      const more = round < maxRounds ? input.nudge?.(text, calls) : null;
+      if (more) {
+        messages.push(createMessage('assistant', text));
+        messages.push(createMessage('user', more));
+        continue;
+      }
       finalText = text;
       return { finalText, calls, rounds: round, stoppedBy: 'answer', error: null, usage };
     }

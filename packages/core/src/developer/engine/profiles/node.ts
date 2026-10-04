@@ -3,7 +3,7 @@ import { normalizeRepoRelative } from '../../repoPaths.js';
 import type { CheckReport, DevCheck, RepoFacts } from '../../repoCheck.js';
 import { MAX_FIX_ATTEMPTS, TEST_SUITES, type TestSuiteId } from '../../taskPlan.js';
 import { sandboxBranch } from '../../taskPolicy.js';
-import type { ProjectProfile, ProjectTestSuite } from '../projectProfile.js';
+import { WHOLE_FILE_HINT, type ProjectProfile, type ProjectTestSuite } from '../projectProfile.js';
 
 /** Tests d'un projet Node : seulement les scripts npm automatiques présents dans son package.json. */
 export const NODE_SUITES = ['typecheck', 'test', 'lint'] as const satisfies readonly TestSuiteId[];
@@ -71,6 +71,8 @@ export interface NodeProjectInfo {
   name: string;
   description?: string;
   scripts: Readonly<Record<string, string>>;
+  /** Fichiers de structure du gabarit (5.0.1), toujours confirmés. */
+  structure?: readonly string[];
 }
 
 /** Profil d'un projet Node / TypeScript créé ou importé : ses scripts décident des tests. */
@@ -91,7 +93,12 @@ export function createNodeProfile(info: NodeProjectInfo): ProjectProfile {
     testSuites,
     defaultTestSuites: suites.filter((id) => id !== 'lint'),
     maxFixAttempts: MAX_FIX_ATTEMPTS,
-    protectedFileReason: nodeProtectedReason,
+    protectedFileReason: (path) => {
+      const rel = normalizeRepoRelative(path)?.toLowerCase();
+      if (rel && info.structure?.some((s) => s.toLowerCase() === rel))
+        return 'structure du gabarit (prête, à ne pas modifier)';
+      return nodeProtectedReason(path);
+    },
     knownWorkspaces: new Set(),
     autoScripts: AUTO_SCRIPTS,
     promptContext: `Dépôt : ${info.name}, projet Node.js / TypeScript (npm), indépendant de Jarvis.${description}
@@ -100,5 +107,7 @@ Code et messages en français.`,
     codeSystemPrompt: `Tu es le modèle de code de Jarvis Développeur, sur le projet « ${info.name} » (Node.js, TypeScript). Réponds en français. N’invente aucun fichier ni aucune fonction : appuie-toi seulement sur ce qu’on te montre.`,
     sandboxBranchPrefix: 'jarvis-dev/',
     sandboxBranch,
+
+    editHints: WHOLE_FILE_HINT,
   };
 }

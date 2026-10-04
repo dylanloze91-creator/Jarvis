@@ -55,6 +55,12 @@ export interface ProviderConfig {
   baseUrl?: string;
   /** Réglages de requête du modèle de code (Jarvis Développeur). Absents : requête du chat inchangée. */
   ollama?: OllamaCodeOptions;
+  /**
+   * Transport du modèle de code (Jarvis Développeur, 5.0.1) : un `fetch` sans
+   * délai d'en-têtes, car Ollama n'envoie rien tant qu'un long appel d'outil
+   * n'est pas fini. Absent : le `fetch` global, comme pour le chat.
+   */
+  fetch?: typeof fetch;
 }
 
 /** Options de requête Ollama, jamais des variables du serveur. */

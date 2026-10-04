@@ -1,4 +1,5 @@
 import { MISSION_CHAINS, type ChainActor, type MissionKind } from './router.js';
+import type { MissionGate } from './difficulty.js';
 import type { CheckedProposal } from './improve.js';
 import type { GoalOutput } from './specialistSchemas.js';
 
@@ -48,6 +49,8 @@ export interface MissionState {
   proposals?: CheckedProposal[];
   /** Mission née d'une proposition retenue (0.5.5). */
   fromProposal?: { missionId: string; index: number };
+  /** Difficulté estimée avant le départ, face au modèle Codeur (5.0.1). */
+  gate?: MissionGate;
 }
 
 export interface MissionSummary {

@@ -2,7 +2,7 @@ import { normalizeRepoRelative } from '../../repoPaths.js';
 import type { CheckReport, RepoFacts } from '../../repoCheck.js';
 import { MAX_FIX_ATTEMPTS } from '../../taskPlan.js';
 import { sandboxBranch } from '../../taskPolicy.js';
-import type { ProjectProfile, ProjectTestSuite } from '../projectProfile.js';
+import { WHOLE_FILE_HINT, type ProjectProfile, type ProjectTestSuite } from '../projectProfile.js';
 
 /**
  * Environnement de `dotnet` (0.5.4) : pas de télémétrie, sortie en anglais
@@ -123,5 +123,7 @@ Code et messages en français.`,
     sandboxBranchPrefix: 'jarvis-dev/',
     sandboxBranch,
     install: { program: 'dotnet', args: ['restore', info.target] },
+
+    editHints: WHOLE_FILE_HINT,
   };
 }

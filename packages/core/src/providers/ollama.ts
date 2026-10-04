@@ -97,11 +97,13 @@ export class OllamaProvider implements LLMProvider {
   readonly model: string;
   private readonly baseUrl: string;
   private readonly codeOptions: OllamaCodeOptions | undefined;
+  private readonly transport: typeof fetch | undefined;
 
   constructor(config: ProviderConfig) {
     this.model = config.model || ollamaDescriptor.defaultModel;
     this.baseUrl = (config.baseUrl || ollamaDescriptor.defaultBaseUrl!).replace(/\/+$/, '');
     this.codeOptions = config.ollama;
+    this.transport = config.fetch;
   }
 
   async *streamChat(request: ChatRequest): AsyncIterable<ChatStreamEvent> {
@@ -127,7 +129,7 @@ export class OllamaProvider implements LLMProvider {
 
     let response: Response;
     try {
-      response = await fetch(`${this.baseUrl}/api/chat`, {
+      response = await (this.transport ?? fetch)(`${this.baseUrl}/api/chat`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(body),

@@ -35,6 +35,9 @@ export * from './engine/templates.js';
 export * from './engine/project.js';
 export * from './engine/improve.js';
 export * from './engine/skill.js';
+export * from './engine/limits.js';
+export * from './engine/fallbacks.js';
+export * from './engine/difficulty.js';
 export { normalizeRepoRelative, protectedRepoPath } from './repoPaths.js';
 export {
   ARCHITECTURE_LAYERS,

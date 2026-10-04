@@ -17,14 +17,30 @@ export const DIAGNOSE_MARKER = 'ÉTAPE : DIAGNOSTIC';
 /** Questions avant de coder : 5 au plus (recommandation D10), aucune si rien ne manque. */
 export const MAX_GOAL_QUESTIONS = 5;
 
-function head(role: SpecialistRole | 'GOAL', marker: string, project: ProjectProfile): string {
+/**
+ * Contexte du REASONER quand la mission crée un projet (5.0.1) : le projet
+ * n'existe pas encore, il ne faut pas lui donner le dépôt de Jarvis.
+ */
+export const NEW_PROJECT_CONTEXT = {
+  promptContext:
+    'Nouveau projet, pas encore créé, indépendant de Jarvis : l’ARCHITECTE choisira ensuite son gabarit (jeu dans le navigateur, outil en ligne de commande, application web, bibliothèque, appli Windows). Décris le résultat attendu, sans chemin de fichier, sans parler de Jarvis, d’Electron ni de leurs dossiers.',
+} as const satisfies Pick<ProjectProfile, 'promptContext'>;
+
+function head(
+  role: SpecialistRole | 'GOAL',
+  marker: string,
+  project: Pick<ProjectProfile, 'promptContext'>,
+): string {
   return `Tu es le spécialiste ${role === 'GOAL' ? 'REASONER' : role} de Jarvis Développeur. ${marker}.
 ${project.promptContext}
 Réponds en français. Le format attendu est :
 ${ROLE_FORMATS[role]}`;
 }
 
-export function goalSystem(project: ProjectProfile, maxQuestions = MAX_GOAL_QUESTIONS): string {
+export function goalSystem(
+  project: Pick<ProjectProfile, 'promptContext'>,
+  maxQuestions = MAX_GOAL_QUESTIONS,
+): string {
   return `${head('GOAL', GOAL_MARKER, project)}
 Tu reformules la demande en un objectif vérifiable, avec des critères d'acceptation que l'on peut contrôler (fichier, test, commande).
 Pose au plus ${maxQuestions} questions, et seulement si une information indispensable manque. Sinon, "questions" est vide.`;
