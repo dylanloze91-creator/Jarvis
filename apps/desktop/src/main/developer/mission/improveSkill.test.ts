@@ -12,10 +12,16 @@ import {
   RESEARCH_MARKER,
   REVIEW_MARKER,
   SKILL_MARKER,
+  WRITE_MARKER,
 } from '@jarvis/core';
 import { createHarness, fakeOutcome } from '../controllerHarness.testkit.js';
 import { FakeOllama, type ChatBody, type Reply } from '../models/fakeOllama.testkit.js';
-import { createFixtureRepo, taskScript } from '../task/taskWorkflow.testkit.js';
+import {
+  codeBlock,
+  createFixtureRepo,
+  taskScript,
+  writeRequest,
+} from '../task/taskWorkflow.testkit.js';
 
 const base = mkdtempSync(join(tmpdir(), 'jarvis-ameliorer-'));
 const repo = join(base, 'Jarvis');
@@ -30,6 +36,9 @@ const loop = taskScript();
 function script(body: ChatBody): Reply {
   const text = system(body);
   const done = body.messages.filter((m) => m.role === 'tool').length;
+  const write = text.includes(WRITE_MARKER) ? writeRequest(body) : null;
+  if (write?.path === 'src/tools/cube_stl.ts')
+    return codeBlock("export const cube = () => 'solid cube';");
   if (text.includes(IMPROVE_MARKER)) {
     if (done === 0) return { call: { name: 'dev_read_file', arguments: { path: 'src/index.ts' } } };
     return {

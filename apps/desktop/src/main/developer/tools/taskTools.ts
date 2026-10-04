@@ -58,6 +58,9 @@ export const TASK_MODEL_TOOLS = [
   'dev_delete_file',
 ] as const;
 
+/** Projets autres que Jarvis (5.0.1) : en plus, réécrire un fichier en entier. */
+export const PROJECT_MODEL_TOOLS = [...TASK_MODEL_TOOLS, 'dev_write_file'] as const;
+
 const suiteSchema = z.enum(TEST_SUITE_IDS as [TestSuiteId, ...TestSuiteId[]]);
 
 function sandboxTools(deps: TaskToolDeps): RegisteredTool[] {
@@ -233,7 +236,7 @@ export function createTaskToolManager(deps: TaskToolDeps): ToolManager {
 }
 
 export const TASK_TOOLS = [
-  ...TASK_MODEL_TOOLS,
+  ...PROJECT_MODEL_TOOLS,
   'dev_create_branch',
   'dev_install_sandbox',
   'dev_run_tests',

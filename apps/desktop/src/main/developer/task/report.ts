@@ -30,6 +30,7 @@ export function buildTaskReport(
   add(
     `Branche \`${state.branch}\` · copie isolée \`${state.worktreePath || '—'}\` · modèle \`${state.model}\`${state.finishedAt ? ` · ${seconds(state.finishedAt - state.startedAt)}` : ''}`,
   );
+  if (state.planFallback) add(`**Plan :** ${state.planFallback}.`);
   add('### Fichiers modifiés');
   if (state.diff.length === 0) add('Aucun.');
   add(

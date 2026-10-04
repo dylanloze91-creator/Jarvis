@@ -4,6 +4,7 @@ import type {
   CheckReport,
   CheckedAnswer,
   MissionKind,
+  MissionGate,
   MissionState,
   MissionSummary,
   ProjectTemplateId,
@@ -85,6 +86,10 @@ export interface CodeTaskState {
   report: { markdown: string; verdict: 'success' | 'failed' | 'stopped' } | null;
   /** Revue du diff par le REVIEWER d'une mission (0.5.2). */
   review?: { summary: string; blocking: string[]; model: string; at: number } | null;
+  /** Plan de secours utilisé (5.0.1) : pourquoi. */
+  planFallback?: string;
+  /** Boucle de correction arrêtée net (5.0.1) : la correction a reproduit le même échec. */
+  repeatedFailure?: { attempt: number; failures: string[]; unused: number };
   closed: null | 'kept' | 'discarded';
   startedAt: number;
   finishedAt: number | null;
@@ -300,6 +305,8 @@ export interface DeveloperState {
   missions: MissionSummary[] | null;
   /** Projet de l'historique affiché. */
   missionsProject: string;
+  /** Dernière mission refusée par le contrôle de difficulté (5.0.1), avec sa version ciblée. */
+  missionGate?: MissionGate | null;
   /** Projets connus, Jarvis en premier (null : pas encore lus). */
   projects: ProjectView[] | null;
   /** Dossier des nouveaux projets (décision D2). */

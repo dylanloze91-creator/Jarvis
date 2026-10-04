@@ -19,6 +19,18 @@ import {
   reviewPlan,
   scanDiff,
   suiteCommandFor,
+  extractFileContent,
+  fileWritePrompt,
+  fileWriteSystem,
+  addUsage,
+  type ChatUsage,
+  STEP_LIMITS,
+  limitText,
+  retryLimit,
+  withDeadline,
+  type StepLimit,
+  type ToolLoopInput,
+  normalizeRepoRelative,
   toolView,
   trimDiffFiles,
   type CodeAIProvider,
@@ -27,9 +39,11 @@ import {
   type TestRunSummary,
   type ToolManager,
 } from '@jarvis/core';
+import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { CodeTaskRun, CodeTaskState } from '../../../shared/developerIpc.js';
-import { TASK_MODEL_TOOLS } from '../tools/taskTools.js';
+import { PROJECT_MODEL_TOOLS, TASK_MODEL_TOOLS } from '../tools/taskTools.js';
+import { patientFetch } from '../models/patientFetch.js';
 import { buildTaskReport } from './report.js';
 import { SANDBOX_NPM_CI_ARGS } from './suites.js';
 import {
@@ -58,6 +72,13 @@ function speed(usage: { outputTokens: number; outputMs: number }): number | null
   return usage.outputMs > 0
     ? Math.round(tokensPerSecond(usage.outputTokens, usage.outputMs) * 10) / 10
     : null;
+}
+
+const WRITE_TOOLS = new Set(['dev_create_file', 'dev_edit_file', 'dev_write_file']);
+
+/** Échecs d'une série de tests, sans ordre : deux séries au même ensemble ont la même signature. */
+export function failureSignature(failures: readonly string[]): string {
+  return [...new Set(failures)].sort().join('\n');
 }
 
 export class TaskStopped extends Error {
@@ -134,43 +155,262 @@ export class TaskRun extends TaskRunBase {
     });
   }
 
+  /** Un tour du modèle de code sous plafond (jetons par réponse, durée) ; `expired` : délai atteint. */
+  private async limitedRun(
+    code: CodeAIProvider,
+    input: Omit<Parameters<CodeAIProvider['runTools']>[0], 'signal' | 'maxTokens'>,
+    limit: StepLimit,
+    signal: AbortSignal,
+  ): Promise<Awaited<ReturnType<CodeAIProvider['runTools']>> & { expired: boolean }> {
+    const deadline = withDeadline(signal, limit.timeoutMs);
+    try {
+      const result = await code.runTools({
+        ...input,
+        maxTokens: limit.maxTokens,
+        signal: deadline.signal,
+      });
+      return { ...result, expired: deadline.expired() };
+    } finally {
+      deadline.dispose();
+    }
+  }
+
   private async makePlan(
     code: CodeAIProvider,
     signal: AbortSignal,
     pause: () => Promise<void>,
   ): Promise<TaskPlan> {
     const tools = this.host.readTools(this.repo.root);
-    const first = await code.runTools({
-      tools,
-      system: planSystemPrompt(this.profile),
-      prompt: this.planRequest(),
-      maxRounds: 10,
+    const first = await this.limitedRun(
+      code,
+      {
+        tools,
+        system: planSystemPrompt(this.profile),
+        prompt: this.planRequest(),
+        maxRounds: 10,
+        beforeRound: pause,
+      },
+      STEP_LIMITS.plan,
       signal,
-      beforeRound: pause,
-    });
-    if (first.stoppedBy === 'error')
+    );
+    if (signal.aborted) throw new Error('Annulé.');
+    if (first.stoppedBy === 'error' && !first.expired)
       throw new Error(`Le modèle de code n’a pas répondu : ${first.error}`);
-    try {
-      return parsePlanReply(first.finalText, this.profile);
-    } catch (error) {
-      if (!(error instanceof CodeModelFormatError)) throw error;
-      const read = first.calls
-        .filter((c) => c.status === 'ok')
-        .map((c) => `${c.name} ${JSON.stringify(c.arguments)}`)
-        .slice(0, 12)
-        .join('\n');
-      const retry = await code.runTools({
+    let problem = first.expired ? `délai dépassé (${limitText(STEP_LIMITS.plan)})` : '';
+    if (!first.expired) {
+      try {
+        return parsePlanReply(first.finalText, this.profile);
+      } catch (error) {
+        if (!(error instanceof CodeModelFormatError)) throw error;
+        problem = error.message;
+      }
+    }
+    const read = first.calls
+      .filter((c) => c.status === 'ok')
+      .map((c) => `${c.name} ${JSON.stringify(c.arguments)}`)
+      .slice(0, 12)
+      .join('\n');
+    const retry = await this.limitedRun(
+      code,
+      {
         tools: toolView(tools, []),
         system: planSystemPrompt(this.profile),
-        prompt: `${this.planRequest()}\n\nDéjà consulté :\n${read || '—'}\n\nTa réponse précédente n’était pas un plan valide (${error.message}). Réponds seulement par le bloc JSON du plan.`,
+        prompt: `${this.planRequest()}\n\nDéjà consulté :\n${read || '—'}\n\nTa réponse précédente n’était pas un plan valide (${problem}). Réponds seulement par le bloc JSON du plan, court.`,
         maxRounds: 1,
-        signal,
         beforeRound: pause,
-      });
-      if (retry.stoppedBy === 'error')
-        throw new Error(`Le modèle de code n’a pas répondu : ${retry.error}`);
-      return parsePlanReply(retry.finalText, this.profile);
+      },
+      retryLimit(STEP_LIMITS.plan),
+      signal,
+    );
+    if (signal.aborted) throw new Error('Annulé.');
+    if (retry.stoppedBy === 'error' && !retry.expired && !this.hooks.fallbackPlan)
+      throw new Error(`Le modèle de code n’a pas répondu : ${retry.error}`);
+    try {
+      if (retry.stoppedBy !== 'error') return parsePlanReply(retry.finalText, this.profile);
+      problem = retry.expired ? `délai dépassé` : (retry.error ?? 'erreur du modèle');
+    } catch (error) {
+      if (!(error instanceof CodeModelFormatError) || !this.hooks.fallbackPlan) throw error;
+      problem = error.message;
     }
+    if (!this.hooks.fallbackPlan) throw new Error(`Plan impossible : ${problem}`);
+    this.state.planFallback = `plan de secours (gabarit du projet) : le modèle n’a pas rendu de plan valide (${problem.slice(0, 160)})`;
+    return this.hooks.fallbackPlan;
+  }
+
+  /**
+   * Projets (5.0.1) : un petit modèle annonce souvent « je vais écrire… » sans
+   * appeler d'outil. Relance (3 fois au plus) en nommant le fichier du plan à
+   * écrire. Absent pour Jarvis : son déroulé ne change pas.
+   */
+  private writeNudge(kind: 'edit' | 'fix'): ToolLoopInput['nudge'] {
+    if (!this.profile.editHints) return undefined;
+    let left = 3;
+    const planned = (this.reviewed?.files ?? []).filter(
+      (f) => f.action !== 'delete' && !f.problem && !f.core,
+    );
+    return (_answer, calls) => {
+      if (left <= 0) return null;
+      const written = new Set(
+        calls
+          .filter((c) => c.status === 'ok' && WRITE_TOOLS.has(c.name))
+          .map((c) => (normalizeRepoRelative(String(c.arguments.path ?? '')) ?? '').toLowerCase()),
+      );
+      if (kind === 'fix') {
+        if (written.size > 0) return null;
+        left -= 1;
+        return 'Tu n’as encore rien corrigé. Corrige maintenant le fichier en cause : appelle dev_write_file avec son contenu complet corrigé, sans explication.';
+      }
+      const next = planned.find((f) => !written.has(f.path.toLowerCase()));
+      if (!next) return null;
+      left -= 1;
+      const tool = next.exists ? 'dev_write_file' : 'dev_create_file';
+      return `Tu n’as pas encore écrit ${next.path}. Écris-le maintenant : appelle ${tool} avec path "${next.path}" et le contenu complet du fichier, sans explication.`;
+    };
+  }
+
+  /**
+   * Projets (5.0.1) : un échec d'outil du modèle porte un conseil (réécrire le
+   * fichier entier), et un appel qui échoue à l'identique est signalé, au lieu
+   * de tourner en rond jusqu'au plafond de tours.
+   */
+  private coached(
+    tools: Pick<ToolManager, 'schemas' | 'execute'>,
+  ): Pick<ToolManager, 'schemas' | 'execute'> {
+    if (!this.profile.editHints) return tools;
+    const failures = new Map<string, number>();
+    return {
+      schemas: () => tools.schemas(),
+      execute: async (call, context, events) => {
+        const outcome = await tools.execute(call, context, events);
+        if (outcome.status === 'ok') return outcome;
+        const key = `${call.name}|${JSON.stringify(call.arguments)}`;
+        const count = (failures.get(key) ?? 0) + 1;
+        failures.set(key, count);
+        const path = String(call.arguments.path ?? 'le fichier');
+        const hints: string[] = [];
+        if (call.name === 'dev_edit_file' || /existe déjà/.test(outcome.content))
+          hints.push(
+            `Pour changer ${path}, réécris-le en entier : dev_write_file avec path "${path}" et le contenu complet.`,
+          );
+        if (count >= 2) hints.push('Cet appel a déjà échoué de la même façon : change d’approche.');
+        return hints.length
+          ? { ...outcome, content: `${outcome.content}\n${hints.join(' ')}` }
+          : outcome;
+      },
+    };
+  }
+
+  private async readSandbox(path: string): Promise<string | null> {
+    try {
+      return await readFile(join(this.sandbox!.path, path), 'utf8');
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Écriture fichier par fichier (projets nés d'un gabarit, 5.0.1) : un appel
+   * du modèle par fichier du plan (hors fichiers protégés), contenu complet,
+   * écrit par l'outil de la tâche, donc couvert par le plan et inscrit au journal.
+   */
+  private async writeFiles(
+    code: CodeAIProvider,
+    mode: 'edit' | 'fix',
+    signal: AbortSignal,
+    pause: () => Promise<void>,
+    failure?: { failures: string[]; excerpts: string[]; diagnosis: string },
+  ): Promise<{ written: string[]; usage: ChatUsage; expired: boolean }> {
+    const limit = mode === 'edit' ? STEP_LIMITS.edit : STEP_LIMITS.fix;
+    const deadline = withDeadline(signal, limit.timeoutMs);
+    const planned = this.reviewed!.files.filter(
+      (f) => f.action !== 'delete' && !f.problem && !f.core,
+    );
+    let targets = planned;
+    if (failure) {
+      const named = planned.filter((f) => failure.failures.some((x) => x.includes(f.path)));
+      if (named.length) targets = named;
+    }
+    const isTest = (path: string) => /\.(test|spec)\.|Tests?\.cs$/.test(path);
+    targets = [...targets].sort((a, b) => Number(isTest(a.path)) - Number(isTest(b.path)));
+    const fixedFiles = failure
+      ? [
+          ...new Set(
+            failure.failures.flatMap((x) =>
+              [...x.matchAll(/[\w./-]+\.(?:test|spec)\.[cm]?[jt]sx?/g)].map((m) => m[0]),
+            ),
+          ),
+        ].filter((path) => this.profile.protectedFileReason(path) !== null)
+      : [];
+    const written: string[] = [];
+    let usage: ChatUsage = {
+      promptTokens: 0,
+      promptMs: 0,
+      outputTokens: 0,
+      outputMs: 0,
+      loadMs: 0,
+      totalMs: 0,
+    };
+    try {
+      for (const file of targets) {
+        if (deadline.signal.aborted) break;
+        await pause();
+        const current = await this.readSandbox(file.path);
+        const related: Array<{ path: string; content: string }> = [];
+        for (const path of [
+          ...(this.hooks.fileByFile?.references ?? []),
+          ...fixedFiles,
+          ...planned.map((f) => f.path),
+        ]) {
+          if (path === file.path || related.some((r) => r.path === path)) continue;
+          const content = await this.readSandbox(path);
+          if (content !== null) related.push({ path, content });
+        }
+        this.host.log(`Écriture de ${file.path}…`);
+        let text: string;
+        try {
+          const reply = await code.complete({
+            system: fileWriteSystem(this.reviewed!, this.profile),
+            prompt: fileWritePrompt({
+              request: this.state.request,
+              path: file.path,
+              current,
+              context: this.hooks.fileByFile?.guide ?? this.hooks.planContext,
+              related,
+              ...(failure ?? {}),
+              ...(fixedFiles.length ? { fixedFiles } : {}),
+            }),
+            maxTokens: limit.maxTokens,
+            signal: deadline.signal,
+          });
+          text = reply.text;
+          usage = addUsage(usage, reply.usage);
+        } catch (error) {
+          if (signal.aborted) throw error;
+          if (deadline.expired()) break;
+          throw new TaskStopped(
+            `Le modèle de code a échoué : ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
+        const content = extractFileContent(text);
+        if (!content) {
+          this.host.log(`${file.path} : la réponse ne contient pas de code.`);
+          continue;
+        }
+        const outcome = await this.call(
+          current === null ? 'dev_create_file' : 'dev_write_file',
+          { path: file.path, content },
+          signal,
+        );
+        if (outcome.status === 'ok') written.push(file.path);
+      }
+    } finally {
+      deadline.dispose();
+    }
+    if (deadline.expired())
+      this.host.log(
+        `${mode === 'edit' ? 'Modification' : 'Correction'} : délai atteint (${limitText(limit)}).`,
+      );
+    return { written, usage, expired: deadline.expired() };
   }
 
   private async refreshDiff(signal: AbortSignal): Promise<string> {
@@ -351,6 +591,8 @@ export class TaskRun extends TaskRunBase {
     this.host.emit();
     if (verdict === 'success')
       return 'Tâche réussie : vois le rapport. Ta copie de travail n’a pas été touchée.';
+    if (verdict === 'failed' && reason)
+      return `${reason} Vois le rapport. Ta copie de travail n’a pas été touchée.`;
     if (verdict === 'failed')
       return `Des tests échouent encore après ${this.state.attempts} correction(s) : vois le rapport. Ta copie de travail n’a pas été touchée.`;
     return `Tâche arrêtée${reason ? ` : ${reason}` : ''}.`;
@@ -382,6 +624,7 @@ export class TaskRun extends TaskRunBase {
       model: state.model,
       baseUrl: ollama.baseUrl,
       options: this.deps.modelOptions(state.model),
+      fetch: patientFetch,
     });
     const pause = () => this.yieldToChat(signal, addStep, step);
     step('model', 'done', state.model);
@@ -389,11 +632,18 @@ export class TaskRun extends TaskRunBase {
     step('plan', 'running', 'lecture du dépôt');
     this.hooks.onPhase?.('plan', 'running', 'lecture du dépôt, plan de modification');
     const plan = await this.makePlan(code, signal, pause);
-    const checked = reviewPlan(
-      plan,
-      (path) => this.repo.tracked.has(path),
-      this.profile.protectedFileReason,
-    );
+    const review = (p: TaskPlan) =>
+      reviewPlan(p, (path) => this.repo.tracked.has(path), this.profile.protectedFileReason);
+    let checked = review(plan);
+    const entry = this.hooks.fallbackPlan;
+    if (
+      entry &&
+      plan !== entry &&
+      !checked.files.some((f) => !f.problem && entry.files.some((e) => e.path === f.path))
+    ) {
+      state.planFallback = `plan de secours (gabarit du projet) : le plan du modèle ne touchait aucun fichier d’entrée du gabarit (${entry.files.map((f) => f.path).join(', ')})`;
+      checked = review(entry);
+    }
     this.reviewed = this.hooks.docsOnly
       ? {
           ...checked,
@@ -474,18 +724,44 @@ export class TaskRun extends TaskRunBase {
 
     step('edit', 'running', 'le modèle modifie la copie isolée');
     this.hooks.onPhase?.('edit', 'running', 'modification dans la copie isolée');
-    const tools = this.modelTools(toolView(this.manager, TASK_MODEL_TOOLS), signal);
-    const edit = await code.runTools({
-      tools,
-      system: editSystemPrompt(reviewed, this.profile),
-      prompt: editPrompt(state.request),
-      maxRounds: 24,
-      signal,
-      requestConfirmation: (request) => this.decide(request, signal),
-      beforeRound: pause,
-    });
-    if (edit.stoppedBy === 'error')
+    const tools = this.coached(
+      this.modelTools(
+        toolView(this.manager, this.profile.editHints ? PROJECT_MODEL_TOOLS : TASK_MODEL_TOOLS),
+        signal,
+      ),
+    );
+    const byFile = this.hooks.fileByFile
+      ? await this.writeFiles(code, 'edit', signal, pause)
+      : null;
+    const edit = byFile
+      ? {
+          stoppedBy: 'answer' as const,
+          expired: byFile.expired,
+          error: null,
+          usage: byFile.usage,
+          rounds: byFile.written.length,
+        }
+      : await this.limitedRun(
+          code,
+          {
+            tools,
+            system: editSystemPrompt(reviewed, this.profile),
+            prompt: editPrompt(state.request),
+            maxRounds: 24,
+            requestConfirmation: (request) => this.decide(request, signal),
+            beforeRound: pause,
+            nudge: this.writeNudge('edit'),
+          },
+          STEP_LIMITS.edit,
+          signal,
+        );
+    if (signal.aborted) throw new Error('Annulé.');
+    if (edit.stoppedBy === 'error' && !edit.expired)
       throw new TaskStopped(`Le modèle de code a échoué : ${edit.error}`);
+    if (edit.expired)
+      this.host.log(
+        `Modification : délai atteint (${limitText(STEP_LIMITS.edit)}), on teste ce qui est écrit.`,
+      );
     await this.checkpoint('Modification (plan validé)', signal);
     if (state.diff.length === 0) {
       step('edit', 'failed', 'aucune modification');
@@ -504,6 +780,7 @@ export class TaskRun extends TaskRunBase {
       await this.testRun('Après modification', 'test', step, signal, pause),
       signal,
     );
+    let previous = failureSignature(run.newFailures);
     while (!run.ok && state.attempts < state.maxAttempts) {
       const n = (state.attempts += 1);
       addStep(`fix-${n}`, `Correction ${n}/${state.maxAttempts} : analyse des erreurs`, 'report');
@@ -534,16 +811,41 @@ export class TaskRun extends TaskRunBase {
         }
       }
       this.hooks.onPhase?.('fix', 'running', `correction ${n} sur ${state.maxAttempts}`);
-      const fix = await code.runTools({
-        tools,
-        system: fixSystemPrompt(reviewed, n, state.maxAttempts, this.profile),
-        prompt: `${fixPrompt(run.newFailures, excerpts)}${diagnosis ? `\n\nDiagnostic du débogueur :\n${diagnosis}` : ''}`,
-        maxRounds: 16,
-        signal,
-        requestConfirmation: (request) => this.decide(request, signal),
-        beforeRound: pause,
-      });
-      if (fix.stoppedBy === 'error') {
+      const fixByFile = this.hooks.fileByFile
+        ? await this.writeFiles(code, 'fix', signal, pause, {
+            failures: run.newFailures,
+            excerpts,
+            diagnosis,
+          })
+        : null;
+      const fix = fixByFile
+        ? {
+            stoppedBy: 'answer' as const,
+            expired: fixByFile.expired,
+            error: null,
+            usage: fixByFile.usage,
+            rounds: fixByFile.written.length,
+            calls: fixByFile.written.map((path) => ({
+              name: 'dev_write_file',
+              arguments: { path },
+            })),
+          }
+        : await this.limitedRun(
+            code,
+            {
+              tools,
+              system: fixSystemPrompt(reviewed, n, state.maxAttempts, this.profile),
+              prompt: `${fixPrompt(run.newFailures, excerpts)}${diagnosis ? `\n\nDiagnostic du débogueur :\n${diagnosis}` : ''}`,
+              maxRounds: 16,
+              requestConfirmation: (request) => this.decide(request, signal),
+              beforeRound: pause,
+              nudge: this.writeNudge('fix'),
+            },
+            STEP_LIMITS.fix,
+            signal,
+          );
+      if (signal.aborted) throw new Error('Annulé.');
+      if (fix.stoppedBy === 'error' && !fix.expired) {
         this.hooks.onPhase?.('fix', 'failed', fix.error ?? 'erreur du modèle');
         throw new TaskStopped(`Le modèle de code a échoué : ${fix.error}`);
       }
@@ -563,6 +865,18 @@ export class TaskRun extends TaskRunBase {
         await this.testRun(`Correction ${n}`, `retest-${n}`, step, signal, pause),
         signal,
       );
+      const current = failureSignature(run.newFailures);
+      if (!run.ok && current === previous && n < state.maxAttempts) {
+        state.repeatedFailure = {
+          attempt: n,
+          failures: run.newFailures.slice(0, 20),
+          unused: state.maxAttempts - n,
+        };
+        this.hooks.onPhase?.('fix', 'failed', 'même échec qu’avant la correction : arrêt');
+        const reason = `Arrêt net : la correction ${n} reproduit exactement le même échec que la série précédente (${run.newFailures.length} échec(s) identique(s) : ${run.newFailures.slice(0, 2).join(' ; ')}). ${state.repeatedFailure.unused ? `Les ${state.repeatedFailure.unused} correction(s) restante(s) ne sont pas tentées : le modèle tourne en rond.` : 'Le modèle tourne en rond.'}`;
+        throw new TaskStopped(this.finish(step, 'failed', reason));
+      }
+      previous = current;
     }
     const message = this.finish(step, run.ok ? 'success' : 'failed');
     if (!run.ok) throw new TaskStopped(message);

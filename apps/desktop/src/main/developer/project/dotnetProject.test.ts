@@ -3,11 +3,18 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { EDIT_MARKER, FACTORY_MARKER, GOAL_MARKER, PLAN_MARKER, REVIEW_MARKER } from '@jarvis/core';
+import {
+  EDIT_MARKER,
+  FACTORY_MARKER,
+  GOAL_MARKER,
+  PLAN_MARKER,
+  REVIEW_MARKER,
+  WRITE_MARKER,
+} from '@jarvis/core';
 import { createHarness, fakeOutcome } from '../controllerHarness.testkit.js';
 import { FakeOllama, type ChatBody, type Reply } from '../models/fakeOllama.testkit.js';
 import type { RunOutcome, RunSpec } from '../runner.js';
-import { createFixtureRepo } from '../task/taskWorkflow.testkit.js';
+import { codeBlock, createFixtureRepo, writeRequest } from '../task/taskWorkflow.testkit.js';
 
 const base = mkdtempSync(join(tmpdir(), 'jarvis-dotnet-'));
 const jarvis = join(base, 'Jarvis');
@@ -29,9 +36,15 @@ public sealed class HostsBlocker(string hostsPath)
 }
 `;
 
+const TEST_CS =
+  'namespace BloqueurDeSites.Tests;\npublic class HostsBlockerTests { [Fact] public void BloqueDansUnFauxFichier() { var p = Path.GetTempFileName(); new BloqueurDeSites.Core.HostsBlocker(p).Block("x.com"); Assert.Contains("x.com", File.ReadAllText(p)); } }\n';
+
 function script(body: ChatBody): Reply {
   const text = system(body);
   const done = body.messages.filter((m) => m.role === 'tool').length;
+  const write = text.includes(WRITE_MARKER) ? writeRequest(body) : null;
+  if (write?.path === 'src/BloqueurDeSites.Core/HostsBlocker.cs') return codeBlock(BLOCKER);
+  if (write?.path === 'tests/BloqueurDeSites.Tests/HostsBlockerTests.cs') return codeBlock(TEST_CS);
   if (text.includes(GOAL_MARKER))
     return {
       content: JSON.stringify({

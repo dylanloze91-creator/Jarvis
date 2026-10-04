@@ -1,5 +1,11 @@
 import { CheckCircle2, Gauge, MinusCircle, XCircle } from 'lucide-react';
-import { ROLE_LABELS, SPECIALIST_ROLES, type RealBenchResult } from '@jarvis/core';
+import {
+  ROLE_LABELS,
+  SPECIALIST_ROLES,
+  coderVerdict,
+  modelCapability,
+  type RealBenchResult,
+} from '@jarvis/core';
 import { Button } from '@/components/ui/button';
 import type { DeveloperState } from '../../../../../shared/developerIpc';
 import { dateTime, tokValue } from './format';
@@ -93,6 +99,20 @@ export function RealBenchSection({
                   ))}
                 </tr>
               ))}
+              <tr className="border-t border-white/10 text-slate-200" data-coder-verdict>
+                <td className="py-1 pr-3">Verdict Codeur</td>
+                {benches.map((bench) => {
+                  const capability = modelCapability(bench.model, bench);
+                  return (
+                    <td
+                      key={bench.model}
+                      className={`py-1 pr-3 ${capability.level === 0 ? 'text-rose-300' : 'text-emerald-300'}`}
+                    >
+                      {coderVerdict(capability)}
+                    </td>
+                  );
+                })}
+              </tr>
               <tr className="border-t border-white/10 text-slate-400">
                 <td className="py-1 pr-3">Écriture</td>
                 {benches.map((bench) => (

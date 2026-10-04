@@ -147,3 +147,23 @@ export function taskScript(options: ScriptOptions = {}) {
     return { content: 'Je ne sais pas.' };
   };
 }
+
+/**
+ * Réponse d'un modèle scripté à l'écriture fichier par fichier (5.0.1) : le
+ * fichier demandé et son contenu actuel, lus dans la consigne.
+ */
+export function writeRequest(body: ChatBody): { path: string; current: string | null } | null {
+  const user = [...body.messages].reverse().find((m) => m.role === 'user')?.content ?? '';
+  const path = /Écris maintenant le contenu complet de (\S+?)(, corrigé)?, dans un seul bloc/.exec(
+    user,
+  )?.[1];
+  if (!path) return null;
+  const current = new RegExp(
+    `Contenu actuel de ${path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} :\\n\`\`\`[^\\n]*\\n([\\s\\S]*?)\\n\`\`\``,
+  ).exec(user)?.[1];
+  return { path, current: current ?? null };
+}
+
+export function codeBlock(content: string): Reply {
+  return { content: `\`\`\`ts\n${content}\n\`\`\`` };
+}

@@ -14,6 +14,7 @@ import {
   type ProviderRegistry,
   type ReviewedPlan,
   type ScanFinding,
+  type TaskPlan,
   type ToolCallOutcome,
   type ToolManager,
 } from '@jarvis/core';
@@ -41,6 +42,13 @@ export interface TaskHooks {
   planContext?: string;
   /** Mission de documentation : un fichier non Markdown du plan n'est pas couvert par la validation. */
   docsOnly?: boolean;
+  /** Plan de secours (projet neuf, 5.0.1) si le CODER ne rend pas de plan valide ; validé comme un autre. */
+  fallbackPlan?: TaskPlan;
+  /**
+   * Projet né d'un gabarit (5.0.1) : modification et corrections fichier par
+   * fichier (contenu complet rendu par le modèle), avec ces fichiers en référence.
+   */
+  fileByFile?: { references: readonly string[]; guide?: string };
   /** REVIEWER, une fois les tests verts : des points bloquants comptent comme des échecs à corriger. */
   review?: (
     diff: string,
@@ -89,7 +97,12 @@ export interface TaskDeps {
   graceMs?: number;
 }
 
-const FILE_TOOLS = new Set(['dev_create_file', 'dev_edit_file', 'dev_delete_file']);
+const FILE_TOOLS = new Set([
+  'dev_create_file',
+  'dev_edit_file',
+  'dev_write_file',
+  'dev_delete_file',
+]);
 
 /** Une exécution de tâche : état affiché, copie isolée, plan validé et règle de confirmation. */
 export class TaskRunBase {
@@ -113,6 +126,7 @@ export class TaskRunBase {
     switch (name) {
       case 'dev_create_file':
       case 'dev_edit_file':
+      case 'dev_write_file':
         return { kind: 'write', path };
       case 'dev_delete_file':
         return { kind: 'delete', path };

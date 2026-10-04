@@ -39,15 +39,32 @@ import {
   skillTaskContext,
   verifyProposals,
   SKILL_TEMPLATE_ID,
+  STEP_LIMITS,
+  SpecialistError,
+  TEMPLATE_GUIDES,
+  TEMPLATE_REFERENCES,
+  fallbackFactory,
+  fallbackGoal,
+  fallbackSkill,
+  steerFactory,
+  templatePlan,
+  type FactoryOutput,
+  type GoalOutput,
   type ResearcherOutput,
   type SkillDesign,
   goalPrompt,
   goalSchema,
   goalSystem,
+  NEW_PROJECT_CONTEXT,
   memoryBlock,
   patchStep,
   randomId,
   resolveRoleModel,
+  GATED_MISSION_KINDS,
+  assessMission,
+  modelCapability,
+  type MissionGate,
+  type RealBenchResult,
   reviewPrompt,
   reviewSystem,
   reviewerSchema,
@@ -85,6 +102,7 @@ import type {
 import { repoReader, runAsk } from '../ask/askFlow.js';
 import { gatherCodeFiles } from '../improve/measure.js';
 import { readGpuMemory } from '../models/hardwareProbe.js';
+import { patientFetch } from '../models/patientFetch.js';
 import type { OllamaApi } from '../models/ollamaApi.js';
 import type { Runner } from '../runner.js';
 import type { ResolvedProject } from '../project/projectsWorkflow.js';
@@ -139,9 +157,15 @@ export interface MissionDeps {
   store: MissionStore;
   projects: MissionProjects;
   now?(): number;
+  /** Résultats du banc réel (5.0.1) : le score Codeur règle le contrôle de difficulté. */
+  realBenches?(): readonly RealBenchResult[];
 }
 
 export const MISSION_PROJECT_ID = JARVIS_PROJECT_PROFILE.id;
+
+function createsProject(kind: MissionKind): boolean {
+  return kind === 'new-project' || kind === 'skill';
+}
 
 function speed(usage: ChatUsage): number | null {
   return usage.outputMs > 0
@@ -167,6 +191,8 @@ const PHASE_LABELS: Record<TaskPhase, string> = {
  */
 export class MissionWorkflow {
   private current: MissionState | null = null;
+  /** Dernier contrôle de difficulté (5.0.1). */
+  private gate: MissionGate | null = null;
   private history: MissionSummary[] | null = null;
   private historyProject: string = MISSION_PROJECT_ID;
   /** Projet de la mission en cours (null pour « Nouveau projet » avant sa création). */
@@ -186,8 +212,13 @@ export class MissionWorkflow {
     return this.deps.now ? this.deps.now() : Date.now();
   }
 
-  view(): Pick<DeveloperState, 'mission' | 'missions' | 'missionsProject'> {
-    return { mission: this.current, missions: this.history, missionsProject: this.historyProject };
+  view(): Pick<DeveloperState, 'mission' | 'missions' | 'missionsProject' | 'missionGate'> {
+    return {
+      mission: this.current,
+      missions: this.history,
+      missionsProject: this.historyProject,
+      missionGate: this.gate && !this.gate.ok ? this.gate : null,
+    };
   }
 
   private get profile(): ProjectProfile {
@@ -253,6 +284,7 @@ export class MissionWorkflow {
       model,
       baseUrl: this.deps.ollama().baseUrl,
       options: this.deps.modelOptions(model),
+      fetch: patientFetch,
     });
   }
 
@@ -364,6 +396,20 @@ export class MissionWorkflow {
       return this.host.notice(
         `Modèle absent d’Ollama : ${absent.join(', ')}. Rien n’est téléchargé.`,
       );
+    const coder = resolveRoleModel('CODER', this.developer());
+    this.gate =
+      coder && GATED_MISSION_KINDS.includes(kind)
+        ? assessMission(
+            kind,
+            text,
+            modelCapability(
+              coder,
+              this.deps.realBenches?.().find((b) => b.model === coder),
+              status.models.find((m) => m.name === coder)?.parameterSize,
+            ),
+          )
+        : null;
+    if (this.gate && !this.gate.ok) return this.host.notice(this.gate.message);
     const creates = kind === 'new-project' || kind === 'skill';
     let project: ResolvedProject | null = null;
     if (!creates) {
@@ -382,6 +428,7 @@ export class MissionWorkflow {
       now: this.now,
     });
     if (link) this.current.fromProposal = link;
+    if (this.gate) this.current.gate = this.gate;
     this.counters.clear();
     this.open.clear();
     await this.persist();
@@ -450,6 +497,7 @@ export class MissionWorkflow {
               read: repoReader(root),
               profile: this.profile,
               signal,
+              limit: STEP_LIMITS.answer,
               beforeRound: () => this.host.pause(model, signal),
             },
             mission.request,
@@ -489,24 +537,41 @@ export class MissionWorkflow {
       async (step, signal) => {
         step('goal', 'running');
         try {
-          const run = await this.specialist(
-            'goal',
-            'REASONER',
-            {
-              system: goalSystem(this.profile, mission.skipQuestions ? 0 : MAX_GOAL_QUESTIONS),
-              prompt: this.memory
-                ? `${goalPrompt(mission.request)}\n\nMémoire du projet :\n${this.memory}`
-                : goalPrompt(mission.request),
-              schema: goalSchema,
-            },
-            signal,
-            root,
-          );
+          let output: GoalOutput;
+          try {
+            const run = await this.specialist(
+              'goal',
+              'REASONER',
+              {
+                system: goalSystem(
+                  this.project || !createsProject(mission.kind)
+                    ? this.profile
+                    : NEW_PROJECT_CONTEXT,
+                  mission.skipQuestions ? 0 : MAX_GOAL_QUESTIONS,
+                ),
+                prompt: this.memory
+                  ? `${goalPrompt(mission.request)}\n\nMémoire du projet :\n${this.memory}`
+                  : goalPrompt(mission.request),
+                schema: goalSchema,
+                limit: STEP_LIMITS.goal,
+              },
+              signal,
+              root,
+            );
+            output = run.output;
+          } catch (error) {
+            if (!(error instanceof SpecialistError) || signal.aborted) throw error;
+            output = fallbackGoal(mission.request, mission.kind);
+            this.patch('goal', {
+              status: 'done',
+              output,
+              detail: `objectif de secours, tiré de ta demande : ${error.message}`,
+              error: undefined,
+            });
+          }
           const goal = {
-            ...run.output,
-            questions: mission.skipQuestions
-              ? []
-              : run.output.questions.slice(0, MAX_GOAL_QUESTIONS),
+            ...output,
+            questions: mission.skipQuestions ? [] : output.questions.slice(0, MAX_GOAL_QUESTIONS),
           };
           mission.goal = goal;
           if (goal.questions.length) {
@@ -562,19 +627,36 @@ export class MissionWorkflow {
               : role === 'DEBUGGER'
                 ? debuggerSchema
                 : documentationSchema;
-          const run = await this.specialist<ArchitectOutput | DebuggerOutput | DocumentationOutput>(
-            'design',
-            role,
-            {
-              system: designSystem(role, this.profile),
-              prompt: designPrompt(this.brief()),
-              schema: schema as never,
-              tools: this.host.readTools(root),
-              maxRounds: 10,
-            },
-            signal,
-            root,
-          );
+          let run: SpecialistRun<ArchitectOutput | DebuggerOutput | DocumentationOutput>;
+          try {
+            run = await this.specialist<ArchitectOutput | DebuggerOutput | DocumentationOutput>(
+              'design',
+              role,
+              {
+                system: designSystem(role, this.profile),
+                prompt: designPrompt(this.brief()),
+                schema: schema as never,
+                tools: this.host.readTools(root),
+                maxRounds: 10,
+                limit: STEP_LIMITS.design,
+              },
+              signal,
+              root,
+            );
+          } catch (error) {
+            if (!(error instanceof SpecialistError) || signal.aborted) throw error;
+            context = [
+              'Contexte de la mission (la conception n’a pas abouti : pars de la demande) :',
+              briefBlock(this.brief()),
+            ].join('\n');
+            this.patch('design', {
+              status: 'skipped',
+              detail: `conception non rendue (${error.message}) : le plan part de la demande`,
+              error: undefined,
+            });
+            step('design', 'done', 'sans conception');
+            return 'Conception non rendue : le plan de modification part de la demande.';
+          }
           context = designContext(role, run.output, this.brief());
           step('design', 'done');
           return 'Conception prête : le plan de modification suit.';
@@ -641,31 +723,57 @@ export class MissionWorkflow {
           };
           if (skill) {
             step('research', 'running');
-            const research = await this.specialist(
-              'research',
-              'RESEARCHER',
-              {
-                system: researchSystem(),
-                prompt: briefBlock(this.brief()),
-                schema: researcherSchema,
-              },
-              signal,
-              homedir(),
-            );
-            result.research = research.output;
-            step('research', 'done', `${research.output.findings.length} piste(s), à vérifier`);
+            try {
+              const research = await this.specialist(
+                'research',
+                'RESEARCHER',
+                {
+                  system: researchSystem(),
+                  prompt: briefBlock(this.brief()),
+                  schema: researcherSchema,
+                  limit: STEP_LIMITS.research,
+                },
+                signal,
+                homedir(),
+              );
+              result.research = research.output;
+              step('research', 'done', `${research.output.findings.length} piste(s), à vérifier`);
+            } catch (error) {
+              if (!(error instanceof SpecialistError) || signal.aborted) throw error;
+              this.patch('research', {
+                status: 'skipped',
+                detail: `recherche non rendue : ${error.message}`,
+                error: undefined,
+              });
+              step('research', 'done', 'sans recherche');
+            }
             step('design', 'running');
-            const design = await this.specialist(
-              'design',
-              'ARCHITECT',
-              {
-                system: skillSystem(),
-                prompt: skillPrompt(this.brief(), result.research),
-                schema: skillSchema,
-              },
-              signal,
-              homedir(),
-            );
+            let designed: SkillDesign;
+            try {
+              const design = await this.specialist(
+                'design',
+                'ARCHITECT',
+                {
+                  system: skillSystem(),
+                  prompt: skillPrompt(this.brief(), result.research),
+                  schema: skillSchema,
+                  limit: STEP_LIMITS.skill,
+                },
+                signal,
+                homedir(),
+              );
+              designed = design.output;
+            } catch (error) {
+              if (!(error instanceof SpecialistError) || signal.aborted) throw error;
+              designed = fallbackSkill(mission.request);
+              this.patch('design', {
+                status: 'done',
+                output: designed,
+                detail: `conception de secours (un outil tiré de ta demande) : ${error.message}`,
+                error: undefined,
+              });
+            }
+            const design = { output: designed };
             result.design = design.output;
             step(
               'design',
@@ -683,23 +791,45 @@ export class MissionWorkflow {
             };
           } else {
             step('design', 'running');
-            const run = await this.specialist(
-              'design',
-              'ARCHITECT',
-              {
-                system: factorySystem(),
-                prompt: factoryPrompt(this.brief()),
-                schema: factorySchema,
-              },
-              signal,
-              homedir(),
-            );
+            let chosen: FactoryOutput;
+            let note = '';
+            try {
+              const run = await this.specialist(
+                'design',
+                'ARCHITECT',
+                {
+                  system: factorySystem(),
+                  prompt: factoryPrompt(this.brief()),
+                  schema: factorySchema,
+                  limit: STEP_LIMITS.factory,
+                },
+                signal,
+                homedir(),
+              );
+              chosen = steerFactory(mission.request, run.output);
+              if (chosen.template !== run.output.template) {
+                note = ` (règle fixe : un jeu part du gabarit jeu, au lieu de « ${PROJECT_TEMPLATES[run.output.template].label} »)`;
+                this.patch('design', {
+                  output: chosen,
+                  detail: `${PROJECT_TEMPLATES[chosen.template].label} · ${chosen.name}${note}`,
+                });
+              }
+            } catch (error) {
+              if (!(error instanceof SpecialistError) || signal.aborted) throw error;
+              chosen = fallbackFactory(mission.request);
+              this.patch('design', {
+                status: 'done',
+                output: chosen,
+                detail: `choix de secours, par règles fixes : ${PROJECT_TEMPLATES[chosen.template].label} · ${chosen.name} (${error.message})`,
+                error: undefined,
+              });
+            }
             step(
               'design',
               'done',
-              `${PROJECT_TEMPLATES[run.output.template].label} · ${run.output.name}`,
+              `${PROJECT_TEMPLATES[chosen.template].label} · ${chosen.name}${note}`,
             );
-            input = run.output;
+            input = chosen;
           }
           result.template = input.template;
           this.patch('create', { status: 'waiting', detail: 'ta confirmation' });
@@ -746,11 +876,25 @@ export class MissionWorkflow {
       'Contexte de la mission (préparé par les spécialistes, à respecter) :',
       briefBlock(this.brief()),
       `Projet neuf, créé depuis le gabarit « ${template ? PROJECT_TEMPLATES[template].label : '?'} » : lis ses fichiers avant de planifier, garde sa structure, ajoute des tests.`,
+      ...(template && TEMPLATE_GUIDES[template] ? [TEMPLATE_GUIDES[template]] : []),
       ...(design ? [skillTaskContext(design, research)] : []),
     ].join('\n');
+    const fallbackPlan = template ? templatePlan(template, mission.request) : null;
     await this.host.startTask(mission.request, {
       model: coder,
-      hooks: this.loopHooks(project.root, coder, context),
+      hooks: {
+        ...this.loopHooks(project.root, coder, context),
+        ...(fallbackPlan ? { fallbackPlan } : {}),
+        fileByFile: {
+          references: template ? (TEMPLATE_REFERENCES[template] ?? []) : [],
+          guide: [
+            template ? TEMPLATE_GUIDES[template] : undefined,
+            design ? skillTaskContext(design, research) : undefined,
+          ]
+            .filter(Boolean)
+            .join('\n'),
+        },
+      },
       project: { id: project.id, root: project.root, profile: project.profile },
     });
     await this.finishFromTask();
@@ -793,6 +937,7 @@ export class MissionWorkflow {
               schema: improveSchema,
               tools: this.host.readTools(root),
               maxRounds: 10,
+              limit: STEP_LIMITS.improve,
             },
             signal,
             root,
@@ -911,10 +1056,21 @@ export class MissionWorkflow {
             system: reviewSystem(this.profile),
             prompt: reviewPrompt(diff, brief),
             schema: reviewerSchema,
+            limit: STEP_LIMITS.review,
           },
           signal,
           root,
-        ).finally(() => (model !== coder ? this.switchModel(coder) : undefined));
+        )
+          .catch((error: unknown) => {
+            if (!(error instanceof SpecialistError) || signal.aborted) throw error;
+            return error;
+          })
+          .finally(() => (model !== coder ? this.switchModel(coder) : undefined));
+        if (run instanceof SpecialistError) {
+          const summary = `revue non faite (${run.message}) : non bloquante, relis le diff toi-même`;
+          this.patch(id, { status: 'skipped', detail: summary, error: undefined });
+          return { blocking: [], model, summary };
+        }
         const blocking = blockingIssues(run.output);
         return {
           blocking,
@@ -934,6 +1090,7 @@ export class MissionWorkflow {
             schema: debuggerSchema,
             tools,
             maxRounds: 6,
+            limit: STEP_LIMITS.diagnose,
           },
           signal,
           root,

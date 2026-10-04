@@ -236,7 +236,7 @@ describe('tâche de code : plan → validation → modification → tests → co
     expect(success.ran.some((r) => /\b(push|publish)\b/.test(r.display))).toBe(false);
   });
 
-  it('un modèle qui ne corrige pas : trois essais, cinq séries de tests au plus, verdict « échec » honnête', async () => {
+  it('un modèle qui ne corrige pas : arrêt net dès que la correction reproduit le même échec, verdict « échec » honnête', async () => {
     fake.scripts.set(MODEL, taskScript({ neverFix: true }));
     const h = setup(expected);
     const state = await h.instance.startTask(
@@ -244,12 +244,17 @@ describe('tâche de code : plan → validation → modification → tests → co
     );
     const task = state.codeTask!;
     expect(state.task?.outcome).toBe('failed');
-    expect(state.task?.message).toMatch(/échouent encore après 3 correction/);
+    expect(state.task?.message).toMatch(
+      /^Arrêt net : la correction 1 reproduit exactement le même échec/,
+    );
+    expect(state.task?.message).toMatch(/Les 2 correction\(s\) restante\(s\) ne sont pas tentées/);
     expect(task.status).toBe('failed');
     expect(task.report?.verdict).toBe('failed');
-    expect(task.attempts).toBe(3);
-    expect(task.testSeriesUsed).toBe(5);
-    expect(h.ran.filter((r) => r.display === 'npm run typecheck')).toHaveLength(5);
+    expect(task.attempts).toBe(1);
+    expect(task.repeatedFailure).toMatchObject({ attempt: 1, unused: 2 });
+    expect(task.testSeriesUsed).toBe(3);
+    expect(h.ran.filter((r) => r.display === 'npm run typecheck')).toHaveLength(3);
+    expect(task.report?.markdown).toContain('Arrêt net');
     expect(task.report?.markdown).toContain('Échecs restants');
     const cleaned = await h.instance.discardTask();
     expect(cleaned.codeTask?.closed).toBe('discarded');

@@ -1,6 +1,7 @@
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import {
+  BENCH_LIMITS,
   BENCH_SYSTEM,
   CodeModelFormatError,
   EDIT_FIXTURE_FILES,
@@ -11,6 +12,7 @@ import {
   addUsage,
   judgeAsk,
   judgeReview,
+  limitText,
   parseNvidiaSmi,
   parsePlanReply,
   planPrompt,
@@ -20,11 +22,13 @@ import {
   singleHunkDiff,
   tokensPerSecond,
   toolView,
+  withDeadline,
   type ChatUsage,
   type CodeAIProvider,
   type RealBenchResult,
   type RealBenchTask,
   type RealBenchTaskResult,
+  type StepLimit,
   type ToolManager,
 } from '@jarvis/core';
 import { runAsk, repoReader } from '../ask/askFlow.js';
@@ -99,6 +103,7 @@ async function runTask(
   deps: RealBenchDeps,
   task: RealBenchTask,
   read: (path: string) => Promise<string | null>,
+  limit: StepLimit,
 ): Promise<Outcome> {
   const truth = 'truth' in task ? task.truth : null;
   if (truth) {
@@ -116,6 +121,7 @@ async function runTask(
           read,
           profile: JARVIS_PROJECT_PROFILE,
           signal: deps.signal,
+          limit,
           beforeRound: deps.pause,
           maxRounds: 8,
         },
@@ -129,6 +135,7 @@ async function runTask(
         system: planSystemPrompt(),
         prompt: planPrompt(task.request),
         maxRounds: 10,
+        maxTokens: limit.maxTokens,
         signal: deps.signal,
         beforeRound: deps.pause,
       });
@@ -166,6 +173,8 @@ async function runTask(
         const report = await deps.provider.reviewCode({
           diff: singleHunkDiff(task.source, before, after),
           rules: REVIEW_RULES,
+          maxTokens: limit.maxTokens,
+          ...(deps.signal ? { signal: deps.signal } : {}),
         });
         return judgeReview(task, report);
       } catch (error) {
@@ -194,6 +203,7 @@ async function runTask(
         prompt: task.prompt(before?.output || '(sortie indisponible)'),
         tools: createBenchTools(dir),
         maxRounds: 8,
+        maxTokens: limit.maxTokens,
         signal: deps.signal,
         beforeRound: deps.pause,
       });
@@ -235,7 +245,7 @@ async function runTask(
       const { text, usage } = await deps.provider.complete({
         system: 'Tu es un assistant de développement. Réponds en français, sans détour.',
         prompt,
-        maxTokens: 700,
+        maxTokens: limit.maxTokens,
         signal: deps.signal,
       });
       const ok = task.accept(text);
@@ -267,15 +277,27 @@ export async function runRealBenchmark(deps: RealBenchDeps): Promise<RealBenchRe
     if (deps.signal?.aborted) break;
     deps.onTask?.(task, 'running');
     const started = now();
+    const limit = BENCH_LIMITS[task.kind];
+    const deadline = withDeadline(deps.signal, limit.timeoutMs);
+    const late = (usage?: ChatUsage): Outcome => ({
+      ok: false,
+      detail: `délai dépassé (${limitText(limit)})`,
+      ...(usage ? { usage } : {}),
+    });
     let outcome: Outcome;
     try {
-      outcome = await runTask(deps, task, read);
+      outcome = await runTask({ ...deps, signal: deadline.signal }, task, read, limit);
+      if (deadline.expired() && outcome.ok !== true) outcome = late(outcome.usage);
     } catch (error) {
       if (deps.signal?.aborted) throw error;
-      outcome = {
-        ok: false,
-        detail: `erreur : ${error instanceof Error ? error.message : String(error)}`,
-      };
+      outcome = deadline.expired()
+        ? late()
+        : {
+            ok: false,
+            detail: `erreur : ${error instanceof Error ? error.message : String(error)}`,
+          };
+    } finally {
+      deadline.dispose();
     }
     if (outcome.usage) {
       usage = addUsage(usage, outcome.usage);

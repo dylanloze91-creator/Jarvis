@@ -19,6 +19,7 @@ import {
   type ToolCallOutcome,
   type ToolManager,
 } from '@jarvis/core';
+import { patientFetch } from './patientFetch.js';
 import type {
   CodeModelState,
   DevStepStatus,
@@ -366,6 +367,7 @@ export class CodeModelWorkflow {
           model: modelId,
           baseUrl: this.deps.ollama().baseUrl,
           options: this.optionsFor(modelId),
+          fetch: patientFetch,
         });
         const result = await runRealBenchmark({
           provider,

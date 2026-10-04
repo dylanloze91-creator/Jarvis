@@ -64,6 +64,15 @@ export async function previewWrite(
     }));
     return [file(target.relative, 'deleted', removed, `@@ -1,${removed.length} +0,0 @@`)];
   }
+  if (tool === 'dev_write_file') {
+    const old = lines(current.replace(/\r\n/g, '\n'));
+    const fresh = lines(String(args.content ?? '').replace(/\r\n/g, '\n'));
+    const body: DiffLine[] = [
+      ...old.map((text, i): DiffLine => ({ kind: 'del', text, oldLine: i + 1, newLine: null })),
+      ...fresh.map((text, i): DiffLine => ({ kind: 'add', text, oldLine: null, newLine: i + 1 })),
+    ];
+    return [file(target.relative, 'modified', body, `@@ -1,${old.length} +1,${fresh.length} @@`)];
+  }
   if (tool !== 'dev_edit_file') return [];
   const search = String(args.search ?? '');
   const replace = String(args.replace ?? '');

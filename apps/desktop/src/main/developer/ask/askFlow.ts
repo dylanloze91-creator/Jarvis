@@ -7,7 +7,12 @@ import {
   askSystemPrompt,
   checkAnswer,
   parseAskReply,
+  retryLimit,
+  limitText,
+  STEP_LIMITS,
   toolView,
+  withDeadline,
+  type StepLimit,
   type AskAnswer,
   type ChatUsage,
   type CheckedAnswer,
@@ -44,6 +49,28 @@ export interface AskDeps {
   signal?: AbortSignal;
   beforeRound?: (round: number) => Promise<void>;
   maxRounds?: number;
+  /** Plafond de jetons par réponse et durée (5.0.1) ; défaut : `STEP_LIMITS.answer`. */
+  limit?: StepLimit;
+}
+
+async function limited(
+  deps: AskDeps,
+  input: Omit<Parameters<AskDeps['code']['runTools']>[0], 'signal' | 'maxTokens'>,
+  limit: StepLimit,
+) {
+  const deadline = withDeadline(deps.signal, limit.timeoutMs);
+  try {
+    const result = await deps.code.runTools({
+      ...input,
+      maxTokens: limit.maxTokens,
+      signal: deadline.signal,
+    });
+    if (result.stoppedBy === 'error' && deadline.expired())
+      throw new Error(`Le modèle de code n’a pas fini à temps (${limitText(limit)}).`);
+    return result;
+  } finally {
+    deadline.dispose();
+  }
 }
 
 export interface AskResult {
@@ -58,14 +85,18 @@ export interface AskResult {
 export async function runAsk(deps: AskDeps, question: string): Promise<AskResult> {
   const tools = toolView(deps.tools, ASK_TOOLS);
   const system = askSystemPrompt(deps.profile);
-  const first = await deps.code.runTools({
-    tools,
-    system,
-    prompt: askPrompt(question),
-    maxRounds: deps.maxRounds ?? 12,
-    signal: deps.signal,
-    beforeRound: deps.beforeRound,
-  });
+  const limit = deps.limit ?? STEP_LIMITS.answer;
+  const first = await limited(
+    deps,
+    {
+      tools,
+      system,
+      prompt: askPrompt(question),
+      maxRounds: deps.maxRounds ?? 12,
+      beforeRound: deps.beforeRound,
+    },
+    limit,
+  );
   if (first.stoppedBy === 'error')
     throw new Error(`Le modèle de code n’a pas répondu : ${first.error}`);
   let answer: AskAnswer;
@@ -82,14 +113,17 @@ export async function runAsk(deps: AskDeps, question: string): Promise<AskResult
       .map((c) => `${c.name} ${JSON.stringify(c.arguments)}`)
       .slice(0, 12)
       .join('\n');
-    const retry = await deps.code.runTools({
-      tools: toolView(deps.tools, []),
-      system,
-      prompt: `${askPrompt(question)}\n\nDéjà consulté :\n${read || '—'}\n\nTa réponse précédente n’était pas au bon format (${error.message}). Réponds seulement par le bloc JSON.`,
-      maxRounds: 1,
-      signal: deps.signal,
-      beforeRound: deps.beforeRound,
-    });
+    const retry = await limited(
+      deps,
+      {
+        tools: toolView(deps.tools, []),
+        system,
+        prompt: `${askPrompt(question)}\n\nDéjà consulté :\n${read || '—'}\n\nTa réponse précédente n’était pas au bon format (${error.message}). Réponds seulement par le bloc JSON.`,
+        maxRounds: 1,
+        beforeRound: deps.beforeRound,
+      },
+      retryLimit(limit),
+    );
     if (retry.stoppedBy === 'error')
       throw new Error(`Le modèle de code n’a pas répondu : ${retry.error}`);
     usage = addUsage(usage, retry.usage);

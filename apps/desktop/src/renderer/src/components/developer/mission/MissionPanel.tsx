@@ -16,6 +16,7 @@ import { Button } from '@/components/ui/button';
 import type { DeveloperApi, DeveloperState } from '../../../../../shared/developerIpc';
 import { TaskPanel } from '../task/TaskPanel';
 import { ProposalList } from './ProposalList';
+import { MissionGateCard } from './MissionGateCard';
 import { SpecialistRow } from './SpecialistRow';
 
 type Act = (action: (api: DeveloperApi) => Promise<DeveloperState | void>) => void;
@@ -166,6 +167,23 @@ export function MissionPanel({
           </p>
         </section>
       ) : null}
+      {!active && state.missionGate ? (
+        <MissionGateCard
+          gate={state.missionGate}
+          busy={state.busy}
+          onEdit={setRequest}
+          onLaunch={(text) =>
+            act((api) =>
+              api.startMission(
+                state.missionGate!.kind,
+                text,
+                skipQuestions,
+                creates ? undefined : projectId,
+              ),
+            )
+          }
+        />
+      ) : null}
 
       {mission ? (
         <section className="flex flex-col gap-2" data-mission-status={mission.status}>
@@ -175,6 +193,11 @@ export function MissionPanel({
             </span>
             <span className="text-[11px] text-slate-400">« {mission.request} »</span>
           </header>
+          {mission.gate ? (
+            <p className="text-[11px] text-slate-400" data-mission-difficulty>
+              {mission.gate.message}
+            </p>
+          ) : null}
           {mission.goal ? (
             <p className="text-[11px] text-slate-300">
               Objectif : {mission.goal.goal}

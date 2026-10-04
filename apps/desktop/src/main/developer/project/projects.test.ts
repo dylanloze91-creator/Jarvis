@@ -10,10 +10,16 @@ import {
   GOAL_MARKER,
   PLAN_MARKER,
   REVIEW_MARKER,
+  WRITE_MARKER,
 } from '@jarvis/core';
 import { createHarness, fakeOutcome } from '../controllerHarness.testkit.js';
 import { FakeOllama, type ChatBody, type Reply } from '../models/fakeOllama.testkit.js';
-import { createFixtureRepo, taskScript } from '../task/taskWorkflow.testkit.js';
+import {
+  codeBlock,
+  createFixtureRepo,
+  taskScript,
+  writeRequest,
+} from '../task/taskWorkflow.testkit.js';
 
 const base = mkdtempSync(join(tmpdir(), 'jarvis-projets-'));
 const jarvis = join(base, 'Jarvis');
@@ -58,6 +64,9 @@ function script(body: ChatBody): Reply {
 /** Modèle de code du projet neuf : lit src/main.ts, planifie, le modifie. */
 function factoryScript(body: ChatBody): Reply {
   const text = system(body);
+  const write = text.includes(WRITE_MARKER) ? writeRequest(body) : null;
+  if (write?.path === 'src/main.ts' && write.current)
+    return codeBlock(write.current.replace("name: 'monde'", "name: 'le monde'"));
   const done = body.messages.filter((m) => m.role === 'tool').length;
   if (text.includes(PLAN_MARKER)) {
     if (done === 0) return { call: { name: 'dev_read_file', arguments: { path: 'src/main.ts' } } };

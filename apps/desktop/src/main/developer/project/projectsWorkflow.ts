@@ -8,6 +8,7 @@ import {
   JARVIS_PROJECT_PROFILE,
   PROJECT_TEMPLATES,
   SAFETY_LABELS,
+  TEMPLATE_STRUCTURE,
   classifyCommand,
   createDotnetProfile,
   createNodeProfile,
@@ -302,6 +303,9 @@ export class ProjectsWorkflow {
               name: entry.name,
               description: entry.description,
               scripts: check.scripts,
+              ...(entry.template && TEMPLATE_STRUCTURE[entry.template]
+                ? { structure: TEMPLATE_STRUCTURE[entry.template] }
+                : {}),
             }),
     };
   }

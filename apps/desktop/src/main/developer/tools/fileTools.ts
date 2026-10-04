@@ -136,5 +136,32 @@ export function createFileTools(deps: FileToolDeps): RegisteredTool[] {
           });
         }),
     }),
+    defineTool({
+      name: 'dev_write_file',
+      description:
+        'Réécrit un fichier EXISTANT de la copie isolée en entier : content est le nouveau contenu complet. Pratique pour un petit fichier.',
+      risk: 'confirm',
+      schema: z.object({
+        path: z.string().min(1).max(400),
+        content: z.string().max(MAX_FILE_CHARS),
+      }),
+      summarize: ({ path, content }) => `Réécrire ${path} (${lineCount(content)} lignes).`,
+      describeCommand: ({ path, content }) => `Réécrire ${path} (${lineCount(content)} lignes)`,
+      execute: ({ path, content }) =>
+        guarded(root, async (base) => {
+          const file = await resolveForWrite(base, path);
+          if (!existsSync(file.absolute))
+            return fail('definitive', `${file.relative} n’existe pas : utilise dev_create_file.`);
+          if ((await stat(file.absolute)).isDirectory())
+            return fail('definitive', `${file.relative} est un dossier.`);
+          await writeFile(file.absolute, content, 'utf8');
+          const back = await readFile(file.absolute, 'utf8');
+          if (back !== content)
+            return fail('recoverable', `Relecture de ${file.relative} différente.`);
+          return toolSuccess(`${file.relative} réécrit (${lineCount(content)} lignes) et relu.`, {
+            path: file.relative,
+          });
+        }),
+    }),
   ];
 }

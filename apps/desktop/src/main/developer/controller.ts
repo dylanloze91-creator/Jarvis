@@ -44,6 +44,7 @@ import { createReadTools } from './tools/readTools.js';
 import { samePath } from './task/sandbox.js';
 import { ollamaModelsDir } from './models/hardwareProbe.js';
 import { createOllamaApi, type OllamaApi } from './models/ollamaApi.js';
+import { patientFetch } from './models/patientFetch.js';
 import { CodeModelStore } from './models/store.js';
 import { CodeModelWorkflow, type WorkflowDeps } from './models/workflow.js';
 import { ChatActivity } from './task/chatActivity.js';
@@ -274,6 +275,7 @@ export class DeveloperController {
         store: new MissionStore(() => join(deps.userDataPath(), 'developer', 'projects')),
         projects: this.projects,
         now: deps.now ? () => deps.now!().getTime() : undefined,
+        realBenches: () => this.models.state().realBenches,
       },
     );
   }
@@ -389,6 +391,7 @@ export class DeveloperController {
           model,
           baseUrl: this.ollama().baseUrl,
           options: this.models.optionsFor(model),
+          fetch: patientFetch,
         });
         const result = await runAsk(
           {
