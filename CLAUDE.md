@@ -1,8 +1,8 @@
-# Jarvis 5.0.0 — contexte pour un autre développeur
+# Jarvis 5.0.1 — contexte pour un autre développeur
 
 Ce fichier est à la **racine du code**. Les chemins ci-dessous partent de ce dossier. Ce n’est pas un résumé marketing : c’est l’état réel de cet arbre. La voix a été refaite dans cet arbre (publiée en 0.4.11, section « Voix ») : la transcription restait « Chargement… 100 % » sur l’installateur Windows. La refonte du tableau de bord est dans cet arbre : fenêtre étroite = overlay, fenêtre large = tableau de bord.
 
-**Version confirmée :** `apps/desktop/package.json` → `"version": "5.0.0"` (jalon Jarvis 5.0, décision D1 : jamais de suffixe `-beta`). Le `package.json` racine est aligné sur la même version depuis 0.5.0 (il était resté à `0.3.0`), mais il n’est lu par rien : la version qui compte pour l’exe, l’updater et GitHub est celle de `@jarvis/desktop`. `@jarvis/core` reste à `0.1.0`. La voix corrigée en 0.4.11 (installateur Windows) est inchangée. Le modèle par défaut reste `qwen2.5:3b`. `qwen3.5:4b` est le modèle recommandé documenté ; le repli est réglable (`fallbackModel`, défaut `qwen2.5:3b`).
+**Version confirmée :** `apps/desktop/package.json` → `"version": "5.0.1"` (correctif de Jarvis 5.0, décision D1 : jamais de suffixe `-beta`). Le `package.json` racine est aligné sur la même version depuis 0.5.0 (il était resté à `0.3.0`), mais il n’est lu par rien : la version qui compte pour l’exe, l’updater et GitHub est celle de `@jarvis/desktop`. `@jarvis/core` reste à `0.1.0`. La voix corrigée en 0.4.11 (installateur Windows) est inchangée. Le modèle par défaut reste `qwen2.5:3b`. `qwen3.5:4b` est le modèle recommandé documenté ; le repli est réglable (`fallbackModel`, défaut `qwen2.5:3b`).
 
 Lis ce fichier avant de modifier le code.
 
@@ -48,7 +48,7 @@ Scripts utiles (racine) :
 
 Le script `setup:voice` remplit `apps/desktop/voice-assets/` (runtime ONNX, Whisper, openWakeWord, modèle Vosk français ; non commité, voir `.gitignore`). Premier `dev` / `build` : besoin de réseau.
 
-L’installateur publié est `Jarvis-Setup-5.0.0.exe` (release GitHub `v5.0.0`).
+L’installateur publié est `Jarvis-Setup-5.0.1.exe` (release GitHub `v5.0.1`).
 
 Données utilisateur (Electron `userData`, typiquement `%APPDATA%\Jarvis`) :
 
@@ -82,7 +82,7 @@ Données utilisateur (Electron `userData`, typiquement `%APPDATA%\Jarvis`) :
     src/media/                 intent Spotify
     src/update/                lecture latest.yml GitHub
     src/history/  src/audit/
-  apps/desktop/                Electron (version 5.0.0)
+  apps/desktop/                Electron (version 5.0.1)
     electron-builder.yml       NSIS, extraResources, publish GitHub
     electron.vite.config.ts    aliases onnxruntime-web (wasm, pas JSEP)
     scripts/setup-whisper.mjs
@@ -407,9 +407,24 @@ Carte du moteur (tout est dans `packages/core/src/developer/` et `apps/desktop/s
 
 Reporté volontairement (optimisation, après le banc réel sur le PC de l'utilisateur) : réglage fin de `num_batch`, flash attention, cache compressé, variables d'Ollama, pondérations et passages multiples du banc. Python (D6) reporté. Décisions encore ouvertes : D11 (recherche web pendant une mission), D12 (candidats à télécharger pour le banc), D13 (variables du serveur Ollama). Hors de cette phase : Block (SiteBlock) et AI Editor ; entrée des missions depuis le chat (D7) ; compétences dans le chat (D15).
 
+## 5.0.1 — petits modèles : gabarits qui marchent, difficulté mesurée, arrêts nets
+
+Correctif du test 5.0.0 (mission « Nouveau projet » Pong bloquée sur le Raisonnement avec `qwen2.5:3b` sur processeur). Principe : **le gabarit fait le programme, le modèle fait un changement ciblé**, et Jarvis refuse d'avance ce que le modèle Codeur ne peut pas tenir. Mode Développeur coupé par défaut ; chat, catalogue, voix et profils matériel inchangés ; consignes d'une tâche sur Jarvis inchangées (`engine/profiles/jarvis.test.ts`).
+
+- **Gabarits hybrides** : chaque gabarit se construit, se lance et passe ses tests sans aucun modèle (vérifié pour de vrai : `node-cli`, `ts-lib`, `vite-react`, `web-game`, `node-skill`, `dotnet-console`, `dotnet-worker` lancés ; `dotnet-winforms` et `dotnet-wpf` construits et testés, fenêtre lancée sous Windows seulement). **`web-game` est un Pong à deux joueurs jouable** : `src/rules.ts` (réglages : vitesses, tailles, points pour gagner, touches W/S ou Z/S et flèches), `src/game.ts` (`createGame`, `update`, `render` ; `bounce`, `point`), `src/game.test.ts` (10 tests). `index.html`, `src/main.ts` et `src/game.test.ts` sont la structure (`TEMPLATE_STRUCTURE`, toujours confirmés). Les consignes (`TEMPLATE_GUIDES`) disent au modèle de ne faire que le changement demandé.
+- **Contrôle de difficulté** (`engine/difficulty.ts`, avant chaque mission qui écrit du code : modifier, corriger, nouveau projet, compétence) : `estimateDifficulty` (règles fixes : changement ciblé, fonction nouvelle, programme entier ; un autre jeu que le Pong du gabarit = programme entier ; fonctions lourdes, nombre de demandes, longueur) face à `modelCapability` du modèle Codeur (score Codeur du banc réel, plafonné par la taille ; sans banc, la taille seule ne refuse que l'évident). Trop grand : mission **non lancée**, carte « Mission non lancée » (`MissionGateCard`) avec la raison et une **version ciblée** lancée seulement au clic. Une mission acceptée garde sa difficulté estimée (`mission.gate`).
+- **Arrêt net sur erreur répétée** (`task/taskFlow.ts`, `failureSignature`) : si une correction reproduit exactement les mêmes échecs que la série précédente (mêmes erreurs de compilation, mêmes tests), la boucle s'arrête tout de suite, verdict « échec » expliqué, essais restants non tentés (`codeTask.repeatedFailure`).
+- **Banc réel plafonné** (`BENCH_LIMITS`) : chaque tâche a ses jetons et sa durée, le banc finit toujours ; verdict Codeur par modèle (`coderVerdict`) dans l'onglet Modèle de code. Toujours aucun modèle choisi ni téléchargé.
+- **Plafonds de chaque étape** (`engine/limits.ts`, `STEP_LIMITS`) : jetons par réponse (`num_predict`) et durée totale pour chaque spécialiste et chaque étape de la tâche ; une relance courte (`retryLimit`), puis `SpecialistError` `format` ou `timeout` (`withDeadline` distingue l'échéance d'une annulation).
+- **Secours sans modèle** (`engine/fallbacks.ts`) : objectif tiré de la demande (`fallbackGoal`), gabarit par règles fixes (`fallbackFactory`), un jeu part toujours de `web-game` (`steerFactory`), plan des fichiers d'entrée du gabarit (`templatePlan`, aussi quand le plan du modèle n'en touche aucun), revue non faite = non bloquante. Le Raisonnement d'un projet neuf ne reçoit plus le contexte du dépôt de Jarvis (`NEW_PROJECT_CONTEXT`).
+- **Transport du modèle de code** (`models/patientFetch.ts`, option `fetch` de `ProviderConfig`) : le `fetch` de Node abandonne une réponse sans en-têtes au bout de 300 s ; le modèle de code passe par une requête HTTP sans délai de transport, bornée par le plafond de l'étape. Le chat garde le `fetch` global.
+- **Écriture fichier par fichier** (hook `fileByFile`, projets créés par une mission) : un appel par fichier du plan (`ÉTAPE : ÉCRITURE`), contenu complet écrit par `dev_write_file`/`dev_create_file` sous la règle du plan ; corrections avec les lignes refusées par TypeScript et un conseil par code d'erreur (`typeErrorLines`).
+- **Projets (pas Jarvis)** : outil `dev_write_file`, consigne `editHints`, relances quand le modèle annonce sans écrire, conseil après un échec d'outil répété.
+- Tests : `engine/difficulty.test.ts`, `engine/limits.test.ts`, `mission/fallbackMission.test.ts` (modèle bavard ; modèle qui vise Jarvis ; mission trop grande refusée puis version ciblée), `models/patientFetch.test.ts`. Un seul test existant a changé d'attente, à la demande de l'utilisateur : `task/taskWorkflow.test.ts` (un modèle qui ne corrige rien s'arrête après la première correction au lieu de trois).
+
 ## Updater / GitHub
 
-Dernière publication : **5.0.0** (`https://github.com/dylanloze91-creator/Jarvis/releases/tag/v5.0.0`) — exe, `.blockmap` et `latest.yml` publiés : l’updater intégré la propose.
+Dernière publication : **5.0.1** (`https://github.com/dylanloze91-creator/Jarvis/releases/tag/v5.0.1`) — exe, `.blockmap` et `latest.yml` publiés : l’updater intégré la propose.
 
 - `apps/desktop/electron-builder.yml` : `publish.provider: github`, owner `dylanloze91-creator`, repo `Jarvis`, `releaseType: release`, artifact `Jarvis-Setup-${version}.exe`
 - `apps/desktop/src/main/updater.ts` : contrôle 15 s après le démarrage puis toutes les 4 h ; téléchargement auto ; **installation seulement si l’utilisateur clique**
@@ -529,6 +544,7 @@ Corrections de la revue complète (détail : `docs/audit-0410.md` du store du pr
 - **Profil Jarvis (0.5.0)** : valeurs identiques à 0.4.26, vérifiées par `engine/profiles/jarvis.test.ts` sans régénération ; `maxFixAttempts` absent = 3 ; aucune clé de rattachement vide dans le journal ; aucun modèle de code choisi d’avance.
 - **Moteur (0.5.1)** : tout ce qui est propre à Windows dans `main/developer/` passe par `platform/` (garde : `platform/platform.test.ts`) ; une citation n’est « vérifiée » que relue dans le fichier ; le banc réel ne télécharge et ne choisit aucun modèle, et une tâche dont le fait de référence a disparu est « non mesurable », jamais réussie.
 - **Jarvis 5.0 (5.0.0)** : tout ce qui précède à la fois ; le numéro de version ne prend jamais de suffixe (`-beta` changerait le canal de l'updater).
+- **Petits modèles (5.0.1)** : chaque gabarit marche sans modèle (le Pong est jouable tel quel) ; une mission que le modèle Codeur ne peut pas tenir n'est jamais lancée en silence (`assessMission`) ; une correction qui reproduit le même échec arrête la boucle ; chaque étape garde son plafond de jetons et sa durée (`STEP_LIMITS`, `BENCH_LIMITS`) ; un JSON manquant après une relance mène à un secours écrit sur la ligne ; les fichiers de structure d'un gabarit restent toujours confirmés ; « Appliquer » d'un projet neuf vise ce projet, jamais le dépôt de Jarvis ; le chat garde le `fetch` global.
 - **Améliorer et compétences (0.5.5)** : une proposition sans preuve relue par Jarvis n'est jamais retenue ni transformée en mission ; « Améliorer » ne modifie rien ; une compétence reste un projet à part avec `"chat": false`, le catalogue du chat ne change pas.
 - **.NET (0.5.4)** : seules `dotnet build|test <solution> --no-restore` sont automatiques, et seulement dans la copie isolée ; tout ce qui télécharge, lance ou installe redemande ; jamais de publication NuGet ni de MSBuild direct ; jamais de droits administrateur ni de vrai fichier hosts dans les tests ; le SDK n'est jamais installé par Jarvis.
 - **Projets (0.5.3)** : la copie de l’utilisateur ne change qu’avec « Appliquer » (ou « Annuler l’application »), toujours après une carte, copie propre exigée, conflit annulé ; « Construire » jamais publié ; rien de Jarvis dans les dépôts des projets ; un projet n’a ni la mémoire, ni les missions, ni les copies isolées de Jarvis.
