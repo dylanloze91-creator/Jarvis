@@ -1,5 +1,6 @@
 import type { ProjectProfile } from './projectProfile.js';
 import type { SpecialistRole } from './roles.js';
+import { CODE_MODEL_DEBUGGER_KNOWLEDGE } from '../codeModelKnowledge.js';
 import {
   ROLE_FORMATS,
   type ArchitectOutput,
@@ -147,7 +148,9 @@ export function blockingIssues(review: ReviewerOutput): string[] {
 
 export function diagnoseSystem(project: ProjectProfile): string {
   return `${head('DEBUGGER', DIAGNOSE_MARKER, project)}
-Des tests échouent après une modification. Explique les causes probables et la correction, sans rien modifier. ${READ_ONLY}`;
+Des tests échouent après une modification. Explique les causes probables et la correction, sans rien modifier. ${READ_ONLY}
+Savoir métier (Débogueur) :
+${CODE_MODEL_DEBUGGER_KNOWLEDGE}`;
 }
 
 export function diagnosePrompt(failures: string[], excerpts: string[]): string {

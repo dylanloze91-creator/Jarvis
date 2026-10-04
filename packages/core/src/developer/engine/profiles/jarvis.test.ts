@@ -7,6 +7,7 @@ import { classifyCommand } from '../../commandSafety.js';
 import type { RepoFacts } from '../../repoCheck.js';
 import { MAX_TEST_SERIES } from '../../taskPlan.js';
 import type { ReviewedPlan } from '../../taskPolicy.js';
+import { CODE_MODEL_CODER_KNOWLEDGE } from '../../codeModelKnowledge.js';
 import {
   editPrompt,
   editSystemPrompt,
@@ -15,6 +16,10 @@ import {
   planSystemPrompt,
 } from '../../taskPrompts.js';
 import { JARVIS_PROJECT_PROFILE as profile } from './jarvis.js';
+
+const CODER_KNOWLEDGE_SUFFIX = `\nSavoir métier (Codeur) :\n${CODE_MODEL_CODER_KNOWLEDGE}`;
+const PLAN_CODER_EXTRA =
+  "\nNe prévois pas de nouveau fichier de tests sauf si l'utilisateur le demande explicitement : sur un gabarit, les tests existants suffisent pour valider un changement ciblé.";
 
 /**
  * Valeurs relevées sur l'arbre 0.4.26 (commit a22ddca) avant la création du
@@ -454,11 +459,13 @@ describe('profil de projet Jarvis : valeurs identiques à 0.4.26', () => {
 
   it('consignes de plan, de modification et de correction : texte identique', () => {
     expect(profile.promptContext).toBe(PROMPT_CONTEXT_0426);
-    expect(planSystemPrompt()).toBe(PROMPTS_0426.planSystem);
+    expect(planSystemPrompt()).toBe(
+      PROMPTS_0426.planSystem + PLAN_CODER_EXTRA + CODER_KNOWLEDGE_SUFFIX,
+    );
     expect(planPrompt('  Ajoute un outil.  ')).toBe(PROMPTS_0426.planPrompt);
-    expect(editSystemPrompt(PLAN)).toBe(PROMPTS_0426.editSystem);
+    expect(editSystemPrompt(PLAN)).toBe(PROMPTS_0426.editSystem + CODER_KNOWLEDGE_SUFFIX);
     expect(editPrompt('Ajoute un outil.')).toBe(PROMPTS_0426.editPrompt);
-    expect(fixSystemPrompt(PLAN, 2, 3)).toBe(PROMPTS_0426.fixSystem);
+    expect(fixSystemPrompt(PLAN, 2, 3)).toBe(PROMPTS_0426.fixSystem + CODER_KNOWLEDGE_SUFFIX);
   });
 
   it('consigne système du fournisseur de code : texte identique', async () => {

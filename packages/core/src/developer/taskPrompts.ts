@@ -3,7 +3,10 @@ import { normalizePlan, rawPlanSchema, suiteSetOf, type TaskPlan } from './taskP
 import type { ReviewedPlan } from './taskPolicy.js';
 import type { ProjectProfile } from './engine/projectProfile.js';
 import { JARVIS_PROJECT_PROFILE } from './engine/profiles/jarvis.js';
+import { CODE_MODEL_CODER_KNOWLEDGE } from './codeModelKnowledge.js';
 import { tscErrors } from './testOutput.js';
+
+const CODER_KNOWLEDGE_BLOCK = `\nSavoir métier (Codeur) :\n${CODE_MODEL_CODER_KNOWLEDGE}`;
 
 /**
  * Consignes du modèle de code pour une tâche. Indépendantes du modèle :
@@ -25,7 +28,8 @@ Utilise les outils de lecture (dev_search_files, dev_search_code, dev_read_file)
 Termine par un seul bloc JSON, sans autre texte après :
 {"resume": "ce qui va changer", "criteres": ["comment on saura que c'est réussi"], "fichiers": [{"chemin": "chemin/relatif.ts", "action": "creer|modifier|supprimer", "pourquoi": "..."}], "tests": [${example}]}
 Tests possibles : ${suites}.
-Liste tous les fichiers à créer ou modifier, tests compris. Garde le plan petit.`;
+Liste tous les fichiers à créer ou modifier, tests compris. Garde le plan petit.
+Ne prévois pas de nouveau fichier de tests sauf si l'utilisateur le demande explicitement : sur un gabarit, les tests existants suffisent pour valider un changement ciblé.${CODER_KNOWLEDGE_BLOCK}`;
 }
 
 export function planPrompt(request: string): string {
@@ -79,7 +83,7 @@ export function editSystemPrompt(
 ${project.promptContext}
 Tu travailles dans une copie isolée du dépôt, sur une branche jarvis-dev/*.
 ${planBlock(plan)}
-${project.editHints ? `${project.editHints}\n` : ''}${EDIT_RULES}`;
+${project.editHints ? `${project.editHints}\n` : ''}${EDIT_RULES}${CODER_KNOWLEDGE_BLOCK}`;
 }
 
 export function editPrompt(request: string): string {
@@ -96,7 +100,7 @@ export function fixSystemPrompt(
 ${project.promptContext}
 Tes modifications ont fait échouer des tests. Corrige-les dans la copie isolée.
 ${planBlock(plan)}
-${project.editHints ? `${project.editHints}\n` : ''}${EDIT_RULES}`;
+${project.editHints ? `${project.editHints}\n` : ''}${EDIT_RULES}${CODER_KNOWLEDGE_BLOCK}`;
 }
 
 export function fixPrompt(newFailures: string[], excerpts: string[]): string {
@@ -109,7 +113,8 @@ ${newFailures
 Extraits des sorties :
 ${excerpts.join('\n---\n').slice(0, 6000)}
 
-Lis les fichiers concernés, puis corrige seulement ce qui est nécessaire.`;
+Lis les fichiers concernés, puis corrige seulement ce qui est nécessaire.
+Si la même erreur (même test ou même code TS à la même ligne) apparaît encore après une correction, change d’approche : ne refais pas la modification déjà tentée.`;
 }
 
 /**
@@ -125,7 +130,7 @@ export function fileWriteSystem(plan: ReviewedPlan, project: ProjectProfile): st
 ${project.promptContext}
 ${planBlock(plan)}
 Tu écris UN fichier à la fois, en entier. Réponds seulement par le contenu complet du fichier, dans un seul bloc de code, sans explication avant ni après.
-Le code doit compiler en TypeScript strict et rester simple. Jamais de secret, jamais de réseau, jamais de lancement de processus.`;
+Le code doit compiler en TypeScript strict et rester simple. Jamais de secret, jamais de réseau, jamais de lancement de processus.${CODER_KNOWLEDGE_BLOCK}`;
 }
 
 export interface FileWriteInput {

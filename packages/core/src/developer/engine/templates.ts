@@ -1046,7 +1046,7 @@ export const TEMPLATE_GUIDES: Partial<Record<ProjectTemplateId, string>> = {
     '- index.html, src/main.ts et src/game.test.ts sont la structure : n’y touche pas.',
     '- Les réglages (vitesses, tailles, points pour gagner, touches) sont dans src/rules.ts : pour changer une valeur, modifie seulement ce fichier.',
     '- La logique et le dessin sont dans src/game.ts (createGame, update, render ; état : left, right, ball, serve, winner). Pour une règle nouvelle, change seulement la fonction concernée (bounce pour un renvoi, point pour un point marqué, update pour une image) et garde tout le reste identique : noms, exports, réglages.',
-    '- Pour vérifier une règle nouvelle, ajoute un test dans un nouveau fichier (par exemple src/regle.test.ts) au lieu de modifier src/game.test.ts.',
+    '- Ne crée pas de nouveau fichier de tests sauf si l’utilisateur ou le plan validé le demande : les 10 tests de src/game.test.ts valident déjà le gabarit. Pour une règle, change le code puis laisse ces tests passer ; n’ajoute pas src/regle.test.ts ou équivalent par défaut.',
   ].join('\n'),
   'node-cli':
     'Gabarit « outil en ligne de commande » : déjà fonctionnel et testé (--name, --help). La logique va dans src/main.ts (fonction run), testée dans src/main.test.ts ; src/cli.ts ne fait que l’appeler. Fais seulement le changement demandé.',
