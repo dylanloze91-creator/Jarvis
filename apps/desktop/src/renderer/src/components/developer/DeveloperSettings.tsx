@@ -187,6 +187,13 @@ export function DeveloperSettingsSection({ developer, onSave }: Props) {
               {error}
             </p>
           ) : null}
+
+          <Toggle
+            label="Mémoriser les solutions validées"
+            hint="Après une mission réussie (tests verts, revue OK, échecs corrigés), enregistre une fiche dans le manuel local sous developer/knowledge/validated/. Coupé : aucune nouvelle fiche."
+            checked={developer.knowledgeLearning !== false}
+            onChange={(on) => onSave({ ...developer, knowledgeLearning: on })}
+          />
         </>
       ) : null}
 

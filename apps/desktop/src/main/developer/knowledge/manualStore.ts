@@ -2,8 +2,11 @@ import { mkdir, readFile, readdir, writeFile, rename } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   DEVELOPER_MANUAL_SEED,
+  buildValidatedFix,
+  canSaveValidatedFix,
   chunkMarkdownFile,
   formatManualBlock,
+  missionLearningOutcome,
   retrieveManualPassages,
   retrieveManualPassagesAsync,
   toManualPassageViews,
@@ -11,9 +14,14 @@ import {
   type ManualIndex,
   type ManualPassageView,
   type ManualQuery,
+  type MissionKind,
+  type MissionLearning,
   type ProjectTemplateId,
   type Settings,
   MANUAL_INDEX_VERSION,
+  validatedFixSchema,
+  validatedFixToChunk,
+  type ValidatedFix,
 } from '@jarvis/core';
 
 const EMBED_MODEL = 'nomic-embed-text';
@@ -54,6 +62,10 @@ export class DeveloperManualStore {
     return join(this.root(), INDEX_FILE);
   }
 
+  private validatedDir(): string {
+    return join(this.root(), 'validated');
+  }
+
   private get fetch(): typeof fetch {
     return this.options.fetchImpl ?? globalThis.fetch;
   }
@@ -68,6 +80,38 @@ export class DeveloperManualStore {
     }
   }
 
+  async loadValidatedFixes(): Promise<ValidatedFix[]> {
+    const dir = this.validatedDir();
+    await mkdir(dir, { recursive: true });
+    const names = (await readdir(dir).catch(() => [] as string[])).filter((f) => f.endsWith('.json'));
+    const out: ValidatedFix[] = [];
+    for (const name of names) {
+      try {
+        const parsed = validatedFixSchema.safeParse(
+          JSON.parse(await readFile(join(dir, name), 'utf8')),
+        );
+        if (parsed.success) out.push(parsed.data);
+      } catch {
+        /* ignore corrupt */
+      }
+    }
+    return out;
+  }
+
+  async saveValidatedFix(
+    fix: ValidatedFix,
+    settings: Settings,
+    installedModels: readonly string[],
+  ): Promise<void> {
+    await mkdir(this.validatedDir(), { recursive: true });
+    const path = join(this.validatedDir(), `${fix.id}.json`);
+    const tmp = `${path}.tmp`;
+    await writeFile(tmp, JSON.stringify(fix, null, 2), { encoding: 'utf8', mode: 0o600 });
+    await rename(tmp, path);
+    this.index = null;
+    await this.rebuildIndex(settings, installedModels);
+  }
+
   async rebuildIndex(settings: Settings, installedModels: readonly string[]): Promise<void> {
     await this.ensureSeed();
     const files = (await readdir(this.manualDir())).filter((f) => f.endsWith('.md'));
@@ -75,6 +119,9 @@ export class DeveloperManualStore {
     for (const file of files) {
       const text = await readFile(join(this.manualDir(), file), 'utf8');
       flat.push(...chunkMarkdownFile(file, text));
+    }
+    for (const fix of await this.loadValidatedFixes()) {
+      flat.push(validatedFixToChunk(fix));
     }
     const embed = this.embedFn(settings, installedModels);
     if (embed) {
@@ -158,5 +205,48 @@ export class DeveloperManualStore {
       : retrieveManualPassages(index, query);
     const block = formatManualBlock(passages);
     return { block, passages: toManualPassageViews(passages) };
+  }
+
+  /** Enregistre une fiche si la mission a réussi après correction (sinon explique pourquoi non). */
+  async tryLearningFromTask(input: {
+    settings: Settings;
+    installedModels: readonly string[];
+    missionKind: MissionKind;
+    request: string;
+    model: string;
+    templateId?: ProjectTemplateId;
+    reportVerdict: 'success' | 'failed' | 'stopped' | null;
+    repeatedFailure: boolean;
+    reviewBlocking: readonly string[];
+    planSummary: string;
+    filesTouched: readonly string[];
+    testSuites: readonly string[];
+    runs: ReadonlyArray<{ newFailures: readonly string[] }>;
+    checkpoint?: string;
+    now: number;
+  }): Promise<MissionLearning> {
+    const hadNewFailures = input.runs.some((r) => r.newFailures.length > 0);
+    const gate = canSaveValidatedFix({
+      learningEnabled: input.settings.developer.knowledgeLearning !== false,
+      reportVerdict: input.reportVerdict,
+      repeatedFailure: input.repeatedFailure,
+      reviewBlockingCount: input.reviewBlocking.length,
+      hadNewFailures,
+    });
+    if (!gate.ok) return missionLearningOutcome(gate);
+    const fix = buildValidatedFix({
+      missionKind: input.missionKind,
+      request: input.request,
+      model: input.model,
+      templateId: input.templateId,
+      planSummary: input.planSummary,
+      filesTouched: input.filesTouched,
+      testSuites: input.testSuites,
+      runs: input.runs,
+      checkpoint: input.checkpoint,
+      now: input.now,
+    });
+    await this.saveValidatedFix(fix, input.settings, input.installedModels);
+    return missionLearningOutcome(gate, fix.id);
   }
 }

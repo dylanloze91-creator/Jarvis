@@ -283,6 +283,7 @@ export class DeveloperController {
         projects: this.projects,
         now: deps.now ? () => deps.now!().getTime() : undefined,
         realBenches: () => this.models.state().realBenches,
+        manualStore: this.manualStore,
       },
     );
   }

@@ -108,6 +108,7 @@ import type { Runner } from '../runner.js';
 import type { ResolvedProject } from '../project/projectsWorkflow.js';
 import type { TaskHooks, TaskPhase } from '../task/taskRun.js';
 import type { TaskProject } from '../task/workflow.js';
+import type { DeveloperManualStore } from '../knowledge/manualStore.js';
 import type { MissionStore } from './history.js';
 
 type Step = (id: string, status: DevStepStatus, detail?: string) => void;
@@ -164,6 +165,7 @@ export interface MissionDeps {
   now?(): number;
   /** Résultats du banc réel (5.0.1) : le score Codeur règle le contrôle de difficulté. */
   realBenches?(): readonly RealBenchResult[];
+  manualStore?: DeveloperManualStore;
 }
 
 export const MISSION_PROJECT_ID = JARVIS_PROJECT_PROFILE.id;
@@ -1139,6 +1141,26 @@ export class MissionWorkflow {
         : verdict === 'success'
           ? `Réussie : ${task?.diff.length ?? 0} fichier(s) modifié(s) dans la copie isolée, tests sans nouvel échec${task?.review ? ', revue sans point bloquant' : ''}.`
           : 'Pas réussie : vois le rapport de la tâche.';
+    if (task && this.deps.manualStore) {
+      const installed = (await this.deps.ollama().status()).models.map((m) => m.name);
+      mission.learning = await this.deps.manualStore.tryLearningFromTask({
+        settings: this.deps.settings(),
+        installedModels: installed,
+        missionKind: mission.kind,
+        request: mission.request,
+        model: task.model,
+        templateId: this.project?.template,
+        reportVerdict: task.report?.verdict ?? verdict,
+        repeatedFailure: Boolean(task.repeatedFailure),
+        reviewBlocking: task.review?.blocking ?? [],
+        planSummary: task.plan?.summary ?? mission.request,
+        filesTouched: task.diff.map((f) => f.path),
+        testSuites: task.plan?.tests ?? [],
+        runs: task.runs,
+        checkpoint: task.checkpoints.at(-1)?.sha,
+        now: this.now,
+      });
+    }
     this.activeRole = null;
     await this.persist();
   }

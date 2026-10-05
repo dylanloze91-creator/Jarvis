@@ -104,6 +104,10 @@ export const developerSettingsSchema = z.object({
    * Mettre à `false` pour couper la récupération de passages.
    */
   knowledgeManual: z.boolean().optional(),
+  /**
+   * Mémoriser une fiche « solution validée » après mission réussie (absent : activé).
+   */
+  knowledgeLearning: z.boolean().optional(),
 });
 
 export type DeveloperSettings = z.infer<typeof developerSettingsSchema>;

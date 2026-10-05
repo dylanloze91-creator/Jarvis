@@ -1,6 +1,7 @@
 import { MISSION_CHAINS, type ChainActor, type MissionKind } from './router.js';
 import type { MissionGate } from './difficulty.js';
 import type { CheckedProposal } from './improve.js';
+import type { MissionLearning } from '../knowledge/learning.js';
 import type { GoalOutput } from './specialistSchemas.js';
 
 export type MissionStepStatus = 'pending' | 'running' | 'done' | 'failed' | 'skipped' | 'waiting';
@@ -51,6 +52,8 @@ export interface MissionState {
   fromProposal?: { missionId: string; index: number };
   /** Difficulté estimée avant le départ, face au modèle Codeur (5.0.1). */
   gate?: MissionGate;
+  /** Fiche solution validée enregistrée (ou refusée) à la fin de la boucle de code. */
+  learning?: MissionLearning;
 }
 
 export interface MissionSummary {

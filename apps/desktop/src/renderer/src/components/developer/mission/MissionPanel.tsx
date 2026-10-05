@@ -17,6 +17,7 @@ import type { DeveloperApi, DeveloperState } from '../../../../../shared/develop
 import { TaskPanel } from '../task/TaskPanel';
 import { ProposalList } from './ProposalList';
 import { MissionGateCard } from './MissionGateCard';
+import { MissionLearningCard } from './MissionLearningCard';
 import { SpecialistRow } from './SpecialistRow';
 
 type Act = (action: (api: DeveloperApi) => Promise<DeveloperState | void>) => void;
@@ -247,6 +248,7 @@ export function MissionPanel({
             ))}
           </ul>
           {mission.summary ? <p className="text-xs text-slate-200">{mission.summary}</p> : null}
+          {mission.learning ? <MissionLearningCard learning={mission.learning} /> : null}
           <ProposalList mission={mission} busy={state.busy} act={act} />
         </section>
       ) : null}
