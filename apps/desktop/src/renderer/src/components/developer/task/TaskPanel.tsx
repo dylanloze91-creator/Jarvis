@@ -7,6 +7,7 @@ import { DiffView } from './DiffView';
 import { PlanCard } from './PlanCard';
 import { SandboxList } from './SandboxList';
 import { TaskReport } from './TaskReport';
+import { ManualPassagesCard } from './ManualPassagesCard';
 import { TestResults } from './TestResults';
 
 type Act = (action: (api: DeveloperApi) => Promise<DeveloperState | void>) => void;
@@ -121,6 +122,8 @@ export function TaskPanel({
       {task?.plan ? (
         <PlanCard task={task} onRespond={(ok) => act((api) => api.approvePlan(ok))} />
       ) : null}
+
+      {task ? <ManualPassagesCard task={task} /> : null}
 
       {timeline}
 

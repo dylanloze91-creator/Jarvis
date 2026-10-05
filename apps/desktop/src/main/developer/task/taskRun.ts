@@ -18,6 +18,7 @@ import {
   type ToolCallOutcome,
   type ToolManager,
 } from '@jarvis/core';
+import type { ManualPassageView } from '@jarvis/core';
 import type { CodeTaskState, DevStepStatus, DeveloperState } from '../../../shared/developerIpc.js';
 import type { OllamaApi } from '../models/ollamaApi.js';
 import type { Runner } from '../runner.js';
@@ -61,6 +62,8 @@ export interface TaskHooks {
     signal: AbortSignal,
     tools: Pick<ToolManager, 'schemas' | 'execute'>,
   ) => Promise<string>;
+  /** Rafraîchit le manuel technique (ex. après de nouveaux échecs). */
+  refreshManual?: (failures: string[]) => Promise<{ block: string; passages: ManualPassageView[] }>;
   onPhase?: (
     phase: TaskPhase,
     status: TaskPhaseStatus,

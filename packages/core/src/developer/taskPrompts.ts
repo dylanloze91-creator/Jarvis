@@ -8,6 +8,11 @@ import { tscErrors } from './testOutput.js';
 
 const CODER_KNOWLEDGE_BLOCK = `\nSavoir métier (Codeur) :\n${CODE_MODEL_CODER_KNOWLEDGE}`;
 
+function appendManual(system: string, manual?: string): string {
+  const block = manual?.trim();
+  return block ? `${system}\n\n${block}` : system;
+}
+
 /**
  * Consignes du modèle de code pour une tâche. Indépendantes du modèle :
  * appels d'outils natifs d'Ollama, plan en JSON validé par Zod. Sans profil,
@@ -17,11 +22,14 @@ export const PLAN_MARKER = 'ÉTAPE : PLAN';
 export const EDIT_MARKER = 'ÉTAPE : MODIFICATION';
 export const FIX_MARKER = 'ÉTAPE : CORRECTION';
 
-export function planSystemPrompt(project: ProjectProfile = JARVIS_PROJECT_PROFILE): string {
+export function planSystemPrompt(
+  project: ProjectProfile = JARVIS_PROJECT_PROFILE,
+  manual?: string,
+): string {
   const { ids, defaults } = suiteSetOf(project);
   const suites = ids.map((id) => `"${id}" (${project.testSuites[id]!.label})`).join(', ');
   const example = defaults.map((id) => `"${id}"`).join(', ');
-  return `Tu es Jarvis Développeur. ${PLAN_MARKER}.
+  const base = `Tu es Jarvis Développeur. ${PLAN_MARKER}.
 ${project.promptContext}
 Tu prépares un plan de modification. Tu ne modifies rien à cette étape.
 Utilise les outils de lecture (dev_search_files, dev_search_code, dev_read_file) pour trouver les vrais fichiers, en peu d'appels.
@@ -30,6 +38,7 @@ Termine par un seul bloc JSON, sans autre texte après :
 Tests possibles : ${suites}.
 Liste tous les fichiers à créer ou modifier, tests compris. Garde le plan petit.
 Ne prévois pas de nouveau fichier de tests sauf si l'utilisateur le demande explicitement : sur un gabarit, les tests existants suffisent pour valider un changement ciblé.${CODER_KNOWLEDGE_BLOCK}`;
+  return appendManual(base, manual);
 }
 
 export function planPrompt(request: string): string {
@@ -78,12 +87,14 @@ Quand tout est fait, réponds par un court résumé, sans appel d'outil.`;
 export function editSystemPrompt(
   plan: ReviewedPlan,
   project: ProjectProfile = JARVIS_PROJECT_PROFILE,
+  manual?: string,
 ): string {
-  return `Tu es Jarvis Développeur. ${EDIT_MARKER}.
+  const base = `Tu es Jarvis Développeur. ${EDIT_MARKER}.
 ${project.promptContext}
 Tu travailles dans une copie isolée du dépôt, sur une branche jarvis-dev/*.
 ${planBlock(plan)}
 ${project.editHints ? `${project.editHints}\n` : ''}${EDIT_RULES}${CODER_KNOWLEDGE_BLOCK}`;
+  return appendManual(base, manual);
 }
 
 export function editPrompt(request: string): string {
@@ -95,16 +106,22 @@ export function fixSystemPrompt(
   attempt: number,
   max: number,
   project: ProjectProfile = JARVIS_PROJECT_PROFILE,
+  manual?: string,
 ): string {
-  return `Tu es Jarvis Développeur. ${FIX_MARKER} (essai ${attempt} sur ${max}).
+  const base = `Tu es Jarvis Développeur. ${FIX_MARKER} (essai ${attempt} sur ${max}).
 ${project.promptContext}
 Tes modifications ont fait échouer des tests. Corrige-les dans la copie isolée.
 ${planBlock(plan)}
 ${project.editHints ? `${project.editHints}\n` : ''}${EDIT_RULES}${CODER_KNOWLEDGE_BLOCK}`;
+  return appendManual(base, manual);
 }
 
-export function fixPrompt(newFailures: string[], excerpts: string[]): string {
-  return `Nouveaux échecs (absents avant la tâche) :
+export function fixPrompt(
+  newFailures: string[],
+  excerpts: string[],
+  manual?: string,
+): string {
+  const base = `Nouveaux échecs (absents avant la tâche) :
 ${newFailures
   .slice(0, 20)
   .map((f) => `- ${f}`)
@@ -115,6 +132,7 @@ ${excerpts.join('\n---\n').slice(0, 6000)}
 
 Lis les fichiers concernés, puis corrige seulement ce qui est nécessaire.
 Si la même erreur (même test ou même code TS à la même ligne) apparaît encore après une correction, change d’approche : ne refais pas la modification déjà tentée.`;
+  return appendManual(base, manual);
 }
 
 /**
@@ -125,12 +143,17 @@ Si la même erreur (même test ou même code TS à la même ligne) apparaît enc
  */
 export const WRITE_MARKER = 'ÉTAPE : ÉCRITURE';
 
-export function fileWriteSystem(plan: ReviewedPlan, project: ProjectProfile): string {
-  return `Tu es Jarvis Développeur. ${WRITE_MARKER}.
+export function fileWriteSystem(
+  plan: ReviewedPlan,
+  project: ProjectProfile,
+  manual?: string,
+): string {
+  const base = `Tu es Jarvis Développeur. ${WRITE_MARKER}.
 ${project.promptContext}
 ${planBlock(plan)}
 Tu écris UN fichier à la fois, en entier. Réponds seulement par le contenu complet du fichier, dans un seul bloc de code, sans explication avant ni après.
 Le code doit compiler en TypeScript strict et rester simple. Jamais de secret, jamais de réseau, jamais de lancement de processus.${CODER_KNOWLEDGE_BLOCK}`;
+  return appendManual(base, manual);
 }
 
 export interface FileWriteInput {

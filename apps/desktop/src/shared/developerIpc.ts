@@ -14,6 +14,7 @@ import type {
   DevCheck,
   DiffFile,
   HardwareFacts,
+  ManualPassageView,
   Prediction,
   ScanFinding,
   ServerInstructions,
@@ -95,6 +96,10 @@ export interface CodeTaskState {
   finishedAt: number | null;
   /** Projet de la tâche (0.5.3) ; absent = Jarvis. */
   projectId?: string;
+  /** Passages du manuel technique consultés pour cette tâche. */
+  manualPassages?: ManualPassageView[];
+  /** Bloc « Manuel pertinent » injecté dans les prompts Codeur. */
+  manualBlock?: string;
   /** Fusion dans la copie de l'utilisateur après sa carte (0.5.3), et son annulation éventuelle. */
   applied?: {
     at: number;

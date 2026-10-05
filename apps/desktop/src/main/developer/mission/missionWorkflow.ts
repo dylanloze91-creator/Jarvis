@@ -127,7 +127,12 @@ export interface MissionHost {
   /** Boucle de modification existante (plan → validation → copie isolée → tests → corrections). */
   startTask(
     request: string,
-    options: { model: string; hooks: TaskHooks; project?: TaskProject },
+    options: {
+      model: string;
+      hooks: TaskHooks;
+      project?: TaskProject;
+      templateId?: ProjectTemplateId;
+    },
   ): Promise<DeveloperState>;
   currentTask(): CodeTaskState | null;
 }
@@ -674,8 +679,16 @@ export class MissionWorkflow {
     await this.host.startTask(mission.request, {
       model: coder,
       hooks: this.loopHooks(root, coder, context),
+      templateId: this.project?.template,
       ...(this.project && this.project.id !== JARVIS_PROJECT_ID
-        ? { project: { id: this.project.id, root, profile: this.project.profile } }
+        ? {
+            project: {
+              id: this.project.id,
+              root,
+              profile: this.project.profile,
+              templateId: this.project.template,
+            },
+          }
         : {}),
     });
     await this.finishFromTask();
@@ -882,6 +895,7 @@ export class MissionWorkflow {
     const fallbackPlan = template ? templatePlan(template, mission.request) : null;
     await this.host.startTask(mission.request, {
       model: coder,
+      templateId: template ?? undefined,
       hooks: {
         ...this.loopHooks(project.root, coder, context),
         ...(fallbackPlan ? { fallbackPlan } : {}),
@@ -895,7 +909,12 @@ export class MissionWorkflow {
             .join('\n'),
         },
       },
-      project: { id: project.id, root: project.root, profile: project.profile },
+      project: {
+        id: project.id,
+        root: project.root,
+        profile: project.profile,
+        templateId: template ?? undefined,
+      },
     });
     await this.finishFromTask();
     return this.host.emit();

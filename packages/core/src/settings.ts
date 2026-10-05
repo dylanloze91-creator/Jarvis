@@ -99,6 +99,11 @@ export const developerSettingsSchema = z.object({
   roleModels: z.partialRecord(z.enum(SPECIALIST_ROLES), z.string().max(200)).optional(),
   /** Dossier des nouveaux projets (absent ou vide : `C:\dev\Projets` sous Windows, décision D2). */
   projectsRoot: z.string().max(400).optional(),
+  /**
+   * Manuel technique local injecté dans les prompts Codeur (absent : activé).
+   * Mettre à `false` pour couper la récupération de passages.
+   */
+  knowledgeManual: z.boolean().optional(),
 });
 
 export type DeveloperSettings = z.infer<typeof developerSettingsSchema>;

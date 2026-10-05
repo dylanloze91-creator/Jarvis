@@ -82,6 +82,7 @@ export interface ResolvedProject {
   name: string;
   root: string;
   profile: ProjectProfile;
+  template?: ProjectTemplateId;
 }
 
 /** Dossier où se trouve l'installateur construit par `package:win` dans la copie de Jarvis. */
@@ -290,6 +291,7 @@ export class ProjectsWorkflow {
       id,
       name: entry.name,
       root: entry.path,
+      template: entry.template,
       profile:
         entry.kind === 'dotnet' && check.target
           ? createDotnetProfile({

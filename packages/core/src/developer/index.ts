@@ -38,6 +38,10 @@ export * from './engine/skill.js';
 export * from './engine/limits.js';
 export * from './engine/fallbacks.js';
 export * from './engine/difficulty.js';
+export * from './knowledge/types.js';
+export * from './knowledge/chunk.js';
+export * from './knowledge/retrieve.js';
+export * from './knowledge/seed.js';
 export { normalizeRepoRelative, protectedRepoPath } from './repoPaths.js';
 export {
   ARCHITECTURE_LAYERS,

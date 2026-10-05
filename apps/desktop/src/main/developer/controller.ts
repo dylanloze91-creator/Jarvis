@@ -49,6 +49,7 @@ import { CodeModelStore } from './models/store.js';
 import { CodeModelWorkflow, type WorkflowDeps } from './models/workflow.js';
 import { ChatActivity } from './task/chatActivity.js';
 import type { AskExtra } from './task/taskRun.js';
+import { DeveloperManualStore } from './knowledge/manualStore.js';
 import { CodeTaskWorkflow } from './task/workflow.js';
 
 export interface ControllerDeps {
@@ -99,6 +100,7 @@ export class DeveloperController {
   private readonly pending = new Map<string, (approved: boolean) => void>();
   private readonly models: CodeModelWorkflow;
   private readonly tasks: CodeTaskWorkflow;
+  private readonly manualStore: DeveloperManualStore;
   private readonly missions: MissionWorkflow;
   private readonly projects: ProjectsWorkflow;
   /** Outils de lecture d'un projet autre que Jarvis (0.5.3), un gestionnaire par dossier. */
@@ -188,6 +190,10 @@ export class DeveloperController {
       },
       freeBytes: (path) => (deps.freeBytes ?? measureFree)(path),
     });
+    this.manualStore = new DeveloperManualStore({
+      userDataPath: deps.userDataPath,
+      fetchImpl: deps.fetch,
+    });
     this.tasks = new CodeTaskWorkflow(
       {
         runTask: (kind, title, steps, work) => this.runTask(kind, title, steps, work),
@@ -223,6 +229,7 @@ export class DeveloperController {
         logsDir: deps.logsDir,
         freeBytes,
         graceMs: deps.chatGraceMs,
+        manualStore: this.manualStore,
       },
     );
     this.projects = new ProjectsWorkflow(

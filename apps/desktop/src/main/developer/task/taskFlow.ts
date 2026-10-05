@@ -123,6 +123,10 @@ export class TaskRun extends TaskRunBase {
     return this.repo.worktreeRoot;
   }
 
+  private manualText(): string | undefined {
+    return this.state.manualBlock?.trim() || undefined;
+  }
+
   private planRequest(): string {
     const prompt = planPrompt(this.state.request);
     return this.hooks.planContext ? `${prompt}\n\n${this.hooks.planContext}` : prompt;
@@ -185,7 +189,7 @@ export class TaskRun extends TaskRunBase {
       code,
       {
         tools,
-        system: planSystemPrompt(this.profile),
+        system: planSystemPrompt(this.profile, this.manualText()),
         prompt: this.planRequest(),
         maxRounds: 10,
         beforeRound: pause,
@@ -214,7 +218,7 @@ export class TaskRun extends TaskRunBase {
       code,
       {
         tools: toolView(tools, []),
-        system: planSystemPrompt(this.profile),
+        system: planSystemPrompt(this.profile, this.manualText()),
         prompt: `${this.planRequest()}\n\nDéjà consulté :\n${read || '—'}\n\nTa réponse précédente n’était pas un plan valide (${problem}). Réponds seulement par le bloc JSON du plan, court.`,
         maxRounds: 1,
         beforeRound: pause,
@@ -369,7 +373,7 @@ export class TaskRun extends TaskRunBase {
         let text: string;
         try {
           const reply = await code.complete({
-            system: fileWriteSystem(this.reviewed!, this.profile),
+            system: fileWriteSystem(this.reviewed!, this.profile, this.manualText()),
             prompt: fileWritePrompt({
               request: this.state.request,
               path: file.path,
@@ -745,7 +749,7 @@ export class TaskRun extends TaskRunBase {
           code,
           {
             tools,
-            system: editSystemPrompt(reviewed, this.profile),
+            system: editSystemPrompt(reviewed, this.profile, this.manualText()),
             prompt: editPrompt(state.request),
             maxRounds: 24,
             requestConfirmation: (request) => this.decide(request, signal),
@@ -787,6 +791,9 @@ export class TaskRun extends TaskRunBase {
       addStep(`retest-${n}`, `Tests après la correction ${n}`, 'report');
       step(`fix-${n}`, 'running', `${run.newFailures.length} échec(s) à corriger`);
       const excerpts = run.results.filter((r) => r.failures.length).map((r) => r.excerpt);
+      if (this.hooks.refreshManual) {
+        await this.hooks.refreshManual(run.newFailures);
+      }
       let diagnosis = '';
       if (this.hooks.diagnose) {
         this.hooks.onPhase?.('diagnose', 'running', `${run.newFailures.length} échec(s)`);
@@ -834,8 +841,8 @@ export class TaskRun extends TaskRunBase {
             code,
             {
               tools,
-              system: fixSystemPrompt(reviewed, n, state.maxAttempts, this.profile),
-              prompt: `${fixPrompt(run.newFailures, excerpts)}${diagnosis ? `\n\nDiagnostic du débogueur :\n${diagnosis}` : ''}`,
+              system: fixSystemPrompt(reviewed, n, state.maxAttempts, this.profile, this.manualText()),
+              prompt: `${fixPrompt(run.newFailures, excerpts, this.manualText())}${diagnosis ? `\n\nDiagnostic du débogueur :\n${diagnosis}` : ''}`,
               maxRounds: 16,
               requestConfirmation: (request) => this.decide(request, signal),
               beforeRound: pause,

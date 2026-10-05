@@ -7,6 +7,7 @@ import {
   sandboxBranch,
   suiteSetOf,
   type ProjectProfile,
+  type ProjectTemplateId,
   type Settings,
   type ToolCallOutcome,
   type ToolManager,
@@ -31,6 +32,7 @@ import {
 } from './apply.js';
 import { defaultWorktreeRoot, listSandboxes, pruneWorktrees, samePath } from './sandbox.js';
 import { TASK_STEPS, TaskRun } from './taskFlow.js';
+import type { DeveloperManualStore } from '../knowledge/manualStore.js';
 import type { AddStepFn, TaskDeps, TaskHooks, TaskHost } from './taskRun.js';
 
 export interface CodeTaskHost extends TaskHost {
@@ -54,6 +56,7 @@ export interface TaskProject {
   id: string;
   root: string;
   profile: ProjectProfile;
+  templateId?: ProjectTemplateId;
 }
 
 interface ToolRepo {
@@ -66,6 +69,7 @@ export interface CodeTaskDeps extends TaskDeps {
   logsDir(): string;
   freeBytes(path: string): Promise<number | null>;
   now?(): Date;
+  manualStore?: DeveloperManualStore;
 }
 
 /** Tâches de code : une à la fois, chacune dans sa copie isolée. La copie de l'utilisateur ne change qu'avec « Appliquer », après sa carte. */
@@ -159,7 +163,12 @@ export class CodeTaskWorkflow {
   /** `options` : tâche lancée par une mission (modèle du CODER, points d'accroche, projet). */
   async start(
     request: string,
-    options: { model?: string; hooks?: TaskHooks; project?: TaskProject } = {},
+    options: {
+      model?: string;
+      hooks?: TaskHooks;
+      project?: TaskProject;
+      templateId?: ProjectTemplateId;
+    } = {},
   ): Promise<DeveloperState> {
     const text = request.trim();
     if (text.length < 8) return this.host.notice('Décris la modification en une phrase au moins.');
@@ -225,13 +234,39 @@ export class CodeTaskWorkflow {
       finishedAt: null,
       ...(project ? { projectId: project.id } : {}),
     };
+    const hooks: TaskHooks = { ...(options.hooks ?? {}) };
+    const templateId = options.templateId ?? project?.templateId;
+    if (this.deps.manualStore) {
+      const installed = (await this.deps.ollama().status()).models.map((m) => m.name);
+      const prep = await this.deps.manualStore.prepare({
+        request: text,
+        templateId,
+        settings: this.deps.settings(),
+        installedModels: installed,
+      });
+      if (prep.block) state.manualBlock = prep.block;
+      if (prep.passages.length) state.manualPassages = prep.passages;
+      hooks.refreshManual = async (failures) => {
+        const next = await this.deps.manualStore!.prepare({
+          request: text,
+          templateId,
+          failures,
+          settings: this.deps.settings(),
+          installedModels: (await this.deps.ollama().status()).models.map((m) => m.name),
+        });
+        if (next.block) state.manualBlock = next.block;
+        else delete state.manualBlock;
+        state.manualPassages = next.passages;
+        return next;
+      };
+    }
     const run = new TaskRun(
       this.host,
       this.deps,
       state,
       this.manager,
       { root, worktreeRoot: tasksRoot, folder, tracked, dirty },
-      options.hooks,
+      hooks,
       project?.profile,
     );
     this.current = run;
