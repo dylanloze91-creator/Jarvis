@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ManualChunk, ManualIndex } from './types.js';
+import { MANUAL_INDEX_VERSION } from './types.js';
 import {
   cosineSimilarity,
   extractErrorCodes,
@@ -40,7 +41,7 @@ describe('cosineSimilarity', () => {
 
 describe('retrieveManualPassages avec embeddings factices', () => {
   const index: ManualIndex = {
-    version: 1,
+    version: MANUAL_INDEX_VERSION,
     chunks: [
       chunk('a', 'Canvas', 'boucle requestAnimationFrame update render', {
         embedding: [1, 0, 0],

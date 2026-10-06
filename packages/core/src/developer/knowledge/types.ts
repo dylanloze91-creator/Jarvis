@@ -1,6 +1,6 @@
 import type { ProjectTemplateId } from '../engine/templates.js';
 
-export const MANUAL_INDEX_VERSION = 1 as const;
+export const MANUAL_INDEX_VERSION = 2 as const;
 
 /** Métadonnées d’un extrait du manuel technique (frontmatter ou défaut). */
 export interface ManualChunkMeta {

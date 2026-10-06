@@ -10,7 +10,7 @@ describe('projectChat', () => {
   it('rappelle qu’aucune écriture directe n’est faite', () => {
     expect(
       projectChatSystemPrompt(JARVIS_PROJECT_PROFILE, 'notes', [], ['qwen2.5-coder:14b'], true),
-    ).toMatch(/mission « Modifier »/);
+    ).toMatch(/Mission Modifier/);
   });
 
   it('inclut l’historique dans le prompt', () => {

@@ -1,8 +1,50 @@
 /**
  * Manuel technique livré avec Jarvis : copié dans
  * `<userData>/developer/knowledge/manual/` à la première utilisation.
+ * Incrémenter quand on ajoute ou modifie une page seed (réécriture sur les installs existantes).
  */
+export const DEVELOPER_MANUAL_SEED_VERSION = 2;
+
 export const DEVELOPER_MANUAL_SEED: Record<string, string> = {
+  'methode-travail.md': `---
+tags: [method, methodology, all]
+language: fr
+---
+
+## Méthode de travail
+
+### Comprendre avant de coder
+
+Lis la demande, le plan validé et les fichiers déjà touchés. Utilise les outils de lecture pour voir le code réel (noms, exports, tests existants). Ne pars pas d’une API ou d’un fichier que tu n’as pas ouvert.
+
+### Ne pas inventer une API ni un fichier
+
+N’ajoute pas de fonction, de module, de \`*.test.ts\` ou de dépendance qui n’est pas dans le plan validé. Si quelque chose manque, signale-le dans le plan ou la réponse — ne le crées pas « au cas où ».
+
+### Changer le minimum
+
+Sur un gabarit déjà vert, modifie le strict nécessaire (souvent une valeur dans \`src/rules.ts\` ou une fonction dans \`src/game.ts\`). Ne réécris pas un fichier entier par précaution.
+
+### Les tests tranchent
+
+Ce que demandent les tests du gabarit et ce que montrent \`tsc\` / Vitest font foi. Si un test échoue, corrige le code ou la modification — ne « adapte » pas les tests de référence pour masquer l’échec, sauf si le plan validé le prévoit.
+
+### Ne pas enregistrer une correction ratée
+
+Une fiche « solution validée » ne se sauvegarde qu’après succès des tests et revue, pas après un échec répété. Si la même erreur revient, change d’hypothèse au lieu de renvoyer la même modification.
+
+### Manuel et mémoire du projet
+
+Le **manuel technique** (passages récupérés ici) = règles générales et pièges types. La **mémoire du projet** (notes utilisateur, décisions de discussion) = contexte propre à ce dépôt. Ne mélange pas les deux : le manuel ne remplace pas les décisions mémorisées sur le projet.
+
+### Arrêt après trois corrections
+
+Si trois tentatives de correction n’ont pas rendu les tests verts, ou si le même échec revient, arrête la boucle et explique ce qui bloque. Demande une décision ou un plan revu plutôt que d’empiler des changements au hasard.
+
+### Règle finale
+
+Choisis **la voie la plus simple, fiable et testable** pour obtenir **exactement** ce qui a été demandé — ni plus, ni à côté.
+`,
   'typescript-strict.md': `---
 tags: [typescript, all]
 language: fr
@@ -91,3 +133,10 @@ Sur un gabarit déjà vert, modifie le minimum : souvent \`src/rules.ts\` pour u
 Les fichiers du cœur de Jarvis (agent, IPC, module Développeur lui-même) demandent une confirmation explicite même après validation du plan.
 `,
 };
+
+/** Contenu seed avec marqueur de version (écrit sur disque). */
+export function developerManualSeedContent(filename: string): string {
+  const body = DEVELOPER_MANUAL_SEED[filename];
+  if (!body) throw new Error(`Page manuel inconnue : ${filename}`);
+  return body;
+}

@@ -2,6 +2,8 @@ import { mkdir, readFile, readdir, writeFile, rename } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   DEVELOPER_MANUAL_SEED,
+  DEVELOPER_MANUAL_SEED_VERSION,
+  developerManualSeedContent,
   buildValidatedFix,
   canSaveValidatedFix,
   chunkMarkdownFile,
@@ -26,6 +28,7 @@ import {
 
 const EMBED_MODEL = 'nomic-embed-text';
 const INDEX_FILE = 'index.json';
+const SEED_VERSION_FILE = '.seed-version';
 
 export interface ManualPrepareInput {
   request: string;
@@ -73,11 +76,25 @@ export class DeveloperManualStore {
   async ensureSeed(): Promise<void> {
     const dir = this.manualDir();
     await mkdir(dir, { recursive: true });
-    const existing = await readdir(dir).catch(() => [] as string[]);
-    if (existing.some((f) => f.endsWith('.md'))) return;
-    for (const [name, content] of Object.entries(DEVELOPER_MANUAL_SEED)) {
-      await writeFile(join(dir, name), content, { encoding: 'utf8', mode: 0o600 });
+    let installedVersion = 0;
+    try {
+      const raw = await readFile(join(dir, SEED_VERSION_FILE), 'utf8');
+      installedVersion = Number.parseInt(raw.trim(), 10) || 0;
+    } catch {
+      /* première copie */
     }
+    if (installedVersion >= DEVELOPER_MANUAL_SEED_VERSION) return;
+    for (const name of Object.keys(DEVELOPER_MANUAL_SEED)) {
+      await writeFile(join(dir, name), developerManualSeedContent(name), {
+        encoding: 'utf8',
+        mode: 0o600,
+      });
+    }
+    await writeFile(join(dir, SEED_VERSION_FILE), String(DEVELOPER_MANUAL_SEED_VERSION), {
+      encoding: 'utf8',
+      mode: 0o600,
+    });
+    this.index = null;
   }
 
   async loadValidatedFixes(): Promise<ValidatedFix[]> {
