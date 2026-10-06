@@ -186,6 +186,7 @@ export interface ProjectChatMessage {
   role: 'user' | 'assistant';
   content: string;
   at: number;
+  hasScreenshot?: boolean;
 }
 
 /** Discussion avec le modèle de code sur un projet (importé ou créé). */
@@ -193,6 +194,11 @@ export interface ProjectChatView {
   projectId: string;
   projectName: string;
   messages: ProjectChatMessage[];
+  decisions: string[];
+  codingPick: { model: string; reason: string; at: number } | null;
+  webSearchUsed: boolean;
+  compareOffer: { alternateModel: string; reason: string } | null;
+  previewOpen: boolean;
 }
 
 export interface AskView {
@@ -246,6 +252,9 @@ export const DeveloperChannel = {
   projectBuild: 'dev:project-build',
   projectChatOpen: 'dev:project-chat-open',
   projectChatSend: 'dev:project-chat-send',
+  projectChatPreview: 'dev:project-chat-preview',
+  projectChatCompare: 'dev:project-chat-compare',
+  startMissionFromChat: 'dev:start-mission-from-chat',
   taskApply: 'dev:task-apply',
   taskRevert: 'dev:task-revert',
   missionProposal: 'dev:mission-proposal',
@@ -392,7 +401,10 @@ export interface DeveloperApi {
   saveProjectMemory(id: string, notes: string): Promise<DeveloperState>;
   buildProject(id: string): Promise<DeveloperState>;
   openProjectChat(projectId: string): Promise<DeveloperState>;
-  sendProjectChat(projectId: string, text: string): Promise<DeveloperState>;
+  sendProjectChat(projectId: string, text: string, withScreenshot?: boolean): Promise<DeveloperState>;
+  setProjectChatPreview(projectId: string, open: boolean): Promise<DeveloperState>;
+  compareProjectChatModels(projectId: string, alternateModel: string): Promise<DeveloperState>;
+  startMissionFromChat(projectId: string): Promise<DeveloperState>;
   applyTask(): Promise<DeveloperState>;
   revertTask(): Promise<DeveloperState>;
   /** Proposition retenue d'une mission « Améliorer » → nouvelle mission sur le même projet (0.5.5). */

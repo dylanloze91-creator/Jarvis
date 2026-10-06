@@ -185,11 +185,29 @@ export function registerDeveloperIpc(
   );
   ipcMain.handle(
     DeveloperChannel.projectChatSend,
-    (_event, id: unknown, text: unknown) =>
+    (_event, id: unknown, text: unknown, withScreenshot: unknown) =>
       get()?.sendProjectChat(
         projectId(id) ?? '',
         typeof text === 'string' ? text.slice(0, 4_000) : '',
+        withScreenshot === true,
       ) ?? refused(),
+  );
+  ipcMain.handle(
+    DeveloperChannel.projectChatPreview,
+    (_event, id: unknown, open: unknown) =>
+      get()?.setProjectChatPreview(projectId(id) ?? '', open === true) ?? refused(),
+  );
+  ipcMain.handle(
+    DeveloperChannel.projectChatCompare,
+    (_event, id: unknown, alternate: unknown) =>
+      get()?.compareProjectChatModels(
+        projectId(id) ?? '',
+        typeof alternate === 'string' ? alternate.slice(0, 100) : '',
+      ) ?? refused(),
+  );
+  ipcMain.handle(
+    DeveloperChannel.startMissionFromChat,
+    (_event, id: unknown) => get()?.startMissionFromChat(projectId(id) ?? '') ?? refused(),
   );
   ipcMain.handle(
     DeveloperChannel.missionProposal,

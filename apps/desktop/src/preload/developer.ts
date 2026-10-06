@@ -49,8 +49,14 @@ export function createDeveloperApi(ipc: IpcRenderer): DeveloperApi {
       ipc.invoke(DeveloperChannel.projectMemory, id, notes),
     buildProject: (id: string) => ipc.invoke(DeveloperChannel.projectBuild, id),
     openProjectChat: (projectId: string) => ipc.invoke(DeveloperChannel.projectChatOpen, projectId),
-    sendProjectChat: (projectId: string, text: string) =>
-      ipc.invoke(DeveloperChannel.projectChatSend, projectId, text),
+    sendProjectChat: (projectId: string, text: string, withScreenshot?: boolean) =>
+      ipc.invoke(DeveloperChannel.projectChatSend, projectId, text, withScreenshot === true),
+    setProjectChatPreview: (projectId: string, open: boolean) =>
+      ipc.invoke(DeveloperChannel.projectChatPreview, projectId, open),
+    compareProjectChatModels: (projectId: string, alternateModel: string) =>
+      ipc.invoke(DeveloperChannel.projectChatCompare, projectId, alternateModel),
+    startMissionFromChat: (projectId: string) =>
+      ipc.invoke(DeveloperChannel.startMissionFromChat, projectId),
     applyTask: () => ipc.invoke(DeveloperChannel.taskApply),
     revertTask: () => ipc.invoke(DeveloperChannel.taskRevert),
     startProposal: (missionId: string, index: number, projectId: string) =>

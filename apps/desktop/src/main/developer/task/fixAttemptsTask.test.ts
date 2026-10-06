@@ -2,7 +2,12 @@ import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { InMemoryAuditLogStore, createDefaultRegistry, parseSettings } from '@jarvis/core';
+import {
+  InMemoryAuditLogStore,
+  createDefaultRegistry,
+  createDefaultSearchRegistry,
+  parseSettings,
+} from '@jarvis/core';
 import type { DevConfirmation, DeveloperState } from '../../../shared/developerIpc.js';
 import { DeveloperController } from '../controller.js';
 import { FakeOllama } from '../models/fakeOllama.testkit.js';
@@ -58,6 +63,7 @@ function controller(maxFixAttempts: number) {
     auditLog: new InMemoryAuditLogStore(),
     freeBytes: async () => 400e9,
     registry: createDefaultRegistry(),
+    searchRegistry: createDefaultSearchRegistry(),
     userDataPath: () => join(base, 'userData'),
     env: {},
     run,

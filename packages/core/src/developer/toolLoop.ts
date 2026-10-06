@@ -14,6 +14,8 @@ export interface ToolLoopInput {
   tools: Pick<ToolManager, 'schemas' | 'execute'>;
   system: string;
   prompt: string;
+  /** Images base64 (PNG/JPEG) pour le premier message utilisateur (aperçu projet). */
+  userImages?: string[];
   maxRounds?: number;
   temperature?: number;
   /** Jetons au plus par réponse du modèle (5.0.1) ; absent : pas de plafond. */
@@ -94,7 +96,9 @@ export function toolView(
 
 export async function runToolLoop(input: ToolLoopInput): Promise<ToolLoopResult> {
   const maxRounds = input.maxRounds ?? 6;
-  const messages: ChatMessage[] = [createMessage('user', input.prompt)];
+  const messages: ChatMessage[] = [
+    createMessage('user', input.prompt, input.userImages?.length ? { images: input.userImages } : {}),
+  ];
   const calls: ToolLoopCall[] = [];
   let usage = EMPTY_USAGE;
   let finalText = '';

@@ -90,7 +90,13 @@ function ProjectRow({
         </p>
       ) : null}
       {failing.length ? <CheckList checks={failing} /> : null}
-      <ProjectChatPanel project={project} state={state} act={act} codeModel={codeModel} />
+      <ProjectChatPanel
+        project={project}
+        state={state}
+        act={act}
+        codeModel={codeModel}
+        installedModels={state.model.installedModels}
+      />
       {editing ? (
         <div className="flex flex-col gap-1.5">
           <label htmlFor={`memory-${project.id}`} className="text-[11px] text-slate-400">

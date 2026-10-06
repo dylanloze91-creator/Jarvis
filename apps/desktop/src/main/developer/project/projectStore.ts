@@ -1,4 +1,4 @@
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { mkdir, rename, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import {
   PROJECT_ID_PATTERN,
@@ -10,6 +10,11 @@ import {
   type ProjectMemory,
   type ProjectRegistry,
 } from '@jarvis/core';
+import {
+  emptyChatState,
+  parseChatPersisted,
+  type ProjectChatPersisted,
+} from './projectChatStore.js';
 
 /**
  * Registre et mémoire des projets, dans les données de Jarvis (décision D3) :
@@ -122,37 +127,57 @@ export class ProjectStore {
     return join(this.root(), id, 'chat.json');
   }
 
+  private chatImagesDir(id: string): string {
+    return join(this.root(), id, 'chat-images');
+  }
+
+  async loadChatState(id: string): Promise<ProjectChatPersisted> {
+    await this.queue;
+    try {
+      const raw = JSON.parse(await readFile(this.chatPath(id), 'utf8'));
+      if (
+        raw &&
+        typeof raw === 'object' &&
+        (raw as { version?: number }).version === 1 &&
+        Array.isArray((raw as { messages?: unknown }).messages)
+      ) {
+        return parseChatPersisted({ version: 2, messages: (raw as { messages: unknown }).messages });
+      }
+      return parseChatPersisted(raw);
+    } catch {
+      return emptyChatState();
+    }
+  }
+
+  async saveChatState(id: string, state: ProjectChatPersisted): Promise<void> {
+    await this.write(this.chatPath(id), {
+      version: 2,
+      messages: state.messages.slice(-80),
+      decisions: state.decisions.slice(0, 40),
+      codingPick: state.codingPick,
+      webSearchUsed: state.webSearchUsed,
+      compareOffer: state.compareOffer,
+    });
+  }
+
+  async saveChatScreenshot(id: string, messageId: string, png: Buffer): Promise<void> {
+    const dir = this.chatImagesDir(id);
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, `${messageId.slice(0, 40)}.png`), png);
+  }
+
+  /** Messages seuls (compatibilité). */
   async loadChat(
     id: string,
   ): Promise<Array<{ id: string; role: 'user' | 'assistant'; content: string; at: number }>> {
-    await this.queue;
-    try {
-      const raw = JSON.parse(await readFile(this.chatPath(id), 'utf8')) as {
-        messages?: unknown;
-      };
-      if (!Array.isArray(raw.messages)) return [];
-      return raw.messages
-        .map((entry) => {
-          if (!entry || typeof entry !== 'object') return null;
-          const row = entry as Record<string, unknown>;
-          const role = row.role === 'assistant' ? 'assistant' : row.role === 'user' ? 'user' : null;
-          const content = typeof row.content === 'string' ? row.content.slice(0, 8_000) : '';
-          const id = typeof row.id === 'string' ? row.id.slice(0, 40) : '';
-          const at = typeof row.at === 'number' ? row.at : 0;
-          if (!role || !content || !id) return null;
-          return { id, role: role as 'user' | 'assistant', content, at };
-        })
-        .filter((m): m is NonNullable<typeof m> => m !== null)
-        .slice(-80);
-    } catch {
-      return [];
-    }
+    return (await this.loadChatState(id)).messages;
   }
 
   async saveChat(
     id: string,
     messages: Array<{ id: string; role: 'user' | 'assistant'; content: string; at: number }>,
   ): Promise<void> {
-    await this.write(this.chatPath(id), { version: 1, messages: messages.slice(-80) });
+    const current = await this.loadChatState(id);
+    await this.saveChatState(id, { ...current, messages });
   }
 }

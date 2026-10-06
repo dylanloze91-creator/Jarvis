@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { MessageCircle, Rocket } from 'lucide-react';
+import { Camera, MessageCircle, MonitorPlay, Rocket, Scale } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { DeveloperApi, DeveloperState, ProjectView } from '../../../../../shared/developerIpc';
 
@@ -13,11 +13,13 @@ export function ProjectChatPanel({
   state,
   act,
   codeModel,
+  installedModels,
 }: {
   project: ProjectView;
   state: DeveloperState;
   act: Act;
   codeModel: string;
+  installedModels: string[];
 }) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState('');
@@ -36,7 +38,9 @@ export function ProjectChatPanel({
     Boolean(codeModel) &&
     draft.trim().length >= 2 &&
     (project.ok || project.kind === 'jarvis');
-  const lastUser = [...(chat?.messages ?? [])].reverse().find((m) => m.role === 'user');
+  const hasUserMessage = (chat?.messages ?? []).some((m) => m.role === 'user');
+  const compareAlt = chat?.compareOffer?.alternateModel;
+  const otherModels = installedModels.filter((m) => m && m !== codeModel);
   return (
     <div className="mt-2 border-t border-white/5 pt-2" data-project-chat={project.id}>
       <Button size="sm" variant="ghost" onClick={() => setOpen((v) => !v)}>
@@ -48,9 +52,53 @@ export function ProjectChatPanel({
             Tu parles au <strong className="font-normal text-slate-200">modèle de code</strong>{' '}
             ({codeModel || 'pas encore choisi'}) sur « {project.name} ». Jarvis lit le dépôt mais{' '}
             <strong className="font-normal text-slate-200">n’écrit rien</strong> ici : pour changer
-            le code, lance une mission Modifier (plan + confirmations).
+            le code, lance une mission Modifier (plan + confirmations) — le{' '}
+            <strong className="font-normal text-slate-200">fil complet</strong> de la discussion
+            est transmis.
           </p>
-          <div className="max-h-48 overflow-y-auto flex flex-col gap-2 pr-1">
+          {(chat?.decisions?.length ?? 0) > 0 ? (
+            <div className="rounded-md border border-amber-400/15 bg-amber-400/5 px-2 py-1.5">
+              <p className="text-[10px] font-medium uppercase tracking-wide text-amber-200/80">
+                Décisions mémorisées
+              </p>
+              <ul className="mt-1 list-disc pl-4 text-[11px] text-amber-50/90">
+                {chat!.decisions.map((d) => (
+                  <li key={d}>{d}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+          {chat?.codingPick ? (
+            <p className="text-[11px] text-cyan-200/90">
+              Modèle suggéré pour le code : <strong className="font-normal">{chat.codingPick.model}</strong>{' '}
+              — {chat.codingPick.reason}
+            </p>
+          ) : null}
+          {chat?.compareOffer ? (
+            <p className="text-[11px] text-violet-200/90">
+              Comparaison proposée avec {chat.compareOffer.alternateModel} :{' '}
+              {chat.compareOffer.reason}
+            </p>
+          ) : null}
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              size="sm"
+              variant="subtle"
+              disabled={state.busy}
+              onClick={() =>
+                act((api) => api.setProjectChatPreview(project.id, !chat?.previewOpen))
+              }
+            >
+              <MonitorPlay className="size-3.5" />
+              {chat?.previewOpen ? 'Fermer l’aperçu' : 'Ouvrir l’aperçu jeu / page'}
+            </Button>
+            {chat?.previewOpen ? (
+              <span className="text-[10px] text-slate-500">
+                Fenêtre à côté : commente (« plus rapide », « plus grand ») puis envoie avec capture.
+              </span>
+            ) : null}
+          </div>
+          <div className="max-h-56 overflow-y-auto flex flex-col gap-2 pr-1">
             {(chat?.messages ?? []).map((message) => (
               <div
                 key={message.id}
@@ -61,7 +109,12 @@ export function ProjectChatPanel({
                 }
               >
                 {message.role === 'user' ? (
-                  message.content
+                  <>
+                    {message.hasScreenshot ? (
+                      <span className="mb-1 block text-[10px] text-cyan-300/80">📷 capture jointe</span>
+                    ) : null}
+                    {message.content}
+                  </>
                 ) : (
                   <Markdown remarkPlugins={[remarkGfm]}>{message.content}</Markdown>
                 )}
@@ -92,15 +145,42 @@ export function ProjectChatPanel({
             <Button
               size="sm"
               variant="subtle"
-              disabled={state.busy || !lastUser}
-              title="Ouvre une mission Modifier avec ton dernier message"
+              disabled={!canSend || !chat?.previewOpen}
+              title="Envoie ta remarque avec une capture de l’aperçu"
+              onClick={() => {
+                const text = draft.trim();
+                setDraft('');
+                act((api) => api.sendProjectChat(project.id, text, true));
+              }}
+            >
+              <Camera className="size-3.5" /> Envoyer avec capture
+            </Button>
+            <Button
+              size="sm"
+              variant="subtle"
+              disabled={state.busy || !hasUserMessage}
+              title="Mission Modifier avec tout le fil de discussion"
+              onClick={() => act((api) => api.startMissionFromChat(project.id))}
+            >
+              <Rocket className="size-3.5" /> Lancer mission Modifier
+            </Button>
+            <Button
+              size="sm"
+              variant="subtle"
+              disabled={state.busy || !hasUserMessage || otherModels.length === 0}
+              title="Compare le modèle actuel avec un autre installé (une validation de plan)"
               onClick={() =>
                 act((api) =>
-                  api.startMission('modify', lastUser!.content, false, project.id),
+                  api.compareProjectChatModels(
+                    project.id,
+                    compareAlt && otherModels.includes(compareAlt)
+                      ? compareAlt
+                      : otherModels[0]!,
+                  ),
                 )
               }
             >
-              <Rocket className="size-3.5" /> Lancer mission Modifier
+              <Scale className="size-3.5" /> Comparer les modèles
             </Button>
           </div>
         </div>

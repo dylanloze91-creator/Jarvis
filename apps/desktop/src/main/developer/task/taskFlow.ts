@@ -136,6 +136,11 @@ export class TaskRun extends TaskRunBase {
     return this.approvalWaiter !== null;
   }
 
+  /** Plan validé (comparaison de modèles). */
+  get reviewedPlan(): import('@jarvis/core').ReviewedPlan | null {
+    return this.reviewed;
+  }
+
   approve(approved: boolean): boolean {
     const waiter = this.approvalWaiter;
     if (!waiter) return false;
@@ -635,14 +640,19 @@ export class TaskRun extends TaskRunBase {
 
     step('plan', 'running', 'lecture du dépôt');
     this.hooks.onPhase?.('plan', 'running', 'lecture du dépôt, plan de modification');
-    const plan = await this.makePlan(code, signal, pause);
     const review = (p: TaskPlan) =>
       reviewPlan(p, (path) => this.repo.tracked.has(path), this.profile.protectedFileReason);
-    let checked = review(plan);
+    let checked: ReviewedPlan;
+    if (this.hooks.presetPlan) {
+      checked = this.hooks.presetPlan;
+    } else {
+      const plan = await this.makePlan(code, signal, pause);
+      checked = review(plan);
+    }
     const entry = this.hooks.fallbackPlan;
     if (
+      !this.hooks.presetPlan &&
       entry &&
-      plan !== entry &&
       !checked.files.some((f) => !f.problem && entry.files.some((e) => e.path === f.path))
     ) {
       state.planFallback = `plan de secours (gabarit du projet) : le plan du modèle ne touchait aucun fichier d’entrée du gabarit (${entry.files.map((f) => f.path).join(', ')})`;
@@ -682,7 +692,7 @@ export class TaskRun extends TaskRunBase {
 
     state.status = 'awaiting-approval';
     step('approval', 'running', 'en attente de ta validation');
-    const approved = await this.waitApproval(signal);
+    const approved = this.hooks.autoApprovePlan ? true : await this.waitApproval(signal);
     if (signal.aborted) throw new Error('Annulé.');
     if (!approved) {
       state.status = 'refused';

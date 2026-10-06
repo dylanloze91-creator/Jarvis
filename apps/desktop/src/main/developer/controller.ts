@@ -5,6 +5,7 @@ import {
   candidateRepoPaths,
   createCodeAIProvider,
   classifyCommand,
+  missionRequestFromProjectChat,
   randomId,
   redactSecrets,
   resolveLocalOllamaBase,
@@ -16,12 +17,16 @@ import {
   type ProviderRegistry,
   type ConfirmationRequest,
   type RepoFacts,
+  type SearchProviderRegistry,
   type Settings,
   type ToolCallOutcome,
   type ToolManager,
 } from '@jarvis/core';
 import { join } from 'node:path';
-import { runProjectChatTurn } from './project/projectChatFlow.js';
+import { runProjectChatTurn, type ProjectChatSideEffects } from './project/projectChatFlow.js';
+import { ProjectPreviewWindow } from './project/projectPreview.js';
+import type { ProjectChatPersisted } from './project/projectChatStore.js';
+import { createProjectChatTools } from './tools/projectChatTools.js';
 import type {
   AskView,
   DevConfirmation,
@@ -69,6 +74,8 @@ export interface ControllerDeps {
   freeBytes?(path: string): Promise<number | null>;
   /** Registre des fournisseurs du chat, réutilisé pour le modèle de code (aucun nouveau client réseau). */
   registry: ProviderRegistry;
+  /** Recherche web (discussion projet : une fois, avec confirmation). */
+  searchRegistry: SearchProviderRegistry;
   userDataPath(): string;
   env?: Record<string, string | undefined>;
   fetch?: typeof fetch;
@@ -98,6 +105,7 @@ export class DeveloperController {
   private report: DeveloperState['report'] = null;
   private askView: AskView | null = null;
   private projectChat: ProjectChatView | null = null;
+  private readonly projectPreview = new ProjectPreviewWindow();
   private notice: string | null = null;
   private controller: AbortController | null = null;
   private readonly pending = new Map<string, (approved: boolean) => void>();
@@ -487,6 +495,46 @@ export class DeveloperController {
     return this.guard() ?? this.projects.build(id);
   }
 
+  private chatView(
+    id: string,
+    name: string,
+    persisted: ProjectChatPersisted,
+    previewOpen: boolean,
+  ): ProjectChatView {
+    return {
+      projectId: id,
+      projectName: name,
+      messages: persisted.messages,
+      decisions: persisted.decisions,
+      codingPick: persisted.codingPick,
+      webSearchUsed: persisted.webSearchUsed,
+      compareOffer: persisted.compareOffer,
+      previewOpen,
+    };
+  }
+
+  private mergeChatEffects(
+    persisted: ProjectChatPersisted,
+    effects: ProjectChatSideEffects,
+    messages: ProjectChatView['messages'],
+  ): ProjectChatPersisted {
+    const decisions = [...persisted.decisions];
+    for (const d of effects.decisions) {
+      const text = d.trim();
+      if (text && !decisions.includes(text)) decisions.push(text);
+    }
+    return {
+      version: 2,
+      messages,
+      decisions: decisions.slice(0, 40),
+      codingPick: effects.codingPick
+        ? { model: effects.codingPick.model, reason: effects.codingPick.reason, at: Date.now() }
+        : persisted.codingPick,
+      webSearchUsed: persisted.webSearchUsed || effects.webSearchUsed,
+      compareOffer: effects.compareOffer ?? persisted.compareOffer,
+    };
+  }
+
   async openProjectChat(projectId: string): Promise<DeveloperState> {
     if (!this.enabled()) return this.guard() ?? this.state();
     const id = projectId.trim();
@@ -499,12 +547,37 @@ export class DeveloperController {
       this.notice = resolved;
       return this.emit();
     }
-    const messages = await this.projects.loadChat(id);
-    this.projectChat = { projectId: id, projectName: resolved.name, messages };
+    const persisted = await this.projects.loadChatState(id);
+    const previewOpen = this.projectPreview.isOpen(id);
+    this.projectChat = this.chatView(id, resolved.name, persisted, previewOpen);
     return this.emit();
   }
 
-  async sendProjectChat(projectId: string, text: string): Promise<DeveloperState> {
+  async setProjectChatPreview(projectId: string, open: boolean): Promise<DeveloperState> {
+    if (!this.enabled()) return this.guard() ?? this.state();
+    const id = projectId.trim();
+    const resolved = await this.projects.resolve(id);
+    if (typeof resolved === 'string') {
+      this.notice = resolved;
+      return this.emit();
+    }
+    if (open) {
+      const ok = this.projectPreview.open(id, resolved.root, resolved.template ?? null);
+      if (!ok) {
+        this.notice =
+          'Aucun aperçu jouable : le projet doit avoir un index.html (gabarit jeu web ou page locale).';
+      }
+    } else this.projectPreview.close();
+    const persisted = await this.projects.loadChatState(id);
+    this.projectChat = this.chatView(id, resolved.name, persisted, this.projectPreview.isOpen(id));
+    return this.emit();
+  }
+
+  async sendProjectChat(
+    projectId: string,
+    text: string,
+    withScreenshot = false,
+  ): Promise<DeveloperState> {
     const refused = this.guard(projectId === 'jarvis');
     if (refused) return refused;
     const id = projectId.trim();
@@ -520,7 +593,8 @@ export class DeveloperController {
       return this.emit();
     }
     const status = await this.ollama().status();
-    if (!status.models.some((m) => m.name === model)) {
+    const installed = status.models.map((m) => m.name);
+    if (!installed.includes(model)) {
       this.notice = `Le modèle de code « ${model} » n’est pas installé dans Ollama.`;
       return this.emit();
     }
@@ -529,12 +603,69 @@ export class DeveloperController {
       this.notice = resolved;
       return this.emit();
     }
+    const priorPersisted =
+      this.projectChat?.projectId === id
+        ? {
+            version: 2 as const,
+            messages: this.projectChat.messages,
+            decisions: this.projectChat.decisions,
+            codingPick: this.projectChat.codingPick,
+            webSearchUsed: this.projectChat.webSearchUsed,
+            compareOffer: this.projectChat.compareOffer,
+          }
+        : await this.projects.loadChatState(id);
     const now = Date.now();
-    const userMsg = { id: randomId(), role: 'user' as const, content: userText, at: now };
-    const prior = this.projectChat?.projectId === id ? this.projectChat.messages : await this.projects.loadChat(id);
-    const messages = [...prior, userMsg];
-    this.projectChat = { projectId: id, projectName: resolved.name, messages };
-    await this.projects.saveChat(id, messages);
+    const userMsg = {
+      id: randomId(),
+      role: 'user' as const,
+      content: userText,
+      at: now,
+      ...(withScreenshot ? { hasScreenshot: true } : {}),
+    };
+    const pendingMessages = [...priorPersisted.messages, userMsg];
+    this.projectChat = this.chatView(
+      id,
+      resolved.name,
+      { ...priorPersisted, messages: pendingMessages },
+      this.projectPreview.isOpen(id),
+    );
+    await this.projects.saveChatState(id, { ...priorPersisted, messages: pendingMessages });
+    let screenshotBase64: string | undefined;
+    if (withScreenshot) {
+      if (!this.projectPreview.isOpen(id)) {
+        this.notice = 'Ouvre d’abord l’aperçu à côté du chat, puis envoie avec capture.';
+        return this.emit();
+      }
+      const png = await this.projectPreview.capturePng();
+      if (!png) {
+        this.notice = 'Capture impossible : l’aperçu n’est pas prêt.';
+        return this.emit();
+      }
+      await this.projects.saveChatScreenshot(id, userMsg.id, png);
+      screenshotBase64 = png.toString('base64');
+    }
+    const effects: ProjectChatSideEffects = {
+      decisions: [],
+      webSearchUsed: priorPersisted.webSearchUsed,
+    };
+    const chatTools = createProjectChatTools({
+      getSettings: () => this.deps.getSettings(),
+      searchRegistry: this.deps.searchRegistry,
+      installedModels: () => this.models.state().installedModels,
+      onSuggestCoder: (picked, reason) => {
+        effects.codingPick = { model: picked, reason };
+      },
+      onRememberDecision: (decision) => {
+        effects.decisions.push(decision);
+      },
+      onOfferCompare: (alternateModel, reason) => {
+        effects.compareOffer = { alternateModel, reason };
+      },
+      webSearchUsed: () => priorPersisted.webSearchUsed || effects.webSearchUsed,
+      markWebSearchUsed: () => {
+        effects.webSearchUsed = true;
+      },
+    });
     return this.runTask(
       'project-chat',
       `Discussion — ${resolved.name}`,
@@ -553,16 +684,26 @@ export class DeveloperController {
           fetch: patientFetch,
         });
         const memory = await this.projects.memoryNotes(id);
-        const history = prior.map((m) => ({ role: m.role, content: m.content }));
+        const history = priorPersisted.messages.map((m) => ({
+          role: m.role,
+          content: m.content,
+        }));
         const result = await runProjectChatTurn(
           {
             code,
-            tools: this.auditedReadTools(ASK_TOOLS, resolved.root),
+            readTools: this.auditedReadTools(ASK_TOOLS, resolved.root),
+            chatTools,
             profile: resolved.profile,
             memoryNotes: memory,
+            decisions: priorPersisted.decisions,
+            installedModels: installed,
+            webSearchUsed: priorPersisted.webSearchUsed,
             history,
             signal,
             beforeRound: () => this.yieldToChat(model, signal),
+            requestConfirmation: (request) => this.askUser(request, signal),
+            screenshotBase64,
+            effects,
           },
           userText,
         );
@@ -574,12 +715,106 @@ export class DeveloperController {
           content: result.reply,
           at: Date.now(),
         };
-        const next = [...messages, assistant];
-        this.projectChat = { projectId: id, projectName: resolved.name, messages: next };
-        await this.projects.saveChat(id, next);
+        const nextMessages = [...pendingMessages, assistant];
+        const merged = this.mergeChatEffects(priorPersisted, effects, nextMessages);
+        await this.projects.saveChatState(id, merged);
+        this.projectChat = this.chatView(
+          id,
+          resolved.name,
+          merged,
+          this.projectPreview.isOpen(id),
+        );
         step('reply', 'done');
         return 'Réponse ajoutée à la discussion du projet.';
       },
+    );
+  }
+
+  async startMissionFromChat(projectId: string): Promise<DeveloperState> {
+    const refused = this.guard(projectId === 'jarvis');
+    if (refused) return refused;
+    const id = projectId.trim();
+    const persisted =
+      this.projectChat?.projectId === id
+        ? {
+            version: 2 as const,
+            messages: this.projectChat.messages,
+            decisions: this.projectChat.decisions,
+            codingPick: this.projectChat.codingPick,
+            webSearchUsed: this.projectChat.webSearchUsed,
+            compareOffer: this.projectChat.compareOffer,
+          }
+        : await this.projects.loadChatState(id);
+    if (!persisted.messages.some((m) => m.role === 'user')) {
+      this.notice = 'Écris au moins un message dans la discussion avant de lancer une mission.';
+      return this.emit();
+    }
+    const { summary, discussionContext } = missionRequestFromProjectChat(
+      persisted.messages,
+      persisted.decisions,
+    );
+    const extras = {
+      discussionContext,
+      projectDecisions: persisted.decisions,
+      ...(persisted.codingPick
+        ? { coderOverride: { model: persisted.codingPick.model, reason: persisted.codingPick.reason } }
+        : {}),
+    };
+    return this.missions.start('modify', summary, false, id, undefined, extras);
+  }
+
+  async compareProjectChatModels(
+    projectId: string,
+    alternateModel: string,
+  ): Promise<DeveloperState> {
+    const refused = this.guard(projectId === 'jarvis');
+    if (refused) return refused;
+    const id = projectId.trim();
+    const alternate = alternateModel.trim();
+    const primary = this.deps.getSettings().developer.codeModel;
+    if (!primary) {
+      this.notice = 'Choisis d’abord un modèle de code.';
+      return this.emit();
+    }
+    if (alternate === primary) {
+      this.notice = 'Choisis un autre modèle installé que le modèle de code actuel.';
+      return this.emit();
+    }
+    const status = await this.ollama().status();
+    const installed = new Set(status.models.map((m) => m.name));
+    if (!installed.has(primary) || !installed.has(alternate)) {
+      this.notice = 'Les deux modèles doivent être installés dans Ollama (pas de téléchargement ici).';
+      return this.emit();
+    }
+    const resolved = await this.projects.resolve(id);
+    if (typeof resolved === 'string') {
+      this.notice = resolved;
+      return this.emit();
+    }
+    const persisted = await this.projects.loadChatState(id);
+    const { summary, discussionContext } = missionRequestFromProjectChat(
+      persisted.messages,
+      persisted.decisions,
+    );
+    const planContext = [
+      discussionContext,
+      persisted.decisions.length
+        ? `Décisions : ${persisted.decisions.join(' · ')}`
+        : '',
+    ]
+      .filter(Boolean)
+      .join('\n\n');
+    return this.tasks.compareModels(
+      summary,
+      {
+        id: resolved.id,
+        root: resolved.root,
+        profile: resolved.profile,
+        templateId: resolved.template,
+      },
+      primary,
+      alternate,
+      planContext,
     );
   }
 

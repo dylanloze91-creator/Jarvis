@@ -283,6 +283,46 @@ export class CodeTaskWorkflow {
     return this.host.emit();
   }
 
+  /**
+   * Compare deux modèles installés sur la même modification : une validation de plan,
+   * puis deux passes en copie isolée (5.0.4).
+   */
+  async compareModels(
+    request: string,
+    project: TaskProject,
+    primary: string,
+    alternate: string,
+    planContext?: string,
+  ): Promise<DeveloperState> {
+    const hooks = planContext ? { planContext } : {};
+    const first = await this.start(request, { model: primary, project, hooks });
+    const run = this.current;
+    if (!run || run.state.status !== 'finished') {
+      return this.host.notice(
+        'La première passe doit se terminer (plan validé) avant de comparer le second modèle.',
+      );
+    }
+    const plan = run.reviewedPlan;
+    if (!plan) return this.host.notice('Plan introuvable après la première passe.');
+    const primaryOk = run.state.report?.verdict === 'success';
+    const second = await this.start(request, {
+      model: alternate,
+      project,
+      hooks: { presetPlan: plan, autoApprovePlan: true, planContext },
+    });
+    const run2 = this.current;
+    const alternateOk = run2?.state.report?.verdict === 'success';
+    const detail = primaryOk === alternateOk
+      ? `Les deux modèles ont ${primaryOk ? 'réussi' : 'échoué'} les tests.`
+      : primaryOk
+        ? `${primary} a passé les tests, pas ${alternate}.`
+        : `${alternate} a passé les tests, pas ${primary}.`;
+    this.host.notice(
+      `Comparaison : ${primary} ${primaryOk ? 'OK' : 'échec'} · ${alternate} ${alternateOk ? 'OK' : 'échec'}. ${detail}`,
+    );
+    return second;
+  }
+
   private finished(): TaskRun | null {
     const run = this.current;
     return run && run.state.finishedAt !== null && run.sandbox && !run.state.closed ? run : null;

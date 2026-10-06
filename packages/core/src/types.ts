@@ -49,6 +49,8 @@ export interface ChatMessage {
   id: string;
   role: MessageRole;
   content: string;
+  /** Images jointes (base64 brut, API Ollama). */
+  images?: string[];
   /** Présent sur les messages `assistant` qui demandent l'exécution d'outils. */
   toolCalls?: ToolCall[];
   /** Présent sur les messages `tool`, référence l'appel auquel ils répondent. */

@@ -45,6 +45,10 @@ export interface TaskHooks {
   docsOnly?: boolean;
   /** Plan de secours (projet neuf, 5.0.1) si le CODER ne rend pas de plan valide ; validé comme un autre. */
   fallbackPlan?: TaskPlan;
+  /** Plan déjà validé (comparaison de modèles 5.0.4) : saute la génération. */
+  presetPlan?: ReviewedPlan;
+  /** Avec presetPlan : saute la carte de validation du plan (comparaison 2e passe). */
+  autoApprovePlan?: boolean;
   /**
    * Projet né d'un gabarit (5.0.1) : modification et corrections fichier par
    * fichier (contenu complet rendu par le modèle), avec ces fichiers en référence.

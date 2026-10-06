@@ -7,6 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   InMemoryAuditLogStore,
   createDefaultRegistry,
+  createDefaultSearchRegistry,
   parseSettings,
   type Settings,
 } from '@jarvis/core';
@@ -105,6 +106,7 @@ function controller(settings: Partial<Settings['developer']> = {}, installed = '
     now: () => new Date(2026, 9, 2, 15, 0),
     freeBytes: async () => 100 * 1024 ** 3,
     registry: createDefaultRegistry(),
+    searchRegistry: createDefaultSearchRegistry(),
     userDataPath: () => join(base, 'userData'),
   });
   return {

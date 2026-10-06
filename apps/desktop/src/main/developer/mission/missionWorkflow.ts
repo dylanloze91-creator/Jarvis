@@ -62,6 +62,7 @@ import {
   resolveRoleModel,
   GATED_MISSION_KINDS,
   assessMission,
+  formatProjectDecisions,
   modelCapability,
   type MissionGate,
   type RealBenchResult,
@@ -112,6 +113,12 @@ import type { DeveloperManualStore } from '../knowledge/manualStore.js';
 import type { MissionStore } from './history.js';
 
 type Step = (id: string, status: DevStepStatus, detail?: string) => void;
+
+export interface MissionStartExtras {
+  discussionContext?: string;
+  coderOverride?: { model: string; reason: string };
+  projectDecisions?: string[];
+}
 
 export interface MissionHost {
   runTask(
@@ -248,7 +255,20 @@ export class MissionWorkflow {
   }
 
   private modelFor(role: SpecialistRole): string {
+    if (role === 'CODER' && this.current?.coderOverride?.model)
+      return this.current.coderOverride.model;
     return resolveRoleModel(role, this.developer())!;
+  }
+
+  private enrichedPlanContext(base: string): string {
+    const mission = this.current;
+    const parts = [base];
+    if (mission?.discussionContext?.trim()) parts.push(mission.discussionContext.trim());
+    if (mission?.projectDecisions?.length)
+      parts.push(
+        `Décisions mémorisées du projet :\n${formatProjectDecisions(mission.projectDecisions)}`,
+      );
+    return parts.join('\n\n');
   }
 
   private async persist(): Promise<void> {
@@ -373,6 +393,7 @@ export class MissionWorkflow {
     skipQuestions: boolean,
     projectId: string = MISSION_PROJECT_ID,
     link?: { missionId: string; index: number },
+    chatExtras?: MissionStartExtras,
   ): Promise<DeveloperState> {
     const text = request.trim();
     if (text.length < (kind === 'question' ? 4 : 8))
@@ -436,6 +457,11 @@ export class MissionWorkflow {
     });
     if (link) this.current.fromProposal = link;
     if (this.gate) this.current.gate = this.gate;
+    if (chatExtras?.discussionContext)
+      this.current.discussionContext = chatExtras.discussionContext.slice(0, 24_000);
+    if (chatExtras?.coderOverride) this.current.coderOverride = chatExtras.coderOverride;
+    if (chatExtras?.projectDecisions?.length)
+      this.current.projectDecisions = chatExtras.projectDecisions.slice(0, 40);
     this.counters.clear();
     this.open.clear();
     await this.persist();
@@ -680,7 +706,7 @@ export class MissionWorkflow {
     await this.switchModel(coder);
     await this.host.startTask(mission.request, {
       model: coder,
-      hooks: this.loopHooks(root, coder, context),
+      hooks: this.loopHooks(root, coder, this.enrichedPlanContext(context)),
       templateId: this.project?.template,
       ...(this.project && this.project.id !== JARVIS_PROJECT_ID
         ? {
@@ -899,7 +925,7 @@ export class MissionWorkflow {
       model: coder,
       templateId: template ?? undefined,
       hooks: {
-        ...this.loopHooks(project.root, coder, context),
+        ...this.loopHooks(project.root, coder, this.enrichedPlanContext(context)),
         ...(fallbackPlan ? { fallbackPlan } : {}),
         fileByFile: {
           references: template ? (TEMPLATE_REFERENCES[template] ?? []) : [],

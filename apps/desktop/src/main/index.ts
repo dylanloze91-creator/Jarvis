@@ -482,6 +482,7 @@ function registerIpc(): void {
     auditLog,
     target: () => overlay?.browserWindow.webContents ?? null,
     registry,
+    searchRegistry,
     userDataPath: () => app.getPath('userData'),
     chat: chatActivity,
   });

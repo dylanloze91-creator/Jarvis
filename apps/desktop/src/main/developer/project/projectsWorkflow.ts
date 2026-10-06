@@ -46,6 +46,7 @@ import {
   writeProjectFiles,
 } from './factory.js';
 import { inspectProject } from './inspect.js';
+import type { ProjectChatPersisted } from './projectChatStore.js';
 import type { ProjectStore } from './projectStore.js';
 
 type Step = (id: string, status: DevStepStatus, detail?: string) => void;
@@ -271,17 +272,30 @@ export class ProjectsWorkflow {
     return memory?.notes ?? (id === JARVIS_PROJECT_ID ? JARVIS_DEFAULT_MEMORY : '');
   }
 
+  async loadChatState(id: string): Promise<ProjectChatPersisted> {
+    return this.deps.store.loadChatState(id);
+  }
+
+  async saveChatState(id: string, state: ProjectChatPersisted): Promise<void> {
+    await this.deps.store.saveChatState(id, state);
+  }
+
+  async saveChatScreenshot(id: string, messageId: string, png: Buffer): Promise<void> {
+    await this.deps.store.saveChatScreenshot(id, messageId, png);
+  }
+
   async loadChat(
     id: string,
   ): Promise<Array<{ id: string; role: 'user' | 'assistant'; content: string; at: number }>> {
-    return this.deps.store.loadChat(id);
+    return (await this.loadChatState(id)).messages;
   }
 
   async saveChat(
     id: string,
     messages: Array<{ id: string; role: 'user' | 'assistant'; content: string; at: number }>,
   ): Promise<void> {
-    await this.deps.store.saveChat(id, messages);
+    const current = await this.loadChatState(id);
+    await this.saveChatState(id, { ...current, messages });
   }
 
   async resolve(id: string): Promise<ResolvedProject | string> {

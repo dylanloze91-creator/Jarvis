@@ -281,6 +281,9 @@ function convert(message: ChatMessage): Record<string, unknown> {
       })),
     };
   }
+  if (message.images?.length) {
+    return { role: message.role, content: message.content, images: message.images };
+  }
   return { role: message.role, content: message.content };
 }
 

@@ -3,7 +3,12 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { InMemoryAuditLogStore, createDefaultRegistry, parseSettings } from '@jarvis/core';
+import {
+  InMemoryAuditLogStore,
+  createDefaultRegistry,
+  createDefaultSearchRegistry,
+  parseSettings,
+} from '@jarvis/core';
 import type { DeveloperState } from '../../../shared/developerIpc.js';
 import { DeveloperController } from '../controller.js';
 import { runProcess, type RunSpec } from '../runner.js';
@@ -46,6 +51,7 @@ function setup(repoPath = '') {
     emit: (state) => states.push(structuredClone(state)),
     freeBytes: async () => 400e9,
     registry: createDefaultRegistry(),
+    searchRegistry: createDefaultSearchRegistry(),
     userDataPath: () => join(base, 'userData'),
     env,
     system: {

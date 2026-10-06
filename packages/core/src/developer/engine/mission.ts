@@ -54,6 +54,12 @@ export interface MissionState {
   gate?: MissionGate;
   /** Fiche solution validée enregistrée (ou refusée) à la fin de la boucle de code. */
   learning?: MissionLearning;
+  /** Fil de discussion projet transmis à la mission Modifier (5.0.4). */
+  discussionContext?: string;
+  /** Modèle Codeur choisi pendant la discussion (installé, avec justification). */
+  coderOverride?: { model: string; reason: string };
+  /** Décisions mémorisées du projet injectées dans les prompts. */
+  projectDecisions?: string[];
 }
 
 export interface MissionSummary {

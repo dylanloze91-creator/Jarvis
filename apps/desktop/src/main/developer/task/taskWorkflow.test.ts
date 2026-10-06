@@ -7,6 +7,7 @@ import {
   InMemoryAuditLogStore,
   classifyCommand,
   createDefaultRegistry,
+  createDefaultSearchRegistry,
   parseSettings,
   type CommandSafetyLevel,
 } from '@jarvis/core';
@@ -74,6 +75,7 @@ function setup(answer: (card: DevConfirmation) => boolean, approvePlan = true): 
     auditLog: audit,
     freeBytes: async () => 400e9,
     registry: createDefaultRegistry(),
+    searchRegistry: createDefaultSearchRegistry(),
     userDataPath: () => join(base, 'userData'),
     env: {},
     run,
