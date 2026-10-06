@@ -15,6 +15,7 @@ import type {
   DiffFile,
   HardwareFacts,
   ManualPassageView,
+  OllamaModelInfo,
   Prediction,
   ScanFinding,
   ServerInstructions,
@@ -173,9 +174,27 @@ export interface CodeModelState {
   realBenches: RealBenchResult[];
   /** Modèles présents dans Ollama, pour lancer le banc réel sans rien télécharger. */
   installedModels: string[];
+  /** Dernière liste brute renvoyée par Ollama `/api/tags`. */
+  ollamaModels: OllamaModelInfo[];
+  ollamaModelsAt: number | null;
+  ollamaListMessage: string | null;
 }
 
 /** Question sur le code (0.5.1) : réponse et citations relues dans les fichiers. */
+export interface ProjectChatMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  at: number;
+}
+
+/** Discussion avec le modèle de code sur un projet (importé ou créé). */
+export interface ProjectChatView {
+  projectId: string;
+  projectName: string;
+  messages: ProjectChatMessage[];
+}
+
 export interface AskView {
   question: string;
   model: string;
@@ -204,6 +223,8 @@ export const DeveloperChannel = {
   validateConfig: 'dev:validate-config',
   experts: 'dev:experts',
   pull: 'dev:pull',
+  refreshOllamaModels: 'dev:refresh-ollama-models',
+  pullOllamaModel: 'dev:pull-ollama-model',
   benchmark: 'dev:benchmark',
   taskStart: 'dev:task-start',
   taskApprove: 'dev:task-approve',
@@ -223,6 +244,8 @@ export const DeveloperChannel = {
   projectForget: 'dev:project-forget',
   projectMemory: 'dev:project-memory',
   projectBuild: 'dev:project-build',
+  projectChatOpen: 'dev:project-chat-open',
+  projectChatSend: 'dev:project-chat-send',
   taskApply: 'dev:task-apply',
   taskRevert: 'dev:task-revert',
   missionProposal: 'dev:mission-proposal',
@@ -254,7 +277,8 @@ export type DevTaskKind =
   | 'apply'
   | 'revert'
   | 'build'
-  | 'project';
+  | 'project'
+  | 'project-chat';
 
 export interface DevTask {
   id: string;
@@ -314,6 +338,8 @@ export interface DeveloperState {
   missionGate?: MissionGate | null;
   /** Projets connus, Jarvis en premier (null : pas encore lus). */
   projects: ProjectView[] | null;
+  /** Discussion projet ouverte (onglet Projet). */
+  projectChat: ProjectChatView | null;
   /** Dossier des nouveaux projets (décision D2). */
   projectsRoot: string;
   /** SDK .NET trouvé (0.5.4) et commande d'installation à lancer soi-même ; null : pas encore cherché. */
@@ -337,6 +363,9 @@ export interface DeveloperApi {
   /** L'utilisateur dit avoir appliqué (ou retiré) lui-même les variables « experts en RAM ». */
   confirmExperts(applied: boolean): Promise<DeveloperState>;
   pull(modelId: string): Promise<DeveloperState>;
+  refreshOllamaModels(): Promise<DeveloperState>;
+  /** Téléchargement confirmé d’un nom Ollama libre (hors catalogue). */
+  pullOllamaModel(model: string): Promise<DeveloperState>;
   benchmark(modelId: string): Promise<DeveloperState>;
   startTask(request: string): Promise<DeveloperState>;
   approvePlan(approved: boolean): Promise<DeveloperState>;
@@ -362,6 +391,8 @@ export interface DeveloperApi {
   forgetProject(id: string): Promise<DeveloperState>;
   saveProjectMemory(id: string, notes: string): Promise<DeveloperState>;
   buildProject(id: string): Promise<DeveloperState>;
+  openProjectChat(projectId: string): Promise<DeveloperState>;
+  sendProjectChat(projectId: string, text: string): Promise<DeveloperState>;
   applyTask(): Promise<DeveloperState>;
   revertTask(): Promise<DeveloperState>;
   /** Proposition retenue d'une mission « Améliorer » → nouvelle mission sur le même projet (0.5.5). */

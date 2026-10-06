@@ -63,6 +63,7 @@ export function registerDeveloperIpc(
     projects: null,
     projectsRoot: '',
     dotnet: null,
+    projectChat: null,
   });
 
   const refused = (): DeveloperState => ({ ...disabled(), notice: DEVELOPER_DISABLED_NOTICE });
@@ -89,6 +90,14 @@ export function registerDeveloperIpc(
   ipcMain.handle(
     DeveloperChannel.pull,
     (_event, id: unknown) => get()?.pull(modelId(id)) ?? refused(),
+  );
+  ipcMain.handle(
+    DeveloperChannel.refreshOllamaModels,
+    () => get()?.refreshOllamaModels() ?? refused(),
+  );
+  ipcMain.handle(
+    DeveloperChannel.pullOllamaModel,
+    (_event, name: unknown) => get()?.pullOllamaModel(modelId(name)) ?? refused(),
   );
   ipcMain.handle(
     DeveloperChannel.benchmark,
@@ -169,6 +178,18 @@ export function registerDeveloperIpc(
   ipcMain.handle(
     DeveloperChannel.projectBuild,
     (_event, id: unknown) => get()?.buildProject(projectId(id) ?? '') ?? refused(),
+  );
+  ipcMain.handle(
+    DeveloperChannel.projectChatOpen,
+    (_event, id: unknown) => get()?.openProjectChat(projectId(id) ?? '') ?? refused(),
+  );
+  ipcMain.handle(
+    DeveloperChannel.projectChatSend,
+    (_event, id: unknown, text: unknown) =>
+      get()?.sendProjectChat(
+        projectId(id) ?? '',
+        typeof text === 'string' ? text.slice(0, 4_000) : '',
+      ) ?? refused(),
   );
   ipcMain.handle(
     DeveloperChannel.missionProposal,

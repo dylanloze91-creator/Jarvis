@@ -241,6 +241,15 @@ export function previewModelState(scene: string | null): CodeModelState {
         : null,
     benches: scene === 'developer-bench' ? [SAMPLE_BENCH] : [],
     realBenches: scene === 'developer-real-bench' ? [sampleRealBench()] : [],
-    installedModels: models.filter((m) => m.supportsTools).map((m) => m.name),
+    installedModels: models.map((m) => m.name),
+    ollamaModels: models.map((m) => ({
+      name: m.name,
+      sizeBytes: m.sizeBytes,
+      parameterSize: m.parameterSize,
+      quantizationLevel: m.quantization,
+      supportsTools: m.supportsTools,
+    })),
+    ollamaModelsAt: Date.now() - 30_000,
+    ollamaListMessage: `${models.length} modèles installés.`,
   };
 }

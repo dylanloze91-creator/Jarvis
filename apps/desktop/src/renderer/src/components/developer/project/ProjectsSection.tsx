@@ -4,6 +4,7 @@ import { PROJECT_TEMPLATES } from '@jarvis/core';
 import { Button } from '@/components/ui/button';
 import type { DeveloperApi, DeveloperState, ProjectView } from '../../../../../shared/developerIpc';
 import { CheckList } from '../parts';
+import { ProjectChatPanel } from './ProjectChatPanel';
 
 type Act = (action: (api: DeveloperApi) => Promise<DeveloperState | void>) => void;
 
@@ -17,10 +18,12 @@ function ProjectRow({
   project,
   state,
   act,
+  codeModel,
 }: {
   project: ProjectView;
   state: DeveloperState;
   act: Act;
+  codeModel: string;
 }) {
   const [editing, setEditing] = useState(false);
   const [notes, setNotes] = useState(project.memory);
@@ -87,6 +90,7 @@ function ProjectRow({
         </p>
       ) : null}
       {failing.length ? <CheckList checks={failing} /> : null}
+      <ProjectChatPanel project={project} state={state} act={act} codeModel={codeModel} />
       {editing ? (
         <div className="flex flex-col gap-1.5">
           <label htmlFor={`memory-${project.id}`} className="text-[11px] text-slate-400">
@@ -117,7 +121,15 @@ function ProjectRow({
 }
 
 /** Projets de Jarvis Développeur (0.5.3) : Jarvis, les projets importés et ceux créés depuis un gabarit. */
-export function ProjectsSection({ state, act }: { state: DeveloperState; act: Act }) {
+export function ProjectsSection({
+  state,
+  act,
+  codeModel = '',
+}: {
+  state: DeveloperState;
+  act: Act;
+  codeModel?: string;
+}) {
   const [path, setPath] = useState('');
   useEffect(() => {
     if (state.projects === null) act((api) => api.listProjects());
@@ -132,8 +144,8 @@ export function ProjectsSection({ state, act }: { state: DeveloperState; act: Ac
       </div>
       <p className="text-[11px] leading-snug text-slate-400">
         Les nouveaux projets sont créés dans {state.projectsRoot || '—'} (mission « Nouveau projet
-        », onglet Missions). Chaque projet a sa mémoire, ses missions et ses copies isolées ; rien
-        de Jarvis n’est écrit dans leurs dépôts.
+        », onglet Missions).         Chaque projet a sa <strong className="font-normal text-slate-300">discussion</strong>, sa
+        mémoire, ses missions et ses copies isolées ; rien de Jarvis n’est écrit dans leurs dépôts.
       </p>
       {state.dotnet ? (
         <p className="text-[11px] leading-snug text-slate-400" data-dotnet-sdk>
@@ -158,7 +170,13 @@ export function ProjectsSection({ state, act }: { state: DeveloperState; act: Ac
       ) : (
         <ul className="flex flex-col gap-1.5">
           {state.projects.map((project) => (
-            <ProjectRow key={project.id} project={project} state={state} act={act} />
+            <ProjectRow
+              key={project.id}
+              project={project}
+              state={state}
+              act={act}
+              codeModel={codeModel}
+            />
           ))}
         </ul>
       )}

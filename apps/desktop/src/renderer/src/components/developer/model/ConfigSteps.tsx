@@ -27,7 +27,8 @@ export function ProposalStep({
       <p className="flex flex-wrap items-center gap-1.5 text-xs leading-snug text-slate-400">
         <EstimateBadge /> Vitesses et mémoire sont calculées à partir de ton matériel
         {model.calibration ? ' et de l’étalonnage' : ''}, à ±25 %. Les chiffres publiés viennent de
-        tests sur des cartes de 6 Go. Seul le banc de code (étape 5) mesure vraiment.
+        tests sur des cartes de 6 Go. Seul le banc de code (étape 5) mesure vraiment. Les modèles
+        déjà installés hors catalogue (liste en haut) restent utilisables pour le code et les rôles.
       </p>
       <div className="flex flex-col gap-2">
         {model.candidates.map((candidate) => (

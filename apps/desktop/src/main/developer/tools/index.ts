@@ -18,7 +18,7 @@ export const DEVELOPER_READ_TOOLS = [
 /** Préparation, toujours confirmée. */
 export const DEVELOPER_SETUP_TOOLS = ['dev_clone_repository', 'dev_install_dependencies'] as const;
 /** Modèle de code : téléchargement toujours confirmé, après validation. */
-export const DEVELOPER_MODEL_TOOLS = ['dev_pull_model'] as const;
+export const DEVELOPER_MODEL_TOOLS = ['dev_pull_model', 'dev_pull_ollama_model'] as const;
 
 /**
  * Gestionnaire d'outils de Jarvis Développeur : une instance à part, jamais

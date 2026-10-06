@@ -196,6 +196,7 @@ export function SettingsPanel({ settings, status, onSaved, requestedTab, onAnaly
             <OllamaSettingsSection
               baseUrl={draft.baseUrl}
               model={draft.model}
+              active={tab === 'model'}
               onChange={(values) => patch(values)}
             />
           ) : null}

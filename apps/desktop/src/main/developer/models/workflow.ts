@@ -14,6 +14,7 @@ import {
   expertsInRamInstructions,
   predictModel,
   type HardwareFacts,
+  type OllamaModelInfo,
   type OllamaCodeOptions,
   type ProviderRegistry,
   type ToolCallOutcome,
@@ -99,6 +100,9 @@ export function emptyCodeModelState(
     benches: [],
     realBenches: [],
     installedModels: [],
+    ollamaModels: [],
+    ollamaModelsAt: null,
+    ollamaListMessage: null,
   };
 }
 
@@ -108,9 +112,56 @@ export function emptyCodeModelState(
  * téléchargement confirmé → banc de code → choix. Aucun téléchargement
  * avant la validation, aucune variable du serveur Ollama modifiée.
  */
+function ollamaModelsFromFacts(facts: HardwareFacts | null): OllamaModelInfo[] {
+  if (!facts || facts.ollama.status !== 'detected') return [];
+  return facts.ollama.models.map((model) => ({
+    name: model.name,
+    sizeBytes: model.sizeBytes,
+    parameterSize: model.parameterSize,
+    quantizationLevel: model.quantization,
+    supportsTools: model.supportsTools,
+  }));
+}
+
+function mergeOllamaIntoFacts(
+  facts: HardwareFacts,
+  status: Awaited<ReturnType<OllamaApi['status']>>,
+): HardwareFacts {
+  if (status.status !== 'detected') {
+    return {
+      ...facts,
+      ollama: {
+        ...facts.ollama,
+        status: status.status,
+        version: status.version ?? facts.ollama.version,
+        models: status.status === 'absent' ? [] : facts.ollama.models,
+      },
+    };
+  }
+  return {
+    ...facts,
+    ollama: {
+      status: 'detected',
+      version: status.version ?? facts.ollama.version,
+      models: status.models.map((model) => ({
+        name: model.name,
+        sizeBytes: model.sizeBytes,
+        parameterSize: model.parameterSize,
+        quantization: model.quantizationLevel,
+        supportsTools: model.supportsTools,
+      })),
+    },
+  };
+}
+
 export class CodeModelWorkflow {
   private hardware: CodeModelState['hardware'] = null;
   private pullState: CodeModelState['pull'] = null;
+  private ollamaSnapshot: {
+    models: OllamaModelInfo[];
+    at: number;
+    message: string;
+  } | null = null;
   private stored: Awaited<ReturnType<CodeModelStore['load']>> | null = null;
 
   constructor(
@@ -127,13 +178,31 @@ export class CodeModelWorkflow {
   }
 
   installed(): HardwareFacts['ollama']['models'] {
-    return this.hardware?.facts.ollama.models ?? [];
+    if (this.hardware?.facts.ollama.status === 'detected') {
+      return this.hardware.facts.ollama.models;
+    }
+    if (this.ollamaSnapshot) {
+      return this.ollamaSnapshot.models.map((model) => ({
+        name: model.name,
+        sizeBytes: model.sizeBytes,
+        parameterSize: model.parameterSize,
+        quantization: model.quantizationLevel,
+        supportsTools: model.supportsTools,
+      }));
+    }
+    return [];
+  }
+
+  private resolvedOllamaModels(): OllamaModelInfo[] {
+    if (this.ollamaSnapshot) return this.ollamaSnapshot.models;
+    return ollamaModelsFromFacts(this.hardware?.facts ?? null);
   }
 
   state(): CodeModelState {
     const base = emptyCodeModelState(this.deps.env, this.deps.platform);
     const stored = this.stored;
     const facts = this.hardware?.facts ?? null;
+    const ollamaModels = this.resolvedOllamaModels();
     const calibration = stored?.calibration ?? null;
     return {
       ...base,
@@ -156,9 +225,14 @@ export class CodeModelWorkflow {
       pull: this.pullState,
       benches: stored?.benches ?? [],
       realBenches: stored?.realBenches ?? [],
-      installedModels: this.installed()
-        .filter((model) => model.supportsTools)
-        .map((model) => model.name),
+      installedModels: this.installed().map((model) => model.name),
+      ollamaModels,
+      ollamaModelsAt: this.ollamaSnapshot?.at ?? this.hardware?.at ?? null,
+      ollamaListMessage:
+        this.ollamaSnapshot?.message ??
+        (facts?.ollama.status === 'detected'
+          ? `${facts.ollama.models.length} modèle${facts.ollama.models.length === 1 ? '' : 's'} installé${facts.ollama.models.length === 1 ? '' : 's'}.`
+          : null),
     };
   }
 
@@ -185,6 +259,23 @@ export class CodeModelWorkflow {
     this.pullState = { modelId, status, completed, total, done: status === 'success' };
   }
 
+  async refreshOllamaModels(): Promise<DeveloperState> {
+    const status = await this.deps.ollama().status();
+    this.ollamaSnapshot = {
+      models: status.models,
+      at: this.now,
+      message: status.message,
+    };
+    if (this.hardware) {
+      this.hardware = {
+        ...this.hardware,
+        facts: mergeOllamaIntoFacts(this.hardware.facts, status),
+        at: this.now,
+      };
+    }
+    return this.host.emit();
+  }
+
   async checkHardware(): Promise<DeveloperState> {
     await this.ensureStored();
     const facts = await probeHardware({
@@ -197,6 +288,14 @@ export class CodeModelWorkflow {
       os: this.deps.system,
     });
     this.hardware = { facts, report: checkHardware(facts), at: this.now };
+    this.ollamaSnapshot = {
+      models: facts.ollama.status === 'detected' ? ollamaModelsFromFacts(facts) : [],
+      at: this.now,
+      message:
+        facts.ollama.status === 'detected'
+          ? `${facts.ollama.models.length} modèle${facts.ollama.models.length === 1 ? '' : 's'} installé${facts.ollama.models.length === 1 ? '' : 's'}.`
+          : 'Ollama ne répond pas : démarre le serveur puis rafraîchis la liste.',
+    };
     return this.host.emit();
   }
 
@@ -288,6 +387,39 @@ export class CodeModelWorkflow {
       `Configuration validée par l’utilisateur : ${spec.label}${useExperts ? ', experts en RAM' : ''}. Rien n’est téléchargé à cette étape.`,
     );
     return this.host.emit();
+  }
+
+  /**
+   * Téléchargement confirmé d’un nom Ollama saisi par l’utilisateur (ex. deepseek-coder-v2:16b).
+   * Aucune validation de catalogue ni d’étape matériel.
+   */
+  async pullOllamaModel(model: string): Promise<DeveloperState> {
+    const name = model.trim();
+    if (!name) return this.host.notice('Indique le nom exact du modèle Ollama à télécharger.');
+    if (name.length > 100) return this.host.notice('Nom de modèle trop long.');
+    this.pullState = null;
+    return this.host.runTask(
+      'pull',
+      `Télécharger ${name} dans Ollama`,
+      [
+        { id: 'confirm', label: 'Ta confirmation' },
+        { id: 'pull', label: 'Téléchargement (ollama pull)' },
+        { id: 'verify', label: 'Présent dans Ollama' },
+      ],
+      async (step) => {
+        const outcome = await this.host.callTool(
+          'dev_pull_ollama_model',
+          { model: name },
+          step,
+          'pull',
+        );
+        if (outcome.status !== 'ok') throw new Error(outcome.content);
+        step('verify', 'running');
+        await this.refreshOllamaModels();
+        step('verify', 'done', 'listé par Ollama');
+        return `${name} est téléchargé. Rafraîchis ou rouvre l’onglet si besoin.`;
+      },
+    );
   }
 
   async pull(modelId: string): Promise<DeveloperState> {

@@ -5,7 +5,7 @@ import type { CodeModelState } from '../../../../../shared/developerIpc';
 import { benchFor, benchStatus } from './format';
 import { StepCard, type FlowStatus } from './StepCard';
 
-/** Étape 6 : il choisit le modèle de code par défaut parmi les modèles passés au banc. */
+/** Étape 6 : modèle de code par défaut parmi tous les modèles installés dans Ollama. */
 export function ChooseStep({
   model,
   status,
@@ -21,14 +21,15 @@ export function ChooseStep({
   saving: boolean;
   onChoose: (modelId: string) => void;
 }) {
-  const benched = [...new Set(model.benches.map((bench) => bench.model))];
+  const installed = model.installedModels;
+  const benched = new Set(model.benches.map((bench) => bench.model));
   const currentLabel = current ? (codeModelById(current)?.label ?? current) : null;
   return (
     <StepCard
       number={6}
       title="Modèle de code par défaut"
       status={status}
-      hint={status === 'locked' ? 'après un banc' : undefined}
+      hint={status === 'locked' ? 'quand Ollama liste au moins un modèle' : undefined}
     >
       <p className="text-xs text-slate-300" data-code-model-current>
         {currentLabel
@@ -39,41 +40,57 @@ export function ChooseStep({
           Développeur.
         </span>
       </p>
-      <div className="flex flex-col gap-1.5">
-        {benched.map((id) => {
-          const bench = benchFor(model.benches, id);
-          const label = codeModelById(id)?.label ?? id;
-          const chosen = id === current;
-          return (
-            <div key={id} className="flex flex-wrap items-center gap-2 text-xs">
-              <Button
-                size="sm"
-                variant={chosen ? 'ghost' : 'default'}
-                disabled={saving || chosen}
-                onClick={() => onChoose(id)}
-              >
-                <Star className="size-3.5" />
-                {chosen ? `${label} est le modèle par défaut` : `Choisir ${label} par défaut`}
-              </Button>
-              {bench && benchStatus(bench) === 'failed' ? (
-                <span className="text-amber-200">Banc raté : possible, mais déconseillé.</span>
-              ) : bench && benchStatus(bench) === 'incomplete' ? (
-                <span className="text-amber-200">
-                  Banc incomplet : relance-le une fois les dépendances de la copie de travail
-                  installées.
+      {installed.length === 0 ? (
+        <p className="text-xs text-slate-500">
+          Rafraîchis la liste Ollama en haut de l’onglet, ou vérifie le matériel (étape 1).
+        </p>
+      ) : (
+        <div className="flex flex-col gap-2 text-xs">
+          <select
+            className="no-drag max-w-md rounded-md border border-white/10 bg-black/40 px-2 py-1.5 text-xs text-slate-100"
+            value={current}
+            disabled={saving}
+            aria-label="Modèle de code par défaut"
+            data-code-model-picker
+            onChange={(event) => onChoose(event.target.value)}
+          >
+            <option value="">— Aucun —</option>
+            {installed.map((id) => (
+              <option key={id} value={id}>
+                {codeModelById(id)?.label ?? id}
+              </option>
+            ))}
+          </select>
+          {current && benched.has(current) ? (
+            (() => {
+              const bench = benchFor(model.benches, current);
+              if (!bench) return null;
+              if (benchStatus(bench) === 'failed') {
+                return (
+                  <span className="text-amber-200">Banc raté sur ce modèle : possible, mais déconseillé.</span>
+                );
+              }
+              if (benchStatus(bench) === 'incomplete') {
+                return (
+                  <span className="text-amber-200">
+                    Banc incomplet : relance-le une fois les dépendances de la copie installées.
+                  </span>
+                );
+              }
+              return (
+                <span className="flex items-center gap-1 text-emerald-200/90">
+                  <Star className="size-3.5" /> Banc de code passé sur ce modèle.
                 </span>
-              ) : null}
-            </div>
-          );
-        })}
-        {current ? (
-          <div>
-            <Button size="sm" variant="ghost" disabled={saving} onClick={() => onChoose('')}>
-              Retirer le choix
-            </Button>
-          </div>
-        ) : null}
-      </div>
+              );
+            })()
+          ) : current ? (
+            <span className="text-slate-400">
+              Pas encore passé au banc catalogue : tu peux quand même l’utiliser ; le banc réel
+              ci-dessous mesure les rôles.
+            </span>
+          ) : null}
+        </div>
+      )}
     </StepCard>
   );
 }

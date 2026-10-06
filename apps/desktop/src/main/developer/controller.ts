@@ -21,9 +21,11 @@ import {
   type ToolManager,
 } from '@jarvis/core';
 import { join } from 'node:path';
+import { runProjectChatTurn } from './project/projectChatFlow.js';
 import type {
   AskView,
   DevConfirmation,
+  ProjectChatView,
   DevStep,
   DevStepStatus,
   DevTask,
@@ -95,6 +97,7 @@ export class DeveloperController {
   private confirmation: DevConfirmation | null = null;
   private report: DeveloperState['report'] = null;
   private askView: AskView | null = null;
+  private projectChat: ProjectChatView | null = null;
   private notice: string | null = null;
   private controller: AbortController | null = null;
   private readonly pending = new Map<string, (approved: boolean) => void>();
@@ -351,6 +354,7 @@ export class DeveloperController {
       ask: this.askView,
       ...this.missions.view(),
       ...this.projects.view(),
+      projectChat: this.projectChat,
     };
   }
 
@@ -481,6 +485,102 @@ export class DeveloperController {
 
   async buildProject(id: string): Promise<DeveloperState> {
     return this.guard() ?? this.projects.build(id);
+  }
+
+  async openProjectChat(projectId: string): Promise<DeveloperState> {
+    if (!this.enabled()) return this.guard() ?? this.state();
+    const id = projectId.trim();
+    if (!id) {
+      this.notice = 'Projet introuvable.';
+      return this.emit();
+    }
+    const resolved = await this.projects.resolve(id);
+    if (typeof resolved === 'string') {
+      this.notice = resolved;
+      return this.emit();
+    }
+    const messages = await this.projects.loadChat(id);
+    this.projectChat = { projectId: id, projectName: resolved.name, messages };
+    return this.emit();
+  }
+
+  async sendProjectChat(projectId: string, text: string): Promise<DeveloperState> {
+    const refused = this.guard(projectId === 'jarvis');
+    if (refused) return refused;
+    const id = projectId.trim();
+    const userText = text.trim();
+    if (userText.length < 2) {
+      this.notice = 'Écris au moins quelques mots.';
+      return this.emit();
+    }
+    const model = this.deps.getSettings().developer.codeModel;
+    if (!model) {
+      this.notice =
+        'Choisis d’abord un modèle de code (onglet « Modèle de code ») : aucun n’est choisi d’avance.';
+      return this.emit();
+    }
+    const status = await this.ollama().status();
+    if (!status.models.some((m) => m.name === model)) {
+      this.notice = `Le modèle de code « ${model} » n’est pas installé dans Ollama.`;
+      return this.emit();
+    }
+    const resolved = await this.projects.resolve(id);
+    if (typeof resolved === 'string') {
+      this.notice = resolved;
+      return this.emit();
+    }
+    const now = Date.now();
+    const userMsg = { id: randomId(), role: 'user' as const, content: userText, at: now };
+    const prior = this.projectChat?.projectId === id ? this.projectChat.messages : await this.projects.loadChat(id);
+    const messages = [...prior, userMsg];
+    this.projectChat = { projectId: id, projectName: resolved.name, messages };
+    await this.projects.saveChat(id, messages);
+    return this.runTask(
+      'project-chat',
+      `Discussion — ${resolved.name}`,
+      [
+        { id: 'model', label: 'Modèle de code' },
+        { id: 'read', label: 'Lecture du projet (rien n’est modifié)' },
+        { id: 'reply', label: 'Réponse' },
+      ],
+      async (step, signal) => {
+        step('model', 'done', model);
+        step('read', 'running');
+        const code = createCodeAIProvider(this.deps.registry, {
+          model,
+          baseUrl: this.ollama().baseUrl,
+          options: this.models.optionsFor(model),
+          fetch: patientFetch,
+        });
+        const memory = await this.projects.memoryNotes(id);
+        const history = prior.map((m) => ({ role: m.role, content: m.content }));
+        const result = await runProjectChatTurn(
+          {
+            code,
+            tools: this.auditedReadTools(ASK_TOOLS, resolved.root),
+            profile: resolved.profile,
+            memoryNotes: memory,
+            history,
+            signal,
+            beforeRound: () => this.yieldToChat(model, signal),
+          },
+          userText,
+        );
+        step('read', 'done', `${result.calls} lecture(s), ${result.rounds} tour(s)`);
+        step('reply', 'running');
+        const assistant = {
+          id: randomId(),
+          role: 'assistant' as const,
+          content: result.reply,
+          at: Date.now(),
+        };
+        const next = [...messages, assistant];
+        this.projectChat = { projectId: id, projectName: resolved.name, messages: next };
+        await this.projects.saveChat(id, next);
+        step('reply', 'done');
+        return 'Réponse ajoutée à la discussion du projet.';
+      },
+    );
   }
 
   async applyTask(): Promise<DeveloperState> {
@@ -838,6 +938,14 @@ export class DeveloperController {
 
   async pull(modelId: string): Promise<DeveloperState> {
     return this.guard() ?? this.models.pull(modelId);
+  }
+
+  async refreshOllamaModels(): Promise<DeveloperState> {
+    return this.guard() ?? this.models.refreshOllamaModels();
+  }
+
+  async pullOllamaModel(model: string): Promise<DeveloperState> {
+    return this.guard() ?? this.models.pullOllamaModel(model);
   }
 
   async benchmark(modelId: string): Promise<DeveloperState> {

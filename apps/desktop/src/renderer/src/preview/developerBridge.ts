@@ -226,6 +226,7 @@ export function createPreviewDeveloperApi(
     projects: developerScene ? previewProjects() : null,
     projectsRoot: 'C:\\dev\\Projets',
     dotnet: developerScene ? { sdks: ['10.0.112'], hint: null } : null,
+    projectChat: null,
   };
   applyTaskScene(scene, state);
   if (scene === 'developer-pull') {
@@ -370,6 +371,8 @@ export function createPreviewDeveloperApi(
     validateConfig: async () => set({ notice: 'Aperçu : la validation n’est pas simulée.' }),
     confirmExperts: async () => set({}),
     pull: async () => set({ notice: 'Aperçu : rien n’est téléchargé.' }),
+    refreshOllamaModels: async () => set({ notice: 'Aperçu : liste Ollama non rafraîchie.' }),
+    pullOllamaModel: async () => set({ notice: 'Aperçu : rien n’est téléchargé.' }),
     benchmark: async () => set({ notice: 'Aperçu : le banc n’est pas simulé.' }),
     startTask: async () => set({ notice: 'Aperçu : aucune tâche n’est lancée.' }),
     approvePlan: async () => set({ notice: 'Aperçu : rien n’est écrit.' }),
@@ -389,6 +392,8 @@ export function createPreviewDeveloperApi(
     forgetProject: async () => set({ notice: 'Aperçu : rien n’est retiré.' }),
     saveProjectMemory: async () => set({ notice: 'Aperçu : mémoire non enregistrée.' }),
     buildProject: async () => set({ notice: 'Aperçu : rien n’est construit.' }),
+    openProjectChat: async () => set({}),
+    sendProjectChat: async () => set({ notice: 'Aperçu : discussion non simulée.' }),
     applyTask: async () => set({ notice: 'Aperçu : ta copie n’est pas modifiée.' }),
     revertTask: async () => set({ notice: 'Aperçu : rien n’est annulé.' }),
     startProposal: async () => set({ notice: 'Aperçu : aucune mission n’est lancée.' }),

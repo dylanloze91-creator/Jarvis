@@ -44,7 +44,7 @@ export function ProjectActions({
         </Button>
       </div>
       <AskPanel state={state} act={act} codeModel={codeModel} />
-      <ProjectsSection state={state} act={act} />
+      <ProjectsSection state={state} act={act} codeModel={codeModel} />
       <DeveloperGuide />
     </>
   );

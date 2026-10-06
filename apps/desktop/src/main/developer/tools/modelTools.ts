@@ -26,6 +26,52 @@ export interface ModelToolDeps {
 export function createModelTools(deps: ModelToolDeps): RegisteredTool[] {
   return [
     defineTool({
+      name: 'dev_pull_ollama_model',
+      description:
+        'Télécharge un modèle Ollama par son nom exact, après confirmation explicite. Hors catalogue.',
+      risk: 'confirm',
+      forceConfirm: true,
+      schema: z.object({ model: z.string().min(1).max(100) }),
+      summarize: ({ model }) => `Télécharger le modèle Ollama « ${model} ».`,
+      describeCommand: ({ model }) =>
+        `ollama pull ${model}\n(dans ${deps.modelsDir()} — taille selon le modèle)`,
+      execute: async ({ model }, context) => {
+        const free = await deps.freeBytes(deps.modelsDir());
+        if (free !== null && free < 5e9) {
+          return fail(
+            'definitive',
+            `Pas assez de place : ${formatModelSize(free)} libres (il faut au moins 5 Go de marge).`,
+          );
+        }
+        let lastPercent = -1;
+        try {
+          await deps.ollama().pull(
+            model,
+            ({ status, completed, total }) => {
+              deps.onPullProgress?.(model, status, completed, total);
+              const percent = total > 0 ? Math.floor((completed / total) * 100) : -1;
+              if (percent !== lastPercent || total === 0) {
+                lastPercent = percent;
+                context.onProgress?.(percent >= 0 ? `${status} ${percent} %` : status);
+              }
+            },
+            context.signal,
+          );
+        } catch (error) {
+          if (context.signal?.aborted)
+            return fail(
+              'recoverable',
+              'Téléchargement annulé (Ollama reprendra là où il s’est arrêté).',
+            );
+          return fail('recoverable', error instanceof Error ? error.message : String(error));
+        }
+        const installed = (await deps.ollama().status()).models.some((m) => m.name === model);
+        return installed
+          ? toolSuccess(`Modèle ${model} téléchargé et présent dans Ollama.`)
+          : fail('recoverable', `Ollama ne liste pas ${model} après le téléchargement.`);
+      },
+    }),
+    defineTool({
       name: 'dev_pull_model',
       description:
         'Télécharge un modèle de code du catalogue dans Ollama, après validation de la configuration. Toujours confirmé.',

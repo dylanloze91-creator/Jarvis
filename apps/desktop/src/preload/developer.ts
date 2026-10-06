@@ -24,6 +24,8 @@ export function createDeveloperApi(ipc: IpcRenderer): DeveloperApi {
       ipc.invoke(DeveloperChannel.validateConfig, modelId, expertsInRam),
     confirmExperts: (applied: boolean) => ipc.invoke(DeveloperChannel.experts, applied),
     pull: (modelId: string) => ipc.invoke(DeveloperChannel.pull, modelId),
+    refreshOllamaModels: () => ipc.invoke(DeveloperChannel.refreshOllamaModels),
+    pullOllamaModel: (model: string) => ipc.invoke(DeveloperChannel.pullOllamaModel, model),
     benchmark: (modelId: string) => ipc.invoke(DeveloperChannel.benchmark, modelId),
     startTask: (request: string) => ipc.invoke(DeveloperChannel.taskStart, request),
     approvePlan: (approved: boolean) => ipc.invoke(DeveloperChannel.taskApprove, approved),
@@ -46,6 +48,9 @@ export function createDeveloperApi(ipc: IpcRenderer): DeveloperApi {
     saveProjectMemory: (id: string, notes: string) =>
       ipc.invoke(DeveloperChannel.projectMemory, id, notes),
     buildProject: (id: string) => ipc.invoke(DeveloperChannel.projectBuild, id),
+    openProjectChat: (projectId: string) => ipc.invoke(DeveloperChannel.projectChatOpen, projectId),
+    sendProjectChat: (projectId: string, text: string) =>
+      ipc.invoke(DeveloperChannel.projectChatSend, projectId, text),
     applyTask: () => ipc.invoke(DeveloperChannel.taskApply),
     revertTask: () => ipc.invoke(DeveloperChannel.taskRevert),
     startProposal: (missionId: string, index: number, projectId: string) =>

@@ -271,6 +271,19 @@ export class ProjectsWorkflow {
     return memory?.notes ?? (id === JARVIS_PROJECT_ID ? JARVIS_DEFAULT_MEMORY : '');
   }
 
+  async loadChat(
+    id: string,
+  ): Promise<Array<{ id: string; role: 'user' | 'assistant'; content: string; at: number }>> {
+    return this.deps.store.loadChat(id);
+  }
+
+  async saveChat(
+    id: string,
+    messages: Array<{ id: string; role: 'user' | 'assistant'; content: string; at: number }>,
+  ): Promise<void> {
+    await this.deps.store.saveChat(id, messages);
+  }
+
   async resolve(id: string): Promise<ResolvedProject | string> {
     if (id === JARVIS_PROJECT_ID) {
       const root = await this.host.jarvisRoot();

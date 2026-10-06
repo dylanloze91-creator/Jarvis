@@ -57,6 +57,10 @@ describe('canaux dev:*', () => {
       [DeveloperChannel.validateConfig, 'qwen3.6:35b-a3b-coding', true],
       [DeveloperChannel.experts, true],
       [DeveloperChannel.pull, 'qwen3.6:35b-a3b-coding'],
+      [DeveloperChannel.refreshOllamaModels],
+      [DeveloperChannel.pullOllamaModel, 'deepseek-coder-v2:16b'],
+      [DeveloperChannel.projectChatOpen, 'jarvis'],
+      [DeveloperChannel.projectChatSend, 'jarvis', 'salut'],
       [DeveloperChannel.benchmark, 'qwen3.6:35b-a3b-coding'],
     ] as const) {
       const state = await ipc.invoke(channel, ...args);

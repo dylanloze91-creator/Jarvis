@@ -22,6 +22,8 @@ interface OllamaSettingsSectionProps {
   baseUrl: string;
   model: string;
   onChange: (values: { baseUrl?: string; model?: string }) => void;
+  /** Quand vrai, relit `/api/tags` (ouverture de l’onglet Modèle IA). */
+  active?: boolean;
 }
 
 /**
@@ -32,7 +34,12 @@ interface OllamaSettingsSectionProps {
  * répond. Rendu uniquement quand le fournisseur choisi est « ollama »,
  * indépendamment du reste de `SettingsPanel`.
  */
-export function OllamaSettingsSection({ baseUrl, model, onChange }: OllamaSettingsSectionProps) {
+export function OllamaSettingsSection({
+  baseUrl,
+  model,
+  onChange,
+  active = true,
+}: OllamaSettingsSectionProps) {
   const [status, setStatus] = useState<OllamaStatusResult | null>(null);
   const [loadingStatus, setLoadingStatus] = useState(false);
 
@@ -48,8 +55,9 @@ export function OllamaSettingsSection({ baseUrl, model, onChange }: OllamaSettin
   };
 
   useEffect(() => {
-    refreshStatus();
-  }, [baseUrl]);
+    if (active) refreshStatus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- actualiser à l’ouverture de l’onglet
+  }, [baseUrl, active]);
 
   const runTest = (): void => {
     setTesting(true);
@@ -85,11 +93,21 @@ export function OllamaSettingsSection({ baseUrl, model, onChange }: OllamaSettin
         />
       </Field>
 
-      {status?.status === 'detected' && status.models.length > 0 ? (
-        <Field label="Modèle installé">
-          <Select value={model} onChange={(event) => onChange({ model: event.target.value })}>
-            {!status.models.some((m) => m.name === model) ? (
+      {status?.status === 'detected' ? (
+        <Field
+          label="Modèle installé"
+          hint="Liste lue sur Ollama (/api/tags) : tout modèle installé apparaît ici, sans mise à jour du catalogue Jarvis."
+        >
+          <Select
+            value={model}
+            onChange={(event) => onChange({ model: event.target.value })}
+            disabled={status.models.length === 0}
+          >
+            {!status.models.some((m) => m.name === model) && model ? (
               <option value={model}>{model} (non installé sur ce serveur)</option>
+            ) : null}
+            {status.models.length === 0 ? (
+              <option value="">Aucun modèle installé — utilise ollama pull puis Actualiser</option>
             ) : null}
             {status.models.map((m) => (
               <option key={m.name} value={m.name}>

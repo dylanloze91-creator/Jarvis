@@ -7,6 +7,7 @@ import { HardwareStep } from './HardwareStep';
 import { RealBenchSection } from './RealBenchSection';
 import { RoleModelsSection } from './RoleModelsSection';
 import type { RoleModels, SpecialistRole } from '@jarvis/core';
+import { InstalledOllamaSection } from './InstalledOllamaSection';
 import { BenchStep, PullStep } from './RunSteps';
 import type { FlowStatus } from './StepCard';
 
@@ -54,6 +55,10 @@ export function CodeModelPanel({
       });
     }
   }, [validationKey]);
+  useEffect(() => {
+    act((api) => api.refreshOllamaModels());
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- une fois à l’ouverture de l’onglet
+  }, []);
   const [saving, setSaving] = useState(false);
 
   const busy = state.busy;
@@ -61,9 +66,16 @@ export function CodeModelPanel({
   const validated = model.candidates.find((c) => c.spec.id === model.validation?.modelId);
   const anyInstalled = model.candidates.some((c) => c.installed);
   const benched = model.benches.length > 0;
+  const canChooseCodeModel = model.installedModels.length > 0;
 
   return (
     <div className="flex flex-col gap-3" data-code-model-panel>
+      <InstalledOllamaSection
+        model={model}
+        busy={busy}
+        onRefresh={() => act((api) => api.refreshOllamaModels())}
+        onPull={(name) => act((api) => api.pullOllamaModel(name))}
+      />
       {model.candidates.length === 0 ? (
         <p className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-xs leading-relaxed text-slate-300">
           Profil modeste : les gros modèles de code ne sont pas proposés, et le modèle de 23 Go
@@ -106,7 +118,7 @@ export function CodeModelPanel({
       />
       <ChooseStep
         model={model}
-        status={flow(Boolean(codeModel), benched)}
+        status={flow(Boolean(codeModel), canChooseCodeModel)}
         current={codeModel}
         chatModel={chatModel}
         saving={saving}

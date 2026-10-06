@@ -115,4 +115,44 @@ export class ProjectStore {
     await this.write(this.memoryPath(id), memory);
     return memory;
   }
+
+  private chatPath(id: string): string {
+    if (id !== JARVIS_PROJECT_ID && !PROJECT_ID_PATTERN.test(id))
+      throw new Error(`Projet invalide : ${id}`);
+    return join(this.root(), id, 'chat.json');
+  }
+
+  async loadChat(
+    id: string,
+  ): Promise<Array<{ id: string; role: 'user' | 'assistant'; content: string; at: number }>> {
+    await this.queue;
+    try {
+      const raw = JSON.parse(await readFile(this.chatPath(id), 'utf8')) as {
+        messages?: unknown;
+      };
+      if (!Array.isArray(raw.messages)) return [];
+      return raw.messages
+        .map((entry) => {
+          if (!entry || typeof entry !== 'object') return null;
+          const row = entry as Record<string, unknown>;
+          const role = row.role === 'assistant' ? 'assistant' : row.role === 'user' ? 'user' : null;
+          const content = typeof row.content === 'string' ? row.content.slice(0, 8_000) : '';
+          const id = typeof row.id === 'string' ? row.id.slice(0, 40) : '';
+          const at = typeof row.at === 'number' ? row.at : 0;
+          if (!role || !content || !id) return null;
+          return { id, role: role as 'user' | 'assistant', content, at };
+        })
+        .filter((m): m is NonNullable<typeof m> => m !== null)
+        .slice(-80);
+    } catch {
+      return [];
+    }
+  }
+
+  async saveChat(
+    id: string,
+    messages: Array<{ id: string; role: 'user' | 'assistant'; content: string; at: number }>,
+  ): Promise<void> {
+    await this.write(this.chatPath(id), { version: 1, messages: messages.slice(-80) });
+  }
 }

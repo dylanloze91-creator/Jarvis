@@ -22,8 +22,13 @@ export function RoleModelsSection({
 }) {
   const installed = state.model.installedModels;
   const options = [
-    ...new Set([...installed, ...Object.values(roleModels).filter(Boolean)]),
-  ] as string[];
+    ...new Set([
+      ...installed,
+      ...state.model.ollamaModels.map((m) => m.name),
+      ...Object.values(roleModels).filter(Boolean),
+      codeModel,
+    ]),
+  ].filter(Boolean) as string[];
   const score = (role: SpecialistRole, model: string): string | null => {
     const bench = state.model.realBenches.find((b) => b.model === model);
     const entry = bench?.roles.find((r) => r.role === role);
