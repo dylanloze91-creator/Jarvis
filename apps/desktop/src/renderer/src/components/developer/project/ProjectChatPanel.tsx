@@ -19,6 +19,7 @@ export function ProjectChatPanel({
   simple = false,
   previewable = false,
   hideComposer = false,
+  unifiedSurface = false,
 }: {
   project: ProjectView;
   state: DeveloperState;
@@ -31,6 +32,8 @@ export function ProjectChatPanel({
   previewable?: boolean;
   /** Composer géré par le chat unifié (5.0.13). */
   hideComposer?: boolean;
+  /** Un seul défilement dans UnifiedJarvisChat (5.0.14). */
+  unifiedSurface?: boolean;
 }) {
   const [open, setOpen] = useState(simple);
   const [draft, setDraft] = useState('');
@@ -41,8 +44,9 @@ export function ProjectChatPanel({
     if ((open || simple) && !chat) act((api) => api.openProjectChat(project.id));
   }, [open, simple, project.id, chat]);
   useEffect(() => {
+    if (unifiedSurface) return;
     bottom.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [chat?.messages.length, chat?.run?.phase]);
+  }, [chat?.messages.length, chat?.run?.phase, unifiedSurface]);
   const canSend =
     (open || simple) &&
     !state.busy &&
@@ -56,8 +60,13 @@ export function ProjectChatPanel({
   if (simple) {
     return (
       <div
-        className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden"
+        className={
+          unifiedSurface
+            ? 'flex flex-col gap-3'
+            : 'flex min-h-0 flex-1 flex-col gap-3 overflow-hidden'
+        }
         data-project-chat-simple={project.id}
+        data-unified-surface={unifiedSurface ? 'yes' : undefined}
       >
         {run && run.phase !== 'idle' ? (
           <div
@@ -96,7 +105,13 @@ export function ProjectChatPanel({
             ) : null}
           </div>
         ) : null}
-        <div className="min-h-0 flex-1 overflow-y-auto flex flex-col gap-2 pr-1 developer-cursor-messages">
+        <div
+          className={
+            unifiedSurface
+              ? 'flex flex-col gap-2 pr-1 developer-cursor-messages'
+              : 'min-h-0 flex-1 overflow-y-auto flex flex-col gap-2 pr-1 developer-cursor-messages'
+          }
+        >
           {(chat?.messages ?? []).map((message) => (
             <div
               key={message.id}

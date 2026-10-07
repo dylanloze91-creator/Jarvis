@@ -349,6 +349,26 @@
   min-width: 0;
 }
 
+/* Une seule zone défilante : fil classique ou projet, sans panneau empilé. */
+.dash-unified-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.dash-unified-scroll .developer-cursor-messages {
+  flex: none;
+  min-height: 0;
+  overflow: visible;
+}
+
+.dash-chat > .composer-wrap,
+.dash-chat > .voice-strip {
+  flex-shrink: 0;
+}
+
 .dash-chat-compact .dash-unified-body.has-projects {
   flex-direction: column;
 }

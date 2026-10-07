@@ -62,6 +62,8 @@ export function UnifiedJarvisChat({
   const project = projects.find((p) => p.id === activeId) ?? null;
   const [channel, setChannel] = useState<Channel>('assistant');
   const spokenMessageCountRef = useRef(0);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const prevProjectMsgCount = useRef(0);
   const projectChat =
     activeId && state?.projectChat?.projectId === activeId ? state.projectChat : null;
   const codeModel = settings?.developer.codeModel ?? '';
@@ -109,7 +111,16 @@ export function UnifiedJarvisChat({
 
   useEffect(() => {
     spokenMessageCountRef.current = projectChat?.messages.length ?? 0;
+    prevProjectMsgCount.current = projectChat?.messages.length ?? 0;
   }, [activeId, projectChat?.projectId]);
+
+  useEffect(() => {
+    const count = projectChat?.messages.length ?? 0;
+    if (count > prevProjectMsgCount.current && scrollRef.current) {
+      scrollRef.current.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
+    }
+    prevProjectMsgCount.current = count;
+  }, [projectChat?.messages.length]);
 
   useEffect(() => {
     if (!projectChat || devBusy) return;
@@ -168,7 +179,11 @@ export function UnifiedJarvisChat({
             </ul>
           </aside>
         ) : null}
-        <div className="dash-unified-messages min-h-0 flex-1 flex flex-col overflow-hidden">
+        <div
+          ref={scrollRef}
+          className="dash-unified-messages dash-unified-scroll"
+          data-scroll-surface="yes"
+        >
           {bootError ? (
             <div className="error-card m-4">{bootError}</div>
           ) : showProjectThread ? (
@@ -177,7 +192,7 @@ export function UnifiedJarvisChat({
             ) : !project ? (
               <p className="p-4 text-sm text-slate-400">Choisis un projet à gauche.</p>
             ) : (
-              <div className="min-h-0 flex-1 overflow-hidden flex flex-col">
+              <>
                 {error ? <p className="px-3 text-xs text-rose-200">{error}</p> : null}
                 {state.confirmation ? (
                   <div className="px-3 pb-2">
@@ -195,9 +210,10 @@ export function UnifiedJarvisChat({
                   installedModels={state.model.installedModels}
                   simple
                   hideComposer
+                  unifiedSurface
                   previewable={projectPreviewable(project)}
                 />
-              </div>
+              </>
             )
           ) : booting && chat.items.length === 0 ? (
             <div className="dash-loading">Démarrage de Jarvis…</div>
@@ -208,7 +224,7 @@ export function UnifiedJarvisChat({
               Dis « Jarvis », puis pose une question ou demande une modification de projet.
             </div>
           ) : (
-            <Messages items={chat.items} />
+            <Messages items={chat.items} scrollParentRef={scrollRef} />
           )}
         </div>
       </div>

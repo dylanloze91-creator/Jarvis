@@ -1,17 +1,35 @@
 import { AlertTriangle, Check, ShieldOff, Wrench } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type RefObject } from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { ChatItem } from '@/hooks/useChat';
 import { sourcePillLabel, sourcePills, type SourcePill } from '@/dashboard/sources';
 import { cn } from '@/lib/utils';
 
-export function Messages({ items }: { items: ChatItem[] }) {
+export function Messages({
+  items,
+  scrollParentRef,
+}: {
+  items: ChatItem[];
+  /** Conteneur unique de discussion (évite un second panneau défilant). */
+  scrollParentRef?: RefObject<HTMLElement | null>;
+}) {
   const bottom = useRef<HTMLDivElement>(null);
+  const prevLength = useRef(items.length);
 
   useEffect(() => {
+    if (items.length <= prevLength.current) {
+      prevLength.current = items.length;
+      return;
+    }
+    prevLength.current = items.length;
+    const parent = scrollParentRef?.current;
+    if (parent) {
+      parent.scrollTo({ top: parent.scrollHeight, behavior: 'smooth' });
+      return;
+    }
     bottom.current?.scrollIntoView({ block: 'end' });
-  }, [items]);
+  }, [items.length, scrollParentRef]);
 
   return (
     <div className="messages-list">
