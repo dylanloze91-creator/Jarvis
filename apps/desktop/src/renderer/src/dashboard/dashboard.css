@@ -337,25 +337,56 @@
   min-height: 0;
   flex: 1;
   display: flex;
+  flex-direction: column;
   overflow: hidden;
 }
 
-.dash-unified-body.has-projects .developer-cursor-projects {
-  width: 168px;
-  flex-shrink: 0;
+/* Projets à gauche, fil unique à droite — pas de superposition. */
+.dash-unified-body.has-projects {
+  display: grid;
+  grid-template-columns: minmax(132px, 168px) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  align-items: stretch;
+}
+
+.dash-unified-body.has-projects .dash-unified-projects {
+  grid-column: 1;
+  grid-row: 1;
+  width: auto;
+  max-width: 168px;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.dash-unified-body.has-projects .dash-unified-scroll {
+  grid-column: 2;
+  grid-row: 1;
 }
 
 .dash-unified-messages {
   min-width: 0;
 }
 
-/* Une seule zone défilante : fil classique ou projet, sans panneau empilé. */
+/* Une seule zone défilante : fil classique ou projet. */
 .dash-unified-scroll {
   flex: 1;
+  min-width: 0;
   min-height: 0;
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
+}
+
+.dash-unified-scroll .messages-list {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* Outils dans le fil (colonne messages), pas décalés sur la liste projets. */
+.dash-unified-scroll .tool-row {
+  padding-left: 0;
+  max-width: 100%;
 }
 
 .dash-unified-scroll .developer-cursor-messages {
@@ -370,13 +401,27 @@
 }
 
 .dash-chat-compact .dash-unified-body.has-projects {
+  display: flex;
   flex-direction: column;
+  grid-template-columns: unset;
+  grid-template-rows: unset;
 }
 
-.dash-chat-compact .dash-unified-projects {
+.dash-chat-compact .dash-unified-body.has-projects .dash-unified-projects {
+  grid-column: unset;
+  grid-row: unset;
   width: 100%;
+  max-width: none;
   max-height: 88px;
+  flex-shrink: 0;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.dash-chat-compact .dash-unified-body.has-projects .dash-unified-scroll {
+  grid-column: unset;
+  grid-row: unset;
+  flex: 1;
+  min-height: 0;
 }
 
 .dash-chat-compact .developer-cursor-project-list {
