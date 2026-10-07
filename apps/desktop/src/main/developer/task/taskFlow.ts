@@ -38,6 +38,9 @@ import {
   type TaskPlan,
   type TestRunSummary,
   type ToolManager,
+  type ConfirmationRequest,
+  classifyCommand,
+  SAFETY_LABELS,
 } from '@jarvis/core';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -98,6 +101,13 @@ export interface TaskRepo {
   dirty: Set<string>;
 }
 
+const FILE_TOOL_NAMES = new Set([
+  'dev_create_file',
+  'dev_edit_file',
+  'dev_write_file',
+  'dev_delete_file',
+]);
+
 export class TaskRun extends TaskRunBase {
   private approvalWaiter: ((ok: boolean) => void) | null = null;
   private readonly acknowledged = new Set<string>();
@@ -108,10 +118,95 @@ export class TaskRun extends TaskRunBase {
     state: CodeTaskState,
     manager: ToolManager,
     private readonly repo: TaskRepo,
-    private readonly hooks: TaskHooks = {},
+    protected readonly hooks: TaskHooks = {},
     profile?: ProjectProfile,
   ) {
     super(host, deps, state, manager, profile);
+  }
+
+  protected async decide(request: ConfirmationRequest, signal?: AbortSignal): Promise<boolean> {
+    if (!this.hooks.directRun) return super.decide(request, signal);
+    const call = this.calls.get(request.callId) ?? {
+      name: request.toolName,
+      arguments: {} as Record<string, unknown>,
+    };
+    const path = typeof call.arguments.path === 'string' ? call.arguments.path : '';
+    const rel = path ? normalizeRepoRelative(path) : null;
+    const core = rel ? this.profile.protectedFileReason(rel) : null;
+    if (core) {
+      return this.host.ask(
+        request,
+        {
+          safety: {
+            command: path,
+            level: 'always-confirm',
+            label: SAFETY_LABELS['always-confirm'],
+            reasons: [core],
+            runsWithoutAsking: false,
+          },
+          reason: core,
+        },
+        signal,
+      );
+    }
+    const cmd = `${request.command ?? ''} ${request.details ?? ''}`.toLowerCase();
+    if (/\b(git\s+push|push\s+origin|npm\s+publish|package:win:publish)\b/.test(cmd)) {
+      const firstLine = (request.command ?? '').split('\n')[0] ?? '';
+      const safety = classifyCommand(
+        firstLine,
+        this.sandbox ? await this.sandbox.context() : {},
+      );
+      return this.host.ask(request, { safety, reason: 'publication ou push : toujours confirmé' }, signal);
+    }
+    if (call.name === 'dev_delete_file') {
+      const firstLine = (request.command ?? '').split('\n')[0] ?? '';
+      const safety = classifyCommand(
+        firstLine,
+        this.sandbox ? await this.sandbox.context() : {},
+      );
+      return this.host.ask(
+        request,
+        { safety, reason: 'suppression de fichier : confirmation requise' },
+        signal,
+      );
+    }
+    if (request.toolName === 'dev_review_diff') return true;
+    const firstLine = (request.command ?? '').split('\n')[0] ?? '';
+    const safety = classifyCommand(
+      firstLine,
+      this.sandbox ? await this.sandbox.context() : {},
+    );
+    if (safety.level === 'denied') return false;
+    if (safety.level === 'always-confirm') {
+      const outside =
+        !this.sandbox &&
+        (FILE_TOOL_NAMES.has(call.name) ||
+          /\b(rm\s+-rf|del\s+\/|format\s+|diskpart|reg\s+add)\b/i.test(cmd));
+      if (outside) {
+        return this.host.ask(
+          request,
+          { safety, reason: 'action sensible hors copie isolée' },
+          signal,
+        );
+      }
+      if (safety.reasons.some((r) => /secret|mot de passe|token|api.?key/i.test(r))) {
+        return this.host.ask(request, { safety, reason: 'secrets : toujours confirmé' }, signal);
+      }
+    }
+    if (
+      call.name === 'dev_install_sandbox' ||
+      call.name === 'dev_run_tests' ||
+      FILE_TOOL_NAMES.has(call.name)
+    ) {
+      this.state.planApproved.push({
+        tool: call.name,
+        target: path || String(call.arguments.suite ?? ''),
+        at: Date.now(),
+      });
+      return true;
+    }
+    if (safety.level === 'auto' || safety.level === 'confirm') return true;
+    return this.host.ask(request, { safety, reason: 'confirmation requise en mode direct' }, signal);
   }
 
   /** Copie de l'utilisateur d'où part la tâche (Jarvis ou le projet). */
@@ -436,6 +531,10 @@ export class TaskRun extends TaskRunBase {
 
   /** Revue du diff avant chaque série de tests : un code sensible nouveau demande ton accord. */
   private async scanGate(step: StepFn, signal: AbortSignal): Promise<void> {
+    if (this.hooks.directRun) {
+      step('scan', 'done', 'contrôle automatique');
+      return;
+    }
     const diff = await this.refreshDiff(signal);
     const fresh = scanDiff(diff).filter((f) => !this.acknowledged.has(findingKey(f)));
     if (fresh.length === 0) {

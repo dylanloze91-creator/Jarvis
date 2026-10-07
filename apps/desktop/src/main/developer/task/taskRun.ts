@@ -50,6 +50,12 @@ export interface TaskHooks {
   /** Avec presetPlan : saute la carte de validation du plan (comparaison 2e passe). */
   autoApprovePlan?: boolean;
   /**
+   * Discussion projet (5.0.6) : code seul, plan auto-validé, npm/tests dans la copie
+   * isolée sans carte ; fusion dans le projet sans carte si succès. Carte seulement
+   * pour push, publication, secrets, hors sandbox, admin, cœur Jarvis.
+   */
+  directRun?: boolean;
+  /**
    * Projet né d'un gabarit (5.0.1) : modification et corrections fichier par
    * fichier (contenu complet rendu par le modèle), avec ces fichiers en référence.
    */
@@ -117,7 +123,7 @@ export class TaskRunBase {
   protected reviewed: ReviewedPlan | null = null;
   protected approval: PlanApproval | null = null;
   protected series = 0;
-  private readonly calls = new Map<string, { name: string; arguments: Record<string, unknown> }>();
+  protected readonly calls = new Map<string, { name: string; arguments: Record<string, unknown> }>();
 
   constructor(
     protected readonly host: TaskHost,

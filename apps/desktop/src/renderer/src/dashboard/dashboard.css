@@ -486,6 +486,83 @@
   font-size: 10px;
 }
 
+.dashboard[data-app-mode='choose'],
+.dashboard[data-app-mode='developer'] {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.dashboard[data-app-mode='classic'] {
+  grid-template-columns: 84px minmax(0, 1fr);
+}
+
+.jarvis-mode-picker {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 28px;
+  padding: 32px 24px 48px;
+  min-height: 0;
+}
+
+.jarvis-mode-picker-lead {
+  margin: 0;
+  font-size: 1.35rem;
+  font-weight: 600;
+  color: #e8f4ff;
+  text-align: center;
+}
+
+.jarvis-mode-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+  width: min(720px, 100%);
+}
+
+.jarvis-mode-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 28px 24px;
+  border-radius: 16px;
+  border: 1px solid rgba(120, 210, 255, 0.22);
+  background: linear-gradient(165deg, rgba(20, 40, 62, 0.85), rgba(8, 16, 28, 0.92));
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 0.15s,
+    transform 0.15s,
+    box-shadow 0.15s;
+}
+
+.jarvis-mode-card:hover {
+  border-color: rgba(103, 232, 255, 0.45);
+  transform: translateY(-2px);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+}
+
+.jarvis-mode-card-title {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #f0f8ff;
+}
+
+.jarvis-mode-card-hint {
+  font-size: 0.85rem;
+  line-height: 1.45;
+  color: #94a8c4;
+}
+
+@media (max-width: 640px) {
+  .jarvis-mode-picker-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (max-width: 1280px) {
   .dashboard {
     grid-template-columns: 76px minmax(0, 1fr) 250px;

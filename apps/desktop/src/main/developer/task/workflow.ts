@@ -579,6 +579,51 @@ export class CodeTaskWorkflow {
     );
   }
 
+  /** Fusionne une tâche réussie dans le projet sans carte (discussion directe 5.0.6). */
+  async applyDirectToProject(): Promise<DeveloperState> {
+    const run = this.current;
+    if (!run || run.state.finishedAt === null || !run.sandbox || run.state.closed === 'discarded')
+      return this.host.notice('Aucune tâche terminée à appliquer.');
+    if (run.state.report?.verdict !== 'success')
+      return this.host.notice('Les tests n’ont pas réussi : rien n’a été appliqué.');
+    if (run.state.applied && run.state.applied.revertedAt === null)
+      return this.host.notice('Cette modification est déjà dans ton projet.');
+    const { branch, baseCommit, request } = run.state;
+    const root = run.repoRoot;
+    try {
+      const target = await checkApply(this.deps.run, root, branch, baseCommit ?? '');
+      const message = mergeMessage(request, branch);
+      const result = await mergeTask(this.deps.run, root, branch, message);
+      if (!result.ok) {
+        return this.host.notice(
+          `La fusion a échoué et a été annulée : ton projet n’a pas changé. ${result.detail}`,
+        );
+      }
+      run.state.applied = {
+        at: Date.now(),
+        root,
+        branch: target.branch,
+        preHead: target.head,
+        merge: result.merge,
+        revertedAt: null,
+        revert: null,
+      };
+      if (run.state.report)
+        run.state.report.markdown += `\n\n### Application automatique\n\nFusionnée dans « ${target.branch} ».\n`;
+      this.record(
+        'dev_apply_task',
+        { branch, root, target: target.branch, direct: true },
+        true,
+        `Application automatique : ${branch} → ${target.branch}.`,
+      );
+      return this.host.notice(
+        `Modification appliquée dans « ${target.branch} » (${result.merge.slice(0, 7)}). Rien n’est publié sur Internet.`,
+      );
+    } catch (error) {
+      return this.host.notice(error instanceof Error ? error.message : String(error));
+    }
+  }
+
   /** Annule une application par `git revert -m 1` (nouveau commit), après la carte. */
   async revertApply(): Promise<DeveloperState> {
     const run = this.current;

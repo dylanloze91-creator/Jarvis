@@ -6,6 +6,8 @@ import {
   createCodeAIProvider,
   classifyCommand,
   missionRequestFromProjectChat,
+  codeModelsOffered,
+  isProjectChatDirectRequest,
   randomId,
   redactSecrets,
   resolveLocalOllamaBase,
@@ -31,6 +33,7 @@ import type {
   AskView,
   DevConfirmation,
   ProjectChatView,
+  ProjectSimpleRun,
   DevStep,
   DevStepStatus,
   DevTask,
@@ -42,7 +45,7 @@ import { repoReader, runAsk } from './ask/askFlow.js';
 import { MissionStore } from './mission/history.js';
 import { MissionWorkflow } from './mission/missionWorkflow.js';
 import { ProjectStore } from './project/projectStore.js';
-import { ProjectsWorkflow } from './project/projectsWorkflow.js';
+import { ProjectsWorkflow, type ResolvedProject } from './project/projectsWorkflow.js';
 import { measureFree, probeEnvironment, type EnvironmentProbe } from './environment.js';
 import { detectRepo, gatherRepoFacts } from './repo.js';
 import { runProcess, type Runner } from './runner.js';
@@ -55,7 +58,7 @@ import { patientFetch } from './models/patientFetch.js';
 import { CodeModelStore } from './models/store.js';
 import { CodeModelWorkflow, type WorkflowDeps } from './models/workflow.js';
 import { ChatActivity } from './task/chatActivity.js';
-import type { AskExtra } from './task/taskRun.js';
+import type { AskExtra, TaskHooks, TaskPhase, TaskPhaseStatus } from './task/taskRun.js';
 import { DeveloperManualStore } from './knowledge/manualStore.js';
 import { CodeTaskWorkflow } from './task/workflow.js';
 
@@ -88,6 +91,20 @@ export interface ControllerDeps {
 export const DEVELOPER_DISABLED_NOTICE =
   'Le mode Développeur est coupé : active-le dans Réglages → Développeur.';
 const MAX_LOG_LINES = 40;
+
+function directRunIntent(phase: TaskPhase, status: TaskPhaseStatus, detail?: string): string {
+  if (status === 'failed') return 'Un problème est survenu ; je m’arrête.';
+  const labels: Record<TaskPhase, string> = {
+    plan: 'Je lis le projet et je prépare les changements…',
+    edit: 'J’écris le code…',
+    test: 'Je vérifie que tout fonctionne…',
+    review: 'Je relis le résultat…',
+    diagnose: 'Je cherche la cause d’un souci…',
+    fix: 'Je corrige…',
+  };
+  if (status === 'running' && detail?.trim()) return detail.trim();
+  return labels[phase] ?? 'Je travaille sur ta demande…';
+}
 
 /**
  * Session de Jarvis Développeur, séparée du chat : son propre gestionnaire
@@ -500,7 +517,14 @@ export class DeveloperController {
     name: string,
     persisted: ProjectChatPersisted,
     previewOpen: boolean,
+    run?: ProjectSimpleRun | null,
   ): ProjectChatView {
+    const keepRun =
+      run !== undefined
+        ? run
+        : this.projectChat?.projectId === id
+          ? (this.projectChat.run ?? null)
+          : null;
     return {
       projectId: id,
       projectName: name,
@@ -510,7 +534,24 @@ export class DeveloperController {
       webSearchUsed: persisted.webSearchUsed,
       compareOffer: persisted.compareOffer,
       previewOpen,
+      run: keepRun,
     };
+  }
+
+  /** Modèle de code installé, sans demander à l’utilisateur (5.0.6). */
+  private async ensureCodeModel(installed?: readonly string[]): Promise<string | null> {
+    const names =
+      installed ??
+      (await this.ollama().status()).models.map((m) => m.name);
+    const saved = this.deps.getSettings().developer.codeModel;
+    if (saved && names.includes(saved)) return saved;
+    const suggested = this.projectChat?.codingPick?.model;
+    if (suggested && names.includes(suggested)) return suggested;
+    const profile = this.deps.getSettings().machine?.profile;
+    for (const spec of codeModelsOffered(profile)) {
+      if (names.includes(spec.id)) return spec.id;
+    }
+    return names.find((n) => codeModelsOffered(profile).some((s) => s.id === n)) ?? null;
   }
 
   private mergeChatEffects(
@@ -586,16 +627,12 @@ export class DeveloperController {
       this.notice = 'Écris au moins quelques mots.';
       return this.emit();
     }
-    const model = this.deps.getSettings().developer.codeModel;
-    if (!model) {
-      this.notice =
-        'Choisis d’abord un modèle de code (onglet « Modèle de code ») : aucun n’est choisi d’avance.';
-      return this.emit();
-    }
     const status = await this.ollama().status();
     const installed = status.models.map((m) => m.name);
-    if (!installed.includes(model)) {
-      this.notice = `Le modèle de code « ${model} » n’est pas installé dans Ollama.`;
+    const model = await this.ensureCodeModel(installed);
+    if (!model) {
+      this.notice =
+        'Jarvis n’a pas encore de modèle prêt pour ce projet. Vérifie qu’Ollama tourne avec un modèle de code installé.';
       return this.emit();
     }
     const resolved = await this.projects.resolve(id);
@@ -630,6 +667,16 @@ export class DeveloperController {
       this.projectPreview.isOpen(id),
     );
     await this.projects.saveChatState(id, { ...priorPersisted, messages: pendingMessages });
+    if (isProjectChatDirectRequest(userText) && !withScreenshot) {
+      return this.runProjectChatDirect(
+        id,
+        resolved,
+        userText,
+        priorPersisted,
+        pendingMessages,
+        model,
+      );
+    }
     let screenshotBase64: string | undefined;
     if (withScreenshot) {
       if (!this.projectPreview.isOpen(id)) {
@@ -728,6 +775,115 @@ export class DeveloperController {
         return 'Réponse ajoutée à la discussion du projet.';
       },
     );
+  }
+
+  /** Demande claire → plan auto, copie isolée, tests, application au projet sans cartes intermédiaires. */
+  private async runProjectChatDirect(
+    id: string,
+    resolved: ResolvedProject,
+    userText: string,
+    priorPersisted: ProjectChatPersisted,
+    pendingMessages: ProjectChatView['messages'],
+    model: string,
+  ): Promise<DeveloperState> {
+    let simpleRun: ProjectSimpleRun = {
+      request: userText,
+      phase: 'running',
+      intent: 'Je prépare la modification…',
+      result: null,
+    };
+    this.projectChat = this.chatView(
+      id,
+      resolved.name,
+      { ...priorPersisted, messages: pendingMessages },
+      this.projectPreview.isOpen(id),
+      simpleRun,
+    );
+    this.emit();
+    const { summary, discussionContext } = missionRequestFromProjectChat(
+      pendingMessages,
+      priorPersisted.decisions,
+    );
+    const planContext = [
+      discussionContext,
+      priorPersisted.decisions.length
+        ? `Décisions : ${priorPersisted.decisions.join(' · ')}`
+        : '',
+    ]
+      .filter(Boolean)
+      .join('\n\n');
+    const hooks: TaskHooks = {
+      directRun: true,
+      autoApprovePlan: true,
+      planContext,
+      onPhase: (phase, status, detail) => {
+        if (this.projectChat?.projectId !== id) return;
+        simpleRun = {
+          ...simpleRun,
+          intent: directRunIntent(phase, status, detail),
+        };
+        this.projectChat = {
+          ...this.projectChat,
+          run: simpleRun,
+        };
+        this.deps.emit(this.state());
+      },
+    };
+    const started = await this.tasks.start(summary, {
+      model,
+      project: {
+        id: resolved.id,
+        root: resolved.root,
+        profile: resolved.profile,
+        templateId: resolved.template ?? undefined,
+      },
+      hooks,
+    });
+    const task = this.tasks.view().codeTask;
+    const verdict = task?.report?.verdict;
+    let applied = false;
+    if (verdict === 'success') {
+      const applyState = await this.tasks.applyDirectToProject();
+      applied = Boolean(applyState.notice?.includes('Modification appliquée'));
+      this.notice = applyState.notice;
+    } else if (this.notice === null && task?.report) {
+      this.notice =
+        verdict === 'failed'
+          ? 'Les vérifications n’ont pas réussi : ton projet n’a pas été modifié.'
+          : null;
+    }
+    const ok = verdict === 'success' && applied;
+    simpleRun = {
+      ...simpleRun,
+      phase: ok ? 'success' : 'failed',
+      intent: ok ? 'Terminé.' : simpleRun.intent,
+      result: ok
+        ? 'La modification est dans ton projet. Tu peux réessayer ou demander autre chose.'
+        : task?.report?.verdict === 'success' && !applied
+          ? 'Les tests ont réussi mais la fusion a échoué ; ton projet n’a pas changé.'
+          : 'Je n’ai pas pu finir cette fois. Reformule ou précise ta demande.',
+    };
+    const assistantText = ok
+      ? `C’est fait : ${task?.plan?.summary ?? userText}\n\nTu peux tester dans l’aperçu ou me demander un autre changement.`
+      : simpleRun.result!;
+    const assistant = {
+      id: randomId(),
+      role: 'assistant' as const,
+      content: assistantText,
+      at: Date.now(),
+    };
+    const nextMessages = [...pendingMessages, assistant];
+    const merged = this.mergeChatEffects(priorPersisted, { decisions: [], webSearchUsed: false }, nextMessages);
+    await this.projects.saveChatState(id, merged);
+    this.projectChat = this.chatView(
+      id,
+      resolved.name,
+      merged,
+      this.projectPreview.isOpen(id),
+      simpleRun,
+    );
+    void started;
+    return this.emit();
   }
 
   async startMissionFromChat(projectId: string): Promise<DeveloperState> {

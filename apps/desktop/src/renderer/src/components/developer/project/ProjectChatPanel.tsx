@@ -4,43 +4,156 @@ import remarkGfm from 'remark-gfm';
 import { Camera, MessageCircle, MonitorPlay, Rocket, Scale } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { DeveloperApi, DeveloperState, ProjectView } from '../../../../../shared/developerIpc';
+import { DiffView } from '../task/DiffView';
+import { TestResults } from '../task/TestResults';
 
 type Act = (action: (api: DeveloperApi) => Promise<DeveloperState | void>) => void;
 
-/** Discussion avec le modèle de code sur ce projet (lecture seule ; mission Modifier séparée). */
+/** Discussion avec le modèle de code sur ce projet. */
 export function ProjectChatPanel({
   project,
   state,
   act,
   codeModel,
   installedModels,
+  simple = false,
 }: {
   project: ProjectView;
   state: DeveloperState;
   act: Act;
   codeModel: string;
   installedModels: string[];
+  /** Vue simplifiée (5.0.6) : une boîte, pas de mission ni jargon. */
+  simple?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(simple);
   const [draft, setDraft] = useState('');
   const bottom = useRef<HTMLDivElement>(null);
   const chat =
     state.projectChat?.projectId === project.id ? state.projectChat : null;
   useEffect(() => {
-    if (open && !chat) act((api) => api.openProjectChat(project.id));
-  }, [open, project.id]);
+    if ((open || simple) && !chat) act((api) => api.openProjectChat(project.id));
+  }, [open, simple, project.id, chat]);
   useEffect(() => {
     bottom.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [chat?.messages.length]);
+  }, [chat?.messages.length, chat?.run?.phase]);
   const canSend =
-    open &&
+    (open || simple) &&
     !state.busy &&
-    Boolean(codeModel) &&
     draft.trim().length >= 2 &&
     (project.ok || project.kind === 'jarvis');
   const hasUserMessage = (chat?.messages ?? []).some((m) => m.role === 'user');
   const compareAlt = chat?.compareOffer?.alternateModel;
   const otherModels = installedModels.filter((m) => m && m !== codeModel);
+  const run = chat?.run;
+
+  if (simple) {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col gap-3" data-project-chat-simple={project.id}>
+        {run && run.phase !== 'idle' ? (
+          <div
+            className="rounded-xl border border-cyan-400/20 bg-cyan-400/5 px-3.5 py-3 text-sm text-slate-100"
+            data-simple-run={run.phase}
+          >
+            <p className="text-[11px] uppercase tracking-wide text-cyan-200/80">Ta demande</p>
+            <p className="mt-1">{run.request}</p>
+            <p className="mt-2 text-[11px] uppercase tracking-wide text-slate-400">Ce que Jarvis fait</p>
+            <p className="mt-0.5 text-slate-200">{run.intent}</p>
+            {run.result ? (
+              <>
+                <p className="mt-2 text-[11px] uppercase tracking-wide text-slate-400">Résultat</p>
+                <p className="mt-0.5">{run.result}</p>
+              </>
+            ) : null}
+          </div>
+        ) : null}
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            size="sm"
+            variant="subtle"
+            disabled={state.busy}
+            onClick={() =>
+              act((api) => api.setProjectChatPreview(project.id, !chat?.previewOpen))
+            }
+          >
+            <MonitorPlay className="size-3.5" />
+            {chat?.previewOpen ? 'Masquer l’aperçu' : 'Voir l’aperçu'}
+          </Button>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto flex flex-col gap-2 pr-1">
+          {(chat?.messages ?? []).map((message) => (
+            <div
+              key={message.id}
+              className={
+                message.role === 'user'
+                  ? 'rounded-md bg-cyan-400/10 px-2 py-1.5 text-[13px] text-slate-100'
+                  : 'markdown rounded-md bg-white/[0.04] px-2 py-1.5 text-[13px] text-slate-200'
+              }
+            >
+              {message.role === 'user' ? (
+                <>
+                  {message.hasScreenshot ? (
+                    <span className="mb-1 block text-[10px] text-cyan-300/80">Capture jointe</span>
+                  ) : null}
+                  {message.content}
+                </>
+              ) : (
+                <Markdown remarkPlugins={[remarkGfm]}>{message.content}</Markdown>
+              )}
+            </div>
+          ))}
+          <div ref={bottom} />
+        </div>
+        <textarea
+          className="no-drag min-h-16 rounded-md border border-white/10 bg-black/30 px-3 py-2 text-[13px] text-slate-100"
+          placeholder="Dis ce que tu veux changer ou pose une question…"
+          maxLength={4_000}
+          value={draft}
+          disabled={state.busy}
+          onChange={(event) => setDraft(event.target.value)}
+        />
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            size="sm"
+            disabled={!canSend}
+            onClick={() => {
+              const text = draft.trim();
+              setDraft('');
+              act((api) => api.sendProjectChat(project.id, text));
+            }}
+          >
+            Envoyer
+          </Button>
+          <Button
+            size="sm"
+            variant="subtle"
+            disabled={!canSend || !chat?.previewOpen}
+            onClick={() => {
+              const text = draft.trim();
+              setDraft('');
+              act((api) => api.sendProjectChat(project.id, text, true));
+            }}
+          >
+            <Camera className="size-3.5" /> Avec capture
+          </Button>
+        </div>
+        {state.codeTask ? (
+          <details className="rounded-lg border border-white/8 bg-black/20 px-3 py-2 text-xs text-slate-400">
+            <summary className="cursor-pointer text-slate-300">Détail technique (optionnel)</summary>
+            <div className="mt-2 flex flex-col gap-2">
+              {state.codeTask.diff.length ? (
+                <DiffView files={state.codeTask.diff} tags={{}} />
+              ) : null}
+              {state.codeTask.runs.length ? (
+                <TestResults runs={state.codeTask.runs} baseline={state.codeTask.baseline} />
+              ) : null}
+            </div>
+          </details>
+        ) : null}
+      </div>
+    );
+  }
+
   return (
     <div className="mt-2 border-t border-white/5 pt-2" data-project-chat={project.id}>
       <Button size="sm" variant="ghost" onClick={() => setOpen((v) => !v)}>

@@ -189,6 +189,16 @@ export interface ProjectChatMessage {
   hasScreenshot?: boolean;
 }
 
+/** Suivi en langage simple d’une modification directe depuis la discussion (5.0.6). */
+export interface ProjectSimpleRun {
+  request: string;
+  phase: 'idle' | 'running' | 'success' | 'failed';
+  /** Ce que Jarvis fait (sans jargon). */
+  intent: string;
+  /** Résultat une fois terminé. */
+  result: string | null;
+}
+
 /** Discussion avec le modèle de code sur un projet (importé ou créé). */
 export interface ProjectChatView {
   projectId: string;
@@ -199,6 +209,8 @@ export interface ProjectChatView {
   webSearchUsed: boolean;
   compareOffer: { alternateModel: string; reason: string } | null;
   previewOpen: boolean;
+  /** Dernière exécution directe (demande claire → code → tests → application). */
+  run: ProjectSimpleRun | null;
 }
 
 export interface AskView {

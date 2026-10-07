@@ -40,6 +40,8 @@ import type { UseVoiceResult } from '@/voice/useVoice';
 import type { RuntimeStatus, ToolInfo } from '../../../shared/ipc';
 import type { ChatItem, PendingConfirmation } from '@/hooks/useChat';
 import { JarvisOrb } from '@/components/JarvisOrb';
+import { DeveloperSimpleView } from '@/components/developer/DeveloperSimpleView';
+import { JarvisModePicker, type JarvisAppMode } from '@/dashboard/JarvisModePicker';
 import './dashboard.css';
 
 type View = 'chat' | 'history' | 'settings' | 'audit';
@@ -217,10 +219,17 @@ export function Dashboard({
   const [developerOpen, setDeveloperOpen] = useState(() => /^developer-(panel|confirm|model|pull|bench|task-plan|task-run|task-report)$/.test(developerScene));
   const developerEnabled = settings?.developer.enabled ?? false;
   const showDeveloper = developerOpen && developerEnabled;
+  const [appMode, setAppMode] = useState<JarvisAppMode>('choose');
   const navigate = (next: View): void => {
     setDeveloperOpen(false);
     setView(next);
   };
+  const pickMode = (mode: Exclude<JarvisAppMode, 'choose'>): void => {
+    setAppMode(mode);
+    if (mode === 'classic') navigate('chat');
+  };
+  const showModePicker = appMode === 'choose';
+  const showSimpleDeveloper = appMode === 'developer';
 
   const ask = (prompt: string): void => {
     navigate('chat');
@@ -255,8 +264,9 @@ export function Dashboard({
       data-ui-ready={booting ? 'no' : 'yes'}
       data-ui-view={view}
       data-ui-layout="dashboard"
+      data-app-mode={appMode}
     >
-      <aside className="dash-side">
+      <aside className="dash-side" hidden={showModePicker || showSimpleDeveloper}>
         <div className="side-logo" aria-hidden>
           J
         </div>
@@ -278,25 +288,35 @@ export function Dashboard({
       </aside>
 
       <main className="dash-main">
-        <header className="dash-top drag-region">
-          <div className="dash-title">
-            <h1>JARVIS</h1>
-            <p>{presence.hint}</p>
-          </div>
-          <div className={cn('presence no-drag', presence.tone)}>
-            <i />
-            {presence.label}
-          </div>
-          <button
-            type="button"
-            className="icon-btn no-drag"
-            onClick={() => void window.jarvis.window.setChrome('compact')}
-          >
-            <Shrink className="size-4" /> Réduire
-          </button>
-        </header>
+        {!showModePicker ? (
+          <header className="dash-top drag-region">
+            <div className="dash-title">
+              <h1>JARVIS</h1>
+              <p>{presence.hint}</p>
+            </div>
+            <div className={cn('presence no-drag', presence.tone)}>
+              <i />
+              {presence.label}
+            </div>
+            <button
+              type="button"
+              className="icon-btn no-drag"
+              onClick={() => void window.jarvis.window.setChrome('compact')}
+            >
+              <Shrink className="size-4" /> Réduire
+            </button>
+          </header>
+        ) : null}
 
-        {showDeveloper ? (
+        {showModePicker ? (
+          <JarvisModePicker onPick={pickMode} />
+        ) : showSimpleDeveloper ? (
+          <DeveloperSimpleView
+            settings={settings}
+            onSaved={onSaved}
+            onBack={() => setAppMode('choose')}
+          />
+        ) : showDeveloper ? (
           <section className="dash-panel">
             <button type="button" className="panel-back" onClick={() => setDeveloperOpen(false)}>
               Retour à l’accueil
@@ -310,6 +330,7 @@ export function Dashboard({
           </section>
         ) : view === 'chat' ? (
           <>
+            {appMode === 'classic' ? null : (
             <section className="dash-stage" aria-label="Assistant">
               <JarvisOrb listening={voice.state === 'listening'} level={voice.level} />
               <div className="temp-readout">
@@ -331,7 +352,9 @@ export function Dashboard({
                 <strong>{temperature}</strong>
               </div>
             </section>
+            )}
 
+            {appMode === 'classic' ? null : (
             <div className="fn-row">
               {FUNCTIONS.filter((card) => card.id !== 'video' || settings?.videoAnalysis !== false).map((card) => (
                 <button
@@ -352,11 +375,17 @@ export function Dashboard({
                 </button>
               ))}
             </div>
+            )}
 
             <section className="dash-chat" aria-label="Discussion">
               <div className="dash-chat-head">
                 <MessageSquare className="size-4" />
                 Discussion
+                {appMode === 'classic' ? (
+                  <button type="button" className="icon-btn" onClick={() => setAppMode('choose')}>
+                    Changer de mode
+                  </button>
+                ) : null}
                 <button type="button" className="icon-btn" onClick={onNew}>
                   Nouvelle
                 </button>
@@ -414,7 +443,7 @@ export function Dashboard({
         ) : null}
       </main>
 
-      <aside className="dash-rail">
+      <aside className="dash-rail" hidden={showModePicker || showSimpleDeveloper || appMode === 'classic'}>
         <section className="rail-card" aria-label="Système">
           <h2>Système</h2>
           <Metric
