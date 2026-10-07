@@ -397,8 +397,12 @@ export {
 } from './speech/microphoneCapture.js';
 export {
   ATTENUATED_PEAK,
+  DICTATION_MAX_GAIN,
+  DICTATION_MIN_PEAK_TO_BOOST,
+  DICTATION_TARGET_PEAK,
   FULL_SCALE_PEAK,
   attenuateClipping,
+  normalizeDictationLevel,
   type AttenuatedPcm,
 } from './speech/voiceGain.js';
 export {

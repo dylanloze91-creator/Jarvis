@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { ATTENUATED_PEAK, attenuateClipping } from './voiceGain.js';
+import { ATTENUATED_PEAK, attenuateClipping, DICTATION_TARGET_PEAK, normalizeDictationLevel } from './voiceGain.js';
 import { scaleOpenWakeWordPcm } from './openWakeWord.js';
+import { peakEnergy } from './wakeWordFromTranscript.js';
 
 describe('atténuation quand la crête atteint le plein échelle', () => {
   it('ramène une crête ≥ 1 sous 1, sans changer la forme', () => {
@@ -35,5 +36,25 @@ describe('atténuation quand la crête atteint le plein échelle', () => {
     expect(scaled[1]).toBeCloseTo(-0.25 * 32767, 0);
     expect(scaled[2]).toBe(0);
     expect(Math.abs(scaled[0]!)).toBeGreaterThan(1000);
+  });
+});
+
+describe('normalizeDictationLevel', () => {
+  it('amplifie un signal faible sans dépasser la crête visée', () => {
+    const quiet = new Float32Array(1600).map((_, i) => Math.sin(i / 5) * 0.04);
+    const out = normalizeDictationLevel(quiet);
+    expect(peakEnergy(out)).toBeGreaterThan(0.2);
+    expect(peakEnergy(out)).toBeLessThanOrEqual(DICTATION_TARGET_PEAK + 0.02);
+  });
+
+  it('ne modifie pas un signal déjà assez fort', () => {
+    const loud = new Float32Array(800).map((_, i) => Math.sin(i / 5) * 0.5);
+    expect(normalizeDictationLevel(loud)).toBe(loud);
+  });
+
+  it('s’enchaîne avec l’atténuation d’écrêtage', () => {
+    const clipped = new Float32Array(400).fill(1.2);
+    const chain = attenuateClipping(normalizeDictationLevel(clipped)).pcm;
+    expect(peakEnergy(chain)).toBeLessThan(1);
   });
 });

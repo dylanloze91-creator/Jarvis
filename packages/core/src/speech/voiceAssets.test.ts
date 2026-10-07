@@ -26,7 +26,7 @@ describe('fichiers voix embarqués', () => {
       parseVoiceAssetUrl(`jarvis-oww://whisper/${WHISPER_MODEL_REPO}/onnx/encoder_model_quantized.onnx`),
     ).toEqual({
       host: 'whisper',
-      segments: ['Xenova', 'whisper-base', 'onnx', 'encoder_model_quantized.onnx'],
+      segments: ['Xenova', 'whisper-small', 'onnx', 'encoder_model_quantized.onnx'],
     });
   });
 
@@ -35,7 +35,7 @@ describe('fichiers voix embarqués', () => {
       'jarvis-oww://whisper/../secret.txt',
       'jarvis-oww://whisper/Xenova/%2e%2e/%2e%2e/secret.txt',
       'jarvis-oww://whisper/..%5C..%5CWindows%5Cwin.ini',
-      'jarvis-oww://whisper/Xenova%5Cwhisper-base%5Cconfig.json',
+      'jarvis-oww://whisper/Xenova%5Cwhisper-small%5Cconfig.json',
       'jarvis-oww://ort/C:%5CWindows%5Cwin.ini',
       'jarvis-oww://ort/.hidden',
       'jarvis-oww://ort/',
@@ -58,9 +58,9 @@ describe('fichiers voix embarqués', () => {
 
   it('liste les fichiers dont dépend le chargement de Whisper et d’openWakeWord', () => {
     const paths = REQUIRED_VOICE_ASSETS.map((asset) => `${asset.host}/${asset.path}`);
-    expect(paths).toContain('whisper/Xenova/whisper-base/preprocessor_config.json');
-    expect(paths).toContain('whisper/Xenova/whisper-base/tokenizer_config.json');
-    expect(paths).toContain('whisper/Xenova/whisper-base/tokenizer.json');
+    expect(paths).toContain(`whisper/${WHISPER_MODEL_REPO}/preprocessor_config.json`);
+    expect(paths).toContain(`whisper/${WHISPER_MODEL_REPO}/tokenizer_config.json`);
+    expect(paths).toContain(`whisper/${WHISPER_MODEL_REPO}/tokenizer.json`);
     expect(paths).toContain('ort/ort-wasm-simd-threaded.wasm');
     for (const file of OPENWAKEWORD_MODEL_FILES) expect(paths).toContain(`openwakeword/${file}`);
     expect(paths.filter((p) => p.startsWith('ort/'))).toHaveLength(2);

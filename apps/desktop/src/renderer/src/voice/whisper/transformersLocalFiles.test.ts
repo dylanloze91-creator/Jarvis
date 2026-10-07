@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { WHISPER_MODEL_REPO } from '@jarvis/core';
 import { ModelRegistry, env } from '@huggingface/transformers';
 
 vi.mock('../onnxRuntime', () => ({ configureOnnxRuntime: vi.fn(), withOrtLock: <T,>(task: () => Promise<T>) => task() }));
@@ -57,15 +58,15 @@ describe('détection des fichiers Whisper par transformers.js via jarvis-oww', (
     const requests: string[] = [];
     Object.assign(env, { useFSCache: false, fetch: jarvisOwwFetch(requests) });
     configureTransformersEnv(env);
-    expect(await ModelRegistry.get_tokenizer_files('Xenova/whisper-base')).toEqual([
+    expect(await ModelRegistry.get_tokenizer_files(WHISPER_MODEL_REPO)).toEqual([
       'tokenizer.json',
       'tokenizer_config.json',
     ]);
-    expect(await ModelRegistry.get_processor_files('Xenova/whisper-base')).toEqual([
+    expect(await ModelRegistry.get_processor_files(WHISPER_MODEL_REPO)).toEqual([
       'preprocessor_config.json',
     ]);
-    expect(requests).toContain('jarvis-oww://whisper/Xenova/whisper-base/tokenizer_config.json');
-    expect(requests).toContain('jarvis-oww://whisper/Xenova/whisper-base/preprocessor_config.json');
+    expect(requests).toContain(`jarvis-oww://whisper/${WHISPER_MODEL_REPO}/tokenizer_config.json`);
+    expect(requests).toContain(`jarvis-oww://whisper/${WHISPER_MODEL_REPO}/preprocessor_config.json`);
     expect(requests.every((url) => url.startsWith('jarvis-oww://whisper/'))).toBe(true);
   });
 });

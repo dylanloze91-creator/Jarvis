@@ -151,13 +151,13 @@ describe('Tester la voix', () => {
   });
 
   it('nomme le fichier que jarvis-oww ne sert pas (404)', async () => {
-    const url = voiceAssetUrl('whisper', 'Xenova/whisper-base/tokenizer_config.json');
+    const url = voiceAssetUrl('whisper', 'Xenova/whisper-small/tokenizer_config.json');
     const result = await runVoiceDiagnostic(
       deps({ fetch: servedFetch({ [url]: new Response('Fichier introuvable', { status: 404 }) }) }),
     );
     expect(result.firstFailure?.id).toBe('protocol');
     expect(result.firstFailure?.summary).toBe(
-      'whisper/Xenova/whisper-base/tokenizer_config.json : HTTP 404 par jarvis-oww.',
+      'whisper/Xenova/whisper-small/tokenizer_config.json : HTTP 404 par jarvis-oww.',
     );
     expect(result.steps.find((s) => s.id === 'whisper')?.status).toBe('skipped');
   });

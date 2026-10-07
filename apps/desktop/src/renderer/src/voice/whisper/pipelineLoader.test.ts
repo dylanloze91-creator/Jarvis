@@ -91,7 +91,7 @@ describe('chargement de Whisper', () => {
     expect(fake.env).toMatchObject({ allowLocalModels: true, allowRemoteModels: false });
     expect(fake.pipeline).toHaveBeenCalledWith(
       'automatic-speech-recognition',
-      'Xenova/whisper-base',
+      'Xenova/whisper-small',
       expect.objectContaining({ device: 'wasm', dtype: 'q8' }),
     );
   });

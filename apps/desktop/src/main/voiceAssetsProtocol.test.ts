@@ -42,10 +42,10 @@ describe('chemins Windows (installateur NSIS par utilisateur)', () => {
     expect(
       resolveVoiceAssetPath(
         WINDOWS_RESOURCES,
-        'jarvis-oww://whisper/Xenova/whisper-base/onnx/encoder_model_quantized.onnx',
+        'jarvis-oww://whisper/Xenova/whisper-small/onnx/encoder_model_quantized.onnx',
         path.win32,
       ),
-    ).toBe(`${WINDOWS_RESOURCES}\\whisper\\Xenova\\whisper-base\\onnx\\encoder_model_quantized.onnx`);
+    ).toBe(`${WINDOWS_RESOURCES}\\whisper\\Xenova\\whisper-small\\onnx\\encoder_model_quantized.onnx`);
     expect(
       resolveVoiceAssetPath(WINDOWS_RESOURCES, 'jarvis-oww://ort/ort-wasm-simd-threaded.wasm', path.win32),
     ).toBe(`${WINDOWS_RESOURCES}\\ort\\ort-wasm-simd-threaded.wasm`);
@@ -72,10 +72,10 @@ describe('serveVoiceAsset (fichiers réels)', () => {
 
   beforeAll(async () => {
     root = await mkdtemp(path.join(tmpdir(), 'jarvis voix '));
-    await mkdir(path.join(root, 'whisper', 'Xenova', 'whisper-base'), { recursive: true });
+    await mkdir(path.join(root, 'whisper', 'Xenova', 'whisper-small'), { recursive: true });
     await mkdir(path.join(root, 'ort'), { recursive: true });
     await writeFile(
-      path.join(root, 'whisper', 'Xenova', 'whisper-base', 'tokenizer_config.json'),
+      path.join(root, 'whisper', 'Xenova', 'whisper-small', 'tokenizer_config.json'),
       '{"tokenizer_class":"WhisperTokenizer"}',
     );
     await writeFile(path.join(root, 'ort', 'ort-wasm-simd-threaded.wasm'), Buffer.from([0, 97, 115, 109]));
@@ -87,7 +87,7 @@ describe('serveVoiceAsset (fichiers réels)', () => {
 
   it('renvoie le JSON avec content-length, type et CORS', async () => {
     const response = await serveVoiceAsset(
-      { url: 'jarvis-oww://whisper/Xenova/whisper-base/tokenizer_config.json', method: 'GET' },
+      { url: 'jarvis-oww://whisper/Xenova/whisper-small/tokenizer_config.json', method: 'GET' },
       root,
     );
     expect(response.status).toBe(200);
@@ -118,7 +118,7 @@ describe('serveVoiceAsset (fichiers réels)', () => {
 
   it('404 pour un fichier absent, 400 pour une URL hors dossier, 405 pour POST', async () => {
     expect(
-      (await serveVoiceAsset({ url: 'jarvis-oww://whisper/Xenova/whisper-base/config.json', method: 'GET' }, root))
+      (await serveVoiceAsset({ url: 'jarvis-oww://whisper/Xenova/whisper-small/config.json', method: 'GET' }, root))
         .status,
     ).toBe(404);
     expect(

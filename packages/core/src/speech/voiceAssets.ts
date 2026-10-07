@@ -28,8 +28,8 @@ export const VOSK_MODEL_ARCHIVE = `${VOSK_MODEL_NAME}.tar.gz`;
 export const ORT_WASM_MJS = 'ort-wasm-simd-threaded.mjs';
 export const ORT_WASM_BINARY = 'ort-wasm-simd-threaded.wasm';
 
-/** Seul modèle Whisper embarqué (quantifié q8, ~75 Mo). */
-export const WHISPER_MODEL_REPO = 'Xenova/whisper-base';
+/** Seul modèle Whisper embarqué (quantifié q8, ~180 Mo — small, meilleur français). */
+export const WHISPER_MODEL_REPO = 'Xenova/whisper-small';
 
 export const OPENWAKEWORD_MODEL_FILES = [
   'melspectrogram.onnx',
@@ -66,13 +66,13 @@ export const REQUIRED_VOICE_ASSETS: readonly VoiceAssetSpec[] = [
     host: 'whisper',
     path: `${WHISPER_MODEL_REPO}/onnx/encoder_model_quantized.onnx`,
     kind: 'onnx',
-    minBytes: 1_000_000,
+    minBytes: 8_000_000,
   },
   {
     host: 'whisper',
     path: `${WHISPER_MODEL_REPO}/onnx/decoder_model_merged_quantized.onnx`,
     kind: 'onnx',
-    minBytes: 1_000_000,
+    minBytes: 8_000_000,
   },
   ...OPENWAKEWORD_MODEL_FILES.map(
     (file): VoiceAssetSpec => ({ host: 'openwakeword', path: file, kind: 'onnx', minBytes: 100_000 }),

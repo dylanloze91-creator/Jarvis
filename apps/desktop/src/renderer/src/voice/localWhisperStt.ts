@@ -40,7 +40,7 @@ const MIN_COMMAND_SPEECH_MS = 300;
 
 export const localWhisperSttDescriptor: SpeechToTextDescriptor = {
   id: 'local-whisper',
-  label: 'Whisper local (gratuit, hors ligne, whisper-base embarqué)',
+  label: 'Whisper local (gratuit, hors ligne, whisper-small embarqué)',
   requiresApiKey: false,
 };
 

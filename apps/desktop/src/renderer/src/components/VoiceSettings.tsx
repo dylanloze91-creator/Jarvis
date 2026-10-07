@@ -390,7 +390,7 @@ export function VoiceSettingsSection({
       <Disclosure title="Détails techniques de la dictée" hint="Moteur de reconnaissance, clé dédiée">
         <Field
           label="Moteur de reconnaissance vocale (STT)"
-          hint="Whisper local est le moteur gratuit par défaut : whisper-base et son runtime WebAssembly sont embarqués dans l’installateur, hors ligne. Le même Whisper sert au mot de réveil et à l’écoute YouTube."
+          hint="Whisper local est le moteur gratuit par défaut : whisper-small et son runtime WebAssembly sont embarqués dans l’installateur, hors ligne. Le même Whisper sert au mot de réveil et à l’écoute YouTube."
         >
           <Select
             value={voice.sttProvider}

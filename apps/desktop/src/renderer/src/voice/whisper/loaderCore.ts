@@ -4,15 +4,16 @@ import {
   WHISPER_LOCAL_MODEL_ROOT,
   WHISPER_MODEL_REPO,
   attenuateClipping,
+  normalizeDictationLevel,
 } from '@jarvis/core';
 
 /**
  * Chargement complet (runtime + lecture des fichiers + sessions ONNX)
  * au-delà duquel on abandonne avec une erreur qui nomme l'étape bloquée.
- * whisper-base q8 se charge en quelques secondes sur un i7 ; 90 s couvre
+ * whisper-small q8 prend un peu plus de temps qu’avec base ; 120 s couvre
  * un PC lent sans jamais laisser « Chargement… » affiché indéfiniment.
  */
-export const WHISPER_LOAD_TIMEOUT_MS = 90_000;
+export const WHISPER_LOAD_TIMEOUT_MS = 120_000;
 /**
  * Après un échec, les appels suivants reçoivent la même erreur pendant ce
  * délai au lieu de relancer 20 s de chargement à chaque mot de réveil.
@@ -213,7 +214,7 @@ export function createWhisperLoader(deps: WhisperLoaderDeps) {
 
   const transcribe = async (pcm: Float32Array, options: TranscribeOptions = {}): Promise<string> => {
     const pipe = await getPipeline();
-    const leveled = attenuateClipping(pcm).pcm;
+    const leveled = attenuateClipping(normalizeDictationLevel(pcm)).pcm;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<never>((_, reject) => {
       timer = setTimeout(
@@ -229,6 +230,7 @@ export function createWhisperLoader(deps: WhisperLoaderDeps) {
             task: 'transcribe',
             chunk_length_s: 30,
             max_new_tokens: options.maxNewTokens ?? DICTATION_MAX_NEW_TOKENS,
+            temperature: 0,
           }),
         ),
         timeout,

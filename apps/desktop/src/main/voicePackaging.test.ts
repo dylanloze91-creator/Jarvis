@@ -71,9 +71,9 @@ describe('empaquetage de la voix', () => {
         writeFileSync(file, Buffer.alloc(asset.minBytes));
       }
       await expect(afterPack({ appOutDir })).resolves.toBeUndefined();
-      rmSync(join(appOutDir, 'resources', 'whisper', 'Xenova', 'whisper-base', 'preprocessor_config.json'));
+      rmSync(join(appOutDir, 'resources', 'whisper', 'Xenova', 'whisper-small', 'preprocessor_config.json'));
       await expect(afterPack({ appOutDir })).rejects.toThrow(
-        /manquant : whisper[\\/]Xenova[\\/]whisper-base[\\/]preprocessor_config\.json/,
+        /manquant : whisper[\\/]Xenova[\\/]whisper-small[\\/]preprocessor_config\.json/,
       );
     } finally {
       rmSync(appOutDir, { recursive: true, force: true });
