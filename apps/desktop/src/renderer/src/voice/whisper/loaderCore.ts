@@ -5,6 +5,8 @@ import {
   WHISPER_MODEL_REPO,
   attenuateClipping,
   normalizeDictationLevel,
+  preprocessDictationPcm,
+  refineFrenchDictation,
 } from '@jarvis/core';
 
 /**
@@ -97,6 +99,30 @@ export interface TranscribeOptions {
 
 /** Une dictée dure au plus 12 s : ~40 mots. */
 export const DICTATION_MAX_NEW_TOKENS = 96;
+const DICTATION_SAMPLE_RATE = 16_000;
+/** Au-delà, on garde des fenêtres de 30 s avec recouvrement. */
+const SINGLE_CHUNK_MAX_SECONDS = 15;
+
+type WhisperInferenceDevice = 'wasm' | 'webgpu';
+let resolvedWhisperDevice: WhisperInferenceDevice | null = null;
+
+async function resolveWhisperInferenceDevice(): Promise<{ device: WhisperInferenceDevice; dtype: 'q8' | 'fp16' }> {
+  if (resolvedWhisperDevice === 'wasm') return { device: 'wasm', dtype: 'q8' };
+  if (resolvedWhisperDevice === 'webgpu') return { device: 'webgpu', dtype: 'fp16' };
+  if (typeof navigator !== 'undefined' && 'gpu' in navigator) {
+    try {
+      const adapter = await navigator.gpu!.requestAdapter({ powerPreference: 'high-performance' });
+      if (adapter) {
+        resolvedWhisperDevice = 'webgpu';
+        return { device: 'webgpu', dtype: 'fp16' };
+      }
+    } catch {
+      // WebGPU indisponible : repli WASM.
+    }
+  }
+  resolvedWhisperDevice = 'wasm';
+  return { device: 'wasm', dtype: 'q8' };
+}
 /** « Jarvis » et un ou deux mots. */
 export const WAKE_WORD_MAX_NEW_TOKENS = 12;
 /** Une tranche YouTube de 30 s. */
@@ -146,16 +172,30 @@ export function createWhisperLoader(deps: WhisperLoaderDeps) {
       const transformers = await deps.importTransformers();
       configureTransformersEnv(transformers.env);
       setStage('files', 0);
-      const pipe = (await deps.runExclusive(() => transformers.pipeline('automatic-speech-recognition', WHISPER_MODEL_REPO, {
-        device: 'wasm',
-        dtype: 'q8',
-        progress_callback: (info: ProgressInfo) => {
-          if (timedOut || info.status !== 'progress_total') return;
-          const percent = Math.max(0, Math.min(100, info.progress ?? 0));
-          if (percent >= 100) setStage('session');
-          else if (stage === 'files') setStage('files', percent);
-        },
-      }))) as LoadedPipeline;
+      const progress_callback = (info: ProgressInfo) => {
+        if (timedOut || info.status !== 'progress_total') return;
+        const percent = Math.max(0, Math.min(100, info.progress ?? 0));
+        if (percent >= 100) setStage('session');
+        else if (stage === 'files') setStage('files', percent);
+      };
+      const createPipeline = async (device: WhisperInferenceDevice, dtype: 'q8' | 'fp16') =>
+        (await deps.runExclusive(() =>
+          transformers.pipeline('automatic-speech-recognition', WHISPER_MODEL_REPO, {
+            device,
+            dtype,
+            progress_callback,
+          }),
+        )) as LoadedPipeline;
+      let inference = await resolveWhisperInferenceDevice();
+      let pipe: LoadedPipeline;
+      try {
+        pipe = await createPipeline(inference.device, inference.dtype);
+      } catch (firstError: unknown) {
+        if (inference.device !== 'webgpu') throw firstError;
+        resolvedWhisperDevice = 'wasm';
+        inference = { device: 'wasm', dtype: 'q8' };
+        pipe = await createPipeline('wasm', 'q8');
+      }
       if (timedOut) {
         void pipe.dispose?.();
         throw new WhisperLoadTimeoutError(stage, deps.loadTimeoutMs);
@@ -214,7 +254,13 @@ export function createWhisperLoader(deps: WhisperLoaderDeps) {
 
   const transcribe = async (pcm: Float32Array, options: TranscribeOptions = {}): Promise<string> => {
     const pipe = await getPipeline();
-    const leveled = attenuateClipping(normalizeDictationLevel(pcm)).pcm;
+    const language = options.language ?? WHISPER_DICTATION_LANGUAGE;
+    const prepared =
+      language === WHISPER_DICTATION_LANGUAGE
+        ? preprocessDictationPcm(normalizeDictationLevel(pcm))
+        : pcm;
+    const leveled = attenuateClipping(prepared).pcm;
+    const chunk_length_s = leveled.length / DICTATION_SAMPLE_RATE <= SINGLE_CHUNK_MAX_SECONDS ? 0 : 30;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<never>((_, reject) => {
       timer = setTimeout(
@@ -226,9 +272,9 @@ export function createWhisperLoader(deps: WhisperLoaderDeps) {
       const output = await Promise.race([
         deps.runExclusive(() =>
           pipe(leveled, {
-            language: options.language ?? WHISPER_DICTATION_LANGUAGE,
+            language,
             task: 'transcribe',
-            chunk_length_s: 30,
+            chunk_length_s,
             max_new_tokens: options.maxNewTokens ?? DICTATION_MAX_NEW_TOKENS,
             temperature: 0,
           }),
@@ -236,7 +282,9 @@ export function createWhisperLoader(deps: WhisperLoaderDeps) {
         timeout,
       ]);
       const first = Array.isArray(output) ? output[0] : output;
-      return (first as { text?: string } | undefined)?.text?.trim() ?? '';
+      let text = (first as { text?: string } | undefined)?.text?.trim() ?? '';
+      if (language === WHISPER_DICTATION_LANGUAGE) text = refineFrenchDictation(text);
+      return text;
     } finally {
       clearTimeout(timer);
     }

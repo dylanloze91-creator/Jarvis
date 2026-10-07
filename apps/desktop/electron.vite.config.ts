@@ -39,7 +39,8 @@ export default defineConfig({
     resolve: {
       alias: [
         { find: '@', replacement: resolve(__dirname, 'src/renderer/src') },
-        { find: /^onnxruntime-web(\/webgpu)?$/, replacement: onnxRuntimeWasm },
+        // openWakeWord : WASM seul. Whisper (transformers.js) peut charger webgpu dans le worker.
+        { find: /^onnxruntime-web$/, replacement: onnxRuntimeWasm },
       ],
     },
     plugins: [

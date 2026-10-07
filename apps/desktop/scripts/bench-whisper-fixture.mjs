@@ -1,8 +1,7 @@
 #!/usr/bin/env node
 /**
- * Compare whisper-base et whisper-small sur un enregistrement (MP3/WAV).
+ * Mesure la dictée sur un enregistrement avec le même pré-traitement que l'app.
  * Usage : node apps/desktop/scripts/bench-whisper-fixture.mjs <fichier audio>
- * Nécessite ffmpeg et le réseau (téléchargement HF une fois).
  */
 import { execFileSync } from 'node:child_process';
 import { readFileSync, mkdtempSync, rmSync } from 'node:fs';
@@ -12,7 +11,12 @@ import { createRequire } from 'node:module';
 import { pipeline } from '@huggingface/transformers';
 
 const require = createRequire(import.meta.url);
-const { attenuateClipping, normalizeDictationLevel } = require('@jarvis/core');
+const {
+  attenuateClipping,
+  normalizeDictationLevel,
+  preprocessDictationPcm,
+  refineFrenchDictation,
+} = require('@jarvis/core');
 
 const input = process.argv[2];
 if (!input) {
@@ -29,19 +33,18 @@ execFileSync(
 );
 const raw = new Float32Array(readFileSync(pcmPath).buffer);
 const pcm = attenuateClipping(normalizeDictationLevel(raw)).pcm;
+const chunk_length_s = pcm.length / 16000 <= 15 ? 0 : 30;
 
-const models = ['Xenova/whisper-base', 'Xenova/whisper-small'];
-for (const model of models) {
-  const started = Date.now();
-  const asr = await pipeline('automatic-speech-recognition', model, { dtype: 'q8' });
-  const out = await asr(pcm, {
-    language: 'french',
-    task: 'transcribe',
-    max_new_tokens: 96,
-    temperature: 0,
-    chunk_length_s: 30,
-  });
-  const text = (Array.isArray(out) ? out[0] : out)?.text?.trim() ?? '';
-  console.log(JSON.stringify({ model, ms: Date.now() - started, text }));
-}
+const started = Date.now();
+const asr = await pipeline('automatic-speech-recognition', 'Xenova/whisper-small', { dtype: 'q8' });
+const out = await asr(pcm, {
+  language: 'french',
+  task: 'transcribe',
+  max_new_tokens: 96,
+  temperature: 0,
+  chunk_length_s,
+});
+const rawText = (Array.isArray(out) ? out[0] : out)?.text?.trim() ?? '';
+const text = refineFrenchDictation(rawText);
+console.log(JSON.stringify({ ms: Date.now() - started, rawText, text }));
 rmSync(dir, { recursive: true, force: true });

@@ -34,9 +34,9 @@ describe('empaquetage de la voix', () => {
     expect(existsSync(join(desktopRoot, 'node_modules', 'onnxruntime-web'))).toBe(false);
   });
 
-  it('Whisper et openWakeWord importent le même ort.wasm.min.mjs (ni JSEP ni WebGPU)', () => {
+  it('openWakeWord reste sur ort.wasm ; Whisper peut charger webgpu dans le worker', () => {
     const config = readFileSync(join(desktopRoot, 'electron.vite.config.ts'), 'utf8');
-    expect(config).toContain("find: /^onnxruntime-web(\\/webgpu)?$/");
+    expect(config).toContain("find: /^onnxruntime-web$/");
     expect(config).toContain("'ort.wasm.min.mjs'");
     expect(config).not.toMatch(/ort\.min\.mjs['"]/);
     const entry = readFileSync(join(packageRoot('onnxruntime-web'), 'dist', 'ort.wasm.min.mjs'), 'utf8');
