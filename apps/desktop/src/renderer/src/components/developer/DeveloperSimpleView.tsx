@@ -85,10 +85,13 @@ export function DeveloperSimpleView({
 
   useEffect(() => {
     if (!projectChat || state.busy) return;
-    const last = [...projectChat.messages].reverse().find((m) => m.role === 'assistant');
-    const content = last?.content?.trim() ?? '';
-    if (!content || content === lastAssistantSpokenRef.current) return;
-    lastAssistantSpokenRef.current = content;
+    const messages = projectChat.messages;
+    if (messages.length <= spokenMessageCountRef.current) return;
+    const newSlice = messages.slice(spokenMessageCountRef.current);
+    spokenMessageCountRef.current = messages.length;
+    const lastAssistant = [...newSlice].reverse().find((m) => m.role === 'assistant');
+    const content = lastAssistant?.content?.trim() ?? '';
+    if (!content) return;
     onAssistantReply(content);
   }, [projectChat?.messages, state?.busy, onAssistantReply]);
 
