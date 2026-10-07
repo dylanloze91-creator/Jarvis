@@ -63,7 +63,11 @@ export function DeveloperSimpleView({
   const codeModel = settings?.developer.codeModel ?? '';
   const projectChat =
     activeId && state?.projectChat?.projectId === activeId ? state.projectChat : null;
-  const lastAssistantSpokenRef = useRef('');
+  const spokenMessageCountRef = useRef(0);
+
+  useEffect(() => {
+    spokenMessageCountRef.current = projectChat?.messages.length ?? 0;
+  }, [activeId, projectChat?.projectId]);
 
   useEffect(() => {
     const canSend = project && (project.ok || project.kind === 'jarvis');
