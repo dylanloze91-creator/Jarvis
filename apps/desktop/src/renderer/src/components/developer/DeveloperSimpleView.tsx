@@ -22,12 +22,16 @@ export function DeveloperSimpleView({
   onAssistantReply,
   onSaved,
   onBack,
+  pendingVoice = null,
+  onPendingVoiceConsumed,
 }: {
   settings: Settings | null;
   voice: UseVoiceResult;
   onAssistantReply: (text: string) => void;
   onSaved: (payload: { settings: Settings; status: RuntimeStatus }) => void;
   onBack: () => void;
+  pendingVoice?: string | null;
+  onPendingVoiceConsumed?: () => void;
 }) {
   const { state, error, act } = useDeveloper(settings?.developer.enabled);
   const projects = useMemo(() => state?.projects ?? [], [state?.projects]);
@@ -59,6 +63,15 @@ export function DeveloperSimpleView({
   useEffect(() => {
     if (activeId) act((api) => api.openProjectChat(activeId));
   }, [activeId]);
+
+  useEffect(() => {
+    const text = pendingVoice?.trim() ?? '';
+    if (!text || !activeId || state?.busy) return;
+    const canSend = project && (project.ok || project.kind === 'jarvis');
+    if (!canSend) return;
+    act((api) => api.sendProjectChat(activeId, text));
+    onPendingVoiceConsumed?.();
+  }, [pendingVoice, activeId, state?.busy, project?.ok, project?.kind]);
 
   const codeModel = settings?.developer.codeModel ?? '';
   const projectChat =

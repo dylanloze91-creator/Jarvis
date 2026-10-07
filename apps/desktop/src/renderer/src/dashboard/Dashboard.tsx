@@ -18,10 +18,11 @@ import {
   UserRound,
   Workflow,
   AppWindow,
+  Code2,
   type LucideIcon,
 } from 'lucide-react';
-import { useEffect, useState } from 'react';
-import { formatSeconds, type Conversation, type Settings } from '@jarvis/core';
+import { useCallback, useEffect, useState } from 'react';
+import { formatSeconds, isDeveloperVoiceIntent, type Conversation, type Settings } from '@jarvis/core';
 import { AuditPanel } from '@/components/AuditPanel';
 import { Composer } from '@/components/Composer';
 import { ConfirmationCard } from '@/components/ConfirmationCard';
@@ -39,7 +40,11 @@ import type { RuntimeStatus, ToolInfo } from '../../../shared/ipc';
 import type { ChatItem, PendingConfirmation } from '@/hooks/useChat';
 import { JarvisOrb } from '@/components/JarvisOrb';
 import { DeveloperSimpleView } from '@/components/developer/DeveloperSimpleView';
-import { JarvisModePicker, type JarvisAppMode } from '@/dashboard/JarvisModePicker';
+import type { JarvisAppMode } from '@/dashboard/JarvisModePicker';
+import {
+  setDeveloperVoiceRoute,
+  takePendingDeveloperVoiceTranscript,
+} from '@/voice/voiceTranscriptRouter';
 import './dashboard.css';
 
 type View = 'chat' | 'history' | 'settings' | 'audit';
@@ -212,20 +217,49 @@ export function Dashboard({
     if (view !== 'settings') setSettingsTab(undefined);
   }, [view]);
 
-  const [appMode, setAppMode] = useState<JarvisAppMode>('choose');
+  const [appMode, setAppMode] = useState<JarvisAppMode>('classic');
+  const [pendingDeveloperVoice, setPendingDeveloperVoice] = useState<string | null>(null);
   const navigate = (next: View): void => {
     setView(next);
   };
-  const pickMode = (mode: Exclude<JarvisAppMode, 'choose'>): void => {
-    setAppMode(mode);
-    if (mode === 'classic') navigate('chat');
-  };
-  const showModePicker = appMode === 'choose';
   const showSimpleDeveloper = appMode === 'developer';
+  const developerNavVisible = settings?.developer.enabled !== false;
+
+  const openDeveloper = useCallback((): void => {
+    setAppMode('developer');
+    navigate('chat');
+  }, []);
+
+  const openDeveloperWithPhrase = useCallback((phrase: string): void => {
+    const trimmed = phrase.trim();
+    if (trimmed) setPendingDeveloperVoice(trimmed);
+    setAppMode('developer');
+    navigate('chat');
+  }, []);
+
+  useEffect(() => {
+    const queued = takePendingDeveloperVoiceTranscript();
+    if (queued) openDeveloperWithPhrase(queued);
+  }, [openDeveloperWithPhrase]);
+
+  useEffect(() => {
+    setDeveloperVoiceRoute((text) => openDeveloperWithPhrase(text));
+    return () => setDeveloperVoiceRoute(null);
+  }, [openDeveloperWithPhrase]);
+
+  const sendChat = (text: string, source?: 'voice' | 'text'): void => {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    if (developerNavVisible && isDeveloperVoiceIntent(trimmed)) {
+      openDeveloperWithPhrase(trimmed);
+      return;
+    }
+    chat.send(trimmed, source);
+  };
 
   const ask = (prompt: string): void => {
     navigate('chat');
-    chat.send(prompt);
+    sendChat(prompt, 'text');
   };
 
   const openGoogleSettings = (): void => {
@@ -252,7 +286,7 @@ export function Dashboard({
       data-ui-layout="dashboard"
       data-app-mode={appMode}
     >
-      <aside className="dash-side" hidden={showModePicker || showSimpleDeveloper}>
+      <aside className="dash-side" hidden={showSimpleDeveloper}>
         <div className="side-logo" aria-hidden>
           J
         </div>
@@ -262,6 +296,14 @@ export function Dashboard({
           <SideButton label="Historique" icon={History} active={view === 'history'} onClick={() => navigate(view === 'history' ? 'chat' : 'history')} />
           <SideButton label="Google" icon={CalendarClock} onClick={openGoogleSettings} />
           <SideButton label="Automatisation" icon={Workflow} soon />
+          {developerNavVisible ? (
+            <SideButton
+              label="Projets"
+              icon={Code2}
+              active={showSimpleDeveloper}
+              onClick={() => openDeveloper()}
+            />
+          ) : null}
           <SideButton label="Micro" icon={Mic} active={false} onClick={() => navigate('settings')} />
           <SideButton label="Journal" icon={ScrollText} active={view === 'audit'} onClick={() => navigate(view === 'audit' ? 'chat' : 'audit')} />
           <SideButton label="Réglages" icon={SettingsIcon} active={view === 'settings'} onClick={() => navigate(view === 'settings' ? 'chat' : 'settings')} />
@@ -273,7 +315,7 @@ export function Dashboard({
       </aside>
 
       <main className="dash-main">
-        {!showModePicker && !showSimpleDeveloper ? (
+        {!showSimpleDeveloper ? (
           <header className="dash-top drag-region">
             <div className="dash-title">
               <h1>JARVIS</h1>
@@ -293,15 +335,15 @@ export function Dashboard({
           </header>
         ) : null}
 
-        {showModePicker ? (
-          <JarvisModePicker onPick={pickMode} />
-        ) : showSimpleDeveloper ? (
+        {showSimpleDeveloper ? (
           <DeveloperSimpleView
             settings={settings}
             voice={voice}
             onAssistantReply={(text) => voice.noteAssistantReply(text)}
             onSaved={onSaved}
-            onBack={() => setAppMode('choose')}
+            onBack={() => setAppMode('classic')}
+            pendingVoice={pendingDeveloperVoice}
+            onPendingVoiceConsumed={() => setPendingDeveloperVoice(null)}
           />
         ) : view === 'chat' ? (
           <>
@@ -356,9 +398,9 @@ export function Dashboard({
               <div className="dash-chat-head">
                 <MessageSquare className="size-4" />
                 Discussion
-                {appMode === 'classic' ? (
-                  <button type="button" className="icon-btn" onClick={() => setAppMode('choose')}>
-                    Changer de mode
+                {developerNavVisible ? (
+                  <button type="button" className="icon-btn" onClick={() => openDeveloper()}>
+                    Projets
                   </button>
                 ) : null}
                 <button type="button" className="icon-btn" onClick={onNew}>
@@ -383,7 +425,7 @@ export function Dashboard({
               {chat.confirmation ? (
                 <ConfirmationCard confirmation={chat.confirmation} onRespond={chat.respond} />
               ) : null}
-              <Composer busy={chat.busy} onSend={chat.send} onCancel={chat.cancel} />
+              <Composer busy={chat.busy} onSend={sendChat} onCancel={chat.cancel} />
               <VoiceBar voice={voice} voiceEnabled={settings?.voice.enabled ?? false} />
             </section>
           </>
@@ -418,7 +460,7 @@ export function Dashboard({
         ) : null}
       </main>
 
-      <aside className="dash-rail" hidden={showModePicker || showSimpleDeveloper || appMode === 'classic'}>
+      <aside className="dash-rail" hidden={showSimpleDeveloper}>
         <section className="rail-card" aria-label="Système">
           <h2>Système</h2>
           <Metric

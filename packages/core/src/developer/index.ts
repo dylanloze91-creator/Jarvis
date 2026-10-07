@@ -25,6 +25,7 @@ export * from './engine/roles.js';
 export * from './engine/ask.js';
 export * from './engine/projectChat.js';
 export * from './engine/projectChatDirect.js';
+export * from './voiceAssistantRoute.js';
 export * from './engine/realBench.js';
 export * from './engine/specialistSchemas.js';
 export * from './engine/specialist.js';

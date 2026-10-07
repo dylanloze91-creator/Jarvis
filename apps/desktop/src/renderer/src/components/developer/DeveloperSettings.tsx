@@ -55,7 +55,7 @@ export function DeveloperSettingsSection({
           </p>
           <Toggle
             label="Activer Jarvis développeur"
-            hint="Désactivé par défaut. Au lancement, choisis « Jarvis développeur » dans l’écran de mode."
+            hint="Désactivé par défaut. Après « Jarvis », une demande de code ou de projet ouvre l’écran Projets ; sinon le classique répond."
             checked={developer.enabled}
             onChange={(enabled) => onSave({ ...developer, enabled })}
           />

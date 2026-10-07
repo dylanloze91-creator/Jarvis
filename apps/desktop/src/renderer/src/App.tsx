@@ -19,7 +19,11 @@ import { isDemoRuntime } from '@/lib/runtimeStatus';
 import { cn } from '@/lib/utils';
 import { SAMPLE_CONVERSATION } from '@/preview/sampleConversation';
 import { useVoice } from '@/voice/useVoice';
-import { deliverVoiceTranscript } from '@/voice/voiceTranscriptRouter';
+import { isDeveloperVoiceIntent } from '@jarvis/core';
+import {
+  deliverVoiceTranscript,
+  queueDeveloperVoiceTranscript,
+} from '@/voice/voiceTranscriptRouter';
 import { BrandMark, JarvisOrb } from '@/components/JarvisOrb';
 import { MachineSetupFlow } from '@/components/MachineSetupFlow';
 import { MachineSetupScreen, previewMachineDecision } from '@/components/MachineSetupScreen';
@@ -57,8 +61,25 @@ export default function App() {
   // prompt système (voir `withVoiceOriginNotice`), jamais dans le texte
   // affiché ou enregistré, qui reste la transcription telle quelle.
   const onVoiceTranscript = useCallback(
-    (text: string) => deliverVoiceTranscript(text, (t) => chat.send(t, 'voice')),
-    [chat.send],
+    (text: string) => {
+      const developerEnabled = settings?.developer.enabled !== false;
+      if (
+        !wide &&
+        developerEnabled &&
+        isDeveloperVoiceIntent(text) &&
+        typeof window !== 'undefined'
+      ) {
+        queueDeveloperVoiceTranscript(text);
+        void window.jarvis.window.setChrome('dashboard');
+        return;
+      }
+      deliverVoiceTranscript(
+        text,
+        (t) => chat.send(t, 'voice'),
+        { developerEnabled },
+      );
+    },
+    [chat.send, settings?.developer.enabled, wide],
   );
   const voice = useVoice({
     settings,
