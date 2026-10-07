@@ -124,6 +124,7 @@ async function chatTurns(settings: ReturnType<typeof core.parseSettings>) {
       voice: { hasApiKey: () => false } as never,
       personalization: { get: async () => core.emptyPersonalization() } as never,
       knowledge: { indexConversation: async () => 0 } as never,
+      localLearning: { recordTurn: async () => undefined } as never,
     });
     await session.send(sender, { conversationId: null, text: turn.text, source: turn.source });
     turns.push({
@@ -183,6 +184,7 @@ describe('chat identique à 0.4.22', () => {
   it('réglages par défaut : identiques hors du bloc developer', () => {
     const defaults: Record<string, unknown> = { ...core.parseSettings({}) };
     delete defaults.developer;
+    delete defaults.localLearning;
     golden('reglages-par-defaut', defaults);
   });
 });
