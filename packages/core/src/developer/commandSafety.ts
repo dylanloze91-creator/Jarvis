@@ -9,6 +9,7 @@ import {
   secretReason,
   systemRules,
 } from './commandRulesSystem.js';
+import { commandTargetsGraphicsEngine } from './graphicsEngineAccess.js';
 import {
   LEVEL_RANK,
   SAFETY_LABELS,
@@ -60,6 +61,14 @@ function classifyFindings(
   if (!command.trim()) return [finding('denied', 'commande vide')];
   const parsed = parseCommandLine(command);
   const out: Finding[] = parsed.issues.map((issue) => finding('denied', issue));
+  if (commandTargetsGraphicsEngine(command) && !context.graphicsEngineGranted) {
+    out.push(
+      finding(
+        'denied',
+        'moteur graphique : accorde l’accès dans le chat projet (un « oui » suffit) avant téléchargement ou lancement',
+      ),
+    );
+  }
   if (
     /^\s*(`|\$\(|\(|\{|&\s*[$(`]|\.\s+[$(])/.test(command) ||
     /(^|[;&|\n]\s*)`[^`]*`/.test(command)

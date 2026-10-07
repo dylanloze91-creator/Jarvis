@@ -268,10 +268,10 @@ describe('gabarit « jeu dans le navigateur » (5.0.7)', () => {
     expect(byPath['src/game.ts']).toMatch(/export function createGame/);
     expect(byPath['src/game.ts']).not.toMatch(/\bball\b/);
     expect(byPath['src/game.test.ts']!.match(/\bit\(/g)).toHaveLength(2);
-    expect(TEMPLATE_GUIDES['web-game']).toMatch(/gabarit neutre|pas de jeu jouable/i);
+    expect(TEMPLATE_GUIDES['web-game']).toMatch(/pas de jeu jouable|Point de départ/i);
     expect(factorySchema.parse({ template: 'jeu', name: 'Snake' }).template).toBe('web-game');
     expect(factorySystem()).toContain('"web-game"');
-    expect(TEMPLATE_GUIDES['web-game']).toContain('src/game.test.ts');
+    expect(TEMPLATE_GUIDES['web-game']).toMatch(/tests|game\.test/i);
     expect(TEMPLATE_STRUCTURE['web-game']).toEqual([
       'index.html',
       'src/main.ts',

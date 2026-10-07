@@ -122,6 +122,13 @@ export class TaskRun extends TaskRunBase {
     profile?: ProjectProfile,
   ) {
     super(host, deps, state, manager, profile);
+    if (hooks.graphicsEngineGranted) {
+      this.extraSafetyContext = { graphicsEngineGranted: true };
+    }
+  }
+
+  private async safetyCtx(): Promise<CommandSafetyContext> {
+    return this.commandContext();
   }
 
   protected async decide(request: ConfirmationRequest, signal?: AbortSignal): Promise<boolean> {
@@ -152,18 +159,12 @@ export class TaskRun extends TaskRunBase {
     const cmd = `${request.command ?? ''} ${request.details ?? ''}`.toLowerCase();
     if (/\b(git\s+push|push\s+origin|npm\s+publish|package:win:publish)\b/.test(cmd)) {
       const firstLine = (request.command ?? '').split('\n')[0] ?? '';
-      const safety = classifyCommand(
-        firstLine,
-        this.sandbox ? await this.sandbox.context() : {},
-      );
+      const safety = classifyCommand(firstLine, await this.safetyCtx());
       return this.host.ask(request, { safety, reason: 'publication ou push : toujours confirmé' }, signal);
     }
     if (call.name === 'dev_delete_file') {
       const firstLine = (request.command ?? '').split('\n')[0] ?? '';
-      const safety = classifyCommand(
-        firstLine,
-        this.sandbox ? await this.sandbox.context() : {},
-      );
+      const safety = classifyCommand(firstLine, await this.safetyCtx());
       return this.host.ask(
         request,
         { safety, reason: 'suppression de fichier : confirmation requise' },
@@ -172,10 +173,7 @@ export class TaskRun extends TaskRunBase {
     }
     if (request.toolName === 'dev_review_diff') return true;
     const firstLine = (request.command ?? '').split('\n')[0] ?? '';
-    const safety = classifyCommand(
-      firstLine,
-      this.sandbox ? await this.sandbox.context() : {},
-    );
+    const safety = classifyCommand(firstLine, await this.safetyCtx());
     if (safety.level === 'denied') return false;
     if (safety.level === 'always-confirm') {
       const outside =

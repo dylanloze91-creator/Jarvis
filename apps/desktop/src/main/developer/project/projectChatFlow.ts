@@ -20,6 +20,7 @@ export interface ProjectChatSideEffects {
   decisions: string[];
   webSearchUsed: boolean;
   compareOffer?: { alternateModel: string; reason: string };
+  graphicsEngineGranted?: boolean;
 }
 
 export interface ProjectChatDeps {
@@ -31,6 +32,7 @@ export interface ProjectChatDeps {
   decisions: string[];
   installedModels: string[];
   webSearchUsed: boolean;
+  graphicsEngineGranted: boolean;
   history: Array<{ role: 'user' | 'assistant'; content: string }>;
   signal?: AbortSignal;
   beforeRound?: (round: number) => Promise<void>;
@@ -84,6 +86,7 @@ export async function runProjectChatTurn(
     deps.decisions,
     deps.installedModels,
     !deps.webSearchUsed && !deps.effects.webSearchUsed,
+    deps.graphicsEngineGranted || deps.effects.graphicsEngineGranted === true,
   );
   const limit = deps.limit ?? STEP_LIMITS.answer;
   const images = deps.screenshotBase64 ? [deps.screenshotBase64] : undefined;

@@ -5,6 +5,7 @@ import {
   planCoverage,
   randomId,
   type CommandClassification,
+  type CommandSafetyContext,
   type ConfirmationRequest,
   type CoverageRequest,
   type DiffFile,
@@ -55,6 +56,8 @@ export interface TaskHooks {
    * pour push, publication, secrets, hors sandbox, admin, cœur Jarvis.
    */
   directRun?: boolean;
+  /** Accord chat projet : moteur graphique (Godot, Unity…). */
+  graphicsEngineGranted?: boolean;
   /**
    * Projet né d'un gabarit (5.0.1) : modification et corrections fichier par
    * fichier (contenu complet rendu par le modèle), avec ces fichiers en référence.
@@ -120,6 +123,7 @@ const FILE_TOOLS = new Set([
 /** Une exécution de tâche : état affiché, copie isolée, plan validé et règle de confirmation. */
 export class TaskRunBase {
   sandbox: Sandbox | null = null;
+  protected extraSafetyContext: Partial<CommandSafetyContext> = {};
   protected reviewed: ReviewedPlan | null = null;
   protected approval: PlanApproval | null = null;
   protected series = 0;
@@ -133,6 +137,11 @@ export class TaskRunBase {
     /** Projet de la tâche : ses tests, ses fichiers protégés, son contexte. Jarvis par défaut. */
     readonly profile: ProjectProfile = JARVIS_PROJECT_PROFILE,
   ) {}
+
+  protected async commandContext(): Promise<CommandSafetyContext> {
+    const base = this.sandbox ? await this.sandbox.context() : {};
+    return { ...base, ...this.extraSafetyContext };
+  }
 
   protected coverageRequest(name: string, args: Record<string, unknown>): CoverageRequest {
     const path = String(args.path ?? '');
@@ -194,7 +203,7 @@ export class TaskRunBase {
         ? await previewWrite(this.sandbox.path, call.name, call.arguments)
         : undefined;
     } else {
-      safety = classifyCommand(firstLine, this.sandbox ? await this.sandbox.context() : {});
+      safety = classifyCommand(firstLine, await this.commandContext());
     }
     if (safety.level === 'denied') return false;
     return this.host.ask(request, { safety, reason: coverage.reason, diff }, signal);

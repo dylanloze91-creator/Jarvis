@@ -8,6 +8,11 @@ import { tscErrors } from './testOutput.js';
 
 const CODER_KNOWLEDGE_BLOCK = `\nSavoir métier (Codeur) :\n${CODE_MODEL_CODER_KNOWLEDGE}`;
 
+function userProjectStyleHint(project: ProjectProfile): string {
+  if (project.id === 'jarvis') return '';
+  return `\nÉcris le programme demandé dans le style qui convient (fichiers, pile, architecture) : ne force pas un canevas unique imposé par le gabarit si la demande demande autre chose.`;
+}
+
 function appendManual(system: string, manual?: string): string {
   const block = manual?.trim();
   return block ? `${system}\n\n${block}` : system;
@@ -37,7 +42,7 @@ Termine par un seul bloc JSON, sans autre texte après :
 {"resume": "ce qui va changer", "criteres": ["comment on saura que c'est réussi"], "fichiers": [{"chemin": "chemin/relatif.ts", "action": "creer|modifier|supprimer", "pourquoi": "..."}], "tests": [${example}]}
 Tests possibles : ${suites}.
 Liste tous les fichiers à créer ou modifier, tests compris. Garde le plan petit.
-Ne prévois pas de nouveau fichier de tests sauf si l'utilisateur le demande explicitement : sur un gabarit, les tests existants suffisent pour valider un changement ciblé.${CODER_KNOWLEDGE_BLOCK}`;
+Ne prévois pas de nouveau fichier de tests sauf si l'utilisateur le demande explicitement : sur un gabarit, les tests existants suffisent pour valider un changement ciblé.${userProjectStyleHint(project)}${CODER_KNOWLEDGE_BLOCK}`;
   return appendManual(base, manual);
 }
 
@@ -93,7 +98,7 @@ export function editSystemPrompt(
 ${project.promptContext}
 Tu travailles dans une copie isolée du dépôt, sur une branche jarvis-dev/*.
 ${planBlock(plan)}
-${project.editHints ? `${project.editHints}\n` : ''}${EDIT_RULES}${CODER_KNOWLEDGE_BLOCK}`;
+${project.editHints ? `${project.editHints}\n` : ''}${EDIT_RULES}${userProjectStyleHint(project)}${CODER_KNOWLEDGE_BLOCK}`;
   return appendManual(base, manual);
 }
 
@@ -112,7 +117,7 @@ export function fixSystemPrompt(
 ${project.promptContext}
 Tes modifications ont fait échouer des tests. Corrige-les dans la copie isolée.
 ${planBlock(plan)}
-${project.editHints ? `${project.editHints}\n` : ''}${EDIT_RULES}${CODER_KNOWLEDGE_BLOCK}`;
+${project.editHints ? `${project.editHints}\n` : ''}${EDIT_RULES}${userProjectStyleHint(project)}${CODER_KNOWLEDGE_BLOCK}`;
   return appendManual(base, manual);
 }
 
@@ -152,7 +157,7 @@ export function fileWriteSystem(
 ${project.promptContext}
 ${planBlock(plan)}
 Tu écris UN fichier à la fois, en entier. Réponds seulement par le contenu complet du fichier, dans un seul bloc de code, sans explication avant ni après.
-Le code doit compiler en TypeScript strict et rester simple. Jamais de secret, jamais de réseau, jamais de lancement de processus.${CODER_KNOWLEDGE_BLOCK}`;
+Le code doit compiler en TypeScript strict et rester simple. Jamais de secret, jamais de réseau, jamais de lancement de processus.${userProjectStyleHint(project)}${CODER_KNOWLEDGE_BLOCK}`;
   return appendManual(base, manual);
 }
 

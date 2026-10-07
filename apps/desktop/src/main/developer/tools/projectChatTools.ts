@@ -18,6 +18,7 @@ export interface ProjectChatToolDeps {
   onSuggestCoder: (model: string, reason: string) => void;
   onRememberDecision: (text: string) => void;
   onOfferCompare: (alternateModel: string, reason: string) => void;
+  onGrantGraphicsEngine: () => void;
   webSearchUsed: () => boolean;
   markWebSearchUsed: () => void;
 }
@@ -29,6 +30,7 @@ function searchConfig(settings: Settings): SearchProviderConfig {
 export const PROJECT_CHAT_EXTRA_TOOLS = [
   'dev_project_chat_suggest_coder',
   'dev_project_chat_remember_decision',
+  'dev_project_chat_grant_graphics_engine',
   'dev_project_chat_web_search',
   'dev_project_chat_offer_compare',
 ] as const;
@@ -55,6 +57,23 @@ export function createProjectChatTools(deps: ProjectChatToolDeps): RegisteredToo
         deps.onSuggestCoder(model, reason);
         return toolSuccess(
           `Noté : pour le code, tu suggères ${model} (${reason}). L’utilisateur verra ce choix avant la mission.`,
+        );
+      },
+    }),
+    defineTool({
+      name: 'dev_project_chat_grant_graphics_engine',
+      description:
+        'Enregistre que l’utilisateur a accordé dans le chat le téléchargement ou le lancement d’un moteur graphique (Godot, Unity, Unreal…) pour ce projet. À utiliser quand il dit oui explicitement.',
+      risk: 'safe',
+      schema: z.object({
+        note: z.string().max(200).optional(),
+      }),
+      summarize: () => 'Accorder l’accès moteur graphique pour ce projet.',
+      execute: async ({ note }) => {
+        deps.onGrantGraphicsEngine();
+        const extra = note?.trim() ? ` (${note.trim()})` : '';
+        return toolSuccess(
+          `Accès moteur graphique enregistré pour ce projet${extra}. Tu peux proposer installation ou lancement si le code en a besoin.`,
         );
       },
     }),

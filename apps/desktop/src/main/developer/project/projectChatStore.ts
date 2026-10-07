@@ -7,6 +7,8 @@ export interface ProjectChatPersisted {
   codingPick: { model: string; reason: string; at: number } | null;
   webSearchUsed: boolean;
   compareOffer: { alternateModel: string; reason: string } | null;
+  /** Accord chat pour télécharger ou lancer un moteur graphique (Godot, Unity…). */
+  graphicsEngineGranted?: boolean;
 }
 
 export function emptyChatState(): ProjectChatPersisted {
@@ -17,6 +19,7 @@ export function emptyChatState(): ProjectChatPersisted {
     codingPick: null,
     webSearchUsed: false,
     compareOffer: null,
+    graphicsEngineGranted: false,
   };
 }
 
@@ -39,6 +42,7 @@ export function parseChatPersisted(raw: unknown): ProjectChatPersisted {
     codingPick,
     webSearchUsed: row.webSearchUsed === true,
     compareOffer: parseCompareOffer(row.compareOffer),
+    graphicsEngineGranted: row.graphicsEngineGranted === true,
   };
 }
 

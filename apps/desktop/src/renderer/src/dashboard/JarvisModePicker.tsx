@@ -30,7 +30,7 @@ export function JarvisModePicker({
         >
           <Code2 className="size-8 text-violet-300" aria-hidden />
           <span className="jarvis-mode-card-title">Jarvis développeur</span>
-          <span className="jarvis-mode-card-hint">Modifier un projet, voir le résultat, discuter</span>
+          <span className="jarvis-mode-card-hint">Tes projets à gauche, une discussion à droite</span>
         </button>
       </div>
     </section>

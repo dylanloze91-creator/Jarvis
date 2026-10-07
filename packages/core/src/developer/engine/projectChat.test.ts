@@ -7,10 +7,10 @@ import {
 } from './projectChat.js';
 
 describe('projectChat', () => {
-  it('rappelle qu’aucune écriture directe n’est faite', () => {
+  it('rappelle qu’aucune écriture directe n’est faite dans le fil', () => {
     expect(
       projectChatSystemPrompt(JARVIS_PROJECT_PROFILE, 'notes', [], ['qwen2.5-coder:14b'], true),
-    ).toMatch(/Mission Modifier/);
+    ).toMatch(/tu n'écris pas les fichiers dans ce fil/i);
   });
 
   it('inclut l’historique dans le prompt', () => {

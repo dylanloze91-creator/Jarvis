@@ -157,6 +157,7 @@ export class ProjectStore {
       codingPick: state.codingPick,
       webSearchUsed: state.webSearchUsed,
       compareOffer: state.compareOffer,
+      graphicsEngineGranted: state.graphicsEngineGranted === true,
     });
   }
 

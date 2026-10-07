@@ -778,10 +778,10 @@ export const TEMPLATE_REFERENCES: Partial<Record<ProjectTemplateId, readonly str
 /** Consignes du CODER pour un projet neuf, selon son gabarit (5.0.1). */
 export const TEMPLATE_GUIDES: Partial<Record<ProjectTemplateId, string>> = {
   'web-game': [
-    'Gabarit « jeu dans le navigateur » : canvas, boucle (main.ts) et tests minimaux seulement — pas de jeu jouable tant que tu n’as pas écrit la demande.',
-    '- Écris le jeu ou l’application demandée dans src/game.ts ; réglages optionnels dans src/rules.ts.',
-    '- Remplace src/game.test.ts par des tests qui vérifient ce programme (ne garde pas les tests du gabarit neutre).',
-    '- index.html et src/main.ts fournissent la boucle requestAnimationFrame : modifie-les seulement si nécessaire.',
+    'Point de départ navigateur : boucle et tests minimaux — pas de jeu jouable tant que tu n’as pas écrit la demande.',
+    '- Écris le programme demandé (jeu, démo, page interactive) dans le style qui convient ; tu peux réorganiser src/ si une autre structure sert mieux la demande.',
+    '- Adapte ou remplace les tests pour vérifier ce programme.',
+    '- index.html et src/main.ts sont une aide, pas une forme obligatoire : change-les si la demande l’exige.',
   ].join('\n'),
   'node-cli':
     'Gabarit « outil en ligne de commande » : déjà fonctionnel et testé (--name, --help). La logique va dans src/main.ts (fonction run), testée dans src/main.test.ts ; src/cli.ts ne fait que l’appeler. Fais seulement le changement demandé.',
@@ -867,7 +867,7 @@ export function factorySystem(): string {
     .map((id) => `- "${id}" : ${PROJECT_TEMPLATES[id].label}, ${PROJECT_TEMPLATES[id].description}`)
     .join('\n');
   return `Tu es le spécialiste ARCHITECT de Jarvis Développeur. ${FACTORY_MARKER}.
-L'utilisateur veut un nouveau projet, indépendant de Jarvis. Choisis le gabarit local le plus simple qui convient, un nom court et une phrase de description. Un jeu ou une appli canvas dans le navigateur (Snake, Pong, Tetris…) est « web-game » (gabarit neutre : le codeur écrit le programme). Une « appli Windows » (fenêtre) est un gabarit .NET ; un outil sans interface peut rester en Node.js. Réponds en français.
+L'utilisateur veut un nouveau projet, indépendant de Jarvis. Choisis le point de départ local le plus simple (outil npm, page web, jeu navigateur, appli Windows .NET…) ; le codeur écrira ensuite le programme dans le style qui convient à la demande, sans imposer une forme unique. Nom court et une phrase de description. Réponds en français.
 Gabarits :
 ${list}
 Le format attendu est :

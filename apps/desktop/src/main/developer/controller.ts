@@ -8,6 +8,10 @@ import {
   missionRequestFromProjectChat,
   codeModelsOffered,
   isProjectChatDirectRequest,
+  GRAPHICS_ENGINE_GRANT_DECISION,
+  graphicsEngineChatPromptLine,
+  hasGraphicsEngineGrant,
+  userGrantsGraphicsEngineInMessage,
   randomId,
   redactSecrets,
   resolveLocalOllamaBase,
@@ -573,7 +577,24 @@ export class DeveloperController {
         : persisted.codingPick,
       webSearchUsed: persisted.webSearchUsed || effects.webSearchUsed,
       compareOffer: effects.compareOffer ?? persisted.compareOffer,
+      graphicsEngineGranted:
+        persisted.graphicsEngineGranted === true || effects.graphicsEngineGranted === true,
     };
+  }
+
+  private withGraphicsEngineGrantFromUser(
+    persisted: ProjectChatPersisted,
+    userText: string,
+  ): ProjectChatPersisted {
+    if (persisted.graphicsEngineGranted) return persisted;
+    const lastAssistant = [...persisted.messages]
+      .reverse()
+      .find((m) => m.role === 'assistant')?.content;
+    if (!userGrantsGraphicsEngineInMessage(userText, lastAssistant)) return persisted;
+    const decisions = persisted.decisions.includes(GRAPHICS_ENGINE_GRANT_DECISION)
+      ? persisted.decisions
+      : [...persisted.decisions, GRAPHICS_ENGINE_GRANT_DECISION];
+    return { ...persisted, graphicsEngineGranted: true, decisions };
   }
 
   async openProjectChat(projectId: string): Promise<DeveloperState> {
@@ -649,6 +670,7 @@ export class DeveloperController {
             codingPick: this.projectChat.codingPick,
             webSearchUsed: this.projectChat.webSearchUsed,
             compareOffer: this.projectChat.compareOffer,
+            graphicsEngineGranted: this.projectChat.graphicsEngineGranted,
           }
         : await this.projects.loadChatState(id);
     const now = Date.now();
@@ -660,19 +682,23 @@ export class DeveloperController {
       ...(withScreenshot ? { hasScreenshot: true } : {}),
     };
     const pendingMessages = [...priorPersisted.messages, userMsg];
+    const chatPersisted = this.withGraphicsEngineGrantFromUser(
+      { ...priorPersisted, messages: pendingMessages },
+      userText,
+    );
     this.projectChat = this.chatView(
       id,
       resolved.name,
-      { ...priorPersisted, messages: pendingMessages },
+      chatPersisted,
       this.projectPreview.isOpen(id),
     );
-    await this.projects.saveChatState(id, { ...priorPersisted, messages: pendingMessages });
+    await this.projects.saveChatState(id, chatPersisted);
     if (isProjectChatDirectRequest(userText) && !withScreenshot) {
       return this.runProjectChatDirect(
         id,
         resolved,
         userText,
-        priorPersisted,
+        chatPersisted,
         pendingMessages,
         model,
       );
@@ -693,7 +719,7 @@ export class DeveloperController {
     }
     const effects: ProjectChatSideEffects = {
       decisions: [],
-      webSearchUsed: priorPersisted.webSearchUsed,
+      webSearchUsed: chatPersisted.webSearchUsed,
     };
     const chatTools = createProjectChatTools({
       getSettings: () => this.deps.getSettings(),
@@ -705,10 +731,14 @@ export class DeveloperController {
       onRememberDecision: (decision) => {
         effects.decisions.push(decision);
       },
+      onGrantGraphicsEngine: () => {
+        effects.graphicsEngineGranted = true;
+        effects.decisions.push(GRAPHICS_ENGINE_GRANT_DECISION);
+      },
       onOfferCompare: (alternateModel, reason) => {
         effects.compareOffer = { alternateModel, reason };
       },
-      webSearchUsed: () => priorPersisted.webSearchUsed || effects.webSearchUsed,
+      webSearchUsed: () => chatPersisted.webSearchUsed || effects.webSearchUsed,
       markWebSearchUsed: () => {
         effects.webSearchUsed = true;
       },
@@ -731,7 +761,7 @@ export class DeveloperController {
           fetch: patientFetch,
         });
         const memory = await this.projects.memoryNotes(id);
-        const history = priorPersisted.messages.map((m) => ({
+        const history = chatPersisted.messages.map((m) => ({
           role: m.role,
           content: m.content,
         }));
@@ -742,9 +772,13 @@ export class DeveloperController {
             chatTools,
             profile: resolved.profile,
             memoryNotes: memory,
-            decisions: priorPersisted.decisions,
+            decisions: chatPersisted.decisions,
             installedModels: installed,
-            webSearchUsed: priorPersisted.webSearchUsed,
+            webSearchUsed: chatPersisted.webSearchUsed,
+            graphicsEngineGranted: hasGraphicsEngineGrant(
+              chatPersisted.graphicsEngineGranted === true,
+              chatPersisted.decisions,
+            ),
             history,
             signal,
             beforeRound: () => this.yieldToChat(model, signal),
@@ -763,7 +797,7 @@ export class DeveloperController {
           at: Date.now(),
         };
         const nextMessages = [...pendingMessages, assistant];
-        const merged = this.mergeChatEffects(priorPersisted, effects, nextMessages);
+        const merged = this.mergeChatEffects(chatPersisted, effects, nextMessages);
         await this.projects.saveChatState(id, merged);
         this.projectChat = this.chatView(
           id,
@@ -804,11 +838,16 @@ export class DeveloperController {
       pendingMessages,
       priorPersisted.decisions,
     );
+    const engineOk = hasGraphicsEngineGrant(
+      priorPersisted.graphicsEngineGranted === true,
+      priorPersisted.decisions,
+    );
     const planContext = [
       discussionContext,
       priorPersisted.decisions.length
         ? `Décisions : ${priorPersisted.decisions.join(' · ')}`
         : '',
+      graphicsEngineChatPromptLine(engineOk, priorPersisted.decisions),
     ]
       .filter(Boolean)
       .join('\n\n');
@@ -816,6 +855,7 @@ export class DeveloperController {
       directRun: true,
       autoApprovePlan: true,
       planContext,
+      graphicsEngineGranted: engineOk,
       onPhase: (phase, status, detail) => {
         if (this.projectChat?.projectId !== id) return;
         simpleRun = {

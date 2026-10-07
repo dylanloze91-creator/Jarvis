@@ -11,10 +11,16 @@ export const SETTINGS_TABS = [
   { id: 'tools', label: 'Outils et sécurité', icon: ShieldCheck },
   { id: 'general', label: 'Fenêtre et démarrage', icon: AppWindow },
   { id: 'updates', label: 'Mises à jour', icon: RefreshCw },
-  { id: 'developer', label: 'Développeur', icon: Code2 },
 ] as const satisfies ReadonlyArray<{ id: string; label: string; icon: LucideIcon }>;
 
-export type SettingsTabId = (typeof SETTINGS_TABS)[number]['id'];
+/** Onglet masqué : ouvert seulement via openSettingsOnTab('developer'). */
+export const SETTINGS_HIDDEN_TABS = [
+  { id: 'developer', label: 'Développeur (avancé)', icon: Code2 },
+] as const satisfies ReadonlyArray<{ id: string; label: string; icon: LucideIcon }>;
+
+const ALL_SETTINGS_TABS = [...SETTINGS_TABS, ...SETTINGS_HIDDEN_TABS];
+
+export type SettingsTabId = (typeof ALL_SETTINGS_TABS)[number]['id'];
 
 export function SettingsTabBar({
   active,
@@ -24,8 +30,8 @@ export function SettingsTabBar({
   onChange: (tab: SettingsTabId) => void;
 }) {
   const move = (offset: number): void => {
-    const index = SETTINGS_TABS.findIndex((tab) => tab.id === active);
-    const next = SETTINGS_TABS[(index + offset + SETTINGS_TABS.length) % SETTINGS_TABS.length]!;
+    const index = ALL_SETTINGS_TABS.findIndex((tab) => tab.id === active);
+    const next = ALL_SETTINGS_TABS[(index + offset + ALL_SETTINGS_TABS.length) % ALL_SETTINGS_TABS.length]!;
     onChange(next.id);
     document.getElementById(`settings-tab-${next.id}`)?.focus();
   };

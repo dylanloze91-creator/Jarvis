@@ -423,12 +423,27 @@ export function SettingsPanel({ settings, status, onSaved, requestedTab, onAnaly
             checked={draft.launchAtLogin}
             onChange={(launchAtLogin) => patch({ launchAtLogin })}
           />
+
+          <div className="mt-2 flex flex-col gap-1 border-t border-white/8 pt-4">
+            <span className="text-[11px] font-medium tracking-wide text-slate-400 uppercase">
+              Jarvis développeur
+            </span>
+          </div>
+          <DeveloperSettingsSection
+            developer={draft.developer}
+            onSave={saveDeveloper}
+            surface="general"
+            onOpenAdvanced={() => setTab('developer')}
+          />
       </TabPanel>
       <TabPanel id="updates" active={tab}>
           <UpdateSettingsSection />
       </TabPanel>
       <TabPanel id="developer" active={tab}>
-          <DeveloperSettingsSection developer={draft.developer} onSave={saveDeveloper} />
+          <Button type="button" size="sm" variant="ghost" className="self-start" onClick={() => setTab('general')}>
+            ← Retour aux réglages
+          </Button>
+          <DeveloperSettingsSection developer={draft.developer} onSave={saveDeveloper} surface="advanced" />
       </TabPanel>
 
       <div className="sticky bottom-0 z-10 -mx-4 -mb-4 flex items-center justify-end gap-3 border-t border-white/8 bg-[#070b14]/90 px-4 py-3 backdrop-blur">

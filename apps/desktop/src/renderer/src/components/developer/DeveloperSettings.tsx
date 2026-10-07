@@ -20,9 +20,17 @@ interface Props {
   developer: DeveloperSettings;
   /** Enregistre tout de suite (comme le choix du micro) : les actions en dépendent. */
   onSave: (next: DeveloperSettings) => void;
+  /** `general` : interrupteur seul ; `advanced` : réglages techniques (onglet caché). */
+  surface?: 'general' | 'advanced';
+  onOpenAdvanced?: () => void;
 }
 
-export function DeveloperSettingsSection({ developer, onSave }: Props) {
+export function DeveloperSettingsSection({
+  developer,
+  onSave,
+  surface = 'general',
+  onOpenAdvanced,
+}: Props) {
   const { state, error, act } = useDeveloper(developer.enabled);
   const [path, setPath] = useState(developer.repoPath);
   const [worktreeRoot, setWorktreeRoot] = useState(developer.worktreeRoot);
@@ -39,21 +47,37 @@ export function DeveloperSettingsSection({ developer, onSave }: Props) {
     state?.repo?.checks.some((check) => check.id === 'folder' && check.status === 'fail') ?? false;
   return (
     <div className="flex flex-col gap-4" data-developer-settings>
-      <p className="text-xs leading-snug text-slate-400">
-        Jarvis Développeur travaille sur le code de Jarvis et sur tes projets, dans des copies
-        isolées sur ton PC : questions, missions, modifications testées, toujours avec ta
-        validation. Coupé, rien ne change : discussion, voix, Spotify, Google et recherche restent
-        identiques.
-      </p>
-      <Toggle
-        label="Activer Jarvis Développeur"
-        hint="Désactivé par défaut. Ajoute l’entrée « Développeur » au tableau de bord."
-        checked={developer.enabled}
-        onChange={(enabled) => onSave({ ...developer, enabled })}
-      />
-
-      {developer.enabled && state ? (
+      {surface === 'general' ? (
         <>
+          <p className="text-xs leading-snug text-slate-400">
+            Construire des applications, jeux et outils sur ton PC via le mode « Jarvis développeur »
+            (projets + chat). Coupé, le classique, la voix et le reste ne changent pas.
+          </p>
+          <Toggle
+            label="Activer Jarvis développeur"
+            hint="Désactivé par défaut. Au lancement, choisis « Jarvis développeur » dans l’écran de mode."
+            checked={developer.enabled}
+            onChange={(enabled) => onSave({ ...developer, enabled })}
+          />
+          {developer.enabled && onOpenAdvanced ? (
+            <Button type="button" size="sm" variant="subtle" onClick={onOpenAdvanced}>
+              Copie de travail, modèle, environnement…
+            </Button>
+          ) : null}
+        </>
+      ) : (
+        <p className="text-xs leading-snug text-slate-500">
+          Réglages techniques : copie de travail, environnement, modèle de code, copies isolées.
+          L’usage quotidien reste l’écran projets + chat.
+        </p>
+      )}
+
+      {surface === 'advanced' && developer.enabled && state ? (
+        <details open className="rounded-xl border border-white/8 bg-white/[0.02] px-3 py-2.5">
+          <summary className="cursor-pointer text-xs font-medium text-slate-300">
+            Réglages avancés (copie, modèle, tests…)
+          </summary>
+          <div className="mt-3 flex flex-col gap-4">
           <div className="flex flex-col gap-2">
             <SectionTitle>Copie de travail</SectionTitle>
             <Field label="Dossier" hint={`Conseillé : ${state.suggestedPath}, hors de OneDrive.`}>
@@ -123,9 +147,7 @@ export function DeveloperSettingsSection({ developer, onSave }: Props) {
             <p className="text-xs leading-snug text-slate-400">
               {developer.codeModel
                 ? `Choisi : ${codeModelById(developer.codeModel)?.label ?? developer.codeModel}.`
-                : 'Pas encore choisi.'}{' '}
-              Matériel, estimations, téléchargement confirmé et banc : tableau de bord → Développeur
-              → onglet « Modèle de code ».
+                : 'Jarvis en choisit un automatiquement au premier besoin (Ollama + matériel).'}
             </p>
           </div>
 
@@ -190,15 +212,21 @@ export function DeveloperSettingsSection({ developer, onSave }: Props) {
 
           <Toggle
             label="Mémoriser les solutions validées"
-            hint="Après une mission réussie (tests verts, revue OK, échecs corrigés), enregistre une fiche dans le manuel local sous developer/knowledge/validated/. Coupé : aucune nouvelle fiche."
+            hint="Après une modification réussie (tests verts), enregistre une fiche locale. Coupé : aucune nouvelle fiche."
             checked={developer.knowledgeLearning !== false}
             onChange={(on) => onSave({ ...developer, knowledgeLearning: on })}
           />
-        </>
+
+          <CommandTester />
+          </div>
+        </details>
       ) : null}
 
-      <CommandTester />
+      {surface === 'advanced' && developer.enabled && !state ? (
+        <p className="text-xs text-slate-500">Chargement des réglages développeur…</p>
+      ) : null}
 
+      {surface === 'advanced' ? (
       <div className="flex items-start gap-2 rounded-lg border border-white/8 bg-white/[0.03] px-3 py-2.5">
         <ShieldOff className="mt-0.5 size-3.5 shrink-0 text-slate-500" />
         <p className="text-xs leading-snug text-slate-500">
@@ -207,6 +235,7 @@ export function DeveloperSettingsSection({ developer, onSave }: Props) {
           de lecture ne voient ni .git/, ni node_modules, ni les fichiers de clés.
         </p>
       </div>
+      ) : null}
     </div>
   );
 }

@@ -15,6 +15,8 @@ export interface CommandSafetyContext {
   branch?: string | null;
   /** Scripts du package.json, pour vérifier ce que lance `npm run <script>`. */
   packageScripts?: Record<string, string>;
+  /** Accord explicite dans le chat projet (moteur graphique). */
+  graphicsEngineGranted?: boolean;
 }
 
 export interface CommandClassification {

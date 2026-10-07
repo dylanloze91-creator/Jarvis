@@ -6,7 +6,7 @@
  */
 
 export const CODE_MODEL_CODER_KNOWLEDGE = [
-  'Changement ciblé : sur un gabarit déjà vert, ne réécris pas un fichier entier « par précaution ». Modifie seulement ce que la demande et le plan demandent (souvent une valeur dans src/rules.ts ou une fonction dans src/game.ts).',
+  'Changement ciblé : ne réécris pas un fichier entier « par précaution ». Livre le programme demandé dans le style qui convient ; adapte structure et fichiers si la demande le nécessite (jeu, page, CLI, outil bureau).',
   'TypeScript strict : le fichier rendu doit passer `tsc --noEmit`. Corrige chaque erreur listée (chemin, ligne, code TS…) avant d’en introduire une autre.',
   'Ne crée aucun fichier hors plan, surtout pas un nouveau `*.test.ts`, sauf si le plan validé le prévoit explicitement. Les tests du gabarit (ex. src/game.test.ts) restent la référence : ne les casse pas.',
   'Vitest : `expect(x).toBeCloseTo(y, nbDécimales)` — le 2ᵉ argument est un entier, pas `{ tolerance: … }`. Une variable déclarée `const` ne se réassigne pas : utilise `let` ou une copie (`const next = { …state }`).',
