@@ -39,28 +39,24 @@ function bench(model: string, coder: Array<boolean | null>): RealBenchResult {
 }
 
 describe('difficulté d’une mission (5.0.1)', () => {
-  it('un Pong (gabarit prêt) avec une règle de plus : changement ciblé', () => {
+  it('jeu web : gabarit neutre, programme à écrire', () => {
+    const snake = estimateDifficulty('new-project', 'Crée un Snake jouable dans le navigateur');
+    expect(snake).toMatchObject({ level: 3, template: 'web-game' });
+    expect(snake.reasons.join(' ')).toMatch(/gabarit neutre|canvas/);
     const pong = estimateDifficulty(
       'new-project',
-      'Crée un Pong jouable dans le navigateur et change une seule règle : la balle accélère un peu à chaque renvoi de raquette.',
+      'Crée un Pong jouable dans le navigateur : deux raquettes, une balle, le score.',
     );
-    expect(pong).toMatchObject({ level: 1, template: 'web-game' });
-    expect(pong.reasons[0]).toMatch(/déjà un Pong jouable/);
-    expect(
-      estimateDifficulty(
-        'new-project',
-        'Crée un Pong jouable dans le navigateur : deux raquettes, une balle, le score, au clavier (W/S pour la gauche, flèches pour la droite).',
-      ).level,
-    ).toBe(1);
+    expect(pong.template).toBe('web-game');
+    expect(pong.level).toBeGreaterThanOrEqual(2);
   });
 
-  it('un autre jeu entier, ou des fonctions lourdes : programme entier', () => {
+  it('fonctions lourdes ou refonte : programme entier', () => {
     const tetris = estimateDifficulty(
       'new-project',
       'Crée un Tetris complet dans le navigateur avec niveaux, score, sauvegarde des meilleurs scores et musique.',
     );
     expect(tetris).toMatchObject({ level: 3, template: 'web-game' });
-    expect(tetris.reasons.join(' ')).toMatch(/« Tetris » est un autre jeu entier/);
     expect(
       estimateDifficulty('modify', 'Réécris tout le projet en Rust avec une base de données').level,
     ).toBe(3);
@@ -111,29 +107,27 @@ describe('capacité du modèle CODER (5.0.1)', () => {
   });
 });
 
-describe('contrôle avant la mission (5.0.1)', () => {
+describe('contrôle avant la mission (5.0.7)', () => {
   const small = modelCapability('qwen2.5:3b', bench('qwen2.5:3b', [true, false, false]));
 
-  it('trop grand : refus clair et version ciblée proposée', () => {
+  it('jeu entier : mission autorisée avec avertissement, pas de refus par difficulté', () => {
     const gate = assessMission(
       'new-project',
       'Crée un Tetris complet dans le navigateur avec niveaux, score, sauvegarde des meilleurs scores et musique.',
       small,
     );
-    expect(gate.ok).toBe(false);
-    expect(gate.message).toMatch(/^Mission non lancée : trop grande pour qwen2\.5:3b/);
-    expect(gate.message).toMatch(/banc réel CODER 1\/3/);
-    expect(gate.suggestion).toMatch(/^Crée un Pong jouable/);
-    expect(assessMission('new-project', gate.suggestion!, small).ok).toBe(true);
+    expect(gate.ok).toBe(true);
+    expect(gate.message).toMatch(/peut être trop limité|part quand même/);
+    expect(gate.suggestion).toBeTruthy();
   });
 
-  it('une demande à plusieurs morceaux : la première seule', () => {
+  it('une demande à plusieurs morceaux : suggestion sans bloquer', () => {
     const gate = assessMission(
       'modify',
       'Ajoute une option --version, un écran de réglages, une sauvegarde des préférences et un menu',
       small,
     );
-    expect(gate.ok).toBe(false);
+    expect(gate.ok).toBe(true);
     expect(gate.suggestion).toBe('Ajoute une option --version.');
   });
 

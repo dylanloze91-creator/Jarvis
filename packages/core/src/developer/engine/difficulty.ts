@@ -72,11 +72,6 @@ function words(pattern: string, flags = 'i'): RegExp {
 const GAME = words(
   String.raw`jeu|jeux|game|pong|snake|tetris|casse[- ]briques?|breakout|morpion|tic[- ]tac[- ]toe|flappy|space invaders|labyrinthe|platformer|plateforme|asteroids?|échecs|dames|démineur|sudoku|pac-?man|course`,
 );
-/** Jeu fourni prêt par le gabarit `web-game`. */
-const TEMPLATE_GAME = words('pong');
-const OTHER_GAME = words(
-  String.raw`snake|tetris|casse[- ]briques?|breakout|morpion|tic[- ]tac[- ]toe|flappy|space invaders|labyrinthe|platformer|plateforme|asteroids?|échecs|dames|démineur|sudoku|pac-?man|course`,
-);
 const WHOLE = words(
   String.raw`complet|complète|complets|complètes|entier|entière|tout un|toute une|de zéro|de a à z|from scratch|clone`,
 );
@@ -115,12 +110,7 @@ const HEAVY: Array<[RegExp, string]> = [
   [words(String.raw`éditeur|editeur`), 'éditeur'],
 ];
 /** Ce que chaque gabarit fait déjà : ces mots ne comptent pas comme des demandes. */
-const COVERED: Partial<Record<ProjectTemplateId, RegExp>> = {
-  'web-game': words(
-    String.raw`pong|jeu|jouable|navigateur|raquettes?|balles?|score|scores|points?|clavier|touches|w\/s|z\/s|flèches|fleches|deux joueurs|2 joueurs|canvas|gauche|droite|haut|bas`,
-    'gi',
-  ),
-};
+const COVERED: Partial<Record<ProjectTemplateId, RegExp>> = {};
 const FILLER = words(
   String.raw`crée|créer|creer|cree|fais|fabrique|génère|genere|écris|ecris|moi|un|une|le|la|les|des|de|du|pour|dans|avec|et|à|a|au|aux|en|qui|que|petit|petite|simple|nouveau|nouvelle|projet|application|appli|programme|outil|deux|trois|quatre`,
   'gi',
@@ -157,20 +147,13 @@ export function estimateDifficulty(kind: MissionKind, request: string): Difficul
         : null;
   const reasons: string[] = [];
   let level: DifficultyLevel = 1;
-  let covered = false;
   if (kind === 'new-project' && template === 'web-game') {
-    const other = OTHER_GAME.exec(text)?.[0];
-    if (other && !TEMPLATE_GAME.test(text)) {
-      level = 3;
-      reasons.push(
-        `le gabarit jeu est un Pong jouable : « ${other} » est un autre jeu entier à écrire`,
-      );
-    } else if (!TEMPLATE_GAME.test(text) && !GAME.test(text)) {
-      level = 2;
-    } else {
-      covered = true;
-      reasons.push('le gabarit jeu est déjà un Pong jouable');
-    }
+    level = GAME.test(text) || WHOLE.test(text) ? 3 : 2;
+    reasons.push(
+      level >= 3
+        ? 'jeu ou application canvas à écrire depuis le gabarit neutre'
+        : 'gabarit jeu neutre : logique et tests à écrire',
+    );
   } else if (creates) {
     level = 2;
     reasons.push(
@@ -183,7 +166,7 @@ export function estimateDifficulty(kind: MissionKind, request: string): Difficul
     level = 2;
     reasons.push('une fonction nouvelle à écrire');
   }
-  if (!covered && WHOLE.test(text) && level < 3) {
+  if (WHOLE.test(text) && level < 3) {
     level = 3;
     reasons.push('demandé « complet » : tout est à écrire');
   }
@@ -274,7 +257,7 @@ export function coderVerdict(capability: ModelCapability): string {
 
 const TARGETED_EXAMPLES: Partial<Record<ProjectTemplateId, string>> = {
   'web-game':
-    'Crée un Pong jouable dans le navigateur et change une seule règle : la balle accélère un peu à chaque renvoi de raquette.',
+    'Crée un Snake jouable dans le navigateur : serpent, nourriture, score, game over au mur ou sur soi.',
   'node-cli':
     'Crée un outil en ligne de commande (le gabarit répond déjà à --name et --help) et ajoute une seule option : --majuscules.',
   'vite-react':
@@ -310,19 +293,20 @@ export function assessMission(
   capability: ModelCapability,
 ): MissionGate {
   const difficulty = estimateDifficulty(kind, request);
-  const ok = capability.level >= difficulty.level;
   const why = difficulty.reasons.join(' ; ');
-  const base = { ok, kind, request: clean(request), difficulty, capability };
-  if (ok)
+  const base = { ok: true, kind, request: clean(request), difficulty, capability };
+  if (capability.level === 0) {
     return {
       ...base,
-      message: `Difficulté estimée : ${DIFFICULTY_LABELS[difficulty.level]} (${why}). ${capability.model} tient ${CAPABILITY_LABELS[capability.level]} (${capability.detail}).`,
+      ok: false,
+      message: `Mission non lancée : ${capability.model} n’a réussi aucune tâche de code au banc réel (${capability.detail}). Choisis un autre modèle pour le rôle Codeur (onglet Modèle de code).`,
       suggestion: null,
     };
-  const suggestion = suggest(kind, request, difficulty, capability);
-  const message =
-    capability.level === 0
-      ? `Mission non lancée : ${capability.model} n’a réussi aucune tâche de code au banc réel (${capability.detail}). Choisis un autre modèle pour le rôle Codeur (onglet Modèle de code).`
-      : `Mission non lancée : trop grande pour ${capability.model}. Difficulté estimée : ${DIFFICULTY_LABELS[difficulty.level]} (${why}). Ce modèle tient au plus ${CAPABILITY_LABELS[capability.level]} (${capability.detail}). Un essai finirait en échec après de longues minutes.${suggestion ? ' Version ciblée proposée ci-dessous.' : ' Découpe la demande : une règle ou une fonction à la fois.'}`;
-  return { ...base, message, suggestion };
+  }
+  const tight = capability.level < difficulty.level;
+  const hint = tight ? suggest(kind, request, difficulty, capability) : null;
+  const message = tight
+    ? `Difficulté estimée : ${DIFFICULTY_LABELS[difficulty.level]} (${why}). ${capability.model} peut être trop limité (${CAPABILITY_LABELS[capability.level]} — ${capability.detail}) : la mission part quand même ; un gros programme peut échouer sans tout finir. Aucun modèle local ne garantit une application entière.`
+    : `Difficulté estimée : ${DIFFICULTY_LABELS[difficulty.level]} (${why}). ${capability.model} tient ${CAPABILITY_LABELS[capability.level]} (${capability.detail}).`;
+  return { ...base, message, suggestion: hint };
 }

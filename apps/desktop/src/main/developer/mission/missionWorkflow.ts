@@ -916,7 +916,7 @@ export class MissionWorkflow {
     const context = [
       'Contexte de la mission (préparé par les spécialistes, à respecter) :',
       briefBlock(this.brief()),
-      `Projet neuf, créé depuis le gabarit « ${template ? PROJECT_TEMPLATES[template].label : '?'} » : lis ses fichiers avant de planifier, garde sa structure, ajoute des tests.`,
+      `Projet neuf, créé depuis le gabarit « ${template ? PROJECT_TEMPLATES[template].label : '?'} » : lis ses fichiers, écris le programme demandé et adapte les tests (gabarit neutre pour web-game).`,
       ...(template && TEMPLATE_GUIDES[template] ? [TEMPLATE_GUIDES[template]] : []),
       ...(design ? [skillTaskContext(design, research)] : []),
     ].join('\n');
@@ -1161,12 +1161,18 @@ export class MissionWorkflow {
         : verdict === 'success'
           ? 'finished'
           : 'failed';
+    const failedNew =
+      mission.kind === 'new-project' &&
+      verdict !== 'success' &&
+      task?.status !== 'refused';
     mission.summary =
       task?.status === 'refused'
         ? 'Plan refusé : rien n’a été écrit.'
         : verdict === 'success'
           ? `Réussie : ${task?.diff.length ?? 0} fichier(s) modifié(s) dans la copie isolée, tests sans nouvel échec${task?.review ? ', revue sans point bloquant' : ''}.`
-          : 'Pas réussie : vois le rapport de la tâche.';
+          : failedNew
+            ? 'Échec : le programme demandé n’a pas été livré. Ton projet sur le disque est resté le gabarit neutre (la copie isolée n’a pas été fusionnée). Vois le rapport de la tâche.'
+            : 'Pas réussie : vois le rapport de la tâche.';
     if (task && this.deps.manualStore) {
       const installed = (await this.deps.ollama().status()).models.map((m) => m.name);
       mission.learning = await this.deps.manualStore.tryLearningFromTask({

@@ -861,7 +861,7 @@ export class DeveloperController {
         ? 'La modification est dans ton projet. Tu peux réessayer ou demander autre chose.'
         : task?.report?.verdict === 'success' && !applied
           ? 'Les tests ont réussi mais la fusion a échoué ; ton projet n’a pas changé.'
-          : 'Je n’ai pas pu finir cette fois. Reformule ou précise ta demande.',
+          : 'Échec : le programme demandé n’a pas été livré. Ton projet sur le disque n’a pas été fusionné (gabarit neutre ou version précédente intacte).',
     };
     const assistantText = ok
       ? `C’est fait : ${task?.plan?.summary ?? userText}\n\nTu peux tester dans l’aperçu ou me demander un autre changement.`

@@ -190,6 +190,7 @@ describe('secours sans modèle (5.0.1)', () => {
       files: [
         { path: 'src/game.ts', action: 'edit' },
         { path: 'src/rules.ts', action: 'edit' },
+        { path: 'src/game.test.ts', action: 'edit' },
       ],
       tests: ['typecheck', 'test'],
     });
@@ -244,11 +245,11 @@ describe('correction fichier par fichier (5.0.1)', () => {
   });
 });
 
-describe('gabarit « jeu dans le navigateur » (5.0.1)', () => {
-  it('un Pong déjà jouable : raquettes, balle, score, victoire, réglages à part', () => {
+describe('gabarit « jeu dans le navigateur » (5.0.7)', () => {
+  it('gabarit neutre : compile, boucle canvas, tests minimaux', () => {
     const files = renderTemplate('web-game', {
-      packageName: 'pong',
-      title: 'Pong',
+      packageName: 'snake',
+      title: 'Snake',
       description: '',
     });
     const byPath = Object.fromEntries(files.map((f) => [f.path, f.content]));
@@ -265,15 +266,12 @@ describe('gabarit « jeu dans le navigateur » (5.0.1)', () => {
     expect(pkg.scripts).toMatchObject({ typecheck: 'tsc --noEmit', test: 'vitest run' });
     expect(byPath['src/main.ts']).toContain('requestAnimationFrame');
     expect(byPath['src/game.ts']).toMatch(/export function createGame/);
-    for (const word of ['left', 'right', 'ball', 'score', 'winner', 'bounce'])
-      expect(byPath['src/game.ts']).toContain(word);
-    expect(byPath['src/rules.ts']).toMatch(/winScore: 7/);
-    expect(byPath['src/rules.ts']).toMatch(/leftUp: \['w', 'W', 'z', 'Z'\]/);
-    expect(byPath['src/game.test.ts']!.match(/\bit\(/g)).toHaveLength(10);
-    expect(TEMPLATE_GUIDES['web-game']).toMatch(/déjà un Pong à deux joueurs jouable et testé/);
-    expect(factorySchema.parse({ template: 'jeu', name: 'Pong' }).template).toBe('web-game');
+    expect(byPath['src/game.ts']).not.toMatch(/\bball\b/);
+    expect(byPath['src/game.test.ts']!.match(/\bit\(/g)).toHaveLength(2);
+    expect(TEMPLATE_GUIDES['web-game']).toMatch(/gabarit neutre|pas de jeu jouable/i);
+    expect(factorySchema.parse({ template: 'jeu', name: 'Snake' }).template).toBe('web-game');
     expect(factorySystem()).toContain('"web-game"');
-    expect(TEMPLATE_GUIDES['web-game']).toContain('src/game.ts');
+    expect(TEMPLATE_GUIDES['web-game']).toContain('src/game.test.ts');
     expect(TEMPLATE_STRUCTURE['web-game']).toEqual([
       'index.html',
       'src/main.ts',

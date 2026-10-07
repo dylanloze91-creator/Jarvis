@@ -84,8 +84,9 @@ export function steerFactory(request: string, chosen: FactoryOutput): FactoryOut
 
 const ENTRY_FILES: Partial<Record<ProjectTemplateId, Array<[string, string]>>> = {
   'web-game': [
-    ['src/game.ts', 'logique et dessin du jeu'],
+    ['src/game.ts', 'logique et dessin du programme demandé'],
     ['src/rules.ts', 'réglages du jeu'],
+    ['src/game.test.ts', 'tests du programme demandé'],
   ],
   'node-cli': [
     ['src/main.ts', 'logique du programme'],

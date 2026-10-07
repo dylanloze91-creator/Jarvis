@@ -118,7 +118,11 @@ describe('mission avec un petit modèle bavard (5.0.1)', () => {
 
     const task = done.codeTask!;
     expect(task.planFallback).toMatch(/^plan de secours/);
-    expect(task.plan?.files.map((f) => f.path)).toEqual(['src/game.ts', 'src/rules.ts']);
+    expect(task.plan?.files.map((f) => f.path)).toEqual([
+      'src/game.ts',
+      'src/rules.ts',
+      'src/game.test.ts',
+    ]);
     expect(task.diff.map((f) => f.path)).toEqual(['src/game.ts']);
     expect(task.report?.verdict).toBe('success');
     expect(task.report?.markdown).toContain('plan de secours');
@@ -153,7 +157,7 @@ describe('mission avec un petit modèle bavard (5.0.1)', () => {
     await h.instance.discardTask();
   }, 180_000);
 
-  it('trop grand pour le modèle : refusé avant tout appel, version ciblée proposée, puis lancée', async () => {
+  it('jeu ambitieux pour un petit modèle : mission lancée (avertissement), pas de refus par difficulté', async () => {
     const h = createHarness({
       base,
       repo,
@@ -163,29 +167,19 @@ describe('mission avec un petit modèle bavard (5.0.1)', () => {
     });
     await h.instance.validate(repo);
     const before = bodies().length;
-    const refused = await h.instance.startMission(
+    const started = await h.instance.startMission(
       'new-project',
       'Crée un Tetris complet dans le navigateur avec niveaux, score, sauvegarde des meilleurs scores et musique.',
       true,
     );
-    expect(refused.mission).toBeNull();
-    expect(bodies().length).toBe(before);
-    expect(refused.notice).toMatch(/^Mission non lancée : trop grande pour petit:bavard/);
-    const gate = refused.missionGate!;
-    expect(gate).toMatchObject({
-      ok: false,
+    expect(started.mission).not.toBeNull();
+    expect(bodies().length).toBeGreaterThan(before);
+    expect(String(started.notice ?? '')).not.toMatch(/^Mission non lancée/);
+    expect(started.missionGate).toBeNull();
+    expect(started.mission?.gate).toMatchObject({
+      ok: true,
       difficulty: { level: 3, template: 'web-game' },
-      capability: { level: 2, source: 'taille', paramsB: 3 },
     });
-    expect(gate.suggestion).toMatch(
-      /^Crée un Pong jouable dans le navigateur et change une seule règle/,
-    );
-    expect(h.cards).toEqual([]);
-
-    const done = await h.instance.startMission('new-project', gate.suggestion!, true);
-    expect(done.missionGate).toBeNull();
-    expect(done.mission?.status, done.mission?.summary ?? '').toBe('finished');
-    expect(done.mission?.gate).toMatchObject({ ok: true, difficulty: { level: 1 } });
     await h.instance.discardTask();
   }, 180_000);
 
@@ -260,9 +254,13 @@ describe('mission avec un petit modèle bavard (5.0.1)', () => {
 
     const task = done.codeTask!;
     expect(task.planFallback).toMatch(
-      /ne touchait aucun fichier d’entrée du gabarit \(src\/game\.ts, src\/rules\.ts\)/,
+      /ne touchait aucun fichier d’entrée du gabarit \(src\/game\.ts, src\/rules\.ts, src\/game\.test\.ts\)/,
     );
-    expect(task.plan?.files.map((f) => f.path)).toEqual(['src/game.ts', 'src/rules.ts']);
+    expect(task.plan?.files.map((f) => f.path)).toEqual([
+      'src/game.ts',
+      'src/rules.ts',
+      'src/game.test.ts',
+    ]);
     expect(task.diff.map((f) => f.path)).toEqual(['src/game.ts']);
     expect(task.report?.verdict).toBe('success');
     await h.instance.discardTask();

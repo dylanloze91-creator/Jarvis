@@ -3,7 +3,7 @@
  * `<userData>/developer/knowledge/manual/` à la première utilisation.
  * Incrémenter quand on ajoute ou modifie une page seed (réécriture sur les installs existantes).
  */
-export const DEVELOPER_MANUAL_SEED_VERSION = 2;
+export const DEVELOPER_MANUAL_SEED_VERSION = 3;
 
 export const DEVELOPER_MANUAL_SEED: Record<string, string> = {
   'methode-travail.md': `---
@@ -23,11 +23,11 @@ N’ajoute pas de fonction, de module, de \`*.test.ts\` ou de dépendance qui n�
 
 ### Changer le minimum
 
-Sur un gabarit déjà vert, modifie le strict nécessaire (souvent une valeur dans \`src/rules.ts\` ou une fonction dans \`src/game.ts\`). Ne réécris pas un fichier entier par précaution.
+Sur un projet neuf, écris le programme demandé dans \`src/game.ts\` et adapte \`src/game.test.ts\` pour le vérifier. Sur un projet déjà vert, modifie le strict nécessaire.
 
 ### Les tests tranchent
 
-Ce que demandent les tests du gabarit et ce que montrent \`tsc\` / Vitest font foi. Si un test échoue, corrige le code ou la modification — ne « adapte » pas les tests de référence pour masquer l’échec, sauf si le plan validé le prévoit.
+Ce que demandent les tests du projet et ce que montrent \`tsc\` / Vitest font foi. Si un test échoue, corrige le code — adapte les tests seulement quand le plan validé le prévoit (projet neuf : les tests doivent décrire le programme demandé).
 
 ### Ne pas enregistrer une correction ratée
 
@@ -56,7 +56,7 @@ En TypeScript strict, une variable déclarée avec \`const\` ne se réassigne pa
 
 ## Types et exports
 
-Garde les noms d’interface et d’export existants du gabarit. Si un test attend une fonction \`bounce\` ou \`update\`, ne la renomme pas : ajuste son corps seulement.
+Garde \`createGame\`, \`update\` et \`render\` exportés depuis \`src/game.ts\` tant que \`main.ts\` ne change pas : le corps et l’état peuvent devenir le jeu demandé.
 
 ## Modules ES
 
@@ -72,7 +72,7 @@ tags: [vitest, tests, all]
 
 ## Ne pas multiplier les fichiers de tests
 
-Sur un gabarit déjà vert, les tests dans \`src/game.test.ts\` (ou équivalent) font foi. Ne crée pas un second fichier \`regle.test.ts\` sauf si le plan validé le demande explicitement.
+Pour un projet neuf jeu web, remplace les tests minimaux du gabarit par des tests du programme demandé dans \`src/game.test.ts\`. Ne multiplie pas les fichiers de tests sans raison.
 
 ## Assertions lisibles
 
@@ -85,11 +85,11 @@ templateId: web-game
 
 ## Boucle de jeu
 
-Sépare \`update(state, dt)\` (logique) et \`render(ctx, state)\` (dessin). Le gabarit Pong appelle déjà ces fonctions depuis \`main.ts\` : ne réécris pas toute la boucle requestAnimationFrame.
+Sépare \`update(state, input, dt)\` (logique) et \`render(ctx, state)\` (dessin). \`main.ts\` appelle déjà la boucle : ne la réécris pas sans besoin.
 
 ## Canvas 2D
 
-Le contexte est \`CanvasRenderingContext2D\`. Efface le fond chaque frame (\`clearRect\`) avant de redessiner balle et raquettes.
+Le contexte est \`CanvasRenderingContext2D\`. Efface ou repeins le fond chaque frame avant de redessiner.
 
 ## Clavier
 
@@ -112,9 +112,9 @@ Corrige d’abord ce que montrent **fichier**, **ligne** et **code TS** (ex. TS2
 
 Si le même test ou la même ligne TS échoue encore, change d’hypothèse : une autre variable, une autre formule, ou un \`let\` au lieu d’un \`const\`.
 
-## Tests du gabarit protégés
+## Tests et programme
 
-Si seuls les tests fournis avec le gabarit échouent après ta modification, le bug est dans **ton** code modifié, pas dans les tests de référence.
+Les tests doivent vérifier le programme demandé, pas un jeu livré par défaut. Si les tests et le code divergent, aligne-les selon le plan validé.
 `,
   'jarvis-conventions.md': `---
 tags: [jarvis, all]

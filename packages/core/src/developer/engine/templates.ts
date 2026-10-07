@@ -45,7 +45,7 @@ export const PROJECT_TEMPLATES: Record<ProjectTemplateId, { label: string; descr
     'web-game': {
       label: 'Jeu dans le navigateur (TypeScript, canvas, Vite)',
       description:
-        'un Pong à deux joueurs déjà jouable au clavier (raquettes, balle, score, victoire) et testé, à faire évoluer règle par règle',
+        'canvas, boucle et tests minimaux qui compilent ; le programme demandé (jeu ou autre) est à écrire dans game.ts et game.test.ts',
     },
     'node-skill': {
       label: 'Compétence de Jarvis (outils TypeScript, hors du chat)',
@@ -587,13 +587,12 @@ function webGame(input: TemplateInput): TemplateFile[] {
       content: json({
         name: input.packageName,
         version: '0.1.0',
-        description: input.description,
         private: true,
         type: 'module',
         scripts: {
-          dev: 'vite --port 5393',
-          build: 'tsc --noEmit && vite build',
-          preview: 'vite preview --port 5394',
+          dev: 'vite --port 5393 --strictPort',
+          build: 'vite build',
+          preview: 'vite preview',
           typecheck: 'tsc --noEmit',
           test: 'vitest run',
         },
@@ -642,10 +641,7 @@ function webGame(input: TemplateInput): TemplateFile[] {
       path: 'src/main.ts',
       content: `import { createGame, render, update, type Input } from './game';
 
-/**
- * Boucle du jeu : canvas, clavier, une image par rafraîchissement de l'écran.
- * La logique et le dessin sont dans game.ts.
- */
+/** Boucle canvas : la logique et le dessin sont dans game.ts. */
 const canvas = document.querySelector<HTMLCanvasElement>('#game')!;
 const ctx = canvas.getContext('2d')!;
 const keys = new Set<string>();
@@ -673,325 +669,64 @@ requestAnimationFrame(frame);
     },
     {
       path: 'src/rules.ts',
-      content: `/**
- * Réglages du Pong : vitesses en pixels par seconde, tailles en pixels.
- * Pour changer une valeur du jeu, ce fichier suffit.
- */
+      content: `/** Réglages du jeu : constantes modifiables sans toucher à toute la logique. */
 export const RULES = {
-  /** Points pour gagner la partie. */
-  winScore: 7,
-  paddleWidth: 12,
-  paddleHeight: 80,
-  /** Distance entre le bord du terrain et une raquette. */
-  paddleMargin: 24,
-  paddleSpeed: 360,
-  ballSize: 12,
-  /** Vitesse de la balle à chaque service. */
-  ballSpeed: 320,
-  /** Angle le plus raide d'un renvoi, au bout de la raquette (radians). */
-  maxBounceAngle: Math.PI / 3,
-  /** Pause avant chaque service (secondes). */
-  servePause: 0.8,
-};
-
-/** Touches : W/S (ou Z/S sur un clavier AZERTY) à gauche, flèches à droite, espace pour rejouer. */
-export const KEYS = {
-  leftUp: ['w', 'W', 'z', 'Z'],
-  leftDown: ['s', 'S'],
-  rightUp: ['ArrowUp'],
-  rightDown: ['ArrowDown'],
-  restart: [' '],
+  title: '${title.replace("'", "\\'")}',
 };
 `,
     },
     {
       path: 'src/game.ts',
-      content: `import { KEYS, RULES } from './rules';
+      content: `import { RULES } from './rules';
 
-/**
- * Pong à deux joueurs, déjà jouable : deux raquettes, une balle, le score et
- * la victoire. main.ts appelle createGame une fois, puis update et render à
- * chaque image. Pour une règle nouvelle, change seulement la partie concernée.
- */
-export type Side = 'left' | 'right';
-
-export interface Paddle {
-  x: number;
-  y: number;
-  score: number;
-}
-
-export interface Ball {
-  x: number;
-  y: number;
-  vx: number;
-  vy: number;
-}
-
+/** État minimal du gabarit : remplace-le par le jeu ou l’application demandée. */
 export interface GameState {
   width: number;
   height: number;
-  left: Paddle;
-  right: Paddle;
-  ball: Ball;
-  /** Secondes avant le prochain service. */
-  serve: number;
-  winner: Side | null;
+  tick: number;
 }
 
-/** Touches enfoncées, par exemple 'w', 's', 'ArrowUp', 'ArrowDown', ' '. */
 export interface Input {
   keys: ReadonlySet<string>;
 }
 
-const pressed = (input: Input, names: readonly string[]): boolean =>
-  names.some((name) => input.keys.has(name));
-
-const clamp = (value: number, min: number, max: number): number =>
-  Math.min(max, Math.max(min, value));
-
-/** Balle au centre, lancée vers \`toward\` ; l'angle alterne à chaque point. */
-function serveBall(width: number, height: number, toward: Side, points: number): Ball {
-  const angle = (Math.PI / 7) * (points % 2 === 0 ? 1 : -1);
-  return {
-    x: (width - RULES.ballSize) / 2,
-    y: (height - RULES.ballSize) / 2,
-    vx: (toward === 'right' ? 1 : -1) * RULES.ballSpeed * Math.cos(angle),
-    vy: RULES.ballSpeed * Math.sin(angle),
-  };
-}
-
 export function createGame(width: number, height: number): GameState {
-  const y = (height - RULES.paddleHeight) / 2;
-  return {
-    width,
-    height,
-    left: { x: RULES.paddleMargin, y, score: 0 },
-    right: { x: width - RULES.paddleMargin - RULES.paddleWidth, y, score: 0 },
-    ball: serveBall(width, height, 'right', 0),
-    serve: RULES.servePause,
-    winner: null,
-  };
+  return { width, height, tick: 0 };
 }
 
-function movePaddle(paddle: Paddle, up: boolean, down: boolean, dt: number, height: number): Paddle {
-  const direction = (down ? 1 : 0) - (up ? 1 : 0);
-  const y = clamp(paddle.y + direction * RULES.paddleSpeed * dt, 0, height - RULES.paddleHeight);
-  return { ...paddle, y };
-}
-
-function touches(ball: Ball, paddle: Paddle): boolean {
-  return (
-    ball.x < paddle.x + RULES.paddleWidth &&
-    ball.x + RULES.ballSize > paddle.x &&
-    ball.y + RULES.ballSize > paddle.y &&
-    ball.y < paddle.y + RULES.paddleHeight
-  );
-}
-
-/** Renvoi : plus la balle touche loin du centre de la raquette, plus l'angle est raide. */
-function bounce(ball: Ball, paddle: Paddle, direction: 1 | -1): void {
-  const center = paddle.y + RULES.paddleHeight / 2;
-  const offset = clamp((ball.y + RULES.ballSize / 2 - center) / (RULES.paddleHeight / 2), -1, 1);
-  const angle = offset * RULES.maxBounceAngle;
-  const speed = Math.hypot(ball.vx, ball.vy);
-  ball.vx = direction * speed * Math.cos(angle);
-  ball.vy = speed * Math.sin(angle);
-  ball.x = direction > 0 ? paddle.x + RULES.paddleWidth : paddle.x - RULES.ballSize;
-}
-
-/** Point marqué par \`scorer\` : score, victoire éventuelle, nouveau service vers le perdant. */
-function point(state: GameState, left: Paddle, right: Paddle, scorer: Side): GameState {
-  const nextLeft = scorer === 'left' ? { ...left, score: left.score + 1 } : left;
-  const nextRight = scorer === 'right' ? { ...right, score: right.score + 1 } : right;
-  const points = nextLeft.score + nextRight.score;
-  const best = Math.max(nextLeft.score, nextRight.score);
-  return {
-    ...state,
-    left: nextLeft,
-    right: nextRight,
-    ball: serveBall(state.width, state.height, scorer === 'left' ? 'right' : 'left', points),
-    serve: RULES.servePause,
-    winner: best >= RULES.winScore ? scorer : null,
-  };
-}
-
-/** Une image : dt en secondes depuis la précédente. */
-export function update(state: GameState, input: Input, dt: number): GameState {
-  if (state.winner) return pressed(input, KEYS.restart) ? createGame(state.width, state.height) : state;
-  const left = movePaddle(state.left, pressed(input, KEYS.leftUp), pressed(input, KEYS.leftDown), dt, state.height);
-  const right = movePaddle(state.right, pressed(input, KEYS.rightUp), pressed(input, KEYS.rightDown), dt, state.height);
-  if (state.serve > 0) return { ...state, left, right, serve: Math.max(0, state.serve - dt) };
-
-  const ball = { ...state.ball };
-  ball.x += ball.vx * dt;
-  ball.y += ball.vy * dt;
-  const bottom = state.height - RULES.ballSize;
-  if (ball.y < 0) {
-    ball.y = -ball.y;
-    ball.vy = Math.abs(ball.vy);
-  } else if (ball.y > bottom) {
-    ball.y = 2 * bottom - ball.y;
-    ball.vy = -Math.abs(ball.vy);
-  }
-  ball.y = clamp(ball.y, 0, bottom);
-
-  if (ball.vx < 0 && touches(ball, left)) bounce(ball, left, 1);
-  else if (ball.vx > 0 && touches(ball, right)) bounce(ball, right, -1);
-
-  if (ball.x + RULES.ballSize < 0) return point(state, left, right, 'right');
-  if (ball.x > state.width) return point(state, left, right, 'left');
-  return { ...state, left, right, ball };
+export function update(state: GameState, _input: Input, dt: number): GameState {
+  return { ...state, tick: state.tick + dt };
 }
 
 export function render(ctx: CanvasRenderingContext2D, state: GameState): void {
-  const { width, height } = state;
-  ctx.fillStyle = '#000';
-  ctx.fillRect(0, 0, width, height);
-  ctx.fillStyle = '#333';
-  for (let y = 0; y < height; y += 24) ctx.fillRect(width / 2 - 2, y, 4, 12);
-
-  ctx.fillStyle = '#fff';
-  for (const paddle of [state.left, state.right])
-    ctx.fillRect(paddle.x, paddle.y, RULES.paddleWidth, RULES.paddleHeight);
-  ctx.fillRect(state.ball.x, state.ball.y, RULES.ballSize, RULES.ballSize);
-
+  ctx.fillStyle = '#111';
+  ctx.fillRect(0, 0, state.width, state.height);
+  ctx.fillStyle = '#ccc';
+  ctx.font = '20px sans-serif';
   ctx.textAlign = 'center';
-  ctx.font = '32px sans-serif';
-  ctx.fillText(String(state.left.score), width / 4, 48);
-  ctx.fillText(String(state.right.score), (3 * width) / 4, 48);
-  if (state.winner) {
-    ctx.font = '28px sans-serif';
-    const name = state.winner === 'left' ? 'Joueur de gauche' : 'Joueur de droite';
-    ctx.fillText(\`\${name} gagne !\`, width / 2, height / 2 - 16);
-    ctx.font = '16px sans-serif';
-    ctx.fillText('Espace pour rejouer', width / 2, height / 2 + 16);
-  }
+  ctx.fillText(RULES.title, state.width / 2, state.height / 2 - 12);
   ctx.fillStyle = '#888';
   ctx.font = '14px sans-serif';
-  ctx.fillText(\`W/S à gauche · flèches à droite · premier à \${RULES.winScore} points\`, width / 2, height - 14);
+  ctx.fillText('Gabarit prêt — écris le programme demandé dans game.ts', state.width / 2, state.height / 2 + 16);
 }
 `,
     },
     {
       path: 'src/game.test.ts',
       content: `import { describe, expect, it } from 'vitest';
-import { createGame, update, type GameState, type Input } from './game';
-import { RULES } from './rules';
+import { createGame, update } from './game';
 
-const W = 800;
-const H = 480;
-const keys = (...names: string[]): Input => ({ keys: new Set(names) });
-const run = (state: GameState, frames: number, input: Input = keys()): GameState => {
-  let next = state;
-  for (let i = 0; i < frames; i += 1) next = update(next, input, 1 / 60);
-  return next;
-};
-const centered = (state: GameState) =>
-  Math.abs(state.ball.x + RULES.ballSize / 2 - W / 2) < RULES.ballSize &&
-  Math.abs(state.ball.y + RULES.ballSize / 2 - H / 2) < RULES.ballSize;
-/** Balle placée à la main, service déjà fait. */
-const withBall = (state: GameState, ball: GameState['ball']): GameState => ({ ...state, serve: 0, ball });
-
-describe('Pong', () => {
-  it('garde la taille du terrain', () => {
-    const state = run(createGame(W, H), 600, keys('w', 'ArrowDown'));
-    expect(state.width).toBe(W);
-    expect(state.height).toBe(H);
+/** Tests du gabarit : remplace-les par ceux du jeu ou de l’application demandée. */
+describe('gabarit jeu navigateur', () => {
+  it('createGame respecte la taille du canvas', () => {
+    const state = createGame(800, 480);
+    expect(state.width).toBe(800);
+    expect(state.height).toBe(480);
   });
 
-  it('deux raquettes face à face, la balle au centre, 0 à 0', () => {
-    const state = createGame(W, H);
-    expect(state.left.x).toBeLessThan(W / 2);
-    expect(state.right.x).toBeGreaterThan(W / 2);
-    expect([state.left.score, state.right.score]).toEqual([0, 0]);
-    expect(centered(state)).toBe(true);
-    expect(state.winner).toBeNull();
-  });
-
-  it('la balle part toute seule après le service', () => {
-    const start = createGame(W, H);
-    const later = run(start, 90);
-    expect(later.ball.x).not.toBe(start.ball.x);
-    expect(later.ball.y).not.toBe(start.ball.y);
-  });
-
-  it('W et S déplacent la raquette gauche, les flèches la droite', () => {
-    const start = createGame(W, H);
-    expect(run(start, 20, keys('w')).left.y).toBeLessThan(start.left.y);
-    expect(run(start, 20, keys('s')).left.y).toBeGreaterThan(start.left.y);
-    expect(run(start, 20, keys('ArrowUp')).right.y).toBeLessThan(start.right.y);
-    expect(run(start, 20, keys('ArrowDown')).right.y).toBeGreaterThan(start.right.y);
-    expect(run(start, 20, keys('w')).right.y).toBe(start.right.y);
-  });
-
-  it('les raquettes restent dans le terrain', () => {
-    const top = run(createGame(W, H), 300, keys('w', 'ArrowUp'));
-    const bottom = run(createGame(W, H), 300, keys('s', 'ArrowDown'));
-    for (const paddle of [top.left, top.right]) expect(paddle.y).toBeGreaterThanOrEqual(0);
-    for (const paddle of [bottom.left, bottom.right])
-      expect(paddle.y + RULES.paddleHeight).toBeLessThanOrEqual(H);
-  });
-
-  it('la balle rebondit en haut et en bas sans sortir', () => {
-    let state = withBall(createGame(W, H), { x: W / 2, y: 4, vx: 0, vy: -300 });
-    state = run(state, 5);
-    expect(state.ball.vy).toBeGreaterThan(0);
-    for (let i = 0; i < 240; i += 1) {
-      state = update(state, keys(), 1 / 60);
-      expect(state.ball.y).toBeGreaterThanOrEqual(0);
-      expect(state.ball.y + RULES.ballSize).toBeLessThanOrEqual(H);
-    }
-  });
-
-  it('une raquette renvoie la balle vers l’autre camp', () => {
-    const start = createGame(W, H);
-    const y = start.left.y + RULES.paddleHeight / 2 - RULES.ballSize / 2;
-    const state = run(withBall(start, { x: start.left.x + RULES.paddleWidth + 4, y, vx: -300, vy: 0 }), 10);
-    expect(state.ball.vx).toBeGreaterThan(0);
-    expect(state.left.score + state.right.score).toBe(0);
-  });
-
-  it('balle manquée : un point pour l’autre joueur, puis service au centre', () => {
-    const start = createGame(W, H);
-    const state = run(
-      withBall({ ...start, left: { ...start.left, y: 0 } }, { x: 40, y: H - 40, vx: -400, vy: 0 }),
-      30,
-    );
-    expect([state.left.score, state.right.score]).toEqual([0, 1]);
-    expect(centered(state)).toBe(true);
-  });
-
-  it(\`premier à RULES.winScore points : la partie s’arrête, espace relance\`, () => {
-    const start = createGame(W, H);
-    const won = run(
-      withBall(
-        { ...start, left: { ...start.left, y: 0 }, right: { ...start.right, score: RULES.winScore - 1 } },
-        { x: 40, y: H - 40, vx: -400, vy: 0 },
-      ),
-      30,
-    );
-    expect(won.winner).toBe('right');
-    expect(run(won, 60).ball).toEqual(won.ball);
-    const again = update(won, keys(' '), 1 / 60);
-    expect(again.winner).toBeNull();
-    expect([again.left.score, again.right.score]).toEqual([0, 0]);
-  });
-
-  it('une longue partie au clavier : tout reste dans le terrain', () => {
-    let state = createGame(W, H);
-    const sets = [[], ['w'], ['s'], ['ArrowUp'], ['ArrowDown'], ['w', 'ArrowDown'], ['s', 'ArrowUp']];
-    for (let i = 0; i < 3600; i += 1) {
-      state = update(state, keys(...sets[Math.floor(i / 50) % sets.length]!), 1 / 60);
-      for (const paddle of [state.left, state.right]) {
-        expect(paddle.y).toBeGreaterThanOrEqual(0);
-        expect(paddle.y + RULES.paddleHeight).toBeLessThanOrEqual(H);
-      }
-      expect(state.ball.x).toBeGreaterThanOrEqual(-RULES.ballSize - 20);
-      expect(state.ball.x).toBeLessThanOrEqual(W + 20);
-      expect(state.ball.y).toBeGreaterThanOrEqual(0);
-      expect(state.ball.y + RULES.ballSize).toBeLessThanOrEqual(H);
-    }
+  it('update avance sans erreur', () => {
+    const next = update(createGame(100, 100), { keys: new Set() }, 1 / 60);
+    expect(next.tick).toBeGreaterThan(0);
   });
 });
 `,
@@ -1004,6 +739,7 @@ describe('Pong', () => {
   ];
 }
 
+
 function readmeGame(input: TemplateInput): string {
   const tick = '`';
   return [
@@ -1015,7 +751,7 @@ function readmeGame(input: TemplateInput): string {
     '',
     `- ${tick}npm install${tick}`,
     `- ${tick}npm run dev${tick}, puis ouvre http://localhost:5393`,
-    '- Raquette de gauche : W et S (Z et S sur un clavier AZERTY). Raquette de droite : flèches haut et bas. Espace : rejouer après une victoire.',
+    '- Le gabarit affiche un écran neutre : écris le jeu ou l’application demandée dans src/game.ts et adapte src/game.test.ts.',
     '',
     '## Vérifier',
     '',
@@ -1036,17 +772,16 @@ export const TEMPLATE_STRUCTURE: Partial<Record<ProjectTemplateId, readonly stri
 
 /** Fichiers montrés au modèle, en référence, quand il écrit un fichier du gabarit (5.0.1). */
 export const TEMPLATE_REFERENCES: Partial<Record<ProjectTemplateId, readonly string[]>> = {
-  'web-game': ['src/rules.ts', 'src/game.test.ts'],
+  'web-game': ['src/rules.ts', 'src/main.ts', 'src/game.test.ts'],
 };
 
 /** Consignes du CODER pour un projet neuf, selon son gabarit (5.0.1). */
 export const TEMPLATE_GUIDES: Partial<Record<ProjectTemplateId, string>> = {
   'web-game': [
-    'Gabarit « jeu dans le navigateur » : c’est déjà un Pong à deux joueurs jouable et testé (src/game.test.ts). Ne réécris pas le jeu : fais seulement le changement demandé.',
-    '- index.html, src/main.ts et src/game.test.ts sont la structure : n’y touche pas.',
-    '- Les réglages (vitesses, tailles, points pour gagner, touches) sont dans src/rules.ts : pour changer une valeur, modifie seulement ce fichier.',
-    '- La logique et le dessin sont dans src/game.ts (createGame, update, render ; état : left, right, ball, serve, winner). Pour une règle nouvelle, change seulement la fonction concernée (bounce pour un renvoi, point pour un point marqué, update pour une image) et garde tout le reste identique : noms, exports, réglages.',
-    '- Ne crée pas de nouveau fichier de tests sauf si l’utilisateur ou le plan validé le demande : les 10 tests de src/game.test.ts valident déjà le gabarit. Pour une règle, change le code puis laisse ces tests passer ; n’ajoute pas src/regle.test.ts ou équivalent par défaut.',
+    'Gabarit « jeu dans le navigateur » : canvas, boucle (main.ts) et tests minimaux seulement — pas de jeu jouable tant que tu n’as pas écrit la demande.',
+    '- Écris le jeu ou l’application demandée dans src/game.ts ; réglages optionnels dans src/rules.ts.',
+    '- Remplace src/game.test.ts par des tests qui vérifient ce programme (ne garde pas les tests du gabarit neutre).',
+    '- index.html et src/main.ts fournissent la boucle requestAnimationFrame : modifie-les seulement si nécessaire.',
   ].join('\n'),
   'node-cli':
     'Gabarit « outil en ligne de commande » : déjà fonctionnel et testé (--name, --help). La logique va dans src/main.ts (fonction run), testée dans src/main.test.ts ; src/cli.ts ne fait que l’appeler. Fais seulement le changement demandé.',
@@ -1132,7 +867,7 @@ export function factorySystem(): string {
     .map((id) => `- "${id}" : ${PROJECT_TEMPLATES[id].label}, ${PROJECT_TEMPLATES[id].description}`)
     .join('\n');
   return `Tu es le spécialiste ARCHITECT de Jarvis Développeur. ${FACTORY_MARKER}.
-L'utilisateur veut un nouveau projet, indépendant de Jarvis. Choisis le gabarit local le plus simple qui convient, un nom court et une phrase de description. Un jeu dans le navigateur (Pong, Snake…) est « web-game ». Une « appli Windows » (fenêtre) est un gabarit .NET ; un outil sans interface peut rester en Node.js. Réponds en français.
+L'utilisateur veut un nouveau projet, indépendant de Jarvis. Choisis le gabarit local le plus simple qui convient, un nom court et une phrase de description. Un jeu ou une appli canvas dans le navigateur (Snake, Pong, Tetris…) est « web-game » (gabarit neutre : le codeur écrit le programme). Une « appli Windows » (fenêtre) est un gabarit .NET ; un outil sans interface peut rester en Node.js. Réponds en français.
 Gabarits :
 ${list}
 Le format attendu est :
