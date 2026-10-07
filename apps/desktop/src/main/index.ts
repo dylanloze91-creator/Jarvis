@@ -53,6 +53,8 @@ import { presentWindow } from './startup.js';
 import { allowPermissionCheck, allowPermissionRequest, originForLog } from './mediaPermissions.js';
 import { VoiceCaptureLog } from './voiceCaptureLog.js';
 import { WakeLearningStore } from './wakeLearningStore.js';
+import { LocalLearningStore } from './learning/store.js';
+import { LocalLearningController } from './learning/controller.js';
 import { ListeningIndicatorWindow } from './listeningIndicator.js';
 import { createOverlayWindow, type OverlayWindow } from './window.js';
 import {
@@ -84,6 +86,16 @@ let listeningIndicator: ListeningIndicatorWindow | null = null;
 
 let settings: Settings = parseSettings({});
 let settingsFileExisted = false;
+const localLearningStore = new LocalLearningStore(() => app.getPath('userData'));
+const localLearning = new LocalLearningController(
+  localLearningStore,
+  () => settings,
+  async (patch) => {
+    settings = parseSettings({ ...settings, ...patch }, settings);
+    await writeSettings(settings);
+    return settings;
+  },
+);
 const spotify = new SpotifyBridge(() => settings);
 const siteBlock = new SiteBlockBridge(() => settings);
 // Jetons chiffrés par safeStorage (DPAPI), consentement dans le navigateur système.
@@ -148,6 +160,7 @@ const session = new ChatSession({
   getSettings: () => settings,
   personalization,
   knowledge,
+  localLearning,
 });
 
 if (!app.requestSingleInstanceLock()) {
@@ -277,6 +290,14 @@ function createTray(): void {
 }
 
 function registerIpc(): void {
+  localLearning.registerIpc(ipcMain);
+  localLearning.setBroadcast((status) => {
+    const contents = overlay?.browserWindow.webContents;
+    if (contents && !contents.isDestroyed()) {
+      contents.send(IpcChannel.localLearningEvent, status);
+    }
+  });
+
   registerMachineIpc({
     getSettings: () => settings,
     setSettings: (next) => {

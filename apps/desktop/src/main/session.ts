@@ -25,6 +25,7 @@ import { IpcChannel } from '../shared/ipc.js';
 import type { PersonalizationStore } from './personalization.js';
 import type { KnowledgeStore } from './knowledge.js';
 import type { VoiceBridge } from './voice.js';
+import type { LocalLearningController } from './learning/controller.js';
 
 interface SessionDeps {
   registry: ProviderRegistry;
@@ -35,6 +36,7 @@ interface SessionDeps {
   voice: VoiceBridge;
   personalization: PersonalizationStore;
   knowledge: KnowledgeStore;
+  localLearning: LocalLearningController;
 }
 
 /**
@@ -177,6 +179,7 @@ export class ChatSession {
         settings,
       )
       .catch(() => undefined);
+    void this.deps.localLearning.recordTurn(updated.id, updated.messages).catch(() => undefined);
     emit({ type: 'done', conversationId: updated.id, messages: updated.messages });
     } catch {
       if (this.controller === controller) this.controller = null;

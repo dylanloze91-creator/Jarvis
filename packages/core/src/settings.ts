@@ -75,6 +75,22 @@ export const voiceSettingsSchema = z.object({
 
 export type VoiceSettings = z.infer<typeof voiceSettingsSchema>;
 
+/** Apprentissage local (exemples + adaptateur QLoRA sur ce PC, sans cloud). */
+export const localLearningSettingsSchema = z
+  .object({
+    enabled: z.boolean().default(true),
+    /** Modèle Ollama à utiliser pour le chat quand l’adaptateur est prêt. */
+    activeOllamaModel: z.string().optional(),
+    trainBaseModel: z.string().optional(),
+    lastTrainedAt: z.number().optional(),
+    lastTrainExampleCount: z.number().int().optional(),
+    /** Précision affichée une ligne dans la discussion après entraînement. */
+    statusHint: z.string().max(240).optional(),
+  })
+  .default({ enabled: true });
+
+export type LocalLearningSettings = z.infer<typeof localLearningSettingsSchema>;
+
 /**
  * Jarvis Développeur. Coupé par défaut : tant qu'il l'est, aucune session
  * développeur n'existe et le chat reste celui de 0.4.22.
@@ -188,6 +204,7 @@ export const settingsSchema = z.object({
   toolPolicies: toolPoliciesSchema,
   voice: voiceSettingsSchema.default(voiceSettingsSchema.parse({})),
   developer: developerSettingsSchema.default(developerSettingsSchema.parse({})),
+  localLearning: localLearningSettingsSchema,
   /**
    * Analyse vidéo (YouTube, mémoire vidéo). Absente : comme en 0.4.25, activée.
    * Seul `false` (profil modeste) la coupe. Pas de défaut Zod : un ancien

@@ -1,10 +1,12 @@
 export * from './types.js';
 export * from './settings.js';
+export * from './learning/index.js';
 export {
   applyMachineProfile,
   assertChatModelDownload,
   chatOllamaOptions,
   chatProviderConfig,
+  resolveChatModel,
   modelIsInstalled,
   modestChatModel,
   offeredCodeModels,

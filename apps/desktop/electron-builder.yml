@@ -42,6 +42,8 @@ extraResources:
     to: openwakeword
   - from: voice-assets/vosk
     to: vosk
+  - from: scripts/jarvis-qlora-train.py
+    to: learning/jarvis-qlora-train.py
 afterPack: scripts/after-pack.cjs
 extraMetadata:
   main: out/main/index.js

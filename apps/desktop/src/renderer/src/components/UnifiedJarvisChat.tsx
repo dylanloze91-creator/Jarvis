@@ -61,6 +61,7 @@ export function UnifiedJarvisChat({
   }, [projects, selectedId]);
   const project = projects.find((p) => p.id === activeId) ?? null;
   const [channel, setChannel] = useState<Channel>('assistant');
+  const [learningLine, setLearningLine] = useState<string | null>(null);
   const spokenMessageCountRef = useRef(0);
   const scrollRef = useRef<HTMLDivElement>(null);
   const prevProjectMsgCount = useRef(0);
@@ -108,6 +109,11 @@ export function UnifiedJarvisChat({
     setVoiceTranscriptTarget((text) => submit(text, 'voice'));
     return () => setVoiceTranscriptTarget(null);
   }, [submit]);
+
+  useEffect(() => {
+    void window.jarvis.localLearning.status().then((s) => setLearningLine(s.line));
+    return window.jarvis.localLearning.onEvent((s) => setLearningLine(s.line));
+  }, []);
 
   useEffect(() => {
     spokenMessageCountRef.current = projectChat?.messages.length ?? 0;
@@ -231,6 +237,7 @@ export function UnifiedJarvisChat({
       {chat.confirmation && channel === 'assistant' ? (
         <ConfirmationCard confirmation={chat.confirmation} onRespond={chat.respond} />
       ) : null}
+      {learningLine ? <p className="dash-learning-hint no-drag">{learningLine}</p> : null}
       <Composer busy={busy} onSend={submit} onCancel={chat.cancel} />
       <VoiceBar voice={voice} voiceEnabled={settings?.voice.enabled ?? false} />
     </section>

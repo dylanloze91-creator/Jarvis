@@ -15,7 +15,7 @@ import {
   type YoutubeTranscribeRequest,
   type YoutubeTranscribeResult,
 } from '../shared/ipc.js';
-import type { Settings, WakeStatKind } from '@jarvis/core';
+import type { LocalLearningRuntimeStatus, Settings, WakeStatKind } from '@jarvis/core';
 import { createDeveloperApi } from './developer.js';
 
 /**
@@ -99,6 +99,15 @@ const api: JarvisApi = {
     openMicrophonePrivacy: () => ipcRenderer.invoke(IpcChannel.voiceOpenMicrophonePrivacy),
     setListening: (active: boolean) => ipcRenderer.send(IpcChannel.listeningIndicator, { active: active === true }),
     sendLevel: (level: number) => ipcRenderer.send(IpcChannel.listeningLevel, Number.isFinite(level) ? level : 0),
+  },
+  localLearning: {
+    status: () => ipcRenderer.invoke(IpcChannel.localLearningStatus),
+    onEvent: (listener: (status: LocalLearningRuntimeStatus) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, payload: LocalLearningRuntimeStatus): void =>
+        listener(payload);
+      ipcRenderer.on(IpcChannel.localLearningEvent, handler);
+      return () => ipcRenderer.removeListener(IpcChannel.localLearningEvent, handler);
+    },
   },
   wakeLearning: {
     status: () => ipcRenderer.invoke(IpcChannel.wakeLearningStatus),

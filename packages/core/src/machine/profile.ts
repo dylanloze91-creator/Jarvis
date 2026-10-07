@@ -207,11 +207,20 @@ export function chatOllamaOptions(settings: Settings): OllamaCodeOptions | undef
   return options.numCtx !== undefined || options.numGpu !== undefined ? options : undefined;
 }
 
+/** Modèle effectif : adaptateur personnel local si prêt (sans changer l’écran Réglages). */
+export function resolveChatModel(settings: Settings): string {
+  const ll = settings.localLearning;
+  if (settings.provider === 'ollama' && ll?.enabled && ll.activeOllamaModel?.trim()) {
+    return ll.activeOllamaModel.trim();
+  }
+  return settings.model;
+}
+
 export function chatProviderConfig(settings: Settings): ProviderConfig {
   const ollama = settings.provider === 'ollama' ? chatOllamaOptions(settings) : undefined;
   return {
     provider: settings.provider,
-    model: settings.model,
+    model: resolveChatModel(settings),
     apiKey: settings.apiKey,
     baseUrl: settings.baseUrl,
     ...(ollama ? { ollama } : {}),

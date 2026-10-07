@@ -20,6 +20,7 @@ import type {
   WakeStatKind,
   WakeStatsSummary,
   WakeVerifierModel,
+  type LocalLearningRuntimeStatus,
 } from '@jarvis/core';
 import type { DeveloperApi } from './developerIpc.js';
 
@@ -108,6 +109,8 @@ export const IpcChannel = {
   wakeLearningRetrain: 'wake-learning:retrain',
   wakeLearningClear: 'wake-learning:clear',
   wakeLearningReset: 'wake-learning:reset',
+  localLearningStatus: 'local-learning:status',
+  localLearningEvent: 'local-learning:event',
   listeningIndicator: 'listening:indicator',
   listeningLevel: 'listening:level',
   youtubeTranscribe: 'youtube:transcribe-audio',
@@ -468,6 +471,10 @@ export interface JarvisApi {
     sendLevel(level: number): void;
   };
   /** Apprentissage du réveil : tout reste dans le dossier de données de l'appli. */
+  localLearning: {
+    status(): Promise<LocalLearningRuntimeStatus>;
+    onEvent(listener: (status: LocalLearningRuntimeStatus) => void): () => void;
+  };
   wakeLearning: {
     status(): Promise<WakeLearningStatus>;
     addSample(input: WakeLearningSampleInput): Promise<{ model: WakeVerifierModel | null; retrained: boolean } | null>;
