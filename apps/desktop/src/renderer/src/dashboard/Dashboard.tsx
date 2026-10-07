@@ -288,7 +288,7 @@ export function Dashboard({
       </aside>
 
       <main className="dash-main">
-        {!showModePicker ? (
+        {!showModePicker && !showSimpleDeveloper ? (
           <header className="dash-top drag-region">
             <div className="dash-title">
               <h1>JARVIS</h1>
