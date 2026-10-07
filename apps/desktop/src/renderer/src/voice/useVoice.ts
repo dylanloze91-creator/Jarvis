@@ -68,10 +68,13 @@ export interface UseVoiceResult {
   speak: (text: string) => void;
   /**
    * Fin du tour de l'agent. En discussion (après un réveil), garde le micro
-   * ouvert : la synthèse se termine, ou le texte seul si elle est coupée,
-   * puis 2 s de silence avant la veille.
+   * ouvert après la synthèse ou le texte seul si elle est coupée.
    */
   noteAssistantReply: (text: string) => void;
+  /** Vrai tant que l'utilisateur n'a pas fermé la session vocale (après « Jarvis »). */
+  inVoiceConversation: boolean;
+  /** Ferme la session d'écoute et revient en veille (mot de réveil à nouveau requis). */
+  endConversation: () => void;
   listMicrophones: typeof listMicrophones;
   /** Nouvelle tentative d'ouverture du micro. */
   retryMicrophone: () => void;
@@ -115,6 +118,7 @@ export function useVoice({
   const [voiceError, setVoiceErrorState] = useState<string | null>(null);
   const [whisperStatus, setWhisperStatus] = useState<string | null>(null);
   const [speakingText, setSpeakingText] = useState<string | null>(null);
+  const [inVoiceConversation, setInVoiceConversation] = useState(false);
   const [mic, setMic] = useState<MicrophoneStatus>(() => microphone.getStatus());
 
   const sttRegistry = useMemo(() => createSttRegistry(), []);
@@ -151,6 +155,9 @@ export function useVoice({
   const levelRef = useRef(0);
   const levelShownAtRef = useRef(0);
   const conversationRef = useRef(new ConversationSession());
+  const syncVoiceConversation = useCallback(() => {
+    setInVoiceConversation(conversationRef.current.showListening);
+  }, []);
   /** Transcription en cours : les trames suivantes ne relancent pas la fin de parole. */
   const closingRef = useRef(false);
   const hotTailRef = useRef(new FrameTail());
@@ -252,9 +259,10 @@ export function useVoice({
     hotTailRef.current.clear();
     pendingWakeWordStripRef.current = null;
     conversationRef.current.standby();
+    syncVoiceConversation();
     setLiveTranscript('');
     backToSleepOrIdle();
-  }, [backToSleepOrIdle, clearMaxDurationTimer]);
+  }, [backToSleepOrIdle, clearMaxDurationTimer, syncVoiceConversation]);
 
   const armHot = useCallback(() => {
     closingRef.current = false;
@@ -292,6 +300,7 @@ export function useVoice({
       if (decision.kind === 'send') {
         onTranscriptRef.current(sent);
         armHot();
+        syncVoiceConversation();
         return;
       }
       if (decision.kind === 'stop') {
@@ -305,9 +314,9 @@ export function useVoice({
         return;
       }
       armHot();
-      if (conversationRef.current.pollHot(audioMs()) === 'standby') returnToStandby();
+      syncVoiceConversation();
     },
-    [armHot, audioMs, clearMaxDurationTimer, returnToStandby, stopPlayback, wakeMatch],
+    [armHot, clearMaxDurationTimer, returnToStandby, stopPlayback, wakeMatch, syncVoiceConversation],
   );
 
   const finishListening = useCallback(() => {
@@ -327,6 +336,7 @@ export function useVoice({
 
   const beginListening = useCallback(() => {
     if (conversationRef.current.acceptWake(audioMs()) !== 'started') return;
+    syncVoiceConversation();
     closingRef.current = false;
     microphoneLog(
       `[latence] réveil · audio ${audioClockRef.current.toFixed(2)} s · dernière parole ${Math.round((audioClockRef.current - lastVoiceClockRef.current) * 1000)} ms avant`,
@@ -380,7 +390,7 @@ export function useVoice({
     }
 
     maxDurationTimerRef.current = window.setTimeout(() => finishListening(), MAX_UTTERANCE_MS);
-  }, [audioMs, finalizeTranscript, finishListening, resolveStt, setVoiceError, setVoiceState]);
+  }, [audioMs, finalizeTranscript, finishListening, resolveStt, setVoiceError, setVoiceState, syncVoiceConversation]);
 
   const beginFollowUp = useCallback(
     (frames: Float32Array[], sampleRate: number) => {
@@ -466,11 +476,7 @@ export function useVoice({
               ttsGenerationRef.current += 1;
               stopPlayback();
               beginFollowUp(hotTailRef.current.drain(), sampleRate);
-            } else if (decision === 'standby') {
-              returnToStandby();
             }
-          } else if (session.pollHot(at) === 'standby') {
-            returnToStandby();
           }
           return;
         }
@@ -499,10 +505,17 @@ export function useVoice({
     hotTailRef.current.clear();
     closingRef.current = false;
     conversationRef.current.standby();
+    syncVoiceConversation();
     levelRef.current = 0;
     setLevel(0);
     setLiveTranscript('');
-  }, [clearMaxDurationTimer]);
+  }, [clearMaxDurationTimer, syncVoiceConversation]);
+
+  const endConversation = useCallback(() => {
+    ttsGenerationRef.current += 1;
+    stopPlayback();
+    returnToStandby();
+  }, [returnToStandby, stopPlayback]);
 
   // Le choix du micro est appliqué tout de suite, sans rouvrir le reste.
   useEffect(() => {
@@ -568,13 +581,12 @@ export function useVoice({
     if (session.showListening) {
       if (session.phase === 'hot') {
         session.replyFinished(audioMs());
-        if (session.pollHot(audioMs()) === 'standby') returnToStandby();
       }
       if (stateRef.current !== 'listening') setVoiceState('listening');
       return;
     }
     if (stateRef.current === 'speaking') backToSleepOrIdle();
-  }, [audioMs, backToSleepOrIdle, returnToStandby, setVoiceState, stopPlayback]);
+  }, [audioMs, backToSleepOrIdle, setVoiceState, stopPlayback]);
 
   const playClip = useCallback((data: Uint8Array, mimeType: string, onEnd: () => void) => {
     const blob = new Blob([data.buffer as ArrayBuffer], { type: mimeType });
@@ -636,7 +648,6 @@ export function useVoice({
         const session = conversationRef.current;
         if (session.phase !== 'hot') return;
         session.replyFinished(audioMs());
-        if (session.pollHot(audioMs()) === 'standby') returnToStandby();
       };
 
       const controller = provider.speak(
@@ -655,7 +666,7 @@ export function useVoice({
       );
       ttsControllerRef.current = controller;
     },
-    [audioMs, playClip, resolveTts, returnToStandby, setVoiceError, setVoiceState, stopPlayback],
+    [audioMs, playClip, resolveTts, setVoiceError, setVoiceState, stopPlayback],
   );
 
   const noteAssistantReply = useCallback(
@@ -668,12 +679,11 @@ export function useVoice({
       const current = settingsRef.current;
       if (!current?.voice.ttsEnabled || !text.trim()) {
         session.replyFinished(audioMs());
-        if (session.pollHot(audioMs()) === 'standby') returnToStandby();
         return;
       }
       speakInConversation(text);
     },
-    [audioMs, returnToStandby, speak, speakInConversation],
+    [audioMs, speak, speakInConversation],
   );
 
   useEffect(
@@ -718,6 +728,8 @@ export function useVoice({
     stopSpeaking,
     speak,
     noteAssistantReply,
+    inVoiceConversation,
+    endConversation,
     listMicrophones,
     retryMicrophone,
   };

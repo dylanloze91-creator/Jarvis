@@ -313,6 +313,8 @@ export function Dashboard({
         ) : showSimpleDeveloper ? (
           <DeveloperSimpleView
             settings={settings}
+            voice={voice}
+            onAssistantReply={(text) => voice.noteAssistantReply(text)}
             onSaved={onSaved}
             onBack={() => setAppMode('choose')}
           />
@@ -647,6 +649,9 @@ function micDetail(
   if (!settings.voice.enabled) return 'Active l’écoute dans les réglages pour dire « Jarvis ».';
   if (voice.micError) return voice.micError;
   if (voice.micNotice) return voice.micNotice;
+  if (voice.inVoiceConversation) {
+    return voice.liveTranscript || 'Micro ouvert — enchaîne sans redire « Jarvis ». « Stop » ou Terminer pour fermer.';
+  }
   if (voice.state === 'listening') return voice.liveTranscript || 'À l’écoute…';
   if (voice.state === 'sleeping') {
     return voice.voiceError ? `Dis « Jarvis ». Hors micro : ${voice.voiceError}` : 'Dis « Jarvis »';

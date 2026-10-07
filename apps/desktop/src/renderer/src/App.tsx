@@ -19,6 +19,7 @@ import { isDemoRuntime } from '@/lib/runtimeStatus';
 import { cn } from '@/lib/utils';
 import { SAMPLE_CONVERSATION } from '@/preview/sampleConversation';
 import { useVoice } from '@/voice/useVoice';
+import { deliverVoiceTranscript } from '@/voice/voiceTranscriptRouter';
 import { BrandMark, JarvisOrb } from '@/components/JarvisOrb';
 import { MachineSetupFlow } from '@/components/MachineSetupFlow';
 import { MachineSetupScreen, previewMachineDecision } from '@/components/MachineSetupScreen';
@@ -55,7 +56,10 @@ export default function App() {
   // Marque explicitement l'origine vocale : le modèle en est averti côté
   // prompt système (voir `withVoiceOriginNotice`), jamais dans le texte
   // affiché ou enregistré, qui reste la transcription telle quelle.
-  const onVoiceTranscript = useCallback((text: string) => chat.send(text, 'voice'), [chat.send]);
+  const onVoiceTranscript = useCallback(
+    (text: string) => deliverVoiceTranscript(text, (t) => chat.send(t, 'voice')),
+    [chat.send],
+  );
   const voice = useVoice({
     settings,
     voiceKeyConfigured: status?.voiceKeyConfigured ?? false,

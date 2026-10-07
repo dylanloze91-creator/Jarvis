@@ -30,6 +30,8 @@ function voice(overrides: Partial<UseVoiceResult>): UseVoiceResult {
     stopSpeaking: () => undefined,
     speak: () => undefined,
     noteAssistantReply: () => undefined,
+    inVoiceConversation: false,
+    endConversation: () => undefined,
     listMicrophones: async () => [],
     retryMicrophone: () => undefined,
     ...overrides,

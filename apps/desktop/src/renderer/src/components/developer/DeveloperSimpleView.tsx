@@ -1,11 +1,14 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import type { Settings } from '@jarvis/core';
 import { Button } from '@/components/ui/button';
+import { VoiceBar } from '@/components/VoiceBar';
 import { cn } from '@/lib/utils';
 import { useDeveloper } from '@/hooks/useDeveloper';
 import type { RuntimeStatus } from '../../../../shared/ipc';
 import type { ProjectView } from '../../../../shared/developerIpc';
+import type { UseVoiceResult } from '@/voice/useVoice';
+import { setVoiceTranscriptTarget } from '@/voice/voiceTranscriptRouter';
 import { DeveloperConfirmationCard } from './DeveloperConfirmationCard';
 import { ProjectChatPanel } from './project/ProjectChatPanel';
 
@@ -15,10 +18,14 @@ function projectPreviewable(project: ProjectView): boolean {
 
 export function DeveloperSimpleView({
   settings,
+  voice,
+  onAssistantReply,
   onSaved,
   onBack,
 }: {
   settings: Settings | null;
+  voice: UseVoiceResult;
+  onAssistantReply: (text: string) => void;
   onSaved: (payload: { settings: Settings; status: RuntimeStatus }) => void;
   onBack: () => void;
 }) {
@@ -54,6 +61,32 @@ export function DeveloperSimpleView({
   }, [activeId]);
 
   const codeModel = settings?.developer.codeModel ?? '';
+  const projectChat =
+    activeId && state?.projectChat?.projectId === activeId ? state.projectChat : null;
+  const lastAssistantSpokenRef = useRef('');
+
+  useEffect(() => {
+    const canSend = project && (project.ok || project.kind === 'jarvis');
+    if (!activeId || !canSend) {
+      setVoiceTranscriptTarget(null);
+      return;
+    }
+    setVoiceTranscriptTarget((text) => {
+      const trimmed = text.trim();
+      if (trimmed.length < 2 || state?.busy) return;
+      act((api) => api.sendProjectChat(activeId, trimmed));
+    });
+    return () => setVoiceTranscriptTarget(null);
+  }, [activeId, project?.id, project?.ok, project?.kind, state?.busy]);
+
+  useEffect(() => {
+    if (!projectChat || state.busy) return;
+    const last = [...projectChat.messages].reverse().find((m) => m.role === 'assistant');
+    const content = last?.content?.trim() ?? '';
+    if (!content || content === lastAssistantSpokenRef.current) return;
+    lastAssistantSpokenRef.current = content;
+    onAssistantReply(content);
+  }, [projectChat?.messages, state?.busy, onAssistantReply]);
 
   if (!state) {
     return <div className="dash-loading">Chargement…</div>;
@@ -106,19 +139,24 @@ export function DeveloperSimpleView({
             )}
           </ul>
         </aside>
-        <section className="developer-cursor-chat" aria-label="Discussion projet">
+        <section className="developer-cursor-chat flex min-h-0 flex-col" aria-label="Discussion projet">
           {!project ? (
             <p className="p-6 text-sm text-slate-400">Choisis un projet à gauche pour parler.</p>
           ) : (
-            <ProjectChatPanel
-              project={project}
-              state={state}
-              act={act}
-              codeModel={codeModel}
-              installedModels={state.model.installedModels}
-              simple
-              previewable={projectPreviewable(project)}
-            />
+            <>
+              <div className="min-h-0 flex-1 overflow-hidden">
+                <ProjectChatPanel
+                  project={project}
+                  state={state}
+                  act={act}
+                  codeModel={codeModel}
+                  installedModels={state.model.installedModels}
+                  simple
+                  previewable={projectPreviewable(project)}
+                />
+              </div>
+              <VoiceBar voice={voice} voiceEnabled={settings?.voice.enabled ?? false} />
+            </>
           )}
         </section>
       </div>

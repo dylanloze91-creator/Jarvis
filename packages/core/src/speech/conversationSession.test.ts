@@ -84,25 +84,28 @@ describe('suivi sans mot de réveil', () => {
     expect(session.acceptsWakeWord).toBe(false);
   });
 
-  it('une parole dans les 2 s après la réponse part sans mot de réveil', () => {
+  it('une parole longtemps après la réponse part sans mot de réveil', () => {
     const session = sent();
     session.replyFinished(4_000);
-    expect(session.noteHotSpeech(4_000 + FOLLOW_UP_WINDOW_MS - 500, 200)).toBe('capture');
+    expect(session.noteHotSpeech(4_000 + FOLLOW_UP_WINDOW_MS + 60_000, 200)).toBe('capture');
     expect(session.deliver('et demain', wake)).toEqual({ kind: 'send', text: 'et demain' });
     expect(session.acceptsWakeWord).toBe(false);
     expect(session.showListening).toBe(true);
   });
 
-  it('le silence au-delà de 2 s exige à nouveau le mot de réveil', () => {
+  it('le silence prolongé ne ferme pas la session : seul un arrêt explicite', () => {
     expect(FOLLOW_UP_WINDOW_MS).toBe(2_000);
     const session = sent();
     session.replyFinished(4_000);
     expect(session.pollHot(4_000 + FOLLOW_UP_WINDOW_MS - 1)).toBe('stay');
     expect(session.acceptsWakeWord).toBe(false);
-    expect(session.pollHot(4_000 + FOLLOW_UP_WINDOW_MS)).toBe('standby');
+    expect(session.pollHot(4_000 + FOLLOW_UP_WINDOW_MS + 120_000)).toBe('stay');
+    expect(session.acceptsWakeWord).toBe(false);
+    expect(session.showListening).toBe(true);
+    expect(session.phase).toBe('hot');
+    session.standby();
     expect(session.acceptsWakeWord).toBe(true);
     expect(session.showListening).toBe(false);
-    expect(session.phase).toBe('standby');
   });
 
   it('« stop », « tais-toi » et « merci c’est bon » reviennent en veille', () => {
@@ -117,7 +120,7 @@ describe('suivi sans mot de réveil', () => {
     }
   });
 
-  it('une hallucination ne lance pas de tour et ne prolonge pas les 2 s', () => {
+  it('une hallucination ne lance pas de tour et ne ferme pas la session', () => {
     const session = sent();
     session.replyFinished(0);
     expect(session.noteHotSpeech(1_000, 200)).toBe('capture');
@@ -126,8 +129,8 @@ describe('suivi sans mot de réveil', () => {
     expect(session.noteHotSpeech(1_500, 200)).toBe('capture');
     expect(session.deliver('you', wake).kind).toBe('ignore');
     expect(session.phase).toBe('hot');
-    expect(session.pollHot(FOLLOW_UP_WINDOW_MS - 1)).toBe('stay');
-    expect(session.pollHot(FOLLOW_UP_WINDOW_MS)).toBe('standby');
+    expect(session.pollHot(FOLLOW_UP_WINDOW_MS + 99_000)).toBe('stay');
+    expect(session.showListening).toBe(true);
   });
 });
 
