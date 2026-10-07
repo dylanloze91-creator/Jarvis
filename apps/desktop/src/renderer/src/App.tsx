@@ -2,16 +2,11 @@ import { History, Maximize2, Plus, ScrollText, Settings as SettingsIcon, X, Pin,
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { stripSourcesFooter, type Conversation, type Settings } from '@jarvis/core';
 import { AuditPanel } from '@/components/AuditPanel';
-import { Composer } from '@/components/Composer';
-import { ConfirmationCard } from '@/components/ConfirmationCard';
 import { Dashboard } from '@/dashboard/Dashboard';
 import { useWideLayout } from '@/dashboard/useWideLayout';
-import { EmptyState } from '@/components/EmptyState';
 import { HistoryPanel } from '@/components/HistoryPanel';
-import { Messages } from '@/components/Messages';
 import { SettingsPanel, openSettingsOnTab } from '@/components/SettingsPanel';
 import { UpdateBadge } from '@/components/UpdateBadge';
-import { VoiceBar } from '@/components/VoiceBar';
 import { Button } from '@/components/ui/button';
 import { useChat } from '@/hooks/useChat';
 import { useUpdate } from '@/hooks/useUpdate';
@@ -19,11 +14,8 @@ import { isDemoRuntime } from '@/lib/runtimeStatus';
 import { cn } from '@/lib/utils';
 import { SAMPLE_CONVERSATION } from '@/preview/sampleConversation';
 import { useVoice } from '@/voice/useVoice';
-import { isDeveloperVoiceIntent } from '@jarvis/core';
-import {
-  deliverVoiceTranscript,
-  queueDeveloperVoiceTranscript,
-} from '@/voice/voiceTranscriptRouter';
+import { deliverVoiceTranscript } from '@/voice/voiceTranscriptRouter';
+import { UnifiedJarvisChat } from '@/components/UnifiedJarvisChat';
 import { BrandMark, JarvisOrb } from '@/components/JarvisOrb';
 import { MachineSetupFlow } from '@/components/MachineSetupFlow';
 import { MachineSetupScreen, previewMachineDecision } from '@/components/MachineSetupScreen';
@@ -61,25 +53,8 @@ export default function App() {
   // prompt système (voir `withVoiceOriginNotice`), jamais dans le texte
   // affiché ou enregistré, qui reste la transcription telle quelle.
   const onVoiceTranscript = useCallback(
-    (text: string) => {
-      const developerEnabled = settings?.developer.enabled !== false;
-      if (
-        !wide &&
-        developerEnabled &&
-        isDeveloperVoiceIntent(text) &&
-        typeof window !== 'undefined'
-      ) {
-        queueDeveloperVoiceTranscript(text);
-        void window.jarvis.window.setChrome('dashboard');
-        return;
-      }
-      deliverVoiceTranscript(
-        text,
-        (t) => chat.send(t, 'voice'),
-        { developerEnabled },
-      );
-    },
-    [chat.send, settings?.developer.enabled, wide],
+    (text: string) => deliverVoiceTranscript(text, (t) => chat.send(t, 'voice')),
+    [chat.send],
   );
   const voice = useVoice({
     settings,
@@ -348,8 +323,28 @@ export default function App() {
         </div>
       ) : null}
 
-      <div className="relative z-10 min-h-0 flex-1 overflow-y-auto">
-        <div ref={content}>
+      <div className="relative z-10 flex min-h-0 flex-1 flex-col overflow-hidden">
+        {view === 'chat' ? (
+          booting && chat.items.length === 0 && !bootError ? (
+            <BootStage label="Démarrage de Jarvis…" />
+          ) : (
+            <div ref={footer} className="flex min-h-0 flex-1 flex-col">
+              <UnifiedJarvisChat
+                settings={settings}
+                voice={voice}
+                compact
+                booting={booting}
+                bootError={bootError}
+                onSaved={(payload) => {
+                  setSettings(payload.settings);
+                  setStatus(payload.status);
+                }}
+                chat={chat}
+              />
+            </div>
+          )
+        ) : (
+        <div ref={content} className="min-h-0 flex-1 overflow-y-auto">
           {view === 'history' ? <HistoryPanel onOpen={openConversation} /> : null}
           {view === 'audit' ? <AuditPanel /> : null}
           {view === 'settings' ? (
@@ -373,46 +368,9 @@ export default function App() {
               <div className="error-card m-5">Réglages indisponibles pour le moment.</div>
             )
           ) : null}
-          {view === 'chat' ? (
-            bootError ? (
-              <div className="error-card m-5">{bootError}</div>
-            ) : booting && chat.items.length === 0 ? (
-              <BootStage label="Démarrage de Jarvis…" />
-            ) : chat.items.length === 0 ? (
-              <EmptyState tools={tools} onPick={chat.send} listening={voice.state === 'listening'} level={voice.level} />
-            ) : (
-              <Messages items={chat.items} />
-            )
-          ) : null}
         </div>
+        )}
       </div>
-
-      {view === 'chat' ? (
-        <div ref={footer} className="relative z-10 shrink-0">
-          {chat.confirmation ? (
-            <ConfirmationCard confirmation={chat.confirmation} onRespond={chat.respond} />
-          ) : null}
-          <div className="mb-2 flex flex-wrap gap-1.5 px-4">
-            {[
-              ['Recherche', 'Cherche les dernières infos importantes'],
-              ['Mémoire', 'Rappelle-moi ce que tu sais de mes projets'],
-              ['Outils', 'Quels outils peux-tu utiliser sur ce PC ?'],
-              ...(settings?.videoAnalysis === false ? [] : [['Vidéo', 'Analyse cette vidéo YouTube : '] as const]),
-            ].map(([label, prompt]) => (
-              <button
-                key={label}
-                type="button"
-                className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] text-slate-300 hover:border-cyan-300/40"
-                onClick={() => chat.send(prompt ?? '')}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-          <Composer busy={chat.busy} onSend={chat.send} onCancel={chat.cancel} />
-          <VoiceBar voice={voice} voiceEnabled={settings?.voice.enabled ?? false} />
-        </div>
-      ) : null}
     </div>
   );
 }

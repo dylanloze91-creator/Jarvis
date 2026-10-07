@@ -55,7 +55,7 @@ export function DeveloperSettingsSection({
           </p>
           <Toggle
             label="Activer Jarvis développeur"
-            hint="Désactivé par défaut. Après « Jarvis », une demande de code ou de projet ouvre l’écran Projets ; sinon le classique répond."
+            hint="Désactivé par défaut. Après « Jarvis », tout reste dans la même discussion : classique ou projet selon ta phrase."
             checked={developer.enabled}
             onChange={(enabled) => onSave({ ...developer, enabled })}
           />
@@ -68,7 +68,7 @@ export function DeveloperSettingsSection({
       ) : (
         <p className="text-xs leading-snug text-slate-500">
           Réglages techniques : copie de travail, environnement, modèle de code, copies isolées.
-          L’usage quotidien reste l’écran projets + chat.
+          L’usage quotidien reste la discussion (liste des projets à gauche, fil au centre).
         </p>
       )}
 

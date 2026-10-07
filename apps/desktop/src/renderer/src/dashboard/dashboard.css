@@ -333,6 +333,40 @@
   overflow: auto;
 }
 
+.dash-unified-body {
+  min-height: 0;
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+
+.dash-unified-body.has-projects .developer-cursor-projects {
+  width: 168px;
+  flex-shrink: 0;
+}
+
+.dash-unified-messages {
+  min-width: 0;
+}
+
+.dash-chat-compact .dash-unified-body.has-projects {
+  flex-direction: column;
+}
+
+.dash-chat-compact .dash-unified-projects {
+  width: 100%;
+  max-height: 88px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.dash-chat-compact .developer-cursor-project-list {
+  flex-direction: row;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  gap: 6px;
+  padding-bottom: 4px;
+}
+
 .dash-empty,
 .dash-loading {
   min-height: 120px;

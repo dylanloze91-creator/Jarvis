@@ -18,6 +18,7 @@ export function ProjectChatPanel({
   installedModels,
   simple = false,
   previewable = false,
+  hideComposer = false,
 }: {
   project: ProjectView;
   state: DeveloperState;
@@ -28,6 +29,8 @@ export function ProjectChatPanel({
   simple?: boolean;
   /** Aperçu séparé (jeu / page) : bouton seulement si vrai (5.0.8). */
   previewable?: boolean;
+  /** Composer géré par le chat unifié (5.0.13). */
+  hideComposer?: boolean;
 }) {
   const [open, setOpen] = useState(simple);
   const [draft, setDraft] = useState('');
@@ -117,6 +120,7 @@ export function ProjectChatPanel({
           ))}
           <div ref={bottom} />
         </div>
+        {hideComposer ? null : (
         <div className="developer-cursor-composer no-drag">
           <textarea
             className="developer-cursor-input"
@@ -162,6 +166,7 @@ export function ProjectChatPanel({
             ) : null}
           </div>
         </div>
+        )}
         {state.codeTask && (state.busy || state.codeTask.diff.length || state.codeTask.runs.length) ? (
           <details className="rounded-lg border border-white/8 bg-black/20 px-3 py-2 text-xs text-slate-400">
             <summary className="cursor-pointer text-slate-300">Détail technique (optionnel)</summary>
