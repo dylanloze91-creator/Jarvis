@@ -86,6 +86,8 @@ export const localLearningSettingsSchema = z
     lastTrainExampleCount: z.number().int().optional(),
     /** Précision affichée une ligne dans la discussion après entraînement. */
     statusHint: z.string().max(240).optional(),
+    /** Venv + torch/peft/trl prêts sous userData (installés automatiquement). */
+    pythonDepsReady: z.boolean().optional(),
   })
   .default({ enabled: true });
 

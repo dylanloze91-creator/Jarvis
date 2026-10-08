@@ -95,6 +95,7 @@ const localLearning = new LocalLearningController(
     await writeSettings(settings);
     return settings;
   },
+  () => app.getPath('userData'),
 );
 const spotify = new SpotifyBridge(() => settings);
 const siteBlock = new SiteBlockBridge(() => settings);

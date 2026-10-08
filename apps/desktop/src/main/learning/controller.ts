@@ -10,6 +10,7 @@ import {
 } from '@jarvis/core';
 import type { LocalLearningStore } from './store.js';
 import { runQloraTrain } from './trainer.js';
+import { ensureLearningPythonDeps } from './pythonEnv.js';
 import { createOllamaApi } from '../developer/models/ollamaApi.js';
 import { IpcChannel } from '../../shared/ipc.js';
 
@@ -25,6 +26,7 @@ export class LocalLearningController {
     private readonly store: LocalLearningStore,
     private readonly getSettings: () => Settings,
     private readonly saveSettings: SaveSettings,
+    private readonly userData: () => string,
   ) {}
 
   setBroadcast(fn: (status: LocalLearningRuntimeStatus) => void): void {
@@ -74,16 +76,45 @@ export class LocalLearningController {
     this.line = `Apprentissage local en cours (${plan.trainBaseModel})…`;
     this.emit();
 
+    const deps = await ensureLearningPythonDeps(this.userData(), (msg) => {
+      this.line = msg;
+      this.emit();
+    });
+    if (!deps.ok || !deps.python) {
+      this.running = false;
+      this.line = `Apprentissage local reporté : ${deps.error ?? 'installation Python impossible.'}`;
+      this.emit();
+      setTimeout(() => {
+        if (!this.running) {
+          this.line = null;
+          this.emit();
+        }
+      }, 120_000);
+      return;
+    }
+    const pythonPath = deps.python;
+    if (!settings.localLearning?.pythonDepsReady) {
+      await this.saveSettings({
+        localLearning: { ...settings.localLearning, pythonDepsReady: true },
+      });
+    }
+
     const api = createOllamaApi(settings.baseUrl || 'http://127.0.0.1:11434');
     const running = await api.running();
     for (const model of running) {
       await api.unload(model.name);
     }
 
-    const outcome = await runQloraTrain(this.store, plan, examples, (log) => {
-      if (log.startsWith('OK')) this.line = `Apprentissage local : finalisation…`;
-      this.emit();
-    });
+    const outcome = await runQloraTrain(
+      this.store,
+      plan,
+      examples,
+      (log) => {
+        if (log.startsWith('OK')) this.line = `Apprentissage local : finalisation…`;
+        this.emit();
+      },
+      pythonPath,
+    );
 
     this.running = false;
     if (outcome.ok && outcome.ollamaModel) {

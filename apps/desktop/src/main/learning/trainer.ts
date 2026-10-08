@@ -69,6 +69,7 @@ export async function runQloraTrain(
   plan: LocalLearningTrainPlan,
   examples: LocalLearningExample[],
   onLog?: (line: string) => void,
+  pythonPath?: string,
 ): Promise<TrainOutcome> {
   if (process.env.JARVIS_LOCAL_LEARNING_DRY_RUN === '1') {
     return dryRunTrain(store, plan, examples);
@@ -81,7 +82,7 @@ export async function runQloraTrain(
 
   const code = await new Promise<number>((resolve) => {
     const child = spawn(
-      process.env.JARVIS_PYTHON ?? 'python',
+      pythonPath ?? process.env.JARVIS_PYTHON ?? 'python',
       [
         scriptPath(),
         '--jsonl',
@@ -110,8 +111,7 @@ export async function runQloraTrain(
   if (code === 3) {
     return {
       ok: false,
-      error:
-        'Dépendances Python manquantes (torch, peft, transformers, trl, bitsandbytes). Installe-les une fois sur ce PC.',
+      error: 'Bibliothèques Python d’apprentissage incomplètes après installation automatique.',
     };
   }
   if (code !== 0) {
