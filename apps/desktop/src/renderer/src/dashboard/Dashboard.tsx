@@ -1,5 +1,6 @@
 import {
   Brain,
+  Cable,
   Camera,
   Clapperboard,
   CalendarClock,
@@ -25,6 +26,7 @@ import { formatSeconds, type Conversation, type Settings } from '@jarvis/core';
 import { AuditPanel } from '@/components/AuditPanel';
 import { HistoryPanel } from '@/components/HistoryPanel';
 import { UnifiedJarvisChat } from '@/components/UnifiedJarvisChat';
+import { SetupGuideView } from '@/components/SetupGuideView';
 import { SettingsPanel, openSettingsOnTab } from '@/components/SettingsPanel';
 import type { SettingsTabId } from '@/components/SettingsTabs';
 import { VoiceBar } from '@/components/VoiceBar';
@@ -38,7 +40,7 @@ import type { ChatItem, PendingConfirmation } from '@/hooks/useChat';
 import { JarvisOrb } from '@/components/JarvisOrb';
 import './dashboard.css';
 
-type View = 'chat' | 'history' | 'settings' | 'audit';
+type View = 'chat' | 'history' | 'settings' | 'audit' | 'setup-guide';
 
 interface FunctionCard {
   id: string;
@@ -253,6 +255,12 @@ export function Dashboard({
           <SideButton label="Micro" icon={Mic} active={false} onClick={() => navigate('settings')} />
           <SideButton label="Journal" icon={ScrollText} active={view === 'audit'} onClick={() => navigate(view === 'audit' ? 'chat' : 'audit')} />
           <SideButton label="Réglages" icon={SettingsIcon} active={view === 'settings'} onClick={() => navigate(view === 'settings' ? 'chat' : 'settings')} />
+          <SideButton
+            label="Comment tout brancher"
+            icon={Cable}
+            active={view === 'setup-guide'}
+            onClick={() => navigate(view === 'setup-guide' ? 'chat' : 'setup-guide')}
+          />
         </nav>
         <div className="side-spacer" />
         <div className="side-profile" title={profileInitial ? 'Profil local' : 'Profil'} aria-label={profileInitial ? 'Profil local' : 'Profil'}>
@@ -361,6 +369,11 @@ export function Dashboard({
               ) : (
                 <div className="error-card m-4">Réglages indisponibles pour le moment.</div>
               )
+            ) : null}
+            {view === 'setup-guide' ? (
+              <div className="flex min-h-0 flex-1 flex-col">
+                <SetupGuideView onClose={() => setView('chat')} />
+              </div>
             ) : null}
           </section>
         )}

@@ -1,4 +1,14 @@
-import { History, Maximize2, Plus, ScrollText, Settings as SettingsIcon, X, Pin, PinOff } from 'lucide-react';
+import {
+  Cable,
+  History,
+  Maximize2,
+  Plus,
+  ScrollText,
+  Settings as SettingsIcon,
+  X,
+  Pin,
+  PinOff,
+} from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { stripSourcesFooter, type Conversation, type Settings } from '@jarvis/core';
 import { AuditPanel } from '@/components/AuditPanel';
@@ -15,13 +25,14 @@ import { cn } from '@/lib/utils';
 import { SAMPLE_CONVERSATION } from '@/preview/sampleConversation';
 import { useVoice } from '@/voice/useVoice';
 import { deliverVoiceTranscript } from '@/voice/voiceTranscriptRouter';
+import { SetupGuideView } from '@/components/SetupGuideView';
 import { UnifiedJarvisChat } from '@/components/UnifiedJarvisChat';
 import { BrandMark, JarvisOrb } from '@/components/JarvisOrb';
 import { MachineSetupFlow } from '@/components/MachineSetupFlow';
 import { MachineSetupScreen, previewMachineDecision } from '@/components/MachineSetupScreen';
 import type { RuntimeStatus, ToolInfo } from '../../shared/ipc';
 
-type View = 'chat' | 'history' | 'settings' | 'audit';
+type View = 'chat' | 'history' | 'settings' | 'audit' | 'setup-guide';
 const HEADER_HEIGHT = 52;
 const MAX_BODY_HEIGHT = 620;
 
@@ -166,9 +177,11 @@ export default function App() {
       ? 'Historique'
       : view === 'settings'
         ? 'Réglages'
-        : view === 'audit'
-          ? 'Journal'
-          : 'Assistant';
+        : view === 'setup-guide'
+          ? 'Comment tout brancher'
+          : view === 'audit'
+            ? 'Journal'
+            : 'Assistant';
 
   const fallback = status ? isDemoRuntime(status) : false;
   const previewKind =
@@ -294,6 +307,13 @@ export default function App() {
             <SettingsIcon className="size-4" />
           </IconButton>
           <IconButton
+            label="Comment tout brancher"
+            active={view === 'setup-guide'}
+            onClick={() => setView(view === 'setup-guide' ? 'chat' : 'setup-guide')}
+          >
+            <Cable className="size-4" />
+          </IconButton>
+          <IconButton
             label={
               settings?.stayVisibleOnBlur
                 ? 'Rester ouverte (activé)'
@@ -368,6 +388,7 @@ export default function App() {
               <div className="error-card m-5">Réglages indisponibles pour le moment.</div>
             )
           ) : null}
+          {view === 'setup-guide' ? <SetupGuideView onClose={() => setView('chat')} /> : null}
         </div>
         )}
       </div>
