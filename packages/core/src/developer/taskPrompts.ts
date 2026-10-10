@@ -82,6 +82,7 @@ Critères : ${plan.criteria.join(' ; ') || '—'}`;
 
 const EDIT_RULES = `Règles :
 - Modifie seulement les fichiers du plan. Un autre fichier demandera l'accord de l'utilisateur.
+- Avant d’écrire : localise exports, imports et appels avec dev_search_code / dev_search_files (pas un nom de fichier deviné).
 - Lis un fichier (dev_read_file) avant de le modifier.
 - dev_edit_file remplace un extrait EXACT et UNIQUE du fichier (copie-le tel quel, avec l'indentation) ; préfère plusieurs petits remplacements à un gros.
 - dev_create_file pour un nouveau fichier seulement.

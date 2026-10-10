@@ -42,10 +42,14 @@ import {
   type ConfirmationRequest,
   type CommandSafetyContext,
   type ReviewedPlan,
+  buildEditSymbolContext,
+  type CodeSearchMatch,
+  type EditSymbolContextResult,
   classifyCommand,
   SAFETY_LABELS,
 } from '@jarvis/core';
 import { invalidateProjectInventory } from './projectInventoryCache.js';
+import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { CodeTaskRun, CodeTaskState } from '../../../shared/developerIpc.js';
@@ -133,6 +137,30 @@ export class TaskRun extends TaskRunBase {
 
   private async safetyCtx(): Promise<CommandSafetyContext> {
     return this.commandContext();
+  }
+
+  /** Recherche git des symboles cités avant la modification (évite les chemins devinés). */
+  private async resolveEditSymbolContext(
+    plan: ReviewedPlan,
+    request: string,
+    signal: AbortSignal,
+  ): Promise<{ plan: ReviewedPlan; block: string; resolutions: EditSymbolContextResult['resolutions'] }> {
+    const root = this.sandbox?.path;
+    if (!root) return { plan, block: '', resolutions: [] };
+    const search = async (pattern: string): Promise<readonly CodeSearchMatch[]> => {
+      const outcome = await this.call(
+        'dev_search_code',
+        { pattern, maxResults: 24, ignoreCase: false },
+        signal,
+      );
+      if (outcome.status !== 'ok') return [];
+      const data = outcome.data as { matches?: CodeSearchMatch[] } | undefined;
+      return data?.matches ?? [];
+    };
+    const exists = (rel: string) => existsSync(join(root, rel));
+    const ctx = await buildEditSymbolContext({ request, plan, exists, search });
+    if (ctx.block) this.host.log(`Symboles localisés : ${ctx.resolutions.length} correction(s) de chemin.`);
+    return { plan: ctx.plan, block: ctx.block, resolutions: ctx.resolutions };
   }
 
   protected override async decide(
@@ -768,7 +796,7 @@ export class TaskRun extends TaskRunBase {
       state.planFallback = `plan de secours (gabarit du projet) : le plan du modèle ne touchait aucun fichier d’entrée du gabarit (${entry.files.map((f) => f.path).join(', ')})`;
       checked = review(entry);
     }
-    const reviewed: ReviewedPlan = this.hooks.docsOnly
+    let reviewed: ReviewedPlan = this.hooks.docsOnly
       ? {
           ...checked,
           files: checked.files.map((f) =>
@@ -852,6 +880,12 @@ export class TaskRun extends TaskRunBase {
 
     step('edit', 'running', 'le modèle modifie la copie isolée');
     this.hooks.onPhase?.('edit', 'running', 'modification dans la copie isolée');
+    const symbolCtx = await this.resolveEditSymbolContext(reviewed, state.request, signal);
+    if (!this.hooks.fileByFile && symbolCtx.resolutions.length) {
+      reviewed = symbolCtx.plan;
+      this.reviewed = reviewed;
+    }
+    const editManual = [this.manualText(), symbolCtx.block].filter(Boolean).join('\n\n');
     const tools = this.coached(
       this.modelTools(
         toolView(this.manager, this.profile.editHints ? PROJECT_MODEL_TOOLS : TASK_MODEL_TOOLS),
@@ -873,7 +907,7 @@ export class TaskRun extends TaskRunBase {
           code,
           {
             tools,
-            system: editSystemPrompt(reviewed, this.profile, this.manualText()),
+            system: editSystemPrompt(reviewed, this.profile, editManual),
             prompt: editPrompt(state.request),
             maxRounds: 24,
             requestConfirmation: (request) => this.decide(request, signal),
