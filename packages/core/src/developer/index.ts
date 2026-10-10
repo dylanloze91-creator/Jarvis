@@ -52,6 +52,7 @@ export * from './projectInventory.js';
 export * from './missionLifecycle.js';
 export * from './planScope.js';
 export * from './editSymbolContext.js';
+export * from './symbolSearchCache.js';
 export { normalizeRepoRelative, protectedRepoPath } from './repoPaths.js';
 export {
   ARCHITECTURE_LAYERS,

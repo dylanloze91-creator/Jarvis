@@ -45,6 +45,11 @@ import {
   buildEditSymbolContext,
   type CodeSearchMatch,
   type EditSymbolContextResult,
+  cachedCodeSearch,
+  getStoredSymbolContext,
+  invalidateSymbolResolutionCache,
+  setStoredSymbolContext,
+  symbolPlanCacheKey,
   classifyCommand,
   SAFETY_LABELS,
 } from '@jarvis/core';
@@ -86,6 +91,7 @@ function speed(usage: { outputTokens: number; outputMs: number }): number | null
 }
 
 const WRITE_TOOLS = new Set(['dev_create_file', 'dev_edit_file', 'dev_write_file']);
+const SANDBOX_MUTATION_TOOLS = new Set([...WRITE_TOOLS, 'dev_delete_file']);
 
 /** Échecs d'une série de tests, sans ordre : deux séries au même ensemble ont la même signature. */
 export function failureSignature(failures: readonly string[]): string {
@@ -147,20 +153,43 @@ export class TaskRun extends TaskRunBase {
   ): Promise<{ plan: ReviewedPlan; block: string; resolutions: EditSymbolContextResult['resolutions'] }> {
     const root = this.sandbox?.path;
     if (!root) return { plan, block: '', resolutions: [] };
-    const search = async (pattern: string): Promise<readonly CodeSearchMatch[]> => {
-      const outcome = await this.call(
-        'dev_search_code',
-        { pattern, maxResults: 24, ignoreCase: false },
-        signal,
-      );
-      if (outcome.status !== 'ok') return [];
-      const data = outcome.data as { matches?: CodeSearchMatch[] } | undefined;
-      return data?.matches ?? [];
-    };
+    const planKey = symbolPlanCacheKey(request, plan);
+    const cached = getStoredSymbolContext(root, planKey);
+    if (cached) {
+      return {
+        plan: cached.plan,
+        block: cached.block,
+        resolutions: cached.resolutions,
+      };
+    }
+    const search = async (pattern: string): Promise<readonly CodeSearchMatch[]> =>
+      cachedCodeSearch(root, pattern, async () => {
+        const outcome = await this.call(
+          'dev_search_code',
+          { pattern, maxResults: 24, ignoreCase: false },
+          signal,
+        );
+        if (outcome.status !== 'ok') return [];
+        const data = outcome.data as { matches?: CodeSearchMatch[] } | undefined;
+        return data?.matches ?? [];
+      });
     const exists = (rel: string) => existsSync(join(root, rel));
     const ctx = await buildEditSymbolContext({ request, plan, exists, search });
+    setStoredSymbolContext(root, planKey, {
+      block: ctx.block,
+      resolutions: ctx.resolutions,
+      plan: ctx.plan,
+    });
     if (ctx.block) this.host.log(`Symboles localisés : ${ctx.resolutions.length} correction(s) de chemin.`);
     return { plan: ctx.plan, block: ctx.block, resolutions: ctx.resolutions };
+  }
+
+  private applySymbolPlan(
+    plan: ReviewedPlan,
+    symbolCtx: { plan: ReviewedPlan; resolutions: EditSymbolContextResult['resolutions'] },
+  ): ReviewedPlan {
+    if (!this.hooks.fileByFile && symbolCtx.resolutions.length) return symbolCtx.plan;
+    return plan;
   }
 
   protected override async decide(
@@ -410,6 +439,26 @@ export class TaskRun extends TaskRunBase {
    * fichier entier), et un appel qui échoue à l'identique est signalé, au lieu
    * de tourner en rond jusqu'au plafond de tours.
    */
+  /** Invalide le cache symboles après toute mutation de fichier dans la sandbox. */
+  private instrumentSandboxWrites(
+    tools: Pick<ToolManager, 'schemas' | 'execute'>,
+  ): Pick<ToolManager, 'schemas' | 'execute'> {
+    return {
+      schemas: () => tools.schemas(),
+      execute: async (call, context, events) => {
+        const outcome = await tools.execute(call, context, events);
+        if (
+          outcome.status === 'ok' &&
+          SANDBOX_MUTATION_TOOLS.has(call.name) &&
+          this.sandbox?.path
+        ) {
+          invalidateSymbolResolutionCache(this.sandbox.path);
+        }
+        return outcome;
+      },
+    };
+  }
+
   private coached(
     tools: Pick<ToolManager, 'schemas' | 'execute'>,
   ): Pick<ToolManager, 'schemas' | 'execute'> {
@@ -880,16 +929,17 @@ export class TaskRun extends TaskRunBase {
 
     step('edit', 'running', 'le modèle modifie la copie isolée');
     this.hooks.onPhase?.('edit', 'running', 'modification dans la copie isolée');
-    const symbolCtx = await this.resolveEditSymbolContext(reviewed, state.request, signal);
-    if (!this.hooks.fileByFile && symbolCtx.resolutions.length) {
-      reviewed = symbolCtx.plan;
-      this.reviewed = reviewed;
-    }
-    const editManual = [this.manualText(), symbolCtx.block].filter(Boolean).join('\n\n');
-    const tools = this.coached(
-      this.modelTools(
-        toolView(this.manager, this.profile.editHints ? PROJECT_MODEL_TOOLS : TASK_MODEL_TOOLS),
-        signal,
+    let symbolCtx = await this.resolveEditSymbolContext(reviewed, state.request, signal);
+    reviewed = this.applySymbolPlan(reviewed, symbolCtx);
+    this.reviewed = reviewed;
+    let symbolManual = symbolCtx.block;
+    const editManual = [this.manualText(), symbolManual].filter(Boolean).join('\n\n');
+    const tools = this.instrumentSandboxWrites(
+      this.coached(
+        this.modelTools(
+          toolView(this.manager, this.profile.editHints ? PROJECT_MODEL_TOOLS : TASK_MODEL_TOOLS),
+          signal,
+        ),
       ),
     );
     const byFile = this.hooks.fileByFile
@@ -976,6 +1026,11 @@ export class TaskRun extends TaskRunBase {
         }
       }
       this.hooks.onPhase?.('fix', 'running', `correction ${n} sur ${state.maxAttempts}`);
+      symbolCtx = await this.resolveEditSymbolContext(reviewed, state.request, signal);
+      reviewed = this.applySymbolPlan(reviewed, symbolCtx);
+      this.reviewed = reviewed;
+      symbolManual = symbolCtx.block;
+      const fixManual = [this.manualText(), symbolManual].filter(Boolean).join('\n\n');
       const fixByFile = this.hooks.fileByFile
         ? await this.writeFiles(code, 'fix', signal, pause, {
             failures: run.newFailures,
@@ -999,8 +1054,8 @@ export class TaskRun extends TaskRunBase {
             code,
             {
               tools,
-              system: fixSystemPrompt(reviewed, n, state.maxAttempts, this.profile, this.manualText()),
-              prompt: `${fixPrompt(run.newFailures, excerpts, this.manualText())}${diagnosis ? `\n\nDiagnostic du débogueur :\n${diagnosis}` : ''}`,
+              system: fixSystemPrompt(reviewed, n, state.maxAttempts, this.profile, fixManual),
+              prompt: `${fixPrompt(run.newFailures, excerpts, fixManual)}${diagnosis ? `\n\nDiagnostic du débogueur :\n${diagnosis}` : ''}`,
               maxRounds: 16,
               requestConfirmation: (request) => this.decide(request, signal),
               beforeRound: pause,
