@@ -270,6 +270,10 @@ export function installPreviewBridge(): void {
       setListening: () => undefined,
       sendLevel: () => undefined,
     },
+    localLearning: {
+      status: async () => ({ running: false, line: null }),
+      onEvent: () => () => undefined,
+    },
     wakeLearning: {
       status: async () => previewWakeLearningStatus,
       addSample: async () => null,

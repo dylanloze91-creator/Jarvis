@@ -190,7 +190,7 @@ export function ProjectChatPanel({
                 <DiffView files={state.codeTask.diff} tags={{}} />
               ) : null}
               {state.codeTask.runs.length ? (
-                <TestResults runs={state.codeTask.runs} baseline={state.codeTask.baseline} />
+                <TestResults task={state.codeTask} />
               ) : null}
             </div>
           </details>

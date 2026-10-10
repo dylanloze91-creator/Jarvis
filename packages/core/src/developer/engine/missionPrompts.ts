@@ -146,6 +146,52 @@ export function blockingIssues(review: ReviewerOutput): string[] {
     );
 }
 
+export type StructuredReviewBucket = 'bloquant' | 'important' | 'mineur' | 'suggestion';
+
+export interface StructuredReviewFinding {
+  bucket: StructuredReviewBucket;
+  message: string;
+  file?: string;
+  line?: number;
+}
+
+export interface StructuredTaskReview {
+  summary: string;
+  verdict: ReviewerOutput['verdict'];
+  model: string;
+  at: number;
+  blocking: string[];
+  findings: StructuredReviewFinding[];
+}
+
+function issueBucket(severity: 'info' | 'avertissement' | 'bloquant'): StructuredReviewBucket {
+  if (severity === 'bloquant') return 'bloquant';
+  if (severity === 'avertissement') return 'important';
+  return 'mineur';
+}
+
+/** Regroupe la sortie REVIEWER pour l’UI et le blocage d’« Appliquer ». */
+export function structureReviewerOutput(
+  output: ReviewerOutput,
+  model: string,
+  at: number,
+): StructuredTaskReview {
+  const findings: StructuredReviewFinding[] = output.issues.map((issue) => ({
+    bucket: issueBucket(issue.severity),
+    message: issue.message,
+    ...(issue.file ? { file: issue.file } : {}),
+    ...(issue.line !== undefined ? { line: issue.line } : {}),
+  }));
+  for (const rec of output.recommendations) {
+    const text = rec.trim();
+    if (!text) continue;
+    findings.push({ bucket: 'suggestion', message: text });
+  }
+  const blocking = blockingIssues(output);
+  const summary = `verdict « ${output.verdict} », ${output.issues.length} remarque(s)${blocking.length ? `, ${blocking.length} bloquante(s)` : ''}`;
+  return { summary, verdict: output.verdict, model, at, blocking, findings };
+}
+
 export function diagnoseSystem(project: ProjectProfile): string {
   return `${head('DEBUGGER', DIAGNOSE_MARKER, project)}
 Des tests échouent après une modification. Explique les causes probables et la correction, sans rien modifier. ${READ_ONLY}

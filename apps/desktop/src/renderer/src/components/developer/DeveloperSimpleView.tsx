@@ -97,7 +97,7 @@ export function DeveloperSimpleView({
   }, [activeId, project?.id, project?.ok, project?.kind, state?.busy]);
 
   useEffect(() => {
-    if (!projectChat || state.busy) return;
+    if (!projectChat || !state || state.busy) return;
     const messages = projectChat.messages;
     if (messages.length <= spokenMessageCountRef.current) return;
     const newSlice = messages.slice(spokenMessageCountRef.current);

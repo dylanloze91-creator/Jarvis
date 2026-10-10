@@ -10,8 +10,8 @@ import { DeveloperConfirmationCard } from '@/components/developer/DeveloperConfi
 import { ProjectChatPanel } from '@/components/developer/project/ProjectChatPanel';
 import { useDeveloper } from '@/hooks/useDeveloper';
 import type { ChatItem, PendingConfirmation } from '@/hooks/useChat';
-import type { RuntimeStatus } from '../../shared/ipc';
-import type { ProjectView } from '../../shared/developerIpc';
+import type { RuntimeStatus } from '../../../shared/ipc.js';
+import type { ProjectView } from '../../../shared/developerIpc.js';
 import type { UseVoiceResult } from '@/voice/useVoice';
 import { setVoiceTranscriptTarget } from '@/voice/voiceTranscriptRouter';
 import '@/dashboard/dashboard.css';

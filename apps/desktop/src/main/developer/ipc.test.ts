@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   InMemoryAuditLogStore,
   createDefaultRegistry,
+  createDefaultSearchRegistry,
   parseSettings,
   type Settings,
 } from '@jarvis/core';
@@ -35,6 +36,7 @@ describe('canaux dev:*', () => {
       auditLog: new InMemoryAuditLogStore(),
       target: () => null,
       registry: createDefaultRegistry(),
+      searchRegistry: createDefaultSearchRegistry(),
       userDataPath: () => 'C:\\Users\\dex\\AppData\\Roaming\\Jarvis',
     });
     expect([...ipc.handlers.keys()].every((channel) => channel.startsWith('dev:'))).toBe(true);

@@ -20,8 +20,8 @@ import type {
   WakeStatKind,
   WakeStatsSummary,
   WakeVerifierModel,
-  type LocalLearningRuntimeStatus,
 } from '@jarvis/core';
+import type { LocalLearningRuntimeStatus } from '@jarvis/core';
 import type { DeveloperApi } from './developerIpc.js';
 
 /** Exemple étiqueté envoyé au main : caractéristiques + extrait de 2 s (aucun extrait pour un fond sonore). */

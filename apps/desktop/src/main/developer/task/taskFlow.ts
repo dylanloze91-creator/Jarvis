@@ -40,9 +40,12 @@ import {
   type TestRunSummary,
   type ToolManager,
   type ConfirmationRequest,
+  type CommandSafetyContext,
+  type ReviewedPlan,
   classifyCommand,
   SAFETY_LABELS,
 } from '@jarvis/core';
+import { invalidateProjectInventory } from './projectInventoryCache.js';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { CodeTaskRun, CodeTaskState } from '../../../shared/developerIpc.js';
@@ -132,7 +135,10 @@ export class TaskRun extends TaskRunBase {
     return this.commandContext();
   }
 
-  protected async decide(request: ConfirmationRequest, signal?: AbortSignal): Promise<boolean> {
+  protected override async decide(
+    request: ConfirmationRequest,
+    signal?: AbortSignal,
+  ): Promise<boolean> {
     if (!this.hooks.directRun) return super.decide(request, signal);
     const call = this.calls.get(request.callId) ?? {
       name: request.toolName,
@@ -385,7 +391,13 @@ export class TaskRun extends TaskRunBase {
       schemas: () => tools.schemas(),
       execute: async (call, context, events) => {
         const outcome = await tools.execute(call, context, events);
-        if (outcome.status === 'ok') return outcome;
+        if (outcome.status === 'ok') {
+          if (WRITE_TOOLS.has(call.name)) {
+            invalidateProjectInventory(this.repo.root);
+            if (this.sandbox?.path) invalidateProjectInventory(this.sandbox.path);
+          }
+          return outcome;
+        }
         const key = `${call.name}|${JSON.stringify(call.arguments)}`;
         const count = (failures.get(key) ?? 0) + 1;
         failures.set(key, count);
@@ -651,7 +663,7 @@ export class TaskRun extends TaskRunBase {
     if (!run.ok || !this.hooks.review) return run;
     this.hooks.onPhase?.('review', 'running', 'revue du diff testé');
     const result = await this.hooks.review(await this.sandbox!.diff(signal), signal);
-    this.state.review = { ...result, at: Date.now() };
+    this.state.review = result.structured;
     if (result.blocking.length === 0) {
       this.hooks.onPhase?.('review', 'done', result.summary);
       return run;
@@ -756,7 +768,7 @@ export class TaskRun extends TaskRunBase {
       state.planFallback = `plan de secours (gabarit du projet) : le plan du modèle ne touchait aucun fichier d’entrée du gabarit (${entry.files.map((f) => f.path).join(', ')})`;
       checked = review(entry);
     }
-    this.reviewed = this.hooks.docsOnly
+    const reviewed: ReviewedPlan = this.hooks.docsOnly
       ? {
           ...checked,
           files: checked.files.map((f) =>
@@ -769,7 +781,7 @@ export class TaskRun extends TaskRunBase {
           ),
         }
       : checked;
-    const reviewed = this.reviewed;
+    this.reviewed = reviewed;
     this.hooks.onPhase?.('plan', 'done', reviewed.summary, {
       files: reviewed.files.map((f) => f.path),
     });

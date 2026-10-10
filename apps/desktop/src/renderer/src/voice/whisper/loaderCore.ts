@@ -109,9 +109,13 @@ let resolvedWhisperDevice: WhisperInferenceDevice | null = null;
 async function resolveWhisperInferenceDevice(): Promise<{ device: WhisperInferenceDevice; dtype: 'q8' | 'fp16' }> {
   if (resolvedWhisperDevice === 'wasm') return { device: 'wasm', dtype: 'q8' };
   if (resolvedWhisperDevice === 'webgpu') return { device: 'webgpu', dtype: 'fp16' };
-  if (typeof navigator !== 'undefined' && 'gpu' in navigator) {
+  const webGpu =
+    typeof navigator !== 'undefined'
+      ? (navigator as Navigator & { gpu?: { requestAdapter: (opts?: { powerPreference?: string }) => Promise<unknown> } }).gpu
+      : undefined;
+  if (webGpu) {
     try {
-      const adapter = await navigator.gpu!.requestAdapter({ powerPreference: 'high-performance' });
+      const adapter = await webGpu.requestAdapter({ powerPreference: 'high-performance' });
       if (adapter) {
         resolvedWhisperDevice = 'webgpu';
         return { device: 'webgpu', dtype: 'fp16' };

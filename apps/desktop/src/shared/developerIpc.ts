@@ -87,7 +87,19 @@ export interface CodeTaskState {
   asked: number;
   report: { markdown: string; verdict: 'success' | 'failed' | 'stopped' } | null;
   /** Revue du diff par le REVIEWER d'une mission (0.5.2). */
-  review?: { summary: string; blocking: string[]; model: string; at: number } | null;
+  review?: {
+    summary: string;
+    blocking: string[];
+    model: string;
+    at: number;
+    verdict?: 'ok' | 'à revoir' | 'refusé';
+    findings: Array<{
+      bucket: 'bloquant' | 'important' | 'mineur' | 'suggestion';
+      message: string;
+      file?: string;
+      line?: number;
+    }>;
+  } | null;
   /** Plan de secours utilisé (5.0.1) : pourquoi. */
   planFallback?: string;
   /** Boucle de correction arrêtée net (5.0.1) : la correction a reproduit le même échec. */
@@ -210,6 +222,7 @@ export interface ProjectChatView {
   codingPick: { model: string; reason: string; at: number } | null;
   webSearchUsed: boolean;
   compareOffer: { alternateModel: string; reason: string } | null;
+  graphicsEngineGranted?: boolean;
   previewOpen: boolean;
   /** Dernière exécution directe (demande claire → code → tests → application). */
   run: ProjectSimpleRun | null;

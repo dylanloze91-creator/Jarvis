@@ -15,6 +15,7 @@ import {
   type ProviderRegistry,
   type ReviewedPlan,
   type ScanFinding,
+  type StructuredTaskReview,
   type TaskPlan,
   type ToolCallOutcome,
   type ToolManager,
@@ -67,7 +68,7 @@ export interface TaskHooks {
   review?: (
     diff: string,
     signal: AbortSignal,
-  ) => Promise<{ blocking: string[]; summary: string; model: string }>;
+  ) => Promise<{ blocking: string[]; summary: string; model: string; structured: StructuredTaskReview }>;
   /** DEBUGGER, avant chaque correction : diagnostic ajouté à la consigne ; `tools` lit la copie isolée. */
   diagnose?: (
     failures: string[],

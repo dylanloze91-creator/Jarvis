@@ -9,7 +9,6 @@ import {
   MAX_GOAL_QUESTIONS,
   ROLE_LABELS,
   architectSchema,
-  blockingIssues,
   briefBlock,
   createCodeAIProvider,
   createMission,
@@ -69,6 +68,7 @@ import {
   reviewPrompt,
   reviewSystem,
   reviewerSchema,
+  structureReviewerOutput,
   rolesWithoutModel,
   runSpecialist,
   tokensPerSecond,
@@ -1116,13 +1116,20 @@ export class MissionWorkflow {
         if (run instanceof SpecialistError) {
           const summary = `revue non faite (${run.message}) : non bloquante, relis le diff toi-même`;
           this.patch(id, { status: 'skipped', detail: summary, error: undefined });
-          return { blocking: [], model, summary };
+          const structured = structureReviewerOutput(
+            { verdict: 'à revoir', issues: [], recommendations: [] },
+            model,
+            Date.now(),
+          );
+          structured.summary = summary;
+          return { blocking: [], model, summary, structured };
         }
-        const blocking = blockingIssues(run.output);
+        const structured = structureReviewerOutput(run.output, model, Date.now());
         return {
-          blocking,
+          blocking: structured.blocking,
           model,
-          summary: `verdict « ${run.output.verdict} », ${run.output.issues.length} remarque(s)${blocking.length ? `, ${blocking.length} bloquante(s)` : ''}`,
+          summary: structured.summary,
+          structured,
         };
       },
       diagnose: async (failures, excerpts, signal, tools) => {

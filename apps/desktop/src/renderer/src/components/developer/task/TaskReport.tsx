@@ -31,11 +31,13 @@ export function TaskReport({
   if (!task.report) return null;
   const open = !task.closed && Boolean(task.worktreePath);
   const applied = task.applied && task.applied.revertedAt === null ? task.applied : null;
+  const reviewBlocks = (task.review?.blocking?.length ?? 0) > 0;
   const canApply =
     task.report.verdict === 'success' &&
     task.closed !== 'discarded' &&
     Boolean(task.worktreePath) &&
-    !applied;
+    !applied &&
+    !reviewBlocks;
   return (
     <section className="flex flex-col gap-3" data-task-report>
       <article className="markdown developer-report rounded-xl border border-white/8 bg-black/20 px-4 py-3 text-[13px] leading-relaxed text-slate-200">
@@ -62,8 +64,9 @@ export function TaskReport({
                 <GitMerge className="size-3.5" /> Appliquer à ta copie
               </Button>
               <span className="text-[11px] text-slate-400">
-                Fusion de {task.branch} dans ta copie (git merge --no-ff), après ta confirmation. Ta
-                copie doit être propre ; en cas de conflit, rien ne change. Jamais de push.
+                {reviewBlocks
+                  ? 'Revue bloquante : corrige les points bloquants avant d’appliquer.'
+                  : `Fusion de ${task.branch} dans ta copie (git merge --no-ff), après ta confirmation. Ta copie doit être propre ; en cas de conflit, rien ne change. Jamais de push.`}
               </span>
             </>
           )}

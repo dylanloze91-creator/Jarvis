@@ -10,7 +10,6 @@ import {
   type CodeAIProvider,
   type ProjectProfile,
   type StepLimit,
-  type ToolManager as TM,
 } from '@jarvis/core';
 import type { ConfirmationRequest, RegisteredTool } from '@jarvis/core';
 import { PROJECT_CHAT_EXTRA_TOOLS } from '../tools/projectChatTools.js';
@@ -25,7 +24,7 @@ export interface ProjectChatSideEffects {
 
 export interface ProjectChatDeps {
   code: CodeAIProvider;
-  readTools: Pick<TM, 'schemas' | 'execute'>;
+  readTools: Pick<ToolManager, 'schemas' | 'execute'>;
   chatTools: RegisteredTool[];
   profile: ProjectProfile;
   memoryNotes: string;
@@ -75,7 +74,11 @@ export async function runProjectChatTurn(
       ...deps.readTools.schemas().filter((s) => askSet.has(s.name)),
       ...chatManager.schemas(),
     ],
-    execute: async (call, context, events) => {
+    execute: async (
+      call: Parameters<ToolManager['execute']>[0],
+      context: Parameters<ToolManager['execute']>[1],
+      events: Parameters<ToolManager['execute']>[2],
+    ) => {
       if (askSet.has(call.name)) return deps.readTools.execute(call, context, events);
       return chatManager.execute(call, context, events);
     },

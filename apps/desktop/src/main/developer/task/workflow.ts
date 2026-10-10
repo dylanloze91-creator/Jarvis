@@ -1,10 +1,7 @@
-import { existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync } from 'node:fs';
 import {
   JARVIS_PROJECT_PROFILE,
   classifyCommand,
-  detectProjectInventory,
-  formatProjectInventoryBlock,
   randomId,
   resolveMaxFixAttempts,
   sandboxBranch,
@@ -34,6 +31,7 @@ import {
   revertMerge,
 } from './apply.js';
 import { defaultWorktreeRoot, listSandboxes, pruneWorktrees, samePath } from './sandbox.js';
+import { projectInventoryContext } from './projectInventoryCache.js';
 import { TASK_STEPS, TaskRun } from './taskFlow.js';
 import type { DeveloperManualStore } from '../knowledge/manualStore.js';
 import type { AddStepFn, TaskDeps, TaskHooks, TaskHost } from './taskRun.js';
@@ -238,19 +236,7 @@ export class CodeTaskWorkflow {
       ...(project ? { projectId: project.id } : {}),
     };
     const hooks: TaskHooks = { ...(options.hooks ?? {}) };
-    const inventoryBlock = formatProjectInventoryBlock(
-      detectProjectInventory({
-        exists: (rel) => existsSync(join(root, rel)),
-        readUtf8: (rel) => {
-          try {
-            return readFileSync(join(root, rel), 'utf8');
-          } catch {
-            return null;
-          }
-        },
-      }),
-    );
-    hooks.planContext = [hooks.planContext, inventoryBlock].filter(Boolean).join('\n\n');
+    hooks.planContext = [hooks.planContext, projectInventoryContext(root)].filter(Boolean).join('\n\n');
     const templateId = options.templateId ?? project?.templateId;
     if (this.deps.manualStore) {
       const installed = (await this.deps.ollama().status()).models.map((m) => m.name);
@@ -521,6 +507,11 @@ export class CodeTaskWorkflow {
       return this.host.notice(
         'Seule une tâche réussie (tests sans nouvel échec) peut être appliquée.',
       );
+    if (run.state.review?.blocking?.length) {
+      return this.host.notice(
+        `Revue bloquante : ${run.state.review.blocking.length} point(s) à corriger avant d’appliquer.`,
+      );
+    }
     if (run.state.applied && run.state.applied.revertedAt === null)
       return this.host.notice('Cette tâche est déjà appliquée.');
     const { branch, baseCommit, request } = run.state;

@@ -7,6 +7,7 @@ import { DiffView } from './DiffView';
 import { PlanCard } from './PlanCard';
 import { SandboxList } from './SandboxList';
 import { TaskReport } from './TaskReport';
+import { TaskReviewCard } from './TaskReviewCard';
 import { ManualPassagesCard } from './ManualPassagesCard';
 import { TestResults } from './TestResults';
 
@@ -137,6 +138,8 @@ export function TaskPanel({
       ) : null}
 
       {task ? <TestResults task={task} /> : null}
+
+      {task?.review ? <TaskReviewCard task={task} /> : null}
 
       {task?.report ? (
         <TaskReport

@@ -22,6 +22,7 @@ vi.mock('electron', () => ({
 const core = await import('@jarvis/core');
 const { createToolManager } = await import('./tools/index.js');
 const { ChatSession } = await import('./session.js');
+const { stubLocalLearning } = await import('./test/localLearningStub.js');
 const { SpotifyBridge } = await import('./media/SpotifyBridge.js');
 const { SiteBlockBridge } = await import('./siteblock/SiteBlockBridge.js');
 const { PersonalizationStore } = await import('./personalization.js');
@@ -109,6 +110,7 @@ async function promptsFor(settings: Settings) {
       voice: { hasApiKey: () => false } as never,
       personalization: { get: async () => core.emptyPersonalization() } as never,
       knowledge: { indexConversation: async () => 0 } as never,
+      localLearning: stubLocalLearning(),
     });
     await session.send(sender, { conversationId: null, text });
     captured.push({ text, requests });

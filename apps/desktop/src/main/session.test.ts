@@ -11,6 +11,7 @@ import {
 import { z } from 'zod';
 import type { ChatEvent } from '../shared/ipc.js';
 import { ChatSession } from './session.js';
+import { stubLocalLearning } from './test/localLearningStub.js';
 
 function sender(events: ChatEvent[]) {
   return {
@@ -44,6 +45,7 @@ function session(options: { save?: () => Promise<void> } = {}) {
     voice: { hasApiKey: () => false } as never,
     personalization: { get: async () => emptyPersonalization() } as never,
     knowledge: { indexConversation: async () => 0 } as never,
+    localLearning: stubLocalLearning(),
   });
   return { chat, executed, audit, store };
 }
