@@ -47,6 +47,9 @@ export * from './knowledge/chunk.js';
 export * from './knowledge/retrieve.js';
 export * from './knowledge/seed.js';
 export * from './knowledge/learning.js';
+export * from './projectInventory.js';
+export * from './missionLifecycle.js';
+export * from './planScope.js';
 export { normalizeRepoRelative, protectedRepoPath } from './repoPaths.js';
 export {
   ARCHITECTURE_LAYERS,

@@ -587,6 +587,7 @@ function webGame(input: TemplateInput): TemplateFile[] {
       content: json({
         name: input.packageName,
         version: '0.1.0',
+        description: input.description.replace(/\s+/g, ' ').trim(),
         private: true,
         type: 'module',
         scripts: {

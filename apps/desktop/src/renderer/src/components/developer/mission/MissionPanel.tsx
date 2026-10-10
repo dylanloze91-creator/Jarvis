@@ -9,6 +9,8 @@ import {
   SPECIALIST_ROLES,
   resolveRoleModel,
   suggestMissionKind,
+  MISSION_LIFECYCLE_LABELS,
+  resolveMissionLifecyclePhase,
   type MissionKind,
   type Settings,
 } from '@jarvis/core';
@@ -76,6 +78,16 @@ export function MissionPanel({
   const models = SPECIALIST_ROLES.map(
     (role) => `${ROLE_LABELS[role]} → ${resolveRoleModel(role, developer) ?? 'aucun'}`,
   );
+  const task = state.codeTask;
+  const lifecycle =
+    mission &&
+    resolveMissionLifecyclePhase(mission, {
+      status: task?.status ?? 'planning',
+      attempts: task?.attempts ?? 0,
+      maxAttempts: task?.maxAttempts ?? 3,
+      awaitingApproval: task?.status === 'awaiting-approval',
+      reportVerdict: task?.report?.verdict ?? null,
+    });
   return (
     <div className="flex flex-col gap-3" data-mission-panel>
       {!active ? (
@@ -192,8 +204,19 @@ export function MissionPanel({
             <span className="font-medium text-slate-100">
               {MISSION_LABELS[mission.kind]} · {STATUS[mission.status] ?? mission.status}
             </span>
+            {lifecycle ? (
+              <span className="rounded-full bg-cyan-400/10 px-2 py-0.5 text-[10px] text-cyan-200" data-mission-phase={lifecycle}>
+                Phase : {MISSION_LIFECYCLE_LABELS[lifecycle]}
+              </span>
+            ) : null}
             <span className="text-[11px] text-slate-400">« {mission.request} »</span>
           </header>
+          {task && mission.status === 'task' ? (
+            <p className="text-[11px] text-slate-500">
+              Corrections : {task.attempts}/{task.maxAttempts}
+              {task.runs.length ? ` · Séries de tests : ${task.testSeriesUsed}` : ''}
+            </p>
+          ) : null}
           {mission.gate ? (
             <p className="text-[11px] text-slate-400" data-mission-difficulty>
               {mission.gate.message}

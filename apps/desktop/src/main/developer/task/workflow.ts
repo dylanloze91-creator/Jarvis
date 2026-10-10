@@ -1,7 +1,10 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import {
   JARVIS_PROJECT_PROFILE,
   classifyCommand,
+  detectProjectInventory,
+  formatProjectInventoryBlock,
   randomId,
   resolveMaxFixAttempts,
   sandboxBranch,
@@ -235,6 +238,19 @@ export class CodeTaskWorkflow {
       ...(project ? { projectId: project.id } : {}),
     };
     const hooks: TaskHooks = { ...(options.hooks ?? {}) };
+    const inventoryBlock = formatProjectInventoryBlock(
+      detectProjectInventory({
+        exists: (rel) => existsSync(join(root, rel)),
+        readUtf8: (rel) => {
+          try {
+            return readFileSync(join(root, rel), 'utf8');
+          } catch {
+            return null;
+          }
+        },
+      }),
+    );
+    hooks.planContext = [hooks.planContext, inventoryBlock].filter(Boolean).join('\n\n');
     const templateId = options.templateId ?? project?.templateId;
     if (this.deps.manualStore) {
       const installed = (await this.deps.ollama().status()).models.map((m) => m.name);

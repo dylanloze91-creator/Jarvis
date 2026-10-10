@@ -101,6 +101,8 @@ export interface CodeTaskState {
   manualPassages?: ManualPassageView[];
   /** Bloc « Manuel pertinent » injecté dans les prompts Codeur. */
   manualBlock?: string;
+  /** Alertes périmètre / critères avant validation du plan. */
+  planScopeWarnings?: string[];
   /** Fusion dans la copie de l'utilisateur après sa carte (0.5.3), et son annulation éventuelle. */
   applied?: {
     at: number;

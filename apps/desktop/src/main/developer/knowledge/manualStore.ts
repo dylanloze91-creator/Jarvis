@@ -1,4 +1,5 @@
-import { mkdir, readFile, readdir, writeFile, rename } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { mkdir, readFile, readdir, writeFile, rename, access } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   DEVELOPER_MANUAL_SEED,
@@ -83,18 +84,35 @@ export class DeveloperManualStore {
     } catch {
       /* première copie */
     }
-    if (installedVersion >= DEVELOPER_MANUAL_SEED_VERSION) return;
     for (const name of Object.keys(DEVELOPER_MANUAL_SEED)) {
-      await writeFile(join(dir, name), developerManualSeedContent(name), {
+      const path = join(dir, name);
+      const missing = await access(path).then(
+        () => false,
+        () => true,
+      );
+      if (!missing) continue;
+      await writeFile(path, developerManualSeedContent(name), {
         encoding: 'utf8',
         mode: 0o600,
       });
+      this.index = null;
     }
+    if (installedVersion >= DEVELOPER_MANUAL_SEED_VERSION) return;
     await writeFile(join(dir, SEED_VERSION_FILE), String(DEVELOPER_MANUAL_SEED_VERSION), {
       encoding: 'utf8',
       mode: 0o600,
     });
     this.index = null;
+  }
+
+  private chunkDigest(chunk: { source: string; section: string; text: string }): string {
+    return createHash('sha256')
+      .update(chunk.source)
+      .update('\0')
+      .update(chunk.section)
+      .update('\0')
+      .update(chunk.text)
+      .digest('hex');
   }
 
   async loadValidatedFixes(): Promise<ValidatedFix[]> {
@@ -140,11 +158,20 @@ export class DeveloperManualStore {
     for (const fix of await this.loadValidatedFixes()) {
       flat.push(validatedFixToChunk(fix));
     }
+    const previous = await this.loadIndex();
+    const prevById = new Map(previous.chunks.map((c) => [c.id, c]));
     const embed = this.embedFn(settings, installedModels);
-    if (embed) {
-      for (const chunk of flat) {
-        chunk.embedding = (await embed(`${chunk.section}\n${chunk.text}`).catch(() => null)) ?? undefined;
+    for (const chunk of flat) {
+      const digest = this.chunkDigest(chunk);
+      chunk.contentDigest = digest;
+      const prev = prevById.get(chunk.id);
+      if (prev?.embedding?.length && prev.contentDigest === digest) {
+        chunk.embedding = prev.embedding;
+        continue;
       }
+      if (!embed) continue;
+      chunk.embedding =
+        (await embed(`${chunk.section}\n${chunk.text}`).catch(() => null)) ?? undefined;
     }
     this.index = { version: MANUAL_INDEX_VERSION, chunks: flat };
     await this.saveIndex();

@@ -14,6 +14,7 @@ import {
   parseUnifiedDiff,
   tokensPerSecond,
   planPrompt,
+  planScopeWarnings,
   planSystemPrompt,
   randomId,
   reviewPlan,
@@ -785,6 +786,10 @@ export class TaskRun extends TaskRunBase {
         ? `dotnet ${this.profile.install.args.join(' ')}`
         : `npm ${SANDBOX_NPM_CI_ARGS.join(' ')}`,
     };
+    state.planScopeWarnings = planScopeWarnings(state.request, {
+      summary: reviewed.summary,
+      criteria: reviewed.criteria,
+    });
     step('plan', 'done', `${reviewed.files.length} fichier(s)`);
 
     state.status = 'awaiting-approval';

@@ -18,6 +18,8 @@ export interface ManualChunk {
   text: string;
   meta: ManualChunkMeta;
   embedding?: number[];
+  /** Empreinte du contenu : réutilisation des embeddings à la reconstruction d’index. */
+  contentDigest?: string;
 }
 
 export interface ManualIndex {

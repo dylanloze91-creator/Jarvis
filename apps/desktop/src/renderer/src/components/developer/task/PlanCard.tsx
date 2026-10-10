@@ -42,6 +42,16 @@ export function PlanCard({
       {plan.criteria.length ? (
         <p className="text-xs text-slate-400">Réussi si : {plan.criteria.join(' · ')}</p>
       ) : null}
+      {task.planScopeWarnings?.length ? (
+        <ul className="flex flex-col gap-1 rounded-lg border border-amber-400/25 bg-amber-400/10 px-2.5 py-2 text-xs text-amber-100">
+          {task.planScopeWarnings.map((line) => (
+            <li key={line} className="flex gap-2">
+              <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+              <span>{line}</span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
       <ul className="flex flex-col gap-1">
         {plan.files.map((file) => {
           const action = ACTION[file.action];
