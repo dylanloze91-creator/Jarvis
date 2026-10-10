@@ -59,6 +59,8 @@ import {
   patchStep,
   randomId,
   resolveRoleModel,
+  buildMissionModelPlan,
+  type RoleModelRoute,
   GATED_MISSION_KINDS,
   assessMission,
   formatProjectDecisions,
@@ -69,7 +71,6 @@ import {
   reviewSystem,
   reviewerSchema,
   structureReviewerOutput,
-  rolesWithoutModel,
   runSpecialist,
   tokensPerSecond,
   upsertStep,
@@ -173,6 +174,7 @@ export interface MissionDeps {
   /** Résultats du banc réel (5.0.1) : le score Codeur règle le contrôle de difficulté. */
   realBenches?(): readonly RealBenchResult[];
   manualStore?: DeveloperManualStore;
+  log?: (line: string) => void;
 }
 
 export const MISSION_PROJECT_ID = JARVIS_PROJECT_PROFILE.id;
@@ -213,6 +215,7 @@ export class MissionWorkflow {
   private project: ResolvedProject | null = null;
   private memory = '';
   private lastModel: string | null = null;
+  private modelPlan: Map<SpecialistRole, RoleModelRoute> | null = null;
   private activeRole: SpecialistRole | null = null;
   private counters = new Map<TaskPhase, number>();
   private open = new Map<TaskPhase, string>();
@@ -257,6 +260,8 @@ export class MissionWorkflow {
   private modelFor(role: SpecialistRole): string {
     if (role === 'CODER' && this.current?.coderOverride?.model)
       return this.current.coderOverride.model;
+    const routed = this.modelPlan?.get(role);
+    if (routed) return routed.model;
     return resolveRoleModel(role, this.developer())!;
   }
 
@@ -290,9 +295,12 @@ export class MissionWorkflow {
     this.persistLater();
   }
 
-  /** Un seul gros modèle chargé : le précédent est libéré quand un rôle change de modèle. */
+  /** Un seul modèle Ollama chargé : tout autre modèle en cours est libéré avant le suivant. */
   private async switchModel(model: string): Promise<void> {
-    if (this.lastModel && this.lastModel !== model) await this.deps.ollama().unload(this.lastModel);
+    const running = await this.deps.ollama().running();
+    for (const loaded of running) {
+      if (loaded.name !== model) await this.deps.ollama().unload(loaded.name);
+    }
     this.lastModel = model;
   }
 
@@ -400,31 +408,15 @@ export class MissionWorkflow {
       return this.host.notice('Décris la mission en une phrase au moins.');
     if (text.length > 2_000)
       return this.host.notice('Demande trop longue (2 000 caractères au plus).');
-    const missing = rolesWithoutModel(kind, this.developer());
-    if (missing.length)
-      return this.host.notice(
-        `Aucun modèle pour : ${missing.map((r) => ROLE_LABELS[r]).join(', ')}. Choisis un modèle de code, ou un modèle par rôle (onglet Modèle de code). Aucun n’est choisi d’avance.`,
-      );
     const status = await this.deps.ollama().status();
     const installed = new Set(status.models.map((m) => m.name));
-    const needed = new Set(
-      (
-        [
-          'REASONER',
-          'ARCHITECT',
-          'DEBUGGER',
-          'DOCUMENTATION',
-          ...(kind === 'skill' ? (['RESEARCHER'] as const) : []),
-          ...Object.values(LOOP_ACTORS),
-        ] as SpecialistRole[]
-      ).map((role) => resolveRoleModel(role, this.developer())),
-    );
-    const absent = [...needed].filter((m): m is string => Boolean(m) && !installed.has(m!));
-    if (absent.length)
-      return this.host.notice(
-        `Modèle absent d’Ollama : ${absent.join(', ')}. Rien n’est téléchargé.`,
-      );
-    const coder = resolveRoleModel('CODER', this.developer());
+    const plan = buildMissionModelPlan(kind, this.developer(), installed);
+    if (!(plan instanceof Map)) return this.host.notice(plan.error);
+    for (const route of plan.values()) {
+      if (route.logLine) this.deps.log?.(`[modèles] ${route.logLine}`);
+    }
+    this.modelPlan = plan;
+    const coder = plan.get('CODER')?.model ?? this.developer().codeModel.trim();
     this.gate =
       coder && GATED_MISSION_KINDS.includes(kind)
         ? assessMission(

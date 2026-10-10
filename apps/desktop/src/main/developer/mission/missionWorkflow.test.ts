@@ -210,16 +210,22 @@ describe('missions sur Jarvis (0.5.2)', () => {
     expect(state.codeTask).toBeNull();
   }, 60_000);
 
-  it('sans questions demandé : aucune attente, et aucun modèle = mission refusée', async () => {
+  it('sans modèle de complétion installé : mission refusée', async () => {
     askQuestions = true;
-    const none = createHarness({ base, repo, fake, developer: { codeModel: '' } });
+    const embedOnly = new FakeOllama();
+    await embedOnly.start();
+    embedOnly.installed.clear();
+    embedOnly.installed.set('nomic-embed-text', 1e8);
+    embedOnly.scripts.set(CODE, script);
+    const none = createHarness({ base, repo, fake: embedOnly, developer: { codeModel: '' } });
     await none.instance.validate(repo);
     const refused = await none.instance.startMission(
       'modify',
       'Ajoute une constante VERSION.',
       true,
     );
-    expect(refused.notice).toMatch(/Aucun modèle pour/);
+    expect(refused.notice).toMatch(/Aucun modèle Ollama utilisable/);
     expect(refused.mission).toBeNull();
+    await embedOnly.stop();
   });
 });

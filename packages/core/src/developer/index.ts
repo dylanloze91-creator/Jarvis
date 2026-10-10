@@ -30,6 +30,7 @@ export * from './engine/realBench.js';
 export * from './engine/specialistSchemas.js';
 export * from './engine/specialist.js';
 export * from './engine/router.js';
+export * from './engine/roleModelRouting.js';
 export * from './engine/missionPrompts.js';
 export * from './engine/mission.js';
 export * from './engine/profiles/node.js';

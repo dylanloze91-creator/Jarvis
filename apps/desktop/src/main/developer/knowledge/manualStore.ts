@@ -40,6 +40,8 @@ export interface ManualPrepareInput {
   failures?: readonly string[];
   settings: Settings;
   installedModels: readonly string[];
+  /** Faux pendant une mission : ne pas charger le modèle d’embeddings en parallèle du codeur. */
+  allowEmbeddingLoad?: boolean;
 }
 
 export interface ManualPrepareResult {
@@ -247,7 +249,11 @@ export class DeveloperManualStore {
     return out;
   }
 
-  async rebuildIndex(settings: Settings, installedModels: readonly string[]): Promise<void> {
+  async rebuildIndex(
+    settings: Settings,
+    installedModels: readonly string[],
+    options?: { allowEmbeddingLoad?: boolean },
+  ): Promise<void> {
     const flat = [];
     for (const { file, text } of await this.listManualMarkdown()) {
       flat.push(...chunkMarkdownFile(file, text));
@@ -257,7 +263,8 @@ export class DeveloperManualStore {
     }
     const previous = await this.loadIndex();
     const prevById = new Map(previous.chunks.map((c) => [c.id, c]));
-    const embed = this.embedFn(settings, installedModels);
+    const embed =
+      options?.allowEmbeddingLoad === false ? null : this.embedFn(settings, installedModels);
     for (const chunk of flat) {
       const digest = this.chunkDigest(chunk);
       chunk.contentDigest = digest;
@@ -331,16 +338,26 @@ export class DeveloperManualStore {
       return { block: '', passages: [] };
     }
     let index = await this.loadIndex();
-    if (!index.chunks.length) {
-      await this.rebuildIndex(input.settings, input.installedModels);
+    const allowEmbed = input.allowEmbeddingLoad !== false;
+    try {
+      if (!index.chunks.length) {
+        await this.rebuildIndex(input.settings, input.installedModels, {
+          allowEmbeddingLoad: allowEmbed,
+        });
+        index = await this.loadIndex();
+      }
+    } catch {
       index = await this.loadIndex();
+      if (!index.chunks.length) {
+        return { block: '', passages: [] };
+      }
     }
     const query: ManualQuery = {
       text: input.request,
       templateId: input.templateId,
       failures: input.failures,
     };
-    const embed = this.embedFn(input.settings, input.installedModels);
+    const embed = allowEmbed ? this.embedFn(input.settings, input.installedModels) : null;
     const passages = embed
       ? await retrieveManualPassagesAsync(index, query, embed)
       : retrieveManualPassages(index, query);

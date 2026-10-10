@@ -316,6 +316,7 @@ export class DeveloperController {
         now: deps.now ? () => deps.now!().getTime() : undefined,
         realBenches: () => this.models.state().realBenches,
         manualStore: this.manualStore,
+        log: (line) => this.appendLog(line),
       },
     );
   }

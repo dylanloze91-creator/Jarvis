@@ -4,8 +4,10 @@ import {
   classifyCommand,
   randomId,
   resolveMaxFixAttempts,
+  routeRoleToInstalledModel,
   sandboxBranch,
   suiteSetOf,
+  type ManualPassageView,
   type ProjectProfile,
   type ProjectTemplateId,
   type Settings,
@@ -175,14 +177,18 @@ export class CodeTaskWorkflow {
     if (text.length < 8) return this.host.notice('Décris la modification en une phrase au moins.');
     if (text.length > 2_000)
       return this.host.notice('Demande trop longue (2 000 caractères au plus).');
-    const model = options.model ?? this.deps.settings().developer.codeModel;
-    if (!model)
-      return this.host.notice(
-        'Choisis d’abord un modèle de code (onglet « Modèle de code », étape 6).',
-      );
     const status = await this.deps.ollama().status();
-    if (!status.models.some((m) => m.name === model))
-      return this.host.notice(`Le modèle de code « ${model} » n’est pas installé dans Ollama.`);
+    const installed = new Set(status.models.map((m) => m.name));
+    const routed =
+      options.model
+        ? { model: options.model, logLine: '' }
+        : routeRoleToInstalledModel('CODER', this.deps.settings().developer, installed);
+    if (!routed)
+      return this.host.notice(
+        'Aucun modèle Ollama utilisable pour le codeur. Installe un modèle de complétion ou choisis un modèle de code.',
+      );
+    if (routed.logLine) this.host.log(`[modèles] ${routed.logLine}`);
+    const model = routed.model;
     const project = options.project;
     if (project && suiteSetOf(project.profile).ids.length === 0)
       return this.host.notice(
@@ -239,21 +245,32 @@ export class CodeTaskWorkflow {
     hooks.planContext = [hooks.planContext, projectInventoryContext(root)].filter(Boolean).join('\n\n');
     const templateId = options.templateId ?? project?.templateId;
     if (this.deps.manualStore) {
-      const installed = (await this.deps.ollama().status()).models.map((m) => m.name);
-      const prep = await this.deps.manualStore.prepare({
-        request: text,
-        templateId,
+      const installedList = [...installed];
+      const manualOpts = {
+        allowEmbeddingLoad: false as const,
+        installedModels: installedList,
         settings: this.deps.settings(),
-        installedModels: installed,
-      });
+      };
+      let prep: { block: string; passages: ManualPassageView[] } = { block: '', passages: [] };
+      try {
+        prep = await this.deps.manualStore.prepare({
+          request: text,
+          templateId,
+          ...manualOpts,
+        });
+      } catch (error) {
+        this.host.log(
+          `Manuel : passages ignorés (${error instanceof Error ? error.message : String(error)}).`,
+        );
+      }
       if (prep.block) state.manualBlock = prep.block;
-      if (prep.passages.length) state.manualPassages = prep.passages;
+      if (prep.passages?.length) state.manualPassages = prep.passages;
       hooks.refreshManual = async (failures) => {
         const next = await this.deps.manualStore!.prepare({
           request: text,
           templateId,
           failures,
-          settings: this.deps.settings(),
+          ...manualOpts,
           installedModels: (await this.deps.ollama().status()).models.map((m) => m.name),
         });
         if (next.block) state.manualBlock = next.block;
