@@ -1,6 +1,7 @@
 /**
  * Manuel technique livré avec Jarvis : copié dans
- * `<userData>/developer/knowledge/manual/` à la première utilisation.
+ * `<userData>/developer/knowledge/shipped/` (fiches livrées),
+ * séparées de `user/` (modifications utilisateur) et `learned/` (fiches mémorisées).
  * Incrémenter quand on ajoute ou modifie une page seed (réécriture sur les installs existantes).
  */
 export const DEVELOPER_MANUAL_SEED_VERSION = 3;

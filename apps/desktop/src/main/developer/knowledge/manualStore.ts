@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdir, readFile, readdir, writeFile, rename, access } from 'node:fs/promises';
+import { mkdir, readFile, readdir, writeFile, rename, access, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   DEVELOPER_MANUAL_SEED,
@@ -30,6 +30,9 @@ import {
 const EMBED_MODEL = 'nomic-embed-text';
 const INDEX_FILE = 'index.json';
 const SEED_VERSION_FILE = '.seed-version';
+/** Ancien dossier unique (avant séparation shipped / user / learned). */
+const LEGACY_MANUAL_DIR = 'manual';
+const LEGACY_VALIDATED_DIR = 'validated';
 
 export interface ManualPrepareInput {
   request: string;
@@ -51,6 +54,7 @@ export interface DeveloperManualStoreOptions {
 
 export class DeveloperManualStore {
   private index: ManualIndex | null = null;
+  private migrated = false;
 
   constructor(private readonly options: DeveloperManualStoreOptions) {}
 
@@ -58,47 +62,122 @@ export class DeveloperManualStore {
     return join(this.options.userDataPath(), 'developer', 'knowledge');
   }
 
-  private manualDir(): string {
-    return join(this.root(), 'manual');
+  /** Fiches livrées avec Jarvis : mises à jour quand la version seed augmente. */
+  private shippedDir(): string {
+    return join(this.root(), 'shipped');
+  }
+
+  /** Fiches modifiées ou créées par l'utilisateur : jamais touchées par une mise à jour seed. */
+  private userDir(): string {
+    return join(this.root(), 'user');
+  }
+
+  /** Fiches mémorisées après mission réussie (JSON validés). */
+  private learnedDir(): string {
+    return join(this.root(), 'learned');
   }
 
   private indexPath(): string {
     return join(this.root(), INDEX_FILE);
   }
 
-  private validatedDir(): string {
-    return join(this.root(), 'validated');
-  }
-
   private get fetch(): typeof fetch {
     return this.options.fetchImpl ?? globalThis.fetch;
   }
 
+  private async exists(path: string): Promise<boolean> {
+    return access(path).then(
+      () => true,
+      () => false,
+    );
+  }
+
+  /** Reprend les anciennes données `manual/` et `validated/` une seule fois. */
+  private async migrateLegacyLayout(): Promise<void> {
+    if (this.migrated) return;
+    this.migrated = true;
+    const legacyManual = join(this.root(), LEGACY_MANUAL_DIR);
+    if (!(await this.exists(legacyManual))) return;
+
+    await mkdir(this.userDir(), { recursive: true });
+    await mkdir(this.shippedDir(), { recursive: true });
+
+    const names = (await readdir(legacyManual).catch(() => [] as string[])).filter((f) =>
+      f.endsWith('.md'),
+    );
+    for (const name of names) {
+      const legacyPath = join(legacyManual, name);
+      const text = await readFile(legacyPath, 'utf8');
+      const seedBody = DEVELOPER_MANUAL_SEED[name];
+      const userPath = join(this.userDir(), name);
+      if (!seedBody) {
+        if (!(await this.exists(userPath))) {
+          await writeFile(userPath, text, { encoding: 'utf8', mode: 0o600 });
+        }
+        continue;
+      }
+      if (text.trim() !== seedBody.trim() && !(await this.exists(userPath))) {
+        await writeFile(userPath, text, { encoding: 'utf8', mode: 0o600 });
+      }
+    }
+
+    const legacyVersion = join(legacyManual, SEED_VERSION_FILE);
+    const shippedVersion = join(this.shippedDir(), SEED_VERSION_FILE);
+    if ((await this.exists(legacyVersion)) && !(await this.exists(shippedVersion))) {
+      const raw = await readFile(legacyVersion, 'utf8');
+      await writeFile(shippedVersion, raw, { encoding: 'utf8', mode: 0o600 });
+    }
+
+    const legacyValidated = join(this.root(), LEGACY_VALIDATED_DIR);
+    if (await this.exists(legacyValidated)) {
+      await mkdir(this.learnedDir(), { recursive: true });
+      for (const name of (await readdir(legacyValidated).catch(() => [] as string[])).filter((f) =>
+        f.endsWith('.json'),
+      )) {
+        const dest = join(this.learnedDir(), name);
+        if (!(await this.exists(dest))) {
+          await rename(join(legacyValidated, name), dest).catch(async () => {
+            const text = await readFile(join(legacyValidated, name), 'utf8');
+            await writeFile(dest, text, { encoding: 'utf8', mode: 0o600 });
+          });
+        }
+      }
+    }
+
+    await rm(legacyManual, { recursive: true, force: true }).catch(() => undefined);
+    await rm(legacyValidated, { recursive: true, force: true }).catch(() => undefined);
+    this.index = null;
+  }
+
   async ensureSeed(): Promise<void> {
-    const dir = this.manualDir();
-    await mkdir(dir, { recursive: true });
+    await this.migrateLegacyLayout();
+    const shipped = this.shippedDir();
+    await mkdir(shipped, { recursive: true });
+    await mkdir(this.userDir(), { recursive: true });
+    await mkdir(this.learnedDir(), { recursive: true });
+
     let installedVersion = 0;
     try {
-      const raw = await readFile(join(dir, SEED_VERSION_FILE), 'utf8');
+      const raw = await readFile(join(shipped, SEED_VERSION_FILE), 'utf8');
       installedVersion = Number.parseInt(raw.trim(), 10) || 0;
     } catch {
       /* première copie */
     }
+
+    const refreshShipped = installedVersion < DEVELOPER_MANUAL_SEED_VERSION;
     for (const name of Object.keys(DEVELOPER_MANUAL_SEED)) {
-      const path = join(dir, name);
-      const missing = await access(path).then(
-        () => false,
-        () => true,
-      );
-      if (!missing) continue;
+      const path = join(shipped, name);
+      const missing = !(await this.exists(path));
+      if (!refreshShipped && !missing) continue;
       await writeFile(path, developerManualSeedContent(name), {
         encoding: 'utf8',
         mode: 0o600,
       });
       this.index = null;
     }
-    if (installedVersion >= DEVELOPER_MANUAL_SEED_VERSION) return;
-    await writeFile(join(dir, SEED_VERSION_FILE), String(DEVELOPER_MANUAL_SEED_VERSION), {
+
+    if (!refreshShipped) return;
+    await writeFile(join(shipped, SEED_VERSION_FILE), String(DEVELOPER_MANUAL_SEED_VERSION), {
       encoding: 'utf8',
       mode: 0o600,
     });
@@ -116,7 +195,7 @@ export class DeveloperManualStore {
   }
 
   async loadValidatedFixes(): Promise<ValidatedFix[]> {
-    const dir = this.validatedDir();
+    const dir = this.learnedDir();
     await mkdir(dir, { recursive: true });
     const names = (await readdir(dir).catch(() => [] as string[])).filter((f) => f.endsWith('.json'));
     const out: ValidatedFix[] = [];
@@ -138,8 +217,8 @@ export class DeveloperManualStore {
     settings: Settings,
     installedModels: readonly string[],
   ): Promise<void> {
-    await mkdir(this.validatedDir(), { recursive: true });
-    const path = join(this.validatedDir(), `${fix.id}.json`);
+    await mkdir(this.learnedDir(), { recursive: true });
+    const path = join(this.learnedDir(), `${fix.id}.json`);
     const tmp = `${path}.tmp`;
     await writeFile(tmp, JSON.stringify(fix, null, 2), { encoding: 'utf8', mode: 0o600 });
     await rename(tmp, path);
@@ -147,12 +226,30 @@ export class DeveloperManualStore {
     await this.rebuildIndex(settings, installedModels);
   }
 
-  async rebuildIndex(settings: Settings, installedModels: readonly string[]): Promise<void> {
+  /** Indexe shipped + user ; une fiche user du même nom masque la fiche shipped. */
+  private async listManualMarkdown(): Promise<Array<{ file: string; text: string; origin: 'user' | 'shipped' }>> {
     await this.ensureSeed();
-    const files = (await readdir(this.manualDir())).filter((f) => f.endsWith('.md'));
+    const userNames = new Set(
+      (await readdir(this.userDir()).catch(() => [] as string[])).filter((f) => f.endsWith('.md')),
+    );
+    const out: Array<{ file: string; text: string; origin: 'user' | 'shipped' }> = [];
+    for (const name of userNames) {
+      const text = await readFile(join(this.userDir(), name), 'utf8');
+      out.push({ file: name, text, origin: 'user' });
+    }
+    for (const name of (await readdir(this.shippedDir()).catch(() => [] as string[])).filter((f) =>
+      f.endsWith('.md'),
+    )) {
+      if (userNames.has(name)) continue;
+      const text = await readFile(join(this.shippedDir(), name), 'utf8');
+      out.push({ file: name, text, origin: 'shipped' });
+    }
+    return out;
+  }
+
+  async rebuildIndex(settings: Settings, installedModels: readonly string[]): Promise<void> {
     const flat = [];
-    for (const file of files) {
-      const text = await readFile(join(this.manualDir(), file), 'utf8');
+    for (const { file, text } of await this.listManualMarkdown()) {
       flat.push(...chunkMarkdownFile(file, text));
     }
     for (const fix of await this.loadValidatedFixes()) {
