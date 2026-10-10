@@ -19,6 +19,7 @@ import {
   randomId,
   reviewPlan,
   scanDiff,
+  formatTaskVerificationSummary,
   suiteCommandFor,
   extractFileContent,
   fileWritePrompt,
@@ -699,10 +700,14 @@ export class TaskRun extends TaskRunBase {
       results.push(outcome.data as TestRunSummary);
     }
     const failing = results.reduce((n, r) => n + r.failures.length, 0);
+    const summary = formatTaskVerificationSummary(
+      results.map((r) => ({ suite: r.suite, summary: r.summary })),
+      { profile: this.profile },
+    );
     this.hooks.onPhase?.(
       'test',
       'done',
-      `${results.map((r) => `${r.suite} : ${r.summary}`).join(' · ')}${failing ? ` (${failing} échec(s) au total)` : ''}`,
+      `${summary}${failing ? ` (${failing} échec(s) au total)` : ''}`,
     );
     return results;
   }

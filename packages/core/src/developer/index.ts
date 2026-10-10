@@ -49,6 +49,7 @@ export * from './knowledge/retrieve.js';
 export * from './knowledge/seed.js';
 export * from './knowledge/learning.js';
 export * from './projectInventory.js';
+export * from './projectValidation.js';
 export * from './missionLifecycle.js';
 export * from './planScope.js';
 export * from './editSymbolContext.js';

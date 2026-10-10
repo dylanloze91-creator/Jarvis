@@ -1,3 +1,5 @@
+import { suiteExpectsTestCounts } from './projectValidation.js';
+
 /**
  * Lecture des sorties de tests (tsc, Vitest, ESLint, dotnet) pour comparer à la
  * référence prise avant toute modification : un échec qui existait déjà
@@ -42,7 +44,7 @@ function relativeTo(path: string, root?: string): string {
 
 export function parseTestOutput(
   output: string,
-  options: { exitCode: number | null; root?: string } = { exitCode: null },
+  options: { exitCode: number | null; root?: string; suite?: string } = { exitCode: null },
 ): { failures: string[]; summary: string } {
   const lines = stripAnsi(output).split(/\r?\n/);
   const failures = new Set<string>();
@@ -81,12 +83,17 @@ export function parseTestOutput(
   }
   const parts: string[] = [];
   if (tsc) parts.push(`${tsc} erreur(s) TypeScript`);
-  if (vitestTotal !== null)
+  if (vitestTotal !== null) {
+    const expectTests =
+      options.suite === undefined || suiteExpectsTestCounts(options.suite);
     parts.push(
       vitestFailed
         ? `${vitestFailed} test(s) échoué(s) sur ${vitestTotal}`
-        : `${vitestTotal} tests réussis`,
+        : expectTests
+          ? `${vitestTotal} tests réussis`
+          : 'réussi',
     );
+  }
   if (eslint) parts.push(`${eslint} erreur(s) de lint`);
   if (options.exitCode !== 0 && failures.size === 0) {
     failures.add(`sortie ${options.exitCode ?? 'interrompue'}`);
@@ -109,7 +116,7 @@ const DOTNET_SUMMARY =
  */
 export function parseDotnetOutput(
   output: string,
-  options: { exitCode: number | null; root?: string } = { exitCode: null },
+  options: { exitCode: number | null; root?: string; suite?: string } = { exitCode: null },
 ): { failures: string[]; summary: string } {
   const failures = new Set<string>();
   const errors = new Set<string>();
@@ -144,8 +151,17 @@ export function parseDotnetOutput(
   }
   const parts: string[] = [];
   if (errors.size) parts.push(`${errors.size} erreur(s) de compilation`);
-  if (total !== null)
-    parts.push(failed ? `${failed} test(s) échoué(s) sur ${total}` : `${total} tests réussis`);
+  if (total !== null) {
+    const expectTests =
+      options.suite === undefined || suiteExpectsTestCounts(options.suite);
+    parts.push(
+      failed
+        ? `${failed} test(s) échoué(s) sur ${total}`
+        : expectTests
+          ? `${total} tests réussis`
+          : 'réussi',
+    );
+  }
   if (options.exitCode !== 0 && failures.size === 0) {
     failures.add(`sortie ${options.exitCode ?? 'interrompue'}`);
     parts.push(`échec (code ${options.exitCode ?? 'aucun'})`);

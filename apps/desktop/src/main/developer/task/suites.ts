@@ -44,7 +44,7 @@ export async function runSuite(
   const output = `${outcome.stdout}\n${outcome.stderr}`;
   const parsed = outcome.error
     ? { failures: [`impossible de lancer npm : ${outcome.error}`], summary: 'npm introuvable' }
-    : parseTestOutput(output, { exitCode: outcome.code, root: sandbox.path });
+    : parseTestOutput(output, { exitCode: outcome.code, root: sandbox.path, suite });
   return {
     suite,
     command,
@@ -117,7 +117,7 @@ export async function runDotnetSuite(
         failures: [`impossible de lancer dotnet : ${outcome.error}`],
         summary: 'dotnet introuvable',
       }
-    : parseDotnetOutput(output, { exitCode: outcome.code, root: sandbox.path });
+    : parseDotnetOutput(output, { exitCode: outcome.code, root: sandbox.path, suite });
   return {
     suite,
     command: spec.command,

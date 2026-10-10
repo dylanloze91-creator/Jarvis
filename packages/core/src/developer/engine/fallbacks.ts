@@ -1,8 +1,17 @@
+import {
+  defaultNodePlanSuites,
+  verificationCriteriaFromScripts,
+} from '../projectValidation.js';
 import type { TaskPlan } from '../taskPlan.js';
 import type { MissionKind } from './router.js';
 import type { SkillDesign } from './skill.js';
 import type { GoalOutput } from './specialistSchemas.js';
-import type { FactoryOutput, ProjectTemplateId } from './templates.js';
+import {
+  renderTemplate,
+  templateToolchain,
+  type FactoryOutput,
+  type ProjectTemplateId,
+} from './templates.js';
 
 /**
  * Secours sans modèle (5.0.1) : quand un spécialiste ne rend pas de JSON
@@ -107,14 +116,31 @@ const ENTRY_FILES: Partial<Record<ProjectTemplateId, Array<[string, string]>>> =
  * Plan de secours d'un projet neuf : les fichiers d'entrée de son gabarit, si
  * le CODER ne rend pas de plan valide. L'utilisateur le valide comme un autre.
  */
+function templatePackageScripts(template: ProjectTemplateId): Record<string, string> {
+  if (templateToolchain(template) !== 'node') return {};
+  const file = renderTemplate(template, {
+    packageName: 'jarvis-template',
+    title: 'jarvis-template',
+    description: '',
+  }).find((item) => item.path === 'package.json');
+  if (!file) return {};
+  try {
+    const pkg = JSON.parse(file.content) as { scripts?: Record<string, string> };
+    return pkg.scripts ?? {};
+  } catch {
+    return {};
+  }
+}
+
 export function templatePlan(template: ProjectTemplateId, request: string): TaskPlan | null {
   const files = ENTRY_FILES[template];
   if (!files) return null;
+  const scripts = templatePackageScripts(template);
   return {
     summary: `Écrire ${clean(request).slice(0, 200)} dans les fichiers d’entrée du gabarit.`,
-    criteria: ['la vérification des types passe', 'les tests passent'],
+    criteria: verificationCriteriaFromScripts(scripts),
     files: files.map(([path, reason]) => ({ path, action: 'edit' as const, reason })),
-    tests: ['typecheck', 'test'],
+    tests: defaultNodePlanSuites(scripts),
   };
 }
 

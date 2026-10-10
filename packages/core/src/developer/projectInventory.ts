@@ -1,3 +1,5 @@
+import { npmValidationCommands } from './projectValidation.js';
+
 /** Lecture ciblée du dépôt (sans node_modules) pour le plan et les missions. */
 export type ProjectInventoryKind = 'node' | 'dotnet' | 'python' | 'go' | 'rust' | 'unknown';
 
@@ -63,21 +65,6 @@ function firstCsproj(access: InventoryFileAccess): string | null {
     if (access.exists(path)) return path;
   }
   return null;
-}
-
-function pickValidationScripts(scripts: Record<string, string>): string[] {
-  const keys = Object.keys(scripts);
-  const preferred = ['test', 'typecheck', 'lint', 'build', 'check'];
-  const out: string[] = [];
-  for (const key of preferred) {
-    if (scripts[key]) out.push(`npm run ${key}`);
-  }
-  for (const key of keys) {
-    if (/test|lint|type|check|build/i.test(key) && !preferred.includes(key)) {
-      out.push(`npm run ${key}`);
-    }
-  }
-  return [...new Set(out)].slice(0, 8);
 }
 
 /** Détecte le type de projet à partir des fichiers présents (pas du nom du dossier). */
@@ -146,7 +133,7 @@ export function detectProjectInventory(access: InventoryFileAccess): ProjectInve
 
   const validationScripts =
     kind === 'node'
-      ? pickValidationScripts(scripts)
+      ? npmValidationCommands(scripts)
       : kind === 'dotnet'
         ? ['dotnet build', 'dotnet test']
         : [];

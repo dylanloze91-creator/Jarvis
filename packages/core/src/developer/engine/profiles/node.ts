@@ -1,6 +1,7 @@
 import { AUTO_SCRIPTS } from '../../commandRulesNode.js';
 import { normalizeRepoRelative } from '../../repoPaths.js';
 import type { CheckReport, DevCheck, RepoFacts } from '../../repoCheck.js';
+import { nodeTaskSuiteIds } from '../../projectValidation.js';
 import { MAX_FIX_ATTEMPTS, TEST_SUITES, type TestSuiteId } from '../../taskPlan.js';
 import { sandboxBranch } from '../../taskPolicy.js';
 import { WHOLE_FILE_HINT, type ProjectProfile, type ProjectTestSuite } from '../projectProfile.js';
@@ -34,7 +35,7 @@ export function nodeProtectedReason(path: string): string | null {
 }
 
 export function nodeSuites(scripts: Readonly<Record<string, string>>): TestSuiteId[] {
-  return NODE_SUITES.filter((id) => typeof scripts[id] === 'string' && scripts[id]!.trim() !== '');
+  return nodeTaskSuiteIds(scripts);
 }
 
 /** Copie d'un projet Node : un dépôt git avec un commit et un package.json. */

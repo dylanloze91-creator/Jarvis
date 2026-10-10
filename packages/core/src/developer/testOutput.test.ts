@@ -48,6 +48,15 @@ describe('lecture des sorties de tests', () => {
     });
   });
 
+  it('sans suite de tests, une sortie Vitest ne dit pas que des tests sont passés', () => {
+    expect(
+      parseTestOutput('      Tests  3 passed (3)', { exitCode: 0, suite: 'typecheck' }),
+    ).toEqual({
+      failures: [],
+      summary: 'réussi',
+    });
+  });
+
   it('ESLint : erreurs par fichier', () => {
     const out = [
       '/tmp/t/src/a.ts',

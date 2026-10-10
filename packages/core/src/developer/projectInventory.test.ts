@@ -24,7 +24,8 @@ describe('detectProjectInventory', () => {
     );
     expect(inv.kind).toBe('node');
     expect(inv.languages).toContain('typescript');
-    expect(inv.validationScripts.some((c) => c.includes('typecheck'))).toBe(true);
+    expect(inv.validationScripts[0]).toContain('typecheck');
+    expect(inv.validationScripts.some((c) => c.includes('test'))).toBe(true);
     expect(formatProjectInventoryBlock(inv)).toContain('5.0.18');
   });
 
