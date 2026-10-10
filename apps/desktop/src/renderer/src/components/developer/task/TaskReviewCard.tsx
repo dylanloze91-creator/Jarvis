@@ -27,7 +27,12 @@ export function TaskReviewCard({ task }: { task: CodeTaskState }) {
       data-task-review
     >
       <header className="flex flex-wrap items-center gap-2 text-xs">
-        <span className="font-medium text-slate-100">Revue du diff</span>
+        <span className="font-medium text-slate-100">Revue du diff (appel séparé)</span>
+        {review.sameModelAsCoder ? (
+          <span className="rounded-full bg-amber-400/15 px-2 py-0.5 text-[10px] text-amber-100">
+            même modèle que le codeur — pas indépendant
+          </span>
+        ) : null}
         {review.verdict ? (
           <span className="text-[11px] text-slate-400">verdict : {review.verdict}</span>
         ) : null}
@@ -37,6 +42,9 @@ export function TaskReviewCard({ task }: { task: CodeTaskState }) {
           </span>
         ) : null}
       </header>
+      {review.independenceNote ? (
+        <p className="text-[11px] text-slate-400">{review.independenceNote}</p>
+      ) : null}
       <p className="text-[12px] text-slate-300">{review.summary}</p>
       {groups.map((bucket) => {
         const items = review.findings.filter((f) => f.bucket === bucket);

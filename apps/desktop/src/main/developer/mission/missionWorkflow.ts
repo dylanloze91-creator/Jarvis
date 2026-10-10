@@ -1120,11 +1120,14 @@ export class MissionWorkflow {
             { verdict: 'à revoir', issues: [], recommendations: [] },
             model,
             Date.now(),
+            { coderModel: coder },
           );
           structured.summary = summary;
           return { blocking: [], model, summary, structured };
         }
-        const structured = structureReviewerOutput(run.output, model, Date.now());
+        const structured = structureReviewerOutput(run.output, model, Date.now(), {
+          coderModel: coder,
+        });
         return {
           blocking: structured.blocking,
           model,

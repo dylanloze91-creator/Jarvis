@@ -3,8 +3,10 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import type { CodeTaskState } from '../../../shared/developerIpc.js';
 import { createHarness } from '../controllerHarness.testkit.js';
 import { FakeOllama } from '../models/fakeOllama.testkit.js';
+import type { TaskRun } from './taskFlow.js';
 import { createFixtureRepo, taskScript } from './taskWorkflow.testkit.js';
 
 const base = mkdtempSync(join(tmpdir(), 'jarvis-appliquer-'));
@@ -115,6 +117,30 @@ describe('« Appliquer » une tâche réussie (0.5.3)', () => {
     expect(git('rev-parse', 'HEAD')).toBe(head);
     expect(git('status', '--porcelain')).toBe('');
     expect(existsSync(join(repo, '.git', 'MERGE_HEAD'))).toBe(false);
+    await h.instance.discardTask();
+  }, 120_000);
+
+  it('revue bloquante : Appliquer refusé sans carte ni fusion', async () => {
+    const h = await finishedTask();
+    const head = git('rev-parse', 'HEAD');
+    const run = (h.instance as unknown as { tasks: { current: TaskRun | null } }).tasks.current;
+    expect(run?.state.report?.verdict).toBe('success');
+    const review: NonNullable<CodeTaskState['review']> = {
+      summary: 'test',
+      blocking: ['secret en clair'],
+      model: MODEL,
+      at: Date.now(),
+      verdict: 'à revoir',
+      separateCall: true,
+      sameModelAsCoder: true,
+      independenceNote: 'même modèle',
+      findings: [{ bucket: 'bloquant', message: 'secret en clair' }],
+    };
+    run!.state.review = review;
+    const state = await h.instance.applyTask();
+    expect(state.notice).toMatch(/Revue bloquante/);
+    expect(h.cards.some((c) => c.toolName === 'dev_apply_task')).toBe(false);
+    expect(git('rev-parse', 'HEAD')).toBe(head);
     await h.instance.discardTask();
   }, 120_000);
 

@@ -130,7 +130,8 @@ export function designContext(
 
 export function reviewSystem(project: ProjectProfile): string {
   return `${head('REVIEWER', REVIEW_MARKER, project)}
-Tu relis un diff déjà testé. Est « bloquant » : une confirmation retirée ou affaiblie, un secret en clair, une suppression de fichiers ou un lancement de processus non demandé, un envoi réseau non local, un critère de la mission non tenu. Le reste est « avertissement » ou « info ».`;
+Tu relis un diff déjà testé, dans un appel séparé de la boucle qui a modifié les fichiers (tu ne partages pas sa conversation outils). Si tu es le même modèle que le codeur, ne te présente pas comme un relecteur humain indépendant.
+Est « bloquant » : une confirmation retirée ou affaiblie, un secret en clair, une suppression de fichiers ou un lancement de processus non demandé, un envoi réseau non local, un critère de la mission non tenu. Le reste est « avertissement » ou « info ».`;
 }
 
 export function reviewPrompt(diff: string, brief: MissionBrief): string {
@@ -162,6 +163,12 @@ export interface StructuredTaskReview {
   at: number;
   blocking: string[];
   findings: StructuredReviewFinding[];
+  /** Toujours vrai : la revue est un appel modèle distinct de la boucle CODER. */
+  separateCall: true;
+  /** Même modèle Ollama que le CODER de la tâche (pas une relecture indépendante). */
+  sameModelAsCoder: boolean;
+  /** Transparence affichée à l'utilisateur sur l'indépendance de la revue. */
+  independenceNote: string;
 }
 
 function issueBucket(severity: 'info' | 'avertissement' | 'bloquant'): StructuredReviewBucket {
@@ -170,12 +177,25 @@ function issueBucket(severity: 'info' | 'avertissement' | 'bloquant'): Structure
   return 'mineur';
 }
 
+export interface StructureReviewerOptions {
+  /** Modèle CODER de la tâche en cours (pour signaler une revue non indépendante). */
+  coderModel?: string;
+}
+
 /** Regroupe la sortie REVIEWER pour l’UI et le blocage d’« Appliquer ». */
 export function structureReviewerOutput(
   output: ReviewerOutput,
   model: string,
   at: number,
+  options?: StructureReviewerOptions,
 ): StructuredTaskReview {
+  const coderModel = options?.coderModel?.trim();
+  const sameModelAsCoder = Boolean(coderModel && coderModel === model);
+  const independenceNote = sameModelAsCoder
+    ? `Revue par un 2e appel au même modèle que le codeur (${model}) : ce n’est pas une relecture indépendante.`
+    : coderModel
+      ? `Revue par un appel distinct (${model}), modèle de code : ${coderModel}.`
+      : `Revue par un appel distinct du modèle ${model}.`;
   const findings: StructuredReviewFinding[] = output.issues.map((issue) => ({
     bucket: issueBucket(issue.severity),
     message: issue.message,
@@ -188,8 +208,19 @@ export function structureReviewerOutput(
     findings.push({ bucket: 'suggestion', message: text });
   }
   const blocking = blockingIssues(output);
-  const summary = `verdict « ${output.verdict} », ${output.issues.length} remarque(s)${blocking.length ? `, ${blocking.length} bloquante(s)` : ''}`;
-  return { summary, verdict: output.verdict, model, at, blocking, findings };
+  const detail = `verdict « ${output.verdict} », ${output.issues.length} remarque(s)${blocking.length ? `, ${blocking.length} bloquante(s)` : ''}`;
+  const summary = `${independenceNote} ${detail}`;
+  return {
+    summary,
+    verdict: output.verdict,
+    model,
+    at,
+    blocking,
+    findings,
+    separateCall: true,
+    sameModelAsCoder,
+    independenceNote,
+  };
 }
 
 export function diagnoseSystem(project: ProjectProfile): string {

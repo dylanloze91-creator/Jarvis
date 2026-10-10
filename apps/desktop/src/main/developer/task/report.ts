@@ -62,7 +62,8 @@ export function buildTaskReport(
   } else add('Pas lancés.');
   add(`Corrections : ${state.attempts} sur ${state.maxAttempts} au plus.`);
   if (state.review) {
-    add('### Revue (REVIEWER)');
+    add('### Revue (REVIEWER, appel séparé)');
+    if (state.review.independenceNote) add(state.review.independenceNote);
     add(`Modèle \`${state.review.model}\` : ${state.review.summary}`);
     if (state.review.blocking.length)
       add(...state.review.blocking.slice(0, 10).map((b) => `- bloquant : ${b.replace(/\|/g, '/')}`));

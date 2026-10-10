@@ -93,6 +93,9 @@ export interface CodeTaskState {
     model: string;
     at: number;
     verdict?: 'ok' | 'à revoir' | 'refusé';
+    separateCall: true;
+    sameModelAsCoder: boolean;
+    independenceNote: string;
     findings: Array<{
       bucket: 'bloquant' | 'important' | 'mineur' | 'suggestion';
       message: string;

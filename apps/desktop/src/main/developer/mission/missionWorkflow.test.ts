@@ -154,8 +154,14 @@ describe('missions sur Jarvis (0.5.2)', () => {
     const task = done.codeTask!;
     expect(task.model).toBe(CODE);
     expect(task.attempts).toBe(2);
-    expect(task.review).toMatchObject({ model: REV, blocking: [] });
-    expect(task.report?.markdown).toContain('### Revue (REVIEWER)');
+    expect(task.review).toMatchObject({
+      model: REV,
+      blocking: [],
+      separateCall: true,
+      sameModelAsCoder: false,
+    });
+    expect(task.review?.independenceNote).toContain('appel distinct');
+    expect(task.report?.markdown).toContain('### Revue (REVIEWER, appel séparé)');
 
     expect(fake.unloaded).toEqual(expect.arrayContaining([CODE, REV]));
 
