@@ -1180,11 +1180,13 @@ export class MissionWorkflow {
             ? 'Échec : le programme demandé n’a pas été livré. Ton projet sur le disque est resté le gabarit neutre (la copie isolée n’a pas été fusionnée). Vois le rapport de la tâche.'
             : 'Pas réussie : vois le rapport de la tâche.';
     if (task) {
-      void this.deps.recordModelRun?.({
-        model: task.model,
-        category: modelRunCategory('CODER', mission.kind),
-        success: verdict === 'success',
-      });
+      this.deps
+        .recordModelRun?.({
+          model: task.model,
+          category: modelRunCategory('CODER', mission.kind),
+          success: verdict === 'success',
+        })
+        ?.catch(() => undefined);
     }
     if (task && this.deps.manualStore) {
       const installed = (await this.deps.ollama().status()).models.map((m) => m.name);

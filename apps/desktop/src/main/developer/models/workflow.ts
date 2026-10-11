@@ -612,6 +612,6 @@ export class CodeModelWorkflow {
   async recordModelRun(record: Omit<ModelRunRecord, 'at'>): Promise<void> {
     const stored = await this.ensureStored();
     const modelRuns = appendModelRun(stored.modelRuns ?? [], record);
-    this.stored = await this.deps.store.update({ modelRuns });
+    this.stored = await this.deps.store.serializedUpdate({ modelRuns });
   }
 }

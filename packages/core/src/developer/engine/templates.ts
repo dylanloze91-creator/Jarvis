@@ -780,7 +780,8 @@ export const TEMPLATE_REFERENCES: Partial<Record<ProjectTemplateId, readonly str
 export const TEMPLATE_GUIDES: Partial<Record<ProjectTemplateId, string>> = {
   'web-game': [
     'Point de départ navigateur : boucle et tests minimaux — pas de jeu jouable tant que tu n’as pas écrit la demande.',
-    '- Écris le programme demandé (jeu, démo, page interactive) dans le style qui convient ; tu peux réorganiser src/ si une autre structure sert mieux la demande.',
+    '- Dans src/game.ts, garde les exports createGame, update et render attendus par src/game.test.ts et src/main.ts ; étends le gabarit neutre au lieu de tout effacer.',
+    '- Écris le programme demandé (jeu, démo, page interactive) en TypeScript valide : le typecheck doit passer.',
     '- Adapte ou remplace les tests pour vérifier ce programme.',
     '- index.html et src/main.ts sont une aide, pas une forme obligatoire : change-les si la demande l’exige.',
   ].join('\n'),

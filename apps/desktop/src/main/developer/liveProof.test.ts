@@ -4,11 +4,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createLiveHarness } from './controllerHarness.testkit.js';
+import { createFixtureRepo } from './task/taskWorkflow.testkit.js';
 
 const LIVE = process.env.LIVE_DEVELOPER_PROOF === '1';
 const base = mkdtempSync(join(tmpdir(), 'jarvis-live-proof-'));
 const projectsRoot = join(base, 'Projets');
-const repo = '/tmp/Jarvis';
+const repo = join(base, 'Jarvis');
 
 function run(cwd: string, cmd: string, args: string[]) {
   return execFileSync(cmd, args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
@@ -17,6 +18,7 @@ function run(cwd: string, cmd: string, args: string[]) {
 describe.runIf(LIVE)('preuve live Développeur (Ollama réel)', () => {
   beforeAll(() => {
     mkdirSync(join(base, 'home'), { recursive: true });
+    createFixtureRepo(repo);
     mkdirSync(projectsRoot, { recursive: true });
     mkdirSync(join(base, 'userData', 'developer'), { recursive: true });
     writeFileSync(
@@ -33,13 +35,19 @@ describe.runIf(LIVE)('preuve live Développeur (Ollama réel)', () => {
               at: 1,
               model: 'qwen2.5:3b',
               category: 'role:CODER:mission:new-project',
-              success: true,
+              success: false,
             },
             {
               at: 2,
               model: 'qwen3.5:4b',
               category: 'role:CODER:mission:new-project',
-              success: false,
+              success: true,
+            },
+            {
+              at: 3,
+              model: 'qwen3.5:4b',
+              category: 'role:CODER:mission:new-project',
+              success: true,
             },
           ],
         },
@@ -71,7 +79,7 @@ describe.runIf(LIVE)('preuve live Développeur (Ollama réel)', () => {
       expect(started.mission?.status, started.notice ?? started.mission?.summary).toBe('finished');
       const task = started.codeTask!;
       expect(task.report?.verdict).toBe('success');
-      expect(task.model).toBe('qwen2.5:3b');
+      expect(task.model).toBe('qwen3.5:4b');
 
       const applied = await h.instance.applyTask();
       expect(applied.codeTask?.closed).toBe('applied');

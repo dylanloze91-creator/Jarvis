@@ -502,6 +502,19 @@ export class TaskRun extends TaskRunBase {
     }
   }
 
+  /** Contenu du fichier au commit de référence de la copie isolée (gabarit neutre). */
+  private async readSandboxAtBase(path: string): Promise<string | null> {
+    if (!this.sandbox) return null;
+    const outcome = await this.deps.run({
+      program: 'git',
+      args: ['show', `${this.sandbox.baseCommit}:${path}`],
+      cwd: this.sandbox.path,
+      display: `git show ${this.sandbox.baseCommit}:${path}`,
+      timeoutMs: 15_000,
+    });
+    return outcome.code === 0 ? outcome.stdout : null;
+  }
+
   /**
    * Écriture fichier par fichier (projets nés d'un gabarit, 5.0.1) : un appel
    * du modèle par fichier du plan (hors fichiers protégés), contenu complet,
@@ -548,6 +561,13 @@ export class TaskRun extends TaskRunBase {
       for (const file of targets) {
         if (deadline.signal.aborted) break;
         await pause();
+        if (failure && file.path === 'src/game.ts' && this.hooks.fileByFile) {
+          const baseline = await this.readSandboxAtBase(file.path);
+          if (baseline) {
+            await this.call('dev_write_file', { path: file.path, content: baseline }, signal);
+            this.host.log(`${file.path} : retour au gabarit neutre avant correction.`);
+          }
+        }
         const current = await this.readSandbox(file.path);
         const related: Array<{ path: string; content: string }> = [];
         for (const path of [
@@ -789,11 +809,13 @@ export class TaskRun extends TaskRunBase {
     if (this.state.status !== 'cancelled' && this.state.status !== 'refused')
       this.state.status = verdict === 'success' ? 'finished' : 'failed';
     this.state.report = { markdown: buildTaskReport(this.state, verdict, reason), verdict };
-    void this.deps.recordModelRun?.({
-      model: this.state.model,
-      category: modelRunCategory('CODER', 'code-task'),
-      success: verdict === 'success',
-    });
+    this.deps
+      .recordModelRun?.({
+        model: this.state.model,
+        category: modelRunCategory('CODER', 'code-task'),
+        success: verdict === 'success',
+      })
+      ?.catch(() => undefined);
     step('report', 'done');
     this.host.emit();
     if (verdict === 'success')

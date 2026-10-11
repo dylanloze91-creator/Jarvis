@@ -24,8 +24,19 @@ const EMPTY: StoredCodeModel = {
 
 export class CodeModelStore {
   private cache: StoredCodeModel | null = null;
+  private writeChain: Promise<void> = Promise.resolve();
 
   constructor(private readonly path: () => string) {}
+
+  /** Écritures sérialisées : évite les courses entre enregistrements de runs. */
+  async serializedUpdate(patch: Partial<StoredCodeModel>): Promise<StoredCodeModel> {
+    const run = this.writeChain.then(() => this.update(patch));
+    this.writeChain = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  }
 
   async load(): Promise<StoredCodeModel> {
     if (this.cache) return this.cache;
