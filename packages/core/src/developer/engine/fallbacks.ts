@@ -46,7 +46,7 @@ export function fallbackGoal(request: string, kind: MissionKind): GoalOutput {
 }
 
 const GAME =
-  /\b(jeu|jeux|game|pong|snake|tetris|casse[- ]briques?|breakout|morpion|tic[- ]tac[- ]toe|flappy|space invaders|labyrinthe|platformer|asteroids?)\b/i;
+  /\b(jeu|jeux|game|pong|snake|tetris|casse[- ]briques?|breakout|morpion|tic[- ]tac[- ]toe|flappy|space invaders|labyrinthe|platformer|plateforme|mario|side[- ]scroller|asteroids?)\b/i;
 const WEB = /\b(site|page web|navigateur|web|react|interface web)\b/i;
 const LIBRARY = /\b(bibliothèque|bibliotheque|librairie|library|module réutilisable)\b/i;
 const NAMED = /\b(pong|snake|tetris|morpion|breakout|flappy|asteroids?)\b/i;
@@ -105,9 +105,10 @@ export function steerFactory(request: string, chosen: FactoryOutput): FactoryOut
 
 const ENTRY_FILES: Partial<Record<ProjectTemplateId, Array<[string, string]>>> = {
   'web-game': [
-    ['src/game.ts', 'logique et dessin du programme demandé'],
-    ['src/rules.ts', 'réglages du jeu'],
-    ['src/game.test.ts', 'tests du programme demandé'],
+    ['src/level.ts', 'géométrie du niveau jouable'],
+    ['src/game.ts', 'physique et rendu (à garder pour une plateforme)'],
+    ['src/rules.ts', 'vitesses et constantes'],
+    ['src/game.test.ts', 'tests de la logique'],
   ],
   'node-cli': [
     ['src/main.ts', 'logique du programme'],

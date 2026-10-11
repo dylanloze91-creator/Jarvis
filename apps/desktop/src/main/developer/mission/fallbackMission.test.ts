@@ -119,6 +119,7 @@ describe('mission avec un petit modèle bavard (5.0.1)', () => {
     const task = done.codeTask!;
     expect(task.planFallback).toMatch(/^plan de secours/);
     expect(task.plan?.files.map((f) => f.path)).toEqual([
+      'src/level.ts',
       'src/game.ts',
       'src/rules.ts',
       'src/game.test.ts',
@@ -146,6 +147,7 @@ describe('mission avec un petit modèle bavard (5.0.1)', () => {
     expect(factoryCalls.map((b) => b.options?.num_predict)).toEqual([300, 300]);
     const writeCalls = bodies().filter((b) => system(b).includes(WRITE_MARKER));
     expect(writeCalls.map((b) => b.options?.num_predict)).toEqual([
+      STEP_LIMITS.edit.maxTokens,
       STEP_LIMITS.edit.maxTokens,
       STEP_LIMITS.edit.maxTokens,
     ]);
@@ -266,9 +268,10 @@ describe('mission avec un petit modèle bavard (5.0.1)', () => {
 
     const task = done.codeTask!;
     expect(task.planFallback).toMatch(
-      /ne touchait aucun fichier d’entrée du gabarit \(src\/game\.ts, src\/rules\.ts, src\/game\.test\.ts\)/,
+      /ne touchait aucun fichier d’entrée du gabarit \(src\/level\.ts, src\/game\.ts, src\/rules\.ts, src\/game\.test\.ts\)/,
     );
     expect(task.plan?.files.map((f) => f.path)).toEqual([
+      'src/level.ts',
       'src/game.ts',
       'src/rules.ts',
       'src/game.test.ts',

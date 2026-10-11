@@ -70,7 +70,13 @@ function words(pattern: string, flags = 'i'): RegExp {
 }
 
 const GAME = words(
-  String.raw`jeu|jeux|game|pong|snake|tetris|casse[- ]briques?|breakout|morpion|tic[- ]tac[- ]toe|flappy|space invaders|labyrinthe|platformer|plateforme|asteroids?|échecs|dames|démineur|sudoku|pac-?man|course`,
+  String.raw`jeu|jeux|game|pong|snake|tetris|casse[- ]briques?|breakout|morpion|tic[- ]tac[- ]toe|flappy|space invaders|labyrinthe|platformer|plateforme|mario|side[- ]scroller|asteroids?|échecs|dames|démineur|sudoku|pac-?man|course`,
+);
+const PLATFORMER_ASK = words(
+  String.raw`platformer|plateforme|side[- ]scroller|jeu de plateforme|2d.*plateforme|parcours|niveau jouable|vue de côté`,
+);
+const ARCADE_GAME = words(
+  String.raw`pong|snake|tetris|casse[- ]briques?|breakout|morpion|tic[- ]tac|flappy|space invaders|asteroids?|pac-?man`,
 );
 const WHOLE = words(
   String.raw`complet|complète|complets|complètes|entier|entière|tout un|toute une|de zéro|de a à z|from scratch|clone`,
@@ -98,7 +104,7 @@ const HEAVY: Array<[RegExp, string]> = [
     ),
     'adversaire automatique',
   ],
-  [words(String.raw`niveaux|plusieurs niveaux|levels?`), 'plusieurs niveaux'],
+  [words(String.raw`niveaux|plusieurs niveaux|plusieurs levels|worlds?`), 'plusieurs niveaux'],
   [
     words(String.raw`sauvegarde|sauvegarder|meilleurs scores|classement`),
     'sauvegarde ou classement',
@@ -110,7 +116,11 @@ const HEAVY: Array<[RegExp, string]> = [
   [words(String.raw`éditeur|editeur`), 'éditeur'],
 ];
 /** Ce que chaque gabarit fait déjà : ces mots ne comptent pas comme des demandes. */
-const COVERED: Partial<Record<ProjectTemplateId, RegExp>> = {};
+const COVERED: Partial<Record<ProjectTemplateId, RegExp>> = {
+  'web-game': words(
+    String.raw`plateforme|platformer|2d|vue de côté|gravité|saut|sol|collectable|collectible|piège|victoire|canvas|navigateur|niveau`,
+  ),
+};
 const FILLER = words(
   String.raw`crée|créer|creer|cree|fais|fabrique|génère|genere|écris|ecris|moi|un|une|le|la|les|des|de|du|pour|dans|avec|et|à|a|au|aux|en|qui|que|petit|petite|simple|nouveau|nouvelle|projet|application|appli|programme|outil|deux|trois|quatre`,
   'gi',
@@ -148,12 +158,20 @@ export function estimateDifficulty(kind: MissionKind, request: string): Difficul
   const reasons: string[] = [];
   let level: DifficultyLevel = 1;
   if (kind === 'new-project' && template === 'web-game') {
-    level = GAME.test(text) || WHOLE.test(text) ? 3 : 2;
-    reasons.push(
-      level >= 3
-        ? 'jeu ou application canvas à écrire depuis le gabarit neutre'
-        : 'gabarit jeu neutre : logique et tests à écrire',
-    );
+    if (ARCADE_GAME.test(text)) {
+      level = 3;
+      reasons.push('jeu arcade à réécrire depuis le gabarit plateforme');
+    } else if (PLATFORMER_ASK.test(text) || GAME.test(text)) {
+      level = WHOLE.test(text) ? 3 : 2;
+      reasons.push(
+        level >= 3
+          ? 'plateforme 2D complète à composer (niveau et règles)'
+          : 'gabarit plateforme 2D : composer le niveau dans level.ts',
+      );
+    } else {
+      level = 2;
+      reasons.push('gabarit plateforme 2D : niveau et tests à adapter');
+    }
   } else if (creates) {
     level = 2;
     reasons.push(

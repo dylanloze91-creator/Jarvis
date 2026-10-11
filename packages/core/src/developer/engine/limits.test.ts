@@ -190,12 +190,13 @@ describe('secours sans modèle (5.0.1)', () => {
   });
 
   it('plan de secours : les fichiers d’entrée du gabarit', () => {
+    expect(templatePlan('web-game', PONG)?.files.map((f) => f.path)).toEqual([
+      'src/level.ts',
+      'src/game.ts',
+      'src/rules.ts',
+      'src/game.test.ts',
+    ]);
     expect(templatePlan('web-game', PONG)).toMatchObject({
-      files: [
-        { path: 'src/game.ts', action: 'edit' },
-        { path: 'src/rules.ts', action: 'edit' },
-        { path: 'src/game.test.ts', action: 'edit' },
-      ],
       tests: ['typecheck', 'test'],
     });
     const wpfPlan = templatePlan('dotnet-wpf', PONG);
@@ -252,7 +253,7 @@ describe('correction fichier par fichier (5.0.1)', () => {
 });
 
 describe('gabarit « jeu dans le navigateur » (5.0.7)', () => {
-  it('gabarit neutre : compile, boucle canvas, tests minimaux', () => {
+  it('gabarit plateforme 2D : compile, boucle canvas, tests de physique', () => {
     const files = renderTemplate('web-game', {
       packageName: 'snake',
       title: 'Snake',
@@ -263,6 +264,8 @@ describe('gabarit « jeu dans le navigateur » (5.0.7)', () => {
       expect.arrayContaining([
         'index.html',
         'src/main.ts',
+        'src/types.ts',
+        'src/level.ts',
         'src/rules.ts',
         'src/game.ts',
         'src/game.test.ts',
@@ -272,9 +275,10 @@ describe('gabarit « jeu dans le navigateur » (5.0.7)', () => {
     expect(pkg.scripts).toMatchObject({ typecheck: 'tsc --noEmit', test: 'vitest run' });
     expect(byPath['src/main.ts']).toContain('requestAnimationFrame');
     expect(byPath['src/game.ts']).toMatch(/export function createGame/);
-    expect(byPath['src/game.ts']).not.toMatch(/\bball\b/);
-    expect(byPath['src/game.test.ts']!.match(/\bit\(/g)).toHaveLength(2);
-    expect(TEMPLATE_GUIDES['web-game']).toMatch(/pas de jeu jouable|Point de départ/i);
+    expect(byPath['src/game.ts']).toMatch(/gravity|RULES\.gravity/);
+    expect(byPath['src/level.ts']).toContain('PLAY_LEVEL');
+    expect(byPath['src/game.test.ts']!.match(/\bit\(/g)!.length).toBeGreaterThanOrEqual(5);
+    expect(TEMPLATE_GUIDES['web-game']).toMatch(/plateforme 2D|level\.ts/i);
     expect(factorySchema.parse({ template: 'jeu', name: 'Snake' }).template).toBe('web-game');
     expect(factorySystem()).toContain('"web-game"');
     expect(TEMPLATE_GUIDES['web-game']).toMatch(/tests|game\.test/i);

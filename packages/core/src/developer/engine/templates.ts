@@ -7,6 +7,7 @@ import {
   type DotnetTemplateId,
 } from './dotnetTemplates.js';
 import { briefBlock, type MissionBrief } from './missionPrompts.js';
+import { platformerWebGameFiles } from './webGamePlatformer.js';
 
 /**
  * Project Factory : gabarits locaux Node / TypeScript, écrits par Jarvis sans
@@ -45,7 +46,7 @@ export const PROJECT_TEMPLATES: Record<ProjectTemplateId, { label: string; descr
     'web-game': {
       label: 'Jeu dans le navigateur (TypeScript, canvas, Vite)',
       description:
-        'canvas, boucle et tests minimaux qui compilent ; le programme demandé (jeu ou autre) est à écrire dans game.ts et game.test.ts',
+        'plateforme 2D de base (gravité, saut, sol, collectable, piège, victoire) ; le codeur compose le niveau dans level.ts',
     },
     'node-skill': {
       label: 'Compétence de Jarvis (outils TypeScript, hors du chat)',
@@ -668,70 +669,11 @@ function frame(now: number): void {
 requestAnimationFrame(frame);
 `,
     },
-    {
-      path: 'src/rules.ts',
-      content: `/** Réglages du jeu : constantes modifiables sans toucher à toute la logique. */
-export const RULES = {
-  title: '${title.replace("'", "\\'")}',
-};
-`,
-    },
-    {
-      path: 'src/game.ts',
-      content: `import { RULES } from './rules';
-
-/** État minimal du gabarit : remplace-le par le jeu ou l’application demandée. */
-export interface GameState {
-  width: number;
-  height: number;
-  tick: number;
-}
-
-export interface Input {
-  keys: ReadonlySet<string>;
-}
-
-export function createGame(width: number, height: number): GameState {
-  return { width, height, tick: 0 };
-}
-
-export function update(state: GameState, _input: Input, dt: number): GameState {
-  return { ...state, tick: state.tick + dt };
-}
-
-export function render(ctx: CanvasRenderingContext2D, state: GameState): void {
-  ctx.fillStyle = '#111';
-  ctx.fillRect(0, 0, state.width, state.height);
-  ctx.fillStyle = '#ccc';
-  ctx.font = '20px sans-serif';
-  ctx.textAlign = 'center';
-  ctx.fillText(RULES.title, state.width / 2, state.height / 2 - 12);
-  ctx.fillStyle = '#888';
-  ctx.font = '14px sans-serif';
-  ctx.fillText('Gabarit prêt — écris le programme demandé dans game.ts', state.width / 2, state.height / 2 + 16);
-}
-`,
-    },
-    {
-      path: 'src/game.test.ts',
-      content: `import { describe, expect, it } from 'vitest';
-import { createGame, update } from './game';
-
-/** Tests du gabarit : remplace-les par ceux du jeu ou de l’application demandée. */
-describe('gabarit jeu navigateur', () => {
-  it('createGame respecte la taille du canvas', () => {
-    const state = createGame(800, 480);
-    expect(state.width).toBe(800);
-    expect(state.height).toBe(480);
-  });
-
-  it('update avance sans erreur', () => {
-    const next = update(createGame(100, 100), { keys: new Set() }, 1 / 60);
-    expect(next.tick).toBeGreaterThan(0);
-  });
-});
-`,
-    },
+    ...platformerWebGameFiles({
+      packageName: input.packageName,
+      title,
+      description: input.description,
+    }),
     {
       path: 'README.md',
       content: readmeGame(input),
@@ -752,14 +694,14 @@ function readmeGame(input: TemplateInput): string {
     '',
     `- ${tick}npm install${tick}`,
     `- ${tick}npm run dev${tick}, puis ouvre http://localhost:5393`,
-    '- Le gabarit affiche un écran neutre : écris le jeu ou l’application demandée dans src/game.ts et adapte src/game.test.ts.',
+    '- Flèches ou A/D pour bouger, Espace pour sauter. Le niveau par défaut est jouable ; étends-le dans src/level.ts.',
     '',
     '## Vérifier',
     '',
     `- ${tick}npm test${tick}`,
     `- ${tick}npm run build${tick}`,
     '',
-    `Les réglages (vitesses, tailles, points pour gagner, touches) sont dans ${tick}src/rules.ts${tick}, la logique et le dessin dans ${tick}src/game.ts${tick} ; ${tick}src/main.ts${tick} gère le canvas, le clavier et la boucle d'images.`,
+    `Physique et tailles : ${tick}src/rules.ts${tick}. Géométrie du niveau : ${tick}src/level.ts${tick} (${tick}PLAY_LEVEL${tick}). Logique : ${tick}src/game.ts${tick} ; ${tick}src/main.ts${tick} gère le canvas et le clavier.`,
     '',
     `Créé par Jarvis Développeur à partir du gabarit « ${PROJECT_TEMPLATES['web-game'].label} ».`,
     '',
@@ -773,17 +715,17 @@ export const TEMPLATE_STRUCTURE: Partial<Record<ProjectTemplateId, readonly stri
 
 /** Fichiers montrés au modèle, en référence, quand il écrit un fichier du gabarit (5.0.1). */
 export const TEMPLATE_REFERENCES: Partial<Record<ProjectTemplateId, readonly string[]>> = {
-  'web-game': ['src/rules.ts', 'src/main.ts', 'src/game.test.ts'],
+  'web-game': ['src/level.ts', 'src/rules.ts', 'src/game.ts', 'src/main.ts', 'src/game.test.ts'],
 };
 
 /** Consignes du CODER pour un projet neuf, selon son gabarit (5.0.1). */
 export const TEMPLATE_GUIDES: Partial<Record<ProjectTemplateId, string>> = {
   'web-game': [
-    'Point de départ navigateur : boucle et tests minimaux — pas de jeu jouable tant que tu n’as pas écrit la demande.',
-    '- Dans src/game.ts, garde les exports createGame, update et render attendus par src/game.test.ts et src/main.ts ; étends le gabarit neutre au lieu de tout effacer.',
-    '- Écris le programme demandé (jeu, démo, page interactive) en TypeScript valide : le typecheck doit passer.',
-    '- Adapte ou remplace les tests pour vérifier ce programme.',
-    '- index.html et src/main.ts sont une aide, pas une forme obligatoire : change-les si la demande l’exige.',
+    'Gabarit plateforme 2D vue de côté : gravité, saut, plateformes, un collectable, un piège, zone de victoire. Formes simples uniquement — pas de sprites, musiques ou noms copiés d’éditeurs tiers.',
+    '- Pour un jeu de plateforme 2D : compose un niveau jouable dans src/level.ts (PLAY_LEVEL) ; ne réécris pas toute la physique dans game.ts sauf nécessité.',
+    '- Garde les exports createGame, update et render ; les tests dans src/game.test.ts doivent rester verts.',
+    '- Pong, Snake, Tetris, etc. : remplace la logique dans game.ts et adapte les tests — le gabarit part d’une plateforme, pas de ces jeux.',
+    '- index.html et src/main.ts peuvent rester inchangés pour une plateforme.',
   ].join('\n'),
   'node-cli':
     'Gabarit « outil en ligne de commande » : déjà fonctionnel et testé (--name, --help). La logique va dans src/main.ts (fonction run), testée dans src/main.test.ts ; src/cli.ts ne fait que l’appeler. Fais seulement le changement demandé.',
@@ -841,6 +783,9 @@ const TEMPLATE_ALIASES: Record<string, ProjectTemplateId> = {
   game: 'web-game',
   canvas: 'web-game',
   pong: 'web-game',
+  mario: 'web-game',
+  plateforme: 'web-game',
+  platformer: 'web-game',
   'jeu-web': 'web-game',
   web: 'vite-react',
   site: 'vite-react',

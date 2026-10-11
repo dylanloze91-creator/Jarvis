@@ -39,10 +39,15 @@ function bench(model: string, coder: Array<boolean | null>): RealBenchResult {
 }
 
 describe('difficulté d’une mission (5.0.1)', () => {
-  it('jeu web : gabarit neutre, programme à écrire', () => {
+  it('jeu web : arcade = réécriture ; plateforme = niveau', () => {
     const snake = estimateDifficulty('new-project', 'Crée un Snake jouable dans le navigateur');
     expect(snake).toMatchObject({ level: 3, template: 'web-game' });
-    expect(snake.reasons.join(' ')).toMatch(/gabarit neutre|canvas/);
+    expect(snake.reasons.join(' ')).toMatch(/arcade|plateforme/);
+    const plateforme = estimateDifficulty(
+      'new-project',
+      'Pour thedexios : un niveau jouable sur le gabarit plateforme 2D (plateformes à franchir).',
+    );
+    expect(plateforme).toMatchObject({ level: 2, template: 'web-game' });
     const pong = estimateDifficulty(
       'new-project',
       'Crée un Pong jouable dans le navigateur : deux raquettes, une balle, le score.',
