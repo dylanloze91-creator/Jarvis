@@ -776,6 +776,30 @@ export class TaskRun extends TaskRunBase {
     return run;
   }
 
+  /** Restaure les fichiers du plan depuis le commit de base et reteste (gabarit neutre). */
+  private async templateRescue(
+    step: StepFn,
+    signal: AbortSignal,
+    pause: () => Promise<void>,
+    run: CodeTaskRun,
+  ): Promise<CodeTaskRun> {
+    if (!this.hooks.fileByFile || !this.reviewed || run.ok) return run;
+    for (const file of this.reviewed.files) {
+      if (file.problem || file.action === 'delete') continue;
+      const baseline = await this.readSandboxAtBase(file.path);
+      if (baseline) await this.call('dev_write_file', { path: file.path, content: baseline }, signal);
+    }
+    const rescue = await this.testRun('Repli gabarit neutre', 'template-rescue', step, signal, pause);
+    if (!rescue.ok) return run;
+    const reviewed = await this.reviewGate(rescue, signal);
+    if (reviewed.ok) {
+      this.state.planFallback = [this.state.planFallback, 'repli gabarit neutre (tests verts)']
+        .filter(Boolean)
+        .join(' · ');
+    }
+    return reviewed;
+  }
+
   /** REVIEWER d'une mission, une fois les tests verts : un point bloquant compte comme un échec. */
   private async reviewGate(run: CodeTaskRun, signal: AbortSignal): Promise<CodeTaskRun> {
     if (!run.ok || !this.hooks.review) return run;
@@ -1154,31 +1178,24 @@ export class TaskRun extends TaskRunBase {
       );
       const current = failureSignature(run.newFailures);
       if (!run.ok && current === previous && n < state.maxAttempts) {
-        state.repeatedFailure = {
-          attempt: n,
-          failures: run.newFailures.slice(0, 20),
-          unused: state.maxAttempts - n,
-        };
-        this.hooks.onPhase?.('fix', 'failed', 'même échec qu’avant la correction : arrêt');
-        const reason = `Arrêt net : la correction ${n} reproduit exactement le même échec que la série précédente (${run.newFailures.length} échec(s) identique(s) : ${run.newFailures.slice(0, 2).join(' ; ')}). ${state.repeatedFailure.unused ? `Les ${state.repeatedFailure.unused} correction(s) restante(s) ne sont pas tentées : le modèle tourne en rond.` : 'Le modèle tourne en rond.'}`;
-        throw new TaskStopped(this.finish(step, 'failed', reason));
+        const rescued = await this.templateRescue(step, signal, pause, run);
+        if (!rescued.ok) {
+          state.repeatedFailure = {
+            attempt: n,
+            failures: run.newFailures.slice(0, 20),
+            unused: state.maxAttempts - n,
+          };
+          this.hooks.onPhase?.('fix', 'failed', 'même échec qu’avant la correction : arrêt');
+          const reason = `Arrêt net : la correction ${n} reproduit exactement le même échec que la série précédente (${run.newFailures.length} échec(s) identique(s) : ${run.newFailures.slice(0, 2).join(' ; ')}). ${state.repeatedFailure.unused ? `Les ${state.repeatedFailure.unused} correction(s) restante(s) ne sont pas tentées : le modèle tourne en rond.` : 'Le modèle tourne en rond.'}`;
+          throw new TaskStopped(this.finish(step, 'failed', reason));
+        }
+        run = rescued;
+        previous = failureSignature(run.newFailures);
+        continue;
       }
       previous = current;
     }
-    if (!run.ok && this.hooks.fileByFile && this.reviewed) {
-      for (const file of this.reviewed.files) {
-        if (file.problem || file.action === 'delete') continue;
-        const baseline = await this.readSandboxAtBase(file.path);
-        if (baseline) await this.call('dev_write_file', { path: file.path, content: baseline }, signal);
-      }
-      const rescue = await this.testRun('Repli gabarit neutre', 'template-rescue', step, signal, pause);
-      if (rescue.ok) {
-        run = await this.reviewGate(rescue, signal);
-        if (run.ok) {
-          state.planFallback = [state.planFallback, 'repli gabarit neutre (tests verts)'].filter(Boolean).join(' · ');
-        }
-      }
-    }
+    run = await this.templateRescue(step, signal, pause, run);
     const message = this.finish(step, run.ok ? 'success' : 'failed');
     if (!run.ok) throw new TaskStopped(message);
     return message;
