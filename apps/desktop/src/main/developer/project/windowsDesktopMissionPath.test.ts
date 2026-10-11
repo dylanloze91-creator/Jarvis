@@ -112,6 +112,64 @@ function assertExeAndTests(projectTitle: string, projectId: string) {
 }
 
 describe('chemin mission bureau .exe (apply + Construire)', () => {
+  it('livraison mission : pas de carte apply ni Construire (automatique)', async () => {
+    const title = 'Sans Carte';
+    const core = 'SansCarte';
+    fake.scripts.set(CODE, missionScript({
+      factoryName: title,
+      plan: [{ path: `src/${core}.Core/Salutation.cs`, action: 'modifier' }],
+      writes: { [`src/${core}.Core/Salutation.cs`]: SALUTATION_CS(core) },
+    }));
+    const h = createHarness({
+      base,
+      repo: jarvis,
+      fake,
+      developer: { codeModel: CODE, projectsRoot },
+      intercept: offlineDotnet(true),
+    });
+    await h.instance.validate(jarvis);
+    const done = await h.instance.startMission(
+      'new-project',
+      'Fais-moi une appli Windows : garde Salutation dans Core.',
+      true,
+    );
+    expect(done.mission?.status, done.mission?.summary).toBe('finished');
+    const applyCards = h.cards.filter((c) => c.toolName === 'dev_apply_task');
+    const buildCards = h.cards.filter((c) => c.toolName === 'dev_build_project');
+    expect(applyCards, JSON.stringify(applyCards.map((c) => c.title))).toHaveLength(0);
+    expect(buildCards, JSON.stringify(buildCards.map((c) => c.title))).toHaveLength(0);
+    expect(h.ran.some((r) => r.display.includes('dotnet publish'))).toBe(true);
+    await h.instance.discardTask();
+  }, 180_000);
+
+  it('Construire manuel : la carte reste obligatoire', async () => {
+    const title = 'Manuel Build';
+    const core = 'ManuelBuild';
+    fake.scripts.set(CODE, missionScript({
+      factoryName: title,
+      plan: [{ path: `src/${core}.Core/Salutation.cs`, action: 'modifier' }],
+      writes: { [`src/${core}.Core/Salutation.cs`]: SALUTATION_CS(core) },
+    }));
+    const h = createHarness({
+      base,
+      repo: jarvis,
+      fake,
+      developer: { codeModel: CODE, projectsRoot },
+      intercept: offlineDotnet(true),
+    });
+    await h.instance.validate(jarvis);
+    const done = await h.instance.startMission(
+      'new-project',
+      'Appli Windows .exe minimaliste.',
+      true,
+    );
+    const projectId = done.mission!.projectId!;
+    await h.instance.discardTask();
+    h.cards.length = 0;
+    await h.instance.buildProject(projectId);
+    expect(h.cards.some((c) => c.toolName === 'dev_build_project')).toBe(true);
+  }, 180_000);
+
   it('appli .exe : mission → fusion → publish win-x64 sur disque', async () => {
     const title = 'Compteur Mots';
     const core = 'CompteurMots';
@@ -145,8 +203,8 @@ describe('chemin mission bureau .exe (apply + Construire)', () => {
     );
     expect(done.mission?.status, done.mission?.summary).toBe('finished');
     expect(done.codeTask?.report?.verdict).toBe('success');
-    expect(h.cards.some((c) => c.toolName === 'dev_apply_task')).toBe(true);
-    expect(h.cards.some((c) => c.toolName === 'dev_build_project')).toBe(true);
+    expect(h.cards.some((c) => c.toolName === 'dev_apply_task')).toBe(false);
+    expect(h.cards.some((c) => c.toolName === 'dev_build_project')).toBe(false);
     expect(h.ran.some((r) => r.display.includes('dotnet publish'))).toBe(true);
     assertExeAndTests(title, done.mission!.projectId!);
     await h.instance.discardTask();
@@ -220,7 +278,7 @@ describe('chemin mission bureau .exe (apply + Construire)', () => {
       true,
     );
     expect(done.mission?.status, done.mission?.summary).toBe('finished');
-    expect(h.cards.some((c) => c.toolName === 'dev_build_project')).toBe(true);
+    expect(h.cards.some((c) => c.toolName === 'dev_apply_task')).toBe(false);
     assertExeAndTests(title, done.mission!.projectId!);
     await h.instance.discardTask();
   }, 180_000);

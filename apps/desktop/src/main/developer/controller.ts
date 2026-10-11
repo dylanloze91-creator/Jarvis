@@ -307,10 +307,10 @@ export class DeveloperController {
         startTask: (request, options) => this.tasks.start(request, options),
         currentTask: () => this.tasks.view().codeTask,
         deliverWindowsExe: async (projectId) => {
-          const applied = await this.tasks.apply();
+          const applied = await this.tasks.applyDirectToProject();
           const task = applied.codeTask;
           if (!task?.applied || task.applied.revertedAt !== null) return applied;
-          return this.projects.build(projectId);
+          return this.projects.build(projectId, { autoConfirm: true });
         },
       },
       {

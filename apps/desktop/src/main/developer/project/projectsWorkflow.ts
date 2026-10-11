@@ -365,7 +365,7 @@ export class ProjectsWorkflow {
    * l'installateur local (`package:win`, jamais `publish`) ; pour un projet,
    * `npm run build`. Jarvis n'installe ni ne lance le résultat.
    */
-  async build(id: string): Promise<DeveloperState> {
+  async build(id: string, options: { autoConfirm?: boolean } = {}): Promise<DeveloperState> {
     const views = this.views ?? (await this.refresh());
     const view = views.find((v) => v.id === id);
     if (!view) return this.host.notice('Projet introuvable.');
@@ -394,38 +394,49 @@ export class ProjectsWorkflow {
         const node = dotnet ? null : await this.host.node();
         if (!dotnet && !node) throw new Error('Node.js et npm sont introuvables.');
         step('environment', 'done', dotnet ? devPlatform().dotnetProgram : node!.nodePath);
-        step('confirm', 'running', 'ta confirmation');
         const safety = classifyCommand(build.command);
-        const approved = await this.host.ask(
-          {
-            callId: randomId(),
-            toolName: 'dev_build_project',
-            title: `Construire ${view.name}`,
-            details:
-              view.kind === 'jarvis'
-                ? 'Construit l’installateur de Jarvis dans ta copie, en local. Il n’est ni publié ni lancé : tu l’installes toi-même si tu veux. Plusieurs minutes ; peut télécharger les fichiers de la voix s’ils manquent.'
-                : dotnet
-                  ? build.artifact
-                    ? 'Publie un .exe Windows (win-x64) dans ta copie. Rien n’est lancé ici (Linux ne peut pas exécuter le .exe).'
-                    : 'Compile la solution en Release dans ta copie. Rien n’est publié ni lancé.'
-                  : 'Lance le script « build » du projet dans ta copie. Rien n’est publié.',
-            command: `${build.command}\n(dans ${resolved.root})`,
-            forced: true,
-          },
-          { safety, reason: 'construction : toujours confirmée' },
-          signal,
-        );
-        this.record(
-          'dev_build_project',
-          { project: id, command: build.command },
-          approved,
-          approved ? `Construction acceptée : ${build.command}.` : 'Construction refusée.',
-        );
-        if (!approved) {
-          step('confirm', 'failed', 'refusée');
-          return 'Construction refusée.';
+        let approved = options.autoConfirm === true;
+        if (approved) {
+          step('confirm', 'skipped', 'automatique (mission bureau livrée)');
+          this.record(
+            'dev_build_project',
+            { project: id, command: build.command, direct: true },
+            true,
+            `Construction automatique : ${build.command}.`,
+          );
+        } else {
+          step('confirm', 'running', 'ta confirmation');
+          approved = await this.host.ask(
+            {
+              callId: randomId(),
+              toolName: 'dev_build_project',
+              title: `Construire ${view.name}`,
+              details:
+                view.kind === 'jarvis'
+                  ? 'Construit l’installateur de Jarvis dans ta copie, en local. Il n’est ni publié ni lancé : tu l’installes toi-même si tu veux. Plusieurs minutes ; peut télécharger les fichiers de la voix s’ils manquent.'
+                  : dotnet
+                    ? build.artifact
+                      ? 'Publie un .exe Windows (win-x64) dans ta copie. Rien n’est lancé ici (Linux ne peut pas exécuter le .exe).'
+                      : 'Compile la solution en Release dans ta copie. Rien n’est publié ni lancé.'
+                    : 'Lance le script « build » du projet dans ta copie. Rien n’est publié.',
+              command: `${build.command}\n(dans ${resolved.root})`,
+              forced: true,
+            },
+            { safety, reason: 'construction : toujours confirmée' },
+            signal,
+          );
+          this.record(
+            'dev_build_project',
+            { project: id, command: build.command },
+            approved,
+            approved ? `Construction acceptée : ${build.command}.` : 'Construction refusée.',
+          );
+          if (!approved) {
+            step('confirm', 'failed', 'refusée');
+            return 'Construction refusée.';
+          }
+          step('confirm', 'done', 'acceptée');
         }
-        step('confirm', 'done', 'acceptée');
         step('build', 'running');
         const outcome = await this.deps.run({
           program: dotnet ? devPlatform().dotnetProgram : node!.nodePath,
