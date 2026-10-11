@@ -262,7 +262,7 @@ export class DeveloperController {
         freeBytes,
         graceMs: deps.chatGraceMs,
         manualStore: this.manualStore,
-        modelRuns: () => this.models.modelRuns(),
+        modelRuns: () => this.models.loadedModelRuns(),
         recordModelRun: (record) => this.models.recordModelRun(record),
       },
     );
@@ -319,7 +319,7 @@ export class DeveloperController {
         realBenches: () => this.models.state().realBenches,
         manualStore: this.manualStore,
         log: (line) => this.appendLog(line),
-        modelRuns: () => this.models.modelRuns(),
+        modelRuns: () => this.models.loadedModelRuns(),
         recordModelRun: (record) => this.models.recordModelRun(record),
       },
     );

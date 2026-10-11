@@ -610,6 +610,16 @@ export class TaskRun extends TaskRunBase {
           this.host.log(`${file.path} : la réponse ne contient pas de code.`);
           continue;
         }
+        if (
+          file.path === 'src/game.ts' &&
+          this.hooks.fileByFile &&
+          (!/export function createGame/.test(content) ||
+            !/export function update/.test(content) ||
+            !/export function render/.test(content))
+        ) {
+          this.host.log(`${file.path} : réponse rejetée (exports createGame/update/render requis).`);
+          continue;
+        }
         const outcome = await this.call(
           current === null ? 'dev_create_file' : 'dev_write_file',
           { path: file.path, content },

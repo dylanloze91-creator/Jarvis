@@ -177,7 +177,7 @@ export interface MissionDeps {
   realBenches?(): readonly RealBenchResult[];
   manualStore?: DeveloperManualStore;
   log?: (line: string) => void;
-  modelRuns?(): readonly ModelRunRecord[];
+  modelRuns?(): Promise<readonly ModelRunRecord[]>;
   recordModelRun?: (record: Omit<ModelRunRecord, 'at'>) => Promise<void>;
 }
 
@@ -414,7 +414,12 @@ export class MissionWorkflow {
       return this.host.notice('Demande trop longue (2 000 caractères au plus).');
     const status = await this.deps.ollama().status();
     const installed = new Set(status.models.map((m) => m.name));
-    const plan = buildMissionModelPlan(kind, this.developer(), installed, this.deps.modelRuns?.() ?? []);
+    const plan = buildMissionModelPlan(
+      kind,
+      this.developer(),
+      installed,
+      (await this.deps.modelRuns?.()) ?? [],
+    );
     if (!(plan instanceof Map)) return this.host.notice(plan.error);
     for (const route of plan.values()) {
       if (route.logLine) this.deps.log?.(`[modèles] ${route.logLine}`);

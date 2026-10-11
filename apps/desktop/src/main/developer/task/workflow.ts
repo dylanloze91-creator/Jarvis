@@ -183,7 +183,7 @@ export class CodeTaskWorkflow {
       options.model
         ? { model: options.model, logLine: '' }
         : routeRoleToInstalledModel('CODER', this.deps.settings().developer, installed, {
-            runs: this.deps.modelRuns?.() ?? [],
+            runs: (await this.deps.modelRuns?.()) ?? [],
           });
     if (!routed)
       return this.host.notice(

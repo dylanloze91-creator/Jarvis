@@ -605,8 +605,8 @@ export class CodeModelWorkflow {
     );
   }
 
-  modelRuns(): ModelRunRecord[] {
-    return this.stored?.modelRuns ?? [];
+  async loadedModelRuns(): Promise<ModelRunRecord[]> {
+    return (await this.ensureStored()).modelRuns ?? [];
   }
 
   async recordModelRun(record: Omit<ModelRunRecord, 'at'>): Promise<void> {
