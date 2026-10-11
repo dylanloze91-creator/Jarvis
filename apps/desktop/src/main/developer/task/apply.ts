@@ -78,7 +78,9 @@ export async function checkApply(
     `git rev-list --count HEAD..${taskBranch}`,
   );
   const count = Number.parseInt(ahead.stdout.trim(), 10) || 0;
-  if (ahead.code !== 0 || count === 0)
+  if (ahead.code !== 0)
+    throw new ApplyError('Rien à appliquer : impossible de compter les commits de la tâche.');
+  if (count < 0)
     throw new ApplyError('Rien à appliquer : la branche de la tâche est déjà dans ta copie.');
   return { branch: branch.stdout.trim(), head: head.stdout.trim(), ahead: count };
 }

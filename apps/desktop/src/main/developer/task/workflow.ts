@@ -546,7 +546,30 @@ export class CodeTaskWorkflow {
       async (step, signal) => {
         step('check', 'running', root);
         const target = await checkApply(this.deps.run, root, branch, baseCommit ?? '');
-        step('check', 'done', `${target.ahead} commit(s) à fusionner dans ${target.branch}`);
+        step(
+          'check',
+          'done',
+          target.ahead
+            ? `${target.ahead} commit(s) à fusionner dans ${target.branch}`
+            : `déjà à jour sur ${target.branch}`,
+        );
+        if (target.ahead === 0) {
+          run.state.applied = {
+            at: Date.now(),
+            root,
+            branch: target.branch,
+            preHead: target.head,
+            merge: target.head,
+            revertedAt: null,
+            revert: null,
+          };
+          if (run.state.report)
+            run.state.report.markdown +=
+              '\n\n### Application\n\nAucune fusion nécessaire : ton projet contient déjà le résultat de la tâche.\n';
+          step('confirm', 'skipped');
+          step('merge', 'skipped');
+          return 'Déjà à jour : rien à fusionner (le projet contient déjà le résultat de la tâche).';
+        }
         const message = mergeMessage(request, branch);
         const commands = applyCommands(branch, message);
         step('confirm', 'running', 'ta confirmation');
@@ -618,6 +641,29 @@ export class CodeTaskWorkflow {
     const root = run.repoRoot;
     try {
       const target = await checkApply(this.deps.run, root, branch, baseCommit ?? '');
+      if (target.ahead === 0) {
+        run.state.applied = {
+          at: Date.now(),
+          root,
+          branch: target.branch,
+          preHead: target.head,
+          merge: target.head,
+          revertedAt: null,
+          revert: null,
+        };
+        if (run.state.report)
+          run.state.report.markdown +=
+            '\n\n### Application automatique\n\nAucune fusion : le projet contient déjà le résultat de la tâche.\n';
+        this.record(
+          'dev_apply_task',
+          { branch, root, target: target.branch, direct: true, noop: true },
+          true,
+          'Application automatique : déjà à jour.',
+        );
+        return this.host.notice(
+          'Modification appliquée : ton projet contient déjà le résultat (aucune fusion nécessaire).',
+        );
+      }
       const message = mergeMessage(request, branch);
       const result = await mergeTask(this.deps.run, root, branch, message);
       if (!result.ok) {

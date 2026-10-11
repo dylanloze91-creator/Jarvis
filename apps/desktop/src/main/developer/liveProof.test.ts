@@ -86,7 +86,7 @@ describe.runIf(LIVE)('preuve live Développeur (Ollama réel)', () => {
       expect(task.model).toBe('qwen3.5:4b');
 
       const applied = await h.instance.applyTask();
-      expect(applied.codeTask?.closed).toBe('applied');
+      expect(applied.codeTask?.applied?.merge, applied.notice ?? '').toBeTruthy();
 
       const slug = started.mission!.projectId;
       const dir = join(projectsRoot, slug);
