@@ -92,8 +92,8 @@ function offlineDotnet(sdk: boolean) {
         ? fakeOutcome(display, '10.0.112 [/usr/lib/dotnet/sdk]\n')
         : { ...fakeOutcome(display, '', 0), code: null, error: 'spawn dotnet ENOENT' };
     if (display.startsWith('dotnet restore')) return fakeOutcome(display, 'Restored.');
-    if (display.startsWith('dotnet build') || display.startsWith('dotnet publish'))
-      return fakeOutcome(display, 'Build succeeded.');
+    if (display.startsWith('dotnet build')) return fakeOutcome(display, 'Build succeeded.');
+    if (display.startsWith('dotnet publish')) return null;
     if (display.startsWith('dotnet test')) {
       const extra = existsSync(
         join(spec.cwd, 'tests', 'BloqueurDeSites.Tests', 'HostsBlockerTests.cs'),
@@ -146,7 +146,11 @@ describe('appli Windows (.NET), 0.5.4', () => {
     );
     expect(app).toContain('<UseWindowsForms>true</UseWindowsForms>');
     expect(app).toContain('<TargetFramework>net10.0-windows</TargetFramework>');
-    expect(git(dir, 'log', '--format=%an')).toBe('Jarvis Développeur');
+    expect(
+      git(dir, 'log', '--format=%an')
+        .split('\n')
+        .every((a) => a === 'Jarvis Développeur'),
+    ).toBe(true);
 
     const create = h.cards.find((c) => c.toolName === 'dev_create_project')!;
     expect(create.command).toContain('dotnet restore BloqueurDeSites.sln');
@@ -174,7 +178,9 @@ describe('appli Windows (.NET), 0.5.4', () => {
     const tests = h.ran.filter((r) => r.display === 'dotnet test BloqueurDeSites.sln --no-restore');
     expect(tests.length).toBeGreaterThan(0);
     expect(new Set(tests.map((r) => r.level))).toEqual(new Set(['auto']));
-    expect(h.ran.some((r) => /dotnet (run|publish|nuget)/.test(r.display))).toBe(false);
+    expect(h.ran.some((r) => r.display.startsWith('dotnet publish'))).toBe(true);
+    const exeRel = 'src/BloqueurDeSites.App/bin/Release/net10.0-windows/win-x64/publish/BloqueurDeSites.App.exe';
+    expect(existsSync(join(dir, exeRel))).toBe(true);
 
     const projects = (await h.instance.listProjects()).projects!;
     expect(projects.find((p) => p.id === 'bloqueur-de-sites')).toMatchObject({

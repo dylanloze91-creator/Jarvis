@@ -795,6 +795,8 @@ export const TEMPLATE_GUIDES: Partial<Record<ProjectTemplateId, string>> = {
     'Application Windows (.exe WinForms) : la logique testée est dans src/*.Core (Salutation.cs), l’interface dans src/*.App (MainForm.cs).',
     '- Ne touche pas aux .csproj ni à la solution sans nécessité absolue.',
     '- Les tests xUnit portent sur Core ; l’UI reste mince et appelle Core.',
+    '- Chaque test crée sa propre instance de la classe Core (pas d’état static mutable partagé entre tests).',
+    '- Compteurs et état : préfère un champ int simple sur une instance, sans Interlocked/ref readonly long sauf nécessité.',
     '- Pour livrer un .exe : `dotnet publish src/<Nom>.App/<Nom>.App.csproj -c Release -r win-x64 --no-self-contained` (même hors Windows).',
   ].join('\n'),
   'dotnet-wpf':

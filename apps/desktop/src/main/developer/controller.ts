@@ -306,6 +306,12 @@ export class DeveloperController {
         pause: (model, signal) => this.yieldToChat(model, signal),
         startTask: (request, options) => this.tasks.start(request, options),
         currentTask: () => this.tasks.view().codeTask,
+        deliverWindowsExe: async (projectId) => {
+          const applied = await this.tasks.apply();
+          const task = applied.codeTask;
+          if (!task?.applied || task.applied.revertedAt !== null) return applied;
+          return this.projects.build(projectId);
+        },
       },
       {
         registry: deps.registry,

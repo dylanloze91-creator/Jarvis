@@ -110,9 +110,6 @@ describe.runIf(LIVE)('preuve live appli Windows .exe (Ollama réel)', () => {
       expect(task.report?.verdict).toBe('success');
       expect(task.model).toBe('qwen3.5:4b');
 
-      const applied = await h.instance.applyTask();
-      expect(applied.codeTask?.applied?.merge, applied.notice ?? '').toBeTruthy();
-
       const project = (await h.instance.listProjects()).projects!.find(
         (p) => p.id === started.mission!.projectId,
       )!;
@@ -125,9 +122,6 @@ describe.runIf(LIVE)('preuve live appli Windows .exe (Ollama réel)', () => {
       expect(testOut).toMatch(/réussi|passed|succeeded/i);
 
       const publishCmd = dotnetPublishWinExeCommand(project.name);
-      const publishArgs = publishCmd.replace(/^dotnet\s+/, '').split(/\s+/);
-      run(dir, 'dotnet', publishArgs);
-
       const exeRel = dotnetWinExeArtifactRelative(project.name);
       const exe = join(dir, exeRel);
       expect(existsSync(exe), `fichier attendu : ${exe}`).toBe(true);
@@ -151,6 +145,36 @@ describe.runIf(LIVE)('preuve live appli Windows .exe (Ollama réel)', () => {
           2,
         )}\n`,
       );
+    },
+    1_800_000,
+  );
+
+  it(
+    '2e appli .exe simple (stats texte) via le même chemin mission',
+    async () => {
+      const h = createLiveHarness({
+        base,
+        repo,
+        developer: { codeModel: '', projectsRoot },
+      });
+      await h.instance.validate(repo);
+      const started = await h.instance.startMission(
+        'new-project',
+        'Crée une application Windows .exe : une classe qui compte les mots d’un texte dans Core, avec tests xUnit.',
+        true,
+      );
+      expect(started.mission?.status, started.notice ?? started.mission?.summary).toBe('finished');
+      expect(started.codeTask?.model).toBe('qwen3.5:4b');
+      const project = (await h.instance.listProjects()).projects!.find(
+        (p) => p.id === started.mission!.projectId,
+      )!;
+      const dir = project.path;
+      const slnFile = readdirSync(dir).find((f) => f.endsWith('.sln'))!;
+      const testOut = run(dir, 'dotnet', ['test', slnFile]);
+      expect(testOut).toMatch(/réussi|passed|succeeded/i);
+      const exe = join(dir, dotnetWinExeArtifactRelative(project.name));
+      expect(existsSync(exe), exe).toBe(true);
+      expect(readFileSync(exe).length).toBeGreaterThan(10_000);
     },
     1_800_000,
   );

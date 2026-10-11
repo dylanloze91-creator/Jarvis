@@ -43,6 +43,7 @@ import {
   TEMPLATE_GUIDES,
   TEMPLATE_REFERENCES,
   dotnetDesktopTemplateReferences,
+  DESKTOP_WINDOWS_EXE,
   isDotnetWindowsDesktopTemplate,
   fallbackFactory,
   fallbackGoal,
@@ -148,6 +149,11 @@ export interface MissionHost {
     },
   ): Promise<DeveloperState>;
   currentTask(): CodeTaskState | null;
+  /**
+   * Après une mission « nouveau projet » bureau (.exe) réussie : appliquer la tâche
+   * puis lancer « Construire » (dotnet publish win-x64) dans le projet.
+   */
+  deliverWindowsExe?(projectId: string): Promise<DeveloperState>;
 }
 
 /** Projets (0.5.3) : copie et profil d'un projet, sa mémoire, la Project Factory. */
@@ -958,7 +964,28 @@ export class MissionWorkflow {
       },
     });
     await this.finishFromTask();
+    await this.deliverWindowsExeIfRequested(template, mission.request, mission.projectId!);
     return this.host.emit();
+  }
+
+  /** Demande .exe : fusionne la copie isolée puis publie win-x64 (chemin utilisateur normal). */
+  private async deliverWindowsExeIfRequested(
+    template: ProjectTemplateId | undefined,
+    request: string,
+    projectId: string,
+  ): Promise<void> {
+    const mission = this.current;
+    if (!mission || mission.verdict !== 'success' || !template) return;
+    if (!isDotnetWindowsDesktopTemplate(template) || !DESKTOP_WINDOWS_EXE.test(request)) return;
+    if (!this.host.deliverWindowsExe) return;
+    const task = this.host.currentTask();
+    if (task?.report?.verdict !== 'success') return;
+    this.deps.log?.(
+      `[mission] Livraison .exe : application de la tâche puis dotnet publish win-x64 sur le projet.`,
+    );
+    const state = await this.host.deliverWindowsExe(projectId);
+    const notice = state.notice;
+    if (notice) mission.summary = `${mission.summary} ${notice}`.trim();
   }
 
   /**
