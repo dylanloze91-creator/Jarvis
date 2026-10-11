@@ -187,4 +187,78 @@ describe('chemin mission bureau .exe (apply + Construire)', () => {
     assertExeAndTests(title, done.mission!.projectId!);
     await h.instance.discardTask();
   }, 180_000);
+
+  it('formulation courante sans .exe : « fais-moi une appli Windows » → publish', async () => {
+    const title = 'Lignes Notes';
+    const core = 'LignesNotes';
+    fake.scripts.set(CODE, missionScript({
+      factoryName: title,
+      plan: [
+        { path: `src/${core}.Core/Salutation.cs`, action: 'modifier' },
+        { path: `src/${core}.Core/LineCounter.cs`, action: 'creer' },
+        { path: `tests/${core}.Tests/LineCounterTests.cs`, action: 'creer' },
+      ],
+      writes: {
+        [`src/${core}.Core/Salutation.cs`]: SALUTATION_CS(core),
+        [`src/${core}.Core/LineCounter.cs`]:
+          "namespace LignesNotes.Core;\npublic sealed class LineCounter { public int Count(string? text) => string.IsNullOrEmpty(text) ? 0 : text.Split('\\n').Length; }\n",
+        [`tests/${core}.Tests/LineCounterTests.cs`]:
+          'namespace LignesNotes.Tests;\npublic class LineCounterTests { [Fact] public void Une() { Assert.Equal(1, new LignesNotes.Core.LineCounter().Count("a")); } [Fact] public void Trois() { Assert.Equal(3, new LignesNotes.Core.LineCounter().Count("a\\nb\\nc")); } }\n',
+      },
+    }));
+    const h = createHarness({
+      base,
+      repo: jarvis,
+      fake,
+      developer: { codeModel: CODE, projectsRoot },
+      intercept: offlineDotnet(true),
+    });
+    await h.instance.validate(jarvis);
+    const done = await h.instance.startMission(
+      'new-project',
+      'Fais-moi une appli Windows : une classe dans Core qui compte les lignes d’un texte, avec tests.',
+      true,
+    );
+    expect(done.mission?.status, done.mission?.summary).toBe('finished');
+    expect(h.cards.some((c) => c.toolName === 'dev_build_project')).toBe(true);
+    assertExeAndTests(title, done.mission!.projectId!);
+    await h.instance.discardTask();
+  }, 180_000);
+
+  it('« un programme sur le bureau » → même chemin publish', async () => {
+    const title = 'Taches Jour';
+    const core = 'TachesJour';
+    fake.scripts.set(CODE, missionScript({
+      factoryName: title,
+      plan: [
+        { path: `src/${core}.Core/Salutation.cs`, action: 'modifier' },
+        { path: `src/${core}.Core/TaskTotal.cs`, action: 'creer' },
+        { path: `tests/${core}.Tests/TaskTotalTests.cs`, action: 'creer' },
+      ],
+      writes: {
+        [`src/${core}.Core/Salutation.cs`]: SALUTATION_CS(core),
+        [`src/${core}.Core/TaskTotal.cs`]:
+          'namespace TachesJour.Core;\npublic sealed class TaskTotal { public int Add(int a, int b) => a + b; }\n',
+        [`tests/${core}.Tests/TaskTotalTests.cs`]:
+          'namespace TachesJour.Tests;\npublic class TaskTotalTests { [Fact] public void Somme() { Assert.Equal(5, new TachesJour.Core.TaskTotal().Add(2, 3)); } }\n',
+      },
+    }));
+    const h = createHarness({
+      base,
+      repo: jarvis,
+      fake,
+      developer: { codeModel: CODE, projectsRoot },
+      intercept: offlineDotnet(true),
+    });
+    await h.instance.validate(jarvis);
+    const done = await h.instance.startMission(
+      'new-project',
+      'Un programme sur le bureau : addition de deux entiers dans Core, testé.',
+      true,
+    );
+    expect(done.mission?.status, done.mission?.summary).toBe('finished');
+    expect(h.ran.some((r) => r.display.includes('dotnet publish'))).toBe(true);
+    assertExeAndTests(title, done.mission!.projectId!);
+    await h.instance.discardTask();
+  }, 180_000);
 });

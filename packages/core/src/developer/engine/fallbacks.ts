@@ -47,8 +47,6 @@ export function fallbackGoal(request: string, kind: MissionKind): GoalOutput {
 
 const GAME =
   /\b(jeu|jeux|game|pong|snake|tetris|casse[- ]briques?|breakout|morpion|tic[- ]tac[- ]toe|flappy|space invaders|labyrinthe|platformer|asteroids?)\b/i;
-const WINDOWS =
-  /\b(appli(cation)? windows|winforms|wpf|fenêtre windows|application de bureau|appli de bureau)\b/i;
 const WEB = /\b(site|page web|navigateur|web|react|interface web)\b/i;
 const LIBRARY = /\b(bibliothèque|bibliotheque|librairie|library|module réutilisable)\b/i;
 const NAMED = /\b(pong|snake|tetris|morpion|breakout|flappy|asteroids?)\b/i;
@@ -74,7 +72,7 @@ export function fallbackFactory(request: string): FactoryOutput {
   const text = request.toLowerCase();
   const template: ProjectTemplateId = GAME.test(text)
     ? 'web-game'
-    : WINDOWS.test(text)
+    : DESKTOP_WINDOWS_EXE.test(request)
       ? 'dotnet-winforms'
       : LIBRARY.test(text)
         ? 'ts-lib'
@@ -100,7 +98,8 @@ export function steerFactory(request: string, chosen: FactoryOutput): FactoryOut
   ) {
     return { ...chosen, template: 'dotnet-winforms' };
   }
-  if (chosen.template === 'web-game' || !GAME.test(text) || WINDOWS.test(text)) return chosen;
+  if (chosen.template === 'web-game' || !GAME.test(text) || DESKTOP_WINDOWS_EXE.test(text))
+    return chosen;
   return { ...chosen, template: 'web-game' };
 }
 

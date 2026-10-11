@@ -1,9 +1,17 @@
 import { DOTNET_TEMPLATE_IDS, dotnetIdentifier } from './dotnetTemplates.js';
 import type { ProjectTemplateId } from './templates.js';
 
-/** Demande explicite d’un programme Windows packagé (.exe), pas d’une page web. */
+/**
+ * Demande d’une appli Windows packagée (.exe) : formulations explicites ou courantes
+ * (« appli Windows », « programme sur le bureau », etc.), pas une page web.
+ */
 export const DESKTOP_WINDOWS_EXE =
-  /(?:\.exe\b|exécutable|executable|application de bureau|appli de bureau|programme windows|bureau windows|winforms|wpf|fenêtre windows|application windows|appli windows)/i;
+  /(?:\.exe\b|exécutable|executable|application de bureau|appli de bureau|appli sur le bureau|programme sur le bureau|programme de bureau|programme windows|bureau windows|winforms|wpf|fenêtre windows|application windows|appli windows)/i;
+
+/** Même règle que {@link DESKTOP_WINDOWS_EXE} (livraison publish + gabarit WinForms). */
+export function requestsWindowsDesktopExe(request: string): boolean {
+  return DESKTOP_WINDOWS_EXE.test(request);
+}
 
 export function isDotnetWindowsDesktopTemplate(
   template: ProjectTemplateId | null | undefined,
