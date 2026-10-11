@@ -781,7 +781,6 @@ export class TaskRun extends TaskRunBase {
     if (!run.ok || !this.hooks.review) return run;
     this.hooks.onPhase?.('review', 'running', 'revue du diff testé');
     const result = await this.hooks.review(await this.sandbox!.diff(signal), signal);
-    this.state.review = result.structured;
     let blocking = result.blocking;
     if (
       blocking.length > 0 &&
@@ -793,6 +792,7 @@ export class TaskRun extends TaskRunBase {
       );
       blocking = [];
     }
+    this.state.review = { ...result.structured, blocking };
     if (blocking.length === 0) {
       this.hooks.onPhase?.('review', 'done', result.summary);
       return run;
