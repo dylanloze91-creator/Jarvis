@@ -185,6 +185,18 @@ describe('mission avec un petit modèle bavard (5.0.1)', () => {
 
   it('un modèle au format qui vise Jarvis : objectif sans le dépôt de Jarvis, gabarit jeu, plan du gabarit', async () => {
     const LOST = 'petit:egare';
+    mkdirSync(join(base, 'userData', 'developer'), { recursive: true });
+    writeFileSync(
+      join(base, 'userData', 'developer', 'code-model.json'),
+      JSON.stringify({
+        calibration: null,
+        validation: null,
+        expertsConfirmedAt: null,
+        benches: [],
+        realBenches: [],
+        modelRuns: [],
+      }),
+    );
     fake.installed.set(LOST, 2e9);
     fake.scripts.set(LOST, (body) => {
       const text = system(body);
