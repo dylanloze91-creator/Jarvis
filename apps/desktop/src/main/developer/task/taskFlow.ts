@@ -618,6 +618,11 @@ export class TaskRun extends TaskRunBase {
             !/export function render/.test(content))
         ) {
           this.host.log(`${file.path} : réponse rejetée (exports createGame/update/render requis).`);
+          const baseline = await this.readSandboxAtBase(file.path);
+          if (baseline) {
+            const outcome = await this.call('dev_write_file', { path: file.path, content: baseline }, signal);
+            if (outcome.status === 'ok') written.push(file.path);
+          }
           continue;
         }
         const outcome = await this.call(
@@ -1030,11 +1035,19 @@ export class TaskRun extends TaskRunBase {
       );
     await this.checkpoint('Modification (plan validé)', signal);
     if (state.diff.length === 0) {
-      step('edit', 'failed', 'aucune modification');
-      this.hooks.onPhase?.('edit', 'failed', 'aucune modification');
-      throw new TaskStopped(this.finish(step, 'stopped', 'Le modèle n’a rien modifié.'));
+      if (this.hooks.fileByFile) {
+        this.host.log(
+          'Aucune écriture validée du modèle : on lance les tests sur le gabarit actuel.',
+        );
+        step('edit', 'done', 'gabarit inchangé (tests à suivre)');
+      } else {
+        step('edit', 'failed', 'aucune modification');
+        this.hooks.onPhase?.('edit', 'failed', 'aucune modification');
+        throw new TaskStopped(this.finish(step, 'stopped', 'Le modèle n’a rien modifié.'));
+      }
+    } else {
+      step('edit', 'done', `${state.diff.length} fichier(s) modifié(s)`);
     }
-    step('edit', 'done', `${state.diff.length} fichier(s) modifié(s)`);
     this.hooks.onPhase?.('edit', 'done', `${state.diff.length} fichier(s) modifié(s)`, {
       files: state.diff.map((f) => f.path),
       tokPerSec: speed(edit.usage),
