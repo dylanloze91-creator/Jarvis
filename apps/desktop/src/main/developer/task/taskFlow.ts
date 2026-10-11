@@ -789,6 +789,7 @@ export class TaskRun extends TaskRunBase {
       const baseline = await this.readSandboxAtBase(file.path);
       if (baseline) await this.call('dev_write_file', { path: file.path, content: baseline }, signal);
     }
+    await this.checkpoint('Repli gabarit neutre', signal);
     const rescue = await this.testRun('Repli gabarit neutre', 'template-rescue', step, signal, pause);
     if (!rescue.ok) return run;
     const reviewed = await this.reviewGate(rescue, signal);
