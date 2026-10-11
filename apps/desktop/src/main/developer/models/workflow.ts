@@ -1,9 +1,11 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import {
+  appendModelRun,
   BENCH_TASKS,
   REAL_BENCH_TASKS,
   ROLE_LABELS,
+  type ModelRunRecord,
   codeModelsOffered,
   calibrate,
   checkHardware,
@@ -601,5 +603,15 @@ export class CodeModelWorkflow {
         return `Banc terminé : appels d’outils ${result.summary.toolCalls}, modification ${result.summary.edit === null ? 'non vérifiable' : result.summary.edit ? 'réussie' : 'ratée'}, correction ${result.summary.fix === null ? 'non vérifiable' : result.summary.fix ? 'réussie' : 'ratée'}.`;
       },
     );
+  }
+
+  modelRuns(): ModelRunRecord[] {
+    return this.stored?.modelRuns ?? [];
+  }
+
+  async recordModelRun(record: Omit<ModelRunRecord, 'at'>): Promise<void> {
+    const stored = await this.ensureStored();
+    const modelRuns = appendModelRun(stored.modelRuns ?? [], record);
+    this.stored = await this.deps.store.update({ modelRuns });
   }
 }

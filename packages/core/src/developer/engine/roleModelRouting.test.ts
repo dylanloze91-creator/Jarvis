@@ -30,6 +30,34 @@ describe('routeRoleToInstalledModel', () => {
     expect(route?.logLine).toContain('absent d’Ollama');
   });
 
+  it('choisit selon l’historique de vraies missions quand aucun rôle n’est forcé', () => {
+    const runs = [
+      {
+        at: 1,
+        model: 'relecteur:b',
+        category: 'role:CODER:mission:modify' as const,
+        success: true,
+      },
+      {
+        at: 2,
+        model: 'relecteur:b',
+        category: 'role:CODER:mission:modify' as const,
+        success: true,
+      },
+      {
+        at: 3,
+        model: 'code:main',
+        category: 'role:CODER:mission:modify' as const,
+        success: false,
+      },
+    ];
+    const route = routeRoleToInstalledModel('CODER', { codeModel: 'code:main' }, installed, {
+      missionKind: 'modify',
+      runs,
+    });
+    expect(route).toMatchObject({ model: 'relecteur:b', reason: 'run-memory' });
+  });
+
   it('planifie une mission modify avec un seul modèle de complétion', () => {
     const plan = buildMissionModelPlan('modify', { codeModel: 'code:main' }, installed);
     expect(plan instanceof Map).toBe(true);

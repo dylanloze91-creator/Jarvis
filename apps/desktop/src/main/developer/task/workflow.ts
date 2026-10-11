@@ -182,7 +182,9 @@ export class CodeTaskWorkflow {
     const routed =
       options.model
         ? { model: options.model, logLine: '' }
-        : routeRoleToInstalledModel('CODER', this.deps.settings().developer, installed);
+        : routeRoleToInstalledModel('CODER', this.deps.settings().developer, installed, {
+            runs: this.deps.modelRuns?.() ?? [],
+          });
     if (!routed)
       return this.host.notice(
         'Aucun modèle Ollama utilisable pour le codeur. Installe un modèle de complétion ou choisis un modèle de code.',

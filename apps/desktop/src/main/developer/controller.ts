@@ -262,6 +262,8 @@ export class DeveloperController {
         freeBytes,
         graceMs: deps.chatGraceMs,
         manualStore: this.manualStore,
+        modelRuns: () => this.models.modelRuns(),
+        recordModelRun: (record) => this.models.recordModelRun(record),
       },
     );
     this.projects = new ProjectsWorkflow(
@@ -317,6 +319,8 @@ export class DeveloperController {
         realBenches: () => this.models.state().realBenches,
         manualStore: this.manualStore,
         log: (line) => this.appendLog(line),
+        modelRuns: () => this.models.modelRuns(),
+        recordModelRun: (record) => this.models.recordModelRun(record),
       },
     );
   }

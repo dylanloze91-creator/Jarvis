@@ -20,6 +20,7 @@ import {
   reviewPlan,
   scanDiff,
   formatTaskVerificationSummary,
+  modelRunCategory,
   suiteCommandFor,
   extractFileContent,
   fileWritePrompt,
@@ -788,6 +789,11 @@ export class TaskRun extends TaskRunBase {
     if (this.state.status !== 'cancelled' && this.state.status !== 'refused')
       this.state.status = verdict === 'success' ? 'finished' : 'failed';
     this.state.report = { markdown: buildTaskReport(this.state, verdict, reason), verdict };
+    void this.deps.recordModelRun?.({
+      model: this.state.model,
+      category: modelRunCategory('CODER', 'code-task'),
+      success: verdict === 'success',
+    });
     step('report', 'done');
     this.host.emit();
     if (verdict === 'success')

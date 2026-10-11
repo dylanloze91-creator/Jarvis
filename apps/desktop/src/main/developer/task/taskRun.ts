@@ -112,6 +112,8 @@ export interface TaskDeps {
   modelOptions(model: string): OllamaCodeOptions;
   /** Fenêtre après un tour de chat avant de reprendre (question de suite à la voix). */
   graceMs?: number;
+  modelRuns?(): readonly import('@jarvis/core').ModelRunRecord[];
+  recordModelRun?: (record: Omit<import('@jarvis/core').ModelRunRecord, 'at'>) => Promise<void>;
 }
 
 const FILE_TOOLS = new Set([

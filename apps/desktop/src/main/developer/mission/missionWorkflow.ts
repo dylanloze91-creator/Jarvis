@@ -60,7 +60,9 @@ import {
   randomId,
   resolveRoleModel,
   buildMissionModelPlan,
+  modelRunCategory,
   type RoleModelRoute,
+  type ModelRunRecord,
   GATED_MISSION_KINDS,
   assessMission,
   formatProjectDecisions,
@@ -175,6 +177,8 @@ export interface MissionDeps {
   realBenches?(): readonly RealBenchResult[];
   manualStore?: DeveloperManualStore;
   log?: (line: string) => void;
+  modelRuns?(): readonly ModelRunRecord[];
+  recordModelRun?: (record: Omit<ModelRunRecord, 'at'>) => Promise<void>;
 }
 
 export const MISSION_PROJECT_ID = JARVIS_PROJECT_PROFILE.id;
@@ -410,7 +414,7 @@ export class MissionWorkflow {
       return this.host.notice('Demande trop longue (2 000 caractères au plus).');
     const status = await this.deps.ollama().status();
     const installed = new Set(status.models.map((m) => m.name));
-    const plan = buildMissionModelPlan(kind, this.developer(), installed);
+    const plan = buildMissionModelPlan(kind, this.developer(), installed, this.deps.modelRuns?.() ?? []);
     if (!(plan instanceof Map)) return this.host.notice(plan.error);
     for (const route of plan.values()) {
       if (route.logLine) this.deps.log?.(`[modèles] ${route.logLine}`);
@@ -1175,6 +1179,13 @@ export class MissionWorkflow {
           : failedNew
             ? 'Échec : le programme demandé n’a pas été livré. Ton projet sur le disque est resté le gabarit neutre (la copie isolée n’a pas été fusionnée). Vois le rapport de la tâche.'
             : 'Pas réussie : vois le rapport de la tâche.';
+    if (task) {
+      void this.deps.recordModelRun?.({
+        model: task.model,
+        category: modelRunCategory('CODER', mission.kind),
+        success: verdict === 'success',
+      });
+    }
     if (task && this.deps.manualStore) {
       const installed = (await this.deps.ollama().status()).models.map((m) => m.name);
       mission.learning = await this.deps.manualStore.tryLearningFromTask({

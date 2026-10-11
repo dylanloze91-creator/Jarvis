@@ -1,7 +1,17 @@
+import {
+  appendModelRun,
+  formatRunMemoryLogLine,
+  modelRunCategory,
+  pickModelFromRunMemory,
+  type ModelRunCategory,
+  type ModelRunRecord,
+} from './modelRunMemory.js';
 import { LOOP_ACTORS, MISSION_CHAINS, missionUsesTask, type MissionKind, type RoleModels } from './router.js';
 import { ROLE_LABELS, type SpecialistRole } from './roles.js';
 
-export type RoleModelRouteReason = 'user-role' | 'code-model' | 'installed-pick';
+export type RoleModelRouteReason = 'user-role' | 'code-model' | 'run-memory' | 'installed-pick';
+
+export { appendModelRun, modelRunCategory, type ModelRunRecord };
 
 export interface RoleModelRoute {
   role: SpecialistRole;
@@ -40,14 +50,26 @@ export function missionRolesNeedingModel(kind: MissionKind): SpecialistRole[] {
  * Associe un rôle à un modèle **déjà installé** dans Ollama.
  * Repli journalisé : modèle de code, puis premier modèle de complétion installé.
  */
+export interface RouteRoleContext {
+  missionKind?: MissionKind;
+  runs?: readonly ModelRunRecord[];
+}
+
 export function routeRoleToInstalledModel(
   role: SpecialistRole,
   developer: { codeModel: string; roleModels?: RoleModels },
   installed: ReadonlySet<string>,
+  context: RouteRoleContext = {},
 ): RoleModelRoute | null {
   const label = ROLE_LABELS[role];
   const roleChoice = developer.roleModels?.[role]?.trim() ?? '';
   const codeModel = developer.codeModel.trim();
+  const runs = context.runs ?? [];
+  const memoryCategory: ModelRunCategory | null = context.missionKind
+    ? modelRunCategory(role, context.missionKind)
+    : role === 'CODER'
+      ? modelRunCategory('CODER', 'code-task')
+      : null;
 
   if (roleChoice && installed.has(roleChoice)) {
     return {
@@ -56,6 +78,18 @@ export function routeRoleToInstalledModel(
       reason: 'user-role',
       logLine: '',
     };
+  }
+
+  if (!roleChoice && memoryCategory) {
+    const memoryPick = pickModelFromRunMemory(installed, memoryCategory, runs);
+    if (memoryPick && installed.has(memoryPick.model)) {
+      return {
+        role,
+        model: memoryPick.model,
+        reason: 'run-memory',
+        logLine: formatRunMemoryLogLine(label, memoryCategory, memoryPick),
+      };
+    }
   }
 
   if (!roleChoice && codeModel && installed.has(codeModel)) {
@@ -98,10 +132,14 @@ export function buildMissionModelPlan(
   kind: MissionKind,
   developer: { codeModel: string; roleModels?: RoleModels },
   installed: ReadonlySet<string>,
+  runs: readonly ModelRunRecord[] = [],
 ): Map<SpecialistRole, RoleModelRoute> | { error: string } {
   const plan = new Map<SpecialistRole, RoleModelRoute>();
   for (const role of missionRolesNeedingModel(kind)) {
-    const route = routeRoleToInstalledModel(role, developer, installed);
+    const route = routeRoleToInstalledModel(role, developer, installed, {
+      missionKind: kind,
+      runs,
+    });
     if (!route) {
       return {
         error: `Aucun modèle Ollama utilisable pour ${ROLE_LABELS[role]}. Installe au moins un modèle de complétion.`,

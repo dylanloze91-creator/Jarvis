@@ -1,6 +1,6 @@
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
-import type { BenchResult, Calibration, RealBenchResult } from '@jarvis/core';
+import type { BenchResult, Calibration, ModelRunRecord, RealBenchResult } from '@jarvis/core';
 import type { CodeModelState } from '../../../shared/developerIpc.js';
 
 /** Ce qui doit survivre à un redémarrage : étalonnage, validation, confirmation des variables, résultats du banc. */
@@ -10,6 +10,7 @@ export interface StoredCodeModel {
   expertsConfirmedAt: number | null;
   benches: BenchResult[];
   realBenches: RealBenchResult[];
+  modelRuns: ModelRunRecord[];
 }
 
 const EMPTY: StoredCodeModel = {
@@ -18,6 +19,7 @@ const EMPTY: StoredCodeModel = {
   expertsConfirmedAt: null,
   benches: [],
   realBenches: [],
+  modelRuns: [],
 };
 
 export class CodeModelStore {
@@ -36,6 +38,7 @@ export class CodeModelStore {
           typeof data.expertsConfirmedAt === 'number' ? data.expertsConfirmedAt : null,
         benches: Array.isArray(data.benches) ? data.benches : [],
         realBenches: Array.isArray(data.realBenches) ? data.realBenches : [],
+        modelRuns: Array.isArray(data.modelRuns) ? data.modelRuns : [],
       };
     } catch {
       this.cache = { ...EMPTY };
