@@ -507,7 +507,6 @@ export class DeveloperController {
   }
 
   async listProjects(): Promise<DeveloperState> {
-    if (!this.enabled()) return this.guard() ?? this.state();
     return this.projects.list();
   }
 
@@ -1383,7 +1382,8 @@ export class DeveloperController {
   }
 
   async refreshOllamaModels(): Promise<DeveloperState> {
-    return this.guard() ?? this.models.refreshOllamaModels();
+    await this.models.refreshOllamaModels();
+    return this.emit();
   }
 
   async pullOllamaModel(model: string): Promise<DeveloperState> {

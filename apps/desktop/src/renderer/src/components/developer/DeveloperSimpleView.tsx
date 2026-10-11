@@ -1,15 +1,30 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, AppWindow, Gamepad2, Monitor } from 'lucide-react';
-import { summarizeOllamaModelForDeveloper, type Settings } from '@jarvis/core';
+import {
+  ArrowLeft,
+  AppWindow,
+  FolderInput,
+  FolderPlus,
+  Gamepad2,
+  Monitor,
+  RefreshCw,
+  Trash2,
+} from 'lucide-react';
+import {
+  MISSION_LABELS,
+  summarizeOllamaModelForDeveloper,
+  type OllamaModelInfo,
+  type Settings,
+} from '@jarvis/core';
 import { Button } from '@/components/ui/button';
 import { VoiceBar } from '@/components/VoiceBar';
 import { cn } from '@/lib/utils';
 import { useDeveloper } from '@/hooks/useDeveloper';
 import type { RuntimeStatus } from '../../../../shared/ipc';
-import type { ProjectView } from '../../../../shared/developerIpc';
+import type { DeveloperState, ProjectView } from '../../../../shared/developerIpc';
 import type { UseVoiceResult } from '@/voice/useVoice';
 import { setVoiceTranscriptTarget } from '@/voice/voiceTranscriptRouter';
 import { DeveloperConfirmationCard } from './DeveloperConfirmationCard';
+import { MissionGateCard } from './mission/MissionGateCard';
 import { ProjectChatPanel } from './project/ProjectChatPanel';
 
 function projectPreviewable(project: ProjectView): boolean {
@@ -36,6 +51,27 @@ const DEV_HINTS = [
   },
 ] as const;
 
+const MISSION_STATUS_FR: Record<string, string> = {
+  running: 'En cours',
+  'waiting-answers': 'Questions en attente',
+  task: 'Modification du code',
+  finished: 'Terminée',
+  failed: 'Échec',
+  cancelled: 'Annulée',
+};
+
+function ollamaEntriesForPicker(model: DeveloperState['model']): OllamaModelInfo[] {
+  const rich = model.ollamaModels ?? [];
+  if (rich.length > 0) return rich;
+  return (model.installedModels ?? []).map((name) => ({
+    name,
+    sizeBytes: 0,
+    parameterSize: '?',
+    quantizationLevel: '?',
+    supportsTools: true,
+  }));
+}
+
 export function DeveloperSimpleView({
   settings,
   voice,
@@ -58,6 +94,9 @@ export function DeveloperSimpleView({
   embedded?: boolean;
 }) {
   const { state, error, act } = useDeveloper(settings?.developer.enabled);
+  const devBootedRef = useRef(false);
+  const [importPath, setImportPath] = useState('');
+  const [newProjectBrief, setNewProjectBrief] = useState('');
   const projects = useMemo(() => state?.projects ?? [], [state?.projects]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const activeId = useMemo(() => {
@@ -70,23 +109,23 @@ export function DeveloperSimpleView({
     );
   }, [projects, selectedId]);
   const project = projects.find((p) => p.id === activeId) ?? null;
-  const jarvisProject = useMemo(() => projects.find((p) => p.kind === 'jarvis') ?? null, [projects]);
   const codeModel = settings?.developer.codeModel ?? '';
 
   const launchNewProjectMission = useCallback(
     (prompt: string) => {
       if (state?.busy) return;
-      act((api) =>
-        api.startMission('new-project', prompt, true, jarvisProject?.id ?? 'jarvis'),
-      );
+      const text = prompt.trim();
+      if (text.length < 8) return;
+      act((api) => api.startMission('new-project', text, true));
     },
-    [act, jarvisProject?.id, state?.busy],
+    [act, state?.busy],
   );
 
   const ollamaInstalled = useMemo(() => {
-    const list = state?.model.ollamaModels ?? [];
+    if (!state?.model) return [];
+    const list = ollamaEntriesForPicker(state.model);
     return [...list].sort((a, b) => a.name.localeCompare(b.name, 'fr'));
-  }, [state?.model.ollamaModels]);
+  }, [state?.model]);
 
   const chooseCodeModel = useCallback(
     async (modelId: string) => {
@@ -101,9 +140,22 @@ export function DeveloperSimpleView({
 
   const codeModelQuickPick = embedded ? (
     <div className="flex flex-col gap-1.5" data-dev-code-model-quick>
-      <span className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
-        Modèles Ollama installés — un clic pour le dev
-      </span>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
+          Modèles Ollama installés — un clic pour le dev
+        </span>
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          className="h-7 px-2 text-[11px]"
+          disabled={state?.busy}
+          data-refresh-ollama-models
+          onClick={() => act((api) => api.refreshOllamaModels())}
+        >
+          <RefreshCw className="size-3" /> Rafraîchir
+        </Button>
+      </div>
       {ollamaInstalled.length === 0 ? (
         <p className="text-xs leading-relaxed text-amber-200/95">
           {state?.model.ollamaListMessage ??
@@ -156,21 +208,39 @@ export function DeveloperSimpleView({
   );
 
   useEffect(() => {
-    if (!settings) return;
-    if (!settings.developer.enabled) {
-      void window.jarvis.settings
-        .set({ developer: { ...settings.developer, enabled: true } })
-        .then(onSaved);
-    }
-    act((api) => api.detect());
-    act((api) => api.listProjects());
-    act((api) => api.refreshOllamaModels());
-    act((api) => api.checkEnvironment());
-  }, []);
+    if (!settings || devBootedRef.current) return;
+    devBootedRef.current = true;
+    let cancelled = false;
+    void (async () => {
+      if (!settings.developer.enabled) {
+        const payload = await window.jarvis.settings.set({
+          developer: { ...settings.developer, enabled: true },
+        });
+        if (cancelled) return;
+        onSaved(payload);
+      }
+      if (cancelled) return;
+      act((api) => api.refreshOllamaModels());
+      act((api) => api.listProjects());
+      act((api) => api.detect());
+      act((api) => api.checkEnvironment());
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [settings, act, onSaved]);
 
   useEffect(() => {
     if (activeId) act((api) => api.openProjectChat(activeId));
   }, [activeId]);
+
+  useEffect(() => {
+    const mission = state?.mission;
+    if (!mission || mission.kind !== 'new-project') return;
+    if (mission.status === 'finished' || mission.status === 'task') {
+      act((api) => api.listProjects());
+    }
+  }, [state?.mission?.id, state?.mission?.status, state?.mission?.kind, act]);
 
   useEffect(() => {
     const text = pendingVoice?.trim() ?? '';
@@ -242,7 +312,31 @@ export function DeveloperSimpleView({
           {missionStarters}
         </div>
       ) : null}
-      {error ? <p className="px-4 text-xs text-rose-200">{error}</p> : null}
+      {state.notice ? (
+        <p className="no-drag px-3 py-1.5 text-xs text-amber-200" data-dev-notice>{state.notice}</p>
+      ) : null}
+      {error ? <p className="no-drag px-4 text-xs text-rose-200">{error}</p> : null}
+      {state.mission?.gate && !state.mission.gate.ok ? (
+        <div className="no-drag px-3 pb-2">
+          <MissionGateCard
+            gate={state.mission.gate}
+            busy={state.busy}
+            onLaunch={(request) => launchNewProjectMission(request)}
+            onEdit={(request) => launchNewProjectMission(request)}
+          />
+        </div>
+      ) : null}
+      {state.mission ? (
+        <p className="no-drag border-b border-white/[0.06] px-3 py-1.5 text-[11px] text-slate-400" data-dev-mission-status>
+          <span className="text-slate-200">
+            {MISSION_LABELS[state.mission.kind] ?? state.mission.kind}
+          </span>
+          {' · '}
+          {MISSION_STATUS_FR[state.mission.status] ?? state.mission.status}
+          {' — '}
+          <span className="text-slate-500">{state.mission.request.slice(0, 120)}</span>
+        </p>
+      ) : null}
       {state.confirmation ? (
         <div className="px-3 pb-2">
           <DeveloperConfirmationCard
@@ -251,9 +345,67 @@ export function DeveloperSimpleView({
           />
         </div>
       ) : null}
-      <div className="developer-cursor-body min-h-0 flex-1">
+      <div className="developer-cursor-body no-drag min-h-0 flex-1">
         <aside className="developer-cursor-projects" aria-label="Projets">
-          <p className="developer-cursor-projects-title">Projets</p>
+          <div className="flex flex-wrap items-center justify-between gap-2 px-1">
+            <p className="developer-cursor-projects-title mb-0">Projets</p>
+            <div className="flex flex-wrap gap-1">
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                className="h-7 text-[11px]"
+                disabled={state.busy}
+                data-dev-new-project
+                onClick={() =>
+                  launchNewProjectMission(
+                    newProjectBrief.trim().length >= 8
+                      ? newProjectBrief.trim()
+                      : 'Crée un nouveau projet logiciel (web, CLI ou bibliothèque Node) pour mon idée.',
+                  )
+                }
+              >
+                <FolderPlus className="size-3.5" /> Nouveau
+              </Button>
+            </div>
+          </div>
+          <div className="mt-2 flex flex-col gap-1.5 px-1">
+            <input
+              className="rounded-md border border-white/10 bg-black/30 px-2 py-1 text-[11px] text-slate-100"
+              placeholder="Idée du nouveau projet (optionnel)"
+              value={newProjectBrief}
+              maxLength={500}
+              disabled={state.busy}
+              aria-label="Brève description du nouveau projet"
+              onChange={(e) => setNewProjectBrief(e.target.value)}
+            />
+            <div className="flex flex-wrap gap-1">
+              <input
+                className="min-w-0 flex-1 rounded-md border border-white/10 bg-black/30 px-2 py-1 font-mono text-[11px] text-slate-100"
+                placeholder="Chemin d’un projet existant à importer"
+                value={importPath}
+                maxLength={400}
+                disabled={state.busy}
+                aria-label="Dossier du projet à importer"
+                onChange={(e) => setImportPath(e.target.value)}
+              />
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                className="h-8 shrink-0 text-[11px]"
+                disabled={state.busy || importPath.trim().length < 3}
+                data-dev-import-project
+                onClick={() => {
+                  const path = importPath.trim();
+                  act((api) => api.importProject(path));
+                  setImportPath('');
+                }}
+              >
+                <FolderInput className="size-3.5" /> Importer
+              </Button>
+            </div>
+          </div>
           <ul className="developer-cursor-project-list">
             {projects.length === 0 ? (
               <li className="text-xs text-slate-500 px-2 py-3">
@@ -261,11 +413,11 @@ export function DeveloperSimpleView({
               </li>
             ) : (
               projects.map((p) => (
-                <li key={p.id}>
+                <li key={p.id} className="flex items-stretch gap-1">
                   <button
                     type="button"
                     className={cn(
-                      'developer-cursor-project-btn',
+                      'developer-cursor-project-btn min-w-0 flex-1',
                       p.id === activeId && 'is-active',
                     )}
                     onClick={() => setSelectedId(p.id)}
@@ -275,6 +427,20 @@ export function DeveloperSimpleView({
                       {p.ok ? 'prêt' : 'à vérifier'}
                     </span>
                   </button>
+                  {p.kind !== 'jarvis' ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      className="h-auto shrink-0 px-2 text-rose-300/90"
+                      disabled={state.busy}
+                      title="Retirer de la liste (le dossier reste sur le disque)"
+                      data-dev-forget-project={p.id}
+                      onClick={() => act((api) => api.forgetProject(p.id))}
+                    >
+                      <Trash2 className="size-3.5" />
+                    </Button>
+                  ) : null}
                 </li>
               ))
             )}

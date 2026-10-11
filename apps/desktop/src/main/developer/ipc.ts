@@ -30,6 +30,7 @@ export function registerDeveloperIpc(
   const get = (): DeveloperController | null => {
     if (!enabled()) {
       controller?.cancel();
+      controller = null;
       return null;
     }
     controller ??= new DeveloperController({
