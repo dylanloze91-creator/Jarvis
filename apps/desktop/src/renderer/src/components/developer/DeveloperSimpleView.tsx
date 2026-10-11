@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, AppWindow, Gamepad2, Monitor } from 'lucide-react';
-import type { Settings } from '@jarvis/core';
+import { CODE_MODEL_CATALOG, codeModelById, type Settings } from '@jarvis/core';
 import { Button } from '@/components/ui/button';
 import { VoiceBar } from '@/components/VoiceBar';
 import { cn } from '@/lib/utils';
@@ -35,6 +35,8 @@ const DEV_HINTS = [
     prompt: 'Crée un nouveau projet (appli web, outil en ligne de commande, ou bibliothèque) pour cette idée : ',
   },
 ] as const;
+
+const PINNED_DEV_CODE_MODEL = 'qwen3.5:4b';
 
 export function DeveloperSimpleView({
   settings,
@@ -71,6 +73,7 @@ export function DeveloperSimpleView({
   }, [projects, selectedId]);
   const project = projects.find((p) => p.id === activeId) ?? null;
   const jarvisProject = useMemo(() => projects.find((p) => p.kind === 'jarvis') ?? null, [projects]);
+  const codeModel = settings?.developer.codeModel ?? '';
 
   const launchNewProjectMission = useCallback(
     (prompt: string) => {
@@ -81,6 +84,73 @@ export function DeveloperSimpleView({
     },
     [act, jarvisProject?.id, state?.busy],
   );
+
+  const installedModelIds = useMemo(
+    () => new Set(state?.model.installedModels ?? []),
+    [state?.model.installedModels],
+  );
+
+  const quickCodeModelChoices = useMemo(() => {
+    const ids = new Set<string>([PINNED_DEV_CODE_MODEL]);
+    for (const spec of CODE_MODEL_CATALOG) {
+      if (installedModelIds.has(spec.id)) ids.add(spec.id);
+    }
+    const current = settings?.developer.codeModel?.trim();
+    if (current) ids.add(current);
+    const catalogOrder = new Map(CODE_MODEL_CATALOG.map((s, i) => [s.id, i]));
+    return [...ids].sort((a, b) => {
+      if (a === PINNED_DEV_CODE_MODEL) return -1;
+      if (b === PINNED_DEV_CODE_MODEL) return 1;
+      const oa = catalogOrder.get(a) ?? 999;
+      const ob = catalogOrder.get(b) ?? 999;
+      return oa - ob || a.localeCompare(b);
+    });
+  }, [installedModelIds, settings?.developer.codeModel]);
+
+  const chooseCodeModel = useCallback(
+    async (modelId: string) => {
+      if (!settings || settings.developer.codeModel === modelId) return;
+      const payload = await window.jarvis.settings.set({
+        developer: { ...settings.developer, codeModel: modelId },
+      });
+      onSaved(payload);
+    },
+    [onSaved, settings],
+  );
+
+  const codeModelQuickPick = embedded ? (
+    <div className="flex flex-col gap-1.5" data-dev-code-model-quick>
+      <span className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
+        Modèle de code — un clic
+      </span>
+      <div className="flex flex-wrap gap-2">
+        {quickCodeModelChoices.map((id) => {
+          const label = codeModelById(id)?.label ?? id;
+          const installed = installedModelIds.has(id);
+          const active = codeModel === id;
+          return (
+            <button
+              key={id}
+              type="button"
+              className={cn(
+                'developer-cursor-project-btn text-left',
+                active && 'is-active',
+              )}
+              disabled={state?.busy}
+              aria-pressed={active}
+              data-dev-code-model={id}
+              onClick={() => void chooseCodeModel(id)}
+            >
+              <span className="font-medium text-slate-100">{label}</span>
+              <span className="text-[11px] text-slate-500">
+                {installed ? 'installé' : id === PINNED_DEV_CODE_MODEL ? 'recommandé' : 'Ollama'}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  ) : null;
 
   const missionStarters = (
     <div className="flex flex-wrap gap-2" data-dev-mission-starters>
@@ -125,7 +195,6 @@ export function DeveloperSimpleView({
     onPendingVoiceConsumed?.();
   }, [pendingVoice, activeId, state?.busy, project?.ok, project?.kind]);
 
-  const codeModel = settings?.developer.codeModel ?? '';
   const projectChat =
     activeId && state?.projectChat?.projectId === activeId ? state.projectChat : null;
   const spokenMessageCountRef = useRef(0);
@@ -181,7 +250,12 @@ export function DeveloperSimpleView({
           </span>
         ) : null}
       </div>
-      {embedded ? <div className="no-drag border-b border-white/[0.06] px-3 py-2">{missionStarters}</div> : null}
+      {embedded ? (
+        <div className="no-drag flex flex-col gap-3 border-b border-white/[0.06] px-3 py-2">
+          {codeModelQuickPick}
+          {missionStarters}
+        </div>
+      ) : null}
       {error ? <p className="px-4 text-xs text-rose-200">{error}</p> : null}
       {state.confirmation ? (
         <div className="px-3 pb-2">
