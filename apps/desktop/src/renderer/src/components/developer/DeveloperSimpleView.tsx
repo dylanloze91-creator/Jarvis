@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, AppWindow, Gamepad2, Monitor } from 'lucide-react';
 import type { Settings } from '@jarvis/core';
 import { Button } from '@/components/ui/button';
@@ -70,6 +70,34 @@ export function DeveloperSimpleView({
     );
   }, [projects, selectedId]);
   const project = projects.find((p) => p.id === activeId) ?? null;
+  const jarvisProject = useMemo(() => projects.find((p) => p.kind === 'jarvis') ?? null, [projects]);
+
+  const launchNewProjectMission = useCallback(
+    (prompt: string) => {
+      if (state?.busy) return;
+      act((api) =>
+        api.startMission('new-project', prompt, true, jarvisProject?.id ?? 'jarvis'),
+      );
+    },
+    [act, jarvisProject?.id, state?.busy],
+  );
+
+  const missionStarters = (
+    <div className="flex flex-wrap gap-2" data-dev-mission-starters>
+      {DEV_HINTS.map((hint) => (
+        <button
+          key={hint.label}
+          type="button"
+          className="developer-cursor-project-btn max-w-full text-left"
+          disabled={state?.busy}
+          onClick={() => launchNewProjectMission(hint.prompt)}
+        >
+          <hint.icon className="mb-1 size-4 text-cyan-300" />
+          <span className="font-medium text-slate-100">{hint.label}</span>
+        </button>
+      ))}
+    </div>
+  );
 
   useEffect(() => {
     if (!settings) return;
@@ -153,6 +181,7 @@ export function DeveloperSimpleView({
           </span>
         ) : null}
       </div>
+      {embedded ? <div className="no-drag border-b border-white/[0.06] px-3 py-2">{missionStarters}</div> : null}
       {error ? <p className="px-4 text-xs text-rose-200">{error}</p> : null}
       {state.confirmation ? (
         <div className="px-3 pb-2">
@@ -198,25 +227,7 @@ export function DeveloperSimpleView({
                 Décris ce que tu veux construire : Jarvis choisit le gabarit (plateforme 2D, appli
                 Windows .exe, web, CLI…) et enchaîne plan, code, tests et livraison.
               </p>
-              <div className="flex flex-wrap gap-2">
-                {DEV_HINTS.map((hint) => (
-                  <button
-                    key={hint.label}
-                    type="button"
-                    className="developer-cursor-project-btn max-w-full text-left"
-                    disabled={state.busy || !projects.find((p) => p.kind === 'jarvis')}
-                    onClick={() => {
-                      const jarvis = projects.find((p) => p.kind === 'jarvis');
-                      if (!jarvis) return;
-                      setSelectedId(jarvis.id);
-                      act((api) => api.sendProjectChat(jarvis.id, hint.prompt));
-                    }}
-                  >
-                    <hint.icon className="mb-1 size-4 text-cyan-300" />
-                    <span className="font-medium text-slate-100">{hint.label}</span>
-                  </button>
-                ))}
-              </div>
+              {missionStarters}
             </div>
           ) : (
             <>
