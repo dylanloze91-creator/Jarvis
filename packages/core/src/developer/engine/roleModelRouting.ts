@@ -83,12 +83,16 @@ export function routeRoleToInstalledModel(
   if (!roleChoice && memoryCategory) {
     const memoryPick = pickModelFromRunMemory(installed, memoryCategory, runs);
     if (memoryPick && installed.has(memoryPick.model)) {
-      return {
-        role,
-        model: memoryPick.model,
-        reason: 'run-memory',
-        logLine: formatRunMemoryLogLine(label, memoryCategory, memoryPick),
-      };
+      // Sans historique mesuré, l’exploration ne doit pas écraser un modèle de code choisi.
+      const honorMemory = !codeModel.trim() || !memoryPick.explored;
+      if (honorMemory) {
+        return {
+          role,
+          model: memoryPick.model,
+          reason: 'run-memory',
+          logLine: formatRunMemoryLogLine(label, memoryCategory, memoryPick),
+        };
+      }
     }
   }
 

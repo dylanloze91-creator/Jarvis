@@ -30,6 +30,13 @@ describe('routeRoleToInstalledModel', () => {
     expect(route?.logLine).toContain('absent d’Ollama');
   });
 
+  it('garde le modèle de code sans historique mesuré (exploration seulement si vide)', () => {
+    const route = routeRoleToInstalledModel('CODER', { codeModel: 'code:main' }, installed, {
+      runs: [],
+    });
+    expect(route).toMatchObject({ model: 'code:main', reason: 'code-model' });
+  });
+
   it('choisit selon l’historique de vraies missions quand aucun rôle n’est forcé', () => {
     const runs = [
       {

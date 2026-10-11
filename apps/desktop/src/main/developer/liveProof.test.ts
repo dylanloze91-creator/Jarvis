@@ -7,9 +7,9 @@ import { createLiveHarness } from './controllerHarness.testkit.js';
 import { createFixtureRepo } from './task/taskWorkflow.testkit.js';
 
 const LIVE = process.env.LIVE_DEVELOPER_PROOF === '1';
-const base = mkdtempSync(join(tmpdir(), 'jarvis-live-proof-'));
-const projectsRoot = join(base, 'Projets');
-const repo = join(base, 'Jarvis');
+let base = '';
+let projectsRoot = '';
+let repo = '';
 
 function run(cwd: string, cmd: string, args: string[]) {
   return execFileSync(cmd, args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
@@ -17,6 +17,10 @@ function run(cwd: string, cmd: string, args: string[]) {
 
 describe.runIf(LIVE)('preuve live Développeur (Ollama réel)', () => {
   beforeAll(() => {
+    if (base) rmSync(base, { recursive: true, force: true });
+    base = mkdtempSync(join(tmpdir(), 'jarvis-live-proof-'));
+    projectsRoot = join(base, 'Projets');
+    repo = join(base, 'Jarvis');
     mkdirSync(join(base, 'home'), { recursive: true });
     createFixtureRepo(repo);
     mkdirSync(projectsRoot, { recursive: true });
