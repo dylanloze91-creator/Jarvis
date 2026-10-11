@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, AppWindow, Gamepad2, Monitor } from 'lucide-react';
-import { CODE_MODEL_CATALOG, codeModelById, type Settings } from '@jarvis/core';
+import { summarizeOllamaModelForDeveloper, type Settings } from '@jarvis/core';
 import { Button } from '@/components/ui/button';
 import { VoiceBar } from '@/components/VoiceBar';
 import { cn } from '@/lib/utils';
@@ -35,8 +35,6 @@ const DEV_HINTS = [
     prompt: 'Crée un nouveau projet (appli web, outil en ligne de commande, ou bibliothèque) pour cette idée : ',
   },
 ] as const;
-
-const PINNED_DEV_CODE_MODEL = 'qwen3.5:4b';
 
 export function DeveloperSimpleView({
   settings,
@@ -85,27 +83,10 @@ export function DeveloperSimpleView({
     [act, jarvisProject?.id, state?.busy],
   );
 
-  const installedModelIds = useMemo(
-    () => new Set(state?.model.installedModels ?? []),
-    [state?.model.installedModels],
-  );
-
-  const quickCodeModelChoices = useMemo(() => {
-    const ids = new Set<string>([PINNED_DEV_CODE_MODEL]);
-    for (const spec of CODE_MODEL_CATALOG) {
-      if (installedModelIds.has(spec.id)) ids.add(spec.id);
-    }
-    const current = settings?.developer.codeModel?.trim();
-    if (current) ids.add(current);
-    const catalogOrder = new Map(CODE_MODEL_CATALOG.map((s, i) => [s.id, i]));
-    return [...ids].sort((a, b) => {
-      if (a === PINNED_DEV_CODE_MODEL) return -1;
-      if (b === PINNED_DEV_CODE_MODEL) return 1;
-      const oa = catalogOrder.get(a) ?? 999;
-      const ob = catalogOrder.get(b) ?? 999;
-      return oa - ob || a.localeCompare(b);
-    });
-  }, [installedModelIds, settings?.developer.codeModel]);
+  const ollamaInstalled = useMemo(() => {
+    const list = state?.model.ollamaModels ?? [];
+    return [...list].sort((a, b) => a.name.localeCompare(b.name, 'fr'));
+  }, [state?.model.ollamaModels]);
 
   const chooseCodeModel = useCallback(
     async (modelId: string) => {
@@ -121,34 +102,39 @@ export function DeveloperSimpleView({
   const codeModelQuickPick = embedded ? (
     <div className="flex flex-col gap-1.5" data-dev-code-model-quick>
       <span className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
-        Modèle de code — un clic
+        Modèles Ollama installés — un clic pour le dev
       </span>
-      <div className="flex flex-wrap gap-2">
-        {quickCodeModelChoices.map((id) => {
-          const label = codeModelById(id)?.label ?? id;
-          const installed = installedModelIds.has(id);
-          const active = codeModel === id;
-          return (
-            <button
-              key={id}
-              type="button"
-              className={cn(
-                'developer-cursor-project-btn text-left',
-                active && 'is-active',
-              )}
-              disabled={state?.busy}
-              aria-pressed={active}
-              data-dev-code-model={id}
-              onClick={() => void chooseCodeModel(id)}
-            >
-              <span className="font-medium text-slate-100">{label}</span>
-              <span className="text-[11px] text-slate-500">
-                {installed ? 'installé' : id === PINNED_DEV_CODE_MODEL ? 'recommandé' : 'Ollama'}
-              </span>
-            </button>
-          );
-        })}
-      </div>
+      {ollamaInstalled.length === 0 ? (
+        <p className="text-xs leading-relaxed text-amber-200/95">
+          {state?.model.ollamaListMessage ??
+            'Ollama ne répond pas ou aucun modèle n’est installé : démarre Ollama, installe un modèle (`ollama pull …`), puis rouvre cet onglet.'}
+        </p>
+      ) : (
+        <div className="flex flex-wrap gap-2">
+          {ollamaInstalled.map((entry) => {
+            const active = codeModel === entry.name;
+            return (
+              <button
+                key={entry.name}
+                type="button"
+                className={cn(
+                  'developer-cursor-project-btn max-w-[14rem] text-left',
+                  active && 'is-active',
+                )}
+                disabled={state?.busy}
+                aria-pressed={active}
+                data-dev-code-model={entry.name}
+                onClick={() => void chooseCodeModel(entry.name)}
+              >
+                <span className="font-mono text-[13px] font-medium text-slate-100">{entry.name}</span>
+                <span className="text-[11px] leading-snug text-slate-500">
+                  {summarizeOllamaModelForDeveloper(entry.name, entry)}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
     </div>
   ) : null;
 

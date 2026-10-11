@@ -2,6 +2,7 @@ export { classifyCommand } from './commandSafety.js';
 export * from './graphicsEngineAccess.js';
 export { parseNDJSON } from '../providers/ndjson.js';
 export * from './codeModels.js';
+export { summarizeOllamaModelForDeveloper } from './ollamaModelDevSummary.js';
 export * from './ollamaServer.js';
 export * from './hardware.js';
 export * from './estimate.js';
