@@ -1,5 +1,6 @@
 import {
   Cable,
+  Code2,
   History,
   Maximize2,
   Plus,
@@ -27,12 +28,13 @@ import { useVoice } from '@/voice/useVoice';
 import { deliverVoiceTranscript } from '@/voice/voiceTranscriptRouter';
 import { SetupGuideView } from '@/components/SetupGuideView';
 import { UnifiedJarvisChat } from '@/components/UnifiedJarvisChat';
+import { DeveloperSimpleView } from '@/components/developer/DeveloperSimpleView';
 import { BrandMark, JarvisOrb } from '@/components/JarvisOrb';
 import { MachineSetupFlow } from '@/components/MachineSetupFlow';
 import { MachineSetupScreen, previewMachineDecision } from '@/components/MachineSetupScreen';
 import type { RuntimeStatus, ToolInfo } from '../../shared/ipc';
 
-type View = 'chat' | 'history' | 'settings' | 'audit' | 'setup-guide';
+type View = 'chat' | 'developer' | 'history' | 'settings' | 'audit' | 'setup-guide';
 const HEADER_HEIGHT = 52;
 const MAX_BODY_HEIGHT = 620;
 
@@ -49,6 +51,7 @@ export default function App() {
   const [bootError, setBootError] = useState<string | null>(null);
   const [booting, setBooting] = useState(true);
   const [showSetup, setShowSetup] = useState(false);
+  const [pendingDevVoice, setPendingDevVoice] = useState<string | null>(null);
   const content = useRef<HTMLDivElement>(null);
   const footer = useRef<HTMLDivElement>(null);
   const seeded = useRef(false);
@@ -118,8 +121,7 @@ export default function App() {
       setView('settings');
     } else if (scene === 'developer') {
       seeded.current = true;
-      openSettingsOnTab('developer');
-      setView('settings');
+      setView('developer');
     } else if (scene === 'google-confirm' && !booting) {
       seeded.current = true;
       chat.send('Envoie à Marie un mail pour confirmer la réunion de jeudi à 10 h.');
@@ -172,6 +174,11 @@ export default function App() {
     setView('chat');
   };
 
+  const openDeveloper = useCallback((initialMessage?: string) => {
+    if (initialMessage?.trim()) setPendingDevVoice(initialMessage.trim());
+    setView('developer');
+  }, []);
+
   const viewLabel =
     view === 'history'
       ? 'Historique'
@@ -181,7 +188,9 @@ export default function App() {
           ? 'Comment tout brancher'
           : view === 'audit'
             ? 'Journal'
-            : 'Assistant';
+            : view === 'developer'
+              ? 'Développeur'
+              : 'Assistant';
 
   const fallback = status ? isDemoRuntime(status) : false;
   const previewKind =
@@ -246,6 +255,9 @@ export default function App() {
         onOpenConversation={openConversation}
         onNew={startNew}
         onAnalyzeMachine={() => setShowSetup(true)}
+        onOpenDeveloper={openDeveloper}
+        pendingDevVoice={pendingDevVoice}
+        onPendingDevVoiceConsumed={() => setPendingDevVoice(null)}
       />
     );
   }
@@ -284,6 +296,13 @@ export default function App() {
         <div className="ml-auto flex items-center gap-1">
           <IconButton label="Nouvelle conversation" active={false} onClick={startNew}>
             <Plus className="size-4" />
+          </IconButton>
+          <IconButton
+            label="Développeur"
+            active={view === 'developer'}
+            onClick={() => setView(view === 'developer' ? 'chat' : 'developer')}
+          >
+            <Code2 className="size-4" />
           </IconButton>
           <IconButton
             label="Historique"
@@ -360,9 +379,29 @@ export default function App() {
                   setStatus(payload.status);
                 }}
                 chat={chat}
+                onOpenDeveloper={openDeveloper}
               />
             </div>
           )
+        ) : view === 'developer' ? (
+          <div ref={content} className="flex min-h-0 flex-1 flex-col overflow-hidden">
+            {booting ? (
+              <BootStage label="Chargement du développeur…" />
+            ) : (
+              <DeveloperSimpleView
+                embedded
+                settings={settings}
+                voice={voice}
+                onAssistantReply={handleAssistantFinal}
+                onSaved={(payload) => {
+                  setSettings(payload.settings);
+                  setStatus(payload.status);
+                }}
+                pendingVoice={pendingDevVoice}
+                onPendingVoiceConsumed={() => setPendingDevVoice(null)}
+              />
+            )}
+          </div>
         ) : (
         <div ref={content} className="min-h-0 flex-1 overflow-y-auto">
           {view === 'history' ? <HistoryPanel onOpen={openConversation} /> : null}

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, AppWindow, Gamepad2, Monitor } from 'lucide-react';
 import type { Settings } from '@jarvis/core';
 import { Button } from '@/components/ui/button';
 import { VoiceBar } from '@/components/VoiceBar';
@@ -16,6 +16,26 @@ function projectPreviewable(project: ProjectView): boolean {
   return project.template === 'web-game';
 }
 
+const DEV_HINTS = [
+  {
+    icon: Gamepad2,
+    label: 'Plateforme 2D',
+    prompt:
+      'Crée un jeu de plateforme vue de côté : compose un niveau jouable sur le gabarit (saut, collectable, piège, victoire).',
+  },
+  {
+    icon: Monitor,
+    label: 'Appli Windows (.exe)',
+    prompt:
+      'Crée une petite appli Windows livrée en .exe WinForms : une fonction testée dans Core et une interface simple.',
+  },
+  {
+    icon: AppWindow,
+    label: 'Appli ou outil',
+    prompt: 'Crée un nouveau projet (appli web, outil en ligne de commande, ou bibliothèque) pour cette idée : ',
+  },
+] as const;
+
 export function DeveloperSimpleView({
   settings,
   voice,
@@ -24,14 +44,18 @@ export function DeveloperSimpleView({
   onBack,
   pendingVoice = null,
   onPendingVoiceConsumed,
+  embedded = false,
 }: {
   settings: Settings | null;
   voice: UseVoiceResult;
   onAssistantReply: (text: string) => void;
   onSaved: (payload: { settings: Settings; status: RuntimeStatus }) => void;
-  onBack: () => void;
+  /** Absent en mode onglet intégré (fenêtre Jarvis). */
+  onBack?: () => void;
   pendingVoice?: string | null;
   onPendingVoiceConsumed?: () => void;
+  /** Onglet « Dev » de la fenêtre principale : pas de « Changer de mode ». */
+  embedded?: boolean;
 }) {
   const { state, error, act } = useDeveloper(settings?.developer.enabled);
   const projects = useMemo(() => state?.projects ?? [], [state?.projects]);
@@ -114,11 +138,20 @@ export function DeveloperSimpleView({
 
   return (
     <div className="developer-cursor flex min-h-0 flex-1 flex-col" data-developer-cursor>
-      <div className="developer-cursor-toolbar no-drag flex items-center gap-2 px-3 py-2">
-        <Button type="button" size="sm" variant="ghost" onClick={onBack}>
-          <ArrowLeft className="size-3.5" /> Changer de mode
-        </Button>
-        <span className="text-xs text-slate-500">Jarvis développeur</span>
+      <div className="developer-cursor-toolbar no-drag flex flex-wrap items-center gap-2 px-3 py-2">
+        {!embedded && onBack ? (
+          <Button type="button" size="sm" variant="ghost" onClick={onBack}>
+            <ArrowLeft className="size-3.5" /> Changer de mode
+          </Button>
+        ) : null}
+        <span className="text-xs font-medium text-slate-300">
+          {embedded ? 'Développeur' : 'Jarvis développeur'}
+        </span>
+        {embedded ? (
+          <span className="text-[11px] text-slate-500">
+            Appli, plateforme 2D ou .exe Windows — un modèle à la fois, mémoire des runs.
+          </span>
+        ) : null}
       </div>
       {error ? <p className="px-4 text-xs text-rose-200">{error}</p> : null}
       {state.confirmation ? (
@@ -135,8 +168,7 @@ export function DeveloperSimpleView({
           <ul className="developer-cursor-project-list">
             {projects.length === 0 ? (
               <li className="text-xs text-slate-500 px-2 py-3">
-                Aucun projet pour l’instant. Demande à Jarvis classique de t’aider à en ajouter un,
-                ou reviens quand un projet apparaît ici.
+                Aucun projet : décris ton idée dans le chat à droite pour lancer une mission.
               </li>
             ) : (
               projects.map((p) => (
@@ -161,7 +193,31 @@ export function DeveloperSimpleView({
         </aside>
         <section className="developer-cursor-chat flex min-h-0 flex-col" aria-label="Discussion projet">
           {!project ? (
-            <p className="p-6 text-sm text-slate-400">Choisis un projet à gauche pour parler.</p>
+            <div className="flex min-h-0 flex-1 flex-col gap-4 p-6">
+              <p className="text-sm text-slate-300">
+                Décris ce que tu veux construire : Jarvis choisit le gabarit (plateforme 2D, appli
+                Windows .exe, web, CLI…) et enchaîne plan, code, tests et livraison.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {DEV_HINTS.map((hint) => (
+                  <button
+                    key={hint.label}
+                    type="button"
+                    className="developer-cursor-project-btn max-w-full text-left"
+                    disabled={state.busy || !projects.find((p) => p.kind === 'jarvis')}
+                    onClick={() => {
+                      const jarvis = projects.find((p) => p.kind === 'jarvis');
+                      if (!jarvis) return;
+                      setSelectedId(jarvis.id);
+                      act((api) => api.sendProjectChat(jarvis.id, hint.prompt));
+                    }}
+                  >
+                    <hint.icon className="mb-1 size-4 text-cyan-300" />
+                    <span className="font-medium text-slate-100">{hint.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
           ) : (
             <>
               <div className="min-h-0 flex-1 overflow-hidden">

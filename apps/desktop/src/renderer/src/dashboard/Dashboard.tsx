@@ -19,6 +19,7 @@ import {
   UserRound,
   Workflow,
   AppWindow,
+  Code2,
   type LucideIcon,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
@@ -26,6 +27,7 @@ import { formatSeconds, type Conversation, type Settings } from '@jarvis/core';
 import { AuditPanel } from '@/components/AuditPanel';
 import { HistoryPanel } from '@/components/HistoryPanel';
 import { UnifiedJarvisChat } from '@/components/UnifiedJarvisChat';
+import { DeveloperSimpleView } from '@/components/developer/DeveloperSimpleView';
 import { SetupGuideView } from '@/components/SetupGuideView';
 import { SettingsPanel, openSettingsOnTab } from '@/components/SettingsPanel';
 import type { SettingsTabId } from '@/components/SettingsTabs';
@@ -40,7 +42,7 @@ import type { ChatItem, PendingConfirmation } from '@/hooks/useChat';
 import { JarvisOrb } from '@/components/JarvisOrb';
 import './dashboard.css';
 
-type View = 'chat' | 'history' | 'settings' | 'audit' | 'setup-guide';
+type View = 'chat' | 'developer' | 'history' | 'settings' | 'audit' | 'setup-guide';
 
 interface FunctionCard {
   id: string;
@@ -150,6 +152,9 @@ export interface DashboardProps {
   onOpenConversation: (conversation: Conversation) => void;
   onNew: () => void;
   onAnalyzeMachine?: () => void;
+  onOpenDeveloper: (initialMessage?: string) => void;
+  pendingDevVoice: string | null;
+  onPendingDevVoiceConsumed: () => void;
 }
 
 export function Dashboard({
@@ -166,6 +171,9 @@ export function Dashboard({
   onOpenConversation,
   onNew,
   onAnalyzeMachine,
+  onOpenDeveloper,
+  pendingDevVoice,
+  onPendingDevVoiceConsumed,
 }: DashboardProps) {
   const machine = useMachineSnapshot();
   const [profileInitial, setProfileInitial] = useState<string | null>(null);
@@ -249,6 +257,12 @@ export function Dashboard({
         <nav className="side-nav" aria-label="Navigation">
           <SideButton label="Accueil" icon={Home} active={view === 'chat' && chat.items.length === 0} onClick={() => navigate('chat')} />
           <SideButton label="Discussion" icon={MessageSquare} active={view === 'chat' && chat.items.length > 0} onClick={() => navigate('chat')} />
+          <SideButton
+            label="Développeur"
+            icon={Code2}
+            active={view === 'developer'}
+            onClick={() => navigate(view === 'developer' ? 'chat' : 'developer')}
+          />
           <SideButton label="Historique" icon={History} active={view === 'history'} onClick={() => navigate(view === 'history' ? 'chat' : 'history')} />
           <SideButton label="Google" icon={CalendarClock} onClick={openGoogleSettings} />
           <SideButton label="Automatisation" icon={Workflow} soon />
@@ -344,8 +358,25 @@ export function Dashboard({
               chat={chat}
               booting={booting}
               bootError={bootError}
+              onOpenDeveloper={onOpenDeveloper}
             />
           </>
+        ) : view === 'developer' ? (
+          <section className="dash-panel flex min-h-0 flex-1 flex-col overflow-hidden">
+            {booting ? (
+              <div className="dash-loading">Chargement du développeur…</div>
+            ) : (
+              <DeveloperSimpleView
+                embedded
+                settings={settings}
+                voice={voice}
+                onAssistantReply={(text) => voice.noteAssistantReply(text)}
+                onSaved={onSaved}
+                pendingVoice={pendingDevVoice}
+                onPendingVoiceConsumed={onPendingDevVoiceConsumed}
+              />
+            )}
+          </section>
         ) : (
           <section className="dash-panel">
             <button type="button" className="panel-back" onClick={() => setView('chat')}>
