@@ -1,7 +1,16 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { dotnetPublishWinExeCommand, dotnetWinExeArtifactRelative } from '@jarvis/core';
 import { createLiveHarness } from './controllerHarness.testkit.js';
@@ -18,8 +27,11 @@ function run(cwd: string, cmd: string, args: string[]) {
 
 describe.runIf(LIVE)('preuve live appli Windows .exe (Ollama réel)', () => {
   beforeAll(() => {
-    if (base) rmSync(base, { recursive: true, force: true });
-    base = mkdtempSync(join(tmpdir(), 'jarvis-live-win-'));
+    if (process.env.KEEP_WIN_PROOF === '1') {
+      base = '/tmp/jarvis-win-exe-proof-persist';
+      if (existsSync(base)) rmSync(base, { recursive: true, force: true });
+    } else if (base) rmSync(base, { recursive: true, force: true });
+    base = process.env.KEEP_WIN_PROOF === '1' ? base : mkdtempSync(join(tmpdir(), 'jarvis-live-win-'));
     projectsRoot = join(base, 'Projets');
     repo = join(base, 'Jarvis');
     mkdirSync(join(base, 'home'), { recursive: true });
@@ -63,7 +75,7 @@ describe.runIf(LIVE)('preuve live appli Windows .exe (Ollama réel)', () => {
   });
 
   afterAll(() => {
-    rmSync(base, { recursive: true, force: true });
+    if (process.env.KEEP_WIN_PROOF !== '1') rmSync(base, { recursive: true, force: true });
   });
 
   it(
@@ -80,6 +92,19 @@ describe.runIf(LIVE)('preuve live appli Windows .exe (Ollama réel)', () => {
         'Crée une petite application Windows de bureau livrée en .exe : un compteur de clics testé dans Core, affiché dans la fenêtre WinForms.',
         true,
       );
+      if (started.mission?.status !== 'finished') {
+        const dump = {
+          notice: started.notice,
+          summary: started.mission?.summary,
+          model: started.codeTask?.model,
+          verdict: started.codeTask?.report?.verdict,
+          report: started.codeTask?.report,
+          runs: started.codeTask?.runs,
+          planFallback: started.codeTask?.planFallback,
+          repeatedFailure: started.codeTask?.repeatedFailure,
+        };
+        writeFileSync('/tmp/jarvis-live-win-fail.json', `${JSON.stringify(dump, null, 2)}\n`);
+      }
       expect(started.mission?.status, started.notice ?? started.mission?.summary).toBe('finished');
       const task = started.codeTask!;
       expect(task.report?.verdict).toBe('success');
@@ -106,7 +131,26 @@ describe.runIf(LIVE)('preuve live appli Windows .exe (Ollama réel)', () => {
       const exeRel = dotnetWinExeArtifactRelative(project.name);
       const exe = join(dir, exeRel);
       expect(existsSync(exe), `fichier attendu : ${exe}`).toBe(true);
-      expect(readFileSync(exe).length).toBeGreaterThan(10_000);
+      const exeBytes = readFileSync(exe).length;
+      expect(exeBytes).toBeGreaterThan(10_000);
+      mkdirSync('/tmp/jarvis-final-proof', { recursive: true });
+      copyFileSync(exe, join('/tmp/jarvis-final-proof', basename(exe)));
+      writeFileSync(
+        '/tmp/jarvis-live-win-success.json',
+        `${JSON.stringify(
+          {
+            model: task.model,
+            projectDir: dir,
+            exe,
+            exeBytes,
+            slnFile,
+            publishCmd,
+            testOutSnippet: testOut.split('\n').slice(-8).join('\n'),
+          },
+          null,
+          2,
+        )}\n`,
+      );
     },
     1_800_000,
   );
