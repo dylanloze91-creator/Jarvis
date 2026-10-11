@@ -71,8 +71,7 @@ describe.runIf(LIVE)('preuve live Développeur (Ollama réel)', () => {
       const h = createLiveHarness({
         base,
         repo,
-        projectsRoot,
-        developer: { codeModel: '' },
+        developer: { codeModel: '', projectsRoot },
       });
       await h.instance.validate(repo);
       const started = await h.instance.startMission(
