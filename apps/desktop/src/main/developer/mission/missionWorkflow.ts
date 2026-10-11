@@ -42,6 +42,8 @@ import {
   SpecialistError,
   TEMPLATE_GUIDES,
   TEMPLATE_REFERENCES,
+  dotnetDesktopTemplateReferences,
+  isDotnetWindowsDesktopTemplate,
   fallbackFactory,
   fallbackGoal,
   fallbackSkill,
@@ -850,7 +852,12 @@ export class MissionWorkflow {
               );
               chosen = steerFactory(mission.request, run.output);
               if (chosen.template !== run.output.template) {
-                note = ` (règle fixe : un jeu part du gabarit jeu, au lieu de « ${PROJECT_TEMPLATES[run.output.template].label} »)`;
+                note =
+                  chosen.template === 'web-game'
+                    ? ` (règle fixe : un jeu part du gabarit jeu, au lieu de « ${PROJECT_TEMPLATES[run.output.template].label} »)`
+                    : chosen.template === 'dotnet-winforms'
+                      ? ` (règle fixe : une appli Windows .exe part du gabarit WinForms, au lieu de « ${PROJECT_TEMPLATES[run.output.template].label} »)`
+                      : ` (règle fixe : gabarit « ${PROJECT_TEMPLATES[chosen.template].label} » au lieu de « ${PROJECT_TEMPLATES[run.output.template].label} »)`;
                 this.patch('design', {
                   output: chosen,
                   detail: `${PROJECT_TEMPLATES[chosen.template].label} · ${chosen.name}${note}`,
@@ -921,7 +928,7 @@ export class MissionWorkflow {
       ...(template && TEMPLATE_GUIDES[template] ? [TEMPLATE_GUIDES[template]] : []),
       ...(design ? [skillTaskContext(design, research)] : []),
     ].join('\n');
-    const fallbackPlan = template ? templatePlan(template, mission.request) : null;
+    const fallbackPlan = template ? templatePlan(template, mission.request, project.name) : null;
     await this.host.startTask(mission.request, {
       model: coder,
       templateId: template ?? undefined,
@@ -929,7 +936,12 @@ export class MissionWorkflow {
         ...this.loopHooks(project.root, coder, this.enrichedPlanContext(context)),
         ...(fallbackPlan ? { fallbackPlan } : {}),
         fileByFile: {
-          references: template ? (TEMPLATE_REFERENCES[template] ?? []) : [],
+          references:
+            template && isDotnetWindowsDesktopTemplate(template)
+              ? dotnetDesktopTemplateReferences(template, project.name)
+              : template
+                ? (TEMPLATE_REFERENCES[template] ?? [])
+                : [],
           guide: [
             template ? TEMPLATE_GUIDES[template] : undefined,
             design ? skillTaskContext(design, research) : undefined,

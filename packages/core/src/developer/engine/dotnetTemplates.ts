@@ -333,6 +333,10 @@ export function renderDotnetTemplate(
     id === 'dotnet-winforms' || id === 'dotnet-wpf'
       ? `dotnet run --project src/${n}.App (sous Windows)`
       : `dotnet run --project src/${n}.App`;
+  const publish =
+    id === 'dotnet-winforms' || id === 'dotnet-wpf'
+      ? `dotnet publish src/${n}.App/${n}.App.csproj -c Release -r win-x64 --no-self-contained`
+      : null;
   const tests = Object.entries(DOTNET_TEST_PACKAGES)
     .map(([pkg, version]) => `    <PackageReference Include="${pkg}" Version="${version}" />`)
     .join('\n');
@@ -400,6 +404,7 @@ ${input.description || label.description}.
 - \`dotnet restore ${n}.sln\`
 - \`dotnet test ${n}.sln\`
 - \`${run}\`
+${publish ? `- \`${publish}\` (produit un .exe Windows, même compilé hors Windows)\n` : ''}
 
 La logique est dans \`src/${n}.Core\` (testée dans \`tests/${n}.Tests\`), l'application dans \`src/${n}.App\`.
 

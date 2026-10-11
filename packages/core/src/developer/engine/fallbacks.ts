@@ -12,6 +12,12 @@ import {
   type FactoryOutput,
   type ProjectTemplateId,
 } from './templates.js';
+import {
+  DESKTOP_WINDOWS_EXE,
+  dotnetProjectBaseName,
+  dotnetTemplateEntryFiles,
+} from './dotnetDesktop.js';
+import { DOTNET_TEMPLATE_IDS } from './dotnetTemplates.js';
 
 /**
  * Secours sans modèle (5.0.1) : quand un spécialiste ne rend pas de JSON
@@ -41,7 +47,8 @@ export function fallbackGoal(request: string, kind: MissionKind): GoalOutput {
 
 const GAME =
   /\b(jeu|jeux|game|pong|snake|tetris|casse[- ]briques?|breakout|morpion|tic[- ]tac[- ]toe|flappy|space invaders|labyrinthe|platformer|asteroids?)\b/i;
-const WINDOWS = /\b(appli(cation)? windows|winforms|wpf|fenêtre windows)\b/i;
+const WINDOWS =
+  /\b(appli(cation)? windows|winforms|wpf|fenêtre windows|application de bureau|appli de bureau)\b/i;
 const WEB = /\b(site|page web|navigateur|web|react|interface web)\b/i;
 const LIBRARY = /\b(bibliothèque|bibliotheque|librairie|library|module réutilisable)\b/i;
 const NAMED = /\b(pong|snake|tetris|morpion|breakout|flappy|asteroids?)\b/i;
@@ -87,6 +94,12 @@ export function fallbackFactory(request: string): FactoryOutput {
  */
 export function steerFactory(request: string, chosen: FactoryOutput): FactoryOutput {
   const text = request.toLowerCase();
+  if (
+    DESKTOP_WINDOWS_EXE.test(text) &&
+    !(DOTNET_TEMPLATE_IDS as readonly string[]).includes(chosen.template)
+  ) {
+    return { ...chosen, template: 'dotnet-winforms' };
+  }
   if (chosen.template === 'web-game' || !GAME.test(text) || WINDOWS.test(text)) return chosen;
   return { ...chosen, template: 'web-game' };
 }
@@ -132,15 +145,29 @@ function templatePackageScripts(template: ProjectTemplateId): Record<string, str
   }
 }
 
-export function templatePlan(template: ProjectTemplateId, request: string): TaskPlan | null {
-  const files = ENTRY_FILES[template];
+/** `projectTitle` : nom du projet déjà créé (gabarit) ; sinon dérivé de la demande. */
+export function templatePlan(
+  template: ProjectTemplateId,
+  request: string,
+  projectTitle?: string,
+): TaskPlan | null {
+  const title = projectTitle?.trim() || projectNameFromRequest(request);
+  const dotnetFiles = dotnetTemplateEntryFiles(template, title);
+  const nodeFiles = ENTRY_FILES[template];
+  const files = dotnetFiles ?? nodeFiles;
   if (!files) return null;
   const scripts = templatePackageScripts(template);
+  const isDotnet = templateToolchain(template) === 'dotnet';
   return {
     summary: `Écrire ${clean(request).slice(0, 200)} dans les fichiers d’entrée du gabarit.`,
-    criteria: verificationCriteriaFromScripts(scripts),
+    criteria: isDotnet
+      ? [
+          'dotnet build et dotnet test réussissent sur la solution',
+          'la logique reste dans Core, l’interface dans App',
+        ]
+      : verificationCriteriaFromScripts(scripts),
     files: files.map(([path, reason]) => ({ path, action: 'edit' as const, reason })),
-    tests: defaultNodePlanSuites(scripts),
+    tests: isDotnet ? ['typecheck', 'test'] : defaultNodePlanSuites(scripts),
   };
 }
 

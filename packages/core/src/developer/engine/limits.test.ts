@@ -183,6 +183,10 @@ describe('secours sans modèle (5.0.1)', () => {
     expect(steerFactory('Crée un site pour mes recettes', react)).toBe(react);
     const wpf = { template: 'dotnet-wpf' as const, name: 'Morpion', description: '' };
     expect(steerFactory('Crée un morpion, appli Windows WPF', wpf)).toBe(wpf);
+    const bureau = { template: 'vite-react' as const, name: 'Compteur', description: '' };
+    expect(steerFactory('Crée un compteur livré en .exe', bureau).template).toBe(
+      'dotnet-winforms',
+    );
   });
 
   it('plan de secours : les fichiers d’entrée du gabarit', () => {
@@ -194,7 +198,9 @@ describe('secours sans modèle (5.0.1)', () => {
       ],
       tests: ['typecheck', 'test'],
     });
-    expect(templatePlan('dotnet-wpf', PONG)).toBeNull();
+    const wpfPlan = templatePlan('dotnet-wpf', PONG);
+    expect(wpfPlan?.tests).toEqual(['typecheck', 'test']);
+    expect(wpfPlan?.files.some((f) => f.path.endsWith('Salutation.cs'))).toBe(true);
   });
 });
 

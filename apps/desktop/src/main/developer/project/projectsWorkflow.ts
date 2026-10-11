@@ -13,6 +13,9 @@ import {
   createDotnetProfile,
   createNodeProfile,
   dotnetIdentifier,
+  dotnetPublishWinExeCommand,
+  dotnetWinExeArtifactRelative,
+  isDotnetWindowsDesktopTemplate,
   projectIdFor,
   randomId,
   renderTemplate,
@@ -167,7 +170,12 @@ export class ProjectsWorkflow {
     const build =
       entry.kind === 'dotnet'
         ? check.target
-          ? { command: `dotnet build ${check.target} -c Release`, artifact: null }
+          ? entry.template && isDotnetWindowsDesktopTemplate(entry.template)
+            ? {
+                command: dotnetPublishWinExeCommand(entry.name),
+                artifact: dotnetWinExeArtifactRelative(entry.name),
+              }
+            : { command: `dotnet build ${check.target} -c Release`, artifact: null }
           : null
         : check.scripts.build
           ? { command: 'npm run build', artifact: null }
@@ -397,7 +405,9 @@ export class ProjectsWorkflow {
               view.kind === 'jarvis'
                 ? 'Construit l’installateur de Jarvis dans ta copie, en local. Il n’est ni publié ni lancé : tu l’installes toi-même si tu veux. Plusieurs minutes ; peut télécharger les fichiers de la voix s’ils manquent.'
                 : dotnet
-                  ? 'Compile la solution en Release dans ta copie. Rien n’est publié ni lancé.'
+                  ? build.artifact
+                    ? 'Publie un .exe Windows (win-x64) dans ta copie. Rien n’est lancé ici (Linux ne peut pas exécuter le .exe).'
+                    : 'Compile la solution en Release dans ta copie. Rien n’est publié ni lancé.'
                   : 'Lance le script « build » du projet dans ta copie. Rien n’est publié.',
             command: `${build.command}\n(dans ${resolved.root})`,
             forced: true,

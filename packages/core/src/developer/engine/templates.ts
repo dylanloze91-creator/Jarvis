@@ -791,6 +791,14 @@ export const TEMPLATE_GUIDES: Partial<Record<ProjectTemplateId, string>> = {
     'Gabarit « bibliothèque TypeScript » : déjà fonctionnel et testé (slugify). Ajoute ou change seulement les fonctions demandées dans src/index.ts, avec leurs tests dans src/index.test.ts.',
   'vite-react':
     'Gabarit « application web » : déjà fonctionnel et testé (un compteur). La logique va dans des fonctions pures testées (comme src/counter.ts), l’interface dans src/App.tsx. Fais seulement le changement demandé.',
+  'dotnet-winforms': [
+    'Application Windows (.exe WinForms) : la logique testée est dans src/*.Core (Salutation.cs), l’interface dans src/*.App (MainForm.cs).',
+    '- Ne touche pas aux .csproj ni à la solution sans nécessité absolue.',
+    '- Les tests xUnit portent sur Core ; l’UI reste mince et appelle Core.',
+    '- Pour livrer un .exe : `dotnet publish src/<Nom>.App/<Nom>.App.csproj -c Release -r win-x64 --no-self-contained` (même hors Windows).',
+  ].join('\n'),
+  'dotnet-wpf':
+    'Application Windows WPF (.exe) : logique dans Core, XAML/code-behind mince dans App. Publish : `dotnet publish src/<Nom>.App/<Nom>.App.csproj -c Release -r win-x64 --no-self-contained`.',
 };
 
 export function renderTemplate(id: ProjectTemplateId, input: TemplateInput): TemplateFile[] {

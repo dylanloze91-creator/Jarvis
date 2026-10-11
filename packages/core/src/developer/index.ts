@@ -37,6 +37,7 @@ export * from './engine/mission.js';
 export * from './engine/profiles/node.js';
 export * from './engine/profiles/dotnet.js';
 export * from './engine/dotnetTemplates.js';
+export * from './engine/dotnetDesktop.js';
 export * from './engine/templates.js';
 export * from './engine/project.js';
 export * from './engine/improve.js';

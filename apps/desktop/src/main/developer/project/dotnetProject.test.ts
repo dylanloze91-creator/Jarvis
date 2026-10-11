@@ -41,18 +41,21 @@ const TEST_CS =
 
 function script(body: ChatBody): Reply {
   const text = system(body);
-  const done = body.messages.filter((m) => m.role === 'tool').length;
-  const write = text.includes(WRITE_MARKER) ? writeRequest(body) : null;
-  if (write?.path === 'src/BloqueurDeSites.Core/HostsBlocker.cs') return codeBlock(BLOCKER);
-  if (write?.path === 'tests/BloqueurDeSites.Tests/HostsBlockerTests.cs') return codeBlock(TEST_CS);
-  if (text.includes(GOAL_MARKER))
-    return {
-      content: JSON.stringify({
-        goal: 'Une appli Windows qui bloque des sites dans un fichier hosts réglable.',
-        questions: [],
-        criteria: ['tests sur un faux fichier hosts'],
-      }),
-    };
+  const write = writeRequest(body);
+  const writing = text.includes(WRITE_MARKER);
+  // Missions : le contexte cite les fichiers du gabarit — ne pas confondre avec l’écriture fichier par fichier.
+  if (text.includes(PLAN_MARKER)) {
+    const planJson = JSON.stringify({
+        resume: 'Classe HostsBlocker et son test sur un faux fichier.',
+        fichiers: [
+          { chemin: 'src/BloqueurDeSites.Core/Salutation.cs', action: 'modifier' },
+          { chemin: 'src/BloqueurDeSites.Core/HostsBlocker.cs', action: 'creer' },
+          { chemin: 'tests/BloqueurDeSites.Tests/HostsBlockerTests.cs', action: 'creer' },
+        ],
+        tests: ['test'],
+      });
+    return { content: planJson };
+  }
   if (text.includes(FACTORY_MARKER))
     return {
       content: JSON.stringify({
@@ -61,35 +64,22 @@ function script(body: ChatBody): Reply {
         description: 'Bloque des sites.',
       }),
     };
-  if (text.includes(PLAN_MARKER))
+  if (text.includes(GOAL_MARKER))
     return {
       content: JSON.stringify({
-        resume: 'Classe HostsBlocker et son test sur un faux fichier.',
-        fichiers: [
-          { chemin: 'src/BloqueurDeSites.Core/HostsBlocker.cs', action: 'creer' },
-          { chemin: 'tests/BloqueurDeSites.Tests/HostsBlockerTests.cs', action: 'creer' },
-        ],
-        tests: ['test'],
+        goal: 'Une appli Windows qui bloque des sites dans un fichier hosts réglable.',
+        questions: [],
+        criteria: ['tests sur un faux fichier hosts'],
       }),
     };
-  if (text.includes(EDIT_MARKER)) {
-    const steps = [
-      {
-        name: 'dev_create_file',
-        arguments: { path: 'src/BloqueurDeSites.Core/HostsBlocker.cs', content: BLOCKER },
-      },
-      {
-        name: 'dev_create_file',
-        arguments: {
-          path: 'tests/BloqueurDeSites.Tests/HostsBlockerTests.cs',
-          content:
-            'namespace BloqueurDeSites.Tests;\npublic class HostsBlockerTests { [Fact] public void BloqueDansUnFauxFichier() { var p = Path.GetTempFileName(); new BloqueurDeSites.Core.HostsBlocker(p).Block("x.com"); Assert.Contains("x.com", File.ReadAllText(p)); } }\n',
-        },
-      },
-    ];
-    return steps[done] ? { call: steps[done]! } : { content: 'Fait.' };
-  }
   if (text.includes(REVIEW_MARKER)) return { content: '{"verdict": "ok", "issues": []}' };
+  if (writing && write?.path === 'src/BloqueurDeSites.Core/Salutation.cs')
+    return codeBlock(
+      `namespace BloqueurDeSites.Core;\npublic static class Salutation { public static string Bonjour(string? p) => "Bonjour"; }\n`,
+    );
+  if (writing && write?.path === 'src/BloqueurDeSites.Core/HostsBlocker.cs') return codeBlock(BLOCKER);
+  if (writing && write?.path === 'tests/BloqueurDeSites.Tests/HostsBlockerTests.cs')
+    return codeBlock(TEST_CS);
   return { content: 'Je ne sais pas.' };
 }
 
@@ -102,7 +92,8 @@ function offlineDotnet(sdk: boolean) {
         ? fakeOutcome(display, '10.0.112 [/usr/lib/dotnet/sdk]\n')
         : { ...fakeOutcome(display, '', 0), code: null, error: 'spawn dotnet ENOENT' };
     if (display.startsWith('dotnet restore')) return fakeOutcome(display, 'Restored.');
-    if (display.startsWith('dotnet build')) return fakeOutcome(display, 'Build succeeded.');
+    if (display.startsWith('dotnet build') || display.startsWith('dotnet publish'))
+      return fakeOutcome(display, 'Build succeeded.');
     if (display.startsWith('dotnet test')) {
       const extra = existsSync(
         join(spec.cwd, 'tests', 'BloqueurDeSites.Tests', 'HostsBlockerTests.cs'),
@@ -122,6 +113,7 @@ beforeAll(async () => {
   await fake.start();
   fake.installed.set(CODE, 3e9);
   fake.scripts.set(CODE, script);
+  fake.scripts.set('qwen2.5:3b', script);
 });
 afterAll(async () => {
   await fake.stop();
@@ -169,7 +161,10 @@ describe('appli Windows (.NET), 0.5.4', () => {
       'dotnet test BloqueurDeSites.sln --no-restore',
     ]);
     expect(task.plan?.installCommand).toBe('dotnet restore BloqueurDeSites.sln');
-    expect(task.runs.at(-1)?.results.map((r) => r.summary)).toEqual(['réussi', '3 tests réussis']);
+    expect(task.runs.at(-1)?.results.map((r) => r.summary)).toEqual([
+      'réussi',
+      expect.stringMatching(/\d+ tests réussis/),
+    ]);
     expect(task.findings.map((f) => `${f.category}:${f.file}`)).toEqual([
       'system:src/BloqueurDeSites.Core/HostsBlocker.cs',
     ]);
@@ -186,7 +181,12 @@ describe('appli Windows (.NET), 0.5.4', () => {
       kind: 'dotnet',
       template: 'dotnet-winforms',
       ok: true,
-      build: { command: 'dotnet build BloqueurDeSites.sln -c Release', artifact: null },
+      build: {
+        command:
+          'dotnet publish src/BloqueurDeSites.App/BloqueurDeSites.App.csproj -c Release -r win-x64 --no-self-contained',
+        artifact:
+          'src/BloqueurDeSites.App/bin/Release/net10.0-windows/win-x64/publish/BloqueurDeSites.App.exe',
+      },
     });
     await h.instance.discardTask();
   }, 180_000);
