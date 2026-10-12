@@ -369,6 +369,7 @@ export function Dashboard({
               <DeveloperSimpleView
                 embedded
                 settings={settings}
+                status={status}
                 voice={voice}
                 onAssistantReply={(text) => voice.noteAssistantReply(text)}
                 onSaved={onSaved}

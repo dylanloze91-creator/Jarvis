@@ -647,6 +647,47 @@
   gap: 4px;
 }
 
+.developer-cursor-project-row {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+  position: relative;
+  z-index: 2;
+}
+
+.developer-cursor-project-row .developer-cursor-project-btn {
+  width: auto;
+  flex: 1;
+  min-width: 0;
+}
+
+.developer-project-forget {
+  -webkit-app-region: no-drag;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 36px;
+  padding: 8px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: rgb(253 164 175 / 0.9);
+  cursor: pointer;
+}
+
+.developer-project-forget:hover:not(:disabled) {
+  background: rgb(255 255 255 / 0.06);
+  border-color: rgb(253 164 175 / 0.25);
+}
+
+.developer-project-forget:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .developer-cursor-project-btn {
   width: 100%;
   display: flex;
@@ -748,6 +789,75 @@
 
 [data-developer-compact='yes'] .developer-cursor-input {
   min-height: 64px;
+}
+
+.developer-confirmation-dock {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 45;
+  width: min(100%, 300px);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 10px;
+  pointer-events: none;
+}
+
+.developer-confirmation-dock-inner {
+  pointer-events: auto;
+  border-radius: 14px;
+  border: 1px solid rgba(251, 191, 36, 0.35);
+  background: rgba(12, 10, 6, 0.96);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55);
+  padding: 14px;
+  max-height: min(85%, 420px);
+  overflow-y: auto;
+}
+
+[data-developer-compact='yes'] .developer-confirmation-dock {
+  top: auto;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  justify-content: flex-end;
+  padding: 8px 10px 10px;
+}
+
+[data-developer-compact='yes'] .developer-confirmation-dock-inner {
+  max-height: min(42vh, 280px);
+}
+
+.developer-settings-sheet {
+  position: absolute;
+  inset: 0;
+  z-index: 44;
+  display: flex;
+  flex-direction: column;
+  background: rgba(7, 11, 20, 0.97);
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.developer-settings-sheet-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  flex-shrink: 0;
+}
+
+.developer-settings-sheet-body {
+  min-height: 0;
+  flex: 1;
+  overflow-y: auto;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
 }
 
 .dashboard[data-app-mode='classic'] {

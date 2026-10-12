@@ -23,6 +23,8 @@ interface Props {
   /** `general` : interrupteur seul ; `advanced` : réglages techniques (onglet caché). */
   surface?: 'general' | 'advanced';
   onOpenAdvanced?: () => void;
+  /** La confirmation est affichée dans le panneau latéral de l’onglet Développeur. */
+  hideInlineConfirmation?: boolean;
 }
 
 export function DeveloperSettingsSection({
@@ -30,6 +32,7 @@ export function DeveloperSettingsSection({
   onSave,
   surface = 'general',
   onOpenAdvanced,
+  hideInlineConfirmation = false,
 }: Props) {
   const { state, error, act } = useDeveloper(developer.enabled);
   const [path, setPath] = useState(developer.repoPath);
@@ -170,7 +173,7 @@ export function DeveloperSettingsSection({
             </Field>
           </div>
 
-          {state.confirmation ? (
+          {state.confirmation && !hideInlineConfirmation ? (
             <DeveloperConfirmationCard
               confirmation={state.confirmation}
               onRespond={(id, ok) => act((api) => api.respondConfirmation(id, ok))}

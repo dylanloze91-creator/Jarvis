@@ -48,6 +48,10 @@
   -webkit-app-region: no-drag;
 }
 
+html[data-native-win-caption='yes'] .jarvis-shell {
+  padding-top: 36px;
+}
+
 .jarvis-shell {
   position: relative;
   isolation: isolate;

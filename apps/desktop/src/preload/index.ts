@@ -158,3 +158,4 @@ const api: JarvisApi = {
 };
 
 contextBridge.exposeInMainWorld('jarvis', api);
+contextBridge.exposeInMainWorld('jarvisNativeCaption', process.platform === 'win32');

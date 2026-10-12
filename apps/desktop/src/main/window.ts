@@ -10,6 +10,10 @@ const DASHBOARD_WIDTH = 1360;
 const DASHBOARD_HEIGHT = 860;
 const WIDE_MIN = 1100;
 
+/** Barre de titre Windows native (réduire, agrandir, fermer) + redimensionnement par les bords. */
+const NATIVE_WIN_CAPTION = process.platform === 'win32';
+const TITLE_BAR_OVERLAY_HEIGHT = 36;
+
 export type WindowChrome = 'compact' | 'dashboard';
 
 export interface WorkArea {
@@ -82,17 +86,26 @@ export function createOverlayWindow(hideOnBlur: boolean): OverlayWindow {
     height: DEFAULT_HEIGHT,
     useContentSize: true,
     show: false,
-    frame: false,
-    transparent: true,
-    resizable: false,
+    frame: !NATIVE_WIN_CAPTION,
+    transparent: !NATIVE_WIN_CAPTION,
+    resizable: NATIVE_WIN_CAPTION,
     movable: true,
-    maximizable: false,
-    minimizable: false,
+    maximizable: NATIVE_WIN_CAPTION,
+    minimizable: NATIVE_WIN_CAPTION,
     fullscreenable: false,
-    skipTaskbar: true,
-    alwaysOnTop: true,
-    backgroundColor: '#00000000',
-    hasShadow: false,
+    skipTaskbar: !NATIVE_WIN_CAPTION,
+    alwaysOnTop: !NATIVE_WIN_CAPTION,
+    backgroundColor: NATIVE_WIN_CAPTION ? '#090f1b' : '#00000000',
+    hasShadow: NATIVE_WIN_CAPTION,
+    thickFrame: NATIVE_WIN_CAPTION,
+    titleBarStyle: NATIVE_WIN_CAPTION ? 'hidden' : undefined,
+    titleBarOverlay: NATIVE_WIN_CAPTION
+      ? {
+          color: '#090f1b',
+          symbolColor: '#f4f7fb',
+          height: TITLE_BAR_OVERLAY_HEIGHT,
+        }
+      : undefined,
     autoHideMenuBar: true,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -105,8 +118,15 @@ export function createOverlayWindow(hideOnBlur: boolean): OverlayWindow {
     },
   });
 
-  browserWindow.setAlwaysOnTop(true, 'screen-saver');
-  browserWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  if (!NATIVE_WIN_CAPTION) {
+    browserWindow.setAlwaysOnTop(true, 'screen-saver');
+    browserWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  }
+
+  browserWindow.on('close', (event) => {
+    event.preventDefault();
+    browserWindow.hide();
+  });
 
   browserWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (isExternalHttpUrl(url)) void shell.openExternal(url);
@@ -151,6 +171,7 @@ export function createOverlayWindow(hideOnBlur: boolean): OverlayWindow {
       hideOnBlurEnabled = enabled;
     },
     resize: (height) => {
+      if (NATIVE_WIN_CAPTION) return;
       const [currentWidth] = browserWindow.getContentSize();
       // Le tableau de bord occupe une fenêtre large : un resize « overlay »
       // tardif ne doit pas la rétrécir.
@@ -171,9 +192,17 @@ export function createOverlayWindow(hideOnBlur: boolean): OverlayWindow {
       browserWindow.setResizable(true);
       if (mode === 'compact') {
         browserWindow.setMinimumSize(WIDTH, MIN_HEIGHT);
-        browserWindow.setMaximizable(false);
-        browserWindow.setContentSize(WIDTH, DEFAULT_HEIGHT);
-        browserWindow.setResizable(false);
+        if (NATIVE_WIN_CAPTION) {
+          browserWindow.setMaximizable(true);
+          browserWindow.setResizable(true);
+          if (!browserWindow.isMaximized()) {
+            browserWindow.setContentSize(WIDTH, DEFAULT_HEIGHT);
+          }
+        } else {
+          browserWindow.setMaximizable(false);
+          browserWindow.setContentSize(WIDTH, DEFAULT_HEIGHT);
+          browserWindow.setResizable(false);
+        }
         browserWindow.setPosition(
           Math.round(x + (width - WIDTH) / 2),
           Math.round(y + Math.max(64, height * 0.16)),

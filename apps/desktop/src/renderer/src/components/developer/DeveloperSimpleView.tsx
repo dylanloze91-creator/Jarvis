@@ -7,6 +7,7 @@ import {
   Gamepad2,
   Monitor,
   RefreshCw,
+  Settings,
   Trash2,
 } from 'lucide-react';
 import {
@@ -24,7 +25,8 @@ import type { DeveloperState, ProjectView } from '../../../../shared/developerIp
 import type { UseVoiceResult } from '@/voice/useVoice';
 import { setVoiceTranscriptTarget } from '@/voice/voiceTranscriptRouter';
 import { DeveloperCollapsible } from './DeveloperCollapsible';
-import { DeveloperConfirmationCard } from './DeveloperConfirmationCard';
+import { DeveloperConfirmationDock } from './DeveloperConfirmationDock';
+import { DeveloperTabSettingsSheet } from './DeveloperTabSettingsSheet';
 import { MissionGateCard } from './mission/MissionGateCard';
 import { ProjectChatPanel } from './project/ProjectChatPanel';
 
@@ -78,6 +80,7 @@ export function DeveloperSimpleView({
   voice,
   onAssistantReply,
   onSaved,
+  status,
   onBack,
   pendingVoice = null,
   onPendingVoiceConsumed,
@@ -85,6 +88,7 @@ export function DeveloperSimpleView({
   compactChrome = false,
 }: {
   settings: Settings | null;
+  status: RuntimeStatus | null;
   voice: UseVoiceResult;
   onAssistantReply: (text: string) => void;
   onSaved: (payload: { settings: Settings; status: RuntimeStatus }) => void;
@@ -103,6 +107,7 @@ export function DeveloperSimpleView({
   const [newProjectBrief, setNewProjectBrief] = useState('');
   const [modelsOpen, setModelsOpen] = useState(true);
   const [shortcutsOpen, setShortcutsOpen] = useState(true);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const projects = useMemo(() => state?.projects ?? [], [state?.projects]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const activeId = useMemo(() => {
@@ -209,7 +214,10 @@ export function DeveloperSimpleView({
             className="h-7 px-2 text-[11px]"
             disabled={state?.busy}
             data-refresh-ollama-models
-            onClick={() => act((api) => api.refreshOllamaModels())}
+            onClick={(event) => {
+              event.stopPropagation();
+              act((api) => api.refreshOllamaModels());
+            }}
           >
             <RefreshCw className="size-3" /> Rafraîchir
           </Button>
@@ -326,9 +334,21 @@ export function DeveloperSimpleView({
           {embedded ? 'Développeur' : 'Jarvis développeur'}
         </span>
         {embedded ? (
-          <span className="text-[11px] text-slate-500">
+          <span className="hidden text-[11px] text-slate-500 sm:inline">
             Appli, plateforme 2D ou .exe Windows — un modèle à la fois, mémoire des runs.
           </span>
+        ) : null}
+        {embedded && settings && status ? (
+          <Button
+            type="button"
+            size="sm"
+            variant="subtle"
+            className="ml-auto h-7 text-[11px]"
+            data-dev-open-settings
+            onClick={() => setSettingsOpen(true)}
+          >
+            <Settings className="size-3.5" /> Réglages
+          </Button>
         ) : null}
       </div>
       {embeddedToolsStrip}
@@ -357,16 +377,22 @@ export function DeveloperSimpleView({
           <span className="text-slate-500">{state.mission.request.slice(0, 120)}</span>
         </p>
       ) : null}
-      {state.confirmation ? (
-        <div className="px-3 pb-2">
-          <DeveloperConfirmationCard
+      <div className="developer-cursor-body no-drag relative min-h-0 flex-1 overflow-hidden">
+        {state.confirmation ? (
+          <DeveloperConfirmationDock
             confirmation={state.confirmation}
             onRespond={(id, ok) => act((api) => api.respondConfirmation(id, ok))}
           />
-        </div>
-      ) : null}
-      <div className="developer-cursor-body no-drag min-h-0 flex-1 overflow-hidden">
-        <aside className="developer-cursor-projects" aria-label="Projets">
+        ) : null}
+        {settingsOpen && settings && status ? (
+          <DeveloperTabSettingsSheet
+            settings={settings}
+            status={status}
+            onSaved={onSaved}
+            onClose={() => setSettingsOpen(false)}
+          />
+        ) : null}
+        <aside className="developer-cursor-projects no-drag" aria-label="Projets">
           <div className="flex flex-wrap items-center justify-between gap-2 px-1">
             <p className="developer-cursor-projects-title mb-0">Projets</p>
             <div className="flex flex-wrap gap-1">
@@ -433,11 +459,11 @@ export function DeveloperSimpleView({
               </li>
             ) : (
               projects.map((p) => (
-                <li key={p.id} className="flex items-stretch gap-1">
+                <li key={p.id} className="developer-cursor-project-row">
                   <button
                     type="button"
                     className={cn(
-                      'developer-cursor-project-btn min-w-0 flex-1',
+                      'developer-cursor-project-btn',
                       p.id === activeId && 'is-active',
                     )}
                     onClick={() => setSelectedId(p.id)}
@@ -448,18 +474,22 @@ export function DeveloperSimpleView({
                     </span>
                   </button>
                   {p.kind !== 'jarvis' ? (
-                    <Button
+                    <button
                       type="button"
-                      size="sm"
-                      variant="ghost"
-                      className="h-auto shrink-0 px-2 text-rose-300/90"
+                      className="developer-project-forget no-drag"
                       disabled={state.busy}
                       title="Retirer de la liste (le dossier reste sur le disque)"
+                      aria-label={`Retirer ${p.name} de la liste`}
                       data-dev-forget-project={p.id}
-                      onClick={() => act((api) => api.forgetProject(p.id))}
+                      onPointerDown={(event) => event.stopPropagation()}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        if (p.id === activeId) setSelectedId(null);
+                        act((api) => api.forgetProject(p.id));
+                      }}
                     >
                       <Trash2 className="size-3.5" />
-                    </Button>
+                    </button>
                   ) : null}
                 </li>
               ))

@@ -80,6 +80,12 @@ export default function App() {
   const wide = useWideLayout();
 
   useEffect(() => {
+    if (window.jarvisNativeCaption === true) {
+      document.documentElement.dataset.nativeWinCaption = 'yes';
+    }
+  }, []);
+
+  useEffect(() => {
     let cancelled = false;
     void Promise.all([
       window.jarvis.settings.get(),
@@ -140,7 +146,7 @@ export default function App() {
   }, [view]);
 
   useLayoutEffect(() => {
-    if (wide || window.innerWidth >= 1100) return;
+    if (wide || window.innerWidth >= 1100 || window.jarvisNativeCaption === true) return;
     const pane = mainPaneRef.current;
     if (!pane) return;
     const sync = (): void => {
@@ -397,6 +403,7 @@ export default function App() {
                 embedded
                 compactChrome
                 settings={settings}
+                status={status}
                 voice={voice}
                 onAssistantReply={handleAssistantFinal}
                 onSaved={(payload) => {
