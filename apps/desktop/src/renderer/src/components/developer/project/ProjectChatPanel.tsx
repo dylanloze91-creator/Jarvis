@@ -99,6 +99,24 @@ export function ProjectChatPanel({
                 <p className="mt-0.5">{run.result}</p>
               </>
             ) : null}
+            {run.diff?.length ? (
+              <div className="mt-3 rounded-lg border border-white/10 bg-black/30 p-2">
+                <p className="text-[11px] uppercase tracking-wide text-slate-400">Fichiers modifiés</p>
+                <DiffView files={run.diff} />
+                {run.canRevert ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    className="mt-2"
+                    disabled={state.busy}
+                    onClick={() => act((api) => api.revertTask())}
+                  >
+                    Annuler (revenir au commit précédent)
+                  </Button>
+                ) : null}
+              </div>
+            ) : null}
           </div>
         ) : null}
         {previewable ? (

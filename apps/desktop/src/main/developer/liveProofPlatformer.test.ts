@@ -78,7 +78,7 @@ describe.runIf(LIVE)('preuve live mission plateforme (Ollama réel)', () => {
       });
       await h.instance.validate(repo);
       const started = await h.instance.startMission('new-project', REQUEST, true);
-      expect(started.mission?.status, started.notice ?? started.mission?.summary).toBe('finished');
+      expect(started.mission?.status, String(started.notice ?? started.mission?.summary ?? '')).toBe('finished');
       const task = started.codeTask!;
       expect(task.report?.verdict).toBe('success');
       expect(task.model).toBe('qwen3.5:4b');

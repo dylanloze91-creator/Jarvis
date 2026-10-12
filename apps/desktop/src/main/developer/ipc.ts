@@ -172,6 +172,11 @@ export function registerDeveloperIpc(
       get()?.prepareWorkspace(typeof path === 'string' && path.trim() ? text(path) : undefined) ??
       refused(),
   );
+  ipcMain.handle(DeveloperChannel.projectPickFolder, async () => {
+    const ctrl = get();
+    if (!ctrl) return { path: null, state: disabled() };
+    return ctrl.pickProjectFolder();
+  });
   ipcMain.handle(
     DeveloperChannel.projectForget,
     (_event, id: unknown) => get()?.forgetProject(projectId(id) ?? '') ?? refused(),

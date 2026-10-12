@@ -181,7 +181,9 @@ describe('Project Factory : gabarits locaux', () => {
     expect(suggestMissionKind('Ajoute un réglage pour le thème')).toBe('modify');
     expect(suggestMissionKind('Crée un test pour formatSeconds')).toBe('modify');
     expect(MISSION_CHAINS['new-project'].map((s) => s.actor)).toEqual([
-      'REASONER',
+      'JARVIS',
+      'JARVIS',
+      'JARVIS',
       'ARCHITECT',
       'USER',
     ]);

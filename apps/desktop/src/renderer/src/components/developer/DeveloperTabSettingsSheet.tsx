@@ -11,7 +11,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Field, Select } from '@/components/ui/field';
 import { DeveloperSettingsSection } from './DeveloperSettings';
-import type { RuntimeStatus } from '../../../shared/ipc';
+import type { RuntimeStatus } from '../../../../shared/ipc';
 
 /** Réglages développeur + permissions outils, sans quitter l’onglet Développeur. */
 export function DeveloperTabSettingsSheet({

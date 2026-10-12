@@ -494,7 +494,7 @@ function registerIpc(): void {
   ipcMain.handle(IpcChannel.updateInstall, () => updateManager.quitAndInstall());
 
   // Jarvis Développeur : session séparée du chat, créée seulement si le mode est activé.
-  registerDeveloperIpc(ipcMain, {
+  const developerIpc = registerDeveloperIpc(ipcMain, {
     getSettings: () => settings,
     appVersion: () => app.getVersion(),
     platform: process.platform,
@@ -508,6 +508,11 @@ function registerIpc(): void {
     userDataPath: () => app.getPath('userData'),
     chat: chatActivity,
   });
+  const playArg = process.argv.find((a) => a.startsWith('--jarvis-play-project='));
+  if (playArg) {
+    const projectId = playArg.slice('--jarvis-play-project='.length).trim();
+    if (projectId) void developerIpc.current()?.playProject(projectId);
+  }
 }
 
 function sanitizeGoogleDraft(draft: unknown): GoogleConfigDraft | undefined {

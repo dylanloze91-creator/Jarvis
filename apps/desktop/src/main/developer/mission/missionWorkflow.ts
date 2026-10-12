@@ -1,4 +1,7 @@
+import { existsSync } from 'node:fs';
+import { copyFile, mkdir } from 'node:fs/promises';
 import { homedir } from 'node:os';
+import { dirname, join } from 'node:path';
 import {
   JARVIS_PROJECT_ID,
   JARVIS_PROJECT_PROFILE,
@@ -45,9 +48,11 @@ import {
   dotnetDesktopTemplateReferences,
   DESKTOP_WINDOWS_EXE,
   isDotnetWindowsDesktopTemplate,
+  developerAgentFailed,
   developerAgentFinished,
   developerAgentStarted,
   developerMissionFailureLine,
+  summarizeRepoTree,
   fallbackFactory,
   fallbackGoal,
   fallbackSkill,
@@ -163,6 +168,8 @@ export interface MissionHost {
     project: ResolvedProject,
     request: string,
   ): Promise<string | null>;
+  /** Fusionne la copie isolée dans le dossier projet (5.0.30). */
+  applyTaskToProject?(): Promise<DeveloperState>;
 }
 
 /** Projets (0.5.3) : copie et profil d'un projet, sa mémoire, la Project Factory. */
@@ -178,7 +185,7 @@ export interface MissionProjects {
     },
     step: Step,
     signal: AbortSignal,
-    options?: { reuseEntryId?: string },
+    options?: { reuseEntryId?: string; trustedMissionCreate?: boolean },
   ): Promise<ResolvedProject | null>;
   scaffoldMissionFolder(
     request: string,
@@ -203,7 +210,11 @@ export interface MissionDeps {
   recordModelRun?: (record: Omit<ModelRunRecord, 'at'>) => Promise<void>;
   onMissionChatLine?: (line: string) => void;
   onMissionFocusProject?: (projectId: string) => void;
-  webResearch?: (query: string, request: string) => Promise<string | null>;
+  webResearch?: (
+    query: string,
+    request: string,
+  ) => Promise<{ chatLine: string; coderBlock: string } | null>;
+  verifyWebGameRuntime?: (projectRoot: string) => Promise<{ ok: boolean; detail: string }>;
 }
 
 export const MISSION_PROJECT_ID = JARVIS_PROJECT_PROFILE.id;
@@ -292,6 +303,23 @@ export class MissionWorkflow {
     const routed = this.modelPlan?.get(role);
     if (routed) return routed.model;
     return resolveRoleModel(role, this.developer())!;
+  }
+
+  private async repoMapOutline(root: string): Promise<string> {
+    const listed = await this.deps.run({
+      program: 'git',
+      args: ['ls-files'],
+      cwd: root,
+      display: 'git ls-files',
+      timeoutMs: 30_000,
+      maxBytes: 400_000,
+    });
+    if (listed.code !== 0) return '';
+    const paths = listed.stdout
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean);
+    return summarizeRepoTree(paths);
   }
 
   private enrichedPlanContext(base: string): string {
@@ -445,6 +473,7 @@ export class MissionWorkflow {
       this.developer(),
       installed,
       (await this.deps.modelRuns?.()) ?? [],
+      this.deps.realBenches?.(),
     );
     if (!(plan instanceof Map)) return this.host.notice(plan.error);
     for (const route of plan.values()) {
@@ -633,7 +662,9 @@ export class MissionWorkflow {
             const query = webResearchQueryForRequest(mission.request);
             const summary = await this.deps.webResearch?.(query, mission.request);
             if (summary) {
-              this.deps.onMissionChatLine?.(developerAgentFinished('web', summary.replace(/^Recherche web : /, '')));
+              this.deps.onMissionChatLine?.(
+                developerAgentFinished('web', summary.chatLine.replace(/^Recherche web : /, '')),
+              );
               return summary;
             }
             this.deps.onMissionChatLine?.(
@@ -663,9 +694,9 @@ export class MissionWorkflow {
           this.patch('scaffold', { status: 'done', detail: scaffoldOutcome.path });
           step('scaffold', 'done', scaffoldOutcome.path);
           if (webSummary) {
-            this.patch('web-research', { status: 'done', detail: webSummary.slice(0, 160) });
-            step('web-research', 'done', webSummary.slice(0, 80));
-            mission.discussionContext = `${mission.discussionContext ?? ''}\n\nMéthode (recherche web) : ${webSummary}`.slice(
+            this.patch('web-research', { status: 'done', detail: webSummary.chatLine.slice(0, 160) });
+            step('web-research', 'done', webSummary.chatLine.slice(0, 80));
+            mission.discussionContext = `${mission.discussionContext ?? ''}\n\n${webSummary.coderBlock}\n\n${webSummary.chatLine}`.slice(
               0,
               24_000,
             );
@@ -1089,8 +1120,10 @@ export class MissionWorkflow {
     const coder = this.modelFor('CODER');
     await this.switchModel(coder);
     this.deps.onMissionChatLine?.(developerAgentStarted('codeur', 'écrit le code et adapte les tests'));
+    const repoMap = await this.repoMapOutline(project.root);
     const context = [
       'Contexte de la mission (préparé par les spécialistes, à respecter) :',
+      ...(repoMap ? [repoMap] : []),
       briefBlock(this.brief()),
       `Projet neuf, créé depuis le gabarit « ${template ? PROJECT_TEMPLATES[template].label : '?'} » : lis ses fichiers, écris le programme demandé et adapte les tests (gabarit neutre pour web-game).`,
       ...(template && TEMPLATE_GUIDES[template] ? [TEMPLATE_GUIDES[template]] : []),
@@ -1126,24 +1159,45 @@ export class MissionWorkflow {
       },
     });
     await this.finishFromTask();
-    if (mission.verdict === 'success') {
+    let merged = false;
+    if (mission.verdict === 'success' && this.host.applyTaskToProject) {
+      const applied = await this.host.applyTaskToProject();
+      const task = this.host.currentTask() ?? applied.codeTask;
+      merged = Boolean(task?.applied && task.applied.revertedAt === null);
+      if (merged && task?.worktreePath) {
+        await this.syncDeliveredFiles(
+          task.worktreePath,
+          project.root,
+          task.diff.map((f) => f.path),
+        );
+      }
+      if (merged) {
+        mission.summary = `Livré : ${task?.diff.length ?? 0} fichier(s) fusionnés dans ${project.root}.`;
+      } else {
+        mission.verdict = 'failed';
+        mission.status = 'failed';
+        mission.summary = 'Échec : la fusion dans le dossier projet a échoué.';
+      }
+    }
+    if (mission.verdict === 'success' && merged) {
       this.deps.onMissionChatLine?.(
         developerAgentFinished('codeur', mission.summary?.slice(0, 120) ?? 'code livré'),
       );
     } else if (mission.verdict === 'failed' || mission.verdict === 'stopped') {
       this.deps.onMissionChatLine?.(
-        developerAgentFinished('codeur', mission.summary?.slice(0, 120) ?? 'mission interrompue'),
+        developerAgentFailed('codeur', mission.summary?.slice(0, 160) ?? 'mission interrompue'),
       );
     }
-    if (mission.verdict === 'success' && project) {
+    if (mission.verdict === 'success' && merged && project) {
       this.deps.onMissionFocusProject?.(project.id);
+      await this.deliverWindowsExeIfRequested(template ?? undefined, mission.request, mission.projectId!);
       const shortcut = await this.host.deliverDesktopShortcut?.(project, mission.request);
       if (shortcut) this.deps.onMissionChatLine?.(`Raccourci bureau : ${shortcut}`);
     }
-    await this.deliverWindowsExeIfRequested(template, mission.request, mission.projectId!);
     return this.host.emit();
     } catch (error) {
-      if (mission.status === 'running' || mission.status === 'task') {
+      const st = mission.status;
+      if (st === 'task' || st === 'failed' || st === 'running') {
         this.fail(error instanceof Error ? error.message : String(error));
       }
       return this.host.emit();
@@ -1266,6 +1320,56 @@ export class MissionWorkflow {
     });
   }
 
+  /** Copie les fichiers livrés dans le dossier projet (secours si la fusion git est déjà à jour). */
+  private async syncDeliveredFiles(
+    worktreePath: string,
+    projectRoot: string,
+    paths: string[],
+  ): Promise<void> {
+    let rels = paths;
+    if (!rels.length) {
+      const status = await this.deps.run({
+        program: 'git',
+        args: ['status', '--porcelain=v1'],
+        cwd: worktreePath,
+        display: 'git status --porcelain=v1',
+        timeoutMs: 60_000,
+        maxBytes: 200_000,
+      });
+      if (status.code === 0) {
+        rels = status.stdout
+          .split('\n')
+          .map((line) => line.trim())
+          .filter(Boolean)
+          .map((line) => line.slice(3).trim())
+          .filter(Boolean);
+      }
+      if (!rels.length) {
+        const listed = await this.deps.run({
+          program: 'git',
+          args: ['diff-tree', '--no-commit-id', '--name-only', '-r', 'HEAD'],
+          cwd: worktreePath,
+          display: 'git diff-tree --name-only HEAD',
+          timeoutMs: 60_000,
+          maxBytes: 200_000,
+        });
+        if (listed.code === 0) {
+          rels = listed.stdout
+            .split('\n')
+            .map((line) => line.trim())
+            .filter(Boolean);
+        }
+      }
+    }
+    for (const rel of rels) {
+      const src = join(worktreePath, rel);
+      if (!existsSync(src)) continue;
+      const dst = join(projectRoot, rel);
+      await mkdir(dirname(dst), { recursive: true });
+      await copyFile(src, dst);
+    }
+  }
+
   private loopHooks(root: string, coder: string, planContext: string): TaskHooks {
     const onPhase: TaskHooks['onPhase'] = (phase, status, detail, extra) => {
       const mission = this.current;
@@ -1326,9 +1430,20 @@ export class MissionWorkflow {
       this.activeRole = null;
     };
     const brief = this.brief();
+    const kind = this.current?.kind;
+    const template = this.project?.template;
     return {
       planContext,
+      directRun: kind === 'new-project' || kind === 'modify' || kind === 'fix',
+      autoApprovePlan: kind === 'new-project' || kind === 'modify' || kind === 'fix',
       docsOnly: this.current?.kind === 'document',
+      runtimeLaunchCheck:
+        template === 'web-game' && this.deps.verifyWebGameRuntime
+          ? (root, signal) =>
+              signal.aborted
+                ? Promise.resolve({ ok: false, detail: 'Annulé.' })
+                : this.deps.verifyWebGameRuntime!(root)
+          : undefined,
       onPhase,
       review: async (diff, signal) => {
         const model = this.modelFor('REVIEWER');
@@ -1412,14 +1527,22 @@ export class MissionWorkflow {
       mission.kind === 'new-project' &&
       verdict !== 'success' &&
       task?.status !== 'refused';
+    const lastFail =
+      task?.runs.at(-1)?.newFailures?.[0] ??
+      task?.report?.markdown?.split('\n').find((l) => /échec|fail|error/i.test(l)) ??
+      task?.repeatedFailure?.failures?.[0];
     mission.summary =
       task?.status === 'refused'
         ? 'Plan refusé : rien n’a été écrit.'
         : verdict === 'success'
-          ? `Réussie : ${task?.diff.length ?? 0} fichier(s) modifié(s) dans la copie isolée, tests sans nouvel échec${task?.review ? ', revue sans point bloquant' : ''}.`
+          ? `Réussie : ${task?.diff.length ?? 0} fichier(s) modifié(s), tests et aperçu OK${task?.review ? ', revue sans point bloquant' : ''}.`
           : failedNew
-            ? 'Échec : le programme demandé n’a pas été livré. Ton projet sur le disque est resté le gabarit neutre (la copie isolée n’a pas été fusionnée). Vois le rapport de la tâche.'
-            : 'Pas réussie : vois le rapport de la tâche.';
+            ? lastFail
+              ? `Échec : ${lastFail}`
+              : 'Échec : le programme demandé n’a pas été livré (gabarit non fusionné).'
+            : lastFail
+              ? `Échec : ${lastFail}`
+              : 'Pas réussie : vois le rapport de la tâche.';
     if (task) {
       this.deps
         .recordModelRun?.({

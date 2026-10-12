@@ -6,6 +6,7 @@ import {
   type ModelRunCategory,
   type ModelRunRecord,
 } from './modelRunMemory.js';
+import type { RealBenchResult } from './realBench.js';
 import { LOOP_ACTORS, MISSION_CHAINS, missionUsesTask, type MissionKind, type RoleModels } from './router.js';
 import { ROLE_LABELS, type SpecialistRole } from './roles.js';
 
@@ -31,6 +32,29 @@ export function pickInstalledCompletionModel(installed: ReadonlySet<string>): st
     if (!isEmbeddingModel(name)) return name;
   }
   return null;
+}
+
+const MISSION_CODER_PREFER = ['qwen3.6:35b-a3b-coding', 'qwen2.5-coder:14b', 'qwen2.5-coder:7b'];
+
+/** Modèle Codeur pour une mission (6 Go VRAM) : banc réel, puis défaut catalogue, puis repli. */
+export function pickMissionCoderModel(
+  installed: ReadonlySet<string>,
+  realBenches?: readonly RealBenchResult[],
+): string | null {
+  const fromBench = realBenches
+    ?.map((b) => {
+      const coder = b.roles.find((r) => r.role === 'CODER');
+      const score =
+        coder && coder.measured > 0 ? coder.passed / coder.measured : 0;
+      return { model: b.model, score };
+    })
+    .filter((row) => row.score > 0)
+    .sort((a, b) => b.score - a.score)[0]?.model;
+  if (fromBench && installed.has(fromBench)) return fromBench;
+  for (const id of MISSION_CODER_PREFER) {
+    if (installed.has(id)) return id;
+  }
+  return pickInstalledCompletionModel(installed);
 }
 
 /** Rôles d'une mission qui appellent un modèle Ollama. */
@@ -137,6 +161,7 @@ export function buildMissionModelPlan(
   developer: { codeModel: string; roleModels?: RoleModels },
   installed: ReadonlySet<string>,
   runs: readonly ModelRunRecord[] = [],
+  realBenches?: readonly RealBenchResult[],
 ): Map<SpecialistRole, RoleModelRoute> | { error: string } {
   const plan = new Map<SpecialistRole, RoleModelRoute>();
   for (const role of missionRolesNeedingModel(kind)) {
@@ -150,6 +175,30 @@ export function buildMissionModelPlan(
       };
     }
     plan.set(role, route);
+  }
+  if (missionUsesTask(kind)) {
+    const missionCoder = pickMissionCoderModel(installed, realBenches);
+    const benchPick =
+      missionCoder &&
+      realBenches?.some((b) => {
+        if (b.model !== missionCoder) return false;
+        const coder = b.roles.find((r) => r.role === 'CODER');
+        return Boolean(coder && coder.measured > 0 && coder.passed / coder.measured > 0);
+      });
+    const catalogPick =
+      missionCoder &&
+      (MISSION_CODER_PREFER as readonly string[]).includes(missionCoder);
+    if (missionCoder && (benchPick || catalogPick)) {
+      const shared: RoleModelRoute = {
+        role: 'CODER',
+        model: missionCoder,
+        reason: 'code-model',
+        logLine: `Codeur de mission : « ${missionCoder} » (un seul modèle chargé pour écrire, corriger et relire).`,
+      };
+      plan.set('CODER', shared);
+      if (plan.has('REVIEWER')) plan.set('REVIEWER', { ...shared, role: 'REVIEWER' });
+      if (plan.has('DEBUGGER')) plan.set('DEBUGGER', { ...shared, role: 'DEBUGGER' });
+    }
   }
   return plan;
 }

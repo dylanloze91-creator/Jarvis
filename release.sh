@@ -4,6 +4,9 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT"
 VERSION="$(node -p "require('./apps/desktop/package.json').version")"
+npm run typecheck
+npm test -w @jarvis/core
+npm test -w @jarvis/desktop
 TOKEN_FILE="${JARVIS_GH_TOKEN_FILE:-/cursor/stores/bc-3a2e3f44-8967-432c-8f56-deb24a216831/internal/gh-token.txt}"
 BRANCH="${JARVIS_RELEASE_BRANCH:-$(git branch --show-current)}"
 GHTOK=$(tr -d '\n\r' < "$TOKEN_FILE")

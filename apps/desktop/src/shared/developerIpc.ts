@@ -214,6 +214,9 @@ export interface ProjectSimpleRun {
   intent: string;
   /** Résultat une fois terminé. */
   result: string | null;
+  /** Diff fusionné (5.0.30). */
+  diff?: DiffFile[];
+  canRevert?: boolean;
 }
 
 /** Discussion avec le modèle de code sur un projet (importé ou créé). */
@@ -280,6 +283,7 @@ export const DeveloperChannel = {
   projects: 'dev:projects',
   projectImport: 'dev:project-import',
   projectPrepareWorkspace: 'dev:project-prepare-workspace',
+  projectPickFolder: 'dev:project-pick-folder',
   projectForget: 'dev:project-forget',
   projectMemory: 'dev:project-memory',
   projectBuild: 'dev:project-build',
@@ -338,6 +342,7 @@ export interface DevTask {
 export interface DevConfirmation {
   requestId: string;
   toolName: string;
+  title?: string;
   details: string;
   command?: string;
   forced?: boolean;
@@ -436,6 +441,7 @@ export interface DeveloperApi {
   importProject(path: string): Promise<DeveloperState>;
   /** Dossier vide (ou chemin fourni) : prochaines commandes y travaillent. */
   prepareWorkspace(path?: string): Promise<DeveloperState>;
+  pickProjectFolder(): Promise<{ path: string | null; state: DeveloperState }>;
   forgetProject(id: string): Promise<DeveloperState>;
   saveProjectMemory(id: string, notes: string): Promise<DeveloperState>;
   buildProject(id: string): Promise<DeveloperState>;

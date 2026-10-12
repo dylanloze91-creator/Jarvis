@@ -1,21 +1,28 @@
 import { BrowserWindow } from 'electron';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { serveStaticDir } from './localStaticServer.js';
 
 /** Aperçu local d’un projet web/jeu à côté de la discussion (5.0.4). */
 export class ProjectPreviewWindow {
   private win: BrowserWindow | null = null;
   private projectId: string | null = null;
+  private closeServer: (() => Promise<void>) | null = null;
 
   close(): void {
     this.win?.close();
     this.win = null;
     this.projectId = null;
+    void this.closeServer?.().finally(() => {
+      this.closeServer = null;
+    });
   }
 
-  open(projectId: string, projectRoot: string, template: string | null): boolean {
-    const index = join(projectRoot, 'index.html');
+  async open(projectId: string, projectRoot: string, template: string | null): Promise<boolean> {
+    const distIndex = join(projectRoot, 'dist', 'index.html');
+    const devIndex = join(projectRoot, 'index.html');
+    const staticRoot = existsSync(distIndex) ? join(projectRoot, 'dist') : projectRoot;
+    const index = existsSync(distIndex) ? distIndex : devIndex;
     if (!existsSync(index)) {
       this.close();
       return false;
@@ -27,6 +34,8 @@ export class ProjectPreviewWindow {
     }
     this.close();
     this.projectId = projectId;
+    const served = await serveStaticDir(staticRoot);
+    this.closeServer = served.close;
     this.win = new BrowserWindow({
       width: 720,
       height: 480,
@@ -34,7 +43,7 @@ export class ProjectPreviewWindow {
       autoHideMenuBar: true,
       webPreferences: { sandbox: true, contextIsolation: true },
     });
-    void this.win.loadURL(pathToFileURL(index).href);
+    await this.win.loadURL(served.url);
     this.win.on('closed', () => {
       this.win = null;
       this.projectId = null;

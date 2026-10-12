@@ -53,6 +53,7 @@ import {
   writeProjectFiles,
 } from './factory.js';
 import { inspectProject } from './inspect.js';
+import { gatherRepoFacts } from '../repo.js';
 import { pickProjectDirectory } from './projectDirectory.js';
 import type { ProjectChatPersisted } from './projectChatStore.js';
 import type { ProjectStore } from './projectStore.js';
@@ -111,8 +112,10 @@ const WORKSPACE_MISSION_MARKER = '.jarvis-workspace';
 async function clearWorkspaceMissionDir(dir: string): Promise<void> {
   const entries = await readdir(dir);
   for (const name of entries) {
+    if (name === WORKSPACE_MISSION_MARKER) continue;
     await rm(join(dir, name), { recursive: true, force: true });
   }
+  await writeFile(join(dir, WORKSPACE_MISSION_MARKER), 'mission-scaffold\n', 'utf8');
 }
 
 /**
@@ -403,13 +406,55 @@ export class ProjectsWorkflow {
         projectId: known.id,
         chatLine: `Déjà dans la liste : les commandes travaillent dans ${dir}.`,
       };
-    const check = await inspectProject(dir, this.deps.run);
+    let check = await inspectProject(dir, this.deps.run);
     if (!check.ok) {
-      await this.refresh();
-      const reasons = check.checks
-        .filter((c) => c.status === 'fail')
-        .map((c) => `${c.label} : ${c.detail}`);
-      return { ok: false, chatLine: `Import refusé : ${reasons.join(' ')}` };
+      const facts = await gatherRepoFacts(dir, this.deps.run);
+      if (facts.isDirectory) {
+        if (!facts.hasGit) {
+          await this.deps.run({
+            program: 'git',
+            args: ['init', '-b', 'main'],
+            cwd: dir,
+            display: 'git init -b main',
+            timeoutMs: 60_000,
+            maxBytes: 20_000,
+          });
+          await this.deps.run({
+            program: 'git',
+            args: ['add', '-A'],
+            cwd: dir,
+            display: 'git add -A',
+            timeoutMs: 120_000,
+            maxBytes: 200_000,
+          });
+          await this.deps.run({
+            program: 'git',
+            args: ['commit', '-m', 'État d’origine (import Jarvis)', '--allow-empty'],
+            cwd: dir,
+            display: 'git commit (import)',
+            timeoutMs: 120_000,
+            maxBytes: 20_000,
+          });
+        }
+        check = await inspectProject(dir, this.deps.run);
+        if (!check.ok) {
+          check = {
+            ...check,
+            ok: true,
+            checks: check.checks.map((c) =>
+              c.status === 'fail' ? { ...c, status: 'warn' as const } : c,
+            ),
+            toolchain:
+              check.toolchain ?? (existsSync(join(dir, 'package.json')) ? 'node' : null),
+          };
+        }
+      } else {
+        await this.refresh();
+        const reasons = check.checks
+          .filter((c) => c.status === 'fail')
+          .map((c) => `${c.label} : ${c.detail}`);
+        return { ok: false, chatLine: `Import refusé : ${reasons.join(' ')}` };
+      }
     }
     const name = check.name ?? basename(dir);
     const entry: ProjectEntry = {

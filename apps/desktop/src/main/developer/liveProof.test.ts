@@ -79,7 +79,7 @@ describe.runIf(LIVE)('preuve live Développeur (Ollama réel)', () => {
         'Crée un mini jeu dans le navigateur : une balle rebondit dans un canvas 400×300, affiche le score quand elle sort.',
         true,
       );
-      expect(started.mission?.status, started.notice ?? started.mission?.summary).toBe('finished');
+      expect(started.mission?.status, String(started.notice ?? started.mission?.summary ?? '')).toBe('finished');
       const task = started.codeTask!;
       expect(task.report?.verdict).toBe('success');
       expect(task.model).toBe('qwen3.5:4b');

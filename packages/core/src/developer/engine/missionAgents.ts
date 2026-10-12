@@ -2,11 +2,11 @@
 export type DeveloperMissionAgent = 'web' | 'preparer' | 'architecte' | 'codeur' | 'testeur';
 
 export const DEVELOPER_MISSION_AGENT_LABELS: Record<DeveloperMissionAgent, string> = {
-  web: 'Chercheur web',
-  preparer: 'Préparateur',
-  architecte: 'Architecte',
-  codeur: 'Codeur',
-  testeur: 'Testeur',
+  web: 'Recherche web (sans modèle)',
+  preparer: 'Dossier du projet',
+  architecte: 'Gabarit (règles fixes)',
+  codeur: 'Code et corrections (modèle)',
+  testeur: 'Tests npm/dotnet',
 };
 
 export function developerAgentStarted(agent: DeveloperMissionAgent, task: string): string {
@@ -22,6 +22,12 @@ export function developerAgentFinished(agent: DeveloperMissionAgent, result: str
 }
 
 /** Une ligne française dans le chat quand la mission s’arrête avant le Codeur (5.0.29). */
+export function developerAgentFailed(agent: DeveloperMissionAgent, result: string): string {
+  const label = DEVELOPER_MISSION_AGENT_LABELS[agent];
+  const r = result.trim();
+  return `✗ ${label} — ${r}`;
+}
+
 export function developerMissionFailureLine(reason: string): string {
   const r = reason.trim().replace(/\s+/g, ' ');
   if (!r) return 'Échec — la mission s’est arrêtée après l’Architecte (raison inconnue).';

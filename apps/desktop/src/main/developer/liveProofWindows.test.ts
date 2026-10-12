@@ -105,7 +105,7 @@ describe.runIf(LIVE)('preuve live appli Windows .exe (Ollama réel)', () => {
         };
         writeFileSync('/tmp/jarvis-live-win-fail.json', `${JSON.stringify(dump, null, 2)}\n`);
       }
-      expect(started.mission?.status, started.notice ?? started.mission?.summary).toBe('finished');
+      expect(started.mission?.status, String(started.notice ?? started.mission?.summary ?? '')).toBe('finished');
       const task = started.codeTask!;
       expect(task.report?.verdict).toBe('success');
       expect(task.model).toBe('qwen3.5:4b');
@@ -117,8 +117,9 @@ describe.runIf(LIVE)('preuve live appli Windows .exe (Ollama réel)', () => {
       const slnFile = readdirSync(dir).find((f) => f.endsWith('.sln'));
       expect(slnFile, `solution .sln dans ${dir}`).toBeTruthy();
 
-      run(dir, 'dotnet', ['restore', slnFile]);
-      const testOut = run(dir, 'dotnet', ['test', slnFile, '--no-restore']);
+      const sln = slnFile!;
+      run(dir, 'dotnet', ['restore', sln]);
+      const testOut = run(dir, 'dotnet', ['test', sln, '--no-restore']);
       expect(testOut).toMatch(/réussi|passed|succeeded/i);
 
       const publishCmd = dotnetPublishWinExeCommand(project.name);
@@ -163,7 +164,7 @@ describe.runIf(LIVE)('preuve live appli Windows .exe (Ollama réel)', () => {
         'Crée une application Windows .exe : une classe qui compte les mots d’un texte dans Core, avec tests xUnit.',
         true,
       );
-      expect(started.mission?.status, started.notice ?? started.mission?.summary).toBe('finished');
+      expect(started.mission?.status, String(started.notice ?? started.mission?.summary ?? '')).toBe('finished');
       expect(started.codeTask?.model).toBe('qwen3.5:4b');
       const project = (await h.instance.listProjects()).projects!.find(
         (p) => p.id === started.mission!.projectId,

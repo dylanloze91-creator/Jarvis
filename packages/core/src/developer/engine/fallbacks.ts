@@ -118,7 +118,8 @@ export function steerFactory(request: string, chosen: FactoryOutput): FactoryOut
   return lockFactoryToRequest(request, out);
 }
 
-const OTHER_GAME_NAME = /\b(snake|pong|tetris|breakout|flappy|asteroids?|pac-?man)\b/i;
+const OTHER_GAME_NAME =
+  /\b(snake|serpent|pong|tetris|breakout|flappy|asteroids?|pac-?man|morpion)\b/i;
 
 /** Empêche de remplacer la demande (ex. plateforme 2D) par Snake/Pong via le modèle. */
 export function lockFactoryToRequest(request: string, chosen: FactoryOutput): FactoryOutput {
@@ -129,14 +130,18 @@ export function lockFactoryToRequest(request: string, chosen: FactoryOutput): Fa
     out.template = 'web-game';
     const wrong =
       OTHER_GAME_NAME.test(out.name) ||
-      (!/plateforme|platformer/i.test(out.name) && OTHER_GAME_NAME.test(out.description));
+      OTHER_GAME_NAME.test(out.description) ||
+      (!/plateforme|platformer/i.test(out.name) && /jeu du|type de jeu/i.test(out.description));
     if (wrong || !/plateforme|platformer|2d/i.test(out.name)) {
       const fromReq = projectNameFromRequest(request);
       out.name = OTHER_GAME_NAME.test(fromReq) || fromReq.length < 4 || /^je voudrais/i.test(fromReq)
         ? platformerProjectTitle()
         : fromReq.slice(0, 60);
     }
-    if (OTHER_GAME_NAME.test(out.description) && !OTHER_GAME_NAME.test(request)) {
+    if (
+      (OTHER_GAME_NAME.test(out.description) || !/plateforme|platformer|2d/i.test(out.description)) &&
+      !OTHER_GAME_NAME.test(request)
+    ) {
       out.description = request.trim().slice(0, 300);
     }
     return out;

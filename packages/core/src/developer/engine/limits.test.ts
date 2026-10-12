@@ -180,9 +180,9 @@ describe('secours sans modèle (5.0.1)', () => {
   it('un jeu part du gabarit jeu, même si l’ARCHITECTE en choisit un autre', () => {
     const react = { template: 'vite-react' as const, name: 'Pong Electron', description: '' };
     expect(steerFactory(PONG, react)).toEqual({ ...react, template: 'web-game' });
-    expect(steerFactory('Crée un site pour mes recettes', react)).toBe(react);
+    expect(steerFactory('Crée un site pour mes recettes', react)).toEqual(react);
     const wpf = { template: 'dotnet-wpf' as const, name: 'Morpion', description: '' };
-    expect(steerFactory('Crée un morpion, appli Windows WPF', wpf)).toBe(wpf);
+    expect(steerFactory('Crée un morpion, appli Windows WPF', wpf)).toEqual(wpf);
     const bureau = { template: 'vite-react' as const, name: 'Compteur', description: '' };
     expect(steerFactory('Crée un compteur livré en .exe', bureau).template).toBe(
       'dotnet-winforms',

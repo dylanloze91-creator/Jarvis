@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { mkdir, readdir, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { DOTNET_ENV, normalizeRepoRelative, type TemplateFile } from '@jarvis/core';
 import { devPlatform } from '../platform/index.js';
@@ -33,10 +33,20 @@ export function factoryCommands(
   ];
 }
 
+const WORKSPACE_MISSION_MARKER = '.jarvis-workspace';
+const IGNORED_DIR_ENTRIES = new Set([WORKSPACE_MISSION_MARKER, '.DS_Store']);
+
 /** Écrit le gabarit dans un dossier neuf (ou vide) ; jamais par-dessus des fichiers existants. */
 export async function writeProjectFiles(dir: string, files: TemplateFile[]): Promise<void> {
-  if (existsSync(dir) && (await readdir(dir)).length > 0)
-    throw new FactoryError(`« ${dir} » existe déjà et n’est pas vide : rien n’a été écrit.`);
+  if (existsSync(dir)) {
+    const names = await readdir(dir);
+    const blocking = names.filter((n) => !IGNORED_DIR_ENTRIES.has(n));
+    if (blocking.length > 0)
+      throw new FactoryError(`« ${dir} » existe déjà et n’est pas vide : rien n’a été écrit.`);
+    for (const name of names) {
+      await rm(join(dir, name), { recursive: true, force: true });
+    }
+  }
   await mkdir(dir, { recursive: true });
   for (const file of files) {
     const rel = normalizeRepoRelative(file.path);

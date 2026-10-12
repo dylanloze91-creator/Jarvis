@@ -1196,6 +1196,18 @@ export class TaskRun extends TaskRunBase {
       }
       previous = current;
     }
+    if (run.ok) await this.checkpoint('Livraison', signal);
+    if (run.ok && this.hooks.runtimeLaunchCheck) {
+      step('launch', 'running', 'build et aperçu local (Electron)');
+      const launch = await this.hooks.runtimeLaunchCheck(this.sandbox!.path, signal);
+      if (!launch.ok) {
+        run.ok = false;
+        run.newFailures.push(launch.detail);
+        step('launch', 'failed', launch.detail);
+      } else {
+        step('launch', 'done', launch.detail);
+      }
+    }
     run = await this.templateRescue(step, signal, pause, run);
     const message = this.finish(step, run.ok ? 'success' : 'failed');
     if (!run.ok) throw new TaskStopped(message);

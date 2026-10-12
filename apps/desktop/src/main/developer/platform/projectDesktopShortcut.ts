@@ -40,12 +40,14 @@ async function writeWindowsBatShortcut(
  * ou lance l’exe publié pour une appli Windows.
  */
 export async function createProjectDesktopShortcut(options: {
+  projectId: string;
   projectName: string;
   template: ProjectTemplateId | undefined;
   projectRoot: string;
   platform: NodeJS.Platform;
   home: string;
   run?: Runner;
+  jarvisExe: string;
 }): Promise<DesktopShortcutResult | null> {
   const label = defaultDesktopShortcutLabel(options.projectName);
   const desktop = desktopDir(options.home, options.platform);
@@ -67,8 +69,8 @@ export async function createProjectDesktopShortcut(options: {
     const fileName = `${label.replace(/[^\p{L}\p{N}\-— ]/gu, '').trim()}.bat`;
     const bat =
       options.platform === 'win32'
-        ? `@echo off\r\nstart "" "${index}"\r\n`
-        : `#!/bin/sh\nxdg-open "${index}"\n`;
+        ? `@echo off\r\nstart "" "${options.jarvisExe}" --jarvis-play-project=${options.projectId}\r\n`
+        : `#!/bin/sh\n"${options.jarvisExe}" --jarvis-play-project=${options.projectId}\n`;
     const path = await writeWindowsBatShortcut(
       desktop,
       fileName.endsWith('.bat') ? fileName : `${fileName}.bat`,

@@ -15,6 +15,7 @@
   "spotifyClientId": "",
   "googleClientId": "",
   "googleClientSecret": "",
+  "googleCseId": "",
   "googleAccess": "full",
   "siteBlockBaseUrl": "http://127.0.0.1:18741",
   "siteBlockToken": "",

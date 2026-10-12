@@ -1,6 +1,6 @@
 /** Demande d’action claire dans la discussion projet → exécution directe (code seul, sans mission). */
 const ACTION_VERBS =
-  /\b(ajoute|ajouter|change|changer|modifie|modifier|corrige|corriger|crée|créer|construis|construire|build|implement|implémente|implemente|augmente|augmenter|réduis|reduis|diminue|retire|supprime|enlève|enleve|mets|met|fais|fait|passe|rend|jouable|jouer|fixe|fix)\b/i;
+  /\b(ajoute|ajouter|change|changer|modifie|modifier|corrige|corriger|crée|créer|construis|construire|build|implement|implémente|implemente|augmente|augmenter|réduis|reduis|diminue|retire|supprime|enlève|enleve|mets|met|fais|fait|passe|rend|rends|rendre|jouable|jouer|fixe|fix|accélère|accelere|ralentis|saute)\b/i;
 
 const SOFT_INTENT =
   /\b(il faut|je veux|je voudrais|j'aimerais|j aimerais|besoin de|peux-tu faire|tu peux faire|fais en sorte)\b/i;

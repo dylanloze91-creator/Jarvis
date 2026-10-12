@@ -455,6 +455,20 @@ export function DeveloperSimpleView({
             </div>
           </div>
           <div className="mt-2 flex flex-col gap-1.5 px-1">
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              className="h-7 text-[11px]"
+              disabled={state?.busy}
+              onClick={() =>
+                void window.jarvis.developer.pickProjectFolder().then((picked) => {
+                  if (picked.path) setNewFolderPath(picked.path);
+                })
+              }
+            >
+              Choisir un dossier…
+            </Button>
             <input
               className="rounded-md border border-white/10 bg-black/30 px-2 py-1 font-mono text-[11px] text-slate-100"
               placeholder="Dossier vide (optionnel, chemin complet)"
@@ -474,6 +488,20 @@ export function DeveloperSimpleView({
               onChange={(e) => setNewProjectBrief(e.target.value)}
             />
             <div className="flex flex-wrap gap-1">
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                className="h-8 shrink-0 text-[11px]"
+                disabled={state?.busy}
+                onClick={() =>
+                  void window.jarvis.developer.pickProjectFolder().then((picked) => {
+                    if (picked.path) setImportPath(picked.path);
+                  })
+                }
+              >
+                Parcourir…
+              </Button>
               <input
                 className="min-w-0 flex-1 rounded-md border border-white/10 bg-black/30 px-2 py-1 font-mono text-[11px] text-slate-100"
                 placeholder="Chemin d’un projet existant à importer"

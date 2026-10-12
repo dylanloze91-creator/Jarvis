@@ -84,6 +84,11 @@ export interface TaskHooks {
     detail?: string,
     extra?: { files?: string[]; tokPerSec?: number | null; rounds?: number },
   ) => void;
+  /** Jeu web : build + aperçu local ; les erreurs comptent comme un test rouge. */
+  runtimeLaunchCheck?: (
+    sandboxRoot: string,
+    signal: AbortSignal,
+  ) => Promise<{ ok: boolean; detail: string }>;
 }
 
 export interface AskExtra {

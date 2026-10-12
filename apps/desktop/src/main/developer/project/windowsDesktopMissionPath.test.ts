@@ -75,7 +75,10 @@ function missionScript(files: ScriptFiles): (body: ChatBody) => Reply {
         }),
       };
     if (text.includes(REVIEW_MARKER)) return { content: '{"verdict": "ok", "issues": []}' };
-    if (writing && write?.path && files.writes[write.path]) return codeBlock(files.writes[write.path]);
+    if (writing && write?.path) {
+      const p = write.path;
+      if (files.writes[p]) return codeBlock(files.writes[p]);
+    }
     return { content: 'Je ne sais pas.' };
   };
 }
@@ -134,7 +137,7 @@ describe('chemin mission bureau .exe (apply + Construire)', () => {
       'Fais-moi une appli Windows : garde Salutation dans Core.',
       true,
     );
-    expect(done.mission?.status, done.mission?.summary).toBe('finished');
+    expect(done.mission?.status, String(done.mission?.summary ?? '')).toBe('finished');
     const applyCards = h.cards.filter((c) => c.toolName === 'dev_apply_task');
     const buildCards = h.cards.filter((c) => c.toolName === 'dev_build_project');
     expect(applyCards, JSON.stringify(applyCards.map((c) => c.title))).toHaveLength(0);
@@ -202,7 +205,7 @@ describe('chemin mission bureau .exe (apply + Construire)', () => {
       'Crée une application Windows de bureau livrée en .exe : un compteur de mots dans Core, testé par xUnit.',
       true,
     );
-    expect(done.mission?.status, done.mission?.summary).toBe('finished');
+    expect(done.mission?.status, String(done.mission?.summary ?? '')).toBe('finished');
     expect(done.codeTask?.report?.verdict).toBe('success');
     expect(h.cards.some((c) => c.toolName === 'dev_apply_task')).toBe(false);
     expect(h.cards.some((c) => c.toolName === 'dev_build_project')).toBe(false);
@@ -242,7 +245,7 @@ describe('chemin mission bureau .exe (apply + Construire)', () => {
       'Nouvelle appli Windows .exe : un chronomètre simple (ticks) dans Core avec tests.',
       true,
     );
-    expect(done.mission?.status, done.mission?.summary).toBe('finished');
+    expect(done.mission?.status, String(done.mission?.summary ?? '')).toBe('finished');
     assertExeAndTests(title, done.mission!.projectId!);
     await h.instance.discardTask();
   }, 180_000);
@@ -278,7 +281,7 @@ describe('chemin mission bureau .exe (apply + Construire)', () => {
       'Fais-moi une appli Windows : une classe dans Core qui compte les lignes d’un texte, avec tests.',
       true,
     );
-    expect(done.mission?.status, done.mission?.summary).toBe('finished');
+    expect(done.mission?.status, String(done.mission?.summary ?? '')).toBe('finished');
     expect(h.cards.some((c) => c.toolName === 'dev_apply_task')).toBe(false);
     assertExeAndTests(title, done.mission!.projectId!);
     await h.instance.discardTask();
@@ -315,7 +318,7 @@ describe('chemin mission bureau .exe (apply + Construire)', () => {
       'Un programme sur le bureau : addition de deux entiers dans Core, testé.',
       true,
     );
-    expect(done.mission?.status, done.mission?.summary).toBe('finished');
+    expect(done.mission?.status, String(done.mission?.summary ?? '')).toBe('finished');
     expect(h.ran.some((r) => r.display.includes('dotnet publish'))).toBe(true);
     assertExeAndTests(title, done.mission!.projectId!);
     await h.instance.discardTask();

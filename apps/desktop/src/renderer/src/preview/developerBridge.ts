@@ -404,6 +404,7 @@ export function createPreviewDeveloperApi(
     applyTask: async () => set({ notice: 'Aperçu : ta copie n’est pas modifiée.' }),
     revertTask: async () => set({ notice: 'Aperçu : rien n’est annulé.' }),
     startProposal: async () => set({ notice: 'Aperçu : aucune mission n’est lancée.' }),
+    pickProjectFolder: async () => ({ path: null, state: set({}) }),
     onEvent: (listener) => {
       listeners.add(listener);
       return () => listeners.delete(listener);

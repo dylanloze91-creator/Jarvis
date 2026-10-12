@@ -151,6 +151,8 @@ export const settingsSchema = z.object({
   searchProvider: z.string().min(1).default('google'),
   /** Clé optionnelle, requise seulement par certains fournisseurs (ex. Brave Search). */
   searchApiKey: z.string().default(''),
+  /** Identifiant du moteur Google Programmable Search (Custom Search), si searchProvider = google. */
+  googleCseId: z.string().default(''),
   /** Fournisseur utilisé par l'outil `get_stock_quote`. */
   marketDataProvider: z.string().min(1).default('yahoo-finance'),
   /** Clé optionnelle, requise seulement par certains fournisseurs (ex. Finnhub). */

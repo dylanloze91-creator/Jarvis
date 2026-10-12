@@ -36,6 +36,8 @@ import {
 import { join } from 'node:path';
 import { runProjectChatTurn, type ProjectChatSideEffects } from './project/projectChatFlow.js';
 import { ProjectPreviewWindow } from './project/projectPreview.js';
+import { verifyWebGameRuntime } from './project/webGameRuntimeCheck.js';
+import { app, dialog } from 'electron';
 import type { ProjectChatPersisted } from './project/projectChatStore.js';
 import { createProjectChatTools } from './tools/projectChatTools.js';
 import type {
@@ -139,6 +141,7 @@ export class DeveloperController {
   private developerBulletin: string | null = null;
   /** Fil chat pendant une mission « nouveau projet » (espace ou projet cible). */
   private missionChatTarget: string | null = null;
+  private chatLineTail: Promise<void> = Promise.resolve();
   private controller: AbortController | null = null;
   private readonly pending = new Map<string, (approved: boolean) => void>();
   private readonly models: CodeModelWorkflow;
@@ -328,15 +331,18 @@ export class DeveloperController {
         },
         deliverDesktopShortcut: async (project, _request) => {
           const shortcut = await createProjectDesktopShortcut({
+            projectId: project.id,
             projectName: project.name,
             template: project.template,
             projectRoot: project.root,
             platform: deps.platform,
             home: deps.home,
             run: this.run,
+            jarvisExe: app.getPath('exe'),
           });
           return shortcut?.label ?? null;
         },
+        applyTaskToProject: () => this.tasks.applyDirectToProject(),
       },
       {
         registry: deps.registry,
@@ -353,12 +359,24 @@ export class DeveloperController {
         modelRuns: () => this.models.loadedModelRuns(),
         recordModelRun: (record) => this.models.recordModelRun(record),
         onMissionChatLine: (line) => {
-          void this.appendDeveloperChatLine(line, this.missionChatTarget ?? undefined);
+          this.enqueueDeveloperChatLine(line, this.missionChatTarget ?? undefined);
         },
         onMissionFocusProject: (projectId) => {
           this.focusProjectId = projectId;
+          if (this.missions.view().mission?.kind === 'new-project') {
+            this.missionChatTarget = projectId;
+          }
           void this.openProjectChat(projectId);
         },
+        verifyWebGameRuntime:
+          process.env.VITEST === 'true' && process.env.JARVIS_WEB_GAME_RUNTIME !== '1'
+            ? undefined
+            : async (root) => {
+                const node = await this.environmentNode();
+                if (!node) return { ok: false, detail: 'Node.js introuvable pour le build de jeu.' };
+                const out = await verifyWebGameRuntime(this.run, node, root);
+                return { ok: out.ok, detail: out.detail };
+              },
         webResearch: (query, request) =>
           developerMissionWebResearch(
             deps.searchRegistry,
@@ -437,6 +455,18 @@ export class DeveloperController {
       focusProjectId: this.focusProjectId,
       developerBulletin: this.developerBulletin,
     };
+  }
+
+  private enqueueDeveloperChatLine(line: string, projectId?: string): void {
+    this.chatLineTail = this.chatLineTail
+      .then(() => this.appendDeveloperChatLine(line, projectId))
+      .catch(() => undefined);
+  }
+
+  private async environmentNode() {
+    if (!this.environment) await this.probe();
+    const { nodePath, npmCli } = this.environment ?? { nodePath: null, npmCli: null };
+    return nodePath && npmCli ? { nodePath, npmCli } : null;
   }
 
   private async appendDeveloperChatLine(line: string, projectId?: string): Promise<void> {
@@ -621,6 +651,26 @@ export class DeveloperController {
     return this.emit();
   }
 
+  async pickProjectFolder(): Promise<{ path: string | null; state: DeveloperState }> {
+    const refused = this.guard();
+    if (refused) return { path: null, state: refused };
+    const picked = await dialog.showOpenDialog({
+      properties: ['openDirectory', 'createDirectory'],
+    });
+    const folder = picked.canceled ? null : picked.filePaths[0] ?? null;
+    return { path: folder, state: this.emit() };
+  }
+
+  async playProject(projectId: string): Promise<DeveloperState> {
+    const resolved = await this.projects.resolve(projectId);
+    if (typeof resolved === 'string') {
+      this.notice = resolved;
+      return this.emit();
+    }
+    await this.projectPreview.open(projectId, resolved.root, resolved.template ?? null);
+    return this.emit();
+  }
+
   async prepareWorkspace(path?: string): Promise<DeveloperState> {
     const refused = this.guard();
     if (refused) return refused;
@@ -758,7 +808,7 @@ export class DeveloperController {
       return this.emit();
     }
     if (open) {
-      const ok = this.projectPreview.open(id, resolved.root, resolved.template ?? null);
+      const ok = await this.projectPreview.open(id, resolved.root, resolved.template ?? null);
       if (!ok) {
         this.notice =
           'Aucun aperçu jouable : le projet doit avoir un index.html (gabarit jeu web ou page locale).';
@@ -838,7 +888,7 @@ export class DeveloperController {
     }
     if (
       !withScreenshot &&
-      (isExistingWebGameChange(userText, resolved.template) ||
+      (isExistingWebGameChange(userText, resolved.template ?? null) ||
         (isProjectChatDirectRequest(userText) && resolved.template === 'web-game'))
     ) {
       return this.runProjectChatDirect(
@@ -850,7 +900,11 @@ export class DeveloperController {
         model,
       );
     }
-    if (isProjectChatDirectRequest(userText) && !withScreenshot && resolved.kind !== 'jarvis') {
+    if (
+      isProjectChatDirectRequest(userText) &&
+      !withScreenshot &&
+      resolved.id !== JARVIS_PROJECT_ID
+    ) {
       return this.runProjectChatDirect(
         id,
         resolved,
@@ -1061,6 +1115,7 @@ export class DeveloperController {
           }
         : {}),
     };
+    this.missionChatTarget = id;
     const workspace = resolved.origin === 'workspace' ? id : undefined;
     const done = await this.missions.start(
       'new-project',
@@ -1071,9 +1126,13 @@ export class DeveloperController {
       extras,
     );
     const mission = done.mission;
+    const task = done.codeTask;
     const ok = mission?.status === 'finished';
     const failed = mission?.status === 'failed' || mission?.status === 'cancelled';
     simpleRun.phase = ok ? 'success' : failed ? 'failed' : 'running';
+    if (task?.diff?.length) {
+      (simpleRun as ProjectSimpleRun & { diff?: typeof task.diff }).diff = task.diff;
+    }
     simpleRun.intent = ok
       ? 'Mission terminée.'
       : failed
@@ -1103,12 +1162,18 @@ export class DeveloperController {
       { decisions: [], webSearchUsed: false },
       nextMessages,
     );
-    await this.projects.saveChatState(id, merged);
+    const focusId =
+      mission?.projectId && mission.projectId !== NEW_PROJECT_SCOPE ? mission.projectId : id;
+    const focusResolved = await this.projects.resolve(focusId);
+    const focusName =
+      typeof focusResolved === 'string' ? resolved.name : focusResolved.name;
+    await this.projects.saveChatState(focusId, merged);
+    this.missionChatTarget = focusId;
     this.projectChat = this.chatView(
-      id,
-      resolved.name,
+      focusId,
+      focusName,
       merged,
-      this.projectPreview.isOpen(id),
+      this.projectPreview.isOpen(focusId),
       simpleRun,
     );
     void this.projects.list();
@@ -1207,6 +1272,8 @@ export class DeveloperController {
         : task?.report?.verdict === 'success' && !applied
           ? 'Les tests ont réussi mais la fusion a échoué ; ton projet n’a pas changé.'
           : 'Échec : le programme demandé n’a pas été livré. Ton projet sur le disque n’a pas été fusionné (gabarit neutre ou version précédente intacte).',
+      diff: task?.diff?.length ? task.diff : undefined,
+      canRevert: ok,
     };
     const assistantText = ok
       ? `C’est fait : ${task?.plan?.summary ?? userText}\n\nTu peux tester dans l’aperçu ou me demander un autre changement.`
@@ -1619,6 +1686,7 @@ export class DeveloperController {
     this.confirmation = {
       requestId,
       toolName: request.toolName,
+      title: request.title,
       details: request.details,
       command: request.command,
       forced: request.forced,

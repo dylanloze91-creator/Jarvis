@@ -12,6 +12,7 @@ const ORIGIN: Record<ProjectView['origin'], string> = {
   jarvis: 'Jarvis',
   imported: 'importé',
   created: 'créé par Jarvis',
+  workspace: 'espace de travail',
 };
 
 function ProjectRow({

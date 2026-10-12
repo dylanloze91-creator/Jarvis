@@ -7,6 +7,7 @@ import {
   FACTORY_MARKER,
   GOAL_MARKER,
   newProjectMissionFromProjectChat,
+  EDIT_MARKER,
   PLAN_MARKER,
   REVIEW_MARKER,
   WRITE_MARKER,
@@ -78,7 +79,9 @@ function hybridNpm(spec: RunSpec, display: string): RunOutcome | null {
 
 function missionScript(): (body: ChatBody) => Reply {
   return (body: ChatBody) => {
-    const text = body.messages.find((m) => m.role === 'system')?.content ?? '';
+    const text =
+      body.messages.find((m) => m.role === 'system')?.content ??
+      body.messages.map((m) => m.content).join('\n');
     const write = writeRequest(body);
     if (text.includes(PLAN_MARKER))
       return {
@@ -108,6 +111,31 @@ function missionScript(): (body: ChatBody) => Reply {
         }),
       };
     if (text.includes(REVIEW_MARKER)) return { content: '{"verdict": "ok", "issues": []}' };
+    if (text.includes(EDIT_MARKER)) {
+      const done = body.messages.filter((m) => m.role === 'tool').length;
+      const steps = [
+        { name: 'dev_read_file', arguments: { path: 'src/level.ts' } },
+        { name: 'dev_write_file', arguments: { path: 'src/level.ts', content: EXTENDED_LEVEL } },
+        {
+          name: 'dev_write_file',
+          arguments: {
+            path: 'src/rules.ts',
+            content: `export const RULES = {
+  title: 'Plateforme Dexios',
+  gravity: 1400,
+  moveSpeed: 220,
+  jumpSpeed: 480,
+  maxFall: 700,
+  playerW: 22,
+  playerH: 28,
+  requireCollectibleForWin: false,
+};
+`,
+          },
+        },
+      ];
+      return steps[done] ? { call: steps[done]! } : { content: 'Fait.' };
+    }
     if (text.includes(WRITE_MARKER) && write?.path === 'src/level.ts') return codeBlock(EXTENDED_LEVEL);
     if (text.includes(WRITE_MARKER) && write?.path === 'src/rules.ts')
       return codeBlock(`export const RULES = {
@@ -181,17 +209,26 @@ describe('chemin mission plateforme 2D (thedexios)', () => {
         base,
         repo: jarvis,
         fake,
-        developer: { codeModel: '', projectsRoot },
+        developer: { codeModel: CODE, projectsRoot },
         intercept: hybridNpm,
       });
       await h.instance.validate(jarvis);
       const done = await h.instance.startMission('new-project', REQUEST, true);
-      expect(done.mission?.status, done.mission?.summary ?? done.notice).toBe('finished');
+      expect(done.mission?.status, String(done.mission?.summary ?? done.notice ?? '')).toBe(
+        'finished',
+      );
       expect(done.codeTask?.report?.verdict).toBe('success');
       expect(done.codeTask?.model).toBe(CODE);
+      if (done.codeTask?.applied) expect(done.codeTask.applied.revertedAt).toBeNull();
 
-      const level = readFileSync(join(done.codeTask!.worktreePath, 'src', 'level.ts'), 'utf8');
-      expect(level).toMatch(/580,\s*y:\s*200/);
+      const view = (await h.instance.listProjects()).projects!.find(
+        (p) => p.id === done.mission!.projectId,
+      )!;
+      const projectDir = view.path;
+      const levelWt = readFileSync(join(done.codeTask!.worktreePath, 'src', 'level.ts'), 'utf8');
+      expect(levelWt).toMatch(/580,\s*y:\s*200/);
+      const levelOnDisk = readFileSync(join(projectDir, 'src', 'level.ts'), 'utf8');
+      expect(levelOnDisk).toMatch(/580,\s*y:\s*200/);
       execFileSync('npm', ['install', '--no-audit', '--no-fund', '--ignore-scripts'], {
         cwd: done.codeTask!.worktreePath,
       });
