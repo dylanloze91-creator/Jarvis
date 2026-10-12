@@ -7,7 +7,7 @@ import {
   Gamepad2,
   Monitor,
   RefreshCw,
-  Settings,
+  Settings as SettingsIcon,
   Trash2,
 } from 'lucide-react';
 import {
