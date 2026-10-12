@@ -1003,7 +1003,10 @@ export class DeveloperController {
         return `Mission ${label} en cours…`;
       }
       if (mission.status === 'finished') return 'Mission terminée.';
-      if (mission.status === 'failed') return 'Mission échouée.';
+      if (mission.status === 'failed') {
+        const why = mission.summary?.trim();
+        return why ? `Mission échouée : ${why.split(/\s+/).slice(0, 28).join(' ')}` : 'Mission échouée.';
+      }
     }
     if (this.task) {
       const step = this.task.steps.find((s) => s.status === 'running');

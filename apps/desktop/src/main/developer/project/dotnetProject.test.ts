@@ -160,9 +160,7 @@ describe('appli Windows (.NET), 0.5.4', () => {
         .every((a) => a === 'Jarvis Développeur'),
     ).toBe(true);
 
-    const create = h.cards.find((c) => c.toolName === 'dev_create_project')!;
-    expect(create.command).toContain('dotnet restore BloqueurDeSites.sln');
-    expect(create.safety.reasons).toContain('réseau : dotnet restore (paquets NuGet)');
+    expect(h.cards.some((c) => c.toolName === 'dev_create_project')).toBe(false);
     expect(h.cards.find((c) => c.toolName === 'dev_install_sandbox')?.command).toContain(
       'dotnet restore BloqueurDeSites.sln',
     );

@@ -47,6 +47,7 @@ import {
   isDotnetWindowsDesktopTemplate,
   developerAgentFinished,
   developerAgentStarted,
+  developerMissionFailureLine,
   fallbackFactory,
   fallbackGoal,
   fallbackSkill,
@@ -548,6 +549,8 @@ export class MissionWorkflow {
     this.current.status = signal?.aborted ? 'cancelled' : 'failed';
     this.current.verdict = 'stopped';
     this.current.summary = message;
+    if (!signal?.aborted)
+      this.deps.onMissionChatLine?.(developerMissionFailureLine(message));
     this.persistLater();
   }
 
@@ -1041,7 +1044,12 @@ export class MissionWorkflow {
               input,
               step,
               signal,
-              reuseEntryId ? { reuseEntryId } : undefined,
+              reuseEntryId
+                ? {
+                    reuseEntryId,
+                    trustedMissionCreate: mission.kind === 'new-project',
+                  }
+                : undefined,
             );
           } catch (error) {
             this.patch('create', {
@@ -1077,6 +1085,7 @@ export class MissionWorkflow {
     this.project = project;
     mission.status = 'task';
     await this.persist();
+    try {
     const coder = this.modelFor('CODER');
     await this.switchModel(coder);
     this.deps.onMissionChatLine?.(developerAgentStarted('codeur', 'écrit le code et adapte les tests'));
@@ -1133,6 +1142,12 @@ export class MissionWorkflow {
     }
     await this.deliverWindowsExeIfRequested(template, mission.request, mission.projectId!);
     return this.host.emit();
+    } catch (error) {
+      if (mission.status === 'running' || mission.status === 'task') {
+        this.fail(error instanceof Error ? error.message : String(error));
+      }
+      return this.host.emit();
+    }
   }
 
   /** Demande .exe : fusionne la copie isolée puis publie win-x64 (chemin utilisateur normal). */

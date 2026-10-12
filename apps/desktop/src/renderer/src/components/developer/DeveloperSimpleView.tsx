@@ -413,7 +413,13 @@ export function DeveloperSimpleView({
           {' · '}
           {MISSION_STATUS_FR[state.mission.status] ?? state.mission.status}
           {' — '}
-          <span className="text-slate-500">{state.mission.request.slice(0, 120)}</span>
+          <span className="text-slate-500">
+            {state.mission.status === 'failed' ||
+            state.mission.status === 'cancelled' ||
+            state.mission.status === 'finished'
+              ? (state.mission.summary?.trim() || state.mission.request).slice(0, 160)
+              : state.mission.request.slice(0, 120)}
+          </span>
         </p>
       ) : null}
       <div className="developer-cursor-body no-drag relative min-h-0 flex-1 overflow-hidden">

@@ -112,7 +112,7 @@ describe('mission avec un petit modèle bavard (5.0.1)', () => {
     expect(byId['design']!.detail).toMatch(/Jeu dans le navigateur/);
     expect(byId['create']).toMatchObject({ status: 'done' });
     expect(mission.projectId).toMatch(/^pong(-\d+)?$/);
-    expect(h.cards.some((c) => c.toolName === 'dev_create_project')).toBe(true);
+    expect(h.cards.some((c) => c.toolName === 'dev_create_project')).toBe(false);
 
     const task = done.codeTask!;
     expect(task.planFallback).toMatch(/^plan de secours/);
@@ -275,6 +275,26 @@ describe('mission avec un petit modèle bavard (5.0.1)', () => {
     ]);
     expect(task.diff.map((f) => f.path)).toEqual(['src/game.ts']);
     expect(task.report?.verdict).toBe('success');
+    await h.instance.discardTask();
+  }, 180_000);
+
+  it('thedexios : longue demande plateforme 2D → Architecte puis Codeur (sans carte création)', async () => {
+    const REQUEST =
+      'Je voudrais que tu crées un jeu pour tester tes possibilités en plateforme 2D. Si tu veux des inspirations, tu peux aller voir des jeux classiques.';
+    const h = createHarness({
+      base,
+      repo,
+      fake,
+      developer: { codeModel: MODEL, projectsRoot },
+      intercept: offlineNpm,
+    });
+    await h.instance.validate(repo);
+    const done = await h.instance.startMission('new-project', REQUEST, true);
+    const mission = done.mission!;
+    expect(mission.status, mission.summary ?? '').toBe('finished');
+    expect(mission.steps.find((s) => s.id === 'design')?.detail).toMatch(/Jeu de plateforme 2D|plateforme/i);
+    expect(h.cards.some((c) => c.toolName === 'dev_create_project')).toBe(false);
+    expect(done.codeTask?.report?.verdict).toBe('success');
     await h.instance.discardTask();
   }, 180_000);
 });

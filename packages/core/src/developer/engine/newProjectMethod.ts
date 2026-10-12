@@ -4,6 +4,11 @@ export function isPlatformerRequest(request: string): boolean {
   return PLATFORMER.test(request);
 }
 
+/** Titre de projet affiché et dossier pour une demande plateforme 2D (5.0.29). */
+export function platformerProjectTitle(): string {
+  return 'Jeu de plateforme 2D';
+}
+
 /** Requête de recherche web avant le code (méthode Développeur 5.0.27). */
 export function webResearchQueryForRequest(request: string): string {
   const t = request.trim();

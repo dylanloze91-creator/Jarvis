@@ -270,10 +270,7 @@ describe('projets (0.5.3)', () => {
       'create:USER:done',
       'plan-1:CODER:done',
     ]);
-    const card = h.cards.find((c) => c.toolName === 'dev_create_project')!;
-    expect(card.safety.level).toBe('always-confirm');
-    expect(card.command).toContain('npm install --ignore-scripts --no-audit --no-fund');
-    expect(card.command).toContain('git init -b main');
+    expect(h.cards.some((c) => c.toolName === 'dev_create_project')).toBe(false);
 
     expect(git(dir, 'log', '--format=%an|%s')).toBe(
       'Jarvis Développeur|Projet créé par Jarvis Développeur',
@@ -304,7 +301,7 @@ describe('projets (0.5.3)', () => {
     await h.instance.discardTask();
   }, 180_000);
 
-  it('nouveau projet refusé : rien n’est écrit, la mission reste dans « nouveau »', async () => {
+  it('nouveau projet : échec npm install, pas de Codeur, dossier repris au prochain essai', async () => {
     fake.scripts.set(CODE, factoryScript);
     const root = join(base, 'Projets-refus');
     const h = createHarness({
@@ -312,19 +309,19 @@ describe('projets (0.5.3)', () => {
       repo: jarvis,
       fake,
       developer: { codeModel: CODE, projectsRoot: root },
-      intercept: offlineNpm,
-      answer: (card) => card.toolName !== 'dev_create_project',
+      intercept: (spec, display) => {
+        if (display.startsWith('npm install')) return fakeOutcome(display, 'npm ERR! réseau', 1);
+        return offlineNpm(spec, display);
+      },
     });
     await h.instance.validate(jarvis);
     const done = await h.instance.startMission('new-project', 'Crée une petite CLI.', true);
-    expect(done.mission).toMatchObject({
-      status: 'cancelled',
-      summary: 'Création refusée : rien n’a été écrit.',
-    });
+    expect(done.mission?.status).toBe('failed');
+    expect(done.mission?.summary ?? '').toMatch(/npm install|échoué/i);
     expect(done.mission!.projectId).not.toBe('nouveau');
     const sub = existsSync(root) ? readdirSync(root) : [];
     expect(sub.length).toBe(1);
-    expect(existsSync(join(root, sub[0]!, 'package.json'))).toBe(false);
+    expect(existsSync(join(root, sub[0]!, 'package.json'))).toBe(true);
     expect(done.codeTask).toBeNull();
     expect(
       (await h.instance.listMissions(done.mission!.projectId)).missions?.[0]?.id,

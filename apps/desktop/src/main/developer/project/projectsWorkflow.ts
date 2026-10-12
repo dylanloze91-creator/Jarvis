@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, readdir, stat } from 'node:fs/promises';
+import { mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { basename, isAbsolute, join, resolve } from 'node:path';
 import {
   DOTNET_ENV,
@@ -18,6 +18,8 @@ import {
   isDotnetWindowsDesktopTemplate,
   randomId,
   folderRedirectChatLine,
+  isPlatformerRequest,
+  platformerProjectTitle,
   projectIdFor,
   projectNameFromRequest,
   renderTemplate,
@@ -103,6 +105,15 @@ export interface ResolvedProject {
 
 /** Dossier où se trouve l'installateur construit par `package:win` dans la copie de Jarvis. */
 const JARVIS_RELEASE_DIR = join('apps', 'desktop', 'release');
+/** Marqueur : dossier vide réservé à une mission « Nouveau projet » (reprise après échec). */
+const WORKSPACE_MISSION_MARKER = '.jarvis-workspace';
+
+async function clearWorkspaceMissionDir(dir: string): Promise<void> {
+  const entries = await readdir(dir);
+  for (const name of entries) {
+    await rm(join(dir, name), { recursive: true, force: true });
+  }
+}
 
 /**
  * Projets de Jarvis Développeur (0.5.3) : Jarvis, et les projets Node importés
@@ -335,7 +346,7 @@ export class ProjectsWorkflow {
         return { projectId: known.id, path: known.path };
       }
     }
-    const name = projectNameFromRequest(request);
+    const name = isPlatformerRequest(request) ? platformerProjectTitle() : projectNameFromRequest(request);
     const picked = await pickProjectDirectory(this.projectsRoot(), name, entries);
     const { id, dir } = picked;
     if (entries.some((e) => samePath(e.path, dir))) {
@@ -343,6 +354,7 @@ export class ProjectsWorkflow {
       return { projectId: existing.id, path: existing.path, alreadyThere: true };
     }
     await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, WORKSPACE_MISSION_MARKER), 'mission-scaffold\n', 'utf8');
     if (picked.redirectedFrom) {
       const line = folderRedirectChatLine(picked.redirectedFrom, id);
       this.host.chatLine?.(line);
@@ -670,7 +682,7 @@ export class ProjectsWorkflow {
     },
     step: Step,
     signal: AbortSignal,
-    options?: { reuseEntryId?: string },
+    options?: { reuseEntryId?: string; trustedMissionCreate?: boolean },
   ): Promise<ResolvedProject | null> {
     const toolchain = templateToolchain(input.template);
     const node = toolchain === 'node' ? await this.host.node() : null;
@@ -693,8 +705,14 @@ export class ProjectsWorkflow {
     if (reuse) {
       if (reuse.origin !== 'workspace')
         throw new FactoryError('Ce projet n’est pas un espace vide : choisis « Nouveau » ou une mission plateforme.');
-      if (!(await this.dirIsEmpty(reuse.path)))
-        throw new FactoryError(`Le dossier « ${reuse.path} » n’est plus vide.`);
+      if (!(await this.dirIsEmpty(reuse.path))) {
+        const marker = join(reuse.path, WORKSPACE_MISSION_MARKER);
+        if (existsSync(marker)) await clearWorkspaceMissionDir(reuse.path);
+        else if (!(await this.dirIsEmpty(reuse.path)))
+          throw new FactoryError(
+            `Le dossier « ${reuse.path} » n’est plus vide : vide-le ou choisis un autre dossier.`,
+          );
+      }
       id = reuse.id;
       dir = reuse.path;
     } else {
@@ -720,34 +738,37 @@ export class ProjectsWorkflow {
       files.length,
       target ? `dotnet restore ${target}` : undefined,
     );
-    step('create', 'running', 'ta confirmation');
-    const approved = await this.host.ask(
-      {
-        callId: randomId(),
-        toolName: 'dev_create_project',
-        title: `Créer le projet « ${input.name} »`,
-        details: `Gabarit « ${PROJECT_TEMPLATES[input.template].label} » dans ${dir}${tfm ? ` (${tfm})` : ''}. Nouveau dépôt git local sur « main », sans dépôt distant ; ${target ? 'dotnet restore télécharge les paquets NuGet (réseau)' : 'npm install télécharge les dépendances (réseau, sans script d’installation)'}. Rien n’est publié.`,
-        command: `${commands.join('\n')}\n\nFichiers : ${files.map((f) => f.path).join(', ')}`,
-        forced: true,
-      },
-      {
-        safety: {
-          command: 'créer un projet',
-          level: 'always-confirm',
-          label: SAFETY_LABELS['always-confirm'],
-          reasons: [
-            'écrit un nouveau dossier hors de Jarvis',
-            target
-              ? 'réseau : dotnet restore (paquets NuGet)'
-              : 'réseau : npm install (sans script d’installation)',
-            'aucun dépôt distant, aucun push',
-          ],
-          runsWithoutAsking: false,
-        },
-        reason: 'nouveau projet : toujours confirmé',
-      },
-      signal,
-    );
+    const trusted = Boolean(options?.trustedMissionCreate && reuse);
+    step('create', 'running', trusted ? 'gabarit (mission en cours)' : 'ta confirmation');
+    const approved = trusted
+      ? true
+      : await this.host.ask(
+          {
+            callId: randomId(),
+            toolName: 'dev_create_project',
+            title: `Créer le projet « ${input.name} »`,
+            details: `Gabarit « ${PROJECT_TEMPLATES[input.template].label} » dans ${dir}${tfm ? ` (${tfm})` : ''}. Nouveau dépôt git local sur « main », sans dépôt distant ; ${target ? 'dotnet restore télécharge les paquets NuGet (réseau)' : 'npm install télécharge les dépendances (réseau, sans script d’installation)'}. Rien n’est publié.`,
+            command: `${commands.join('\n')}\n\nFichiers : ${files.map((f) => f.path).join(', ')}`,
+            forced: true,
+          },
+          {
+            safety: {
+              command: 'créer un projet',
+              level: 'always-confirm',
+              label: SAFETY_LABELS['always-confirm'],
+              reasons: [
+                'écrit un nouveau dossier hors de Jarvis',
+                target
+                  ? 'réseau : dotnet restore (paquets NuGet)'
+                  : 'réseau : npm install (sans script d’installation)',
+                'aucun dépôt distant, aucun push',
+              ],
+              runsWithoutAsking: false,
+            },
+            reason: 'nouveau projet : toujours confirmé',
+          },
+          signal,
+        );
     this.record(
       'dev_create_project',
       { id, dir, template: input.template },
@@ -782,6 +803,11 @@ export class ProjectsWorkflow {
     if (reuse) await this.deps.store.remove(reuse.id);
     await this.deps.store.add(entry);
     await this.refresh();
+    try {
+      await rm(join(dir, WORKSPACE_MISSION_MARKER), { force: true });
+    } catch {
+      /* ignore */
+    }
     step('create', 'done', `${dir} (commit ${head.slice(0, 7)})`);
     const resolved = await this.resolve(id);
     if (typeof resolved === 'string') throw new FactoryError(resolved);

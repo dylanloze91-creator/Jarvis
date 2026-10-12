@@ -6,7 +6,7 @@ import type { TaskPlan } from '../taskPlan.js';
 import type { MissionKind } from './router.js';
 import type { SkillDesign } from './skill.js';
 import type { GoalOutput } from './specialistSchemas.js';
-import { isPlatformerRequest } from './newProjectMethod.js';
+import { isPlatformerRequest, platformerProjectTitle } from './newProjectMethod.js';
 import {
   renderTemplate,
   templateToolchain,
@@ -132,7 +132,9 @@ export function lockFactoryToRequest(request: string, chosen: FactoryOutput): Fa
       (!/plateforme|platformer/i.test(out.name) && OTHER_GAME_NAME.test(out.description));
     if (wrong || !/plateforme|platformer|2d/i.test(out.name)) {
       const fromReq = projectNameFromRequest(request);
-      out.name = OTHER_GAME_NAME.test(fromReq) ? 'Plateforme 2D' : fromReq.slice(0, 60);
+      out.name = OTHER_GAME_NAME.test(fromReq) || fromReq.length < 4 || /^je voudrais/i.test(fromReq)
+        ? platformerProjectTitle()
+        : fromReq.slice(0, 60);
     }
     if (OTHER_GAME_NAME.test(out.description) && !OTHER_GAME_NAME.test(request)) {
       out.description = request.trim().slice(0, 300);
