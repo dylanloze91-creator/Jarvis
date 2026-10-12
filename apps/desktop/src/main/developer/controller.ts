@@ -8,6 +8,9 @@ import {
   missionRequestFromProjectChat,
   codeModelsOffered,
   isProjectChatDirectRequest,
+  isExistingWebGameChange,
+  newProjectMissionFromProjectChat,
+  MISSION_LABELS,
   GRAPHICS_ENGINE_GRANT_DECISION,
   graphicsEngineChatPromptLine,
   hasGraphicsEngineGrant,
@@ -539,6 +542,8 @@ export class DeveloperController {
         : this.projectChat?.projectId === id
           ? (this.projectChat.run ?? null)
           : null;
+    const keepActivity =
+      this.projectChat?.projectId === id ? (this.projectChat.activity ?? []) : [];
     return {
       projectId: id,
       projectName: name,
@@ -549,6 +554,7 @@ export class DeveloperController {
       compareOffer: persisted.compareOffer,
       previewOpen,
       run: keepRun,
+      activity: keepActivity,
     };
   }
 
@@ -703,7 +709,30 @@ export class DeveloperController {
       this.projectPreview.isOpen(id),
     );
     await this.projects.saveChatState(id, chatPersisted);
-    if (isProjectChatDirectRequest(userText) && !withScreenshot) {
+    if (newProjectMissionFromProjectChat(userText)) {
+      return this.runProjectChatNewProjectMission(
+        id,
+        resolved,
+        userText,
+        chatPersisted,
+        pendingMessages,
+      );
+    }
+    if (
+      !withScreenshot &&
+      (isExistingWebGameChange(userText, resolved.template) ||
+        (isProjectChatDirectRequest(userText) && resolved.template === 'web-game'))
+    ) {
+      return this.runProjectChatDirect(
+        id,
+        resolved,
+        userText,
+        chatPersisted,
+        pendingMessages,
+        model,
+      );
+    }
+    if (isProjectChatDirectRequest(userText) && !withScreenshot && resolved.kind !== 'jarvis') {
       return this.runProjectChatDirect(
         id,
         resolved,
@@ -753,6 +782,8 @@ export class DeveloperController {
         effects.webSearchUsed = true;
       },
     });
+    this.pushProjectChatActivity(id, 'Discussion : lecture du projet, puis réponse.');
+    this.emit();
     return this.runTask(
       'project-chat',
       `Discussion — ${resolved.name}`,
@@ -821,6 +852,140 @@ export class DeveloperController {
     );
   }
 
+  private pushProjectChatActivity(projectId: string, line: string): void {
+    if (!this.projectChat || this.projectChat.projectId !== projectId) return;
+    const prev = this.projectChat.activity ?? [];
+    if (prev[prev.length - 1] === line) return;
+    this.projectChat = {
+      ...this.projectChat,
+      activity: [...prev, line].slice(-48),
+    };
+  }
+
+  private syncProjectChatActivity(): void {
+    if (!this.projectChat) return;
+    const line = this.nextProjectChatActivityLine();
+    if (line) this.pushProjectChatActivity(this.projectChat.projectId, line);
+  }
+
+  private nextProjectChatActivityLine(): string | null {
+    if (this.confirmation) {
+      return 'En attente de ton accord : utilise Autoriser ou Refuser (panneau jaune).';
+    }
+    const mission = this.missions.view().mission;
+    if (mission?.status === 'waiting-answers') {
+      return 'Jarvis attend tes réponses aux questions ci-dessus.';
+    }
+    if (mission) {
+      const step = mission.steps.find((s) => s.status === 'running');
+      if (step) return `${step.label}…`;
+      if (mission.status === 'task') return 'Écriture du code et tests en cours…';
+      if (mission.status === 'running') {
+        const label = MISSION_LABELS[mission.kind] ?? mission.kind;
+        return `Mission ${label} en cours…`;
+      }
+      if (mission.status === 'finished') return 'Mission terminée.';
+      if (mission.status === 'failed') return 'Mission échouée.';
+    }
+    if (this.task) {
+      const step = this.task.steps.find((s) => s.status === 'running');
+      if (step) {
+        const detail = step.detail?.trim();
+        return detail ? `${step.label} : ${detail}` : `${step.label}…`;
+      }
+    }
+    const codeTask = this.tasks.view().codeTask;
+    if (codeTask?.status === 'awaiting-approval') {
+      return 'Plan prêt : valide ou refuse le plan ci-dessus.';
+    }
+    return null;
+  }
+
+  /** Chat → mission « Nouveau projet » (plateforme 2D, appli, etc.). */
+  private async runProjectChatNewProjectMission(
+    id: string,
+    resolved: ResolvedProject,
+    userText: string,
+    priorPersisted: ProjectChatPersisted,
+    pendingMessages: ProjectChatView['messages'],
+  ): Promise<DeveloperState> {
+    const simpleRun: ProjectSimpleRun = {
+      request: userText,
+      phase: 'running',
+      intent: 'Je lance la mission Nouveau projet…',
+      result: null,
+    };
+    this.projectChat = this.chatView(
+      id,
+      resolved.name,
+      { ...priorPersisted, messages: pendingMessages },
+      this.projectPreview.isOpen(id),
+      simpleRun,
+    );
+    this.pushProjectChatActivity(id, 'Mission démarrée : nouveau projet (gabarit adapté).');
+    this.emit();
+    const { discussionContext } = missionRequestFromProjectChat(
+      pendingMessages,
+      priorPersisted.decisions,
+    );
+    const extras = {
+      discussionContext,
+      projectDecisions: priorPersisted.decisions,
+      ...(priorPersisted.codingPick
+        ? {
+            coderOverride: {
+              model: priorPersisted.codingPick.model,
+              reason: priorPersisted.codingPick.reason,
+            },
+          }
+        : {}),
+    };
+    const done = await this.missions.start('new-project', userText, true, undefined, undefined, extras);
+    const mission = done.mission;
+    const ok = mission?.status === 'finished';
+    const failed = mission?.status === 'failed' || mission?.status === 'cancelled';
+    simpleRun.phase = ok ? 'success' : failed ? 'failed' : 'running';
+    simpleRun.intent = ok
+      ? 'Mission terminée.'
+      : failed
+        ? 'La mission n’a pas abouti.'
+        : 'Mission en pause ou en attente.';
+    simpleRun.result = ok
+      ? 'Le projet a été créé dans ton dossier Projets. Tu peux l’ouvrir dans la liste à gauche.'
+      : failed
+        ? mission?.summary ?? 'Échec de la mission.'
+        : null;
+    if (ok) this.pushProjectChatActivity(id, 'Terminé : projet livré.');
+    else if (failed) this.pushProjectChatActivity(id, `Bloqué ou échec : ${mission?.summary ?? 'voir le détail'}.`);
+    const assistantText = ok
+      ? `Mission terminée : ${mission?.summary ?? userText}\n\nLe nouveau projet apparaît dans la liste. Ouvre-le pour continuer dans le chat.`
+      : failed
+        ? `Je n’ai pas pu livrer le projet : ${mission?.summary ?? 'mission interrompue ou refusée'}.`
+        : `Mission en cours ou en attente : ${MISSION_LABELS[mission?.kind ?? 'new-project']}.`;
+    const assistant = {
+      id: randomId(),
+      role: 'assistant' as const,
+      content: assistantText,
+      at: Date.now(),
+    };
+    const nextMessages = [...pendingMessages, assistant];
+    const merged = this.mergeChatEffects(
+      priorPersisted,
+      { decisions: [], webSearchUsed: false },
+      nextMessages,
+    );
+    await this.projects.saveChatState(id, merged);
+    this.projectChat = this.chatView(
+      id,
+      resolved.name,
+      merged,
+      this.projectPreview.isOpen(id),
+      simpleRun,
+    );
+    void this.projects.list();
+    return this.emit();
+  }
+
   /** Demande claire → plan auto, copie isolée, tests, application au projet sans cartes intermédiaires. */
   private async runProjectChatDirect(
     id: string,
@@ -843,6 +1008,7 @@ export class DeveloperController {
       this.projectPreview.isOpen(id),
       simpleRun,
     );
+    this.pushProjectChatActivity(id, 'Modification directe : plan, code et tests.');
     this.emit();
     const { summary, discussionContext } = missionRequestFromProjectChat(
       pendingMessages,
@@ -1037,6 +1203,7 @@ export class DeveloperController {
   }
 
   private emit(): DeveloperState {
+    this.syncProjectChatActivity();
     const state = this.state();
     this.deps.emit(state);
     return state;
@@ -1271,7 +1438,7 @@ export class DeveloperController {
     } finally {
       task.finishedAt = Date.now();
       this.controller = null;
-      this.confirmation = null;
+      if (this.pending.size === 0) this.confirmation = null;
     }
     return this.emit();
   }

@@ -68,6 +68,22 @@ export function ProjectChatPanel({
         data-project-chat-simple={project.id}
         data-unified-surface={unifiedSurface ? 'yes' : undefined}
       >
+        {(chat?.activity?.length ?? 0) > 0 ? (
+          <div
+            className="rounded-xl border border-white/10 bg-black/25 px-3 py-2 text-[12px] text-slate-300"
+            data-project-chat-activity
+            aria-live="polite"
+          >
+            <p className="text-[10px] uppercase tracking-wide text-slate-500">Jarvis</p>
+            <ul className="mt-1 flex flex-col gap-0.5">
+              {(chat?.activity ?? []).map((line, index) => (
+                <li key={`${index}-${line.slice(0, 24)}`} className="text-slate-200">
+                  {line}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
         {run && run.phase !== 'idle' ? (
           <div
             className="rounded-xl border border-cyan-400/20 bg-cyan-400/5 px-3.5 py-3 text-sm text-slate-100"

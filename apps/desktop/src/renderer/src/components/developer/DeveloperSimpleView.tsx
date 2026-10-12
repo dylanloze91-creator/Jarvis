@@ -27,6 +27,7 @@ import { setVoiceTranscriptTarget } from '@/voice/voiceTranscriptRouter';
 import { DeveloperCollapsible } from './DeveloperCollapsible';
 import { DeveloperConfirmationDock } from './DeveloperConfirmationDock';
 import { DeveloperTabSettingsSheet } from './DeveloperTabSettingsSheet';
+import { DeveloperInlineMissionPrompts } from './DeveloperInlineMissionPrompts';
 import { MissionGateCard } from './mission/MissionGateCard';
 import { ProjectChatPanel } from './project/ProjectChatPanel';
 
@@ -127,9 +128,13 @@ export function DeveloperSimpleView({
       if (state?.busy) return;
       const text = prompt.trim();
       if (text.length < 8) return;
+      if (activeId) {
+        act((api) => api.sendProjectChat(activeId, text));
+        return;
+      }
       act((api) => api.startMission('new-project', text, true));
     },
-    [act, state?.busy],
+    [act, state?.busy, activeId],
   );
 
   const ollamaInstalled = useMemo(() => {
@@ -262,6 +267,14 @@ export function DeveloperSimpleView({
   useEffect(() => {
     if (activeId) act((api) => api.openProjectChat(activeId));
   }, [activeId]);
+
+  useEffect(() => {
+    const notice = state?.notice?.trim() ?? '';
+    if (!notice || !settings || !status) return;
+    if (/réglages|mode développeur|onglet développeur/i.test(notice)) {
+      setSettingsOpen(true);
+    }
+  }, [state?.notice, settings, status]);
 
   useEffect(() => {
     const mission = state?.mission;
@@ -500,6 +513,7 @@ export function DeveloperSimpleView({
           className="developer-cursor-chat flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
           aria-label="Discussion projet"
         >
+          <DeveloperInlineMissionPrompts state={state} act={act} />
           {!project ? (
             <div className="flex min-h-0 flex-1 flex-col gap-4 p-6">
               <p className="text-sm text-slate-300">

@@ -95,7 +95,7 @@ export function suggestMissionKind(text: string): MissionKind {
     return 'improve';
   if (
     /\b(nouveau projet|nouvelle (appli|application))\b/.test(value) ||
-    /^(crée|cree|créer|creer|fais|fabrique|génère|genere)(-moi)? (moi )?(un|une) (petit |petite |nouveau |nouvelle )?(appli|application|cli|outil en ligne de commande|programme|site|page web|bibliothèque|bibliotheque|librairie|projet)\b/.test(
+    /^(crée|cree|créer|creer|fais|fabrique|génère|genere)(-moi)? (moi )?(un|une) (petit |petite |nouveau |nouvelle )?(appli|application|cli|outil en ligne de commande|programme|site|page web|bibliothèque|bibliotheque|librairie|projet|jeu|jeux|game)\b/.test(
       value,
     )
   )

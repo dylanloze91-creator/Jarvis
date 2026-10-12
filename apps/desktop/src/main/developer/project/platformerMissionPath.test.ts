@@ -6,6 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   FACTORY_MARKER,
   GOAL_MARKER,
+  newProjectMissionFromProjectChat,
   PLAN_MARKER,
   REVIEW_MARKER,
   WRITE_MARKER,
@@ -169,6 +170,10 @@ afterAll(async () => {
 });
 
 describe('chemin mission plateforme 2D (thedexios)', () => {
+  it('discussion développeur : la demande plateforme part en mission nouveau projet', () => {
+    expect(newProjectMissionFromProjectChat(REQUEST)).toBe(true);
+  });
+
   it(
     'mission → niveau étendu, npm test et build réels',
     async () => {

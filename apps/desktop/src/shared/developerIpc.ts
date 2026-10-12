@@ -229,6 +229,8 @@ export interface ProjectChatView {
   previewOpen: boolean;
   /** Dernière exécution directe (demande claire → code → tests → application). */
   run: ProjectSimpleRun | null;
+  /** Fil court en français pendant mission / tâche (5.0.26). */
+  activity?: string[];
 }
 
 export interface AskView {

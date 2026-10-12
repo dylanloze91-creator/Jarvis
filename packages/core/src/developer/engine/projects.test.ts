@@ -176,6 +176,7 @@ describe('Project Factory : gabarits locaux', () => {
     expect(suggestMissionKind('Crée une petite CLI qui renomme des photos par date')).toBe(
       'new-project',
     );
+    expect(suggestMissionKind('Crée un jeu de plateforme 2D jouable')).toBe('new-project');
     expect(suggestMissionKind('Nouveau projet : un site pour mes recettes')).toBe('new-project');
     expect(suggestMissionKind('Ajoute un réglage pour le thème')).toBe('modify');
     expect(suggestMissionKind('Crée un test pour formatSeconds')).toBe('modify');

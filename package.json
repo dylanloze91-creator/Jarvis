@@ -1,6 +1,6 @@
 {
   "name": "jarvis",
-  "version": "5.0.25",
+  "version": "5.0.26",
   "private": true,
   "description": "Assistant personnel intelligent pour Windows",
   "type": "module",
