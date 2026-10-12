@@ -52,10 +52,11 @@ export const MISSION_CHAINS: Record<MissionKind, ChainStep[]> = {
     { id: 'design', actor: 'DOCUMENTATION', label: 'Plan de la documentation (lecture seule)' },
   ],
   'new-project': [
-    { id: 'web-research', actor: 'JARVIS', label: 'Recherche web (méthode avant le code)' },
-    { id: 'goal', actor: 'REASONER', label: 'Objectif, critères et questions' },
-    { id: 'design', actor: 'ARCHITECT', label: 'Gabarit et nom du projet' },
-    { id: 'create', actor: 'USER', label: 'Création du projet (ta confirmation)' },
+    { id: 'web-research', actor: 'JARVIS', label: 'Chercheur web (sans modèle)' },
+    { id: 'scaffold', actor: 'JARVIS', label: 'Préparateur : dossier vide' },
+    { id: 'goal', actor: 'JARVIS', label: 'Objectif direct (sans questionnaire)' },
+    { id: 'design', actor: 'ARCHITECT', label: 'Architecte : gabarit' },
+    { id: 'create', actor: 'USER', label: 'Fichiers du gabarit (ta confirmation)' },
   ],
   improve: [
     { id: 'measure', actor: 'JARVIS', label: 'Mesures fixes (sans modèle)' },

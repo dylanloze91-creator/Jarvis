@@ -45,7 +45,8 @@ import {
   dotnetDesktopTemplateReferences,
   DESKTOP_WINDOWS_EXE,
   isDotnetWindowsDesktopTemplate,
-  developerAgentSplitChatLines,
+  developerAgentFinished,
+  developerAgentStarted,
   fallbackFactory,
   fallbackGoal,
   fallbackSkill,
@@ -178,6 +179,10 @@ export interface MissionProjects {
     signal: AbortSignal,
     options?: { reuseEntryId?: string },
   ): Promise<ResolvedProject | null>;
+  scaffoldMissionFolder(
+    request: string,
+    reuseEntryId?: string,
+  ): Promise<{ projectId: string; path: string; alreadyThere?: boolean } | string>;
 }
 
 export interface MissionDeps {
@@ -426,7 +431,8 @@ export class MissionWorkflow {
     link?: { missionId: string; index: number },
     chatExtras?: MissionStartExtras,
   ): Promise<DeveloperState> {
-    const text = request.trim();
+    let text = request.trim();
+    if (kind === 'new-project') skipQuestions = true;
     if (text.length < (kind === 'question' ? 4 : 8))
       return this.host.notice('Décris la mission en une phrase au moins.');
     if (text.length > 2_000)
@@ -604,18 +610,59 @@ export class MissionWorkflow {
       [{ id: 'goal', label: 'Raisonnement : objectif, critères et questions' }],
       async (step, signal) => {
         if (mission.kind === 'new-project') {
-          for (const line of developerAgentSplitChatLines(mission.request)) {
-            this.deps.onMissionChatLine?.(line);
-          }
+          const reuseId =
+            mission.projectId !== NEW_PROJECT_SCOPE ? mission.projectId : undefined;
+          this.patch('scaffold', { status: 'running', detail: 'dossier du projet' });
+          step('scaffold', 'running');
+          this.deps.onMissionChatLine?.(
+            developerAgentStarted('preparer', 'prépare le dossier du projet'),
+          );
+          const scaffoldPromise = this.deps.projects.scaffoldMissionFolder(
+            mission.request,
+            reuseId,
+          );
           this.patch('web-research', { status: 'running', detail: 'recherche sur le web' });
           step('web-research', 'running');
-          const query = webResearchQueryForRequest(mission.request);
-          const summary = await this.deps.webResearch?.(query, mission.request);
-          if (summary) {
-            this.deps.onMissionChatLine?.(summary);
-            this.patch('web-research', { status: 'done', detail: summary.slice(0, 160) });
-            step('web-research', 'done', summary.slice(0, 80));
-            mission.discussionContext = `${mission.discussionContext ?? ''}\n\nMéthode (recherche web) : ${summary}`.slice(
+          this.deps.onMissionChatLine?.(
+            developerAgentStarted('web', 'cherche comment construire ce type de projet'),
+          );
+          const webPromise = (async () => {
+            const query = webResearchQueryForRequest(mission.request);
+            const summary = await this.deps.webResearch?.(query, mission.request);
+            if (summary) {
+              this.deps.onMissionChatLine?.(developerAgentFinished('web', summary.replace(/^Recherche web : /, '')));
+              return summary;
+            }
+            this.deps.onMissionChatLine?.(
+              developerAgentFinished('web', 'pas de source web exploitable, je continue avec le gabarit'),
+            );
+            return null;
+          })();
+          const [scaffoldOutcome, webSummary] = await Promise.all([scaffoldPromise, webPromise]);
+          if (typeof scaffoldOutcome === 'string') {
+            this.deps.onMissionChatLine?.(developerAgentFinished('preparer', scaffoldOutcome));
+            this.patch('scaffold', { status: 'failed', detail: scaffoldOutcome });
+            step('scaffold', 'failed', scaffoldOutcome);
+            throw new Error(scaffoldOutcome);
+          }
+          const fromScope = mission.projectId;
+          mission.projectId = scaffoldOutcome.projectId;
+          if (fromScope !== mission.projectId) await this.deps.store.move(mission, fromScope);
+          this.deps.onMissionFocusProject?.(scaffoldOutcome.projectId);
+          this.deps.onMissionChatLine?.(
+            developerAgentFinished(
+              'preparer',
+              scaffoldOutcome.alreadyThere
+                ? `projet déjà là : ${scaffoldOutcome.path}`
+                : `dossier prêt : ${scaffoldOutcome.path}`,
+            ),
+          );
+          this.patch('scaffold', { status: 'done', detail: scaffoldOutcome.path });
+          step('scaffold', 'done', scaffoldOutcome.path);
+          if (webSummary) {
+            this.patch('web-research', { status: 'done', detail: webSummary.slice(0, 160) });
+            step('web-research', 'done', webSummary.slice(0, 80));
+            mission.discussionContext = `${mission.discussionContext ?? ''}\n\nMéthode (recherche web) : ${webSummary}`.slice(
               0,
               24_000,
             );
@@ -623,40 +670,50 @@ export class MissionWorkflow {
             this.patch('web-research', { status: 'skipped', detail: 'recherche web indisponible' });
             step('web-research', 'done', 'sans résultat exploitable');
           }
+          await this.persist();
         }
         step('goal', 'running');
         try {
           let output: GoalOutput;
-          try {
-            const run = await this.specialist(
-              'goal',
-              'REASONER',
-              {
-                system: goalSystem(
-                  this.project || !createsProject(mission.kind)
-                    ? this.profile
-                    : NEW_PROJECT_CONTEXT,
-                  mission.skipQuestions ? 0 : MAX_GOAL_QUESTIONS,
-                ),
-                prompt: this.memory
-                  ? `${goalPrompt(mission.request)}\n\nMémoire du projet :\n${this.memory}`
-                  : goalPrompt(mission.request),
-                schema: goalSchema,
-                limit: STEP_LIMITS.goal,
-              },
-              signal,
-              root,
-            );
-            output = run.output;
-          } catch (error) {
-            if (!(error instanceof SpecialistError) || signal.aborted) throw error;
+          if (mission.kind === 'new-project' && mission.skipQuestions) {
             output = fallbackGoal(mission.request, mission.kind);
             this.patch('goal', {
               status: 'done',
               output,
-              detail: `objectif de secours, tiré de ta demande : ${error.message}`,
-              error: undefined,
+              detail: 'objectif direct, sans questionnaire',
             });
+          } else {
+            try {
+              const run = await this.specialist(
+                'goal',
+                'REASONER',
+                {
+                  system: goalSystem(
+                    this.project || !createsProject(mission.kind)
+                      ? this.profile
+                      : NEW_PROJECT_CONTEXT,
+                    mission.skipQuestions ? 0 : MAX_GOAL_QUESTIONS,
+                  ),
+                  prompt: this.memory
+                    ? `${goalPrompt(mission.request)}\n\nMémoire du projet :\n${this.memory}`
+                    : goalPrompt(mission.request),
+                  schema: goalSchema,
+                  limit: STEP_LIMITS.goal,
+                },
+                signal,
+                root,
+              );
+              output = run.output;
+            } catch (error) {
+              if (!(error instanceof SpecialistError) || signal.aborted) throw error;
+              output = fallbackGoal(mission.request, mission.kind);
+              this.patch('goal', {
+                status: 'done',
+                output,
+                detail: `objectif de secours, tiré de ta demande : ${error.message}`,
+                error: undefined,
+              });
+            }
           }
           const goal = {
             ...output,
@@ -890,6 +947,30 @@ export class MissionWorkflow {
             step('design', 'running');
             let chosen: FactoryOutput;
             let note = '';
+            const fastDesign = mission.kind === 'new-project' && mission.skipQuestions;
+            if (fastDesign) {
+              this.deps.onMissionChatLine?.(
+                developerAgentStarted('architecte', 'choisit le gabarit adapté'),
+              );
+              chosen = steerFactory(mission.request, fallbackFactory(mission.request));
+              note = ' (règles rapides, un seul modèle ensuite)';
+              this.patch('design', {
+                status: 'done',
+                output: chosen,
+                detail: `${PROJECT_TEMPLATES[chosen.template].label} · ${chosen.name}${note}`,
+              });
+              this.deps.onMissionChatLine?.(
+                developerAgentFinished(
+                  'architecte',
+                  `${PROJECT_TEMPLATES[chosen.template].label} · ${chosen.name}`,
+                ),
+              );
+              step(
+                'design',
+                'done',
+                `${PROJECT_TEMPLATES[chosen.template].label} · ${chosen.name}${note}`,
+              );
+            } else
             try {
               const run = await this.specialist(
                 'design',
@@ -926,11 +1007,12 @@ export class MissionWorkflow {
                 error: undefined,
               });
             }
-            step(
-              'design',
-              'done',
-              `${PROJECT_TEMPLATES[chosen.template].label} · ${chosen.name}${note}`,
-            );
+            if (!fastDesign)
+              step(
+                'design',
+                'done',
+                `${PROJECT_TEMPLATES[chosen.template].label} · ${chosen.name}${note}`,
+              );
             input = chosen;
           }
           result.template = input.template;
@@ -941,6 +1023,20 @@ export class MissionWorkflow {
               mission.kind === 'new-project' && mission.projectId !== NEW_PROJECT_SCOPE
                 ? mission.projectId
                 : undefined;
+            if (reuseEntryId) {
+              const existing = await this.deps.projects.resolve(reuseEntryId);
+              if (typeof existing !== 'string' && existing.origin === 'created' && existing.template) {
+                result.project = existing;
+                this.patch('create', {
+                  status: 'skipped',
+                  detail: 'projet déjà créé, pas de nouvelle installation',
+                });
+                step('create', 'skipped', existing.root);
+                mission.projectId = existing.id;
+                await this.persist();
+              }
+            }
+            if (!result.project)
             result.project = await this.deps.projects.create(
               input,
               step,
@@ -983,6 +1079,7 @@ export class MissionWorkflow {
     await this.persist();
     const coder = this.modelFor('CODER');
     await this.switchModel(coder);
+    this.deps.onMissionChatLine?.(developerAgentStarted('codeur', 'écrit le code et adapte les tests'));
     const context = [
       'Contexte de la mission (préparé par les spécialistes, à respecter) :',
       briefBlock(this.brief()),
@@ -1020,6 +1117,15 @@ export class MissionWorkflow {
       },
     });
     await this.finishFromTask();
+    if (mission.verdict === 'success') {
+      this.deps.onMissionChatLine?.(
+        developerAgentFinished('codeur', mission.summary?.slice(0, 120) ?? 'code livré'),
+      );
+    } else if (mission.verdict === 'failed' || mission.verdict === 'stopped') {
+      this.deps.onMissionChatLine?.(
+        developerAgentFinished('codeur', mission.summary?.slice(0, 120) ?? 'mission interrompue'),
+      );
+    }
     if (mission.verdict === 'success' && project) {
       this.deps.onMissionFocusProject?.(project.id);
       const shortcut = await this.host.deliverDesktopShortcut?.(project, mission.request);
@@ -1149,6 +1255,21 @@ export class MissionWorkflow {
     const onPhase: TaskHooks['onPhase'] = (phase, status, detail, extra) => {
       const mission = this.current;
       if (!mission) return;
+      if (mission.kind === 'new-project' && phase === 'test') {
+        if (status === 'running') {
+          this.deps.onMissionChatLine?.(
+            developerAgentStarted('testeur', 'vérifie que le projet tourne'),
+          );
+        } else if (status === 'done') {
+          this.deps.onMissionChatLine?.(
+            developerAgentFinished('testeur', detail?.trim() || 'tests terminés'),
+          );
+        } else if (status === 'failed') {
+          this.deps.onMissionChatLine?.(
+            developerAgentFinished('testeur', detail?.trim() || 'échec des tests'),
+          );
+        }
+      }
       const actor = LOOP_ACTORS[phase];
       if (status === 'running') {
         const n = (this.counters.get(phase) ?? 0) + 1;

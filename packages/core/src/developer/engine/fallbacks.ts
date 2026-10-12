@@ -52,10 +52,23 @@ const WEB = /\b(site|page web|navigateur|web|react|interface web)\b/i;
 const LIBRARY = /\b(bibliothèque|bibliotheque|librairie|library|module réutilisable)\b/i;
 const NAMED = /\b(pong|snake|tetris|morpion|breakout|flappy|asteroids?)\b/i;
 
+function nameFromAfterColon(request: string): string | null {
+  const idx = request.indexOf(':');
+  if (idx < 0) return null;
+  let tail = clean(request.slice(idx + 1));
+  tail = tail.replace(/^(un|une|le|la|des)\s+/i, '');
+  tail = tail.split(/[,.]| dans /i)[0]!.trim();
+  if (tail.length < 3 || tail.length > 56) return null;
+  return tail[0]!.toUpperCase() + tail.slice(1);
+}
+
 /** Nom court tiré de la demande : un jeu connu, sinon les premiers mots utiles. */
 export function projectNameFromRequest(request: string): string {
   const named = NAMED.exec(request)?.[1];
   if (named) return named[0]!.toUpperCase() + named.slice(1).toLowerCase();
+  const colon = nameFromAfterColon(request);
+  if (colon) return colon;
+  if (/\b(bloque|bloquer)\b/i.test(request) && /\bhosts\b/i.test(request)) return 'Bloqueur de sites';
   const words = clean(request)
     .replace(
       /^(créer|creer|crée|cree|fais|fabrique|génère|genere|écris|ecris)(-moi)?\s+(moi\s+)?(une|un|le|la|des)?\s*(petite|petit|nouvelle|nouveau|simple)?\s*(projet|application|appli|programme|outil)?\s*[:,-]?\s*/i,

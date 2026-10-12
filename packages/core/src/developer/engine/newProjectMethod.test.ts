@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { developerAgentSplitChatLines, isPlatformerRequest, webResearchChatLine } from './newProjectMethod.js';
+import { isPlatformerRequest, webResearchChatLine } from './newProjectMethod.js';
 import { lockFactoryToRequest } from './fallbacks.js';
 
 describe('newProjectMethod', () => {
@@ -17,13 +17,6 @@ describe('newProjectMethod', () => {
     expect(out.template).toBe('web-game');
     expect(out.name.toLowerCase()).not.toBe('snake');
     expect(out.description).toMatch(/plateforme/i);
-  });
-
-  it('produit des lignes d’équipe en français', () => {
-    const lines = developerAgentSplitChatLines('jeu de plateforme 2D');
-    expect(lines.length).toBeGreaterThanOrEqual(2);
-    expect(lines.join(' ')).toMatch(/Chercheur web/);
-    expect(lines.join(' ')).toMatch(/Codeur/);
   });
 
   it('résume la recherche web en une ligne', () => {

@@ -107,13 +107,11 @@ describe('mission avec un petit modèle bavard (5.0.1)', () => {
     expect(mission.status, mission.summary ?? '').toBe('finished');
     const byId = Object.fromEntries(mission.steps.map((s) => [s.id, s]));
     expect(byId['goal']).toMatchObject({ status: 'done' });
-    expect(byId['goal']!.detail).toMatch(/^objectif de secours, tiré de ta demande/);
+    expect(byId['goal']!.detail).toMatch(/objectif direct, sans questionnaire/);
     expect(mission.goal?.goal).toMatch(/^Crée un Pong jouable/);
-    expect(byId['design']!.detail).toMatch(
-      /^choix de secours, par règles fixes : Jeu dans le navigateur/,
-    );
+    expect(byId['design']!.detail).toMatch(/Jeu dans le navigateur/);
     expect(byId['create']).toMatchObject({ status: 'done' });
-    expect(mission.projectId).toBe('pong');
+    expect(mission.projectId).toMatch(/^pong(-\d+)?$/);
     expect(h.cards.some((c) => c.toolName === 'dev_create_project')).toBe(true);
 
     const task = done.codeTask!;
@@ -139,12 +137,9 @@ describe('mission avec un petit modèle bavard (5.0.1)', () => {
     expect(sandboxGame).toBe(GAME);
 
     const goalCalls = bodies().filter((b) => system(b).includes(GOAL_MARKER));
-    expect(goalCalls.map((b) => b.options?.num_predict)).toEqual([
-      STEP_LIMITS.goal.maxTokens,
-      STEP_LIMITS.goal.maxTokens,
-    ]);
+    expect(goalCalls).toHaveLength(0);
     const factoryCalls = bodies().filter((b) => system(b).includes(FACTORY_MARKER));
-    expect(factoryCalls.map((b) => b.options?.num_predict)).toEqual([300, 300]);
+    expect(factoryCalls).toHaveLength(0);
     const writeCalls = bodies().filter((b) => system(b).includes(WRITE_MARKER));
     expect(writeCalls.map((b) => b.options?.num_predict)).toEqual([
       STEP_LIMITS.edit.maxTokens,
@@ -255,16 +250,18 @@ describe('mission avec un petit modèle bavard (5.0.1)', () => {
     );
     const mission = done.mission!;
     expect(mission.status, mission.summary ?? '').toBe('finished');
-    const goalSystem = fake.requests
+    const goalCalls = fake.requests
       .slice(from)
       .filter((r) => r.path === '/api/chat')
       .map((r) => system(r.body as ChatBody))
-      .find((s) => s.includes(GOAL_MARKER))!;
-    expect(goalSystem).toContain(NEW_PROJECT_CONTEXT.promptContext);
-    expect(goalSystem).not.toContain(JARVIS_PROJECT_PROFILE.promptContext);
+      .filter((s) => s.includes(GOAL_MARKER));
+    expect(goalCalls).toHaveLength(0);
     const design = mission.steps.find((s) => s.id === 'design')!;
-    expect(design.detail).toMatch(/règle fixe : un jeu part du gabarit jeu/);
-    expect(existsSync(join(projectsRoot, 'pong-electron', 'src', 'game.test.ts'))).toBe(true);
+    expect(design.detail).toMatch(/Jeu dans le navigateur/);
+    expect(design.detail).toMatch(/règles rapides/);
+    expect(
+      existsSync(join(projectsRoot, mission.projectId, 'src', 'game.test.ts')),
+    ).toBe(true);
 
     const task = done.codeTask!;
     expect(task.planFallback).toMatch(

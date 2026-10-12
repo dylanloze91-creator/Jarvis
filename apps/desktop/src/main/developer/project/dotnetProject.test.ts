@@ -1,5 +1,13 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -260,10 +268,21 @@ describe('appli Windows (.NET), 0.5.4', () => {
       intercept: offlineDotnet(false),
     });
     await h.instance.validate(jarvis);
-    const done = await h.instance.startMission('new-project', 'Crée une appli Windows.', true);
+    const done = await h.instance.startMission(
+      'new-project',
+      'Crée une appli Windows bureau livrée en .exe.',
+      true,
+    );
     expect(done.mission?.status).toBe('failed');
     expect(done.mission?.summary).toMatch(/SDK \.NET \(8 ou plus\) est introuvable/);
     expect(h.cards.some((c) => c.toolName === 'dev_create_project')).toBe(false);
-    expect(existsSync(root)).toBe(false);
+    await h.instance.listProjects();
+    await new Promise((r) => setTimeout(r, 80));
+    const entries = existsSync(root) ? readdirSync(root) : [];
+    expect(entries.length).toBeLessThanOrEqual(1);
+    for (const id of entries) {
+      expect(existsSync(join(root, id, 'BloqueurDeSites.sln'))).toBe(false);
+      expect(existsSync(join(root, id, 'package.json'))).toBe(false);
+    }
   }, 60_000);
 });

@@ -35,17 +35,6 @@ export function webResearchChatLine(request: string, snippets: string): string {
   return `Recherche web : je garde ${kept}`;
 }
 
-/** Lignes visibles dans le chat : qui fait quoi (spécialistes existants). */
-export function developerAgentSplitChatLines(request: string): string[] {
-  const jeu = /\b(jeu|jeux|game|plateforme|platformer)\b/i.test(request);
-  return [
-    'Équipe : le Raisonneur clarifie l’objectif ; le Chercheur web note une méthode fiable ; l’Architecte choisit le gabarit ; le Codeur écrit ; le Testeur et le Relecteur vérifient que ça tourne.',
-    jeu
-      ? 'Rôles : Chercheur web → méthode ; Architecte → gabarit jeu ; Codeur → niveau et code ; Testeur → tests ; Relecteur → relecture du diff.'
-      : 'Rôles : Chercheur web → méthode ; Architecte → gabarit ; Codeur → fichiers ; Testeur → tests ; Relecteur → relecture du diff.',
-  ];
-}
-
 export function defaultDesktopShortcutLabel(projectName: string): string {
   const clean = projectName.trim() || 'Projet';
   return `Jarvis — ${clean}`.slice(0, 120);

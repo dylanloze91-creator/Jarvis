@@ -95,12 +95,13 @@ afterAll(async () => {
   rmSync(base, { recursive: true, force: true });
 });
 
-function assertExeAndTests(projectTitle: string, projectId: string) {
+function assertExeAndTests(_projectTitle: string, projectId: string) {
   const dir = join(projectsRoot, projectId);
   const slnName = readdirSync(dir).find((f) => f.endsWith('.sln'));
   expect(slnName, `solution dans ${dir}`).toBeTruthy();
   execFileSync('dotnet', ['restore', slnName!], { cwd: dir, encoding: 'utf8' });
-  const exeRel = dotnetWinExeArtifactRelative(projectTitle);
+  const slnBase = slnName!.replace(/\.sln$/i, '');
+  const exeRel = `src/${slnBase}.App/bin/Release/net10.0-windows/win-x64/publish/${slnBase}.App.exe`;
   const exe = join(dir, exeRel);
   expect(existsSync(exe), exeRel).toBe(true);
   expect(readFileSync(exe).length).toBeGreaterThan(10_000);

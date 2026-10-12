@@ -19,6 +19,7 @@ import {
   randomId,
   folderRedirectChatLine,
   projectIdFor,
+  projectNameFromRequest,
   renderTemplate,
   templateToolchain,
   type ConfirmationRequest,
@@ -312,6 +313,53 @@ export class ProjectsWorkflow {
     await this.refresh();
     const chatLine = `Espace prêt : les prochaines commandes travaillent dans ${dir}.`;
     return { projectId: id, chatLine };
+  }
+
+  /**
+   * Dossier vide au début d’une mission « Nouveau projet » (5.0.28) : immédiat, sans refaire un projet déjà créé.
+   */
+  async scaffoldMissionFolder(
+    request: string,
+    reuseEntryId?: string,
+  ): Promise<{ projectId: string; path: string; alreadyThere?: boolean } | string> {
+    const entries = await this.deps.store.list();
+    if (reuseEntryId) {
+      const known = entries.find((e) => e.id === reuseEntryId);
+      if (!known) return 'Projet introuvable.';
+      if (known.origin === 'created' && known.template) {
+        return { projectId: known.id, path: known.path, alreadyThere: true };
+      }
+      if (known.origin === 'workspace' || known.origin === 'imported') {
+        if (known.origin === 'imported' && !(await this.dirIsEmpty(known.path)))
+          return { projectId: known.id, path: known.path, alreadyThere: true };
+        return { projectId: known.id, path: known.path };
+      }
+    }
+    const name = projectNameFromRequest(request);
+    const picked = await pickProjectDirectory(this.projectsRoot(), name, entries);
+    const { id, dir } = picked;
+    if (entries.some((e) => samePath(e.path, dir))) {
+      const existing = entries.find((e) => samePath(e.path, dir))!;
+      return { projectId: existing.id, path: existing.path, alreadyThere: true };
+    }
+    await mkdir(dir, { recursive: true });
+    if (picked.redirectedFrom) {
+      const line = folderRedirectChatLine(picked.redirectedFrom, id);
+      this.host.chatLine?.(line);
+      this.host.log(line);
+    }
+    const entry: ProjectEntry = {
+      id,
+      name,
+      path: dir,
+      kind: 'node',
+      origin: 'workspace',
+      description: 'Dossier préparé pour cette mission.',
+      createdAt: this.now,
+    };
+    await this.deps.store.add(entry);
+    await this.refresh();
+    return { projectId: id, path: dir };
   }
 
   /** Ajoute un dossier existant : dépôt git avec un commit, package-lock.json et un test. */

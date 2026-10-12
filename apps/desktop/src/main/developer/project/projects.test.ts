@@ -1,5 +1,13 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -251,11 +259,13 @@ describe('projets (0.5.3)', () => {
     );
     const mission = done.mission!;
     expect(mission.status, mission.summary ?? '').toBe('finished');
-    expect(mission.projectId).toBe('photos-par-date');
-    const dir = join(projectsRoot, 'photos-par-date');
-    expect(mission.steps.slice(0, 5).map((s) => `${s.id}:${s.actor}:${s.status}`)).toEqual([
+    const pid = mission.projectId;
+    expect(pid).toBeTruthy();
+    const dir = join(projectsRoot, pid);
+    expect(mission.steps.slice(0, 6).map((s) => `${s.id}:${s.actor}:${s.status}`)).toEqual([
       'web-research:JARVIS:skipped',
-      'goal:REASONER:done',
+      'scaffold:JARVIS:done',
+      'goal:JARVIS:done',
       'design:ARCHITECT:done',
       'create:USER:done',
       'plan-1:CODER:done',
@@ -270,24 +280,22 @@ describe('projets (0.5.3)', () => {
     );
     expect(git(dir, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('main');
     expect(git(dir, 'remote')).toBe('');
-    expect(JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')).name).toBe(
-      'photos-par-date',
-    );
+    expect(JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')).name).toBe(pid);
 
     const task = done.codeTask!;
-    expect(task.projectId).toBe('photos-par-date');
+    expect(task.projectId).toBe(pid);
     expect(task.plan?.tests).toEqual(['typecheck', 'test']);
     expect(task.report?.verdict).toBe('success');
     expect(task.diff.map((f) => f.path)).toEqual(['src/main.ts']);
 
     const projects = (await h.instance.listProjects()).projects!;
-    expect(projects.find((p) => p.id === 'photos-par-date')).toMatchObject({
+    expect(projects.find((p) => p.id === pid)).toMatchObject({
       origin: 'created',
       template: 'node-cli',
       ok: true,
     });
     const store = join(base, 'userData', 'developer', 'projects');
-    expect(existsSync(join(store, 'photos-par-date', 'missions', `${mission.id}.json`))).toBe(true);
+    expect(existsSync(join(store, pid, 'missions', `${mission.id}.json`))).toBe(true);
     expect(existsSync(join(store, 'nouveau', 'missions', `${mission.id}.json`))).toBe(false);
 
     const applied = await h.instance.applyTask();
@@ -311,11 +319,15 @@ describe('projets (0.5.3)', () => {
     const done = await h.instance.startMission('new-project', 'Crée une petite CLI.', true);
     expect(done.mission).toMatchObject({
       status: 'cancelled',
-      projectId: 'nouveau',
       summary: 'Création refusée : rien n’a été écrit.',
     });
-    expect(existsSync(root)).toBe(false);
+    expect(done.mission!.projectId).not.toBe('nouveau');
+    const sub = existsSync(root) ? readdirSync(root) : [];
+    expect(sub.length).toBe(1);
+    expect(existsSync(join(root, sub[0]!, 'package.json'))).toBe(false);
     expect(done.codeTask).toBeNull();
-    expect((await h.instance.listMissions('nouveau')).missions?.[0]?.id).toBe(done.mission!.id);
+    expect(
+      (await h.instance.listMissions(done.mission!.projectId)).missions?.[0]?.id,
+    ).toBe(done.mission!.id);
   }, 60_000);
 });
