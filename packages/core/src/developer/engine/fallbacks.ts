@@ -6,6 +6,7 @@ import type { TaskPlan } from '../taskPlan.js';
 import type { MissionKind } from './router.js';
 import type { SkillDesign } from './skill.js';
 import type { GoalOutput } from './specialistSchemas.js';
+import { isPlatformerRequest } from './newProjectMethod.js';
 import {
   renderTemplate,
   templateToolchain,
@@ -79,11 +80,11 @@ export function fallbackFactory(request: string): FactoryOutput {
         : WEB.test(text)
           ? 'vite-react'
           : 'node-cli';
-  return {
+  return lockFactoryToRequest(request, {
     template,
     name: projectNameFromRequest(request).slice(0, 60),
     description: clean(request).slice(0, 300),
-  };
+  });
 }
 
 /**
@@ -92,15 +93,46 @@ export function fallbackFactory(request: string): FactoryOutput {
  */
 export function steerFactory(request: string, chosen: FactoryOutput): FactoryOutput {
   const text = request.toLowerCase();
+  let out = chosen;
   if (
     DESKTOP_WINDOWS_EXE.test(text) &&
     !(DOTNET_TEMPLATE_IDS as readonly string[]).includes(chosen.template)
   ) {
-    return { ...chosen, template: 'dotnet-winforms' };
+    out = { ...chosen, template: 'dotnet-winforms' };
+  } else if (chosen.template !== 'web-game' && GAME.test(text) && !DESKTOP_WINDOWS_EXE.test(text)) {
+    out = { ...chosen, template: 'web-game' };
   }
-  if (chosen.template === 'web-game' || !GAME.test(text) || DESKTOP_WINDOWS_EXE.test(text))
-    return chosen;
-  return { ...chosen, template: 'web-game' };
+  return lockFactoryToRequest(request, out);
+}
+
+const OTHER_GAME_NAME = /\b(snake|pong|tetris|breakout|flappy|asteroids?|pac-?man)\b/i;
+
+/** Empêche de remplacer la demande (ex. plateforme 2D) par Snake/Pong via le modèle. */
+export function lockFactoryToRequest(request: string, chosen: FactoryOutput): FactoryOutput {
+  const text = request.toLowerCase();
+  let out: FactoryOutput = { ...chosen };
+
+  if (isPlatformerRequest(request)) {
+    out.template = 'web-game';
+    const wrong =
+      OTHER_GAME_NAME.test(out.name) ||
+      (!/plateforme|platformer/i.test(out.name) && OTHER_GAME_NAME.test(out.description));
+    if (wrong || !/plateforme|platformer|2d/i.test(out.name)) {
+      const fromReq = projectNameFromRequest(request);
+      out.name = OTHER_GAME_NAME.test(fromReq) ? 'Plateforme 2D' : fromReq.slice(0, 60);
+    }
+    if (OTHER_GAME_NAME.test(out.description) && !OTHER_GAME_NAME.test(request)) {
+      out.description = request.trim().slice(0, 300);
+    }
+    return out;
+  }
+
+  if (/\b(jeu|jeux|game)\b/i.test(request) && !OTHER_GAME_NAME.test(request)) {
+    if (OTHER_GAME_NAME.test(out.name) && !OTHER_GAME_NAME.test(text)) {
+      out.name = projectNameFromRequest(request).slice(0, 60);
+    }
+  }
+  return out;
 }
 
 const ENTRY_FILES: Partial<Record<ProjectTemplateId, Array<[string, string]>>> = {

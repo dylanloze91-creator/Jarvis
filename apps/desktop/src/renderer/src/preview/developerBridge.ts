@@ -389,6 +389,10 @@ export function createPreviewDeveloperApi(
     openMission: async () => set({}),
     listProjects: async () => set({}),
     importProject: async () => set({ notice: 'Aperçu : aucun dossier n’est importé.' }),
+    prepareWorkspace: async () =>
+      set({
+        developerBulletin: 'Aperçu : aucun espace vide n’est créé.',
+      }),
     forgetProject: async () => set({ notice: 'Aperçu : rien n’est retiré.' }),
     saveProjectMemory: async () => set({ notice: 'Aperçu : mémoire non enregistrée.' }),
     buildProject: async () => set({ notice: 'Aperçu : rien n’est construit.' }),

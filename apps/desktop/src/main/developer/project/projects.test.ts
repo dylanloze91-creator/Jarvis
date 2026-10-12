@@ -156,19 +156,20 @@ describe('projets (0.5.3)', () => {
       '-qm',
       'x',
     );
-    expect((await h.instance.importProject(bare)).notice).toMatch(/package-lock\.json/);
-    expect((await h.instance.importProject(jarvis)).notice).toMatch(/copie de Jarvis/);
-    expect((await h.instance.importProject('relatif/x')).notice).toMatch(/chemin complet/);
+    expect((await h.instance.importProject(bare)).developerBulletin).toMatch(/package-lock\.json/);
+    expect((await h.instance.importProject(jarvis)).developerBulletin).toMatch(/copie de Jarvis/);
+    expect((await h.instance.importProject('relatif/x')).developerBulletin).toMatch(/chemin complet/);
 
     const imported = await h.instance.importProject(photos);
-    expect(imported.notice).toMatch(/« photos » importé/);
+    expect(imported.developerBulletin).toMatch(/« photos » importé/);
+    expect(imported.focusProjectId).toBe('photos');
     expect(imported.projects?.map((p) => `${p.id}:${p.kind}:${p.origin}:${p.ok}`)).toEqual([
       'jarvis:jarvis:jarvis:true',
       'photos:node:imported:true',
     ]);
     expect(imported.projects?.[0]?.memoryDefault).toBe(true);
     expect(imported.projects?.[0]?.memory).toContain('CLAUDE.md');
-    expect((await h.instance.importProject(photos)).notice).toMatch(/déjà le projet/);
+    expect((await h.instance.importProject(photos)).developerBulletin).toMatch(/Déjà dans la liste/);
 
     const saved = await h.instance.saveProjectMemory('photos', 'Note mémoire : jamais de réseau.');
     expect(saved.projects?.find((p) => p.id === 'photos')).toMatchObject({
@@ -252,7 +253,8 @@ describe('projets (0.5.3)', () => {
     expect(mission.status, mission.summary ?? '').toBe('finished');
     expect(mission.projectId).toBe('photos-par-date');
     const dir = join(projectsRoot, 'photos-par-date');
-    expect(mission.steps.slice(0, 4).map((s) => `${s.id}:${s.actor}:${s.status}`)).toEqual([
+    expect(mission.steps.slice(0, 5).map((s) => `${s.id}:${s.actor}:${s.status}`)).toEqual([
+      'web-research:JARVIS:skipped',
       'goal:REASONER:done',
       'design:ARCHITECT:done',
       'create:USER:done',

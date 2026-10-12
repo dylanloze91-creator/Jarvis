@@ -46,6 +46,7 @@ export * from './engine/improve.js';
 export * from './engine/skill.js';
 export * from './engine/limits.js';
 export * from './engine/fallbacks.js';
+export * from './engine/newProjectMethod.js';
 export * from './engine/difficulty.js';
 export * from './knowledge/types.js';
 export * from './knowledge/chunk.js';

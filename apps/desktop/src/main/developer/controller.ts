@@ -1,6 +1,8 @@
 import {
   ASK_TOOLS,
+  JARVIS_PROJECT_ID,
   JARVIS_PROJECT_PROFILE,
+  NEW_PROJECT_SCOPE,
   buildAuditEntry,
   candidateRepoPaths,
   createCodeAIProvider,
@@ -68,6 +70,8 @@ import { ChatActivity } from './task/chatActivity.js';
 import type { AskExtra, TaskHooks, TaskPhase, TaskPhaseStatus } from './task/taskRun.js';
 import { DeveloperManualStore } from './knowledge/manualStore.js';
 import { CodeTaskWorkflow } from './task/workflow.js';
+import { developerMissionWebResearch } from './project/developerWebResearch.js';
+import { createProjectDesktopShortcut } from './platform/projectDesktopShortcut.js';
 
 export interface ControllerDeps {
   getSettings(): Settings;
@@ -131,6 +135,10 @@ export class DeveloperController {
   private projectChat: ProjectChatView | null = null;
   private readonly projectPreview = new ProjectPreviewWindow();
   private notice: string | null = null;
+  private focusProjectId: string | null = null;
+  private developerBulletin: string | null = null;
+  /** Fil chat pendant une mission « nouveau projet » (espace ou projet cible). */
+  private missionChatTarget: string | null = null;
   private controller: AbortController | null = null;
   private readonly pending = new Map<string, (approved: boolean) => void>();
   private readonly models: CodeModelWorkflow;
@@ -288,6 +296,9 @@ export class DeveloperController {
         },
         jarvisRoot: () => this.jarvisRoot(),
         jarvisChecks: () => this.repo?.checks ?? [],
+        chatLine: (line) => {
+          void this.appendDeveloperChatLine(line);
+        },
       },
       {
         run: this.run,
@@ -315,6 +326,17 @@ export class DeveloperController {
           if (!task?.applied || task.applied.revertedAt !== null) return applied;
           return this.projects.build(projectId, { autoConfirm: true });
         },
+        deliverDesktopShortcut: async (project, _request) => {
+          const shortcut = await createProjectDesktopShortcut({
+            projectName: project.name,
+            template: project.template,
+            projectRoot: project.root,
+            platform: deps.platform,
+            home: deps.home,
+            run: this.run,
+          });
+          return shortcut?.label ?? null;
+        },
       },
       {
         registry: deps.registry,
@@ -330,6 +352,20 @@ export class DeveloperController {
         log: (line) => this.appendLog(line),
         modelRuns: () => this.models.loadedModelRuns(),
         recordModelRun: (record) => this.models.recordModelRun(record),
+        onMissionChatLine: (line) => {
+          void this.appendDeveloperChatLine(line, this.missionChatTarget ?? undefined);
+        },
+        onMissionFocusProject: (projectId) => {
+          this.focusProjectId = projectId;
+          void this.openProjectChat(projectId);
+        },
+        webResearch: (query, request) =>
+          developerMissionWebResearch(
+            deps.searchRegistry,
+            deps.getSettings(),
+            query,
+            request,
+          ),
       },
     );
   }
@@ -398,7 +434,56 @@ export class DeveloperController {
       ...this.missions.view(),
       ...this.projects.view(),
       projectChat: this.projectChat,
+      focusProjectId: this.focusProjectId,
+      developerBulletin: this.developerBulletin,
     };
+  }
+
+  private async appendDeveloperChatLine(line: string, projectId?: string): Promise<void> {
+    const text = line.trim();
+    if (!text) return;
+    this.developerBulletin = text;
+    const target =
+      projectId ??
+      this.missionChatTarget ??
+      this.focusProjectId ??
+      (this.projectChat?.projectId !== JARVIS_PROJECT_ID ? this.projectChat?.projectId : null);
+    if (!target || target === JARVIS_PROJECT_ID) {
+      this.scheduleEmit();
+      return;
+    }
+    const resolved = await this.projects.resolve(target);
+    if (typeof resolved === 'string') {
+      this.scheduleEmit();
+      return;
+    }
+    const persisted =
+      this.projectChat?.projectId === target
+        ? {
+            version: 2 as const,
+            messages: this.projectChat.messages,
+            decisions: this.projectChat.decisions,
+            codingPick: this.projectChat.codingPick,
+            webSearchUsed: this.projectChat.webSearchUsed,
+            compareOffer: this.projectChat.compareOffer,
+            graphicsEngineGranted: this.projectChat.graphicsEngineGranted,
+          }
+        : await this.projects.loadChatState(target);
+    const assistant = {
+      id: randomId(),
+      role: 'assistant' as const,
+      content: text,
+      at: Date.now(),
+    };
+    const merged = { ...persisted, messages: [...persisted.messages, assistant].slice(-80) };
+    await this.projects.saveChatState(target, merged);
+    this.projectChat = this.chatView(
+      target,
+      resolved.name,
+      merged,
+      this.projectPreview.isOpen(target),
+    );
+    this.scheduleEmit();
   }
 
   /** Décision 5 : la discussion garde la priorité, le modèle de code est libéré pendant son tour. */
@@ -487,7 +572,17 @@ export class DeveloperController {
     projectId?: string,
   ): Promise<DeveloperState> {
     const needsJarvis = kind !== 'new-project' && (projectId ?? 'jarvis') === 'jarvis';
-    return this.guard(needsJarvis) ?? this.missions.start(kind, request, skipQuestions, projectId);
+    const refused = this.guard(needsJarvis);
+    if (refused) return refused;
+    if (kind === 'new-project') {
+      this.missionChatTarget =
+        projectId && projectId !== JARVIS_PROJECT_ID && projectId !== 'jarvis' && projectId !== NEW_PROJECT_SCOPE
+          ? projectId
+          : null;
+    } else {
+      this.missionChatTarget = null;
+    }
+    return this.missions.start(kind, request, skipQuestions, projectId);
   }
 
   async answerMission(answers: string[]): Promise<DeveloperState> {
@@ -514,7 +609,30 @@ export class DeveloperController {
   }
 
   async importProject(path: string): Promise<DeveloperState> {
-    return this.guard() ?? this.projects.import(path);
+    const refused = this.guard();
+    if (refused) return refused;
+    const result = await this.projects.import(path);
+    await this.appendDeveloperChatLine(result.chatLine);
+    if (result.projectId) {
+      this.focusProjectId = result.projectId;
+      this.notice = result.ok ? null : this.notice;
+      await this.openProjectChat(result.projectId);
+    }
+    return this.emit();
+  }
+
+  async prepareWorkspace(path?: string): Promise<DeveloperState> {
+    const refused = this.guard();
+    if (refused) return refused;
+    const outcome = await this.projects.prepareWorkspace(path);
+    if (typeof outcome === 'string') {
+      await this.appendDeveloperChatLine(outcome);
+      return this.emit();
+    }
+    await this.appendDeveloperChatLine(outcome.chatLine);
+    this.focusProjectId = outcome.projectId;
+    await this.openProjectChat(outcome.projectId);
+    return this.emit();
   }
 
   async forgetProject(id: string): Promise<DeveloperState> {
@@ -940,7 +1058,15 @@ export class DeveloperController {
           }
         : {}),
     };
-    const done = await this.missions.start('new-project', userText, true, undefined, undefined, extras);
+    const workspace = resolved.origin === 'workspace' ? id : undefined;
+    const done = await this.missions.start(
+      'new-project',
+      userText,
+      true,
+      workspace,
+      undefined,
+      extras,
+    );
     const mission = done.mission;
     const ok = mission?.status === 'finished';
     const failed = mission?.status === 'failed' || mission?.status === 'cancelled';

@@ -52,6 +52,7 @@ export const MISSION_CHAINS: Record<MissionKind, ChainStep[]> = {
     { id: 'design', actor: 'DOCUMENTATION', label: 'Plan de la documentation (lecture seule)' },
   ],
   'new-project': [
+    { id: 'web-research', actor: 'JARVIS', label: 'Recherche web (méthode avant le code)' },
     { id: 'goal', actor: 'REASONER', label: 'Objectif, critères et questions' },
     { id: 'design', actor: 'ARCHITECT', label: 'Gabarit et nom du projet' },
     { id: 'create', actor: 'USER', label: 'Création du projet (ta confirmation)' },

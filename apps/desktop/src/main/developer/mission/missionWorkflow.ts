@@ -45,10 +45,13 @@ import {
   dotnetDesktopTemplateReferences,
   DESKTOP_WINDOWS_EXE,
   isDotnetWindowsDesktopTemplate,
+  developerAgentSplitChatLines,
   fallbackFactory,
   fallbackGoal,
   fallbackSkill,
   steerFactory,
+  webResearchChatLine,
+  webResearchQueryForRequest,
   templatePlan,
   type FactoryOutput,
   type GoalOutput,
@@ -154,6 +157,10 @@ export interface MissionHost {
    * puis lancer « Construire » (dotnet publish win-x64) dans le projet.
    */
   deliverWindowsExe?(projectId: string): Promise<DeveloperState>;
+  deliverDesktopShortcut?(
+    project: ResolvedProject,
+    request: string,
+  ): Promise<string | null>;
 }
 
 /** Projets (0.5.3) : copie et profil d'un projet, sa mémoire, la Project Factory. */
@@ -169,6 +176,7 @@ export interface MissionProjects {
     },
     step: Step,
     signal: AbortSignal,
+    options?: { reuseEntryId?: string },
   ): Promise<ResolvedProject | null>;
 }
 
@@ -187,6 +195,9 @@ export interface MissionDeps {
   log?: (line: string) => void;
   modelRuns?(): Promise<readonly ModelRunRecord[]>;
   recordModelRun?: (record: Omit<ModelRunRecord, 'at'>) => Promise<void>;
+  onMissionChatLine?: (line: string) => void;
+  onMissionFocusProject?: (projectId: string) => void;
+  webResearch?: (query: string, request: string) => Promise<string | null>;
 }
 
 export const MISSION_PROJECT_ID = JARVIS_PROJECT_PROFILE.id;
@@ -449,16 +460,31 @@ export class MissionWorkflow {
     if (this.gate && !this.gate.ok) return this.host.notice(this.gate.message);
     const creates = kind === 'new-project' || kind === 'skill';
     let project: ResolvedProject | null = null;
+    let missionProjectId = NEW_PROJECT_SCOPE;
     if (!creates) {
       const resolved = await this.deps.projects.resolve(projectId);
       if (typeof resolved === 'string') return this.host.notice(resolved);
       project = resolved;
+      missionProjectId = project.id;
+    } else if (
+      kind === 'new-project' &&
+      projectId &&
+      projectId !== MISSION_PROJECT_ID
+    ) {
+      const resolved = await this.deps.projects.resolve(projectId);
+      if (typeof resolved === 'string') return this.host.notice(resolved);
+      missionProjectId = projectId;
     }
     this.project = project;
-    this.memory = project ? await this.loadMemory(project.id) : '';
+    this.memory =
+      missionProjectId !== NEW_PROJECT_SCOPE
+        ? await this.loadMemory(missionProjectId)
+        : project
+          ? await this.loadMemory(project.id)
+          : '';
     this.current = createMission({
       id: `${new Date(this.now).toISOString().slice(0, 10)}-${randomId().slice(0, 8)}`,
-      projectId: project?.id ?? NEW_PROJECT_SCOPE,
+      projectId: missionProjectId,
       kind,
       request: text,
       skipQuestions,
@@ -577,6 +603,27 @@ export class MissionWorkflow {
       `Mission : ${MISSION_LABELS[mission.kind]}`,
       [{ id: 'goal', label: 'Raisonnement : objectif, critères et questions' }],
       async (step, signal) => {
+        if (mission.kind === 'new-project') {
+          for (const line of developerAgentSplitChatLines(mission.request)) {
+            this.deps.onMissionChatLine?.(line);
+          }
+          this.patch('web-research', { status: 'running', detail: 'recherche sur le web' });
+          step('web-research', 'running');
+          const query = webResearchQueryForRequest(mission.request);
+          const summary = await this.deps.webResearch?.(query, mission.request);
+          if (summary) {
+            this.deps.onMissionChatLine?.(summary);
+            this.patch('web-research', { status: 'done', detail: summary.slice(0, 160) });
+            step('web-research', 'done', summary.slice(0, 80));
+            mission.discussionContext = `${mission.discussionContext ?? ''}\n\nMéthode (recherche web) : ${summary}`.slice(
+              0,
+              24_000,
+            );
+          } else {
+            this.patch('web-research', { status: 'skipped', detail: 'recherche web indisponible' });
+            step('web-research', 'done', 'sans résultat exploitable');
+          }
+        }
         step('goal', 'running');
         try {
           let output: GoalOutput;
@@ -890,7 +937,16 @@ export class MissionWorkflow {
           this.patch('create', { status: 'waiting', detail: 'ta confirmation' });
           const from = mission.projectId;
           try {
-            result.project = await this.deps.projects.create(input, step, signal);
+            const reuseEntryId =
+              mission.kind === 'new-project' && mission.projectId !== NEW_PROJECT_SCOPE
+                ? mission.projectId
+                : undefined;
+            result.project = await this.deps.projects.create(
+              input,
+              step,
+              signal,
+              reuseEntryId ? { reuseEntryId } : undefined,
+            );
           } catch (error) {
             this.patch('create', {
               status: 'failed',
@@ -964,6 +1020,11 @@ export class MissionWorkflow {
       },
     });
     await this.finishFromTask();
+    if (mission.verdict === 'success' && project) {
+      this.deps.onMissionFocusProject?.(project.id);
+      const shortcut = await this.host.deliverDesktopShortcut?.(project, mission.request);
+      if (shortcut) this.deps.onMissionChatLine?.(`Raccourci bureau : ${shortcut}`);
+    }
     await this.deliverWindowsExeIfRequested(template, mission.request, mission.projectId!);
     return this.host.emit();
   }

@@ -65,6 +65,8 @@ export function registerDeveloperIpc(
     projectsRoot: '',
     dotnet: null,
     projectChat: null,
+    focusProjectId: null,
+    developerBulletin: null,
   });
 
   const refused = (): DeveloperState => ({ ...disabled(), notice: DEVELOPER_DISABLED_NOTICE });
@@ -163,6 +165,12 @@ export function registerDeveloperIpc(
   ipcMain.handle(
     DeveloperChannel.projectImport,
     (_event, path: unknown) => get()?.importProject(text(path)) ?? refused(),
+  );
+  ipcMain.handle(
+    DeveloperChannel.projectPrepareWorkspace,
+    (_event, path: unknown) =>
+      get()?.prepareWorkspace(typeof path === 'string' && path.trim() ? text(path) : undefined) ??
+      refused(),
   );
   ipcMain.handle(
     DeveloperChannel.projectForget,

@@ -44,6 +44,7 @@ export function createDeveloperApi(ipc: IpcRenderer): DeveloperApi {
       ipc.invoke(DeveloperChannel.missionOpen, id, projectId),
     listProjects: () => ipc.invoke(DeveloperChannel.projects),
     importProject: (path: string) => ipc.invoke(DeveloperChannel.projectImport, path),
+    prepareWorkspace: (path?: string) => ipc.invoke(DeveloperChannel.projectPrepareWorkspace, path),
     forgetProject: (id: string) => ipc.invoke(DeveloperChannel.projectForget, id),
     saveProjectMemory: (id: string, notes: string) =>
       ipc.invoke(DeveloperChannel.projectMemory, id, notes),

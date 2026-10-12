@@ -105,6 +105,7 @@ export function DeveloperSimpleView({
   const { state, error, act } = useDeveloper(settings?.developer.enabled);
   const devBootedRef = useRef(false);
   const [importPath, setImportPath] = useState('');
+  const [newFolderPath, setNewFolderPath] = useState('');
   const [newProjectBrief, setNewProjectBrief] = useState('');
   const [modelsOpen, setModelsOpen] = useState(true);
   const [shortcutsOpen, setShortcutsOpen] = useState(true);
@@ -123,19 +124,34 @@ export function DeveloperSimpleView({
   const project = projects.find((p) => p.id === activeId) ?? null;
   const codeModel = settings?.developer.codeModel ?? '';
 
+  const activeProject = projects.find((p) => p.id === activeId) ?? null;
+  const workspaceActive = activeProject?.origin === 'workspace';
+
   const launchNewProjectMission = useCallback(
-    (prompt: string) => {
+    (prompt: string, forceNewFolder = false) => {
       if (state?.busy) return;
       const text = prompt.trim();
       if (text.length < 8) return;
-      if (activeId) {
-        act((api) => api.sendProjectChat(activeId, text));
-        return;
-      }
-      act((api) => api.startMission('new-project', text, true));
+      const projectId =
+        forceNewFolder || !workspaceActive ? undefined : activeId ?? undefined;
+      act((api) => api.startMission('new-project', text, true, projectId));
     },
-    [act, state?.busy, activeId],
+    [act, state?.busy, activeId, workspaceActive],
   );
+
+  const runNouveau = useCallback(() => {
+    if (state?.busy) return;
+    const folder = newFolderPath.trim();
+    const brief = newProjectBrief.trim();
+    void (async () => {
+      const next = await window.jarvis.developer.prepareWorkspace(folder || undefined);
+      const id = next.focusProjectId;
+      if (id) setSelectedId(id);
+      if (brief.length >= 8) {
+        act((api) => api.startMission('new-project', brief, true, id ?? undefined));
+      }
+    })().catch(() => undefined);
+  }, [act, newFolderPath, newProjectBrief, state?.busy]);
 
   const ollamaInstalled = useMemo(() => {
     if (!state?.model) return [];
@@ -195,7 +211,12 @@ export function DeveloperSimpleView({
           type="button"
           className="developer-cursor-project-btn max-w-full text-left"
           disabled={state?.busy}
-          onClick={() => launchNewProjectMission(hint.prompt)}
+          onClick={() =>
+            launchNewProjectMission(
+              hint.prompt,
+              hint.label === 'Plateforme 2D' || hint.label === 'Appli Windows (.exe)',
+            )
+          }
         >
           <hint.icon className="mb-1 size-4 text-cyan-300" />
           <span className="font-medium text-slate-100">{hint.label}</span>
@@ -267,6 +288,11 @@ export function DeveloperSimpleView({
   useEffect(() => {
     if (activeId) act((api) => api.openProjectChat(activeId));
   }, [activeId]);
+
+  useEffect(() => {
+    const id = state?.focusProjectId;
+    if (id && projects.some((p) => p.id === id)) setSelectedId(id);
+  }, [state?.focusProjectId, projects]);
 
   useEffect(() => {
     const notice = state?.notice?.trim() ?? '';
@@ -360,7 +386,7 @@ export function DeveloperSimpleView({
             data-dev-open-settings
             onClick={() => setSettingsOpen(true)}
           >
-            <Settings className="size-3.5" /> Réglages
+            <SettingsIcon className="size-3.5" /> Réglages
           </Button>
         ) : null}
       </div>
@@ -416,19 +442,22 @@ export function DeveloperSimpleView({
                 className="h-7 text-[11px]"
                 disabled={state.busy}
                 data-dev-new-project
-                onClick={() =>
-                  launchNewProjectMission(
-                    newProjectBrief.trim().length >= 8
-                      ? newProjectBrief.trim()
-                      : 'Crée un nouveau projet logiciel (web, CLI ou bibliothèque Node) pour mon idée.',
-                  )
-                }
+                onClick={() => runNouveau()}
               >
                 <FolderPlus className="size-3.5" /> Nouveau
               </Button>
             </div>
           </div>
           <div className="mt-2 flex flex-col gap-1.5 px-1">
+            <input
+              className="rounded-md border border-white/10 bg-black/30 px-2 py-1 font-mono text-[11px] text-slate-100"
+              placeholder="Dossier vide (optionnel, chemin complet)"
+              value={newFolderPath}
+              maxLength={400}
+              disabled={state.busy}
+              aria-label="Dossier pour le nouvel espace de travail"
+              onChange={(e) => setNewFolderPath(e.target.value)}
+            />
             <input
               className="rounded-md border border-white/10 bg-black/30 px-2 py-1 text-[11px] text-slate-100"
               placeholder="Idée du nouveau projet (optionnel)"
@@ -453,12 +482,12 @@ export function DeveloperSimpleView({
                 size="sm"
                 variant="ghost"
                 className="h-8 shrink-0 text-[11px]"
-                disabled={state.busy || importPath.trim().length < 3}
+                disabled={state.busy}
                 data-dev-import-project
                 onClick={() => {
                   const path = importPath.trim();
                   act((api) => api.importProject(path));
-                  setImportPath('');
+                  if (path.length >= 3) setImportPath('');
                 }}
               >
                 <FolderInput className="size-3.5" /> Importer
@@ -516,6 +545,9 @@ export function DeveloperSimpleView({
           <DeveloperInlineMissionPrompts state={state} act={act} />
           {!project ? (
             <div className="flex min-h-0 flex-1 flex-col gap-4 p-6">
+              {state.developerBulletin ? (
+                <p className="text-sm text-cyan-100/95" data-dev-bulletin>{state.developerBulletin}</p>
+              ) : null}
               <p className="text-sm text-slate-300">
                 Décris ce que tu veux construire : Jarvis choisit le gabarit (plateforme 2D, appli
                 Windows .exe, web, CLI…) et enchaîne plan, code, tests et livraison.

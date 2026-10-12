@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { readFile, stat } from 'node:fs/promises';
+import { mkdir, readFile, readdir, stat } from 'node:fs/promises';
 import { basename, isAbsolute, join, resolve } from 'node:path';
 import {
   DOTNET_ENV,
@@ -16,8 +16,9 @@ import {
   dotnetPublishWinExeCommand,
   dotnetWinExeArtifactRelative,
   isDotnetWindowsDesktopTemplate,
-  projectIdFor,
   randomId,
+  folderRedirectChatLine,
+  projectIdFor,
   renderTemplate,
   templateToolchain,
   type ConfirmationRequest,
@@ -49,10 +50,17 @@ import {
   writeProjectFiles,
 } from './factory.js';
 import { inspectProject } from './inspect.js';
+import { pickProjectDirectory } from './projectDirectory.js';
 import type { ProjectChatPersisted } from './projectChatStore.js';
 import type { ProjectStore } from './projectStore.js';
 
 type Step = (id: string, status: DevStepStatus, detail?: string) => void;
+
+export interface ImportProjectResult {
+  ok: boolean;
+  projectId?: string;
+  chatLine: string;
+}
 
 export interface ProjectsHost {
   runTask(
@@ -66,6 +74,8 @@ export interface ProjectsHost {
   notice(message: string): DeveloperState;
   audit(outcome: ToolCallOutcome): void;
   log(line: string): void;
+  /** Ligne courte dans le fil Développeur (chat projet). */
+  chatLine?(line: string): void;
   node(): Promise<NodeTools | null>;
   /** Copie de Jarvis vérifiée, ou null. */
   jarvisRoot(): Promise<string | null>;
@@ -87,6 +97,7 @@ export interface ResolvedProject {
   root: string;
   profile: ProjectProfile;
   template?: ProjectTemplateId;
+  origin?: ProjectEntry['origin'];
 }
 
 /** Dossier où se trouve l'installateur construit par `package:win` dans la copie de Jarvis. */
@@ -165,6 +176,34 @@ export class ProjectsWorkflow {
   }
 
   private async nodeView(entry: ProjectEntry): Promise<ProjectView> {
+    if (entry.origin === 'workspace') {
+      const memory = await this.deps.store.memory(entry.id);
+      const empty = await this.dirIsEmpty(entry.path);
+      return {
+        id: entry.id,
+        name: entry.name,
+        path: entry.path,
+        kind: entry.kind,
+        origin: entry.origin,
+        template: entry.template ?? null,
+        description: entry.description,
+        ok: empty,
+        checks: [
+          {
+            id: 'workspace',
+            label: 'Dossier de travail',
+            status: empty ? 'ok' : 'fail',
+            detail: empty
+              ? 'vide : prêt pour une mission ou une commande'
+              : 'contient déjà des fichiers — importe-le ou choisis un autre dossier',
+          },
+        ],
+        branch: null,
+        memory: memory?.notes ?? '',
+        memoryDefault: memory === null,
+        build: null,
+      };
+    }
     const check = await inspectProject(entry.path, this.deps.run);
     const memory = await this.deps.store.memory(entry.id);
     const build =
@@ -212,33 +251,105 @@ export class ProjectsWorkflow {
     return this.host.emit();
   }
 
+  private async dirIsEmpty(path: string): Promise<boolean> {
+    if (!existsSync(path)) return true;
+    try {
+      return (await readdir(path)).length === 0;
+    } catch {
+      return false;
+    }
+  }
+
+  /** Dossier vide pour les prochaines commandes (Nouveau). */
+  async prepareWorkspace(optionalPath?: string): Promise<{ projectId: string; chatLine: string } | string> {
+    const entries = await this.deps.store.list();
+    const jarvis = this.deps.settings().developer.repoPath;
+    const raw = optionalPath?.trim();
+    let id: string;
+    let dir: string;
+    let name: string;
+    if (raw) {
+      if (!isAbsolute(raw)) return 'Indique le chemin complet du dossier (ex. C:\\Projets\\mon-jeu).';
+      dir = resolve(raw);
+      if (jarvis && (samePath(jarvis, dir) || isInside(jarvis, dir) || isInside(dir, jarvis)))
+        return 'Ce dossier est la copie de Jarvis : utilise le projet « Jarvis » dans la liste.';
+      const known = entries.find((e) => samePath(e.path, dir));
+      if (known) {
+        return { projectId: known.id, chatLine: `Déjà dans la liste : les commandes travaillent dans ${dir}.` };
+      }
+      try {
+        const st = await stat(dir);
+        if (!st.isDirectory()) return `« ${dir} » n’est pas un dossier.`;
+      } catch {
+        await mkdir(dir, { recursive: true });
+      }
+      if (!(await this.dirIsEmpty(dir)))
+        return `« ${dir} » n’est pas vide : choisis un dossier vide ou laisse Jarvis en créer un.`;
+      name = basename(dir) || 'Nouveau projet';
+      id = projectIdFor(name, new Set(entries.map((e) => e.id)));
+    } else {
+      const picked = await pickProjectDirectory(this.projectsRoot(), 'Nouveau projet', entries);
+      id = picked.id;
+      dir = picked.dir;
+      name = picked.id;
+      await mkdir(dir, { recursive: true });
+      if (picked.redirectedFrom) {
+        const line = folderRedirectChatLine(picked.redirectedFrom, id);
+        this.host.chatLine?.(line);
+        this.host.log(line);
+      }
+    }
+    const entry: ProjectEntry = {
+      id,
+      name,
+      path: dir,
+      kind: 'node',
+      origin: 'workspace',
+      description: 'Espace vide : la prochaine mission ou commande y écrit le gabarit.',
+      createdAt: this.now,
+    };
+    await this.deps.store.add(entry);
+    await this.refresh();
+    const chatLine = `Espace prêt : les prochaines commandes travaillent dans ${dir}.`;
+    return { projectId: id, chatLine };
+  }
+
   /** Ajoute un dossier existant : dépôt git avec un commit, package-lock.json et un test. */
-  async import(path: string): Promise<DeveloperState> {
+  async import(path: string): Promise<ImportProjectResult> {
     const raw = path.trim();
-    if (!raw || !isAbsolute(raw))
-      return this.host.notice('Indique le chemin complet du dossier du projet.');
+    if (!raw)
+      return { ok: false, chatLine: 'Indique le chemin complet du dossier à importer.' };
+    if (!isAbsolute(raw))
+      return { ok: false, chatLine: 'Indique le chemin complet du dossier du projet.' };
     const dir = resolve(raw);
     try {
       if (!(await stat(dir)).isDirectory())
-        return this.host.notice(`« ${dir} » n’est pas un dossier.`);
+        return { ok: false, chatLine: `« ${dir} » n’est pas un dossier.` };
     } catch {
-      return this.host.notice(`« ${dir} » n’existe pas.`);
+      return { ok: false, chatLine: `« ${dir} » n’existe pas.` };
     }
     const jarvis = this.deps.settings().developer.repoPath;
     if (jarvis && (samePath(jarvis, dir) || isInside(jarvis, dir) || isInside(dir, jarvis)))
-      return this.host.notice(
-        'C’est la copie de Jarvis (ou un dossier qui la contient) : elle est déjà le projet « Jarvis ».',
-      );
+      return {
+        ok: false,
+        chatLine:
+          'C’est la copie de Jarvis (ou un dossier qui la contient) : elle est déjà le projet « Jarvis ».',
+      };
     const entries = await this.deps.store.list();
     const known = entries.find((e) => samePath(e.path, dir));
-    if (known) return this.host.notice(`Ce dossier est déjà le projet « ${known.name} ».`);
+    if (known)
+      return {
+        ok: true,
+        projectId: known.id,
+        chatLine: `Déjà dans la liste : les commandes travaillent dans ${dir}.`,
+      };
     const check = await inspectProject(dir, this.deps.run);
     if (!check.ok) {
       await this.refresh();
       const reasons = check.checks
         .filter((c) => c.status === 'fail')
         .map((c) => `${c.label} : ${c.detail}`);
-      return this.host.notice(`Import refusé. ${reasons.join(' ')}`);
+      return { ok: false, chatLine: `Import refusé : ${reasons.join(' ')}` };
     }
     const name = check.name ?? basename(dir);
     const entry: ProjectEntry = {
@@ -252,7 +363,11 @@ export class ProjectsWorkflow {
     };
     await this.deps.store.add(entry);
     await this.refresh();
-    return this.host.notice(`Projet « ${name} » importé. Son dossier n’a pas été modifié.`);
+    return {
+      ok: true,
+      projectId: entry.id,
+      chatLine: `Projet « ${name} » importé : les commandes travaillent dans ${dir}.`,
+    };
   }
 
   async forget(id: string): Promise<DeveloperState> {
@@ -315,6 +430,23 @@ export class ProjectsWorkflow {
     }
     const entry = (await this.deps.store.list()).find((e) => e.id === id);
     if (!entry) return 'Projet introuvable : importe-le ou crée-le d’abord.';
+    if (entry.origin === 'workspace') {
+      return {
+        id,
+        name: entry.name,
+        root: entry.path,
+        template: entry.template,
+        origin: 'workspace',
+        profile: createNodeProfile({
+          id,
+          name: entry.name,
+          description:
+            entry.description ||
+            'Espace vide : la prochaine mission y installera le gabarit demandé.',
+          scripts: {},
+        }),
+      };
+    }
     const check = await inspectProject(entry.path, this.deps.run);
     if (!check.ok) {
       const reasons = check.checks
@@ -327,6 +459,7 @@ export class ProjectsWorkflow {
       name: entry.name,
       root: entry.path,
       template: entry.template,
+      origin: entry.origin,
       profile:
         entry.kind === 'dotnet' && check.target
           ? createDotnetProfile({
@@ -489,6 +622,7 @@ export class ProjectsWorkflow {
     },
     step: Step,
     signal: AbortSignal,
+    options?: { reuseEntryId?: string },
   ): Promise<ResolvedProject | null> {
     const toolchain = templateToolchain(input.template);
     const node = toolchain === 'node' ? await this.host.node() : null;
@@ -503,11 +637,28 @@ export class ProjectsWorkflow {
       tfm = this.dotnet.tfm;
     }
     const entries = await this.deps.store.list();
-    const id = projectIdFor(input.name, new Set(entries.map((e) => e.id)));
     const root = this.projectsRoot();
-    const dir = join(root, id);
-    if (entries.some((e) => samePath(e.path, dir)))
-      throw new FactoryError(`« ${dir} » est déjà un projet.`);
+    let id: string;
+    let dir: string;
+    const reuseId = options?.reuseEntryId?.trim();
+    const reuse = reuseId ? entries.find((e) => e.id === reuseId) : undefined;
+    if (reuse) {
+      if (reuse.origin !== 'workspace')
+        throw new FactoryError('Ce projet n’est pas un espace vide : choisis « Nouveau » ou une mission plateforme.');
+      if (!(await this.dirIsEmpty(reuse.path)))
+        throw new FactoryError(`Le dossier « ${reuse.path} » n’est plus vide.`);
+      id = reuse.id;
+      dir = reuse.path;
+    } else {
+      const picked = await pickProjectDirectory(root, input.name, entries);
+      id = picked.id;
+      dir = picked.dir;
+      if (picked.redirectedFrom) {
+        const line = folderRedirectChatLine(picked.redirectedFrom, id);
+        this.host.chatLine?.(line);
+        this.host.log(line);
+      }
+    }
     const files = renderTemplate(input.template, {
       packageName: id,
       title: input.name,
@@ -578,8 +729,9 @@ export class ProjectsWorkflow {
       origin: 'created',
       template: input.template,
       description: input.description.slice(0, 400),
-      createdAt: this.now,
+      createdAt: reuse?.createdAt ?? this.now,
     };
+    if (reuse) await this.deps.store.remove(reuse.id);
     await this.deps.store.add(entry);
     await this.refresh();
     step('create', 'done', `${dir} (commit ${head.slice(0, 7)})`);

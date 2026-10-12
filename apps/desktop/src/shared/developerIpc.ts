@@ -136,7 +136,7 @@ export interface ProjectView {
   name: string;
   path: string;
   kind: 'jarvis' | 'node' | 'dotnet';
-  origin: 'jarvis' | 'imported' | 'created';
+  origin: 'jarvis' | 'imported' | 'created' | 'workspace';
   template: ProjectTemplateId | null;
   description: string;
   /** Prêt pour une mission (vérifications sans échec). */
@@ -279,6 +279,7 @@ export const DeveloperChannel = {
   missionOpen: 'dev:mission-open',
   projects: 'dev:projects',
   projectImport: 'dev:project-import',
+  projectPrepareWorkspace: 'dev:project-prepare-workspace',
   projectForget: 'dev:project-forget',
   projectMemory: 'dev:project-memory',
   projectBuild: 'dev:project-build',
@@ -385,6 +386,10 @@ export interface DeveloperState {
   projectsRoot: string;
   /** SDK .NET trouvé (0.5.4) et commande d'installation à lancer soi-même ; null : pas encore cherché. */
   dotnet: { sdks: string[]; hint: string | null } | null;
+  /** Projet à sélectionner dans la liste (création, import, mission). */
+  focusProjectId?: string | null;
+  /** Message court affiché dans le panneau chat (import, espace vide). */
+  developerBulletin?: string | null;
 }
 
 export interface DeveloperApi {
@@ -429,6 +434,8 @@ export interface DeveloperApi {
   openMission(id: string, projectId?: string): Promise<DeveloperState>;
   listProjects(): Promise<DeveloperState>;
   importProject(path: string): Promise<DeveloperState>;
+  /** Dossier vide (ou chemin fourni) : prochaines commandes y travaillent. */
+  prepareWorkspace(path?: string): Promise<DeveloperState>;
   forgetProject(id: string): Promise<DeveloperState>;
   saveProjectMemory(id: string, notes: string): Promise<DeveloperState>;
   buildProject(id: string): Promise<DeveloperState>;

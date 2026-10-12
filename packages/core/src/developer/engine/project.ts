@@ -23,7 +23,7 @@ export const projectEntrySchema = z.object({
   name: z.string().trim().min(1).max(80),
   path: z.string().min(1).max(400),
   kind: z.enum(['node', 'dotnet']),
-  origin: z.enum(['imported', 'created']),
+  origin: z.enum(['imported', 'created', 'workspace']),
   template: z.enum(PROJECT_TEMPLATE_IDS).optional(),
   description: z.string().max(400).default(''),
   createdAt: z.number(),

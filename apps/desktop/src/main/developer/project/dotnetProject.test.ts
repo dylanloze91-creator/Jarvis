@@ -231,7 +231,7 @@ describe('appli Windows (.NET), 0.5.4', () => {
       intercept: offlineDotnet(false),
     });
     const refused = await missing.instance.importProject(dir);
-    expect(refused.notice).toMatch(/SDK \.NET : introuvable/);
+    expect(refused.developerBulletin).toMatch(/SDK \.NET : introuvable/);
 
     const h = createHarness({
       base,
@@ -241,7 +241,7 @@ describe('appli Windows (.NET), 0.5.4', () => {
       intercept: offlineDotnet(true),
     });
     const imported = await h.instance.importProject(dir);
-    expect(imported.notice).toMatch(/« MonOutil » importé/);
+    expect(imported.developerBulletin).toMatch(/« MonOutil » importé/);
     expect(imported.projects?.find((p) => p.name === 'MonOutil')).toMatchObject({
       kind: 'dotnet',
       origin: 'imported',
