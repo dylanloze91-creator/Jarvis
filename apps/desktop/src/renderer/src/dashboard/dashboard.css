@@ -682,6 +682,7 @@
 }
 
 .developer-cursor-composer {
+  flex-shrink: 0;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
   padding-top: 12px;
   margin-top: 8px;
@@ -689,8 +690,11 @@
 
 .developer-cursor-input {
   width: 100%;
-  min-height: 88px;
+  min-height: 72px;
+  max-height: 160px;
   resize: vertical;
+  user-select: text;
+  -webkit-user-select: text;
   border-radius: 12px;
   border: 1px solid rgba(255, 255, 255, 0.12);
   background: rgba(0, 0, 0, 0.35);
@@ -721,6 +725,29 @@
     border-bottom: 1px solid rgba(255, 255, 255, 0.06);
     max-height: 160px;
   }
+}
+
+[data-ui-layout='compact'] .dash-chat {
+  min-height: 0;
+}
+
+[data-ui-layout='compact'] .developer-cursor-body {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+[data-ui-layout='compact'] .developer-cursor-projects {
+  max-height: 132px;
+  border-right: none;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+[data-ui-layout='compact'] .developer-cursor-chat {
+  min-height: 180px;
+}
+
+[data-developer-compact='yes'] .developer-cursor-input {
+  min-height: 64px;
 }
 
 .dashboard[data-app-mode='classic'] {

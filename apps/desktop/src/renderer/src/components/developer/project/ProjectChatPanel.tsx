@@ -136,9 +136,9 @@ export function ProjectChatPanel({
           <div ref={bottom} />
         </div>
         {hideComposer ? null : (
-        <div className="developer-cursor-composer no-drag">
+        <div className="developer-cursor-composer no-drag shrink-0">
           <textarea
-            className="developer-cursor-input"
+            className="developer-cursor-input no-drag"
             placeholder="Décris ce que tu veux…"
             maxLength={4_000}
             value={draft}

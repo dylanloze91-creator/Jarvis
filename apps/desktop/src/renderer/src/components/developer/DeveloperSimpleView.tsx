@@ -23,6 +23,7 @@ import type { RuntimeStatus } from '../../../../shared/ipc';
 import type { DeveloperState, ProjectView } from '../../../../shared/developerIpc';
 import type { UseVoiceResult } from '@/voice/useVoice';
 import { setVoiceTranscriptTarget } from '@/voice/voiceTranscriptRouter';
+import { DeveloperCollapsible } from './DeveloperCollapsible';
 import { DeveloperConfirmationCard } from './DeveloperConfirmationCard';
 import { MissionGateCard } from './mission/MissionGateCard';
 import { ProjectChatPanel } from './project/ProjectChatPanel';
@@ -81,6 +82,7 @@ export function DeveloperSimpleView({
   pendingVoice = null,
   onPendingVoiceConsumed,
   embedded = false,
+  compactChrome = false,
 }: {
   settings: Settings | null;
   voice: UseVoiceResult;
@@ -92,11 +94,15 @@ export function DeveloperSimpleView({
   onPendingVoiceConsumed?: () => void;
   /** Onglet « Dev » de la fenêtre principale : pas de « Changer de mode ». */
   embedded?: boolean;
+  /** Fenêtre compacte (overlay) : layout resserré pour garder le chat visible. */
+  compactChrome?: boolean;
 }) {
   const { state, error, act } = useDeveloper(settings?.developer.enabled);
   const devBootedRef = useRef(false);
   const [importPath, setImportPath] = useState('');
   const [newProjectBrief, setNewProjectBrief] = useState('');
+  const [modelsOpen, setModelsOpen] = useState(true);
+  const [shortcutsOpen, setShortcutsOpen] = useState(true);
   const projects = useMemo(() => state?.projects ?? [], [state?.projects]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const activeId = useMemo(() => {
@@ -138,57 +144,38 @@ export function DeveloperSimpleView({
     [onSaved, settings],
   );
 
-  const codeModelQuickPick = embedded ? (
-    <div className="flex flex-col gap-1.5" data-dev-code-model-quick>
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <span className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
-          Modèles Ollama installés — un clic pour le dev
-        </span>
-        <Button
-          type="button"
-          size="sm"
-          variant="ghost"
-          className="h-7 px-2 text-[11px]"
-          disabled={state?.busy}
-          data-refresh-ollama-models
-          onClick={() => act((api) => api.refreshOllamaModels())}
-        >
-          <RefreshCw className="size-3" /> Rafraîchir
-        </Button>
+  const modelsPanelBody =
+    ollamaInstalled.length === 0 ? (
+      <p className="text-xs leading-relaxed text-amber-200/95">
+        {state?.model.ollamaListMessage ??
+          'Ollama ne répond pas ou aucun modèle n’est installé : démarre Ollama, installe un modèle (`ollama pull …`), puis rouvre cet onglet.'}
+      </p>
+    ) : (
+      <div className="flex flex-wrap gap-2">
+        {ollamaInstalled.map((entry) => {
+          const active = codeModel === entry.name;
+          return (
+            <button
+              key={entry.name}
+              type="button"
+              className={cn(
+                'developer-cursor-project-btn max-w-[14rem] text-left',
+                active && 'is-active',
+              )}
+              disabled={state?.busy}
+              aria-pressed={active}
+              data-dev-code-model={entry.name}
+              onClick={() => void chooseCodeModel(entry.name)}
+            >
+              <span className="font-mono text-[13px] font-medium text-slate-100">{entry.name}</span>
+              <span className="text-[11px] leading-snug text-slate-500">
+                {summarizeOllamaModelForDeveloper(entry.name, entry)}
+              </span>
+            </button>
+          );
+        })}
       </div>
-      {ollamaInstalled.length === 0 ? (
-        <p className="text-xs leading-relaxed text-amber-200/95">
-          {state?.model.ollamaListMessage ??
-            'Ollama ne répond pas ou aucun modèle n’est installé : démarre Ollama, installe un modèle (`ollama pull …`), puis rouvre cet onglet.'}
-        </p>
-      ) : (
-        <div className="flex flex-wrap gap-2">
-          {ollamaInstalled.map((entry) => {
-            const active = codeModel === entry.name;
-            return (
-              <button
-                key={entry.name}
-                type="button"
-                className={cn(
-                  'developer-cursor-project-btn max-w-[14rem] text-left',
-                  active && 'is-active',
-                )}
-                disabled={state?.busy}
-                aria-pressed={active}
-                data-dev-code-model={entry.name}
-                onClick={() => void chooseCodeModel(entry.name)}
-              >
-                <span className="font-mono text-[13px] font-medium text-slate-100">{entry.name}</span>
-                <span className="text-[11px] leading-snug text-slate-500">
-                  {summarizeOllamaModelForDeveloper(entry.name, entry)}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  ) : null;
+    );
 
   const missionStarters = (
     <div className="flex flex-wrap gap-2" data-dev-mission-starters>
@@ -206,6 +193,40 @@ export function DeveloperSimpleView({
       ))}
     </div>
   );
+
+  const embeddedToolsStrip = embedded ? (
+    <div className="no-drag flex shrink-0 flex-col gap-2 border-b border-white/[0.06] px-3 py-2">
+      <DeveloperCollapsible
+        title="Modèles Ollama installés — un clic pour le dev"
+        open={modelsOpen}
+        onToggle={() => setModelsOpen((v) => !v)}
+        dataAttr="models"
+        headerExtra={
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="h-7 px-2 text-[11px]"
+            disabled={state?.busy}
+            data-refresh-ollama-models
+            onClick={() => act((api) => api.refreshOllamaModels())}
+          >
+            <RefreshCw className="size-3" /> Rafraîchir
+          </Button>
+        }
+      >
+        <div data-dev-code-model-quick>{modelsPanelBody}</div>
+      </DeveloperCollapsible>
+      <DeveloperCollapsible
+        title="Raccourcis mission"
+        open={shortcutsOpen}
+        onToggle={() => setShortcutsOpen((v) => !v)}
+        dataAttr="shortcuts"
+      >
+        {missionStarters}
+      </DeveloperCollapsible>
+    </div>
+  ) : null;
 
   useEffect(() => {
     if (!settings || devBootedRef.current) return;
@@ -290,7 +311,11 @@ export function DeveloperSimpleView({
   }
 
   return (
-    <div className="developer-cursor flex min-h-0 flex-1 flex-col" data-developer-cursor>
+    <div
+      className="developer-cursor flex min-h-0 flex-1 flex-col overflow-hidden"
+      data-developer-cursor
+      data-developer-compact={compactChrome ? 'yes' : undefined}
+    >
       <div className="developer-cursor-toolbar no-drag flex flex-wrap items-center gap-2 px-3 py-2">
         {!embedded && onBack ? (
           <Button type="button" size="sm" variant="ghost" onClick={onBack}>
@@ -306,12 +331,7 @@ export function DeveloperSimpleView({
           </span>
         ) : null}
       </div>
-      {embedded ? (
-        <div className="no-drag flex flex-col gap-3 border-b border-white/[0.06] px-3 py-2">
-          {codeModelQuickPick}
-          {missionStarters}
-        </div>
-      ) : null}
+      {embeddedToolsStrip}
       {state.notice ? (
         <p className="no-drag px-3 py-1.5 text-xs text-amber-200" data-dev-notice>{state.notice}</p>
       ) : null}
@@ -345,7 +365,7 @@ export function DeveloperSimpleView({
           />
         </div>
       ) : null}
-      <div className="developer-cursor-body no-drag min-h-0 flex-1">
+      <div className="developer-cursor-body no-drag min-h-0 flex-1 overflow-hidden">
         <aside className="developer-cursor-projects" aria-label="Projets">
           <div className="flex flex-wrap items-center justify-between gap-2 px-1">
             <p className="developer-cursor-projects-title mb-0">Projets</p>
@@ -446,7 +466,10 @@ export function DeveloperSimpleView({
             )}
           </ul>
         </aside>
-        <section className="developer-cursor-chat flex min-h-0 flex-col" aria-label="Discussion projet">
+        <section
+          className="developer-cursor-chat flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
+          aria-label="Discussion projet"
+        >
           {!project ? (
             <div className="flex min-h-0 flex-1 flex-col gap-4 p-6">
               <p className="text-sm text-slate-300">
@@ -457,7 +480,7 @@ export function DeveloperSimpleView({
             </div>
           ) : (
             <>
-              <div className="min-h-0 flex-1 overflow-hidden">
+              <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
                 <ProjectChatPanel
                   project={project}
                   state={state}

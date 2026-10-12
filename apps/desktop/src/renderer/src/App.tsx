@@ -36,7 +36,9 @@ import type { RuntimeStatus, ToolInfo } from '../../shared/ipc';
 
 type View = 'chat' | 'developer' | 'history' | 'settings' | 'audit' | 'setup-guide';
 const HEADER_HEIGHT = 52;
-const MAX_BODY_HEIGHT = 620;
+const VIEW_KICKER_HEIGHT = 46;
+const MIN_COMPACT_HEIGHT = 400;
+const MAX_COMPACT_HEIGHT = 700;
 
 function sceneFromLocation(): string | null {
   if (typeof window === 'undefined') return null;
@@ -52,8 +54,7 @@ export default function App() {
   const [booting, setBooting] = useState(true);
   const [showSetup, setShowSetup] = useState(false);
   const [pendingDevVoice, setPendingDevVoice] = useState<string | null>(null);
-  const content = useRef<HTMLDivElement>(null);
-  const footer = useRef<HTMLDivElement>(null);
+  const mainPaneRef = useRef<HTMLDivElement>(null);
   const seeded = useRef(false);
 
   const voiceRef = useRef<ReturnType<typeof useVoice> | null>(null);
@@ -140,17 +141,21 @@ export default function App() {
 
   useLayoutEffect(() => {
     if (wide || window.innerWidth >= 1100) return;
-    const node = content.current;
-    if (!node) return;
+    const pane = mainPaneRef.current;
+    if (!pane) return;
     const sync = (): void => {
-      const body = Math.min(node.getBoundingClientRect().height, MAX_BODY_HEIGHT);
-      const chrome = HEADER_HEIGHT + (footer.current?.getBoundingClientRect().height ?? 0);
-      void window.jarvis.window.resize(Math.ceil(body + chrome));
+      const kicker = view !== 'chat' ? VIEW_KICKER_HEIGHT : 0;
+      const paneH = pane.getBoundingClientRect().height;
+      const contentH = paneH > 64 ? paneH : 360;
+      const total = Math.min(
+        Math.max(HEADER_HEIGHT + kicker + contentH, MIN_COMPACT_HEIGHT),
+        MAX_COMPACT_HEIGHT,
+      );
+      void window.jarvis.window.resize(Math.ceil(total));
     };
     sync();
     const observer = new ResizeObserver(sync);
-    observer.observe(node);
-    if (footer.current) observer.observe(footer.current);
+    observer.observe(pane);
     return () => observer.disconnect();
   }, [view, chat.items.length, booting, bootError, wide]);
 
@@ -362,12 +367,12 @@ export default function App() {
         </div>
       ) : null}
 
-      <div className="relative z-10 flex min-h-0 flex-1 flex-col overflow-hidden">
+      <div ref={mainPaneRef} className="relative z-10 flex min-h-0 flex-1 flex-col overflow-hidden">
         {view === 'chat' ? (
           booting && chat.items.length === 0 && !bootError ? (
             <BootStage label="Démarrage de Jarvis…" />
           ) : (
-            <div ref={footer} className="flex min-h-0 flex-1 flex-col">
+            <div className="flex min-h-0 flex-1 flex-col">
               <UnifiedJarvisChat
                 settings={settings}
                 voice={voice}
@@ -384,12 +389,13 @@ export default function App() {
             </div>
           )
         ) : view === 'developer' ? (
-          <div ref={content} className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
             {booting ? (
               <BootStage label="Chargement du développeur…" />
             ) : (
               <DeveloperSimpleView
                 embedded
+                compactChrome
                 settings={settings}
                 voice={voice}
                 onAssistantReply={handleAssistantFinal}
@@ -403,7 +409,7 @@ export default function App() {
             )}
           </div>
         ) : (
-        <div ref={content} className="min-h-0 flex-1 overflow-y-auto">
+        <div className="min-h-0 flex-1 overflow-y-auto">
           {view === 'history' ? <HistoryPanel onOpen={openConversation} /> : null}
           {view === 'audit' ? <AuditPanel /> : null}
           {view === 'settings' ? (
