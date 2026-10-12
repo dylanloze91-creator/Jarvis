@@ -152,15 +152,27 @@ export function taskScript(options: ScriptOptions = {}) {
  * Réponse d'un modèle scripté à l'écriture fichier par fichier (5.0.1) : le
  * fichier demandé et son contenu actuel, lus dans la consigne.
  */
+/** Réponse scriptée pour l’écriture fichier par fichier (5.0.28+), sans WRITE_MARKER. */
+export function replyForPlannedFileWrite(
+  body: ChatBody,
+  files: Record<string, string>,
+): Reply | null {
+  const write = writeRequest(body);
+  if (!write?.path) return null;
+  const content = files[write.path];
+  return content ? codeBlock(content) : null;
+}
+
 export function writeRequest(body: ChatBody): { path: string; current: string | null } | null {
-  const user = [...body.messages].reverse().find((m) => m.role === 'user')?.content ?? '';
-  const path = /Écris maintenant le contenu complet de (\S+?)(, corrigé)?, dans un seul bloc/.exec(
-    user,
+  const text = body.messages.map((m) => m.content).join('\n\n');
+  const path = /Écris maintenant le contenu complet de (\S+?)(, corrigé)?, dans un seul bloc de code/.exec(
+    text,
   )?.[1];
   if (!path) return null;
+  const esc = path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const current = new RegExp(
-    `Contenu actuel de ${path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} :\\n\`\`\`[^\\n]*\\n([\\s\\S]*?)\\n\`\`\``,
-  ).exec(user)?.[1];
+    `Contenu actuel de ${esc} :\\n\`\`\`[^\\n]*\\n([\\s\\S]*?)\\n\`\`\``,
+  ).exec(text)?.[1];
   return { path, current: current ?? null };
 }
 

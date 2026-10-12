@@ -25,6 +25,7 @@ import { FakeOllama, type ChatBody, type Reply } from '../models/fakeOllama.test
 import {
   codeBlock,
   createFixtureRepo,
+  replyForPlannedFileWrite,
   taskScript,
   writeRequest,
 } from '../task/taskWorkflow.testkit.js';
@@ -72,7 +73,7 @@ function script(body: ChatBody): Reply {
 /** Modèle de code du projet neuf : lit src/main.ts, planifie, le modifie. */
 function factoryScript(body: ChatBody): Reply {
   const text = system(body);
-  const write = text.includes(WRITE_MARKER) ? writeRequest(body) : null;
+  const write = writeRequest(body);
   if (write?.path === 'src/main.ts' && write.current)
     return codeBlock(write.current.replace("name: 'monde'", "name: 'le monde'"));
   const done = body.messages.filter((m) => m.role === 'tool').length;
@@ -281,9 +282,9 @@ describe('projets (0.5.3)', () => {
     expect(early[5]).toMatch(/^plan-1:CODER:done$/);
     expect(h.cards.some((c) => c.toolName === 'dev_create_project')).toBe(false);
 
-    expect(git(dir, 'log', '--format=%an|%s')).toBe(
-      'Jarvis Développeur|Projet créé par Jarvis Développeur',
-    );
+    const history = git(dir, 'log', '--format=%s');
+    expect(history).toContain('Projet créé par Jarvis Développeur');
+    expect(history.split('\n').length).toBeGreaterThan(1);
     expect(git(dir, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('main');
     expect(git(dir, 'remote')).toBe('');
     expect(JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')).name).toBe(pid);

@@ -456,6 +456,16 @@ export class ProjectsWorkflow {
         return { ok: false, chatLine: `Import refusé : ${reasons.join(' ')}` };
       }
     }
+    if (check.toolchain === 'dotnet') {
+      const dotnet = await detectDotnet(this.deps.run, this.deps.home);
+      if (!dotnet.tfm) {
+        const hint = dotnet.hint ? ` (${dotnet.hint})` : '';
+        return {
+          ok: false,
+          chatLine: `SDK .NET : introuvable${hint} — installe le SDK .NET 8 ou plus sur cette machine, puis réessaie.`,
+        };
+      }
+    }
     const name = check.name ?? basename(dir);
     const entry: ProjectEntry = {
       id: projectIdFor(name, new Set(entries.map((e) => e.id))),

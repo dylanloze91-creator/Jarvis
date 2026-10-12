@@ -238,6 +238,20 @@ export class TaskRun extends TaskRunBase {
       );
     }
     if (request.toolName === 'dev_review_diff') return true;
+    // Les libellés d’outils fichier (ex. « Réécrire src/game.ts (12 lignes) ») ne sont
+    // pas des commandes shell : classifyCommand les refuse à cause des parenthèses.
+    if (
+      call.name === 'dev_install_sandbox' ||
+      call.name === 'dev_run_tests' ||
+      FILE_TOOL_NAMES.has(call.name)
+    ) {
+      this.state.planApproved.push({
+        tool: call.name,
+        target: path || String(call.arguments.suite ?? ''),
+        at: Date.now(),
+      });
+      return true;
+    }
     const firstLine = (request.command ?? '').split('\n')[0] ?? '';
     const safety = classifyCommand(firstLine, await this.safetyCtx());
     if (safety.level === 'denied') return false;
@@ -256,18 +270,6 @@ export class TaskRun extends TaskRunBase {
       if (safety.reasons.some((r) => /secret|mot de passe|token|api.?key/i.test(r))) {
         return this.host.ask(request, { safety, reason: 'secrets : toujours confirmé' }, signal);
       }
-    }
-    if (
-      call.name === 'dev_install_sandbox' ||
-      call.name === 'dev_run_tests' ||
-      FILE_TOOL_NAMES.has(call.name)
-    ) {
-      this.state.planApproved.push({
-        tool: call.name,
-        target: path || String(call.arguments.suite ?? ''),
-        at: Date.now(),
-      });
-      return true;
     }
     if (safety.level === 'auto' || safety.level === 'confirm') return true;
     return this.host.ask(request, { safety, reason: 'confirmation requise en mode direct' }, signal);
@@ -657,7 +659,17 @@ export class TaskRun extends TaskRunBase {
   /** Revue du diff avant chaque série de tests : un code sensible nouveau demande ton accord. */
   private async scanGate(step: StepFn, signal: AbortSignal): Promise<void> {
     if (this.hooks.directRun) {
-      step('scan', 'done', 'contrôle automatique');
+      const diff = await this.refreshDiff(signal);
+      const fresh = scanDiff(diff).filter((f) => !this.acknowledged.has(findingKey(f)));
+      for (const finding of fresh) {
+        this.acknowledged.add(findingKey(finding));
+        this.state.findings.push(finding);
+      }
+      step(
+        'scan',
+        'done',
+        fresh.length ? `${fresh.length} point(s) sensible(s) enregistré(s)` : 'contrôle automatique',
+      );
       return;
     }
     const diff = await this.refreshDiff(signal);

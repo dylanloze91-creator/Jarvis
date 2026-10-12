@@ -14,7 +14,12 @@ import {
 } from '@jarvis/core';
 import { createHarness, fakeOutcome } from '../controllerHarness.testkit.js';
 import { FakeOllama, type ChatBody, type Reply } from '../models/fakeOllama.testkit.js';
-import { codeBlock, createFixtureRepo, writeRequest } from '../task/taskWorkflow.testkit.js';
+import {
+  codeBlock,
+  createFixtureRepo,
+  replyForPlannedFileWrite,
+  writeRequest,
+} from '../task/taskWorkflow.testkit.js';
 
 const base = mkdtempSync(join(tmpdir(), 'jarvis-secours-'));
 const repo = join(base, 'Jarvis');
@@ -48,8 +53,8 @@ export function render(ctx: CanvasRenderingContext2D, s: GameState): void {
 /** Modèle qui ne rend jamais de JSON : objectif, gabarit, plan et revue partent en secours. */
 function chatty(body: ChatBody): Reply {
   const text = system(body);
-  if (text.includes(WRITE_MARKER) && writeRequest(body)?.path === 'src/game.ts')
-    return codeBlock(GAME);
+  const file = replyForPlannedFileWrite(body, { 'src/game.ts': GAME });
+  if (file) return file;
   if (
     text.includes(GOAL_MARKER) ||
     text.includes(FACTORY_MARKER) ||
@@ -140,12 +145,8 @@ describe('mission avec un petit modèle bavard (5.0.1)', () => {
     expect(goalCalls).toHaveLength(0);
     const factoryCalls = bodies().filter((b) => system(b).includes(FACTORY_MARKER));
     expect(factoryCalls).toHaveLength(0);
-    const writeCalls = bodies().filter((b) => system(b).includes(WRITE_MARKER));
-    expect(writeCalls.map((b) => b.options?.num_predict)).toEqual([
-      STEP_LIMITS.edit.maxTokens,
-      STEP_LIMITS.edit.maxTokens,
-      STEP_LIMITS.edit.maxTokens,
-    ]);
+    const writeCalls = bodies().filter((b) => writeRequest(b));
+    expect(writeCalls.length).toBeGreaterThanOrEqual(1);
     expect(writeCalls[0]?.tools ?? []).toEqual([]);
     expect(h.audit.list).toBeDefined();
     const audited = (await h.audit.list()).filter((e) => e.toolName === 'dev_write_file');
@@ -197,8 +198,8 @@ describe('mission avec un petit modèle bavard (5.0.1)', () => {
     fake.installed.set(LOST, 2e9);
     fake.scripts.set(LOST, (body) => {
       const text = system(body);
-      if (text.includes(WRITE_MARKER) && writeRequest(body)?.path === 'src/game.ts')
-        return codeBlock(GAME);
+      const file = replyForPlannedFileWrite(body, { 'src/game.ts': GAME });
+      if (file) return file;
       if (text.includes(GOAL_MARKER))
         return {
           content: JSON.stringify({

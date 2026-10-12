@@ -15,7 +15,7 @@ import {
 import { createHarness, fakeOutcome } from '../controllerHarness.testkit.js';
 import { FakeOllama, type ChatBody, type Reply } from '../models/fakeOllama.testkit.js';
 import type { RunOutcome, RunSpec } from '../runner.js';
-import { codeBlock, createFixtureRepo, writeRequest } from '../task/taskWorkflow.testkit.js';
+import { codeBlock, createFixtureRepo, replyForPlannedFileWrite, writeRequest } from '../task/taskWorkflow.testkit.js';
 
 const base = mkdtempSync(join(tmpdir(), 'jarvis-platformer-'));
 const jarvis = join(base, 'Jarvis');
@@ -77,11 +77,28 @@ function hybridNpm(spec: RunSpec, display: string): RunOutcome | null {
   return null;
 }
 
+const RULES_TS = `export const RULES = {
+  title: 'Plateforme Dexios',
+  gravity: 1400,
+  moveSpeed: 220,
+  jumpSpeed: 480,
+  maxFall: 700,
+  playerW: 22,
+  playerH: 28,
+  requireCollectibleForWin: false,
+};
+`;
+
 function missionScript(): (body: ChatBody) => Reply {
   return (body: ChatBody) => {
     const text =
       body.messages.find((m) => m.role === 'system')?.content ??
       body.messages.map((m) => m.content).join('\n');
+    const planned = replyForPlannedFileWrite(body, {
+      'src/level.ts': EXTENDED_LEVEL,
+      'src/rules.ts': RULES_TS,
+    });
+    if (planned) return planned;
     const write = writeRequest(body);
     if (text.includes(PLAN_MARKER))
       return {

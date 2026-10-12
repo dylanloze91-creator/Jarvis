@@ -1,20 +1,29 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import { dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
-  dotnetWinExeArtifactRelative,
+  dotnetProjectBaseName,
   FACTORY_MARKER,
+  projectNameFromRequest,
   GOAL_MARKER,
   PLAN_MARKER,
   REVIEW_MARKER,
-  WRITE_MARKER,
 } from '@jarvis/core';
 import { createHarness, fakeOutcome } from '../controllerHarness.testkit.js';
 import { FakeOllama, type ChatBody, type Reply } from '../models/fakeOllama.testkit.js';
 import type { RunOutcome, RunSpec } from '../runner.js';
-import { codeBlock, createFixtureRepo, writeRequest } from '../task/taskWorkflow.testkit.js';
+import { codeBlock, createFixtureRepo, replyForPlannedFileWrite } from '../task/taskWorkflow.testkit.js';
 
 const base = mkdtempSync(join(tmpdir(), 'jarvis-win-path-'));
 const jarvis = join(base, 'Jarvis');
@@ -30,6 +39,20 @@ interface ScriptFiles {
   writes: Record<string, string>;
 }
 
+function dotnetCoreForRequest(request: string): string {
+  return dotnetProjectBaseName(projectNameFromRequest(request));
+}
+
+function stubPublishExe(spec: RunSpec): void {
+  const slnName = readdirSync(spec.cwd).find((f) => f.endsWith('.sln'));
+  if (!slnName) return;
+  const slnBase = slnName.replace(/\.sln$/i, '');
+  const exeRel = `src/${slnBase}.App/bin/Release/net10.0-windows/win-x64/publish/${slnBase}.App.exe`;
+  const exe = join(spec.cwd, exeRel);
+  mkdirSync(dirname(exe), { recursive: true });
+  writeFileSync(exe, Buffer.alloc(12_000, 0x4d));
+}
+
 function offlineDotnet(sdk: boolean) {
   return (spec: RunSpec, display: string): RunOutcome | null => {
     if (!display.startsWith('dotnet ')) return null;
@@ -40,7 +63,10 @@ function offlineDotnet(sdk: boolean) {
     if (display.startsWith('dotnet restore')) return fakeOutcome(display, 'Restored.');
     if (display.startsWith('dotnet build') || display.startsWith('dotnet test'))
       return fakeOutcome(display, 'Build succeeded.\nPassed!  - Failed: 0, Passed: 3\n');
-    if (display.startsWith('dotnet publish')) return null;
+    if (display.startsWith('dotnet publish')) {
+      stubPublishExe(spec);
+      return fakeOutcome(display, 'Build succeeded.\nMonOutil -> /publish/\n');
+    }
     return null;
   };
 }
@@ -48,8 +74,8 @@ function offlineDotnet(sdk: boolean) {
 function missionScript(files: ScriptFiles): (body: ChatBody) => Reply {
   return (body: ChatBody) => {
     const text = body.messages.find((m) => m.role === 'system')?.content ?? '';
-    const write = writeRequest(body);
-    const writing = text.includes(WRITE_MARKER);
+    const fileReply = replyForPlannedFileWrite(body, files.writes);
+    if (fileReply) return fileReply;
     if (text.includes(PLAN_MARKER))
       return {
         content: JSON.stringify({
@@ -61,7 +87,7 @@ function missionScript(files: ScriptFiles): (body: ChatBody) => Reply {
     if (text.includes(FACTORY_MARKER))
       return {
         content: JSON.stringify({
-          template: 'winforms',
+          template: 'dotnet-winforms',
           name: files.factoryName,
           description: files.factoryName,
         }),
@@ -75,10 +101,6 @@ function missionScript(files: ScriptFiles): (body: ChatBody) => Reply {
         }),
       };
     if (text.includes(REVIEW_MARKER)) return { content: '{"verdict": "ok", "issues": []}' };
-    if (writing && write?.path) {
-      const p = write.path;
-      if (files.writes[p]) return codeBlock(files.writes[p]);
-    }
     return { content: 'Je ne sais pas.' };
   };
 }
@@ -117,10 +139,10 @@ function assertExeAndTests(_projectTitle: string, projectId: string) {
 
 describe('chemin mission bureau .exe (apply + Construire)', () => {
   it('livraison mission : pas de carte apply ni Construire (automatique)', async () => {
-    const title = 'Sans Carte';
-    const core = 'SansCarte';
+    const request = 'Fais-moi une appli Windows : garde Salutation dans Core.';
+    const core = dotnetCoreForRequest(request);
     fake.scripts.set(CODE, missionScript({
-      factoryName: title,
+      factoryName: 'Sans Carte',
       plan: [{ path: `src/${core}.Core/Salutation.cs`, action: 'modifier' }],
       writes: { [`src/${core}.Core/Salutation.cs`]: SALUTATION_CS(core) },
     }));
@@ -132,11 +154,7 @@ describe('chemin mission bureau .exe (apply + Construire)', () => {
       intercept: offlineDotnet(true),
     });
     await h.instance.validate(jarvis);
-    const done = await h.instance.startMission(
-      'new-project',
-      'Fais-moi une appli Windows : garde Salutation dans Core.',
-      true,
-    );
+    const done = await h.instance.startMission('new-project', request, true);
     expect(done.mission?.status, String(done.mission?.summary ?? '')).toBe('finished');
     const applyCards = h.cards.filter((c) => c.toolName === 'dev_apply_task');
     const buildCards = h.cards.filter((c) => c.toolName === 'dev_build_project');
@@ -175,10 +193,11 @@ describe('chemin mission bureau .exe (apply + Construire)', () => {
   }, 180_000);
 
   it('appli .exe : mission → fusion → publish win-x64 sur disque', async () => {
-    const title = 'Compteur Mots';
-    const core = 'CompteurMots';
+    const request =
+      'Crée une application Windows de bureau livrée en .exe : un compteur de mots dans Core, testé par xUnit.';
+    const core = dotnetCoreForRequest(request);
     fake.scripts.set(CODE, missionScript({
-      factoryName: title,
+      factoryName: 'Compteur Mots',
       plan: [
         { path: `src/${core}.Core/Salutation.cs`, action: 'modifier' },
         { path: `src/${core}.Core/WordCounter.cs`, action: 'creer' },
@@ -187,9 +206,9 @@ describe('chemin mission bureau .exe (apply + Construire)', () => {
       writes: {
         [`src/${core}.Core/Salutation.cs`]: SALUTATION_CS(core),
         [`src/${core}.Core/WordCounter.cs`]:
-          'namespace CompteurMots.Core;\npublic sealed class WordCounter { public int Count(string? text) => string.IsNullOrWhiteSpace(text) ? 0 : text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Length; }\n',
+          `namespace ${core}.Core;\npublic sealed class WordCounter { public int Count(string? text) => string.IsNullOrWhiteSpace(text) ? 0 : text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Length; }\n`,
         [`tests/${core}.Tests/WordCounterTests.cs`]:
-          'namespace CompteurMots.Tests;\npublic class WordCounterTests { [Fact] public void Vide() { Assert.Equal(0, new CompteurMots.Core.WordCounter().Count("")); } [Fact] public void Deux() { Assert.Equal(2, new CompteurMots.Core.WordCounter().Count("a b")); } }\n',
+          `namespace ${core}.Tests;\npublic class WordCounterTests { [Fact] public void Vide() { Assert.Equal(0, new ${core}.Core.WordCounter().Count("")); } [Fact] public void Deux() { Assert.Equal(2, new ${core}.Core.WordCounter().Count("a b")); } }\n`,
       },
     }));
     const h = createHarness({
@@ -200,25 +219,22 @@ describe('chemin mission bureau .exe (apply + Construire)', () => {
       intercept: offlineDotnet(true),
     });
     await h.instance.validate(jarvis);
-    const done = await h.instance.startMission(
-      'new-project',
-      'Crée une application Windows de bureau livrée en .exe : un compteur de mots dans Core, testé par xUnit.',
-      true,
-    );
+    const done = await h.instance.startMission('new-project', request, true);
     expect(done.mission?.status, String(done.mission?.summary ?? '')).toBe('finished');
     expect(done.codeTask?.report?.verdict).toBe('success');
     expect(h.cards.some((c) => c.toolName === 'dev_apply_task')).toBe(false);
     expect(h.cards.some((c) => c.toolName === 'dev_build_project')).toBe(false);
     expect(h.ran.some((r) => r.display.includes('dotnet publish'))).toBe(true);
-    assertExeAndTests(title, done.mission!.projectId!);
+    assertExeAndTests('Compteur Mots', done.mission!.projectId!);
     await h.instance.discardTask();
   }, 180_000);
 
   it('deuxième appli .exe simple : chronomètre Core', async () => {
-    const title = 'Chrono Simple';
-    const core = 'ChronoSimple';
+    const request =
+      'Nouvelle appli Windows .exe : un chronomètre simple (ticks) dans Core avec tests.';
+    const core = dotnetCoreForRequest(request);
     fake.scripts.set(CODE, missionScript({
-      factoryName: title,
+      factoryName: 'Chrono Simple',
       plan: [
         { path: `src/${core}.Core/Salutation.cs`, action: 'modifier' },
         { path: `src/${core}.Core/StopwatchCore.cs`, action: 'creer' },
@@ -227,9 +243,9 @@ describe('chemin mission bureau .exe (apply + Construire)', () => {
       writes: {
         [`src/${core}.Core/Salutation.cs`]: SALUTATION_CS(core),
         [`src/${core}.Core/StopwatchCore.cs`]:
-          'namespace ChronoSimple.Core;\npublic sealed class StopwatchCore { private int _ticks; public void Tick() => _ticks++; public int Ticks => _ticks; public void Reset() => _ticks = 0; }\n',
+          `namespace ${core}.Core;\npublic sealed class StopwatchCore { private int _ticks; public void Tick() => _ticks++; public int Ticks => _ticks; public void Reset() => _ticks = 0; }\n`,
         [`tests/${core}.Tests/StopwatchCoreTests.cs`]:
-          'namespace ChronoSimple.Tests;\npublic class StopwatchCoreTests { [Fact] public void Zero() { var s = new ChronoSimple.Core.StopwatchCore(); Assert.Equal(0, s.Ticks); } [Fact] public void Deux() { var s = new ChronoSimple.Core.StopwatchCore(); s.Tick(); s.Tick(); Assert.Equal(2, s.Ticks); } }\n',
+          `namespace ${core}.Tests;\npublic class StopwatchCoreTests { [Fact] public void Zero() { var s = new ${core}.Core.StopwatchCore(); Assert.Equal(0, s.Ticks); } [Fact] public void Deux() { var s = new ${core}.Core.StopwatchCore(); s.Tick(); s.Tick(); Assert.Equal(2, s.Ticks); } }\n`,
       },
     }));
     const h = createHarness({
@@ -240,21 +256,18 @@ describe('chemin mission bureau .exe (apply + Construire)', () => {
       intercept: offlineDotnet(true),
     });
     await h.instance.validate(jarvis);
-    const done = await h.instance.startMission(
-      'new-project',
-      'Nouvelle appli Windows .exe : un chronomètre simple (ticks) dans Core avec tests.',
-      true,
-    );
+    const done = await h.instance.startMission('new-project', request, true);
     expect(done.mission?.status, String(done.mission?.summary ?? '')).toBe('finished');
-    assertExeAndTests(title, done.mission!.projectId!);
+    assertExeAndTests('Chrono Simple', done.mission!.projectId!);
     await h.instance.discardTask();
   }, 180_000);
 
   it('formulation courante sans .exe : « fais-moi une appli Windows » → publish', async () => {
-    const title = 'Lignes Notes';
-    const core = 'LignesNotes';
+    const request =
+      'Fais-moi une appli Windows : une classe dans Core qui compte les lignes d’un texte, avec tests.';
+    const core = dotnetCoreForRequest(request);
     fake.scripts.set(CODE, missionScript({
-      factoryName: title,
+      factoryName: 'Lignes Notes',
       plan: [
         { path: `src/${core}.Core/Salutation.cs`, action: 'modifier' },
         { path: `src/${core}.Core/LineCounter.cs`, action: 'creer' },
@@ -263,9 +276,9 @@ describe('chemin mission bureau .exe (apply + Construire)', () => {
       writes: {
         [`src/${core}.Core/Salutation.cs`]: SALUTATION_CS(core),
         [`src/${core}.Core/LineCounter.cs`]:
-          "namespace LignesNotes.Core;\npublic sealed class LineCounter { public int Count(string? text) => string.IsNullOrEmpty(text) ? 0 : text.Split('\\n').Length; }\n",
+          `namespace ${core}.Core;\npublic sealed class LineCounter { public int Count(string? text) => string.IsNullOrEmpty(text) ? 0 : text.Split('\\n').Length; }\n`,
         [`tests/${core}.Tests/LineCounterTests.cs`]:
-          'namespace LignesNotes.Tests;\npublic class LineCounterTests { [Fact] public void Une() { Assert.Equal(1, new LignesNotes.Core.LineCounter().Count("a")); } [Fact] public void Trois() { Assert.Equal(3, new LignesNotes.Core.LineCounter().Count("a\\nb\\nc")); } }\n',
+          `namespace ${core}.Tests;\npublic class LineCounterTests { [Fact] public void Une() { Assert.Equal(1, new ${core}.Core.LineCounter().Count("a")); } [Fact] public void Trois() { Assert.Equal(3, new ${core}.Core.LineCounter().Count("a\\nb\\nc")); } }\n`,
       },
     }));
     const h = createHarness({
@@ -276,22 +289,18 @@ describe('chemin mission bureau .exe (apply + Construire)', () => {
       intercept: offlineDotnet(true),
     });
     await h.instance.validate(jarvis);
-    const done = await h.instance.startMission(
-      'new-project',
-      'Fais-moi une appli Windows : une classe dans Core qui compte les lignes d’un texte, avec tests.',
-      true,
-    );
+    const done = await h.instance.startMission('new-project', request, true);
     expect(done.mission?.status, String(done.mission?.summary ?? '')).toBe('finished');
     expect(h.cards.some((c) => c.toolName === 'dev_apply_task')).toBe(false);
-    assertExeAndTests(title, done.mission!.projectId!);
+    assertExeAndTests('Lignes Notes', done.mission!.projectId!);
     await h.instance.discardTask();
   }, 180_000);
 
   it('« un programme sur le bureau » → même chemin publish', async () => {
-    const title = 'Taches Jour';
-    const core = 'TachesJour';
+    const request = 'Un programme sur le bureau : addition de deux entiers dans Core, testé.';
+    const core = dotnetCoreForRequest(request);
     fake.scripts.set(CODE, missionScript({
-      factoryName: title,
+      factoryName: 'Taches Jour',
       plan: [
         { path: `src/${core}.Core/Salutation.cs`, action: 'modifier' },
         { path: `src/${core}.Core/TaskTotal.cs`, action: 'creer' },
@@ -300,9 +309,9 @@ describe('chemin mission bureau .exe (apply + Construire)', () => {
       writes: {
         [`src/${core}.Core/Salutation.cs`]: SALUTATION_CS(core),
         [`src/${core}.Core/TaskTotal.cs`]:
-          'namespace TachesJour.Core;\npublic sealed class TaskTotal { public int Add(int a, int b) => a + b; }\n',
+          `namespace ${core}.Core;\npublic sealed class TaskTotal { public int Add(int a, int b) => a + b; }\n`,
         [`tests/${core}.Tests/TaskTotalTests.cs`]:
-          'namespace TachesJour.Tests;\npublic class TaskTotalTests { [Fact] public void Somme() { Assert.Equal(5, new TachesJour.Core.TaskTotal().Add(2, 3)); } }\n',
+          `namespace ${core}.Tests;\npublic class TaskTotalTests { [Fact] public void Somme() { Assert.Equal(5, new ${core}.Core.TaskTotal().Add(2, 3)); } }\n`,
       },
     }));
     const h = createHarness({
@@ -313,14 +322,10 @@ describe('chemin mission bureau .exe (apply + Construire)', () => {
       intercept: offlineDotnet(true),
     });
     await h.instance.validate(jarvis);
-    const done = await h.instance.startMission(
-      'new-project',
-      'Un programme sur le bureau : addition de deux entiers dans Core, testé.',
-      true,
-    );
+    const done = await h.instance.startMission('new-project', request, true);
     expect(done.mission?.status, String(done.mission?.summary ?? '')).toBe('finished');
     expect(h.ran.some((r) => r.display.includes('dotnet publish'))).toBe(true);
-    assertExeAndTests(title, done.mission!.projectId!);
+    assertExeAndTests('Taches Jour', done.mission!.projectId!);
     await h.instance.discardTask();
   }, 180_000);
 });

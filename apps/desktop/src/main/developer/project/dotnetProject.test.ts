@@ -161,9 +161,9 @@ describe('appli Windows (.NET), 0.5.4', () => {
     ).toBe(true);
 
     expect(h.cards.some((c) => c.toolName === 'dev_create_project')).toBe(false);
-    expect(h.cards.find((c) => c.toolName === 'dev_install_sandbox')?.command).toContain(
-      'dotnet restore BloqueurDeSites.sln',
-    );
+    expect(
+      h.ran.some((r) => r.display === 'dotnet restore BloqueurDeSites.sln'),
+    ).toBe(true);
 
     const task = done.codeTask!;
     expect(task.plan?.testCommands).toEqual([
@@ -178,8 +178,7 @@ describe('appli Windows (.NET), 0.5.4', () => {
     expect(task.findings.map((f) => `${f.category}:${f.file}`)).toEqual([
       'system:src/BloqueurDeSites.Core/HostsBlocker.cs',
     ]);
-    const review = h.cards.find((c) => c.toolName === 'dev_review_diff')!;
-    expect(review.findings?.[0]?.reason).toMatch(/faux fichier/);
+    expect(task.findings[0]?.reason).toMatch(/faux fichier/);
 
     const tests = h.ran.filter((r) => r.display === 'dotnet test BloqueurDeSites.sln --no-restore');
     expect(tests.length).toBeGreaterThan(0);
