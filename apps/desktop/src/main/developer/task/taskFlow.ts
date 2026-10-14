@@ -377,8 +377,18 @@ export class TaskRun extends TaskRunBase {
       return this.hooks.fallbackPlan;
     }
     if (signal.aborted) throw new Error('Annulé.');
-    if (first.stoppedBy === 'error' && !first.expired)
+    if (first.stoppedBy === 'error' && !first.expired) {
+      if (this.hooks.fallbackPlan) {
+        const reason = first.error ?? 'erreur du modèle';
+        this.state.planFallback =
+          `plan de secours (gabarit du projet) : le modèle a rendu un appel d’outil inutilisable ou a échoué (${reason.slice(0, 180)})`;
+        this.host.log(
+          `Plan du modèle inutilisable ; plan local du gabarit utilisé. Raison réelle : ${reason}`,
+        );
+        return this.hooks.fallbackPlan;
+      }
       throw new Error(`Le modèle de code n’a pas répondu : ${first.error}`);
+    }
     let problem = first.expired ? `délai dépassé (${limitText(STEP_LIMITS.plan)})` : '';
     if (!first.expired) {
       try {
