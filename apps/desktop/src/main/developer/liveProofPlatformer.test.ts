@@ -14,7 +14,7 @@ let projectsRoot = '';
 let repo = '';
 
 const REQUEST =
-  'Pour thedexios : jeu de plateforme 2D vue de côté sur le gabarit Jarvis — compose un niveau jouable (plateformes, collectable, piège, zone de victoire), formes simples.';
+  'Pour thedexios : jeu de plateforme 2D vue de côté sur le gabarit Jarvis — étends vraiment level.ts avec au moins six plateformes à franchir, un collectable, un piège et une zone de victoire ; formes simples.';
 
 function run(cwd: string, cmd: string, args: string[]) {
   return execFileSync(cmd, args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
@@ -66,6 +66,7 @@ describe.runIf(LIVE)('preuve live mission plateforme (Ollama réel)', () => {
       const level = readFileSync(join(dir, 'src', 'level.ts'), 'utf8');
       expect(level.length).toBeGreaterThan(80);
       expect(level).toMatch(/platform|collect|hazard|goal|spawn/i);
+      expect((level.match(/"x"|\bx\s*:/g) ?? []).length).toBeGreaterThanOrEqual(10);
       run(dir, 'npm', ['install', '--no-audit', '--no-fund', '--ignore-scripts']);
       const testOut = run(dir, 'npm', ['test']);
       expect(testOut).toMatch(/passed|Tests/i);

@@ -1128,10 +1128,12 @@ export class TaskRun extends TaskRunBase {
     await this.checkpoint('Modification (plan validé)', signal);
     if (state.diff.length === 0) {
       if (this.hooks.fileByFile) {
-        this.host.log(
-          'Aucune écriture validée du modèle : on lance les tests sur le gabarit actuel.',
-        );
-        step('edit', 'done', 'gabarit inchangé (tests à suivre)');
+        const reason =
+          'Le modèle n’a produit aucune modification : le gabarit seul ne prouve pas que la demande est livrée.';
+        this.host.log(reason);
+        step('edit', 'failed', reason);
+        this.hooks.onPhase?.('edit', 'failed', reason);
+        throw new TaskStopped(this.finish(step, 'failed', `Échec : ${reason}`));
       } else {
         step('edit', 'failed', 'aucune modification');
         this.hooks.onPhase?.('edit', 'failed', 'aucune modification');
