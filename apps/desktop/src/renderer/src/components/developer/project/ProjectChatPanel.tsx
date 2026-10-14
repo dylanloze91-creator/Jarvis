@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import type { DeveloperApi, DeveloperState, ProjectView } from '../../../../../shared/developerIpc';
 import { DiffView } from '../task/DiffView';
 import { TestResults } from '../task/TestResults';
+import { SupervisorAgentList } from '../mission/SupervisorAgentList';
 
 type Act = (action: (api: DeveloperApi) => Promise<DeveloperState | void>) => void;
 
@@ -68,6 +69,9 @@ export function ProjectChatPanel({
         data-project-chat-simple={project.id}
         data-unified-surface={unifiedSurface ? 'yes' : undefined}
       >
+        {state.mission?.projectId === project.id ? (
+          <SupervisorAgentList agents={state.mission.agents ?? []} />
+        ) : null}
         {(chat?.activity?.length ?? 0) > 0 ? (
           <div
             className="rounded-xl border border-white/10 bg-black/25 px-3 py-2 text-[12px] text-slate-300"

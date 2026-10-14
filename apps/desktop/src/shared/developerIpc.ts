@@ -86,6 +86,8 @@ export interface CodeTaskState {
   planApproved: Array<{ tool: string; target: string; at: number }>;
   asked: number;
   report: { markdown: string; verdict: 'success' | 'failed' | 'stopped' } | null;
+  /** Cause technique réelle si la tâche s'arrête avant de pouvoir produire un rapport. */
+  failureReason?: string;
   /** Revue du diff par le REVIEWER d'une mission (0.5.2). */
   review?: {
     summary: string;

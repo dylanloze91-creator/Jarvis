@@ -3,6 +3,7 @@ import type { MissionGate } from './difficulty.js';
 import type { CheckedProposal } from './improve.js';
 import type { MissionLearning } from '../knowledge/learning.js';
 import type { GoalOutput } from './specialistSchemas.js';
+import type { MissionAgentState, SupervisorPlan } from './supervisor.js';
 
 export type MissionStepStatus = 'pending' | 'running' | 'done' | 'failed' | 'skipped' | 'waiting';
 
@@ -60,6 +61,10 @@ export interface MissionState {
   coderOverride?: { model: string; reason: string };
   /** Décisions mémorisées du projet injectées dans les prompts. */
   projectDecisions?: string[];
+  /** Plan produit par l'IA Superviseur pour cette demande. */
+  supervisor?: SupervisorPlan;
+  /** Agents créés à la demande et suivis en direct dans le chat. */
+  agents?: MissionAgentState[];
 }
 
 export interface MissionSummary {

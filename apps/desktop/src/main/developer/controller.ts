@@ -330,6 +330,7 @@ export class DeveloperController {
           return this.projects.build(projectId, { autoConfirm: true });
         },
         deliverDesktopShortcut: async (project, _request) => {
+          const node = project.template === 'web-game' ? await this.environmentNode() : null;
           const shortcut = await createProjectDesktopShortcut({
             projectId: project.id,
             projectName: project.name,
@@ -338,6 +339,7 @@ export class DeveloperController {
             platform: deps.platform,
             home: deps.home,
             run: this.run,
+            ...(node ? { node } : {}),
             jarvisExe: app.getPath('exe'),
           });
           return shortcut?.label ?? null;

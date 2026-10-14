@@ -177,7 +177,11 @@ export function buildMissionModelPlan(
     plan.set(role, route);
   }
   if (missionUsesTask(kind)) {
-    const missionCoder = pickMissionCoderModel(installed, realBenches);
+    const selectedCoder = developer.codeModel.trim();
+    const missionCoder =
+      selectedCoder && installed.has(selectedCoder)
+        ? selectedCoder
+        : pickMissionCoderModel(installed, realBenches);
     const benchPick =
       missionCoder &&
       realBenches?.some((b) => {
@@ -188,12 +192,15 @@ export function buildMissionModelPlan(
     const catalogPick =
       missionCoder &&
       (MISSION_CODER_PREFER as readonly string[]).includes(missionCoder);
-    if (missionCoder && (benchPick || catalogPick)) {
+    const explicitPick = Boolean(selectedCoder && missionCoder === selectedCoder);
+    if (missionCoder && (explicitPick || benchPick || catalogPick)) {
       const shared: RoleModelRoute = {
         role: 'CODER',
         model: missionCoder,
         reason: 'code-model',
-        logLine: `Codeur de mission : « ${missionCoder} » (un seul modèle chargé pour écrire, corriger et relire).`,
+        logLine: explicitPick
+          ? `Codeur de mission : modèle choisi « ${missionCoder} » respecté (un seul modèle chargé à la fois).`
+          : `Codeur de mission : « ${missionCoder} » (un seul modèle chargé pour écrire, corriger et relire).`,
       };
       plan.set('CODER', shared);
       if (plan.has('REVIEWER')) plan.set('REVIEWER', { ...shared, role: 'REVIEWER' });

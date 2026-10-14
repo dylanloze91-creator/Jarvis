@@ -46,6 +46,12 @@ export async function verifyWebGameRuntime(
   win.webContents.on('console-message', (_e, _level, message) => {
     if (/error|failed|blocked/i.test(message)) errors.push(message.slice(0, 240));
   });
+  win.webContents.on('did-fail-load', (_event, code, description) => {
+    errors.push(`Chargement Electron échoué (${code}) : ${description}`);
+  });
+  win.webContents.on('render-process-gone', (_event, details) => {
+    errors.push(`Le renderer Electron s’est arrêté : ${details.reason}.`);
+  });
   try {
     await Promise.race([
       win.loadURL(server.url),
@@ -53,25 +59,32 @@ export async function verifyWebGameRuntime(
         setTimeout(() => reject(new Error(`Chargement > ${timeoutMs} ms`)), timeoutMs),
       ),
     ]);
-    await new Promise((r) => setTimeout(r, 800));
-    const blank = await win.webContents.executeJavaScript(
-      `(() => {
+    const visualDeadline = Date.now() + Math.min(8_000, timeoutMs);
+    let visual = 'loading';
+    while (Date.now() < visualDeadline && visual === 'loading' && errors.length === 0) {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      visual = await win.webContents.executeJavaScript(
+        `(() => {
         const c = document.querySelector('canvas');
-        if (!c) return 'no-canvas';
+        if (!c || c.width < 2 || c.height < 2) return 'loading';
         const ctx = c.getContext('2d');
         if (!ctx) return 'no-ctx';
-        const w = Math.min(32, c.width), h = Math.min(32, c.height);
+        const w = c.width, h = c.height;
         const d = ctx.getImageData(0, 0, w, h).data;
+        if (!d.length) return 'loading';
         const first = d.slice(0, 4).join(',');
         for (let i = 4; i < d.length; i += 4) if (d.slice(i, i + 4).join(',') !== first) return 'ok';
-        return 'blank-canvas';
+        return document.readyState === 'complete' ? 'uniform-canvas' : 'loading';
       })()`,
-    );
-    if (blank === 'blank-canvas' || blank === 'no-canvas') {
+      );
+    }
+    if (visual !== 'ok') {
       errors.push(
-        blank === 'no-canvas'
-          ? 'Aucun canvas détecté après chargement.'
-          : 'Canvas uniforme (écran noir probable).',
+        visual === 'no-ctx'
+          ? 'Canvas sans contexte 2D après chargement.'
+          : visual === 'uniform-canvas'
+            ? 'Canvas entier uniforme après 8 secondes (écran noir probable).'
+            : 'Aucun canvas jouable détecté après 8 secondes.',
       );
     }
   } catch (error) {

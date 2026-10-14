@@ -21,6 +21,7 @@ import { ProposalList } from './ProposalList';
 import { MissionGateCard } from './MissionGateCard';
 import { MissionLearningCard } from './MissionLearningCard';
 import { SpecialistRow } from './SpecialistRow';
+import { SupervisorAgentList } from './SupervisorAgentList';
 
 type Act = (action: (api: DeveloperApi) => Promise<DeveloperState | void>) => void;
 
@@ -230,6 +231,7 @@ export function MissionPanel({
                 : ''}
             </p>
           ) : null}
+          <SupervisorAgentList agents={mission.agents ?? []} />
           {mission.status === 'waiting-answers' && mission.goal ? (
             <div className="flex flex-col gap-2 rounded-xl border border-amber-400/25 bg-amber-400/10 px-3.5 py-3">
               {mission.goal.questions.map((question, index) => (

@@ -7,6 +7,7 @@ import { GIT_SAFE } from '../tools/common.js';
 import type { RunOutcome, Runner } from '../runner.js';
 import { JARVIS_GIT_IDENTITY, isInside } from '../task/sandbox.js';
 import type { NodeTools } from '../task/suites.js';
+import { windowsLockMessage } from '../platform/windowsLockError.js';
 
 export const FACTORY_NPM_ARGS = ['install', '--ignore-scripts', '--no-audit', '--no-fund'];
 export const FIRST_COMMIT_MESSAGE = 'Projet créé par Jarvis Développeur';
@@ -57,9 +58,10 @@ export async function writeProjectFiles(dir: string, files: TemplateFile[]): Pro
   }
 }
 
-function failed(outcome: RunOutcome, what: string): FactoryError {
+function failed(outcome: RunOutcome, what: string, target?: string): FactoryError {
   const detail = (outcome.error ?? outcome.stderr.trim()) || outcome.stdout.trim();
-  return new FactoryError(`${what} a échoué : ${detail.split('\n').slice(-4).join(' ')}`);
+  const short = detail.split('\n').slice(-4).join(' ');
+  return new FactoryError(windowsLockMessage(short, target) ?? `${what} a échoué : ${short}`);
 }
 
 /** `npm install` sans script d'installation : crée package-lock.json (réseau, confirmé avant). */
@@ -81,7 +83,7 @@ export async function installProject(
     onLine: options.onLine,
   });
   if (outcome.cancelled) throw new FactoryError('Installation annulée.');
-  if (outcome.code !== 0) throw failed(outcome, 'npm install');
+  if (outcome.code !== 0) throw failed(outcome, 'npm install', dir);
   if (!existsSync(join(dir, 'package-lock.json')))
     throw new FactoryError('npm install n’a pas créé package-lock.json.');
 }
@@ -106,7 +108,7 @@ export async function restoreDotnetProject(
   });
   if (outcome.cancelled) throw new FactoryError('Restauration annulée.');
   if (outcome.error) throw new FactoryError(`dotnet introuvable : ${outcome.error}`);
-  if (outcome.code !== 0) throw failed(outcome, 'dotnet restore');
+  if (outcome.code !== 0) throw failed(outcome, 'dotnet restore', dir);
 }
 
 /** Dépôt local sur `main`, premier commit signé « Jarvis Développeur ». Aucun dépôt distant. */
@@ -135,7 +137,7 @@ export async function initProjectRepo(
   ];
   for (const [args, display] of steps) {
     const outcome = await git(args, display);
-    if (outcome.code !== 0) throw failed(outcome, display);
+    if (outcome.code !== 0) throw failed(outcome, display, dir);
   }
   const head = await git(['rev-parse', 'HEAD'], 'git rev-parse HEAD');
   if (head.code !== 0) throw failed(head, 'git rev-parse');

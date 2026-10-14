@@ -109,6 +109,26 @@ const google = createGoogleRuntime({
 });
 let overlay: OverlayWindow | null = null;
 let googleStarted = false;
+let developerIpc: ReturnType<typeof registerDeveloperIpc> | null = null;
+
+function playProjectArg(argv: readonly string[]): string | null {
+  const value = argv.find((arg) => arg.startsWith('--jarvis-play-project='));
+  const projectId = value?.slice('--jarvis-play-project='.length).trim() ?? '';
+  return projectId || null;
+}
+
+let pendingPlayProjectId = playProjectArg(process.argv);
+
+function openPlayProject(projectId: string | null): void {
+  if (!projectId) return;
+  const controller = developerIpc?.ensure();
+  if (!controller) {
+    pendingPlayProjectId = projectId;
+    return;
+  }
+  pendingPlayProjectId = null;
+  void controller.playProject(projectId);
+}
 
 function buildTools() {
   return createToolManager({
@@ -167,7 +187,10 @@ const session = new ChatSession({
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
-  app.on('second-instance', () => overlay?.show());
+  app.on('second-instance', (_event, argv) => {
+    overlay?.show();
+    openPlayProject(playProjectArg(argv));
+  });
   void bootstrap().catch((error: unknown) => {
     console.error(error);
     overlay?.show();
@@ -494,7 +517,7 @@ function registerIpc(): void {
   ipcMain.handle(IpcChannel.updateInstall, () => updateManager.quitAndInstall());
 
   // Jarvis Développeur : session séparée du chat, créée seulement si le mode est activé.
-  const developerIpc = registerDeveloperIpc(ipcMain, {
+  developerIpc = registerDeveloperIpc(ipcMain, {
     getSettings: () => settings,
     appVersion: () => app.getVersion(),
     platform: process.platform,
@@ -508,11 +531,7 @@ function registerIpc(): void {
     userDataPath: () => app.getPath('userData'),
     chat: chatActivity,
   });
-  const playArg = process.argv.find((a) => a.startsWith('--jarvis-play-project='));
-  if (playArg) {
-    const projectId = playArg.slice('--jarvis-play-project='.length).trim();
-    if (projectId) void developerIpc.current()?.playProject(projectId);
-  }
+  openPlayProject(pendingPlayProjectId);
 }
 
 function sanitizeGoogleDraft(draft: unknown): GoogleConfigDraft | undefined {

@@ -24,7 +24,7 @@ function text(value: unknown): string {
 export function registerDeveloperIpc(
   ipcMain: IpcMain,
   deps: DeveloperIpcDeps,
-): { current(): DeveloperController | null } {
+): { current(): DeveloperController | null; ensure(): DeveloperController | null } {
   let controller: DeveloperController | null = null;
   const enabled = (): boolean => deps.getSettings().developer.enabled;
   const get = (): DeveloperController | null => {
@@ -272,5 +272,5 @@ export function registerDeveloperIpc(
         controller?.respondConfirmation(requestId, approved === true);
     },
   );
-  return { current: () => controller };
+  return { current: () => controller, ensure: get };
 }

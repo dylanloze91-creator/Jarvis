@@ -109,6 +109,14 @@ import {
   type ProjectProfile,
   type ProjectTemplateId,
   parseNvidiaSmi,
+  fallbackSupervisorPlan,
+  supervisorPlanSchema,
+  supervisorPrompt,
+  supervisorSystem,
+  type MissionAgentState,
+  type MissionAgentStatus,
+  type SupervisorAgentRole,
+  type SupervisorPlan,
 } from '@jarvis/core';
 import type {
   CodeTaskState,
@@ -350,6 +358,103 @@ export class MissionWorkflow {
   private patch(id: string, patch: Partial<MissionStep>): void {
     if (this.current) patchStep(this.current, id, patch, this.now);
     this.persistLater();
+  }
+
+  private agent(
+    id: string,
+    patch: Partial<MissionAgentState> & { status?: MissionAgentStatus },
+  ): void {
+    const mission = this.current;
+    if (!mission) return;
+    mission.agents ??= [];
+    const found = mission.agents.find((agent) => agent.id === id);
+    if (found) Object.assign(found, patch);
+    if (patch.status === 'running' && found && found.startedAt === undefined) {
+      found.startedAt = this.now;
+    }
+    if (
+      found &&
+      (patch.status === 'done' || patch.status === 'failed') &&
+      found.finishedAt === undefined
+    ) {
+      found.finishedAt = this.now;
+    }
+    mission.updatedAt = this.now;
+    this.persistLater();
+  }
+
+  private installSupervisorPlan(plan: SupervisorPlan, model: string): void {
+    const mission = this.current!;
+    mission.supervisor = plan;
+    const supervisor = mission.agents?.find((agent) => agent.id === 'supervisor');
+    mission.agents = [
+      supervisor ?? {
+        id: 'supervisor',
+        name: 'Superviseur',
+        role: 'architecture',
+        brief: 'Découper la demande et contrôler chaque résultat.',
+        context: mission.request,
+        modelRequired: true,
+        dependsOn: [],
+        status: 'done',
+        model,
+      },
+      ...plan.tasks.map(
+        (task): MissionAgentState => ({
+          ...task,
+          status: 'pending',
+          ...(task.modelRequired ? { model } : {}),
+        }),
+      ),
+    ];
+    this.persistLater();
+  }
+
+  private agentByRole(role: SupervisorAgentRole): MissionAgentState | undefined {
+    return this.current?.agents?.find((agent) => agent.role === role && agent.id !== 'supervisor');
+  }
+
+  private setAgentRole(
+    role: SupervisorAgentRole,
+    status: MissionAgentStatus,
+    detail?: string,
+    extra: Partial<MissionAgentState> = {},
+  ): void {
+    const found = this.current?.agents?.find(
+      (agent) =>
+        agent.role === role &&
+        agent.id !== 'supervisor' &&
+        (status === 'running' ? agent.status === 'pending' : agent.status === 'running'),
+    ) ?? this.agentByRole(role);
+    if (!found) return;
+    this.agent(found.id, { status, ...(detail ? { detail } : {}), ...extra });
+  }
+
+  private ensureFixAgent(detail: string): MissionAgentState {
+    const mission = this.current!;
+    const running = mission.agents?.find(
+      (agent) => agent.role === 'correction' && agent.status === 'running',
+    );
+    if (running) return running;
+    const count = (mission.agents ?? []).filter((agent) => agent.role === 'correction').length + 1;
+    const coder = this.modelFor('CODER');
+    const agent: MissionAgentState = {
+      id: `fix-${count}`,
+      name: `Correcteur ${count}`,
+      role: 'correction',
+      brief: 'Lire l’erreur réelle, corriger sa cause et relancer les vérifications.',
+      context: detail,
+      modelRequired: true,
+      dependsOn: [this.agentByRole('test')?.id ?? 'code'],
+      status: 'running',
+      model: coder,
+      detail,
+      startedAt: this.now,
+    };
+    mission.agents ??= [];
+    mission.agents.push(agent);
+    this.persistLater();
+    return agent;
   }
 
   /** Un seul modèle Ollama chargé : tout autre modèle en cours est libéré avant le suivant. */
@@ -644,6 +749,51 @@ export class MissionWorkflow {
         if (mission.kind === 'new-project') {
           const reuseId =
             mission.projectId !== NEW_PROJECT_SCOPE ? mission.projectId : undefined;
+          const supervisorModel = this.modelFor('CODER');
+          mission.agents = [
+            {
+              id: 'supervisor',
+              name: 'Superviseur',
+              role: 'architecture',
+              brief: 'Lire l’ordre, créer les agents nécessaires et contrôler leurs résultats.',
+              context: mission.request,
+              modelRequired: true,
+              dependsOn: [],
+              status: 'running',
+              model: supervisorModel,
+              startedAt: this.now,
+            },
+          ];
+          this.deps.onMissionChatLine?.(
+            `▶ Superviseur (${supervisorModel}) — découpe la demande en agents`,
+          );
+          const supervisorPromise = (async (): Promise<SupervisorPlan> => {
+            try {
+              const run = await this.specialist(
+                'supervisor',
+                'CODER',
+                {
+                  system: supervisorSystem(),
+                  prompt: supervisorPrompt(mission.request),
+                  schema: supervisorPlanSchema,
+                  limit: STEP_LIMITS.goal,
+                },
+                signal,
+                homedir(),
+              );
+              return run.output;
+            } catch (error) {
+              if (!(error instanceof SpecialistError) || signal.aborted) throw error;
+              const fallback = fallbackSupervisorPlan(mission.request);
+              this.patch('supervisor', {
+                status: 'done',
+                output: fallback,
+                detail: `plan local de secours : ${error.message}`,
+                error: undefined,
+              });
+              return fallback;
+            }
+          })();
           this.patch('scaffold', { status: 'running', detail: 'dossier du projet' });
           step('scaffold', 'running');
           this.deps.onMissionChatLine?.(
@@ -672,7 +822,20 @@ export class MissionWorkflow {
             );
             return null;
           })();
-          const [scaffoldOutcome, webSummary] = await Promise.all([scaffoldPromise, webPromise]);
+          const [scaffoldOutcome, webSummary, supervisorPlan] = await Promise.all([
+            scaffoldPromise,
+            webPromise,
+            supervisorPromise,
+          ]);
+          this.installSupervisorPlan(supervisorPlan, supervisorModel);
+          this.agent('supervisor', {
+            status: 'done',
+            detail: `${supervisorPlan.tasks.length} agent(s) créé(s) selon la demande`,
+            output: supervisorPlan,
+          });
+          this.deps.onMissionChatLine?.(
+            `✓ Superviseur — ${supervisorPlan.tasks.length} agent(s) créés`,
+          );
           if (typeof scaffoldOutcome === 'string') {
             this.deps.onMissionChatLine?.(developerAgentFinished('preparer', scaffoldOutcome));
             this.patch('scaffold', { status: 'failed', detail: scaffoldOutcome });
@@ -692,6 +855,7 @@ export class MissionWorkflow {
             ),
           );
           this.patch('scaffold', { status: 'done', detail: scaffoldOutcome.path });
+          this.setAgentRole('préparation', 'done', scaffoldOutcome.path);
           step('scaffold', 'done', scaffoldOutcome.path);
           if (webSummary) {
             this.patch('web-research', { status: 'done', detail: webSummary.chatLine.slice(0, 160) });
@@ -700,9 +864,15 @@ export class MissionWorkflow {
               0,
               24_000,
             );
+            this.setAgentRole('recherche', 'done', webSummary.chatLine.slice(0, 200));
           } else {
             this.patch('web-research', { status: 'skipped', detail: 'recherche web indisponible' });
             step('web-research', 'done', 'sans résultat exploitable');
+            this.setAgentRole(
+              'recherche',
+              'done',
+              'Aucune source web exploitable ; poursuite avec les connaissances locales.',
+            );
           }
           await this.persist();
         }
@@ -979,6 +1149,7 @@ export class MissionWorkflow {
             };
           } else {
             step('design', 'running');
+            this.setAgentRole('architecture', 'running', 'choisit le gabarit et les modules');
             let chosen: FactoryOutput;
             let note = '';
             const fastDesign = mission.kind === 'new-project' && mission.skipQuestions;
@@ -1047,6 +1218,12 @@ export class MissionWorkflow {
                 'done',
                 `${PROJECT_TEMPLATES[chosen.template].label} · ${chosen.name}${note}`,
               );
+            this.setAgentRole(
+              'architecture',
+              'done',
+              `${PROJECT_TEMPLATES[chosen.template].label} · ${chosen.name}`,
+              { output: chosen },
+            );
             input = chosen;
           }
           result.template = input.template;
@@ -1119,6 +1296,14 @@ export class MissionWorkflow {
     try {
     const coder = this.modelFor('CODER');
     await this.switchModel(coder);
+    const codeAgents = (mission.agents ?? []).filter((agent) => agent.role === 'code');
+    for (const agent of codeAgents) {
+      this.agent(agent.id, {
+        status: 'running',
+        model: coder,
+        detail: agent.brief,
+      });
+    }
     this.deps.onMissionChatLine?.(developerAgentStarted('codeur', 'écrit le code et adapte les tests'));
     const repoMap = await this.repoMapOutline(project.root);
     const context = [
@@ -1128,6 +1313,10 @@ export class MissionWorkflow {
       `Projet neuf, créé depuis le gabarit « ${template ? PROJECT_TEMPLATES[template].label : '?'} » : lis ses fichiers, écris le programme demandé et adapte les tests (gabarit neutre pour web-game).`,
       ...(template && TEMPLATE_GUIDES[template] ? [TEMPLATE_GUIDES[template]] : []),
       ...(design ? [skillTaskContext(design, research)] : []),
+      ...codeAgents.map(
+        (agent) =>
+          `Agent ${agent.name} — brief : ${agent.brief}\nContexte propre : ${agent.context}`,
+      ),
     ].join('\n');
     const fallbackPlan = template ? templatePlan(template, mission.request, project.name) : null;
     await this.host.startTask(mission.request, {
@@ -1173,6 +1362,13 @@ export class MissionWorkflow {
       }
       if (merged) {
         mission.summary = `Livré : ${task?.diff.length ?? 0} fichier(s) fusionnés dans ${project.root}.`;
+        for (const agent of codeAgents) {
+          this.agent(agent.id, {
+            status: 'done',
+            detail: `${task?.diff.length ?? 0} fichier(s) livré(s)`,
+            files: task?.diff.map((file) => file.path) ?? [],
+          });
+        }
       } else {
         mission.verdict = 'failed';
         mission.status = 'failed';
@@ -1184,15 +1380,32 @@ export class MissionWorkflow {
         developerAgentFinished('codeur', mission.summary?.slice(0, 120) ?? 'code livré'),
       );
     } else if (mission.verdict === 'failed' || mission.verdict === 'stopped') {
+      for (const agent of codeAgents.filter((agent) => agent.status !== 'done')) {
+        this.agent(agent.id, {
+          status: 'failed',
+          error: mission.summary?.slice(0, 300) ?? 'mission interrompue',
+        });
+      }
       this.deps.onMissionChatLine?.(
         developerAgentFailed('codeur', mission.summary?.slice(0, 160) ?? 'mission interrompue'),
       );
     }
     if (mission.verdict === 'success' && merged && project) {
       this.deps.onMissionFocusProject?.(project.id);
+      this.setAgentRole('package', 'running', 'prépare le livrable et le raccourci Bureau');
       await this.deliverWindowsExeIfRequested(template ?? undefined, mission.request, mission.projectId!);
       const shortcut = await this.host.deliverDesktopShortcut?.(project, mission.request);
       if (shortcut) this.deps.onMissionChatLine?.(`Raccourci bureau : ${shortcut}`);
+      this.setAgentRole(
+        'package',
+        shortcut ? 'done' : 'failed',
+        shortcut ? `Raccourci Bureau : ${shortcut}` : 'Aucun raccourci n’a pu être créé.',
+        shortcut ? {} : { error: 'Le raccourci Bureau n’a pas été créé.' },
+      );
+      const doneAgents = (mission.agents ?? []).filter((agent) => agent.status === 'done').length;
+      const failedAgents = (mission.agents ?? []).filter((agent) => agent.status === 'failed').length;
+      mission.summary = `Superviseur : ${doneAgents} agent(s) terminés${failedAgents ? `, ${failedAgents} en échec` : ''}. ${mission.summary ?? ''}`.trim();
+      this.deps.onMissionChatLine?.(mission.summary);
     }
     return this.host.emit();
     } catch (error) {
@@ -1374,6 +1587,33 @@ export class MissionWorkflow {
     const onPhase: TaskHooks['onPhase'] = (phase, status, detail, extra) => {
       const mission = this.current;
       if (!mission) return;
+      if (phase === 'test') {
+        if (status === 'running') {
+          this.setAgentRole('test', 'running', detail ?? 'lance les vérifications réelles');
+        } else if (status === 'done') {
+          this.setAgentRole('test', 'done', detail ?? 'tests et lancement réussis');
+        } else {
+          this.setAgentRole('test', 'failed', detail ?? 'vérification en échec', {
+            error: detail ?? 'vérification en échec',
+          });
+        }
+      }
+      if (phase === 'diagnose' && status === 'running') {
+        this.ensureFixAgent(detail ?? 'lit la sortie d’échec réelle');
+      }
+      if (phase === 'fix' && status !== 'running') {
+        const fixer = mission.agents?.find(
+          (agent) => agent.role === 'correction' && agent.status === 'running',
+        );
+        if (fixer) {
+          this.agent(fixer.id, {
+            status: status === 'done' ? 'done' : 'failed',
+            detail,
+            ...(status === 'failed' ? { error: detail ?? 'correction en échec' } : {}),
+            ...(extra?.files ? { files: extra.files } : {}),
+          });
+        }
+      }
       if (mission.kind === 'new-project' && phase === 'test') {
         if (status === 'running') {
           this.deps.onMissionChatLine?.(
@@ -1528,6 +1768,7 @@ export class MissionWorkflow {
       verdict !== 'success' &&
       task?.status !== 'refused';
     const lastFail =
+      task?.failureReason ??
       task?.runs.at(-1)?.newFailures?.[0] ??
       task?.report?.markdown?.split('\n').find((l) => /échec|fail|error/i.test(l)) ??
       task?.repeatedFailure?.failures?.[0];

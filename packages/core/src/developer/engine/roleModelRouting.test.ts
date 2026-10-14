@@ -72,4 +72,17 @@ describe('routeRoleToInstalledModel', () => {
     expect(plan.get('CODER')?.model).toBe('code:main');
     expect(plan.get('REVIEWER')?.model).toBe('code:main');
   });
+
+  it('respecte le 14B choisi même si un 35B préféré est installé', () => {
+    const models = new Set(['qwen2.5-coder:14b', 'qwen3.6:35b-a3b-coding']);
+    const plan = buildMissionModelPlan(
+      'new-project',
+      { codeModel: 'qwen2.5-coder:14b' },
+      models,
+    );
+    expect(plan instanceof Map).toBe(true);
+    if (!(plan instanceof Map)) return;
+    expect(plan.get('CODER')?.model).toBe('qwen2.5-coder:14b');
+    expect(plan.get('CODER')?.logLine).toContain('choisi');
+  });
 });

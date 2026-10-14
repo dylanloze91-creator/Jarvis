@@ -9,6 +9,7 @@ import {
 } from '@jarvis/core';
 import type { Runner } from '../runner.js';
 import { runProcess } from '../runner.js';
+import type { NodeTools } from '../task/suites.js';
 
 export interface DesktopShortcutResult {
   label: string;
@@ -17,8 +18,18 @@ export interface DesktopShortcutResult {
 
 function desktopDir(home: string, platform: NodeJS.Platform): string {
   if (platform === 'win32') {
-    const oneDrive = process.env.OneDrive;
-    if (oneDrive && existsSync(join(oneDrive, 'Desktop'))) return join(oneDrive, 'Desktop');
+    const roots = [
+      process.env.OneDrive,
+      process.env.OneDriveConsumer,
+      process.env.OneDriveCommercial,
+      home,
+    ].filter((value): value is string => Boolean(value));
+    for (const root of roots) {
+      for (const name of ['Desktop', 'Bureau']) {
+        const candidate = join(root, name);
+        if (existsSync(candidate)) return candidate;
+      }
+    }
     return join(home, 'Desktop');
   }
   return join(home, 'Desktop');
@@ -47,6 +58,7 @@ export async function createProjectDesktopShortcut(options: {
   platform: NodeJS.Platform;
   home: string;
   run?: Runner;
+  node?: NodeTools;
   jarvisExe: string;
 }): Promise<DesktopShortcutResult | null> {
   const label = defaultDesktopShortcutLabel(options.projectName);
@@ -55,9 +67,13 @@ export async function createProjectDesktopShortcut(options: {
 
   if (options.template === 'web-game') {
     const runner = options.run ?? runProcess;
+    const program = options.node?.nodePath ?? (options.platform === 'win32' ? 'npm.cmd' : 'npm');
+    const args = options.node
+      ? [options.node.npmCli, 'run', 'build']
+      : ['run', 'build'];
     const build = await runner({
-      program: 'npm',
-      args: ['run', 'build'],
+      program,
+      args,
       cwd: root,
       display: 'npm run build',
       timeoutMs: 10 * 60_000,

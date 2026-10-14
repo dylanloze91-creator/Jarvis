@@ -1,6 +1,7 @@
 import { GIT_SAFE } from '../tools/common.js';
 import type { RunOutcome, Runner } from '../runner.js';
 import { JARVIS_GIT_IDENTITY } from './sandbox.js';
+import { windowsLockMessage } from '../platform/windowsLockError.js';
 
 export class ApplyError extends Error {
   constructor(message: string) {
@@ -23,10 +24,11 @@ function git(run: Runner, root: string, args: string[], display: string, signal?
 }
 
 function detail(outcome: RunOutcome): string {
-  return ((outcome.error ?? outcome.stderr.trim()) || outcome.stdout.trim())
+  const short = ((outcome.error ?? outcome.stderr.trim()) || outcome.stdout.trim())
     .split('\n')
     .slice(-6)
     .join(' ');
+  return windowsLockMessage(short, outcome.display) ?? short;
 }
 
 export interface ApplyTarget {

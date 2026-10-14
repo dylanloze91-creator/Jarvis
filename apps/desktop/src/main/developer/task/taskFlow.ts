@@ -83,6 +83,7 @@ export const TASK_STEPS = [
   { id: 'edit', label: 'Modification' },
   { id: 'scan', label: 'Revue du diff avant les tests' },
   { id: 'test', label: 'Tests' },
+  { id: 'launch', label: 'Lancement réel du projet' },
   { id: 'report', label: 'Rapport' },
 ] as const;
 
@@ -351,18 +352,30 @@ export class TaskRun extends TaskRunBase {
     pause: () => Promise<void>,
   ): Promise<TaskPlan> {
     const tools = this.host.readTools(this.repo.root);
-    const first = await this.limitedRun(
-      code,
-      {
-        tools,
-        system: planSystemPrompt(this.profile, this.manualText()),
-        prompt: this.planRequest(),
-        maxRounds: 10,
-        beforeRound: pause,
-      },
-      STEP_LIMITS.plan,
-      signal,
-    );
+    let first: Awaited<ReturnType<CodeAIProvider['runTools']>> & { expired: boolean };
+    try {
+      first = await this.limitedRun(
+        code,
+        {
+          tools,
+          system: planSystemPrompt(this.profile, this.manualText()),
+          prompt: this.planRequest(),
+          maxRounds: 10,
+          beforeRound: pause,
+        },
+        STEP_LIMITS.plan,
+        signal,
+      );
+    } catch (error) {
+      if (!this.hooks.fallbackPlan || signal.aborted) throw error;
+      const reason = error instanceof Error ? error.message : String(error);
+      this.state.planFallback =
+        `plan de secours (gabarit du projet) : le modèle a rendu un appel d’outil inutilisable ou a échoué (${reason.slice(0, 180)})`;
+      this.host.log(
+        `Plan du modèle inutilisable ; plan local du gabarit utilisé. Raison réelle : ${reason}`,
+      );
+      return this.hooks.fallbackPlan;
+    }
     if (signal.aborted) throw new Error('Annulé.');
     if (first.stoppedBy === 'error' && !first.expired)
       throw new Error(`Le modèle de code n’a pas répondu : ${first.error}`);
@@ -805,6 +818,13 @@ export class TaskRun extends TaskRunBase {
     const rescue = await this.testRun('Repli gabarit neutre', 'template-rescue', step, signal, pause);
     if (!rescue.ok) return run;
     const reviewed = await this.reviewGate(rescue, signal);
+    await this.refreshDiff(signal);
+    if (this.state.diff.length === 0) {
+      this.host.log(
+        'Repli gabarit refusé : il effacerait tout le travail demandé et produirait un faux succès.',
+      );
+      return run;
+    }
     if (reviewed.ok) {
       this.state.planFallback = [this.state.planFallback, 'repli gabarit neutre (tests verts)']
         .filter(Boolean)
@@ -837,6 +857,30 @@ export class TaskRun extends TaskRunBase {
     this.hooks.onPhase?.('review', 'failed', `${blocking.length} point(s) bloquant(s)`);
     run.ok = false;
     run.newFailures = result.blocking.map((issue) => `revue : ${issue}`);
+    return run;
+  }
+
+  /**
+   * Un jeu web n'est vert que si son build s'ouvre réellement dans Electron.
+   * L'échec rejoint la boucle de correction au lieu de restaurer silencieusement
+   * le gabarit neutre.
+   */
+  private async runtimeGate(
+    run: CodeTaskRun,
+    step: StepFn,
+    signal: AbortSignal,
+  ): Promise<CodeTaskRun> {
+    if (!run.ok || !this.hooks.runtimeLaunchCheck) return run;
+    step('launch', 'running', 'build et aperçu local (Electron)');
+    const launch = await this.hooks.runtimeLaunchCheck(this.sandbox!.path, signal);
+    if (launch.ok) {
+      step('launch', 'done', launch.detail);
+      return run;
+    }
+    run.ok = false;
+    run.newFailures.push(`Lancement réel du projet : ${launch.detail}`);
+    step('launch', 'failed', launch.detail);
+    this.hooks.onPhase?.('test', 'failed', launch.detail);
     return run;
   }
 
@@ -902,6 +946,7 @@ export class TaskRun extends TaskRunBase {
         : error instanceof Error
           ? error.message
           : String(error);
+      this.state.failureReason = reason;
       if (this.state.report) throw error;
       if (this.state.approvedAt !== null || cancelled) this.finish(step, 'stopped', reason);
       else this.state.status = 'failed';
@@ -1092,8 +1137,12 @@ export class TaskRun extends TaskRunBase {
     });
 
     await this.scanGate(step, signal);
-    let run = await this.reviewGate(
-      await this.testRun('Après modification', 'test', step, signal, pause),
+    let run = await this.runtimeGate(
+      await this.reviewGate(
+        await this.testRun('Après modification', 'test', step, signal, pause),
+        signal,
+      ),
+      step,
       signal,
     );
     let previous = failureSignature(run.newFailures);
@@ -1185,13 +1234,22 @@ export class TaskRun extends TaskRunBase {
         fix.calls.length ? `${fix.calls.length} action(s)` : 'aucune action',
       );
       await this.scanGate(step, signal);
-      run = await this.reviewGate(
-        await this.testRun(`Correction ${n}`, `retest-${n}`, step, signal, pause),
+      run = await this.runtimeGate(
+        await this.reviewGate(
+          await this.testRun(`Correction ${n}`, `retest-${n}`, step, signal, pause),
+          signal,
+        ),
+        step,
         signal,
       );
       const current = failureSignature(run.newFailures);
       if (!run.ok && current === previous && n < state.maxAttempts) {
-        const rescued = await this.templateRescue(step, signal, pause, run);
+        const launchFailure = run.newFailures.some((failure) =>
+          failure.startsWith('Lancement réel du projet :'),
+        );
+        const rescued = launchFailure
+          ? run
+          : await this.templateRescue(step, signal, pause, run);
         if (!rescued.ok) {
           state.repeatedFailure = {
             attempt: n,
@@ -1209,18 +1267,6 @@ export class TaskRun extends TaskRunBase {
       previous = current;
     }
     if (run.ok) await this.checkpoint('Livraison', signal);
-    if (run.ok && this.hooks.runtimeLaunchCheck) {
-      step('launch', 'running', 'build et aperçu local (Electron)');
-      const launch = await this.hooks.runtimeLaunchCheck(this.sandbox!.path, signal);
-      if (!launch.ok) {
-        run.ok = false;
-        run.newFailures.push(launch.detail);
-        step('launch', 'failed', launch.detail);
-      } else {
-        step('launch', 'done', launch.detail);
-      }
-    }
-    run = await this.templateRescue(step, signal, pause, run);
     const message = this.finish(step, run.ok ? 'success' : 'failed');
     if (!run.ok) throw new TaskStopped(message);
     return message;

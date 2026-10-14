@@ -5,6 +5,7 @@ import type { CommandSafetyContext } from '@jarvis/core';
 import { GIT_SAFE } from '../tools/common.js';
 import type { RunOutcome, Runner } from '../runner.js';
 import { devPlatform } from '../platform/index.js';
+import { windowsLockMessage } from '../platform/windowsLockError.js';
 
 /** 1,1 Go de dépendances (mesuré, décision 3) plus une marge pour les tests et les caches. */
 export const SANDBOX_MIN_FREE_BYTES = 3e9;
@@ -46,7 +47,10 @@ export class SandboxError extends Error {
 
 function failed(outcome: RunOutcome, what: string): SandboxError {
   const detail = (outcome.error ?? outcome.stderr.trim()) || outcome.stdout.trim();
-  return new SandboxError(`${what} a échoué : ${detail.split('\n').slice(-4).join(' ')}`);
+  const short = detail.split('\n').slice(-4).join(' ');
+  return new SandboxError(
+    windowsLockMessage(short, outcome.display) ?? `${what} a échoué : ${short}`,
+  );
 }
 
 export interface Checkpoint {
