@@ -172,7 +172,7 @@ describe('Project Factory : gabarits locaux', () => {
     expect(factorySystem()).toContain(FACTORY_MARKER);
   });
 
-  it('routeur : « crée une petite CLI… » propose un nouveau projet ; le reste ne change pas', () => {
+  it('routeur : « crée une petite CLI… » propose un nouveau projet piloté par le Superviseur', () => {
     expect(suggestMissionKind('Crée une petite CLI qui renomme des photos par date')).toBe(
       'new-project',
     );
@@ -181,6 +181,7 @@ describe('Project Factory : gabarits locaux', () => {
     expect(suggestMissionKind('Ajoute un réglage pour le thème')).toBe('modify');
     expect(suggestMissionKind('Crée un test pour formatSeconds')).toBe('modify');
     expect(MISSION_CHAINS['new-project'].map((s) => s.actor)).toEqual([
+      'CODER',
       'JARVIS',
       'JARVIS',
       'JARVIS',
