@@ -46,7 +46,14 @@ describe.runIf(LIVE)('preuve live mission plateforme (Ollama réel)', () => {
       });
       await h.instance.validate(repo);
       const started = await h.instance.startMission('new-project', REQUEST, true);
-      expect(started.mission?.status, String(started.notice ?? started.mission?.summary ?? '')).toBe('finished');
+      writeFileSync(
+        '/tmp/jarvis-5.0.31-real-platformer-state.json',
+        JSON.stringify(started, null, 2),
+      );
+      expect(
+        started.mission?.status,
+        String(started.mission?.summary ?? started.notice ?? ''),
+      ).toBe('finished');
       const task = started.codeTask!;
       expect(task.report?.verdict).toBe('success');
       expect(task.model).toBe(MODEL);
