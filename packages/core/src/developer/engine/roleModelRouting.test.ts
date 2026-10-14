@@ -73,6 +73,18 @@ describe('routeRoleToInstalledModel', () => {
     expect(plan.get('REVIEWER')?.model).toBe('code:main');
   });
 
+  it('garde le relecteur choisi même quand le codeur de mission est fixé', () => {
+    const plan = buildMissionModelPlan(
+      'modify',
+      { codeModel: 'code:main', roleModels: { REVIEWER: 'relecteur:b' } },
+      installed,
+    );
+    expect(plan instanceof Map).toBe(true);
+    if (!(plan instanceof Map)) return;
+    expect(plan.get('CODER')?.model).toBe('code:main');
+    expect(plan.get('REVIEWER')).toMatchObject({ model: 'relecteur:b', reason: 'user-role' });
+  });
+
   it('respecte le 14B choisi même si un 35B préféré est installé', () => {
     const models = new Set(['qwen2.5-coder:14b', 'qwen3.6:35b-a3b-coding']);
     const plan = buildMissionModelPlan(

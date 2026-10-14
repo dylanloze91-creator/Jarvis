@@ -271,15 +271,16 @@ describe('projets (0.5.3)', () => {
     const pid = mission.projectId;
     expect(pid).toBeTruthy();
     const dir = join(projectsRoot, pid);
-    const early = mission.steps.slice(0, 6).map((s) => `${s.id}:${s.actor}:${s.status}`);
-    expect(early.slice(0, 4)).toEqual([
+    const early = mission.steps.slice(0, 7).map((s) => `${s.id}:${s.actor}:${s.status}`);
+    expect(early.slice(0, 5)).toEqual([
+      'supervisor:CODER:done',
       'web-research:JARVIS:skipped',
       'scaffold:JARVIS:done',
       'goal:JARVIS:done',
       'design:ARCHITECT:done',
     ]);
-    expect(early[4]).toMatch(/^create:(USER|JARVIS):done$/);
-    expect(early[5]).toMatch(/^plan-1:CODER:done$/);
+    expect(early[5]).toMatch(/^create:(USER|JARVIS):done$/);
+    expect(early[6]).toMatch(/^plan-1:CODER:done$/);
     expect(h.cards.some((c) => c.toolName === 'dev_create_project')).toBe(false);
 
     const history = git(dir, 'log', '--format=%s');

@@ -203,8 +203,12 @@ export function buildMissionModelPlan(
           : `Codeur de mission : « ${missionCoder} » (un seul modèle chargé pour écrire, corriger et relire).`,
       };
       plan.set('CODER', shared);
-      if (plan.has('REVIEWER')) plan.set('REVIEWER', { ...shared, role: 'REVIEWER' });
-      if (plan.has('DEBUGGER')) plan.set('DEBUGGER', { ...shared, role: 'DEBUGGER' });
+      // Un relecteur ou un débogueur choisi par l'utilisateur reste le sien.
+      // Le modèle unique ne s'applique qu'aux rôles sans choix dédié installé.
+      for (const role of ['REVIEWER', 'DEBUGGER'] as const) {
+        const current = plan.get(role);
+        if (current && current.reason !== 'user-role') plan.set(role, { ...shared, role });
+      }
     }
   }
   return plan;
