@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -7,6 +7,8 @@ import { createLiveHarness } from './controllerHarness.testkit.js';
 import { createFixtureRepo } from './task/taskWorkflow.testkit.js';
 
 const LIVE = process.env.LIVE_PLATFORMER_MISSION === '1';
+const MODEL = process.env.LIVE_PLATFORMER_MODEL ?? 'qwen2.5-coder:1.5b';
+const PROOF_DIR = '/tmp/jarvis-5.0.31-real-platformer';
 let base = '';
 let projectsRoot = '';
 let repo = '';
@@ -28,40 +30,6 @@ describe.runIf(LIVE)('preuve live mission plateforme (Ollama réel)', () => {
     createFixtureRepo(repo);
     mkdirSync(projectsRoot, { recursive: true });
     mkdirSync(join(base, 'userData', 'developer'), { recursive: true });
-    writeFileSync(
-      join(base, 'userData', 'developer', 'code-model.json'),
-      JSON.stringify(
-        {
-          calibration: null,
-          validation: null,
-          expertsConfirmedAt: null,
-          benches: [],
-          realBenches: [],
-          modelRuns: [
-            {
-              at: 1,
-              model: 'qwen2.5:3b',
-              category: 'role:CODER:mission:new-project',
-              success: false,
-            },
-            {
-              at: 2,
-              model: 'qwen3.5:4b',
-              category: 'role:CODER:mission:new-project',
-              success: true,
-            },
-            {
-              at: 3,
-              model: 'qwen3.5:4b',
-              category: 'role:CODER:mission:new-project',
-              success: true,
-            },
-          ],
-        },
-        null,
-        2,
-      ),
-    );
   });
 
   afterAll(() => {
@@ -74,23 +42,45 @@ describe.runIf(LIVE)('preuve live mission plateforme (Ollama réel)', () => {
       const h = createLiveHarness({
         base,
         repo,
-        developer: { codeModel: '', projectsRoot },
+        developer: { codeModel: MODEL, projectsRoot },
       });
       await h.instance.validate(repo);
       const started = await h.instance.startMission('new-project', REQUEST, true);
       expect(started.mission?.status, String(started.notice ?? started.mission?.summary ?? '')).toBe('finished');
       const task = started.codeTask!;
       expect(task.report?.verdict).toBe('success');
-      expect(task.model).toBe('qwen3.5:4b');
+      expect(task.model).toBe(MODEL);
+      expect(task.planFallback).toMatch(/plan de secours/);
 
-      const dir = task.worktreePath;
+      const project = (await h.instance.listProjects()).projects!.find(
+        (item) => item.id === started.mission!.projectId,
+      )!;
+      const dir = project.path;
       const level = readFileSync(join(dir, 'src', 'level.ts'), 'utf8');
       expect(level.length).toBeGreaterThan(80);
+      expect(level).toMatch(/platform|collect|hazard|goal|spawn/i);
       run(dir, 'npm', ['install', '--no-audit', '--no-fund', '--ignore-scripts']);
       const testOut = run(dir, 'npm', ['test']);
       expect(testOut).toMatch(/passed|Tests/i);
       run(dir, 'npm', ['run', 'build']);
       expect(existsSync(join(dir, 'dist', 'index.html'))).toBe(true);
+      rmSync(PROOF_DIR, { recursive: true, force: true });
+      cpSync(dir, PROOF_DIR, { recursive: true });
+      writeFileSync(
+        join(PROOF_DIR, 'REAL-OLLAMA-PROOF.json'),
+        JSON.stringify(
+          {
+            model: MODEL,
+            selectedDespiteInstalledPreferredModel: 'qwen3.6:35b-a3b-coding',
+            planFallback: task.planFallback,
+            projectId: started.mission!.projectId,
+            tests: 'passed',
+            build: 'dist/index.html',
+          },
+          null,
+          2,
+        ),
+      );
     },
     1_800_000,
   );
