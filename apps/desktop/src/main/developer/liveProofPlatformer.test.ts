@@ -1,5 +1,14 @@
 import { execFileSync } from 'node:child_process';
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -72,6 +81,12 @@ describe.runIf(LIVE)('preuve live mission plateforme (Ollama réel)', () => {
       expect(testOut).toMatch(/passed|Tests/i);
       run(dir, 'npm', ['run', 'build']);
       expect(existsSync(join(dir, 'dist', 'index.html'))).toBe(true);
+      const desktop = join(base, 'home', 'Desktop');
+      const shortcut = readdirSync(desktop).find((name) => name.endsWith('.bat'));
+      expect(shortcut).toBeTruthy();
+      expect(readFileSync(join(desktop, shortcut!), 'utf8')).toContain(
+        `--jarvis-play-project=${started.mission!.projectId}`,
+      );
       rmSync(PROOF_DIR, { recursive: true, force: true });
       cpSync(dir, PROOF_DIR, { recursive: true });
       writeFileSync(

@@ -400,11 +400,18 @@ export class MissionWorkflow {
         model,
       },
       ...plan.tasks.map(
-        (task): MissionAgentState => ({
-          ...task,
-          status: 'pending',
-          ...(task.modelRequired ? { model } : {}),
-        }),
+        (task): MissionAgentState => {
+          const modelRequired =
+            task.role === 'architecture' ||
+            task.role === 'code' ||
+            task.role === 'correction';
+          return {
+            ...task,
+            modelRequired,
+            status: 'pending',
+            ...(modelRequired ? { model } : {}),
+          };
+        },
       ),
     ];
     this.persistLater();
@@ -1409,10 +1416,9 @@ export class MissionWorkflow {
     }
     return this.host.emit();
     } catch (error) {
-      const st = mission.status;
-      if (st === 'task' || st === 'failed' || st === 'running') {
-        this.fail(error instanceof Error ? error.message : String(error));
-      }
+      const message = error instanceof Error ? error.message : String(error);
+      this.setAgentRole('package', 'failed', message, { error: message });
+      if (mission.status !== 'cancelled') this.fail(message);
       return this.host.emit();
     }
   }

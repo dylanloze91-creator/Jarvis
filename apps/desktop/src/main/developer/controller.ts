@@ -342,7 +342,8 @@ export class DeveloperController {
             home: deps.home,
             run: this.run,
             ...(node ? { node } : {}),
-            jarvisExe: app.getPath('exe'),
+            jarvisExe:
+              typeof app?.getPath === 'function' ? app.getPath('exe') : process.execPath,
           });
           return shortcut?.label ?? null;
         },
