@@ -258,4 +258,29 @@ describe('chemin mission plateforme 2D (thedexios)', () => {
     },
     300_000,
   );
+
+  it(
+    'aperçu Electron noir : correction puis échec exact, jamais faux succès sur gabarit neutre',
+    async () => {
+      const h = createHarness({
+        base,
+        repo: jarvis,
+        fake,
+        developer: { codeModel: CODE, projectsRoot },
+        intercept: hybridNpm,
+        verifyWebGameRuntime: async () => ({
+          ok: false,
+          detail: 'Canvas entier uniforme après 8 secondes (écran noir probable).',
+        }),
+      });
+      await h.instance.validate(jarvis);
+      const done = await h.instance.startMission('new-project', REQUEST, true);
+      expect(done.mission?.status).toBe('failed');
+      expect(done.mission?.summary).toMatch(/Canvas entier uniforme/);
+      expect(done.codeTask?.report?.verdict).not.toBe('success');
+      expect(done.codeTask?.diff.length).toBeGreaterThan(0);
+      await h.instance.discardTask();
+    },
+    300_000,
+  );
 });

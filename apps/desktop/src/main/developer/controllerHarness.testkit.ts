@@ -43,6 +43,7 @@ export interface HarnessOptions {
   appVersion?: string;
   /** Remplace une commande (npm hors ligne) ; null = la vraie. Le tri de sécurité s'applique quand même. */
   intercept?: (spec: RunSpec, display: string) => RunOutcome | null;
+  verifyWebGameRuntime?: (root: string) => Promise<{ ok: boolean; detail: string }>;
 }
 
 /** Résultat de commande simulé, pour `intercept`. */
@@ -114,6 +115,7 @@ export function createLiveHarness(options: LiveHarnessOptions): Harness {
     run,
     chat,
     chatGraceMs: 0,
+    verifyWebGameRuntime: options.verifyWebGameRuntime,
     emit: (state) => {
       states.push(structuredClone(state));
       const card = state.confirmation;
@@ -176,6 +178,7 @@ export function createHarness(options: HarnessOptions): Harness {
     run,
     chat,
     chatGraceMs: 0,
+    verifyWebGameRuntime: options.verifyWebGameRuntime,
     emit: (state) => {
       states.push(structuredClone(state));
       const card = state.confirmation;

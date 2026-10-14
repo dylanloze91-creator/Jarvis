@@ -45,6 +45,7 @@ import { readMachineSnapshot } from './machineStats.js';
 import { createToolManager } from './tools/index.js';
 import { registerMachineIpc } from './machine/ipc.js';
 import { registerDeveloperIpc } from './developer/ipc.js';
+import { projectIdFromPlayArgs } from './developer/project/projectPlayArg.js';
 import { ChatActivity } from './developer/task/chatActivity.js';
 import { summarizeYoutubeLink } from './youtube/runtime.js';
 import { UpdateManager } from './updater.js';
@@ -111,13 +112,7 @@ let overlay: OverlayWindow | null = null;
 let googleStarted = false;
 let developerIpc: ReturnType<typeof registerDeveloperIpc> | null = null;
 
-function playProjectArg(argv: readonly string[]): string | null {
-  const value = argv.find((arg) => arg.startsWith('--jarvis-play-project='));
-  const projectId = value?.slice('--jarvis-play-project='.length).trim() ?? '';
-  return projectId || null;
-}
-
-let pendingPlayProjectId = playProjectArg(process.argv);
+let pendingPlayProjectId = projectIdFromPlayArgs(process.argv);
 
 function openPlayProject(projectId: string | null): void {
   if (!projectId) return;
@@ -189,7 +184,7 @@ if (!app.requestSingleInstanceLock()) {
 } else {
   app.on('second-instance', (_event, argv) => {
     overlay?.show();
-    openPlayProject(playProjectArg(argv));
+    openPlayProject(projectIdFromPlayArgs(argv));
   });
   void bootstrap().catch((error: unknown) => {
     console.error(error);

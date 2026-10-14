@@ -99,6 +99,8 @@ export interface ControllerDeps {
   /** Tours de chat en cours (décision 5) : la tâche de code cède la place. */
   chat?: ChatActivity;
   chatGraceMs?: number;
+  /** Injection de test du lancement réel ; production utilise Electron. */
+  verifyWebGameRuntime?: (root: string) => Promise<{ ok: boolean; detail: string }>;
 }
 
 export const DEVELOPER_DISABLED_NOTICE =
@@ -371,14 +373,15 @@ export class DeveloperController {
           void this.openProjectChat(projectId);
         },
         verifyWebGameRuntime:
-          process.env.VITEST === 'true' && process.env.JARVIS_WEB_GAME_RUNTIME !== '1'
+          deps.verifyWebGameRuntime ??
+          (process.env.VITEST === 'true' && process.env.JARVIS_WEB_GAME_RUNTIME !== '1'
             ? undefined
             : async (root) => {
                 const node = await this.environmentNode();
                 if (!node) return { ok: false, detail: 'Node.js introuvable pour le build de jeu.' };
                 const out = await verifyWebGameRuntime(this.run, node, root);
                 return { ok: out.ok, detail: out.detail };
-              },
+              }),
         webResearch: (query, request) =>
           developerMissionWebResearch(
             deps.searchRegistry,

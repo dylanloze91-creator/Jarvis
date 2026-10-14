@@ -181,6 +181,40 @@ describe('mission avec un petit modèle bavard (5.0.1)', () => {
     await h.instance.discardTask();
   }, 180_000);
 
+  it('appel d’outil en texte brut au PLAN : plan local puis livraison réelle', async () => {
+    const LEAK = 'petit:outil-texte';
+    fake.installed.set(LEAK, 2e9);
+    fake.scripts.set(LEAK, (body) => {
+      const file = replyForPlannedFileWrite(body, { 'src/game.ts': GAME });
+      if (file) return file;
+      if (system(body).includes(PLAN_MARKER)) {
+        return {
+          content:
+            '<tool_call>{"name":"dev_read_file","arguments":{"path":"src/game.ts"}}</tool_call>',
+        };
+      }
+      return { content: RAMBLE };
+    });
+    const h = createHarness({
+      base,
+      repo,
+      fake,
+      developer: { codeModel: LEAK, projectsRoot },
+      intercept: offlineNpm,
+    });
+    await h.instance.validate(repo);
+    const done = await h.instance.startMission(
+      'new-project',
+      'Crée un Pong jouable dans le navigateur avec score.',
+      true,
+    );
+    expect(done.mission?.status, done.mission?.summary ?? '').toBe('finished');
+    expect(done.codeTask?.model).toBe(LEAK);
+    expect(done.codeTask?.planFallback).toMatch(/appel d’outil inutilisable/);
+    expect(done.codeTask?.diff.map((file) => file.path)).toContain('src/game.ts');
+    await h.instance.discardTask();
+  }, 180_000);
+
   it('un modèle au format qui vise Jarvis : objectif sans le dépôt de Jarvis, gabarit jeu, plan du gabarit', async () => {
     const LOST = 'petit:egare';
     mkdirSync(join(base, 'userData', 'developer'), { recursive: true });
