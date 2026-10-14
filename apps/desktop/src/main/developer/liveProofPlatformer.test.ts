@@ -89,6 +89,7 @@ describe.runIf(LIVE)('preuve live mission plateforme (Ollama réel)', () => {
       );
       rmSync(PROOF_DIR, { recursive: true, force: true });
       cpSync(dir, PROOF_DIR, { recursive: true });
+      cpSync(join(desktop, shortcut!), join(PROOF_DIR, 'PLAY-SHORTCUT.bat'));
       writeFileSync(
         join(PROOF_DIR, 'REAL-OLLAMA-PROOF.json'),
         JSON.stringify(
