@@ -69,6 +69,7 @@ export interface LiveHarnessOptions {
   approvePlan?: boolean;
   appVersion?: string;
   intercept?: (spec: RunSpec, display: string) => RunOutcome | null;
+  verifyWebGameRuntime?: (root: string) => Promise<{ ok: boolean; detail: string }>;
 }
 
 /** Contrôleur Développeur branché sur un Ollama réel (preuve locale). */
