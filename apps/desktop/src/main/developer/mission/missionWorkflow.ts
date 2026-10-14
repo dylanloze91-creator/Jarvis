@@ -1418,7 +1418,7 @@ export class MissionWorkflow {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.setAgentRole('package', 'failed', message, { error: message });
-      if (mission.status !== 'cancelled') this.fail(message);
+      this.fail(message);
       return this.host.emit();
     }
   }
