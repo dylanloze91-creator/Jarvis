@@ -50,7 +50,7 @@ describe.runIf(LIVE)('preuve live mission plateforme (Ollama réel)', () => {
       const task = started.codeTask!;
       expect(task.report?.verdict).toBe('success');
       expect(task.model).toBe(MODEL);
-      expect(task.planFallback).toMatch(/plan de secours/);
+      expect(task.plan).not.toBeNull();
 
       const project = (await h.instance.listProjects()).projects!.find(
         (item) => item.id === started.mission!.projectId,
@@ -72,7 +72,9 @@ describe.runIf(LIVE)('preuve live mission plateforme (Ollama réel)', () => {
           {
             model: MODEL,
             selectedDespiteInstalledPreferredModel: 'qwen3.6:35b-a3b-coding',
-            planFallback: task.planFallback,
+            planHandling:
+              task.planFallback ??
+              'Appels d’outils structurés du modèle réel acceptés ; aucun secours nécessaire.',
             projectId: started.mission!.projectId,
             tests: 'passed',
             build: 'dist/index.html',
