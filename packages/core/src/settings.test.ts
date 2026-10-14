@@ -96,6 +96,7 @@ describe('réglages Jarvis Développeur', () => {
       enabled: false,
       repoPath: '',
       codeModel: '',
+      chatModel: '',
       worktreeRoot: '',
     });
   });
@@ -106,6 +107,7 @@ describe('réglages Jarvis Développeur', () => {
       enabled: true,
       repoPath: 'C:\\dev\\Jarvis',
       codeModel: '',
+      chatModel: '',
       worktreeRoot: '',
     });
   });
@@ -140,6 +142,7 @@ describe('réglages Jarvis Développeur', () => {
       enabled: true,
       repoPath: 'C:\\dev\\Jarvis',
       codeModel: '',
+      chatModel: '',
       worktreeRoot: '',
     });
     expect(parsed.apiKey).toBe('sk-garde');

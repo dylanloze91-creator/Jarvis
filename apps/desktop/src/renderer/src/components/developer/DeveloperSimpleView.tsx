@@ -123,6 +123,7 @@ export function DeveloperSimpleView({
   }, [projects, selectedId]);
   const project = projects.find((p) => p.id === activeId) ?? null;
   const codeModel = settings?.developer.codeModel ?? '';
+  const chatModel = settings?.developer.chatModel ?? '';
 
   const activeProject = projects.find((p) => p.id === activeId) ?? null;
   const workspaceActive = activeProject?.origin === 'workspace';
@@ -159,11 +160,11 @@ export function DeveloperSimpleView({
     return [...list].sort((a, b) => a.name.localeCompare(b.name, 'fr'));
   }, [state?.model]);
 
-  const chooseCodeModel = useCallback(
+  const chooseChatModel = useCallback(
     async (modelId: string) => {
-      if (!settings || settings.developer.codeModel === modelId) return;
+      if (!settings || settings.developer.chatModel === modelId) return;
       const payload = await window.jarvis.settings.set({
-        developer: { ...settings.developer, codeModel: modelId },
+        developer: { ...settings.developer, chatModel: modelId },
       });
       onSaved(payload);
     },
@@ -179,7 +180,7 @@ export function DeveloperSimpleView({
     ) : (
       <div className="flex flex-wrap gap-2">
         {ollamaInstalled.map((entry) => {
-          const active = codeModel === entry.name;
+          const active = chatModel === entry.name;
           return (
             <button
               key={entry.name}
@@ -190,8 +191,8 @@ export function DeveloperSimpleView({
               )}
               disabled={state?.busy}
               aria-pressed={active}
-              data-dev-code-model={entry.name}
-              onClick={() => void chooseCodeModel(entry.name)}
+              data-dev-chat-model={entry.name}
+              onClick={() => void chooseChatModel(entry.name)}
             >
               <span className="font-mono text-[13px] font-medium text-slate-100">{entry.name}</span>
               <span className="text-[11px] leading-snug text-slate-500">
@@ -228,7 +229,7 @@ export function DeveloperSimpleView({
   const embeddedToolsStrip = embedded ? (
     <div className="no-drag flex shrink-0 flex-col gap-2 border-b border-white/[0.06] px-3 py-2">
       <DeveloperCollapsible
-        title="Modèles Ollama installés — un clic pour le dev"
+        title="Modèle du chat — le codeur de mission ne change pas"
         open={modelsOpen}
         onToggle={() => setModelsOpen((v) => !v)}
         dataAttr="models"

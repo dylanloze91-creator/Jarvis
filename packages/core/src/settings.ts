@@ -103,6 +103,10 @@ export const developerSettingsSchema = z.object({
   repoPath: z.string().max(400).default(''),
   /** Modèle de code choisi après le banc (vide = pas encore choisi). Jamais utilisé par le chat. */
   codeModel: z.string().max(200).default(''),
+  /**
+   * Modèle de la discussion projet (barre latérale). Ne remplace pas le codeur de mission.
+   */
+  chatModel: z.string().max(200).default(''),
   /** Dossier des copies isolées (vide = à côté de la copie de travail : `<copie>-taches`). */
   worktreeRoot: z.string().max(400).default(''),
   /**

@@ -6,6 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   FACTORY_MARKER,
   GOAL_MARKER,
+  isCreateOrBuildOrder,
   newProjectMissionFromProjectChat,
   EDIT_MARKER,
   PLAN_MARKER,
@@ -215,9 +216,51 @@ afterAll(async () => {
 });
 
 describe('chemin mission plateforme 2D (thedexios)', () => {
-  it('discussion développeur : la demande plateforme part en mission nouveau projet', () => {
-    expect(newProjectMissionFromProjectChat(REQUEST)).toBe(true);
+  it('discussion développeur : la demande plateforme reste dans le projet ouvert', () => {
+    expect(newProjectMissionFromProjectChat(REQUEST)).toBe(false);
+    expect(isCreateOrBuildOrder(REQUEST)).toBe(true);
   });
+
+  it(
+    'ordre du chat : le Superviseur écrit dans le dossier ouvert, pas un plan',
+    async () => {
+      const h = createHarness({
+        base,
+        repo: jarvis,
+        fake,
+        developer: { codeModel: CODE, chatModel: 'qwen3.8:latest', projectsRoot },
+        intercept: hybridNpm,
+      });
+      await h.instance.validate(jarvis);
+      const dir = join(projectsRoot, 'nouveau-projet');
+      mkdirSync(dir, { recursive: true });
+      const prep = await h.instance.prepareWorkspace(dir);
+      const id = prep.focusProjectId ?? '';
+      expect(id).toBeTruthy();
+      const order =
+        'Génère un jeu de plateforme 2D vue de côté, jouable dans le navigateur, avec saut, plateformes, un objet à ramasser et une arrivée.';
+      const done = await h.instance.sendProjectChat(id, order);
+      expect(done.mission?.status, String(done.mission?.summary ?? done.notice ?? '')).toBe(
+        'finished',
+      );
+      expect(done.mission?.projectId).toBe(id);
+      expect((done.mission?.agents ?? []).length).toBeGreaterThan(0);
+      expect(done.codeTask?.model).toBe(CODE);
+      expect(done.codeTask?.model).not.toBe('qwen3.8:latest');
+      const assistant = [...(done.projectChat?.messages ?? [])]
+        .reverse()
+        .find((message) => message.role === 'assistant');
+      expect(assistant?.content).toMatch(/Superviseur/);
+      expect(assistant?.content).toMatch(/Agents/);
+      expect((done.projectChat?.activity ?? []).join('\n')).not.toMatch(/rien n’est modifié/);
+      const view = done.projects?.find((item) => item.id === id);
+      expect(view?.path).toBe(dir);
+      const level = readFileSync(join(dir, 'src', 'level.ts'), 'utf8');
+      expect(level).toMatch(/580,\s*y:\s*200/);
+      expect(level.toLowerCase()).not.toContain('mario');
+    },
+    300_000,
+  );
 
   it(
     'mission → niveau étendu, npm test et build réels',

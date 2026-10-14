@@ -9,6 +9,17 @@ export function platformerProjectTitle(): string {
   return 'Jeu de plateforme 2D';
 }
 
+/** Retire un titre de marque : les agents voient un jeu de plateforme, pas ce nom. */
+export function briefWithoutTrademark(text: string): string {
+  if (!/\bmario\b/i.test(text)) return text.trim();
+  return text
+    .replace(/\bsuper\s+mario\b/gi, 'jeu de plateforme 2D')
+    .replace(/\bmario\b/gi, 'jeu de plateforme 2D')
+    .replace(/(?:jeu de plateforme 2D\s*){2,}/gi, 'jeu de plateforme 2D ')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
 /** Requête de recherche web avant le code (méthode Développeur 5.0.27). */
 export function webResearchQueryForRequest(request: string): string {
   const t = request.trim();

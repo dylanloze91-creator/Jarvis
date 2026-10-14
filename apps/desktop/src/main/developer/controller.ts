@@ -9,9 +9,8 @@ import {
   classifyCommand,
   missionRequestFromProjectChat,
   codeModelsOffered,
-  isProjectChatDirectRequest,
-  isExistingWebGameChange,
-  newProjectMissionFromProjectChat,
+  briefWithoutTrademark,
+  routeProjectChatOrder,
   MISSION_LABELS,
   GRAPHICS_ENGINE_GRANT_DECISION,
   graphicsEngineChatPromptLine,
@@ -732,20 +731,24 @@ export class DeveloperController {
     };
   }
 
-  /** Modèle de code installé, sans demander à l’utilisateur (5.0.6). */
+  /**
+   * Modèle de la discussion (barre latérale). Jamais un nom absent d’Ollama,
+   * et jamais le codeur de mission : celui-ci reste `developer.codeModel`.
+   */
   private async ensureCodeModel(installed?: readonly string[]): Promise<string | null> {
     const names =
       installed ??
       (await this.ollama().status()).models.map((m) => m.name);
-    const saved = this.deps.getSettings().developer.codeModel;
+    const developer = this.deps.getSettings().developer;
+    const chat = developer.chatModel?.trim() ?? '';
+    if (chat && names.includes(chat)) return chat;
+    const saved = developer.codeModel.trim();
     if (saved && names.includes(saved)) return saved;
-    const suggested = this.projectChat?.codingPick?.model;
-    if (suggested && names.includes(suggested)) return suggested;
     const profile = this.deps.getSettings().machine?.profile;
     for (const spec of codeModelsOffered(profile)) {
       if (names.includes(spec.id)) return spec.id;
     }
-    return names.find((n) => codeModelsOffered(profile).some((s) => s.id === n)) ?? null;
+    return names.find((n) => !/embed/i.test(n)) ?? null;
   }
 
   private mergeChatEffects(
@@ -883,34 +886,30 @@ export class DeveloperController {
       this.projectPreview.isOpen(id),
     );
     await this.projects.saveChatState(id, chatPersisted);
-    if (newProjectMissionFromProjectChat(userText)) {
+    const orderRoute = routeProjectChatOrder(
+      userText,
+      {
+        jarvis: resolved.id === JARVIS_PROJECT_ID,
+        template: resolved.template ?? null,
+      },
+      withScreenshot,
+    );
+    if (orderRoute === 'jarvis-not-target') {
+      this.notice =
+        'Cet ordre s’écrit dans le projet ouvert. Utilise Nouveau, un raccourci, ou les mots « nouveau projet » pour un dossier neuf — pas la copie de Jarvis.';
+      return this.emit();
+    }
+    if (orderRoute === 'new-folder' || orderRoute === 'supervise-open') {
       return this.runProjectChatNewProjectMission(
         id,
         resolved,
         userText,
         chatPersisted,
         pendingMessages,
+        orderRoute === 'supervise-open',
       );
     }
-    if (
-      !withScreenshot &&
-      (isExistingWebGameChange(userText, resolved.template ?? null) ||
-        (isProjectChatDirectRequest(userText) && resolved.template === 'web-game'))
-    ) {
-      return this.runProjectChatDirect(
-        id,
-        resolved,
-        userText,
-        chatPersisted,
-        pendingMessages,
-        model,
-      );
-    }
-    if (
-      isProjectChatDirectRequest(userText) &&
-      !withScreenshot &&
-      resolved.id !== JARVIS_PROJECT_ID
-    ) {
+    if (orderRoute === 'direct') {
       return this.runProjectChatDirect(
         id,
         resolved,
@@ -1089,11 +1088,15 @@ export class DeveloperController {
     userText: string,
     priorPersisted: ProjectChatPersisted,
     pendingMessages: ProjectChatView['messages'],
+    reuseOpenProject: boolean,
   ): Promise<DeveloperState> {
+    const order = briefWithoutTrademark(userText);
     const simpleRun: ProjectSimpleRun = {
       request: userText,
       phase: 'running',
-      intent: 'Je lance la mission Nouveau projet…',
+      intent: reuseOpenProject
+        ? 'Le Superviseur prend l’ordre. Les agents écrivent dans ce dossier.'
+        : 'Je lance la mission Nouveau projet…',
       result: null,
     };
     this.projectChat = this.chatView(
@@ -1103,7 +1106,12 @@ export class DeveloperController {
       this.projectPreview.isOpen(id),
       simpleRun,
     );
-    this.pushProjectChatActivity(id, 'Mission démarrée : nouveau projet (gabarit adapté).');
+    this.pushProjectChatActivity(
+      id,
+      reuseOpenProject
+        ? 'Superviseur : ordre pris, les agents écrivent dans ce dossier.'
+        : 'Mission démarrée : nouveau projet (gabarit adapté).',
+    );
     this.emit();
     const { discussionContext } = missionRequestFromProjectChat(
       pendingMessages,
@@ -1112,22 +1120,13 @@ export class DeveloperController {
     const extras = {
       discussionContext,
       projectDecisions: priorPersisted.decisions,
-      ...(priorPersisted.codingPick
-        ? {
-            coderOverride: {
-              model: priorPersisted.codingPick.model,
-              reason: priorPersisted.codingPick.reason,
-            },
-          }
-        : {}),
     };
     this.missionChatTarget = id;
-    const workspace = resolved.origin === 'workspace' ? id : undefined;
     const done = await this.missions.start(
       'new-project',
-      userText,
+      order,
       true,
-      workspace,
+      reuseOpenProject ? id : undefined,
       undefined,
       extras,
     );
@@ -1139,23 +1138,31 @@ export class DeveloperController {
     if (task?.diff?.length) {
       (simpleRun as ProjectSimpleRun & { diff?: typeof task.diff }).diff = task.diff;
     }
+    const agentLine = (mission?.agents ?? [])
+      .map((agent) => `${agent.name} (${agent.status})`)
+      .join(', ');
+    const agentSentence = agentLine ? `Agents : ${agentLine}.` : '';
     simpleRun.intent = ok
       ? 'Mission terminée.'
       : failed
         ? 'La mission n’a pas abouti.'
         : 'Mission en pause ou en attente.';
     simpleRun.result = ok
-      ? 'Le projet a été créé dans ton dossier Projets. Tu peux l’ouvrir dans la liste à gauche.'
+      ? reuseOpenProject
+        ? `Les agents ont écrit dans ce dossier. ${agentSentence}`.trim()
+        : 'Le projet a été créé dans ton dossier Projets. Tu peux l’ouvrir dans la liste à gauche.'
       : failed
         ? mission?.summary ?? 'Échec de la mission.'
         : null;
-    if (ok) this.pushProjectChatActivity(id, 'Terminé : projet livré.');
+    if (ok) this.pushProjectChatActivity(id, reuseOpenProject ? 'Terminé : fichiers écrits dans ce dossier.' : 'Terminé : projet livré.');
     else if (failed) this.pushProjectChatActivity(id, `Bloqué ou échec : ${mission?.summary ?? 'voir le détail'}.`);
     const assistantText = ok
-      ? `Mission terminée : ${mission?.summary ?? userText}\n\nLe nouveau projet apparaît dans la liste. Ouvre-le pour continuer dans le chat.`
+      ? reuseOpenProject
+        ? `Le Superviseur a pris l’ordre. ${agentSentence}\n\n${mission?.summary ?? order}`.trim()
+        : `Mission terminée : ${mission?.summary ?? order}\n\nLe nouveau projet apparaît dans la liste. Ouvre-le pour continuer dans le chat.`
       : failed
-        ? `Je n’ai pas pu livrer le projet : ${mission?.summary ?? 'mission interrompue ou refusée'}.`
-        : `Mission en cours ou en attente : ${MISSION_LABELS[mission?.kind ?? 'new-project']}.`;
+        ? `Je n’ai pas pu livrer le projet : ${mission?.summary ?? 'mission interrompue ou refusée'}.${agentSentence ? ` ${agentSentence}` : ''}`
+        : `Mission en cours ou en attente : ${MISSION_LABELS[mission?.kind ?? 'new-project']}. ${agentSentence}`.trim();
     const assistant = {
       id: randomId(),
       role: 'assistant' as const,
@@ -1330,11 +1337,8 @@ export class DeveloperController {
     const extras = {
       discussionContext,
       projectDecisions: persisted.decisions,
-      ...(persisted.codingPick
-        ? { coderOverride: { model: persisted.codingPick.model, reason: persisted.codingPick.reason } }
-        : {}),
     };
-    return this.missions.start('modify', summary, false, id, undefined, extras);
+    return this.missions.start('modify', briefWithoutTrademark(summary), false, id, undefined, extras);
   }
 
   async compareProjectChatModels(

@@ -109,6 +109,7 @@ import {
   type ProjectProfile,
   type ProjectTemplateId,
   parseNvidiaSmi,
+  briefWithoutTrademark,
   fallbackSupervisorPlan,
   supervisorPlanSchema,
   supervisorPrompt,
@@ -572,7 +573,7 @@ export class MissionWorkflow {
     link?: { missionId: string; index: number },
     chatExtras?: MissionStartExtras,
   ): Promise<DeveloperState> {
-    let text = request.trim();
+    let text = briefWithoutTrademark(request);
     if (kind === 'new-project') skipQuestions = true;
     if (text.length < (kind === 'question' ? 4 : 8))
       return this.host.notice('Décris la mission en une phrase au moins.');
@@ -642,7 +643,11 @@ export class MissionWorkflow {
     if (this.gate) this.current.gate = this.gate;
     if (chatExtras?.discussionContext)
       this.current.discussionContext = chatExtras.discussionContext.slice(0, 24_000);
-    if (chatExtras?.coderOverride) this.current.coderOverride = chatExtras.coderOverride;
+    const pickedCoder = chatExtras?.coderOverride;
+    const override = pickedCoder?.model.trim() ?? '';
+    if (pickedCoder && override && installed.has(override)) {
+      this.current.coderOverride = { model: override, reason: pickedCoder.reason };
+    }
     if (chatExtras?.projectDecisions?.length)
       this.current.projectDecisions = chatExtras.projectDecisions.slice(0, 40);
     this.counters.clear();
@@ -1243,7 +1248,7 @@ export class MissionWorkflow {
                 : undefined;
             if (reuseEntryId) {
               const existing = await this.deps.projects.resolve(reuseEntryId);
-              if (typeof existing !== 'string' && existing.origin === 'created' && existing.template) {
+              if (typeof existing !== 'string' && existing.origin !== 'workspace') {
                 result.project = existing;
                 this.patch('create', {
                   status: 'skipped',

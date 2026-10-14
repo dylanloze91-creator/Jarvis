@@ -52,7 +52,9 @@ Les rôles recherche/préparation/test/package sont sans modèle sauf si un rais
 Les rôles architecture/code/correction utilisent le modèle, un seul à la fois (machine 6 Go VRAM).
 Regroupe dans un même agent code les fichiers fortement couplés ; sépare seulement les parties indépendantes.
 Prévois les tests et le lancement réel. Ne crée un agent correction que si un échec existe : le moteur le fera dynamiquement.
-Le dernier agent livre le résultat (package/raccourci) seulement si la demande l'exige.`;
+Le dernier agent livre le résultat (package/raccourci) seulement si la demande l'exige.
+N'invente pas de titre de marque : un jeu de plateforme s'appelle « Jeu de plateforme 2D ».
+N'annonce pas un modèle qui n'est pas déjà celui du codeur de mission.`;
 }
 
 export function supervisorPrompt(request: string): string {

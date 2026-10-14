@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { isPlatformerRequest, webResearchChatLine } from './newProjectMethod.js';
+import {
+  briefWithoutTrademark,
+  isPlatformerRequest,
+  platformerProjectTitle,
+  webResearchChatLine,
+} from './newProjectMethod.js';
 import { lockFactoryToRequest } from './fallbacks.js';
 
 describe('newProjectMethod', () => {
@@ -17,6 +22,19 @@ describe('newProjectMethod', () => {
     expect(out.template).toBe('web-game');
     expect(out.name.toLowerCase()).not.toBe('snake');
     expect(out.description).toMatch(/plateforme/i);
+  });
+
+  it('ne laisse pas un titre de marque dans le brief ni le nom', () => {
+    const brief = briefWithoutTrademark('Génère un jeu Mario 2D vue de côté');
+    expect(brief.toLowerCase()).not.toContain('mario');
+    expect(isPlatformerRequest(brief)).toBe(true);
+    const out = lockFactoryToRequest(brief, {
+      template: 'web-game',
+      name: 'Mario',
+      description: 'Jeu Mario',
+    });
+    expect(out.name).toBe(platformerProjectTitle());
+    expect(out.description.toLowerCase()).not.toContain('mario');
   });
 
   it('résume la recherche web en une ligne', () => {

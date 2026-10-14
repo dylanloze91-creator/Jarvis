@@ -125,6 +125,12 @@ const OTHER_GAME_NAME =
 export function lockFactoryToRequest(request: string, chosen: FactoryOutput): FactoryOutput {
   const text = request.toLowerCase();
   let out: FactoryOutput = { ...chosen };
+  if (/\bmario\b/i.test(out.name)) out.name = platformerProjectTitle();
+  if (/\bmario\b/i.test(out.description)) {
+    out.description = out.description
+      .replace(/\bsuper\s+mario\b/gi, 'jeu de plateforme 2D')
+      .replace(/\bmario\b/gi, 'jeu de plateforme 2D');
+  }
 
   if (isPlatformerRequest(request)) {
     out.template = 'web-game';
