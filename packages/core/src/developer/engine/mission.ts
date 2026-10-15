@@ -65,6 +65,11 @@ export interface MissionState {
   supervisor?: SupervisorPlan;
   /** Agents créés à la demande et suivis en direct dans le chat. */
   agents?: MissionAgentState[];
+  /**
+   * Avertissement du journal de mission (5.0.34). Un verrou Windows
+   * n’annule pas une création dont les fichiers sont déjà écrits.
+   */
+  journalNote?: string;
 }
 
 export interface MissionSummary {

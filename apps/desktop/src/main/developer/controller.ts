@@ -69,7 +69,11 @@ import type {
 } from '../../shared/developerIpc.js';
 import { ANALYSIS_STEPS, analyzeArchitecture } from './analysis.js';
 import { repoReader, runAsk } from './ask/askFlow.js';
-import { MissionStore } from './mission/history.js';
+import {
+  MissionStore,
+  creationJournalBanner,
+  gameFolderWritten,
+} from './mission/history.js';
 import { MissionWorkflow } from './mission/missionWorkflow.js';
 import { ProjectStore } from './project/projectStore.js';
 import { ProjectsWorkflow, type ResolvedProject } from './project/projectsWorkflow.js';
@@ -1164,13 +1168,39 @@ export class DeveloperController {
     const focusResolvedEarly = await this.projects.resolve(focusEarly);
     const folder =
       typeof focusResolvedEarly === 'string' ? null : focusResolvedEarly.root;
-    const report = creationChatLines(folder, ok);
+    const banner = creationJournalBanner({
+      ok,
+      folderWritten: gameFolderWritten(folder),
+      journalNote: mission?.journalNote,
+      summary: mission?.summary,
+    });
+    const report = banner.text ?? creationChatLines(folder, ok);
     const agentSentence = agentLine ? `Agents : ${agentLine}.` : '';
-    simpleRun.intent = ok ? 'Création terminée.' : failed ? 'La création n’a pas abouti.' : 'Création en cours.';
-    simpleRun.result = ok ? report : failed ? 'La création n’a pas abouti.' : null;
-    if (ok) this.pushProjectChatActivity(id, 'Fichiers du jeu écrits.');
+    const shownOk = ok || banner.kept;
+    simpleRun.phase = shownOk ? 'success' : failed || banner.failedShort ? 'failed' : 'running';
+    simpleRun.intent = banner.kept
+      ? 'Jeu écrit.'
+      : shownOk
+        ? 'Création terminée.'
+        : banner.failedShort
+          ? banner.text!
+          : failed
+            ? 'La création n’a pas abouti.'
+            : 'Création en cours.';
+    simpleRun.result = shownOk
+      ? report
+      : banner.failedShort
+        ? banner.text
+        : failed
+          ? 'La création n’a pas abouti.'
+          : null;
+    if (banner.kept || banner.failedShort) this.pushProjectChatActivity(id, banner.text!);
+    else if (ok) this.pushProjectChatActivity(id, 'Fichiers du jeu écrits.');
     else if (failed) this.pushProjectChatActivity(id, 'La création n’a pas abouti.');
-    const assistantText = [report, agentSentence].filter(Boolean).join('\n');
+    const assistantText =
+      banner.kept || banner.failedShort
+        ? banner.text!
+        : [report, agentSentence].filter(Boolean).join('\n');
     const assistant = {
       id: randomId(),
       role: 'assistant' as const,

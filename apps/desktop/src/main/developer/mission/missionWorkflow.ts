@@ -135,7 +135,12 @@ import type { ResolvedProject } from '../project/projectsWorkflow.js';
 import type { TaskHooks, TaskPhase } from '../task/taskRun.js';
 import type { TaskProject } from '../task/workflow.js';
 import type { DeveloperManualStore } from '../knowledge/manualStore.js';
-import type { MissionStore } from './history.js';
+import {
+  gameFolderWritten,
+  isJournalLock,
+  journalOutcomeLine,
+  type MissionStore,
+} from './history.js';
 
 type Step = (id: string, status: DevStepStatus, detail?: string) => void;
 
@@ -342,12 +347,52 @@ export class MissionWorkflow {
     return parts.join('\n\n');
   }
 
+  private gameFilesWritten(): boolean {
+    return gameFolderWritten(this.project?.root);
+  }
+
+  /** Une seule ligne de chat pour un verrou du journal. */
+  private rememberJournal(savedInPlace: boolean): string {
+    const mission = this.current!;
+    const line = journalOutcomeLine(this.gameFilesWritten(), savedInPlace);
+    if (mission.journalNote !== line) {
+      mission.journalNote = line;
+      this.deps.onMissionChatLine?.(line);
+    }
+    return line;
+  }
+
   private async persist(): Promise<void> {
     if (!this.current) return;
     this.current.updatedAt = this.now;
-    await this.deps.store.save(this.current);
+    let mode: 'renamed' | 'in-place' | 'lost' = 'renamed';
+    try {
+      mode = await this.deps.store.save(this.current);
+    } catch (error) {
+      if (!isJournalLock(error)) throw error;
+      mode = 'lost';
+    }
+    if (mode !== 'renamed') {
+      const written = this.gameFilesWritten();
+      const line = journalOutcomeLine(written, mode === 'in-place');
+      const announce = this.current.journalNote !== line;
+      this.current.journalNote = line;
+      if (announce) this.deps.onMissionChatLine?.(line);
+      if (announce && mode === 'in-place') {
+        try {
+          await this.deps.store.save(this.current);
+        } catch (error) {
+          if (!isJournalLock(error)) throw error;
+        }
+      }
+      if (!written) throw new Error(line);
+    }
     this.historyProject = this.current.projectId;
-    this.history = await this.deps.store.list(this.current.projectId);
+    try {
+      this.history = await this.deps.store.list(this.current.projectId);
+    } catch {
+      /* la liste peut manquer : la mission en mémoire reste valable */
+    }
     this.host.emit();
   }
 
@@ -692,11 +737,43 @@ export class MissionWorkflow {
 
   private fail(message: string, signal?: AbortSignal): void {
     if (!this.current) return;
-    this.current.status = signal?.aborted ? 'cancelled' : 'failed';
+    if (signal?.aborted) {
+      this.current.status = 'cancelled';
+      this.current.verdict = 'stopped';
+      this.current.summary = message;
+      this.persistLater();
+      return;
+    }
+    if (isJournalLock(message)) {
+      const written = this.gameFilesWritten();
+      const keep =
+        written &&
+        (this.current.verdict === 'success' || this.current.status === 'finished');
+      if (keep || (written && this.current.verdict === 'failed')) {
+        if (!this.current.journalNote?.startsWith('Jeu écrit')) this.rememberJournal(false);
+        if (keep) {
+          this.current.status = 'finished';
+          this.current.verdict = 'success';
+        }
+        this.persistLater();
+        return;
+      }
+      const told = Boolean(this.current.journalNote);
+      message = this.current.journalNote?.startsWith('Le jeu')
+        ? this.current.journalNote
+        : journalOutcomeLine(false, false);
+      this.current.journalNote = message;
+      this.current.status = 'failed';
+      this.current.verdict = 'stopped';
+      this.current.summary = message;
+      if (!told) this.deps.onMissionChatLine?.(developerMissionFailureLine(message));
+      this.persistLater();
+      return;
+    }
+    this.current.status = 'failed';
     this.current.verdict = 'stopped';
     this.current.summary = message;
-    if (!signal?.aborted)
-      this.deps.onMissionChatLine?.(developerMissionFailureLine(message));
+    this.deps.onMissionChatLine?.(developerMissionFailureLine(message));
     this.persistLater();
   }
 
@@ -1290,8 +1367,17 @@ export class MissionWorkflow {
           }
           this.patch('create', { status: 'done', detail: project.root, files: [project.root] });
           mission.projectId = project.id;
-          await this.deps.store.move(mission, from);
-          await this.persist();
+          this.project = project;
+          try {
+            await this.deps.store.move(mission, from);
+            await this.persist();
+          } catch (error) {
+            if (!isJournalLock(error) || !gameFolderWritten(project.root)) throw error;
+            if (!mission.journalNote) {
+              mission.journalNote = journalOutcomeLine(true, false);
+              this.deps.onMissionChatLine?.(mission.journalNote);
+            }
+          }
           return `Projet créé : ${project.root}.`;
         } catch (error) {
           if (mission.status === 'running')
@@ -1422,8 +1508,18 @@ export class MissionWorkflow {
     return this.host.emit();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      this.setAgentRole('package', 'failed', message, { error: message });
-      this.fail(message);
+      const journal = isJournalLock(error);
+      const keep =
+        journal &&
+        this.gameFilesWritten() &&
+        (this.current?.verdict === 'success' || this.current?.status === 'finished');
+      if (!keep) {
+        const text = journal ? journalOutcomeLine(false, false) : message;
+        this.setAgentRole('package', 'failed', text, { error: text });
+        this.fail(text);
+      } else {
+        this.fail(message);
+      }
       return this.host.emit();
     }
   }
