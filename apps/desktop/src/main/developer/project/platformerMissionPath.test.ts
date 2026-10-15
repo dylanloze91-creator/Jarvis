@@ -237,8 +237,7 @@ describe('chemin mission plateforme 2D (thedexios)', () => {
       const prep = await h.instance.prepareWorkspace(dir);
       const id = prep.focusProjectId ?? '';
       expect(id).toBeTruthy();
-      const order =
-        'Génère un jeu de plateforme 2D vue de côté, jouable dans le navigateur, avec saut, plateformes, un objet à ramasser et une arrivée.';
+      const order = 'Crée un jeu de plateforme 2D';
       const done = await h.instance.sendProjectChat(id, order);
       expect(done.mission?.status, String(done.mission?.summary ?? done.notice ?? '')).toBe(
         'finished',
@@ -247,12 +246,18 @@ describe('chemin mission plateforme 2D (thedexios)', () => {
       expect((done.mission?.agents ?? []).length).toBeGreaterThan(0);
       expect(done.codeTask?.model).toBe(CODE);
       expect(done.codeTask?.model).not.toBe('qwen3.8:latest');
-      const assistant = [...(done.projectChat?.messages ?? [])]
-        .reverse()
-        .find((message) => message.role === 'assistant');
-      expect(assistant?.content).toMatch(/Superviseur/);
-      expect(assistant?.content).toMatch(/Agents/);
+      const assistantText = (done.projectChat?.messages ?? [])
+        .filter((message) => message.role === 'assistant')
+        .map((message) => message.content)
+        .join('\n');
+      expect(assistantText).toMatch(/Dossier créé/);
+      expect(assistantText).toMatch(/Dépendances installées/);
+      expect(assistantText).toMatch(/Fichiers du jeu écrits/);
+      expect(assistantText).not.toMatch(/mkdir |npm init|npm install|voulez-vous que je/i);
       expect((done.projectChat?.activity ?? []).join('\n')).not.toMatch(/rien n’est modifié/);
+      expect(existsSync(join(dir, 'package.json'))).toBe(true);
+      expect(existsSync(join(dir, 'package-lock.json'))).toBe(true);
+      expect(existsSync(join(dir, '.git'))).toBe(true);
       const view = done.projects?.find((item) => item.id === id);
       expect(view?.path).toBe(dir);
       const level = readFileSync(join(dir, 'src', 'level.ts'), 'utf8');

@@ -87,6 +87,20 @@ describe('routeProjectChatOrder', () => {
     expect(routeProjectChatOrder('Comment marche level.ts ?', OPEN)).toBe('discuss');
   });
 
+  it('« Crée un jeu de plateforme 2D » part au Superviseur, pas en discussion', () => {
+    expect(routeProjectChatOrder('Crée un jeu de plateforme 2D', OPEN)).toBe('supervise-open');
+    expect(routeProjectChatOrder('Écris un jeu 2D jouable', OPEN)).toBe('supervise-open');
+    expect(routeProjectChatOrder('Comment créer un jeu de plateforme', OPEN)).toBe(
+      'supervise-open',
+    );
+  });
+
+  it('une retouche n’est pas une création', () => {
+    expect(
+      isCreateOrBuildOrder('Augmente la vitesse de la balle dans Pong', 'web-game'),
+    ).toBe(false);
+  });
+
   it('Jarvis n’est pas le dossier cible d’un jeu', () => {
     expect(
       routeProjectChatOrder('Génère un jeu de plateforme 2D', { jarvis: true, template: null }),

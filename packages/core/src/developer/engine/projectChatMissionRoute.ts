@@ -2,16 +2,92 @@ import { suggestMissionKind } from './router.js';
 import { isProjectChatDirectRequest } from './projectChatDirect.js';
 
 const EXPLICIT_NEW =
-  /\b(nouveau projet|nouvelle appli|nouvelle application|from scratch|depuis zéro|depuis zero)\b/i;
+  /(?:^|[^\p{L}\p{N}_])(nouveau projet|nouvelle appli|nouvelle application|from scratch|depuis zéro|depuis zero)(?=$|[^\p{L}\p{N}_])/iu;
 
-const BUILD_VERB =
-  /\b(crée|créer|creer|créé|cree|fais|fait|faire|fabrique|fabriquer|construis|construire|compose|composer|génère|générer|genere|generer|développe|développer|developpe|developper|programme|programmer|build|code|coder|écris|écrire|ecris|ecrire)\b/i;
+const BUILD_VERBS = [
+  'crée',
+  'créer',
+  'creer',
+  'créé',
+  'cree',
+  'fais',
+  'fait',
+  'faire',
+  'fabrique',
+  'fabriquer',
+  'construis',
+  'construire',
+  'compose',
+  'composer',
+  'génère',
+  'générer',
+  'genere',
+  'generer',
+  'développe',
+  'développer',
+  'developpe',
+  'developper',
+  'programme',
+  'programmer',
+  'build',
+  'code',
+  'coder',
+  'écris',
+  'écrire',
+  'ecris',
+  'ecrire',
+  'prépare',
+  'prepare',
+  'installe',
+  'installer',
+  'monte',
+] as const;
 
-const BUILD_TARGET =
-  /\b(jeu|jeux|game|appli|application|app|programme|outil|cli|site|page|plateforme|platformer|projet)\b/i;
+const PRODUCTS = [
+  'jeu',
+  'jeux',
+  'game',
+  'appli',
+  'application',
+  'app',
+  'programme',
+  'outil',
+  'cli',
+  'site',
+  'plateforme',
+  'platformer',
+  'projet',
+  'phaser',
+  'p5',
+  'pixi',
+  'three',
+] as const;
 
-const QUESTION_START =
-  /^\s*(pourquoi|comment|est-ce que|qu'est-ce|qu’est-ce|c'est quoi|c’est quoi|explique|dis-moi|dis moi)\b/i;
+const EDIT_VERBS = [
+  'augmente',
+  'augmenter',
+  'change',
+  'changer',
+  'corrige',
+  'corriger',
+  'modifie',
+  'modifier',
+  'retire',
+  'supprime',
+  'fixe',
+  'réduis',
+  'reduis',
+  'diminue',
+] as const;
+
+const CODE_QUESTION =
+  /^\s*(pourquoi|comment marche|comment fonctionne|comment ça|comment ca|où |ou est|c'est quoi|c’est quoi|qu'est-ce|qu’est-ce|explique|dis-moi|dis moi)\b/iu;
+
+/** Mot entier, y compris s’il commence par É/è (\\b de JS ignore ces lettres). */
+function mentions(text: string, words: readonly string[]): boolean {
+  const body = words.map((word) => word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
+  return new RegExp(`(?:^|[^\\p{L}\\p{N}_])(?:${body})(?=$|[^\\p{L}\\p{N}_])`, 'iu').test(text);
+}
 
 export type ProjectChatOrderRoute =
   | 'new-folder'
@@ -33,24 +109,34 @@ export function explicitNewProjectFromChat(text: string): boolean {
  * Ordre de créer ou construire un jeu ou une appli.
  * Un plan dans le chat n’est pas cet ordre : le Superviseur doit l’exécuter.
  */
-export function isCreateOrBuildOrder(text: string): boolean {
+export function isCreateOrBuildOrder(text: string, template: string | null = null): boolean {
   const t = text.trim();
   if (t.length < 8) return false;
   if (explicitNewProjectFromChat(t)) return false;
-  if (QUESTION_START.test(t)) return false;
-  if (/\?\s*$/.test(t) && !BUILD_VERB.test(t)) return false;
-  const target = BUILD_TARGET.test(t) || /\bmario\b/i.test(t);
-  if (!target) return false;
-  if (BUILD_VERB.test(t)) return true;
-  return /\b(je veux|je voudrais|j'aimerais|j’aimerais|j aimerais|il me faut|il faut|peux-tu|tu peux)\b/i.test(
-    t,
-  );
+  if (CODE_QUESTION.test(t)) return false;
+  const product = mentions(t, PRODUCTS) || /\bmario\b/iu.test(t);
+  if (!product) return false;
+  const creates = mentions(t, BUILD_VERBS);
+  const edits = mentions(t, EDIT_VERBS);
+  if (edits && !creates) return false;
+  if (/\?\s*$/.test(t) && !creates) return false;
+  if (template && edits) return false;
+  if (creates) return true;
+  if (
+    /\b(je veux|je voudrais|j'aimerais|j’aimerais|j aimerais|il me faut|il faut|peux-tu|tu peux)\b/iu.test(
+      t,
+    )
+  ) {
+    return true;
+  }
+  // Projet encore vide : « jeu de plateforme 2D » est déjà l’ordre, pas une question.
+  return !template;
 }
 
 /** Gabarit web-game : une retouche ciblée reste directe. Un ordre de création non. */
 export function isExistingWebGameChange(text: string, template: string | null): boolean {
   if (template !== 'web-game') return false;
-  if (explicitNewProjectFromChat(text) || isCreateOrBuildOrder(text)) return false;
+  if (explicitNewProjectFromChat(text) || isCreateOrBuildOrder(text, template)) return false;
   return isProjectChatDirectRequest(text);
 }
 
@@ -68,7 +154,9 @@ export function routeProjectChatOrder(
   withScreenshot = false,
 ): ProjectChatOrderRoute {
   if (explicitNewProjectFromChat(text)) return 'new-folder';
-  if (isCreateOrBuildOrder(text)) return project.jarvis ? 'jarvis-not-target' : 'supervise-open';
+  if (isCreateOrBuildOrder(text, project.template)) {
+    return project.jarvis ? 'jarvis-not-target' : 'supervise-open';
+  }
   if (
     !withScreenshot &&
     (isExistingWebGameChange(text, project.template) ||

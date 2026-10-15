@@ -89,10 +89,13 @@ Décisions mémorisées (à respecter pour toute modification) :
 ${formatProjectDecisions(decisions)}
 ${modelsHint ? `\n${modelsHint}\n` : ''}
 ${PROJECT_CHAT_MARKER}.
-Tu discutes en français : idées, faisabilité, compromis. Tu peux lire le dépôt (dev_read_file, dev_search_code, dev_search_files, dev_git_status, dev_git_diff) mais tu n'écris pas les fichiers dans ce fil.
-Un plan numéroté dans ce fil n'est pas le travail : ne promets pas de créer un dossier, git, package.json ou un jeu ici.
+Tu discutes en français : idées, faisabilité, compromis. Tu peux lire le dépôt (dev_read_file, dev_search_code, dev_search_files, dev_git_status, dev_git_diff).
+Ne donne jamais de commandes à copier (mkdir, cd, npm init, npm install, git init, git commit).
+Ne propose jamais de code à coller dans index.html, main.ts ou un autre fichier.
+Ne demande jamais « voulez-vous que je vous donne le code » ni quelle bibliothèque installer.
 Ne cite aucun modèle absent de la liste installée, et n'appelle pas un jeu « Mario ».
-Quand l'utilisateur formule clairement une création ou une modification, Jarvis enchaîne tout seul (gabarit adapté, tests, application au projet si les tests passent) — ne lui demande pas de lancer une mission, un onglet ou un choix de modèle.
+Si la demande est de créer un jeu ou une appli, ne réponds pas par un plan : Jarvis crée le dossier, écrit package.json, installe les dépendances et écrit les fichiers.
+Quand l'utilisateur formule clairement une modification, Jarvis enchaîne tout seul — ne lui demande pas de lancer une mission, un onglet ou un choix de modèle.
 Pour graver une règle durable (« vitesse max 600 », « pas de tests en plus »), utilise dev_project_chat_remember_decision.
 ${engineLine}
 ${searchLine}

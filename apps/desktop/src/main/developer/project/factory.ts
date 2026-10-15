@@ -88,6 +88,32 @@ export async function installProject(
     throw new FactoryError('npm install n’a pas créé package-lock.json.');
 }
 
+/** Installe une bibliothèque nommée dans l’ordre (Phaser, p5, …), sans la dicter. */
+export async function installNamedPackages(
+  run: Runner,
+  dir: string,
+  node: NodeTools,
+  packages: readonly string[],
+  options: { signal?: AbortSignal; onLine?: (line: string) => void } = {},
+): Promise<void> {
+  const names = packages.map((name) => name.trim()).filter(Boolean);
+  if (!names.length) return;
+  const args = ['install', '--ignore-scripts', '--no-audit', '--no-fund', ...names];
+  const outcome = await run({
+    program: node.nodePath,
+    args: [node.npmCli, ...args],
+    cwd: dir,
+    display: `npm ${args.join(' ')}`,
+    env: { ...process.env, FORCE_COLOR: '0', NO_COLOR: '1' },
+    timeoutMs: 15 * 60_000,
+    maxBytes: 400_000,
+    signal: options.signal,
+    onLine: options.onLine,
+  });
+  if (outcome.cancelled) throw new FactoryError('Installation annulée.');
+  if (outcome.code !== 0) throw failed(outcome, 'npm install', dir);
+}
+
 /** `dotnet restore` de la solution du gabarit : paquets NuGet (réseau, confirmé avant). */
 export async function restoreDotnetProject(
   run: Runner,

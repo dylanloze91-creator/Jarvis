@@ -16,13 +16,12 @@ import { createFixtureRepo } from './task/taskWorkflow.testkit.js';
 
 const LIVE = process.env.LIVE_CHAT_BUILD === '1';
 const MODEL = process.env.LIVE_PLATFORMER_MODEL ?? 'qwen2.5-coder:3b';
-const PROOF_DIR = '/tmp/jarvis-5.0.32-chat-order';
+const PROOF_DIR = '/tmp/jarvis-5.0.33-chat-order';
 let base = '';
 let projectsRoot = '';
 let repo = '';
 
-const ORDER =
-  'Génère un jeu de plateforme 2D vue de côté, jouable dans le navigateur, avec saut, des plateformes, un objet à ramasser et une arrivée.';
+const ORDER = 'Crée un jeu de plateforme 2D';
 
 function run(cwd: string, cmd: string, args: string[]) {
   return execFileSync(cmd, args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
@@ -64,7 +63,7 @@ describe.runIf(LIVE)('preuve live : ordre du chat dans le dossier ouvert', () =>
       expect(id, String(prep.notice ?? '')).toBeTruthy();
       const done = await h.instance.sendProjectChat(id, ORDER);
       writeFileSync(
-        '/tmp/jarvis-5.0.32-chat-order-state.json',
+        '/tmp/jarvis-5.0.33-chat-order-state.json',
         JSON.stringify(
           {
             notice: done.notice,
@@ -86,14 +85,21 @@ describe.runIf(LIVE)('preuve live : ordre du chat dans le dossier ouvert', () =>
       expect(done.codeTask?.model).toBe(MODEL);
       expect(done.codeTask?.model).not.toBe('qwen3.8:latest');
       expect(done.codeTask?.model).not.toBe('qwen3.5:4b');
-      const assistant = [...(done.projectChat?.messages ?? [])]
-        .reverse()
-        .find((message) => message.role === 'assistant');
-      expect(assistant?.content).toMatch(/Superviseur/);
-      expect(assistant?.content).toMatch(/Agents/);
-      expect(assistant?.content?.toLowerCase()).not.toContain('mario');
+      const assistantText = (done.projectChat?.messages ?? [])
+        .filter((message) => message.role === 'assistant')
+        .map((message) => message.content)
+        .join('\n');
+      expect(assistantText).toMatch(/Dossier créé/);
+      expect(assistantText).toMatch(/Dépendances installées/);
+      expect(assistantText).toMatch(/Fichiers du jeu écrits/);
+      expect(assistantText).not.toMatch(/mkdir |npm init|npm install|voulez-vous que je|copier dans/i);
+      expect(assistantText.toLowerCase()).not.toContain('mario');
       const activity = (done.projectChat?.activity ?? []).join('\n');
       expect(activity).not.toMatch(/rien n’est modifié/);
+      expect(existsSync(join(dir, 'package.json'))).toBe(true);
+      expect(existsSync(join(dir, 'package-lock.json'))).toBe(true);
+      expect(existsSync(join(dir, 'node_modules'))).toBe(true);
+      expect(existsSync(join(dir, '.git'))).toBe(true);
       const view = (await h.instance.listProjects()).projects!.find((item) => item.id === id)!;
       expect(view.path).toBe(dir);
       const level = readFileSync(join(dir, 'src', 'level.ts'), 'utf8');
@@ -121,7 +127,7 @@ describe.runIf(LIVE)('preuve live : ordre du chat dans le dossier ouvert', () =>
               status: agent.status,
               role: agent.role,
             })),
-            assistant: assistant?.content,
+            assistant: assistantText,
             activity: done.projectChat?.activity ?? [],
             tests: 'passed',
             build: 'dist/index.html',

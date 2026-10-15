@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   briefWithoutTrademark,
   isPlatformerRequest,
+  librariesForCreation,
   platformerProjectTitle,
   webResearchChatLine,
 } from './newProjectMethod.js';
@@ -35,6 +36,11 @@ describe('newProjectMethod', () => {
     });
     expect(out.name).toBe(platformerProjectTitle());
     expect(out.description.toLowerCase()).not.toContain('mario');
+  });
+
+  it('nomme la bibliothèque à installer, sans la dicter', () => {
+    expect(librariesForCreation('Un jeu avec Phaser et un peu de p5.js')).toEqual(['phaser', 'p5']);
+    expect(librariesForCreation('Jeu de plateforme 2D')).toEqual([]);
   });
 
   it('résume la recherche web en une ligne', () => {

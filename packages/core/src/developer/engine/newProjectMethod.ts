@@ -9,6 +9,22 @@ export function platformerProjectTitle(): string {
   return 'Jeu de plateforme 2D';
 }
 
+const CREATION_LIBRARIES: Array<[RegExp, string]> = [
+  [/\bphaser\b/i, 'phaser'],
+  [/\bp5(?:\.js)?\b/i, 'p5'],
+  [/\bpixi(?:\.js)?\b/i, 'pixi.js'],
+  [/\bthree(?:\.js)?\b/i, 'three'],
+];
+
+/** Bibliothèque nommée dans l’ordre : Jarvis l’installe, il ne la dicte pas. */
+export function librariesForCreation(text: string): string[] {
+  const found: string[] = [];
+  for (const [pattern, name] of CREATION_LIBRARIES) {
+    if (pattern.test(text) && !found.includes(name)) found.push(name);
+  }
+  return found;
+}
+
 /** Retire un titre de marque : les agents voient un jeu de plateforme, pas ce nom. */
 export function briefWithoutTrademark(text: string): string {
   if (!/\bmario\b/i.test(text)) return text.trim();

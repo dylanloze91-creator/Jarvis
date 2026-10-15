@@ -7,10 +7,17 @@ import {
 } from './projectChat.js';
 
 describe('projectChat', () => {
-  it('rappelle qu’aucune écriture directe n’est faite dans le fil', () => {
-    expect(
-      projectChatSystemPrompt(JARVIS_PROJECT_PROFILE, 'notes', [], ['qwen2.5-coder:14b'], true),
-    ).toMatch(/tu n'écris pas les fichiers dans ce fil/i);
+  it('interdit les commandes à copier et le code à coller', () => {
+    const prompt = projectChatSystemPrompt(
+      JARVIS_PROJECT_PROFILE,
+      'notes',
+      [],
+      ['qwen2.5-coder:14b'],
+      true,
+    );
+    expect(prompt).toMatch(/Ne donne jamais de commandes à copier/i);
+    expect(prompt).toMatch(/npm install/);
+    expect(prompt).toMatch(/voulez-vous que je vous donne le code/i);
   });
 
   it('inclut l’historique dans le prompt', () => {

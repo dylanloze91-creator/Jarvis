@@ -19,6 +19,7 @@ import {
   randomId,
   folderRedirectChatLine,
   isPlatformerRequest,
+  librariesForCreation,
   platformerProjectTitle,
   projectIdFor,
   projectNameFromRequest,
@@ -48,6 +49,7 @@ import {
   FactoryError,
   factoryCommands,
   initProjectRepo,
+  installNamedPackages,
   installProject,
   restoreDotnetProject,
   writeProjectFiles,
@@ -793,7 +795,7 @@ export class ProjectsWorkflow {
       files.length,
       target ? `dotnet restore ${target}` : undefined,
     );
-    const trusted = Boolean(options?.trustedMissionCreate && reuse);
+    const trusted = Boolean(options?.trustedMissionCreate);
     step('create', 'running', trusted ? 'gabarit (mission en cours)' : 'ta confirmation');
     const approved = trusted
       ? true
@@ -833,18 +835,30 @@ export class ProjectsWorkflow {
     if (!approved) return null;
     step('create', 'running', 'fichiers du gabarit');
     await writeProjectFiles(dir, files);
+    this.host.chatLine?.('Dossier créé.');
+    if (!target) this.host.chatLine?.('package.json écrit.');
     if (target) {
-      step('create', 'running', `dotnet restore ${target} (réseau)`);
+      step('create', 'running', 'dépendances');
       await restoreDotnetProject(this.deps.run, dir, target, {
         signal,
         onLine: (l) => this.host.log(l),
       });
     } else {
-      step('create', 'running', 'npm install (réseau)');
+      step('create', 'running', 'dépendances');
       await installProject(this.deps.run, dir, node!, { signal, onLine: (l) => this.host.log(l) });
+      const libraries = librariesForCreation(`${input.name}\n${input.description}`);
+      if (libraries.length) {
+        await installNamedPackages(this.deps.run, dir, node!, libraries, {
+          signal,
+          onLine: (l) => this.host.log(l),
+        });
+        this.host.chatLine?.(`Bibliothèque installée : ${libraries.join(', ')}.`);
+      }
     }
-    step('create', 'running', 'git init et premier commit');
+    this.host.chatLine?.('Dépendances installées.');
+    step('create', 'running', 'dépôt git local');
     const head = await initProjectRepo(this.deps.run, dir, signal);
+    this.host.chatLine?.('Dépôt git local prêt.');
     const entry: ProjectEntry = {
       id,
       name: input.name,

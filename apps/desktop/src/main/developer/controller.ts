@@ -32,7 +32,24 @@ import {
   type ToolCallOutcome,
   type ToolManager,
 } from '@jarvis/core';
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
+
+function creationChatLines(folder: string | null, ok: boolean): string {
+  if (!ok) return 'La création n’a pas abouti.';
+  const lines: string[] = [];
+  if (folder && existsSync(folder)) lines.push('Dossier créé.');
+  if (folder && existsSync(join(folder, 'package.json'))) lines.push('package.json écrit.');
+  if (
+    folder &&
+    (existsSync(join(folder, 'package-lock.json')) || existsSync(join(folder, 'node_modules')))
+  ) {
+    lines.push('Dépendances installées.');
+  }
+  if (folder && existsSync(join(folder, '.git'))) lines.push('Dépôt git local prêt.');
+  lines.push('Fichiers du jeu écrits.');
+  return lines.join('\n');
+}
 import { runProjectChatTurn, type ProjectChatSideEffects } from './project/projectChatFlow.js';
 import { ProjectPreviewWindow } from './project/projectPreview.js';
 import { verifyWebGameRuntime } from './project/webGameRuntimeCheck.js';
@@ -1139,30 +1156,21 @@ export class DeveloperController {
       (simpleRun as ProjectSimpleRun & { diff?: typeof task.diff }).diff = task.diff;
     }
     const agentLine = (mission?.agents ?? [])
-      .map((agent) => `${agent.name} (${agent.status})`)
+      .map((agent) => agent.name)
+      .filter(Boolean)
       .join(', ');
+    const focusEarly =
+      mission?.projectId && mission.projectId !== NEW_PROJECT_SCOPE ? mission.projectId : id;
+    const focusResolvedEarly = await this.projects.resolve(focusEarly);
+    const folder =
+      typeof focusResolvedEarly === 'string' ? null : focusResolvedEarly.root;
+    const report = creationChatLines(folder, ok);
     const agentSentence = agentLine ? `Agents : ${agentLine}.` : '';
-    simpleRun.intent = ok
-      ? 'Mission terminée.'
-      : failed
-        ? 'La mission n’a pas abouti.'
-        : 'Mission en pause ou en attente.';
-    simpleRun.result = ok
-      ? reuseOpenProject
-        ? `Les agents ont écrit dans ce dossier. ${agentSentence}`.trim()
-        : 'Le projet a été créé dans ton dossier Projets. Tu peux l’ouvrir dans la liste à gauche.'
-      : failed
-        ? mission?.summary ?? 'Échec de la mission.'
-        : null;
-    if (ok) this.pushProjectChatActivity(id, reuseOpenProject ? 'Terminé : fichiers écrits dans ce dossier.' : 'Terminé : projet livré.');
-    else if (failed) this.pushProjectChatActivity(id, `Bloqué ou échec : ${mission?.summary ?? 'voir le détail'}.`);
-    const assistantText = ok
-      ? reuseOpenProject
-        ? `Le Superviseur a pris l’ordre. ${agentSentence}\n\n${mission?.summary ?? order}`.trim()
-        : `Mission terminée : ${mission?.summary ?? order}\n\nLe nouveau projet apparaît dans la liste. Ouvre-le pour continuer dans le chat.`
-      : failed
-        ? `Je n’ai pas pu livrer le projet : ${mission?.summary ?? 'mission interrompue ou refusée'}.${agentSentence ? ` ${agentSentence}` : ''}`
-        : `Mission en cours ou en attente : ${MISSION_LABELS[mission?.kind ?? 'new-project']}. ${agentSentence}`.trim();
+    simpleRun.intent = ok ? 'Création terminée.' : failed ? 'La création n’a pas abouti.' : 'Création en cours.';
+    simpleRun.result = ok ? report : failed ? 'La création n’a pas abouti.' : null;
+    if (ok) this.pushProjectChatActivity(id, 'Fichiers du jeu écrits.');
+    else if (failed) this.pushProjectChatActivity(id, 'La création n’a pas abouti.');
+    const assistantText = [report, agentSentence].filter(Boolean).join('\n');
     const assistant = {
       id: randomId(),
       role: 'assistant' as const,
@@ -1175,11 +1183,9 @@ export class DeveloperController {
       { decisions: [], webSearchUsed: false },
       nextMessages,
     );
-    const focusId =
-      mission?.projectId && mission.projectId !== NEW_PROJECT_SCOPE ? mission.projectId : id;
-    const focusResolved = await this.projects.resolve(focusId);
+    const focusId = focusEarly;
     const focusName =
-      typeof focusResolved === 'string' ? resolved.name : focusResolved.name;
+      typeof focusResolvedEarly === 'string' ? resolved.name : focusResolvedEarly.name;
     await this.projects.saveChatState(focusId, merged);
     this.missionChatTarget = focusId;
     this.projectChat = this.chatView(
