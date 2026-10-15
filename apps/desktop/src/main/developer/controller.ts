@@ -10,7 +10,11 @@ import {
   missionRequestFromProjectChat,
   codeModelsOffered,
   briefWithoutTrademark,
+  announcedFolderPath,
+  carryOutMissionRequest,
+  isCarryOutOrder,
   routeProjectChatOrder,
+  sameFolderPath,
   MISSION_LABELS,
   GRAPHICS_ENGINE_GRANT_DECISION,
   graphicsEngineChatPromptLine,
@@ -73,6 +77,8 @@ import {
   MissionStore,
   creationJournalBanner,
   gameFolderWritten,
+  levelDelivered,
+  presentWrittenGame,
 } from './mission/history.js';
 import { MissionWorkflow } from './mission/missionWorkflow.js';
 import { ProjectStore } from './project/projectStore.js';
@@ -368,6 +374,8 @@ export class DeveloperController {
           return shortcut?.label ?? null;
         },
         applyTaskToProject: () => this.tasks.applyDirectToProject(),
+        openProjectPreview: async (project) =>
+          this.projectPreview.open(project.id, project.root, project.template ?? null),
       },
       {
         registry: deps.registry,
@@ -907,14 +915,35 @@ export class DeveloperController {
       this.projectPreview.isOpen(id),
     );
     await this.projects.saveChatState(id, chatPersisted);
-    const orderRoute = routeProjectChatOrder(
-      userText,
-      {
-        jarvis: resolved.id === JARVIS_PROJECT_ID,
-        template: resolved.template ?? null,
-      },
-      withScreenshot,
-    );
+    let focusResolved = resolved;
+    let focusChatId = id;
+    const carry = isCarryOutOrder(userText);
+    if (carry) {
+      const announced = announcedFolderPath(pendingMessages);
+      if (announced) {
+        const views = await this.projects.refresh();
+        const found = views.find((view) => sameFolderPath(view.path, announced));
+        if (found) {
+          const switched = await this.projects.resolve(found.id);
+          if (typeof switched !== 'string') {
+            focusResolved = switched;
+            focusChatId = found.id;
+          }
+        }
+      }
+    }
+    const orderRoute = carry
+      ? focusResolved.id === JARVIS_PROJECT_ID
+        ? 'jarvis-not-target'
+        : 'supervise-open'
+      : routeProjectChatOrder(
+          userText,
+          {
+            jarvis: resolved.id === JARVIS_PROJECT_ID,
+            template: resolved.template ?? null,
+          },
+          withScreenshot,
+        );
     if (orderRoute === 'jarvis-not-target') {
       this.notice =
         'Cet ordre s’écrit dans le projet ouvert. Utilise Nouveau, un raccourci, ou les mots « nouveau projet » pour un dossier neuf — pas la copie de Jarvis.';
@@ -922,9 +951,9 @@ export class DeveloperController {
     }
     if (orderRoute === 'new-folder' || orderRoute === 'supervise-open') {
       return this.runProjectChatNewProjectMission(
-        id,
-        resolved,
-        userText,
+        focusChatId,
+        focusResolved,
+        carry ? carryOutMissionRequest(pendingMessages, userText) : userText,
         chatPersisted,
         pendingMessages,
         orderRoute === 'supervise-open',
@@ -1168,39 +1197,102 @@ export class DeveloperController {
     const focusResolvedEarly = await this.projects.resolve(focusEarly);
     const folder =
       typeof focusResolvedEarly === 'string' ? null : focusResolvedEarly.root;
+    const delivered = levelDelivered(folder);
     const banner = creationJournalBanner({
       ok,
       folderWritten: gameFolderWritten(folder),
+      levelWritten: delivered,
       journalNote: mission?.journalNote,
       summary: mission?.summary,
     });
-    const report = banner.text ?? creationChatLines(folder, ok);
+    const presented =
+      ok && delivered && folder
+        ? await presentWrittenGame({
+            root: folder,
+            openPreview: async (root) => {
+              try {
+                return await this.projectPreview.open(
+                  focusEarly,
+                  root,
+                  typeof focusResolvedEarly === 'string' ? null : focusResolvedEarly.template ?? null,
+                );
+              } catch {
+                return false;
+              }
+            },
+            placeShortcut: async () => {
+              try {
+                if (/Raccourci/i.test(mission?.summary ?? '')) return 'déjà';
+                const node =
+                  (typeof focusResolvedEarly !== 'string' &&
+                    focusResolvedEarly.template === 'web-game' &&
+                    (await this.environmentNode())) ||
+                  null;
+                const shortcut = await createProjectDesktopShortcut({
+                  projectId: focusEarly,
+                  projectName:
+                    typeof focusResolvedEarly === 'string' ? focusEarly : focusResolvedEarly.name,
+                  template:
+                    typeof focusResolvedEarly === 'string'
+                      ? undefined
+                      : focusResolvedEarly.template ?? undefined,
+                  projectRoot: folder,
+                  platform: this.deps.platform,
+                  home: this.deps.home,
+                  run: this.run,
+                  ...(node ? { node } : {}),
+                  jarvisExe:
+                    typeof app?.getPath === 'function' ? app.getPath('exe') : process.execPath,
+                });
+                return shortcut?.label ?? null;
+              } catch {
+                return null;
+              }
+            },
+          }).catch(() => null)
+        : null;
+    const creationReport = creationChatLines(folder, ok);
+    const report =
+      banner.text ??
+      (presented?.delivered ? `${creationReport}\n${presented.line}` : creationReport);
     const agentSentence = agentLine ? `Agents : ${agentLine}.` : '';
-    const shownOk = ok || banner.kept;
-    simpleRun.phase = shownOk ? 'success' : failed || banner.failedShort ? 'failed' : 'running';
-    simpleRun.intent = banner.kept
-      ? 'Jeu écrit.'
+    const shownOk = (ok || banner.kept || presented?.delivered === true) && !banner.retry;
+    simpleRun.phase = banner.retry
+      ? 'failed'
       : shownOk
-        ? 'Création terminée.'
+        ? 'success'
+        : failed || banner.failedShort
+          ? 'failed'
+          : 'running';
+    simpleRun.intent = banner.retry
+      ? banner.text!
+      : banner.kept
+        ? 'Jeu écrit.'
+        : shownOk
+          ? 'Création terminée.'
+          : banner.failedShort
+            ? banner.text!
+            : failed
+              ? 'La création n’a pas abouti.'
+              : 'Création en cours.';
+    simpleRun.result = banner.retry
+      ? banner.text
+      : shownOk
+        ? report
         : banner.failedShort
-          ? banner.text!
+          ? banner.text
           : failed
             ? 'La création n’a pas abouti.'
-            : 'Création en cours.';
-    simpleRun.result = shownOk
-      ? report
-      : banner.failedShort
-        ? banner.text
-        : failed
-          ? 'La création n’a pas abouti.'
-          : null;
-    if (banner.kept || banner.failedShort) this.pushProjectChatActivity(id, banner.text!);
+            : null;
+    if (banner.kept || banner.failedShort || banner.retry) this.pushProjectChatActivity(id, banner.text!);
     else if (ok) this.pushProjectChatActivity(id, 'Fichiers du jeu écrits.');
     else if (failed) this.pushProjectChatActivity(id, 'La création n’a pas abouti.');
     const assistantText =
-      banner.kept || banner.failedShort
+      banner.kept || banner.failedShort || banner.retry
         ? banner.text!
-        : [report, agentSentence].filter(Boolean).join('\n');
+        : presented?.delivered
+          ? [creationReport, presented.line, agentSentence].filter(Boolean).join('\n')
+          : [report, agentSentence].filter(Boolean).join('\n');
     const assistant = {
       id: randomId(),
       role: 'assistant' as const,

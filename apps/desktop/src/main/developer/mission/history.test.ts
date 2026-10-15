@@ -7,7 +7,6 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   JOURNAL_KEPT_LINE,
   JOURNAL_MISSING_LINE,
-  JOURNAL_UNSAVED_LINE,
   MissionStore,
   creationJournalBanner,
   gameFolderWritten,
@@ -118,26 +117,31 @@ describe('journal de mission sous EPERM', () => {
     const banner = creationJournalBanner({
       ok: true,
       folderWritten: gameFolderWritten(game),
+      levelWritten: true,
       journalNote: JOURNAL_KEPT_LINE,
       summary: mission.summary,
     });
     expect(banner.kept).toBe(true);
-    expect(banner.text).toBe(JOURNAL_KEPT_LINE);
+    expect(banner.text).toMatch(/Jeu écrit/);
+    expect(banner.text).toMatch(/Aperçu ouvert/);
     expect(banner.text).not.toMatch(/AppData|[A-Za-z]:\\/);
 
     const crashed = creationJournalBanner({
       ok: false,
       folderWritten: true,
+      levelWritten: false,
       summary: eperm(windowsPath).message,
     });
-    expect(crashed.kept).toBe(true);
-    expect(crashed.failedShort).toBe(false);
-    expect(crashed.text).toBe(JOURNAL_UNSAVED_LINE);
+    expect(crashed.kept).toBe(false);
+    expect(crashed.retry).toBe(true);
+    expect(crashed.text).not.toMatch(/Jeu écrit/);
+    expect(crashed.text).toMatch(/gabarit/);
     expect(crashed.text).not.toMatch(/AppData|[A-Za-z]:\\/);
 
     const empty = creationJournalBanner({
       ok: false,
       folderWritten: false,
+      levelWritten: false,
       summary: eperm(windowsPath).message,
     });
     expect(empty.kept).toBe(false);

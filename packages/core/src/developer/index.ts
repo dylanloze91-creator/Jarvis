@@ -41,6 +41,7 @@ export * from './engine/profiles/dotnet.js';
 export * from './engine/dotnetTemplates.js';
 export * from './engine/dotnetDesktop.js';
 export * from './engine/templates.js';
+export { isNeutralPlatformerLevel, platformerWebGameFiles } from './engine/webGamePlatformer.js';
 export * from './engine/project.js';
 export * from './engine/improve.js';
 export * from './engine/skill.js';

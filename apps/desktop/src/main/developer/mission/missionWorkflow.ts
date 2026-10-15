@@ -110,6 +110,7 @@ import {
   type ProjectTemplateId,
   parseNvidiaSmi,
   briefWithoutTrademark,
+  isPlatformerRequest,
   fallbackSupervisorPlan,
   supervisorPlanSchema,
   supervisorPrompt,
@@ -136,9 +137,11 @@ import type { TaskHooks, TaskPhase } from '../task/taskRun.js';
 import type { TaskProject } from '../task/workflow.js';
 import type { DeveloperManualStore } from '../knowledge/manualStore.js';
 import {
+  TEMPLATE_STILL_LINE,
   gameFolderWritten,
   isJournalLock,
   journalOutcomeLine,
+  levelDelivered,
   type MissionStore,
 } from './history.js';
 
@@ -184,6 +187,8 @@ export interface MissionHost {
   ): Promise<string | null>;
   /** Fusionne la copie isolée dans le dossier projet (5.0.30). */
   applyTaskToProject?(): Promise<DeveloperState>;
+  /** Ouvre l’aperçu du jeu dès que le niveau est vraiment écrit. */
+  openProjectPreview?(project: ResolvedProject): Promise<boolean>;
 }
 
 /** Projets (0.5.3) : copie et profil d'un projet, sa mémoire, la Project Factory. */
@@ -273,6 +278,8 @@ export class MissionWorkflow {
   private activeRole: SpecialistRole | null = null;
   private counters = new Map<TaskPhase, number>();
   private open = new Map<TaskPhase, string>();
+  /** Un seul nouvel essai d’écriture si le gabarit est encore intact. */
+  private levelRetried = false;
 
   constructor(
     private readonly host: MissionHost,
@@ -351,10 +358,18 @@ export class MissionWorkflow {
     return gameFolderWritten(this.project?.root);
   }
 
-  /** Une seule ligne de chat pour un verrou du journal. */
+  private levelIsDelivered(): boolean {
+    return levelDelivered(this.project?.root);
+  }
+
+  /** Une seule ligne de chat pour un verrou du journal. Le gabarit intact n’est pas un jeu. */
   private rememberJournal(savedInPlace: boolean): string {
     const mission = this.current!;
-    const line = journalOutcomeLine(this.gameFilesWritten(), savedInPlace);
+    const line = this.levelIsDelivered()
+      ? journalOutcomeLine(true, savedInPlace)
+      : this.gameFilesWritten()
+        ? TEMPLATE_STILL_LINE
+        : journalOutcomeLine(false, false);
     if (mission.journalNote !== line) {
       mission.journalNote = line;
       this.deps.onMissionChatLine?.(line);
@@ -373,8 +388,12 @@ export class MissionWorkflow {
       mode = 'lost';
     }
     if (mode !== 'renamed') {
-      const written = this.gameFilesWritten();
-      const line = journalOutcomeLine(written, mode === 'in-place');
+      const delivered = this.levelIsDelivered();
+      const line = delivered
+        ? journalOutcomeLine(true, mode === 'in-place')
+        : this.gameFilesWritten()
+          ? TEMPLATE_STILL_LINE
+          : journalOutcomeLine(false, false);
       const announce = this.current.journalNote !== line;
       this.current.journalNote = line;
       if (announce) this.deps.onMissionChatLine?.(line);
@@ -385,7 +404,7 @@ export class MissionWorkflow {
           if (!isJournalLock(error)) throw error;
         }
       }
-      if (!written) throw new Error(line);
+      if (!delivered && !this.gameFilesWritten()) throw new Error(line);
     }
     this.historyProject = this.current.projectId;
     try {
@@ -697,6 +716,7 @@ export class MissionWorkflow {
       this.current.projectDecisions = chatExtras.projectDecisions.slice(0, 40);
     this.counters.clear();
     this.open.clear();
+    this.levelRetried = false;
     await this.persist();
     if (link && project) {
       const source = await this.deps.store.load(project.id, link.missionId);
@@ -745,11 +765,24 @@ export class MissionWorkflow {
       return;
     }
     if (isJournalLock(message)) {
-      const written = this.gameFilesWritten();
+      const delivered = this.levelIsDelivered();
+      if (!delivered) {
+        const line = this.gameFilesWritten() ? TEMPLATE_STILL_LINE : journalOutcomeLine(false, false);
+        if (this.current.journalNote !== line) {
+          this.current.journalNote = line;
+          this.deps.onMissionChatLine?.(line);
+        }
+        if (!this.gameFilesWritten()) {
+          this.current.status = 'failed';
+          this.current.verdict = 'stopped';
+          this.current.summary = line;
+        }
+        this.persistLater();
+        return;
+      }
       const keep =
-        written &&
-        (this.current.verdict === 'success' || this.current.status === 'finished');
-      if (keep || (written && this.current.verdict === 'failed')) {
+        this.current.verdict === 'success' || this.current.status === 'finished';
+      if (keep || this.current.verdict === 'failed') {
         if (!this.current.journalNote?.startsWith('Jeu écrit')) this.rememberJournal(false);
         if (keep) {
           this.current.status = 'finished';
@@ -1417,7 +1450,7 @@ export class MissionWorkflow {
       ),
     ].join('\n');
     const fallbackPlan = template ? templatePlan(template, mission.request, project.name) : null;
-    await this.host.startTask(mission.request, {
+    const taskOptions = {
       model: coder,
       templateId: template ?? undefined,
       hooks: {
@@ -1444,66 +1477,106 @@ export class MissionWorkflow {
         profile: project.profile,
         templateId: template ?? undefined,
       },
-    });
-    await this.finishFromTask();
+    };
+    const platformer = template === 'web-game' && isPlatformerRequest(mission.request);
     let merged = false;
-    if (mission.verdict === 'success' && this.host.applyTaskToProject) {
-      const applied = await this.host.applyTaskToProject();
-      const task = this.host.currentTask() ?? applied.codeTask;
-      merged = Boolean(task?.applied && task.applied.revertedAt === null);
-      if (merged && task?.worktreePath) {
-        await this.syncDeliveredFiles(
-          task.worktreePath,
-          project.root,
-          task.diff.map((f) => f.path),
-        );
+    for (let pass = 0; pass < (platformer ? 2 : 1); pass++) {
+      if (pass === 1) {
+        if (this.levelIsDelivered()) break;
+        if (mission.verdict === 'failed' || mission.verdict === 'stopped') break;
+        this.levelRetried = true;
+        mission.status = 'task';
+        mission.verdict = null;
+        mission.journalNote = TEMPLATE_STILL_LINE;
+        this.deps.onMissionChatLine?.(TEMPLATE_STILL_LINE);
       }
-      if (merged) {
-        mission.summary = `Livré : ${task?.diff.length ?? 0} fichier(s) fusionnés dans ${project.root}.`;
-        for (const agent of codeAgents) {
+      const request =
+        pass === 0
+          ? mission.request
+          : `${mission.request}\n\n${TEMPLATE_STILL_LINE} Remplace PLAY_LEVEL dans src/level.ts : le niveau tutoriel ne compte pas.`;
+      try {
+        await this.host.startTask(request, taskOptions);
+        await this.finishFromTask();
+      } catch (error) {
+        if (this.levelIsDelivered() || pass === 1 || !platformer) throw error;
+        continue;
+      }
+      merged = false;
+      if (mission.verdict === 'success' && this.host.applyTaskToProject) {
+        const applied = await this.host.applyTaskToProject();
+        const task = this.host.currentTask() ?? applied.codeTask;
+        merged = Boolean(task?.applied && task.applied.revertedAt === null);
+        if (merged && task?.worktreePath) {
+          await this.syncDeliveredFiles(
+            task.worktreePath,
+            project.root,
+            task.diff.map((f) => f.path),
+          );
+        }
+        if (merged) {
+          mission.summary = `Livré : ${task?.diff.length ?? 0} fichier(s) fusionnés dans ${project.root}.`;
+          for (const agent of codeAgents) {
+            this.agent(agent.id, {
+              status: 'done',
+              detail: `${task?.diff.length ?? 0} fichier(s) livré(s)`,
+              files: task?.diff.map((file) => file.path) ?? [],
+            });
+          }
+        } else {
+          mission.verdict = 'failed';
+          mission.status = 'failed';
+          mission.summary = 'Échec : la fusion dans le dossier projet a échoué.';
+        }
+      }
+      const stopped = mission.verdict === 'failed' || mission.verdict === 'stopped';
+      const levelMissing = platformer && !this.levelIsDelivered();
+      if (levelMissing && !stopped && pass === 0) continue;
+      if (!levelMissing && mission.verdict === 'success' && merged) {
+        this.deps.onMissionChatLine?.(
+          developerAgentFinished('codeur', mission.summary?.slice(0, 120) ?? 'code livré'),
+        );
+      } else if (stopped) {
+        for (const agent of codeAgents.filter((agent) => agent.status !== 'done')) {
           this.agent(agent.id, {
-            status: 'done',
-            detail: `${task?.diff.length ?? 0} fichier(s) livré(s)`,
-            files: task?.diff.map((file) => file.path) ?? [],
+            status: 'failed',
+            error: mission.summary?.slice(0, 300) ?? 'mission interrompue',
           });
         }
-      } else {
-        mission.verdict = 'failed';
-        mission.status = 'failed';
-        mission.summary = 'Échec : la fusion dans le dossier projet a échoué.';
+        this.deps.onMissionChatLine?.(
+          developerAgentFailed('codeur', mission.summary?.slice(0, 160) ?? 'mission interrompue'),
+        );
       }
-    }
-    if (mission.verdict === 'success' && merged) {
-      this.deps.onMissionChatLine?.(
-        developerAgentFinished('codeur', mission.summary?.slice(0, 120) ?? 'code livré'),
-      );
-    } else if (mission.verdict === 'failed' || mission.verdict === 'stopped') {
-      for (const agent of codeAgents.filter((agent) => agent.status !== 'done')) {
-        this.agent(agent.id, {
-          status: 'failed',
-          error: mission.summary?.slice(0, 300) ?? 'mission interrompue',
-        });
+      if (!levelMissing && mission.verdict === 'success' && merged && project) {
+        this.deps.onMissionFocusProject?.(project.id);
+        this.setAgentRole('package', 'running', 'prépare le livrable et le raccourci Bureau');
+        await this.deliverWindowsExeIfRequested(template ?? undefined, mission.request, mission.projectId!);
+        const shortcut = await this.host.deliverDesktopShortcut?.(project, mission.request);
+        if (shortcut) this.deps.onMissionChatLine?.(`Raccourci bureau : ${shortcut}`);
+        this.setAgentRole(
+          'package',
+          shortcut ? 'done' : 'failed',
+          shortcut ? `Raccourci Bureau : ${shortcut}` : 'Aucun raccourci n’a pu être créé.',
+          shortcut ? {} : { error: 'Le raccourci Bureau n’a pas été créé.' },
+        );
+        const doneAgents = (mission.agents ?? []).filter((agent) => agent.status === 'done').length;
+        const failedAgents = (mission.agents ?? []).filter((agent) => agent.status === 'failed').length;
+        mission.summary = `Superviseur : ${doneAgents} agent(s) terminés${failedAgents ? `, ${failedAgents} en échec` : ''}. ${mission.summary ?? ''}`.trim();
+        this.deps.onMissionChatLine?.(mission.summary);
       }
-      this.deps.onMissionChatLine?.(
-        developerAgentFailed('codeur', mission.summary?.slice(0, 160) ?? 'mission interrompue'),
-      );
+      break;
     }
-    if (mission.verdict === 'success' && merged && project) {
-      this.deps.onMissionFocusProject?.(project.id);
-      this.setAgentRole('package', 'running', 'prépare le livrable et le raccourci Bureau');
-      await this.deliverWindowsExeIfRequested(template ?? undefined, mission.request, mission.projectId!);
-      const shortcut = await this.host.deliverDesktopShortcut?.(project, mission.request);
-      if (shortcut) this.deps.onMissionChatLine?.(`Raccourci bureau : ${shortcut}`);
-      this.setAgentRole(
-        'package',
-        shortcut ? 'done' : 'failed',
-        shortcut ? `Raccourci Bureau : ${shortcut}` : 'Aucun raccourci n’a pu être créé.',
-        shortcut ? {} : { error: 'Le raccourci Bureau n’a pas été créé.' },
-      );
-      const doneAgents = (mission.agents ?? []).filter((agent) => agent.status === 'done').length;
-      const failedAgents = (mission.agents ?? []).filter((agent) => agent.status === 'failed').length;
-      mission.summary = `Superviseur : ${doneAgents} agent(s) terminés${failedAgents ? `, ${failedAgents} en échec` : ''}. ${mission.summary ?? ''}`.trim();
-      this.deps.onMissionChatLine?.(mission.summary);
+    const stoppedAfter = mission.verdict === 'failed' || mission.verdict === 'stopped';
+    if (platformer && project && !this.levelIsDelivered() && !stoppedAfter) {
+      mission.status = 'failed';
+      mission.verdict = 'failed';
+      mission.summary = TEMPLATE_STILL_LINE;
+      mission.journalNote = TEMPLATE_STILL_LINE;
+    } else if (project && this.levelIsDelivered() && mission.verdict === 'success') {
+      try {
+        await this.host.openProjectPreview?.(project);
+      } catch {
+        /* L’aperçu Electron peut manquer ici : le jeu écrit reste livré. */
+      }
     }
     return this.host.emit();
     } catch (error) {
@@ -1511,10 +1584,14 @@ export class MissionWorkflow {
       const journal = isJournalLock(error);
       const keep =
         journal &&
-        this.gameFilesWritten() &&
+        this.levelIsDelivered() &&
         (this.current?.verdict === 'success' || this.current?.status === 'finished');
       if (!keep) {
-        const text = journal ? journalOutcomeLine(false, false) : message;
+        const text = journal
+          ? this.gameFilesWritten()
+            ? TEMPLATE_STILL_LINE
+            : journalOutcomeLine(false, false)
+          : message;
         this.setAgentRole('package', 'failed', text, { error: text });
         this.fail(text);
       } else {

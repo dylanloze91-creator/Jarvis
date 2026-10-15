@@ -25,6 +25,23 @@ describe('newProjectMethod', () => {
     expect(out.description).toMatch(/plateforme/i);
   });
 
+  it('« type mario » est une plateforme originale, pas un titre de marque', () => {
+    const raw = 'Je souhaiterais un jeu type mario';
+    expect(isPlatformerRequest(raw)).toBe(true);
+    const brief = briefWithoutTrademark(raw);
+    expect(brief.toLowerCase()).not.toContain('mario');
+    expect(isPlatformerRequest(brief)).toBe(true);
+    const out = lockFactoryToRequest(brief, {
+      template: 'node-cli',
+      name: 'Je souhaiterais un',
+      description: 'Mario',
+    });
+    expect(out.template).toBe('web-game');
+    expect(out.name).toBe(platformerProjectTitle());
+    expect(out.name.toLowerCase()).not.toContain('souhaiterais');
+    expect(out.description.toLowerCase()).not.toContain('mario');
+  });
+
   it('ne laisse pas un titre de marque dans le brief ni le nom', () => {
     const brief = briefWithoutTrademark('Génère un jeu Mario 2D vue de côté');
     expect(brief.toLowerCase()).not.toContain('mario');

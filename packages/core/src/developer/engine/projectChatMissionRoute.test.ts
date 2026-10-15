@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
+  announcedFolderPath,
+  carryOutMissionRequest,
+  isCarryOutOrder,
   isCreateOrBuildOrder,
   isExistingWebGameChange,
   newProjectMissionFromProjectChat,
   routeProjectChatOrder,
+  sameFolderPath,
 } from './projectChatMissionRoute.js';
 
 const OPEN = { jarvis: false, template: null as string | null };
@@ -99,6 +103,37 @@ describe('routeProjectChatOrder', () => {
     expect(
       isCreateOrBuildOrder('Augmente la vitesse de la balle dans Pong', 'web-game'),
     ).toBe(false);
+  });
+
+  it('« fait le toi » reprend l’ordre dans le dossier déjà annoncé', () => {
+    expect(isCarryOutOrder('fait le toi')).toBe(true);
+    expect(routeProjectChatOrder('fait le toi', { jarvis: false, template: 'web-game' })).toBe(
+      'supervise-open',
+    );
+    const messages = [
+      { role: 'user', content: 'Je souhaiterais un jeu type mario' },
+      {
+        role: 'assistant',
+        content: 'Je le mets dans C:\\dev\\Projets\\nouveau-projet puis j’écris le niveau.',
+      },
+      { role: 'user', content: 'fait le toi' },
+    ];
+    expect(announcedFolderPath(messages)).toBe('C:\\dev\\Projets\\nouveau-projet');
+    expect(sameFolderPath(announcedFolderPath(messages)!, 'C:/dev/Projets/nouveau-projet')).toBe(
+      true,
+    );
+    const order = carryOutMissionRequest(messages, 'fait le toi');
+    expect(order.toLowerCase()).not.toContain('mario');
+    expect(order).toMatch(/plateforme/i);
+  });
+
+  it('« je souhaiterais un jeu type mario » est un ordre de plateforme, pas une discussion', () => {
+    expect(
+      routeProjectChatOrder('Je souhaiterais un jeu type mario', {
+        jarvis: false,
+        template: 'web-game',
+      }),
+    ).toBe('supervise-open');
   });
 
   it('Jarvis n’est pas le dossier cible d’un jeu', () => {

@@ -1,5 +1,5 @@
 const PLATFORMER =
-  /\b(plateforme|platformer|side[- ]scroller|vue de côté|vue de cote|2d.*plateforme|jeu de plateforme)\b/i;
+  /\b(plateforme|platformer|side[- ]scroller|vue de côté|vue de cote|2d.*plateforme|jeu de plateforme|mario)\b/i;
 export function isPlatformerRequest(request: string): boolean {
   return PLATFORMER.test(request);
 }

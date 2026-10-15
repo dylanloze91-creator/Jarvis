@@ -37,6 +37,13 @@ export const TUTORIAL_LEVEL: LevelData = {
   spawn: { x: 48, y: 380 },
 };
 
+/** Le fichier est encore le niveau tutoriel du gabarit, pas un niveau écrit pour la demande. */
+export function isNeutralPlatformerLevel(source: string): boolean {
+  const compact = source.replace(/\s+/g, '');
+  const needle = JSON.stringify(TUTORIAL_LEVEL).replace(/\s+/g, '');
+  return compact.includes(needle);
+}
+
 function json(value: unknown): string {
   return `${JSON.stringify(value, null, 2)}\n`;
 }

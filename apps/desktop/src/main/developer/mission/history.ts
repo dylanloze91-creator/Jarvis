@@ -1,8 +1,9 @@
-import { existsSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   isMissionState,
+  isNeutralPlatformerLevel,
   summarizeMission,
   type MissionState,
   type MissionSummary,
@@ -18,6 +19,9 @@ export type JournalWriteMode = 'renamed' | 'in-place';
 export const JOURNAL_KEPT_LINE = 'Jeu écrit. Journal verrouillé, enregistré sur place.';
 export const JOURNAL_UNSAVED_LINE = 'Jeu écrit. Journal non enregistré (fichier verrouillé).';
 export const JOURNAL_MISSING_LINE = 'Le jeu n’a pas été écrit. Journal verrouillé.';
+/** Le dossier contient encore le niveau tutoriel : ce n’est pas un jeu livré. */
+export const TEMPLATE_STILL_LINE = 'Le dossier est encore le gabarit. J’écris le niveau.';
+export const PREVIEW_OPEN_LINE = 'Jeu écrit. Aperçu ouvert. Raccourci sur le Bureau.';
 
 /** Erreur disque du journal, sans chemin : le message ne doit pas exposer AppData. */
 export class JournalLockError extends Error {
@@ -60,6 +64,40 @@ export function journalOutcomeLine(gameWritten: boolean, savedInPlace: boolean):
   return savedInPlace ? JOURNAL_KEPT_LINE : JOURNAL_UNSAVED_LINE;
 }
 
+/**
+ * Le niveau n’est plus celui du gabarit.
+ * Un `package.json` ou un `src/` tout seul ne compte pas : c’est le tutoriel.
+ */
+export function levelDelivered(root: string | null | undefined): boolean {
+  if (!root) return false;
+  const level = join(root, 'src', 'level.ts');
+  if (!existsSync(level)) return false;
+  try {
+    return !isNeutralPlatformerLevel(readFileSync(level, 'utf8'));
+  } catch {
+    return false;
+  }
+}
+
+/** Ouvre l’aperçu et pose le raccourci seulement si le niveau a vraiment changé. */
+export async function presentWrittenGame(input: {
+  root: string;
+  openPreview: (root: string) => Promise<boolean>;
+  placeShortcut: (root: string) => Promise<string | null>;
+}): Promise<{ delivered: boolean; line: string; opened: boolean; shortcut: string | null }> {
+  if (!levelDelivered(input.root)) {
+    return { delivered: false, line: TEMPLATE_STILL_LINE, opened: false, shortcut: null };
+  }
+  const opened = await input.openPreview(input.root);
+  const shortcut = await input.placeShortcut(input.root);
+  const line = opened
+    ? shortcut
+      ? PREVIEW_OPEN_LINE
+      : 'Jeu écrit. Aperçu ouvert.'
+    : 'Jeu écrit.';
+  return { delivered: true, line, opened, shortcut };
+}
+
 /** Le dossier du jeu a déjà reçu des fichiers (Node, page web ou projet .NET). */
 export function gameFolderWritten(root: string | null | undefined): boolean {
   if (!root || !existsSync(root)) return false;
@@ -85,23 +123,38 @@ export function gameFolderWritten(root: string | null | undefined): boolean {
 export function creationJournalBanner(input: {
   ok: boolean;
   folderWritten: boolean;
+  /** Le niveau diffère du gabarit. Sans ça, un journal verrouillé n’est pas une réussite. */
+  levelWritten?: boolean;
   journalNote?: string | null;
   summary?: string | null;
-}): { kept: boolean; failedShort: boolean; text: string | null } {
+}): { kept: boolean; failedShort: boolean; retry: boolean; text: string | null } {
   const note = input.journalNote?.trim() ?? '';
   const summary = input.summary?.trim() ?? '';
   const locked = isJournalLock(note) || isJournalLock(summary);
-  if (note.startsWith('Jeu écrit') || (input.folderWritten && locked)) {
-    const text = note.startsWith('Jeu écrit')
-      ? note
-      : journalOutcomeLine(true, false);
-    return { kept: true, failedShort: false, text };
+  const levelWritten = input.levelWritten === true;
+  if ((locked || note.startsWith('Jeu écrit')) && !levelWritten) {
+    if (!input.folderWritten && !note.startsWith('Jeu écrit')) {
+      const text = note.startsWith('Le jeu') ? note : JOURNAL_MISSING_LINE;
+      return { kept: false, failedShort: true, retry: false, text };
+    }
+    return { kept: false, failedShort: false, retry: true, text: TEMPLATE_STILL_LINE };
+  }
+  if (levelWritten && locked) {
+    const journal = note.includes('non enregistré')
+      ? 'Journal non enregistré (fichier verrouillé).'
+      : 'Journal verrouillé, enregistré sur place.';
+    return {
+      kept: true,
+      failedShort: false,
+      retry: false,
+      text: `Jeu écrit. Aperçu ouvert. ${journal}`,
+    };
   }
   if (!input.ok && (locked || note.startsWith('Le jeu'))) {
     const text = note.startsWith('Le jeu') ? note : JOURNAL_MISSING_LINE;
-    return { kept: false, failedShort: true, text };
+    return { kept: false, failedShort: true, retry: false, text };
   }
-  return { kept: false, failedShort: false, text: null };
+  return { kept: false, failedShort: false, retry: false, text: null };
 }
 
 async function replaceJournal(

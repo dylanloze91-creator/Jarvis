@@ -140,9 +140,11 @@ export function lockFactoryToRequest(request: string, chosen: FactoryOutput): Fa
       (!/plateforme|platformer/i.test(out.name) && /jeu du|type de jeu/i.test(out.description));
     if (wrong || !/plateforme|platformer|2d/i.test(out.name)) {
       const fromReq = projectNameFromRequest(request);
-      out.name = OTHER_GAME_NAME.test(fromReq) || fromReq.length < 4 || /^je voudrais/i.test(fromReq)
-        ? platformerProjectTitle()
-        : fromReq.slice(0, 60);
+      const weak =
+        OTHER_GAME_NAME.test(fromReq) ||
+        fromReq.length < 4 ||
+        /^(je|j['’])/i.test(fromReq);
+      out.name = weak ? platformerProjectTitle() : fromReq.slice(0, 60);
     }
     if (
       (OTHER_GAME_NAME.test(out.description) || !/plateforme|platformer|2d/i.test(out.description)) &&

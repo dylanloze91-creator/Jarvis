@@ -32,18 +32,32 @@ export class ProjectPreviewWindow {
       this.close();
       return false;
     }
+    if (typeof BrowserWindow !== 'function') return false;
     this.close();
     this.projectId = projectId;
     const served = await serveStaticDir(staticRoot);
     this.closeServer = served.close;
-    this.win = new BrowserWindow({
-      width: 720,
-      height: 480,
-      title: `Aperçu — ${projectId}`,
-      autoHideMenuBar: true,
-      webPreferences: { sandbox: true, contextIsolation: true },
-    });
-    await this.win.loadURL(served.url);
+    try {
+      this.win = new BrowserWindow({
+        width: 720,
+        height: 480,
+        title: `Aperçu — ${projectId}`,
+        autoHideMenuBar: true,
+        webPreferences: { sandbox: true, contextIsolation: true },
+      });
+      await this.win.loadURL(served.url);
+    } catch {
+      try {
+        this.win?.close();
+      } catch {
+        /* fenêtre déjà fermée */
+      }
+      this.win = null;
+      this.projectId = null;
+      await served.close().catch(() => undefined);
+      this.closeServer = null;
+      return false;
+    }
     this.win.on('closed', () => {
       this.win = null;
       this.projectId = null;
