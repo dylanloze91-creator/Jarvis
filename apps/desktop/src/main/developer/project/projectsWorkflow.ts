@@ -18,9 +18,7 @@ import {
   isDotnetWindowsDesktopTemplate,
   randomId,
   folderRedirectChatLine,
-  isPlatformerRequest,
   librariesForCreation,
-  platformerProjectTitle,
   projectIdFor,
   projectNameFromRequest,
   renderTemplate,
@@ -351,7 +349,7 @@ export class ProjectsWorkflow {
         return { projectId: known.id, path: known.path };
       }
     }
-    const name = isPlatformerRequest(request) ? platformerProjectTitle() : projectNameFromRequest(request);
+    const name = projectNameFromRequest(request);
     const picked = await pickProjectDirectory(this.projectsRoot(), name, entries);
     const { id, dir } = picked;
     if (entries.some((e) => samePath(e.path, dir))) {

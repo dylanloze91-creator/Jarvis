@@ -31,7 +31,7 @@ export const supervisorPlanSchema = z.object({
 export type SupervisorTask = z.infer<typeof supervisorTaskSchema>;
 export type SupervisorPlan = z.infer<typeof supervisorPlanSchema>;
 
-export type MissionAgentStatus = 'pending' | 'running' | 'done' | 'failed';
+export type MissionAgentStatus = 'pending' | 'running' | 'done' | 'failed' | 'cancelled';
 
 export interface MissionAgentState extends SupervisorTask {
   status: MissionAgentStatus;

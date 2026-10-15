@@ -16,14 +16,14 @@ export interface PullProgress {
 export interface OllamaApi {
   readonly baseUrl: string;
   status(): Promise<OllamaStatusResult>;
-  running(): Promise<RunningModel[]>;
+  running(signal?: AbortSignal): Promise<RunningModel[]>;
   pull(
     model: string,
     onProgress: (progress: PullProgress) => void,
     signal?: AbortSignal,
   ): Promise<void>;
   /** Libère la carte graphique (`keep_alive: 0`) : le chat reprend la main (décision 5). */
-  unload(model: string): Promise<boolean>;
+  unload(model: string, signal?: AbortSignal): Promise<boolean>;
 }
 
 interface PullChunk {
@@ -38,9 +38,11 @@ export function createOllamaApi(baseUrl: string, fetchImpl: typeof fetch = fetch
   return {
     baseUrl: base,
     status: () => checkOllamaStatus(base, { fetchImpl, timeoutMs: 4_000 }),
-    async running() {
+    async running(signal?: AbortSignal) {
       try {
-        const response = await fetchImpl(`${base}/api/ps`, { signal: AbortSignal.timeout(4_000) });
+        const response = await fetchImpl(`${base}/api/ps`, {
+          signal: signal ?? AbortSignal.timeout(4_000),
+        });
         if (!response.ok) return [];
         const data = (await response.json()) as {
           models?: Array<{ name?: string; model?: string; size?: number; size_vram?: number }>;
@@ -50,7 +52,8 @@ export function createOllamaApi(baseUrl: string, fetchImpl: typeof fetch = fetch
           sizeBytes: model.size ?? 0,
           sizeVramBytes: model.size_vram ?? 0,
         }));
-      } catch {
+      } catch (error) {
+        if (signal?.aborted) throw error;
         return [];
       }
     },
@@ -78,17 +81,18 @@ export function createOllamaApi(baseUrl: string, fetchImpl: typeof fetch = fetch
       }
       if (!success) throw new Error('Téléchargement interrompu avant la fin.');
     },
-    async unload(model) {
+    async unload(model, signal?: AbortSignal) {
       try {
         const response = await fetchImpl(`${base}/api/generate`, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ model, keep_alive: 0 }),
-          signal: AbortSignal.timeout(10_000),
+          signal: signal ?? AbortSignal.timeout(10_000),
         });
         await response.text().catch(() => '');
         return response.ok;
-      } catch {
+      } catch (error) {
+        if (signal?.aborted) throw error;
         return false;
       }
     },

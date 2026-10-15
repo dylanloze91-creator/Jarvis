@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
+import { slugify } from '../taskPolicy.js';
 import {
   briefWithoutTrademark,
   isPlatformerRequest,
   librariesForCreation,
-  platformerProjectTitle,
   webResearchChatLine,
 } from './newProjectMethod.js';
-import { lockFactoryToRequest } from './fallbacks.js';
+import { lockFactoryToRequest, projectNameFromRequest, projectNameNeedsQuestion } from './fallbacks.js';
 
 describe('newProjectMethod', () => {
   it('détecte une demande plateforme 2D', () => {
@@ -37,9 +37,27 @@ describe('newProjectMethod', () => {
       description: 'Mario',
     });
     expect(out.template).toBe('web-game');
-    expect(out.name).toBe(platformerProjectTitle());
     expect(out.name.toLowerCase()).not.toContain('souhaiterais');
+    expect(slugify(out.name)).toBe('jeu-plateforme-2d');
     expect(out.description.toLowerCase()).not.toContain('mario');
+  });
+
+  it('« jeu type jeu de plateforme 2D » ne prend pas les premiers mots de politesse', () => {
+    const raw = 'Je souhaiterais un jeu type jeu de plateforme 2D';
+    expect(projectNameFromRequest(raw)).toBe('Jeu plateforme 2D');
+    expect(slugify(projectNameFromRequest(raw))).toBe('jeu-plateforme-2d');
+    expect(projectNameNeedsQuestion(raw)).toBeNull();
+    expect(projectNameNeedsQuestion('Je souhaiterais un')).toBe('Quel nom court pour ce projet ?');
+  });
+
+  it('une longue demande plateforme ne garde pas « que tu crées »', () => {
+    const raw =
+      'Je voudrais que tu crées un jeu pour tester tes possibilités en plateforme 2D. Si tu veux des inspirations, tu peux aller voir des jeux classiques.';
+    expect(projectNameFromRequest(raw)).toBe('Jeu plateforme 2D');
+    expect(slugify(projectNameFromRequest(raw))).toBe('jeu-plateforme-2d');
+    expect(projectNameFromRequest('Crée une petite CLI qui renomme des photos')).toBe(
+      'CLI qui renomme',
+    );
   });
 
   it('ne laisse pas un titre de marque dans le brief ni le nom', () => {
@@ -51,7 +69,7 @@ describe('newProjectMethod', () => {
       name: 'Mario',
       description: 'Jeu Mario',
     });
-    expect(out.name).toBe(platformerProjectTitle());
+    expect(slugify(out.name)).toBe('jeu-plateforme-2d');
     expect(out.description.toLowerCase()).not.toContain('mario');
   });
 

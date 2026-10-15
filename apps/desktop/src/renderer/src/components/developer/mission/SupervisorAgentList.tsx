@@ -10,12 +10,14 @@ const STATUS: Record<
   running: { label: 'en cours', tone: 'text-cyan-300' },
   done: { label: 'terminé', tone: 'text-emerald-300' },
   failed: { label: 'échec', tone: 'text-rose-300' },
+  cancelled: { label: 'annulé', tone: 'text-slate-400' },
 };
 
 function StatusIcon({ status }: { status: MissionAgentState['status'] }) {
   if (status === 'running') return <Loader2 className="size-3.5 animate-spin text-cyan-300" />;
   if (status === 'done') return <CheckCircle2 className="size-3.5 text-emerald-400" />;
   if (status === 'failed') return <XCircle className="size-3.5 text-rose-400" />;
+  if (status === 'cancelled') return <Circle className="size-3.5 text-slate-400" />;
   return <Circle className="size-3.5 text-slate-600" />;
 }
 

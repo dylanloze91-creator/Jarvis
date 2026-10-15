@@ -62,23 +62,180 @@ function nameFromAfterColon(request: string): string | null {
   return tail[0]!.toUpperCase() + tail.slice(1);
 }
 
-/** Nom court tiré de la demande : un jeu connu, sinon les premiers mots utiles. */
+const POLITE =
+  /^(?:je souhaiterais|je voudrais|j['’]aimerais|je veux|peux-tu|tu peux|il me faut|merci de|s['’]il te pla[iî]t)\s+/iu;
+const CREATE_PREFIX =
+  /^(?:créer|creer|crée|cree|fais|fabrique|génère|genere|écris|ecris)(?:-moi)?\s+(?:moi\s+)?(?:une|un|le|la|des)?\s*(?:petite|petit|nouvelle|nouveau|simple)?\s*(?:projet|application|appli|programme|outil)?\s*[:,-]?\s*/iu;
+const STOP = new Set([
+  'de',
+  'du',
+  'des',
+  'un',
+  'une',
+  'le',
+  'la',
+  'les',
+  'type',
+  'd',
+]);
+const GENERIC = new Set([
+  ...STOP,
+  'je',
+  'tu',
+  'jeu',
+  'jeux',
+  'game',
+  'souhaiterais',
+  'voudrais',
+  'aimerais',
+  'veux',
+  'petit',
+  'petite',
+  'simple',
+  'projet',
+  'moi',
+  'merci',
+]);
+const PLATFORMER_WORD =
+  /^(?:plateforme|platformer|2d|vue|cote|côté|side|scroller)$/iu;
+/** Formules d’ordre (« que tu crées ») : ce ne sont pas un nom de projet. */
+const FRAME = new Set([
+  'que',
+  'crées',
+  'crée',
+  'cree',
+  'créé',
+  'crees',
+  'fais',
+  'fait',
+  'faire',
+  'fabrique',
+  'fabriques',
+  'écris',
+  'ecris',
+  'écrit',
+  'ecrit',
+  'génère',
+  'genere',
+]);
+/** Aparté d’une demande plateforme (« pour tester tes possibilités »). */
+const PURPOSE = new Set([
+  'pour',
+  'tester',
+  'test',
+  'teste',
+  'tes',
+  'ton',
+  'ta',
+  'possibilités',
+  'possibilité',
+  'possibilites',
+  'possibilite',
+  'en',
+  'si',
+  'inspirations',
+  'inspiration',
+  'peux',
+  'peut',
+  'aller',
+  'voir',
+  'classiques',
+  'classique',
+  'avec',
+  'dans',
+  'sur',
+  'par',
+  'et',
+  'ou',
+  'au',
+  'aux',
+  'ce',
+  'cette',
+  'ces',
+]);
+
+function nameWords(request: string): string[] {
+  let text = clean(request);
+  text = text.replace(/[.!?…]+$/u, '').trim();
+  const sentenceEnd = text.search(/(?<=[\p{L}\p{N}])[.!?](?=\s)/u);
+  if (sentenceEnd >= 0) text = text.slice(0, sentenceEnd).trim();
+  let previous = '';
+  while (text !== previous) {
+    previous = text;
+    text = text.replace(POLITE, '').trim();
+  }
+  text = text.replace(CREATE_PREFIX, '').trim();
+  text = text.replace(/^(?:un|une)\s+jeu\s+type\s+/iu, '').trim();
+  return text.split(/[^\p{L}\p{N}]+/u).filter((word) => word.length > 1);
+}
+
+function titleCase(words: string[]): string {
+  const name = words.join(' ').trim();
+  if (!name || /[\\/]|\.\./.test(name)) return 'Mon projet';
+  return name[0]!.toUpperCase() + name.slice(1);
+}
+
+/** Nom seulement fait de politesses ou de mots vides : on ne le prend pas. */
+export function isWeakProjectName(name: string): boolean {
+  const words = name
+    .trim()
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter((word) => word.length > 1);
+  return (
+    words.length === 0 ||
+    words.every((word) => {
+      const lower = word.toLowerCase();
+      return GENERIC.has(lower) || FRAME.has(lower);
+    })
+  );
+}
+
+/**
+ * Nom court tiré de la demande.
+ * Une formule de politesse ne devient pas le nom : « Je souhaiterais un jeu type jeu de plateforme 2D »
+ * donne « Jeu plateforme 2D » (dossier `jeu-plateforme-2d`).
+ */
 export function projectNameFromRequest(request: string): string {
   const named = NAMED.exec(request)?.[1];
   if (named) return named[0]!.toUpperCase() + named.slice(1).toLowerCase();
   const colon = nameFromAfterColon(request);
   if (colon) return colon;
   if (/\b(bloque|bloquer)\b/i.test(request) && /\bhosts\b/i.test(request)) return 'Bloqueur de sites';
-  const words = clean(request)
-    .replace(
-      /^(créer|creer|crée|cree|fais|fabrique|génère|genere|écris|ecris)(-moi)?\s+(moi\s+)?(une|un|le|la|des)?\s*(petite|petit|nouvelle|nouveau|simple)?\s*(projet|application|appli|programme|outil)?\s*[:,-]?\s*/i,
-      '',
-    )
-    .split(/[^\p{L}\p{N}]+/u)
-    .filter((w) => w.length > 1)
-    .slice(0, 3);
-  const name = words.join(' ').trim();
-  return name ? name[0]!.toUpperCase() + name.slice(1) : 'Mon projet';
+  const words = nameWords(request);
+  if (isPlatformerRequest(request)) {
+    const specific = words.filter((word) => {
+      const lower = word.toLowerCase();
+      return (
+        !GENERIC.has(lower) &&
+        !FRAME.has(lower) &&
+        !PURPOSE.has(lower) &&
+        !PLATFORMER_WORD.test(word)
+      );
+    });
+    if (specific.length === 0) return 'Jeu plateforme 2D';
+    return titleCase(specific.slice(0, 3));
+  }
+  const kept = words.filter((word) => {
+    const lower = word.toLowerCase();
+    return !STOP.has(lower) && !FRAME.has(lower);
+  });
+  const picked = (kept.length ? kept : words).slice(0, 3);
+  if (
+    picked.length === 0 ||
+    picked.every((word) => {
+      const lower = word.toLowerCase();
+      return GENERIC.has(lower) || FRAME.has(lower);
+    })
+  )
+    return 'Mon projet';
+  return titleCase(picked);
+}
+
+/** Une seule question si aucun nom sûr ne sort de la demande. `null` : le nom est décidé. */
+export function projectNameNeedsQuestion(request: string): string | null {
+  return projectNameFromRequest(request) === 'Mon projet'
+    ? 'Quel nom court pour ce projet ?'
+    : null;
 }
 
 /** Gabarit et nom de secours, par règles fixes, si l'ARCHITECTE ne répond pas au format. */
@@ -137,14 +294,12 @@ export function lockFactoryToRequest(request: string, chosen: FactoryOutput): Fa
     const wrong =
       OTHER_GAME_NAME.test(out.name) ||
       OTHER_GAME_NAME.test(out.description) ||
+      isWeakProjectName(out.name) ||
+      out.name === platformerProjectTitle() ||
       (!/plateforme|platformer/i.test(out.name) && /jeu du|type de jeu/i.test(out.description));
     if (wrong || !/plateforme|platformer|2d/i.test(out.name)) {
       const fromReq = projectNameFromRequest(request);
-      const weak =
-        OTHER_GAME_NAME.test(fromReq) ||
-        fromReq.length < 4 ||
-        /^(je|j['’])/i.test(fromReq);
-      out.name = weak ? platformerProjectTitle() : fromReq.slice(0, 60);
+      out.name = isWeakProjectName(fromReq) ? 'Jeu plateforme 2D' : fromReq.slice(0, 60);
     }
     if (
       (OTHER_GAME_NAME.test(out.description) || !/plateforme|platformer|2d/i.test(out.description)) &&

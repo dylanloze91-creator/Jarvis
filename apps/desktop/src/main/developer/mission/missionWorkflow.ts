@@ -111,6 +111,9 @@ import {
   parseNvidiaSmi,
   briefWithoutTrademark,
   isPlatformerRequest,
+  isWeakProjectName,
+  projectNameFromRequest,
+  projectNameNeedsQuestion,
   fallbackSupervisorPlan,
   supervisorPlanSchema,
   supervisorPrompt,
@@ -136,6 +139,7 @@ import type { ResolvedProject } from '../project/projectsWorkflow.js';
 import type { TaskHooks, TaskPhase } from '../task/taskRun.js';
 import type { TaskProject } from '../task/workflow.js';
 import type { DeveloperManualStore } from '../knowledge/manualStore.js';
+import { claimAgent, haltDependents } from './agentLifecycle.js';
 import {
   TEMPLATE_STILL_LINE,
   gameFolderWritten,
@@ -144,6 +148,7 @@ import {
   levelDelivered,
   type MissionStore,
 } from './history.js';
+import { ModelSwitchError, createModelSwitch } from './modelSwitch.js';
 
 type Step = (id: string, status: DevStepStatus, detail?: string) => void;
 
@@ -280,6 +285,8 @@ export class MissionWorkflow {
   private open = new Map<TaskPhase, string>();
   /** Un seul nouvel essai d’écriture si le gabarit est encore intact. */
   private levelRetried = false;
+  /** Déchargements en série : un modèle à la fois, même après un délai. */
+  private readonly modelSwitch = createModelSwitch();
 
   constructor(
     private readonly host: MissionHost,
@@ -425,6 +432,30 @@ export class MissionWorkflow {
     this.persistLater();
   }
 
+  private trace(
+    step: string,
+    status: 'start' | 'end' | 'error' | 'wait' | 'timeout' | 'cancel',
+    extra: { agentId?: string; model?: string; error?: string; startedAt?: number } = {},
+  ): void {
+    const at = new Date(this.now).toISOString();
+    const missionId = this.current?.id ?? '-';
+    const durationMs =
+      extra.startedAt !== undefined ? Math.max(0, this.now - extra.startedAt) : undefined;
+    const line = [
+      at,
+      `mission=${missionId}`,
+      extra.agentId ? `agent=${extra.agentId}` : '',
+      `step=${step}`,
+      extra.model ? `model=${extra.model}` : '',
+      `status=${status}`,
+      durationMs !== undefined ? `durationMs=${durationMs}` : '',
+      extra.error ? `error=${extra.error.replace(/\s+/g, ' ').slice(0, 240)}` : '',
+    ]
+      .filter(Boolean)
+      .join(' ');
+    this.deps.log?.(line);
+  }
+
   private agent(
     id: string,
     patch: Partial<MissionAgentState> & { status?: MissionAgentStatus },
@@ -433,19 +464,50 @@ export class MissionWorkflow {
     if (!mission) return;
     mission.agents ??= [];
     const found = mission.agents.find((agent) => agent.id === id);
-    if (found) Object.assign(found, patch);
-    if (patch.status === 'running' && found && found.startedAt === undefined) {
+    if (!found) return;
+    if (patch.status === 'running' && !claimAgent(found)) return;
+    const previous = found.status;
+    Object.assign(found, patch);
+    if (patch.status === 'running' && previous === 'pending') {
       found.startedAt = this.now;
+      this.trace('agent', 'start', { agentId: found.id, model: found.model });
     }
     if (
-      found &&
-      (patch.status === 'done' || patch.status === 'failed') &&
+      (patch.status === 'done' || patch.status === 'failed' || patch.status === 'cancelled') &&
       found.finishedAt === undefined
     ) {
       found.finishedAt = this.now;
+      this.trace(
+        'agent',
+        patch.status === 'cancelled' ? 'cancel' : patch.status === 'failed' ? 'error' : 'end',
+        {
+          agentId: found.id,
+          model: found.model,
+          error: found.error,
+          startedAt: found.startedAt,
+        },
+      );
     }
     mission.updatedAt = this.now;
     this.persistLater();
+  }
+
+  /** Ferme les agents encore ouverts. `done` n’est jamais posé ici : il faut un résultat vérifiable. */
+  private closeOpenAgents(message: string, mode: 'failed' | 'cancelled'): void {
+    const mission = this.current;
+    if (!mission?.agents?.length) return;
+    const seed = mission.agents.find((agent) => agent.status === 'failed')?.id;
+    let agents = mission.agents;
+    if (seed) agents = haltDependents(agents, seed, message, mode);
+    mission.agents = agents.map((agent) => {
+      if (agent.status !== 'pending' && agent.status !== 'running') return agent;
+      return {
+        ...agent,
+        status: mode,
+        error: (agent.error ?? message).slice(0, 300),
+        finishedAt: agent.finishedAt ?? this.now,
+      };
+    });
   }
 
   private installSupervisorPlan(plan: SupervisorPlan, model: string): void {
@@ -529,13 +591,36 @@ export class MissionWorkflow {
     return agent;
   }
 
-  /** Un seul modèle Ollama chargé : tout autre modèle en cours est libéré avant le suivant. */
+  /**
+   * Un seul modèle Ollama chargé. 20 s pour la liste et chaque déchargement.
+   * `lastModel` n’est posé qu’après la vérification. Un délai n’est pas retenté :
+   * la requête sous-jacente peut encore tourner.
+   */
   private async switchModel(model: string): Promise<void> {
-    const running = await this.deps.ollama().running();
-    for (const loaded of running) {
-      if (loaded.name !== model) await this.deps.ollama().unload(loaded.name);
+    const started = this.now;
+    this.trace('ollama', 'start', { model, startedAt: started });
+    const once = () =>
+      this.modelSwitch.switchTo({
+        api: this.deps.ollama(),
+        model,
+        log: (line) => this.deps.log?.(line),
+      });
+    try {
+      await once();
+    } catch (error) {
+      const recoverable = error instanceof ModelSwitchError && error.kind === 'call';
+      const message = error instanceof Error ? error.message : String(error);
+      this.trace('ollama', error instanceof ModelSwitchError && error.kind === 'timeout' ? 'timeout' : 'error', {
+        model,
+        error: message,
+        startedAt: started,
+      });
+      if (!recoverable) throw error;
+      this.trace('ollama', 'wait', { model, error: 'nouvel essai après une erreur de contact' });
+      await once();
     }
     this.lastModel = model;
+    this.trace('ollama', 'end', { model, startedAt: started });
   }
 
   private async resources(model: string, cwd: string): Promise<MissionStep['resources']> {
@@ -761,6 +846,8 @@ export class MissionWorkflow {
       this.current.status = 'cancelled';
       this.current.verdict = 'stopped';
       this.current.summary = message;
+      this.closeOpenAgents(message, 'cancelled');
+      this.trace('mission', 'cancel', { error: message });
       this.persistLater();
       return;
     }
@@ -776,6 +863,8 @@ export class MissionWorkflow {
           this.current.status = 'failed';
           this.current.verdict = 'stopped';
           this.current.summary = line;
+          this.closeOpenAgents(line, 'failed');
+          this.trace('mission', 'end', { error: line });
         }
         this.persistLater();
         return;
@@ -799,6 +888,8 @@ export class MissionWorkflow {
       this.current.status = 'failed';
       this.current.verdict = 'stopped';
       this.current.summary = message;
+      this.closeOpenAgents(message, 'failed');
+      this.trace('mission', 'end', { error: message });
       if (!told) this.deps.onMissionChatLine?.(developerMissionFailureLine(message));
       this.persistLater();
       return;
@@ -806,6 +897,8 @@ export class MissionWorkflow {
     this.current.status = 'failed';
     this.current.verdict = 'stopped';
     this.current.summary = message;
+    this.closeOpenAgents(message, 'failed');
+    this.trace('mission', 'end', { error: message });
     this.deps.onMissionChatLine?.(developerMissionFailureLine(message));
     this.persistLater();
   }
@@ -905,7 +998,11 @@ export class MissionWorkflow {
               );
               return run.output;
             } catch (error) {
-              if (!(error instanceof SpecialistError) || signal.aborted) throw error;
+              if (!(error instanceof SpecialistError) || signal.aborted) {
+                const message = error instanceof Error ? error.message : String(error);
+                this.agent('supervisor', { status: 'failed', error: message.slice(0, 300) });
+                throw error;
+              }
               const fallback = fallbackSupervisorPlan(mission.request);
               this.patch('supervisor', {
                 status: 'done',
@@ -977,6 +1074,7 @@ export class MissionWorkflow {
             ),
           );
           this.patch('scaffold', { status: 'done', detail: scaffoldOutcome.path });
+          this.trace('folder', 'end', { agentId: 'prepare' });
           this.setAgentRole('préparation', 'done', scaffoldOutcome.path);
           step('scaffold', 'done', scaffoldOutcome.path);
           if (webSummary) {
@@ -1348,14 +1446,41 @@ export class MissionWorkflow {
             );
             input = chosen;
           }
+          const reuseEntryId =
+            mission.kind === 'new-project' && mission.projectId !== NEW_PROJECT_SCOPE
+              ? mission.projectId
+              : undefined;
+          if (!skill && isWeakProjectName(input.name)) {
+            const decided = projectNameFromRequest(mission.request);
+            if (!isWeakProjectName(decided)) input = { ...input, name: decided };
+          }
+          const nameQuestion = projectNameNeedsQuestion(mission.request);
+          const asked = mission.answers.some((item) => item.question === nameQuestion);
+          if (!skill && !reuseEntryId && nameQuestion && !asked && isWeakProjectName(input.name)) {
+            mission.goal = {
+              ...(mission.goal ?? {
+                goal: mission.request,
+                questions: [],
+                criteria: [],
+                constraints: [],
+              }),
+              questions: [nameQuestion],
+            };
+            mission.status = 'waiting-answers';
+            this.trace('mission', 'wait', { error: nameQuestion });
+            await this.persist();
+            return nameQuestion;
+          }
+          const chosenName = mission.answers
+            .find((item) => item.question === nameQuestion)
+            ?.answer.trim();
+          if (chosenName && isWeakProjectName(input.name)) {
+            input = { ...input, name: chosenName.slice(0, 60) };
+          }
           result.template = input.template;
           this.patch('create', { status: 'waiting', detail: 'ta confirmation' });
           const from = mission.projectId;
           try {
-            const reuseEntryId =
-              mission.kind === 'new-project' && mission.projectId !== NEW_PROJECT_SCOPE
-                ? mission.projectId
-                : undefined;
             if (reuseEntryId) {
               const existing = await this.deps.projects.resolve(reuseEntryId);
               if (typeof existing !== 'string' && existing.origin !== 'workspace') {
@@ -1420,20 +1545,65 @@ export class MissionWorkflow {
       },
     );
     const { project, template, design, research } = result;
-    if (!project || mission.status !== 'running') return done;
+    if (mission.status === 'waiting-answers') return done;
+    if (!project || mission.status !== 'running') {
+      if (mission.status === 'running' || mission.status === 'task') {
+        const line = mission.summary ?? 'La mission s’est arrêtée avant le code.';
+        mission.status = 'failed';
+        mission.verdict = 'stopped';
+        mission.summary = line;
+        this.closeOpenAgents(line, 'failed');
+        this.trace('mission', 'end', { error: line });
+        this.persistLater();
+      }
+      return done;
+    }
     this.project = project;
     mission.status = 'task';
     await this.persist();
     try {
     const coder = this.modelFor('CODER');
-    await this.switchModel(coder);
     const codeAgents = (mission.agents ?? []).filter((agent) => agent.role === 'code');
+    this.trace('code-prep', 'start', { model: coder, agentId: codeAgents[0]?.id });
+    await this.switchModel(coder);
     for (const agent of codeAgents) {
+      const blocked = agent.dependsOn.some((id) => {
+        const dep = mission.agents?.find((item) => item.id === id);
+        return dep !== undefined && dep.status !== 'done';
+      });
+      if (blocked) {
+        this.agent(agent.id, {
+          status: 'failed',
+          error: 'Une dépendance n’est pas terminée.',
+          model: coder,
+        });
+        mission.agents = haltDependents(
+          mission.agents ?? [],
+          agent.id,
+          'Une dépendance n’est pas terminée.',
+          'failed',
+        );
+        continue;
+      }
       this.agent(agent.id, {
         status: 'running',
         model: coder,
         detail: agent.brief,
       });
+    }
+    this.trace('code-prep', 'end', { model: coder, agentId: codeAgents[0]?.id });
+    if (
+      codeAgents.length > 0 &&
+      codeAgents.every((agent) => agent.status === 'failed' || agent.status === 'cancelled')
+    ) {
+      const line = 'Le codeur n’a pas démarré : une dépendance a échoué.';
+      mission.status = 'failed';
+      mission.verdict = 'stopped';
+      mission.summary = line;
+      this.closeOpenAgents(line, 'failed');
+      this.trace('mission', 'end', { error: line });
+      this.persistLater();
+      return this.host.emit();
     }
     this.deps.onMissionChatLine?.(developerAgentStarted('codeur', 'écrit le code et adapte les tests'));
     const repoMap = await this.repoMapOutline(project.root);
@@ -1495,7 +1665,9 @@ export class MissionWorkflow {
           ? mission.request
           : `${mission.request}\n\n${TEMPLATE_STILL_LINE} Remplace PLAY_LEVEL dans src/level.ts : le niveau tutoriel ne compte pas.`;
       try {
+        this.trace('dev-task', 'start', { model: coder, agentId: codeAgents[0]?.id });
         await this.host.startTask(request, taskOptions);
+        this.trace('dev-task', 'end', { model: coder, agentId: codeAgents[0]?.id });
         await this.finishFromTask();
       } catch (error) {
         if (this.levelIsDelivered() || pass === 1 || !platformer) throw error;
@@ -1552,6 +1724,10 @@ export class MissionWorkflow {
         await this.deliverWindowsExeIfRequested(template ?? undefined, mission.request, mission.projectId!);
         const shortcut = await this.host.deliverDesktopShortcut?.(project, mission.request);
         if (shortcut) this.deps.onMissionChatLine?.(`Raccourci bureau : ${shortcut}`);
+        this.trace('deliverable', shortcut ? 'end' : 'error', {
+          agentId: this.agentByRole('package')?.id,
+          error: shortcut ? undefined : 'Aucun raccourci n’a pu être créé.',
+        });
         this.setAgentRole(
           'package',
           shortcut ? 'done' : 'failed',
@@ -1571,6 +1747,8 @@ export class MissionWorkflow {
       mission.verdict = 'failed';
       mission.summary = TEMPLATE_STILL_LINE;
       mission.journalNote = TEMPLATE_STILL_LINE;
+      this.closeOpenAgents(TEMPLATE_STILL_LINE, 'failed');
+      this.trace('mission', 'end', { error: TEMPLATE_STILL_LINE });
     } else if (project && this.levelIsDelivered() && mission.verdict === 'success') {
       try {
         await this.host.openProjectPreview?.(project);
@@ -1596,6 +1774,15 @@ export class MissionWorkflow {
         this.fail(text);
       } else {
         this.fail(message);
+      }
+      if (this.current && (this.current.status === 'running' || this.current.status === 'task')) {
+        const text = this.current.summary ?? message;
+        this.current.status = 'failed';
+        this.current.verdict = 'stopped';
+        this.current.summary = text;
+        this.closeOpenAgents(text, 'failed');
+        this.trace('mission', 'end', { error: text });
+        this.persistLater();
       }
       return this.host.emit();
     }
@@ -1774,13 +1961,22 @@ export class MissionWorkflow {
       if (phase === 'test') {
         if (status === 'running') {
           this.setAgentRole('test', 'running', detail ?? 'lance les vérifications réelles');
+          this.trace('tests', 'start', { agentId: this.agentByRole('test')?.id });
         } else if (status === 'done') {
           this.setAgentRole('test', 'done', detail ?? 'tests et lancement réussis');
+          this.trace('tests', 'end', { agentId: this.agentByRole('test')?.id });
         } else {
           this.setAgentRole('test', 'failed', detail ?? 'vérification en échec', {
             error: detail ?? 'vérification en échec',
           });
+          this.trace('tests', 'error', {
+            agentId: this.agentByRole('test')?.id,
+            error: detail ?? 'vérification en échec',
+          });
         }
+      }
+      if (phase === 'edit' && status === 'done') {
+        this.trace('files', 'end', { agentId: this.agentByRole('code')?.id });
       }
       if (phase === 'diagnose' && status === 'running') {
         this.ensureFixAgent(detail ?? 'lit la sortie d’échec réelle');
