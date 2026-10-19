@@ -17,6 +17,11 @@ import { createFixtureRepo } from './task/taskWorkflow.testkit.js';
 
 const LIVE = process.env.LIVE_PLATFORMER_MISSION === '1';
 const MODEL = process.env.LIVE_PLATFORMER_MODEL ?? 'qwen2.5-coder:1.5b';
+const PROOF_TIMEOUT_MS = Number(process.env.LIVE_PLATFORMER_TIMEOUT_MS);
+const proofTimeoutMs =
+  Number.isFinite(PROOF_TIMEOUT_MS) && PROOF_TIMEOUT_MS >= 60_000
+    ? PROOF_TIMEOUT_MS
+    : 1_800_000;
 const PROOF_DIR = '/tmp/jarvis-5.0.31-real-platformer';
 let base = '';
 let projectsRoot = '';
@@ -108,6 +113,6 @@ describe.runIf(LIVE)('preuve live mission plateforme (Ollama réel)', () => {
         ),
       );
     },
-    1_800_000,
+    proofTimeoutMs,
   );
 });

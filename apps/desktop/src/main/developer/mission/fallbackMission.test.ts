@@ -147,7 +147,7 @@ describe('mission avec un petit modèle bavard (5.0.1)', () => {
     expect(factoryCalls).toHaveLength(0);
     const writeCalls = bodies().filter((b) => writeRequest(b));
     expect(writeCalls.length).toBeGreaterThanOrEqual(1);
-    expect(writeCalls[0]?.tools ?? []).toEqual([]);
+    expect(writeCalls[0]?.tools?.length ?? 0).toBeGreaterThan(0);
     expect(h.audit.list).toBeDefined();
     const audited = (await h.audit.list()).filter((e) => e.toolName === 'dev_write_file');
     expect(audited.map((e) => e.decision)).toEqual(['approved']);

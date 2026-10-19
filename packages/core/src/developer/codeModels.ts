@@ -53,7 +53,8 @@ export const CODE_MODEL_CATALOG: CodeModelSpec[] = [
       'Sans réglage du serveur : Ollama met sur la carte les couches qui tiennent (environ 1/5), le reste en RAM.',
     expertsInRam: {
       supported: true,
-      placement: 'Experts en RAM, attention et couches partagées sur la carte (num_gpu 99).',
+      placement:
+        'Experts en RAM, attention sur la carte. num_gpu n’est pas envoyé : Ollama 0.30 garde ce placement.',
     },
     publishedTokPerSec: [11, 17],
     sweBenchVerified: 73.4,
@@ -82,7 +83,7 @@ export const CODE_MODEL_CATALOG: CodeModelSpec[] = [
     expertsInRam: {
       supported: true,
       placement:
-        'Experts en RAM, le reste sur la carte (num_gpu 99). Contexte limité à 16 384 : cache lourd.',
+        'Experts en RAM, attention sur la carte. num_gpu n’est pas envoyé. Contexte limité à 16 384 : cache lourd.',
     },
     publishedTokPerSec: [12, 16],
     sources: [
@@ -160,7 +161,10 @@ export function codeModelsOffered(
 
 /** Réglages de requête envoyés à Ollama pour ce modèle (jamais des variables du serveur). */
 export function codeModelOptions(spec: CodeModelSpec, expertsInRam: boolean): OllamaCodeOptions {
-  const numGpu = expertsInRam && spec.expertsInRam.supported ? 99 : spec.gpuLayers;
+  // MoE + experts en RAM : ne pas envoyer num_gpu. Depuis Ollama 0.30, l’absence
+  // de num_gpu garde les experts en RAM et l’attention sur la carte. 99 les met tous en RAM.
+  const experts = expertsInRam && spec.expertsInRam.supported;
+  const numGpu = experts ? undefined : spec.gpuLayers;
   return {
     numCtx: spec.contextTokens,
     keepAlive: '30m',

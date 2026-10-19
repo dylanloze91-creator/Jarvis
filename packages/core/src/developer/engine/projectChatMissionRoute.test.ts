@@ -4,6 +4,7 @@ import {
   carryOutMissionRequest,
   isCarryOutOrder,
   isCreateOrBuildOrder,
+  isRetryOrder,
   isExistingWebGameChange,
   newProjectMissionFromProjectChat,
   routeProjectChatOrder,
@@ -89,6 +90,16 @@ describe('routeProjectChatOrder', () => {
 
   it('question → discussion', () => {
     expect(routeProjectChatOrder('Comment marche level.ts ?', OPEN)).toBe('discuss');
+    expect(routeProjectChatOrder('jappuie sur quel touche pour respawn', OPEN)).toBe('discuss');
+    expect(routeProjectChatOrder('tu me repond', OPEN)).toBe('discuss');
+  });
+
+  it('« réessaie » ou « tu as échoué » relance le Codeur sur le projet ouvert', () => {
+    const retry = 'tu as echoue sur l ajout du bouton respawn reessaye';
+    expect(isRetryOrder(retry)).toBe(true);
+    expect(routeProjectChatOrder(retry, { jarvis: false, template: 'web-game' })).toBe('direct');
+    expect(routeProjectChatOrder('reessaye le bouton', OPEN)).toBe('direct');
+    expect(isRetryOrder('pourquoi les tests ont échoué ?')).toBe(false);
   });
 
   it('« Crée un jeu de plateforme 2D » part au Superviseur, pas en discussion', () => {

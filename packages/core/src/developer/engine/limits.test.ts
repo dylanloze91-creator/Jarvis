@@ -196,6 +196,11 @@ describe('secours sans modèle (5.0.1)', () => {
       'src/rules.ts',
       'src/game.test.ts',
     ]);
+    expect(
+      templatePlan('web-game', 'Je souhaiterais un jeu type jeu de plateforme 2D')?.files.map(
+        (f) => f.path,
+      ),
+    ).toEqual(['src/level.ts']);
     expect(templatePlan('web-game', PONG)).toMatchObject({
       tests: ['typecheck', 'test'],
     });

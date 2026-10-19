@@ -152,6 +152,19 @@ export function newProjectMissionFromProjectChat(text: string): boolean {
 const CARRY_OUT =
   /^(?:ok[, ]+)?(?:fait le toi|fais[- ]le(?: toi)?|vas[- ]y|écris[- ]le|ecris[- ]le|lance[- ]le|fais le)\s*[.!?]?$/iu;
 
+const RETRY_WORD =
+  /(?:^|[^\p{L}\p{N}_])(?:réessaie|reessaie|réessaye|reessaye|réessayes|reessayes)(?=$|[^\p{L}\p{N}_])/iu;
+
+const FAILED_BY_YOU =
+  /(?:^|[^\p{L}\p{N}_])tu as (?:échoué|echoué|echoue)(?=$|[^\p{L}\p{N}_])/iu;
+
+/** « Réessaie » ou « tu as échoué » : relancer le Codeur sur le projet ouvert. */
+export function isRetryOrder(text: string): boolean {
+  const t = text.trim();
+  if (t.length < 8) return false;
+  return RETRY_WORD.test(t) || FAILED_BY_YOU.test(t);
+}
+
 /** « Fait le toi » après un plan : exécuter, pas discuter. */
 export function isCarryOutOrder(text: string): boolean {
   return CARRY_OUT.test(text.trim());
@@ -201,6 +214,7 @@ export function routeProjectChatOrder(
 ): ProjectChatOrderRoute {
   if (explicitNewProjectFromChat(text)) return 'new-folder';
   if (isCarryOutOrder(text)) return project.jarvis ? 'jarvis-not-target' : 'supervise-open';
+  if (isRetryOrder(text)) return project.jarvis ? 'jarvis-not-target' : 'direct';
   if (isCreateOrBuildOrder(text, project.template)) {
     return project.jarvis ? 'jarvis-not-target' : 'supervise-open';
   }

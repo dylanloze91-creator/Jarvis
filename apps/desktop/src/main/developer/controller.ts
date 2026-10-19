@@ -12,7 +12,9 @@ import {
   briefWithoutTrademark,
   announcedFolderPath,
   carryOutMissionRequest,
+  developerStepSentence,
   isCarryOutOrder,
+  isRetryOrder,
   routeProjectChatOrder,
   sameFolderPath,
   MISSION_LABELS,
@@ -399,7 +401,11 @@ export class DeveloperController {
           if (this.missions.view().mission?.kind === 'new-project') {
             this.missionChatTarget = projectId;
           }
-          void this.openProjectChat(projectId);
+          // Après les phrases déjà en file : sinon l’ouverture recharge un chat vide et les efface.
+          this.chatLineTail = this.chatLineTail
+            .then(() => this.openProjectChat(projectId))
+            .then(() => undefined)
+            .catch(() => undefined);
         },
         verifyWebGameRuntime:
           deps.verifyWebGameRuntime ??
@@ -944,18 +950,35 @@ export class DeveloperController {
           },
           withScreenshot,
         );
-    if (orderRoute === 'jarvis-not-target') {
-      this.notice =
-        'Cet ordre s’écrit dans le projet ouvert. Utilise Nouveau, un raccourci, ou les mots « nouveau projet » pour un dossier neuf — pas la copie de Jarvis.';
-      return this.emit();
+    const ack =
+      orderRoute === 'jarvis-not-target'
+        ? 'Cet ordre s’écrit dans le projet ouvert, pas dans la copie de Jarvis.'
+        : isRetryOrder(userText)
+          ? 'Je relance le Codeur sur ce projet.'
+          : orderRoute === 'direct'
+            ? 'Je modifie ce projet.'
+            : orderRoute === 'supervise-open'
+              ? 'Je le fais dans ce dossier.'
+              : orderRoute === 'new-folder'
+                ? 'Je crée le dossier du projet.'
+                : '';
+    const ackId = orderRoute === 'supervise-open' ? focusChatId : id;
+    const ackName = orderRoute === 'supervise-open' ? focusResolved.name : resolved.name;
+    let thread = pendingMessages;
+    if (ack) {
+      thread = await this.noteInProjectChat(ackId, ackName, chatPersisted, pendingMessages, ack);
+      if (orderRoute === 'jarvis-not-target') {
+        this.notice = ack;
+        return this.emit();
+      }
     }
     if (orderRoute === 'new-folder' || orderRoute === 'supervise-open') {
       return this.runProjectChatNewProjectMission(
         focusChatId,
         focusResolved,
-        carry ? carryOutMissionRequest(pendingMessages, userText) : userText,
-        chatPersisted,
-        pendingMessages,
+        carry ? carryOutMissionRequest(thread, userText) : userText,
+        { ...chatPersisted, messages: thread },
+        thread,
         orderRoute === 'supervise-open',
       );
     }
@@ -964,20 +987,24 @@ export class DeveloperController {
         id,
         resolved,
         userText,
-        chatPersisted,
-        pendingMessages,
+        { ...chatPersisted, messages: thread },
+        thread,
         model,
       );
     }
     let screenshotBase64: string | undefined;
     if (withScreenshot) {
       if (!this.projectPreview.isOpen(id)) {
-        this.notice = 'Ouvre d’abord l’aperçu à côté du chat, puis envoie avec capture.';
+        const line = 'Ouvre d’abord l’aperçu à côté du chat, puis envoie avec capture.';
+        this.notice = line;
+        await this.noteInProjectChat(id, resolved.name, chatPersisted, pendingMessages, line);
         return this.emit();
       }
       const png = await this.projectPreview.capturePng();
       if (!png) {
-        this.notice = 'Capture impossible : l’aperçu n’est pas prêt.';
+        const line = 'Capture impossible : l’aperçu n’est pas prêt.';
+        this.notice = line;
+        await this.noteInProjectChat(id, resolved.name, chatPersisted, pendingMessages, line);
         return this.emit();
       }
       await this.projects.saveChatScreenshot(id, userMsg.id, png);
@@ -1009,14 +1036,14 @@ export class DeveloperController {
         effects.webSearchUsed = true;
       },
     });
-    this.pushProjectChatActivity(id, 'Discussion : lecture du projet, puis réponse.');
+    this.pushProjectChatActivity(id, 'Je lis le projet pour te répondre.');
     this.emit();
     return this.runTask(
       'project-chat',
       `Discussion — ${resolved.name}`,
       [
         { id: 'model', label: 'Modèle de code' },
-        { id: 'read', label: 'Lecture du projet (rien n’est modifié)' },
+        { id: 'read', label: 'Lecture pour répondre' },
         { id: 'reply', label: 'Réponse' },
       ],
       async (step, signal) => {
@@ -1033,35 +1060,45 @@ export class DeveloperController {
           role: m.role,
           content: m.content,
         }));
-        const result = await runProjectChatTurn(
-          {
-            code,
-            readTools: this.auditedReadTools(ASK_TOOLS, resolved.root),
-            chatTools,
-            profile: resolved.profile,
-            memoryNotes: memory,
-            decisions: chatPersisted.decisions,
-            installedModels: installed,
-            webSearchUsed: chatPersisted.webSearchUsed,
-            graphicsEngineGranted: hasGraphicsEngineGrant(
-              chatPersisted.graphicsEngineGranted === true,
-              chatPersisted.decisions,
-            ),
-            history,
-            signal,
-            beforeRound: () => this.yieldToChat(model, signal),
-            requestConfirmation: (request) => this.askUser(request, signal),
-            screenshotBase64,
-            effects,
-          },
-          userText,
-        );
-        step('read', 'done', `${result.calls} lecture(s), ${result.rounds} tour(s)`);
+        let replyText = '';
+        try {
+          const result = await runProjectChatTurn(
+            {
+              code,
+              readTools: this.auditedReadTools(ASK_TOOLS, resolved.root),
+              chatTools,
+              profile: resolved.profile,
+              memoryNotes: memory,
+              decisions: chatPersisted.decisions,
+              installedModels: installed,
+              webSearchUsed: chatPersisted.webSearchUsed,
+              graphicsEngineGranted: hasGraphicsEngineGrant(
+                chatPersisted.graphicsEngineGranted === true,
+                chatPersisted.decisions,
+              ),
+              history,
+              signal,
+              beforeRound: () => this.yieldToChat(model, signal),
+              requestConfirmation: (request) => this.askUser(request, signal),
+              screenshotBase64,
+              effects,
+            },
+            userText,
+          );
+          replyText = result.reply.trim();
+          step('read', 'done', `${result.calls} lecture(s), ${result.rounds} tour(s)`);
+        } catch (error) {
+          const why = error instanceof Error ? error.message : String(error);
+          replyText = `Je n’ai pas pu répondre : ${why}`;
+          step('read', 'failed', why);
+        }
+        if (!replyText) replyText = 'Je n’ai pas pu répondre : réponse vide du modèle.';
         step('reply', 'running');
+        const failedReply = replyText.startsWith('Je n’ai pas pu répondre');
         const assistant = {
           id: randomId(),
           role: 'assistant' as const,
-          content: result.reply,
+          content: replyText,
           at: Date.now(),
         };
         const nextMessages = [...pendingMessages, assistant];
@@ -1073,10 +1110,33 @@ export class DeveloperController {
           merged,
           this.projectPreview.isOpen(id),
         );
-        step('reply', 'done');
+        step('reply', failedReply ? 'failed' : 'done');
+        if (failedReply) throw new Error(replyText);
         return 'Réponse ajoutée à la discussion du projet.';
       },
     );
+  }
+
+  /** Ligne visible tout de suite dans le fil, avant un travail long. */
+  private async noteInProjectChat(
+    id: string,
+    name: string,
+    persisted: ProjectChatPersisted,
+    messages: ProjectChatView['messages'],
+    text: string,
+  ): Promise<ProjectChatView['messages']> {
+    const assistant = {
+      id: randomId(),
+      role: 'assistant' as const,
+      content: text.trim(),
+      at: Date.now(),
+    };
+    const next = [...messages, assistant].slice(-80);
+    const merged = { ...persisted, messages: next };
+    await this.projects.saveChatState(id, merged);
+    this.projectChat = this.chatView(id, name, merged, this.projectPreview.isOpen(id));
+    this.emit();
+    return next;
   }
 
   private pushProjectChatActivity(projectId: string, line: string): void {
@@ -1299,7 +1359,10 @@ export class DeveloperController {
       content: assistantText,
       at: Date.now(),
     };
-    const nextMessages = [...pendingMessages, assistant];
+    await this.chatLineTail;
+    const live =
+      this.projectChat?.projectId === focusEarly ? this.projectChat.messages : pendingMessages;
+    const nextMessages = [...live, assistant];
     const merged = this.mergeChatEffects(
       priorPersisted,
       { decisions: [], webSearchUsed: false },
@@ -1367,7 +1430,29 @@ export class DeveloperController {
       autoApprovePlan: true,
       planContext,
       graphicsEngineGranted: engineOk,
-      onPhase: (phase, status, detail) => {
+      onPhase: (phase, status, detail, extra) => {
+        if (status === 'done' || status === 'failed') {
+          const name =
+            phase === 'test'
+              ? 'Testeur'
+              : phase === 'edit' || phase === 'fix'
+                ? 'Codeur'
+                : phase === 'plan'
+                  ? 'Architecte'
+                  : phase === 'review'
+                    ? 'Relecteur'
+                    : 'Diagnostic';
+          this.enqueueDeveloperChatLine(
+            developerStepSentence({
+              name,
+              status,
+              detail,
+              files: extra?.files,
+              error: status === 'failed' ? detail : undefined,
+            }),
+            id,
+          );
+        }
         if (this.projectChat?.projectId !== id) return;
         simpleRun = {
           ...simpleRun,
@@ -1422,10 +1507,12 @@ export class DeveloperController {
     const assistant = {
       id: randomId(),
       role: 'assistant' as const,
-      content: assistantText,
+      content: assistantText || 'Je n’ai pas pu modifier ce projet.',
       at: Date.now(),
     };
-    const nextMessages = [...pendingMessages, assistant];
+    await this.chatLineTail;
+    const live = this.projectChat?.projectId === id ? this.projectChat.messages : pendingMessages;
+    const nextMessages = [...live, assistant];
     const merged = this.mergeChatEffects(priorPersisted, { decisions: [], webSearchUsed: false }, nextMessages);
     await this.projects.saveChatState(id, merged);
     this.projectChat = this.chatView(

@@ -111,6 +111,7 @@ export class ChatSession {
       temperature: settings.temperature,
     });
 
+    let visibleReply = false;
     try {
       for await (const event of agent.run(messages, {
         signal: controller.signal,
@@ -120,10 +121,12 @@ export class ChatSession {
       })) {
         switch (event.type) {
           case 'assistant_delta':
+            if (event.delta.trim()) visibleReply = true;
             emit({ type: 'delta', text: event.delta });
             break;
           case 'assistant_message':
             messages.push(event.message);
+            if (event.message.content.trim()) visibleReply = true;
             break;
           case 'tool_start':
             emit({ type: 'tool_start', callId: event.call.id, toolName: event.call.name });
@@ -132,6 +135,7 @@ export class ChatSession {
             emit({ type: 'tool_progress', callId: event.callId, message: event.message });
             break;
           case 'tool_result':
+            visibleReply = true;
             messages.push(event.message);
             emit({
               type: 'tool_result',
@@ -143,6 +147,7 @@ export class ChatSession {
             void this.deps.auditLog.append(buildAuditEntry(event.outcome));
             break;
           case 'error':
+            visibleReply = true;
             emit({ type: 'error', message: event.message });
             break;
           case 'done':
@@ -151,6 +156,7 @@ export class ChatSession {
       }
     } catch (error) {
       if (!superseded()) {
+        visibleReply = true;
         emit({ type: 'error', message: error instanceof Error ? error.message : String(error) });
       }
     } finally {
@@ -180,6 +186,12 @@ export class ChatSession {
       )
       .catch(() => undefined);
     void this.deps.localLearning.recordTurn(updated.id, updated.messages).catch(() => undefined);
+    if (!visibleReply) {
+      emit({
+        type: 'error',
+        message: 'Je n’ai pas pu répondre. Réessaie dans un instant.',
+      });
+    }
     emit({ type: 'done', conversationId: updated.id, messages: updated.messages });
     } catch {
       if (this.controller === controller) this.controller = null;

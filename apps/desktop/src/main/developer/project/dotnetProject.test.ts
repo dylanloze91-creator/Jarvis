@@ -17,7 +17,6 @@ import {
   GOAL_MARKER,
   PLAN_MARKER,
   REVIEW_MARKER,
-  WRITE_MARKER,
 } from '@jarvis/core';
 import { createHarness, fakeOutcome } from '../controllerHarness.testkit.js';
 import { FakeOllama, type ChatBody, type Reply } from '../models/fakeOllama.testkit.js';
@@ -50,8 +49,7 @@ const TEST_CS =
 function script(body: ChatBody): Reply {
   const text = system(body);
   const write = writeRequest(body);
-  const writing = text.includes(WRITE_MARKER);
-  // Missions : le contexte cite les fichiers du gabarit — ne pas confondre avec l’écriture fichier par fichier.
+  // La boucle d’outils demande le fichier dans le message, pas via le marqueur d’écriture.
   if (text.includes(PLAN_MARKER)) {
     const planJson = JSON.stringify({
         resume: 'Classe HostsBlocker et son test sur un faux fichier.',
@@ -81,12 +79,12 @@ function script(body: ChatBody): Reply {
       }),
     };
   if (text.includes(REVIEW_MARKER)) return { content: '{"verdict": "ok", "issues": []}' };
-  if (writing && write?.path === 'src/BloqueurDeSites.Core/Salutation.cs')
+  if (write?.path === 'src/BloqueurDeSites.Core/Salutation.cs')
     return codeBlock(
       `namespace BloqueurDeSites.Core;\npublic static class Salutation { public static string Bonjour(string? p) => "Bonjour"; }\n`,
     );
-  if (writing && write?.path === 'src/BloqueurDeSites.Core/HostsBlocker.cs') return codeBlock(BLOCKER);
-  if (writing && write?.path === 'tests/BloqueurDeSites.Tests/HostsBlockerTests.cs')
+  if (write?.path === 'src/BloqueurDeSites.Core/HostsBlocker.cs') return codeBlock(BLOCKER);
+  if (write?.path === 'tests/BloqueurDeSites.Tests/HostsBlockerTests.cs')
     return codeBlock(TEST_CS);
   return { content: 'Je ne sais pas.' };
 }

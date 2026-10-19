@@ -85,8 +85,8 @@ describe('catalogue des modèles de code (décision 4)', () => {
       numCtx: 32_768,
       keepAlive: '30m',
       think: false,
-      numGpu: 99,
     });
+    expect(codeModelOptions(def, true).numGpu).toBeUndefined();
     expect(codeModelOptions(codeModelById('qwen3-coder:30b')!, false)).toEqual({
       numCtx: 16_384,
       keepAlive: '30m',

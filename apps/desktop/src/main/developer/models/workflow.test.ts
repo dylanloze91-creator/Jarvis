@@ -194,8 +194,9 @@ describe('modèle de code : ordre imposé, rien avant la validation', () => {
     expect(benchBody).toMatchObject({
       think: false,
       keep_alive: '30m',
-      options: { num_ctx: 32_768, num_gpu: 99 },
+      options: { num_ctx: 32_768 },
     });
+    expect(benchBody.options).not.toHaveProperty('num_gpu');
   }, 120_000);
 
   it('5. un modèle qui écrit ses appels en texte échoue partout', async () => {

@@ -44,13 +44,10 @@ import {
   STEP_LIMITS,
   SpecialistError,
   TEMPLATE_GUIDES,
-  TEMPLATE_REFERENCES,
-  dotnetDesktopTemplateReferences,
   DESKTOP_WINDOWS_EXE,
   isDotnetWindowsDesktopTemplate,
-  developerAgentFailed,
-  developerAgentFinished,
   developerAgentStarted,
+  developerStepSentence,
   developerMissionFailureLine,
   summarizeRepoTree,
   fallbackFactory,
@@ -112,6 +109,7 @@ import {
   briefWithoutTrademark,
   isPlatformerRequest,
   isWeakProjectName,
+  chooseCreationCoder,
   projectNameFromRequest,
   projectNameNeedsQuestion,
   fallbackSupervisorPlan,
@@ -472,6 +470,21 @@ export class MissionWorkflow {
       found.startedAt = this.now;
       this.trace('agent', 'start', { agentId: found.id, model: found.model });
     }
+    if (patch.status && patch.status !== previous) {
+      const line =
+        patch.status === 'running'
+          ? `${found.name} : en cours.`
+          : patch.status === 'done' || patch.status === 'failed' || patch.status === 'cancelled'
+            ? developerStepSentence({
+                name: found.name,
+                status: patch.status,
+                detail: found.detail,
+                files: found.files,
+                error: found.error,
+              })
+            : '';
+      if (line) this.deps.onMissionChatLine?.(line);
+    }
     if (
       (patch.status === 'done' || patch.status === 'failed' || patch.status === 'cancelled') &&
       found.finishedAt === undefined
@@ -501,6 +514,10 @@ export class MissionWorkflow {
     if (seed) agents = haltDependents(agents, seed, message, mode);
     mission.agents = agents.map((agent) => {
       if (agent.status !== 'pending' && agent.status !== 'running') return agent;
+      const label = mode === 'failed' ? 'échec' : 'annulé';
+      this.deps.onMissionChatLine?.(
+        `${agent.name} : ${label}. ${message.replace(/\s+/g, ' ').slice(0, 160)}`,
+      );
       return {
         ...agent,
         status: mode,
@@ -742,7 +759,18 @@ export class MissionWorkflow {
       if (route.logLine) this.deps.log?.(`[modèles] ${route.logLine}`);
     }
     this.modelPlan = plan;
-    const coder = plan.get('CODER')?.model ?? this.developer().codeModel.trim();
+    const developer = this.developer();
+    const selectedCoder = plan.get('CODER')?.model ?? developer.codeModel.trim();
+    const creationCoder =
+      kind === 'new-project' || kind === 'modify' || kind === 'fix' || kind === 'skill'
+        ? chooseCreationCoder({
+            selected: selectedCoder,
+            chatModel: developer.chatModel,
+            installed,
+            parameterSize: (name) => status.models.find((model) => model.name === name)?.parameterSize,
+          })
+        : { model: selectedCoder, pull: null, reason: '' };
+    const coder = creationCoder.model;
     this.gate =
       coder && GATED_MISSION_KINDS.includes(kind)
         ? assessMission(
@@ -799,6 +827,11 @@ export class MissionWorkflow {
     }
     if (chatExtras?.projectDecisions?.length)
       this.current.projectDecisions = chatExtras.projectDecisions.slice(0, 40);
+    if (creationCoder.reason && creationCoder.model !== this.current.coderOverride?.model) {
+      this.current.coderOverride = { model: creationCoder.model, reason: creationCoder.reason };
+      this.deps.log?.(`[modèles] ${creationCoder.reason}`);
+      this.deps.onMissionChatLine?.(creationCoder.reason);
+    }
     this.counters.clear();
     this.open.clear();
     this.levelRetried = false;
@@ -1030,16 +1063,7 @@ export class MissionWorkflow {
           const webPromise = (async () => {
             const query = webResearchQueryForRequest(mission.request);
             const summary = await this.deps.webResearch?.(query, mission.request);
-            if (summary) {
-              this.deps.onMissionChatLine?.(
-                developerAgentFinished('web', summary.chatLine.replace(/^Recherche web : /, '')),
-              );
-              return summary;
-            }
-            this.deps.onMissionChatLine?.(
-              developerAgentFinished('web', 'pas de source web exploitable, je continue avec le gabarit'),
-            );
-            return null;
+            return summary ?? null;
           })();
           const [scaffoldOutcome, webSummary, supervisorPlan] = await Promise.all([
             scaffoldPromise,
@@ -1053,29 +1077,33 @@ export class MissionWorkflow {
             output: supervisorPlan,
           });
           this.deps.onMissionChatLine?.(
-            `✓ Superviseur — ${supervisorPlan.tasks.length} agent(s) créés`,
+            developerStepSentence({
+              name: 'Superviseur',
+              status: 'done',
+              detail: `${supervisorPlan.tasks.length} agent(s) créé(s) selon la demande`,
+            }),
           );
           if (typeof scaffoldOutcome === 'string') {
-            this.deps.onMissionChatLine?.(developerAgentFinished('preparer', scaffoldOutcome));
+            this.setAgentRole('préparation', 'failed', scaffoldOutcome, { error: scaffoldOutcome });
             this.patch('scaffold', { status: 'failed', detail: scaffoldOutcome });
             step('scaffold', 'failed', scaffoldOutcome);
             throw new Error(scaffoldOutcome);
           }
           const fromScope = mission.projectId;
           mission.projectId = scaffoldOutcome.projectId;
-          if (fromScope !== mission.projectId) await this.deps.store.move(mission, fromScope);
+          // Avant le déplacement du journal : la phrase du Superviseur est déjà en file,
+          // et ce déplacement rend la main. Le chat doit connaître le dossier avant ça.
           this.deps.onMissionFocusProject?.(scaffoldOutcome.projectId);
-          this.deps.onMissionChatLine?.(
-            developerAgentFinished(
-              'preparer',
-              scaffoldOutcome.alreadyThere
-                ? `projet déjà là : ${scaffoldOutcome.path}`
-                : `dossier prêt : ${scaffoldOutcome.path}`,
-            ),
-          );
+          if (fromScope !== mission.projectId) await this.deps.store.move(mission, fromScope);
           this.patch('scaffold', { status: 'done', detail: scaffoldOutcome.path });
           this.trace('folder', 'end', { agentId: 'prepare' });
-          this.setAgentRole('préparation', 'done', scaffoldOutcome.path);
+          this.setAgentRole(
+            'préparation',
+            'done',
+            scaffoldOutcome.alreadyThere
+              ? `déjà là ${scaffoldOutcome.path}`
+              : scaffoldOutcome.path,
+          );
           step('scaffold', 'done', scaffoldOutcome.path);
           if (webSummary) {
             this.patch('web-research', { status: 'done', detail: webSummary.chatLine.slice(0, 160) });
@@ -1085,14 +1113,25 @@ export class MissionWorkflow {
               24_000,
             );
             this.setAgentRole('recherche', 'done', webSummary.chatLine.slice(0, 200));
+            if (!this.agentByRole('recherche')) {
+              this.deps.onMissionChatLine?.(
+                developerStepSentence({
+                  name: 'Recherche',
+                  status: 'done',
+                  detail: webSummary.chatLine.replace(/^Recherche web : /, '').slice(0, 140),
+                }),
+              );
+            }
           } else {
             this.patch('web-research', { status: 'skipped', detail: 'recherche web indisponible' });
             step('web-research', 'done', 'sans résultat exploitable');
-            this.setAgentRole(
-              'recherche',
-              'done',
-              'Aucune source web exploitable ; poursuite avec les connaissances locales.',
-            );
+            const detail = 'aucune source exploitable, je continue avec le gabarit';
+            this.setAgentRole('recherche', 'done', detail);
+            if (!this.agentByRole('recherche')) {
+              this.deps.onMissionChatLine?.(
+                developerStepSentence({ name: 'Recherche', status: 'done', detail }),
+              );
+            }
           }
           await this.persist();
         }
@@ -1384,11 +1423,10 @@ export class MissionWorkflow {
                 output: chosen,
                 detail: `${PROJECT_TEMPLATES[chosen.template].label} · ${chosen.name}${note}`,
               });
-              this.deps.onMissionChatLine?.(
-                developerAgentFinished(
-                  'architecte',
-                  `${PROJECT_TEMPLATES[chosen.template].label} · ${chosen.name}`,
-                ),
+              this.setAgentRole(
+                'architecture',
+                'done',
+                `${PROJECT_TEMPLATES[chosen.template].label} · ${chosen.name}`,
               );
               step(
                 'design',
@@ -1565,7 +1603,7 @@ export class MissionWorkflow {
     const coder = this.modelFor('CODER');
     const codeAgents = (mission.agents ?? []).filter((agent) => agent.role === 'code');
     this.trace('code-prep', 'start', { model: coder, agentId: codeAgents[0]?.id });
-    await this.switchModel(coder);
+    const readyCodeAgents: typeof codeAgents = [];
     for (const agent of codeAgents) {
       const blocked = agent.dependsOn.some((id) => {
         const dep = mission.agents?.find((item) => item.id === id);
@@ -1588,8 +1626,43 @@ export class MissionWorkflow {
       this.agent(agent.id, {
         status: 'running',
         model: coder,
-        detail: agent.brief,
+        detail: 'préparation du modèle',
       });
+      readyCodeAgents.push(mission.agents?.find((item) => item.id === agent.id) ?? agent);
+    }
+    let modelReady = false;
+    let modelError = '';
+    for (let attempt = 0; attempt < 2 && !modelReady; attempt++) {
+      try {
+        await this.switchModel(coder);
+        modelReady = true;
+      } catch (error) {
+        modelError = error instanceof Error ? error.message : String(error);
+        this.deps.onMissionChatLine?.(`Préparation du modèle ${coder} : échec. ${modelError}`);
+        if (attempt === 0) {
+          this.deps.onMissionChatLine?.('Nouvel essai de la préparation du modèle.');
+          continue;
+        }
+      }
+    }
+    if (!modelReady) {
+      const line = `Le codeur n’a pas démarré : ${modelError}`;
+      for (const agent of readyCodeAgents) {
+        this.agent(agent.id, { status: 'failed', error: modelError, model: coder });
+      }
+      mission.status = 'failed';
+      mission.verdict = 'stopped';
+      mission.summary = line;
+      this.closeOpenAgents(line, 'failed');
+      this.trace('mission', 'end', { model: coder, error: line });
+      this.persistLater();
+      return this.host.emit();
+    }
+    for (const agent of readyCodeAgents) {
+      const current = mission.agents?.find((item) => item.id === agent.id);
+      if (current && current.status === 'running') {
+        current.detail = current.brief;
+      }
     }
     this.trace('code-prep', 'end', { model: coder, agentId: codeAgents[0]?.id });
     if (
@@ -1620,26 +1693,27 @@ export class MissionWorkflow {
       ),
     ].join('\n');
     const fallbackPlan = template ? templatePlan(template, mission.request, project.name) : null;
+    const platformer = template === 'web-game' && isPlatformerRequest(mission.request);
     const taskOptions = {
       model: coder,
       templateId: template ?? undefined,
       hooks: {
         ...this.loopHooks(project.root, coder, this.enrichedPlanContext(context)),
         ...(fallbackPlan ? { fallbackPlan } : {}),
-        fileByFile: {
-          references:
-            template && isDotnetWindowsDesktopTemplate(template)
-              ? dotnetDesktopTemplateReferences(template, project.name)
-              : template
-                ? (TEMPLATE_REFERENCES[template] ?? [])
-                : [],
-          guide: [
-            template ? TEMPLATE_GUIDES[template] : undefined,
-            design ? skillTaskContext(design, research) : undefined,
-          ]
-            .filter(Boolean)
-            .join('\n'),
-        },
+        // Plateforme : seulement le niveau, un appel par fichier. Le reste passe par la boucle d’outils.
+        ...(platformer
+          ? {
+              fileByFile: {
+                references: ['src/level.ts'],
+                guide: [
+                  template ? TEMPLATE_GUIDES[template] : undefined,
+                  design ? skillTaskContext(design, research) : undefined,
+                ]
+                  .filter(Boolean)
+                  .join('\n'),
+              },
+            }
+          : {}),
       },
       project: {
         id: project.id,
@@ -1648,7 +1722,6 @@ export class MissionWorkflow {
         templateId: template ?? undefined,
       },
     };
-    const platformer = template === 'web-game' && isPlatformerRequest(mission.request);
     let merged = false;
     for (let pass = 0; pass < (platformer ? 2 : 1); pass++) {
       if (pass === 1) {
@@ -1703,20 +1776,14 @@ export class MissionWorkflow {
       const stopped = mission.verdict === 'failed' || mission.verdict === 'stopped';
       const levelMissing = platformer && !this.levelIsDelivered();
       if (levelMissing && !stopped && pass === 0) continue;
-      if (!levelMissing && mission.verdict === 'success' && merged) {
-        this.deps.onMissionChatLine?.(
-          developerAgentFinished('codeur', mission.summary?.slice(0, 120) ?? 'code livré'),
-        );
-      } else if (stopped) {
+      if (stopped) {
         for (const agent of codeAgents.filter((agent) => agent.status !== 'done')) {
           this.agent(agent.id, {
             status: 'failed',
-            error: mission.summary?.slice(0, 300) ?? 'mission interrompue',
+            error: mission.summary?.slice(0, 300) ?? 'le fichier n’a pas changé',
+            files: [],
           });
         }
-        this.deps.onMissionChatLine?.(
-          developerAgentFailed('codeur', mission.summary?.slice(0, 160) ?? 'mission interrompue'),
-        );
       }
       if (!levelMissing && mission.verdict === 'success' && merged && project) {
         this.deps.onMissionFocusProject?.(project.id);
@@ -1992,21 +2059,6 @@ export class MissionWorkflow {
             ...(status === 'failed' ? { error: detail ?? 'correction en échec' } : {}),
             ...(extra?.files ? { files: extra.files } : {}),
           });
-        }
-      }
-      if (mission.kind === 'new-project' && phase === 'test') {
-        if (status === 'running') {
-          this.deps.onMissionChatLine?.(
-            developerAgentStarted('testeur', 'vérifie que le projet tourne'),
-          );
-        } else if (status === 'done') {
-          this.deps.onMissionChatLine?.(
-            developerAgentFinished('testeur', detail?.trim() || 'tests terminés'),
-          );
-        } else if (status === 'failed') {
-          this.deps.onMissionChatLine?.(
-            developerAgentFinished('testeur', detail?.trim() || 'échec des tests'),
-          );
         }
       }
       const actor = LOOP_ACTORS[phase];

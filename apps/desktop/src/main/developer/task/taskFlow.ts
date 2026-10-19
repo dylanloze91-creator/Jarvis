@@ -23,6 +23,7 @@ import {
   modelRunCategory,
   suiteCommandFor,
   extractFileContent,
+  isNeutralPlatformerLevel,
   fileWritePrompt,
   fileWriteSystem,
   addUsage,
@@ -128,6 +129,8 @@ const FILE_TOOL_NAMES = new Set([
 export class TaskRun extends TaskRunBase {
   private approvalWaiter: ((ok: boolean) => void) | null = null;
   private readonly acknowledged = new Set<string>();
+  private pendingWrite: string | null = null;
+  private readonly adoptedWrites = new Set<string>();
 
   constructor(
     host: TaskHost,
@@ -438,27 +441,67 @@ export class TaskRun extends TaskRunBase {
   private writeNudge(kind: 'edit' | 'fix'): ToolLoopInput['nudge'] {
     if (!this.profile.editHints) return undefined;
     let left = 3;
+    const skipped = new Set<string>();
     const planned = (this.reviewed?.files ?? []).filter(
       (f) => f.action !== 'delete' && !f.problem && !f.core,
     );
+    if (kind === 'edit') left = Math.max(left, planned.length);
     return (_answer, calls) => {
       if (left <= 0) return null;
-      const written = new Set(
-        calls
+      const written = new Set([
+        ...calls
           .filter((c) => c.status === 'ok' && WRITE_TOOLS.has(c.name))
           .map((c) => (normalizeRepoRelative(String(c.arguments.path ?? '')) ?? '').toLowerCase()),
-      );
+        ...this.adoptedWrites,
+      ]);
+      if (
+        kind === 'edit' &&
+        this.pendingWrite &&
+        !written.has(this.pendingWrite.toLowerCase())
+      ) {
+        skipped.add(this.pendingWrite.toLowerCase());
+      }
       if (kind === 'fix') {
         if (written.size > 0) return null;
         left -= 1;
         return 'Tu n’as encore rien corrigé. Corrige maintenant le fichier en cause : appelle dev_write_file avec son contenu complet corrigé, sans explication.';
       }
-      const next = planned.find((f) => !written.has(f.path.toLowerCase()));
+      const next = planned.find(
+        (f) => !written.has(f.path.toLowerCase()) && !skipped.has(f.path.toLowerCase()),
+      );
       if (!next) return null;
       left -= 1;
-      const tool = next.exists ? 'dev_write_file' : 'dev_create_file';
-      return `Tu n’as pas encore écrit ${next.path}. Écris-le maintenant : appelle ${tool} avec path "${next.path}" et le contenu complet du fichier, sans explication.`;
+      this.pendingWrite = next.path;
+      return `Écris maintenant le contenu complet de ${next.path}, dans un seul bloc de code.`;
     };
+  }
+
+  /** Bloc de code renvoyé sans outil : l’écrire, puis laisser la boucle continuer. */
+  private async adoptPlainAnswer(
+    tools: Pick<ToolManager, 'execute'>,
+    answer: string,
+    signal: AbortSignal,
+  ): Promise<boolean> {
+    const path = this.pendingWrite;
+    if (!path) return false;
+    const content = extractFileContent(answer);
+    if (!content) return false;
+    const planned = this.reviewed?.files.find((file) => file.path === path);
+    const name = planned && !planned.exists ? 'dev_create_file' : 'dev_write_file';
+    let outcome = await tools.execute(
+      { id: randomId(), name, arguments: { path, content } },
+      { requestConfirmation: async () => true, signal },
+    );
+    if (outcome.status !== 'ok' && /dev_create_file/.test(outcome.content)) {
+      outcome = await tools.execute(
+        { id: randomId(), name: 'dev_create_file', arguments: { path, content } },
+        { requestConfirmation: async () => true, signal },
+      );
+    }
+    if (outcome.status !== 'ok') return false;
+    this.adoptedWrites.add(path.toLowerCase());
+    this.pendingWrite = null;
+    return true;
   }
 
   /**
@@ -552,8 +595,9 @@ export class TaskRun extends TaskRunBase {
     pause: () => Promise<void>,
     failure?: { failures: string[]; excerpts: string[]; diagnosis: string },
   ): Promise<{ written: string[]; usage: ChatUsage; expired: boolean }> {
-    const limit = mode === 'edit' ? STEP_LIMITS.edit : STEP_LIMITS.fix;
-    const deadline = withDeadline(signal, limit.timeoutMs);
+    const perCallMs = 8 * 60_000;
+    const perCallTokens = 2_500;
+    let expired = false;
     const planned = this.reviewed!.files.filter(
       (f) => f.action !== 'delete' && !f.problem && !f.core,
     );
@@ -582,9 +626,14 @@ export class TaskRun extends TaskRunBase {
       loadMs: 0,
       totalMs: 0,
     };
-    try {
-      for (const file of targets) {
-        if (deadline.signal.aborted) break;
+    for (const file of targets) {
+      if (signal.aborted || expired) break;
+      const deadline = withDeadline(signal, perCallMs);
+      try {
+        if (deadline.signal.aborted) {
+          expired = deadline.expired();
+          break;
+        }
         await pause();
         if (failure && file.path === 'src/game.ts' && this.hooks.fileByFile) {
           const baseline = await this.readSandboxAtBase(file.path);
@@ -618,21 +667,67 @@ export class TaskRun extends TaskRunBase {
               ...(failure ?? {}),
               ...(fixedFiles.length ? { fixedFiles } : {}),
             }),
-            maxTokens: limit.maxTokens,
+            maxTokens: perCallTokens,
             signal: deadline.signal,
           });
           text = reply.text;
           usage = addUsage(usage, reply.usage);
         } catch (error) {
           if (signal.aborted) throw error;
-          if (deadline.expired()) break;
+          if (deadline.expired()) {
+            expired = true;
+            break;
+          }
           throw new TaskStopped(
             `Le modèle de code a échoué : ${error instanceof Error ? error.message : String(error)}`,
           );
         }
-        const content = extractFileContent(text);
+        let content = extractFileContent(text);
+        const levelPath = file.path.replace(/\\/g, '/').endsWith('src/level.ts');
+        const levelProblem = (body: string | null): string | null => {
+          if (!levelPath) return null;
+          if (!body || !/export const PLAY_LEVEL/.test(body)) return 'PLAY_LEVEL manquant';
+          if (isNeutralPlatformerLevel(body)) return 'niveau encore identique au tutoriel';
+          return null;
+        };
+        if (levelProblem(content) && !deadline.signal.aborted) {
+          this.host.log(`${file.path} : ${levelProblem(content)}. Nouvel essai.`);
+          try {
+            const again = await code.complete({
+              system: fileWriteSystem(this.reviewed!, this.profile, this.manualText()),
+              prompt: `${fileWritePrompt({
+                request: this.state.request,
+                path: file.path,
+                current,
+                context: this.hooks.fileByFile?.guide ?? this.hooks.planContext,
+                related,
+                ...(failure ?? {}),
+                ...(fixedFiles.length ? { fixedFiles } : {}),
+              })}\n\nLe fichier précédent est refusé (${levelProblem(content)}). Écris un PLAY_LEVEL nouveau, avec d’autres nombres.`,
+              maxTokens: perCallTokens,
+              signal: deadline.signal,
+            });
+            text = again.text;
+            usage = addUsage(usage, again.usage);
+            content = extractFileContent(text);
+          } catch (error) {
+            if (signal.aborted) throw error;
+            if (deadline.expired()) {
+              expired = true;
+              break;
+            }
+            throw new TaskStopped(
+              `Le modèle de code a échoué : ${error instanceof Error ? error.message : String(error)}`,
+            );
+          }
+        }
         if (!content) {
           this.host.log(`${file.path} : la réponse ne contient pas de code.`);
+          continue;
+        }
+        const rejected = levelProblem(content);
+        if (rejected) {
+          this.host.log(`${file.path} : ${rejected}. Fichier non écrit.`);
           continue;
         }
         if (
@@ -656,15 +751,16 @@ export class TaskRun extends TaskRunBase {
           signal,
         );
         if (outcome.status === 'ok') written.push(file.path);
+      } finally {
+        if (deadline.expired()) expired = true;
+        deadline.dispose();
       }
-    } finally {
-      deadline.dispose();
     }
-    if (deadline.expired())
+    if (expired)
       this.host.log(
-        `${mode === 'edit' ? 'Modification' : 'Correction'} : délai atteint (${limitText(limit)}).`,
+        `${mode === 'edit' ? 'Modification' : 'Correction'} : délai atteint (8 min pour cet appel).`,
       );
-    return { written, usage, expired: deadline.expired() };
+    return { written, usage, expired };
   }
 
   private async refreshDiff(signal: AbortSignal): Promise<string> {
@@ -1093,6 +1189,8 @@ export class TaskRun extends TaskRunBase {
         ),
       ),
     );
+    this.adoptedWrites.clear();
+    this.pendingWrite = null;
     const byFile = this.hooks.fileByFile
       ? await this.writeFiles(code, 'edit', signal, pause)
       : null;
@@ -1114,6 +1212,7 @@ export class TaskRun extends TaskRunBase {
             requestConfirmation: (request) => this.decide(request, signal),
             beforeRound: pause,
             nudge: this.writeNudge('edit'),
+            adoptPlainAnswer: (answer) => this.adoptPlainAnswer(tools, answer, signal),
           },
           STEP_LIMITS.edit,
           signal,
@@ -1225,6 +1324,7 @@ export class TaskRun extends TaskRunBase {
               requestConfirmation: (request) => this.decide(request, signal),
               beforeRound: pause,
               nudge: this.writeNudge('fix'),
+              adoptPlainAnswer: (answer) => this.adoptPlainAnswer(tools, answer, signal),
             },
             STEP_LIMITS.fix,
             signal,

@@ -165,9 +165,12 @@ export function replyForPlannedFileWrite(
 
 export function writeRequest(body: ChatBody): { path: string; current: string | null } | null {
   const text = body.messages.map((m) => m.content).join('\n\n');
-  const path = /Écris maintenant le contenu complet de (\S+?)(, corrigé)?, dans un seul bloc de code/.exec(
-    text,
-  )?.[1];
+  const hits = [
+    ...text.matchAll(
+      /Écris maintenant le contenu complet de (\S+?)(, corrigé)?, dans un seul bloc de code/g,
+    ),
+  ];
+  const path = hits.at(-1)?.[1];
   if (!path) return null;
   const esc = path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const current = new RegExp(

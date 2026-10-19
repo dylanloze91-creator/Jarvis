@@ -367,6 +367,19 @@ export function templatePlan(
   projectTitle?: string,
 ): TaskPlan | null {
   const title = projectTitle?.trim() || projectNameFromRequest(request);
+  if (template === 'web-game' && isPlatformerRequest(request)) {
+    const scripts = templatePackageScripts(template);
+    return {
+      summary: `Écrire un niveau de plateforme 2D dans src/level.ts pour : ${clean(request).slice(0, 160)}`,
+      criteria: [
+        'src/level.ts définit un PLAY_LEVEL différent du niveau tutoriel',
+        'au moins six plateformes, un collectable, un piège et une arrivée',
+        ...verificationCriteriaFromScripts(scripts),
+      ],
+      files: [{ path: 'src/level.ts', action: 'edit', reason: 'géométrie du niveau jouable' }],
+      tests: defaultNodePlanSuites(scripts),
+    };
+  }
   const dotnetFiles = dotnetTemplateEntryFiles(template, title);
   const nodeFiles = ENTRY_FILES[template];
   const files = dotnetFiles ?? nodeFiles;

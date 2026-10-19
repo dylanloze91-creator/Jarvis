@@ -1,3 +1,4 @@
+import { modelParamsB } from './difficulty.js';
 import {
   appendModelRun,
   formatRunMemoryLogLine,
@@ -35,6 +36,99 @@ export function pickInstalledCompletionModel(installed: ReadonlySet<string>): st
 }
 
 const MISSION_CODER_PREFER = ['qwen3.6:35b-a3b-coding', 'qwen2.5-coder:14b', 'qwen2.5-coder:7b'];
+
+/** Codeur MoE déjà prévu pour une carte de 6 Go. Jamais téléchargé par la mission. */
+export const PREFERRED_SIX_GB_CODER = 'qwen3.6:35b-a3b-coding';
+
+const SIX_GB = 6e9;
+
+/**
+ * Tient dans 6 Go de VRAM : dense jusqu’à 7B (Q4 + marge), ou MoE « a3b »
+ * (experts en RAM, attention sur la carte). Taille inconnue : on ne l’écarte pas.
+ * `qwen3.8` est dense et trop gros même sans suffixe « b ».
+ */
+export function modelFitsSixGb(name: string, parameterSize?: string | null): boolean {
+  if (/qwen3\.8/i.test(name)) return false;
+  if (/a3b/i.test(name)) return true;
+  const params = modelParamsB(name, parameterSize);
+  if (params === null) return true;
+  return params * 0.6e9 + 0.8e9 <= SIX_GB;
+}
+
+function isCoderName(name: string): boolean {
+  return /coder/i.test(name);
+}
+
+/** Codeur installé qui tient dans 6 Go. Jamais le modèle de discussion. Les plus petits d’abord. */
+export function pickFittingCoderModel(
+  installed: ReadonlySet<string>,
+  options: {
+    chatModel?: string;
+    parameterSize?: (name: string) => string | null | undefined;
+  } = {},
+): string | null {
+  const chat = options.chatModel?.trim() ?? '';
+  const fitting = [...installed].filter((name) => {
+    if (!name || /embed/i.test(name) || name === chat) return false;
+    if (!isCoderName(name)) return false;
+    return modelFitsSixGb(name, options.parameterSize?.(name));
+  });
+  if (!fitting.length) return null;
+  const rank = (name: string): number => {
+    if (name === PREFERRED_SIX_GB_CODER) return 0;
+    if (/a3b/i.test(name)) return 1;
+    return 10 + (modelParamsB(name, options.parameterSize?.(name)) ?? 8);
+  };
+  return fitting.sort((a, b) => rank(a) - rank(b) || a.localeCompare(b))[0]!;
+}
+
+export interface CreationCoderChoice {
+  model: string;
+  /** Nom à télécharger, ou null si `model` est déjà installé. */
+  pull: string | null;
+  reason: string;
+}
+
+/**
+ * Codeur d’une création. Le 35B MoE installé gagne sur un modèle trop gros ou sur le chat.
+ * Un nom de test dont la taille est inconnue est gardé. Aucun téléchargement.
+ */
+export function chooseCreationCoder(input: {
+  selected: string;
+  chatModel?: string;
+  installed: ReadonlySet<string>;
+  parameterSize?: (name: string) => string | null | undefined;
+}): CreationCoderChoice {
+  const selected = input.selected.trim();
+  const chat = input.chatModel?.trim() ?? '';
+  const sizeOf = input.parameterSize;
+  const isChat = Boolean(chat) && selected === chat;
+  const fits = Boolean(selected) && modelFitsSixGb(selected, sizeOf?.(selected)) && !isChat;
+  if (fits) return { model: selected, pull: null, reason: '' };
+  const moe = input.installed.has(PREFERRED_SIX_GB_CODER) ? PREFERRED_SIX_GB_CODER : null;
+  if (moe && moe !== chat) {
+    return {
+      model: moe,
+      pull: null,
+      reason: isChat
+        ? `Codeur : « ${moe} » à la place du modèle de discussion « ${selected} ».`
+        : `Codeur : « ${moe} » tient dans 6 Go, « ${selected || 'aucun'} » non.`,
+    };
+  }
+  const better = pickFittingCoderModel(input.installed, { chatModel: chat, parameterSize: sizeOf });
+  if (better) {
+    return {
+      model: better,
+      pull: null,
+      reason: `Codeur : « ${better} » tient dans 6 Go, « ${selected || 'aucun'} » non.`,
+    };
+  }
+  return {
+    model: selected,
+    pull: null,
+    reason: 'Aucun codeur installé ne tient dans 6 Go. Aucun autre modèle n’est téléchargé.',
+  };
+}
 
 /** Modèle Codeur pour une mission (6 Go VRAM) : banc réel, puis défaut catalogue, puis repli. */
 export function pickMissionCoderModel(

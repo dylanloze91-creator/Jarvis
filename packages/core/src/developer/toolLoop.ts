@@ -29,6 +29,11 @@ export interface ToolLoopInput {
    * (par exemple « écris maintenant ce fichier »), ou null pour s'arrêter.
    */
   nudge?: (answer: string, calls: readonly ToolLoopCall[]) => string | null;
+  /**
+   * Réponse sans outil qui contient déjà un fichier (bloc de code).
+   * `true` : le fichier est écrit, la boucle continue.
+   */
+  adoptPlainAnswer?: (answer: string) => Promise<boolean>;
 }
 
 export interface ToolLoopCall {
@@ -131,6 +136,14 @@ export async function runToolLoop(input: ToolLoopInput): Promise<ToolLoopResult>
       };
     }
     if (pending.length === 0) {
+      if (input.adoptPlainAnswer && round < maxRounds) {
+        const adopted = await input.adoptPlainAnswer(text);
+        if (adopted) {
+          messages.push(createMessage('assistant', text));
+          messages.push(createMessage('user', 'Fichier enregistré.'));
+          continue;
+        }
+      }
       const more = round < maxRounds ? input.nudge?.(text, calls) : null;
       if (more) {
         messages.push(createMessage('assistant', text));

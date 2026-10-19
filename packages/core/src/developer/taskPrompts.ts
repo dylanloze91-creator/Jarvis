@@ -273,6 +273,10 @@ export function fileWritePrompt(input: FileWriteInput): string {
     parts.push(
       `${input.path} fonctionne déjà : garde tel quel tout ce que la demande ne change pas (noms, exports, réglages, autres fonctions).`,
     );
+  if (input.path.replace(/\\/g, '/').endsWith('src/level.ts'))
+    parts.push(
+      'Ce fichier est le niveau. Remplace PLAY_LEVEL : au moins six plateformes, un collectable, un piège et une arrivée. Garde `export const PLAY_LEVEL` et le type LevelData. Le spawn est au-dessus d’une plateforme. Ne recopie pas les nombres du niveau actuel : c’est le tutoriel, il ne compte pas.',
+    );
   parts.push(
     `Écris maintenant le contenu complet de ${input.path}${input.failures?.length ? ', corrigé' : ''}, dans un seul bloc de code.`,
   );

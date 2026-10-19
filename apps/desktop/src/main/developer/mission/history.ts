@@ -139,7 +139,7 @@ export function creationJournalBanner(input: {
     }
     return { kept: false, failedShort: false, retry: true, text: TEMPLATE_STILL_LINE };
   }
-  if (levelWritten && locked) {
+  if (input.ok && levelWritten && locked) {
     const journal = note.includes('non enregistré')
       ? 'Journal non enregistré (fichier verrouillé).'
       : 'Journal verrouillé, enregistré sur place.';

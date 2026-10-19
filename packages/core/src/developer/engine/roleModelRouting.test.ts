@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { buildMissionModelPlan, routeRoleToInstalledModel } from './roleModelRouting.js';
+import {
+  buildMissionModelPlan,
+  chooseCreationCoder,
+  routeRoleToInstalledModel,
+} from './roleModelRouting.js';
 
 describe('routeRoleToInstalledModel', () => {
   const installed = new Set(['code:main', 'relecteur:b', 'nomic-embed-text']);
@@ -96,5 +100,57 @@ describe('routeRoleToInstalledModel', () => {
     if (!(plan instanceof Map)) return;
     expect(plan.get('CODER')?.model).toBe('qwen2.5-coder:14b');
     expect(plan.get('CODER')?.logLine).toContain('choisi');
+  });
+});
+
+describe('codeur qui tient dans 6 Go (pas le modèle de discussion)', () => {
+  const installed = new Set([
+    'deepseek-coder-v2:16b',
+    'qwen2.5-coder:14b',
+    'qwen2.5:3b',
+    'qwen3.5:4b',
+    'qwen3.6:35b-a3b-coding',
+    'qwen3.8:latest',
+  ]);
+
+  it('préfère le MoE qui tient, pas le 14B ni le chat 4B', () => {
+    const choice = chooseCreationCoder({
+      selected: 'qwen2.5-coder:14b',
+      chatModel: 'qwen3.5:4b',
+      installed,
+    });
+    expect(choice.model).toBe('qwen3.6:35b-a3b-coding');
+    expect(choice.pull).toBeNull();
+    expect(choice.reason).toMatch(/6 Go/);
+  });
+
+  it('préfère le MoE 35B même si un petit codeur dense est installé', () => {
+    const choice = chooseCreationCoder({
+      selected: 'qwen3.5:4b',
+      chatModel: 'qwen3.5:4b',
+      installed: new Set([...installed, 'qwen2.5-coder:1.5b']),
+    });
+    expect(choice.model).toBe('qwen3.6:35b-a3b-coding');
+    expect(choice.pull).toBeNull();
+  });
+
+  it('ne télécharge rien si seuls des modèles trop gros ou le chat sont là', () => {
+    const choice = chooseCreationCoder({
+      selected: 'qwen3.5:4b',
+      chatModel: 'qwen3.5:4b',
+      installed: new Set(['qwen2.5-coder:14b', 'qwen3.5:4b', 'qwen2.5:3b']),
+    });
+    expect(choice.pull).toBeNull();
+    expect(choice.model).not.toBe('qwen2.5-coder:1.5b');
+    expect(choice.reason).toMatch(/n’est téléchargé|téléchargé/);
+  });
+
+  it('garde un modèle de test dont la taille est inconnue', () => {
+    const choice = chooseCreationCoder({
+      selected: 'scripte:mission',
+      chatModel: 'qwen3.5:4b',
+      installed: new Set(['scripte:mission', 'qwen3.5:4b']),
+    });
+    expect(choice).toEqual({ model: 'scripte:mission', pull: null, reason: '' });
   });
 });
