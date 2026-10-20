@@ -1,7 +1,7 @@
 import { suiteExpectsTestCounts } from './projectValidation.js';
 
 /**
- * Lecture des sorties de tests (tsc, Vitest, ESLint, dotnet) pour comparer à la
+ * Lecture des sorties de tests (tsc, Vitest, node:test, ESLint, dotnet) pour comparer à la
  * référence prise avant toute modification : un échec qui existait déjà
  * n'est jamais attribué à la tâche.
  */
@@ -31,6 +31,10 @@ const VITEST_FAIL = /^\s*(?:FAIL|×|✗)\s+(.+?)(?:\s+\d+ms)?$/;
 const VITEST_SUMMARY = /^\s*Tests\s+(?:(\d+) failed)?(?:\s*\|\s*)?(?:(\d+) passed)?.*\((\d+)\)/;
 const ESLINT_FILE = /^(\/|[A-Za-z]:\\|\.{0,2}[\\/]?[\w@.-]+[\\/]).+\.[cm]?[jt]sx?$/;
 const ESLINT_PROBLEM = /^\s+(\d+):(\d+)\s+error\s+(.+?)\s{2,}(\S+)$/;
+const NODE_NOT_OK = /^not ok \d+ - (.+)$/;
+const NODE_ERR =
+  /^#\s*((?:AssertionError|ReferenceError|TypeError|SyntaxError|Error)(?: \[[A-Z0-9_]+\])?(?::.*)?)/;
+const NODE_FAIL_COUNT = /^#\s+fail\s+(\d+)\s*$/;
 
 function relativeTo(path: string, root?: string): string {
   let value = path.replace(/\\/g, '/');
@@ -53,6 +57,8 @@ export function parseTestOutput(
   let eslint = 0;
   let vitestFailed: number | null = null;
   let vitestTotal: number | null = null;
+  let nodeFailed = 0;
+  let pendingNodeError = '';
   for (const line of lines) {
     const ts = TSC_ERROR.exec(line.trim());
     if (ts) {
@@ -79,7 +85,22 @@ export function parseTestOutput(
     if (problem && eslintFile) {
       eslint += 1;
       failures.add(`lint ${eslintFile} ${problem[4]} ${problem[3]!.slice(0, 80)}`);
+      continue;
     }
+    const nodeErr = NODE_ERR.exec(line.trim());
+    if (nodeErr) {
+      if (!pendingNodeError) pendingNodeError = nodeErr[1]!.replace(/\s+/g, ' ').slice(0, 160);
+      continue;
+    }
+    const nodeFail = NODE_NOT_OK.exec(line.trim());
+    if (nodeFail) {
+      const name = nodeFail[1]!.trim().slice(0, 120);
+      failures.add(pendingNodeError ? `node:test ${name} ${pendingNodeError}` : `node:test ${name}`);
+      pendingNodeError = '';
+      continue;
+    }
+    const nodeCount = NODE_FAIL_COUNT.exec(line.trim());
+    if (nodeCount) nodeFailed = Number(nodeCount[1] ?? 0);
   }
   const parts: string[] = [];
   if (tsc) parts.push(`${tsc} erreur(s) TypeScript`);
@@ -95,6 +116,7 @@ export function parseTestOutput(
     );
   }
   if (eslint) parts.push(`${eslint} erreur(s) de lint`);
+  if (nodeFailed) parts.push(`${nodeFailed} test(s) node:test échoué(s)`);
   if (options.exitCode !== 0 && failures.size === 0) {
     failures.add(`sortie ${options.exitCode ?? 'interrompue'}`);
     parts.push(`échec (code ${options.exitCode ?? 'aucun'})`);

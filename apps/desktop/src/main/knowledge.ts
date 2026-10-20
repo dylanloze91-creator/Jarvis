@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdir, readFile, readdir, stat, writeFile, rename } from 'node:fs/promises';
+import { mkdir, open, readFile, readdir, rm, stat, writeFile, rename } from 'node:fs/promises';
 import { extname, isAbsolute, join, relative, resolve } from 'node:path';
 import {
   applyIncoming,
@@ -97,7 +97,7 @@ const BLOCKED_FOLDER_NAMES = new Set([
 
 export class KnowledgeStore {
   private index: KnowledgeIndex | null = null;
-  private writeQueue: Promise<void> = Promise.resolve();
+  private indexMtime = -1;
 
   constructor(private readonly options: KnowledgeStoreOptions) {}
 
@@ -110,17 +110,11 @@ export class KnowledgeStore {
   }
 
   async load(): Promise<KnowledgeIndex> {
-    if (this.index) return this.index;
-    try {
-      const raw = await readFile(this.indexPath(), 'utf8');
-      const parsed = JSON.parse(raw) as Partial<KnowledgeIndex>;
-      this.index = {
-        version: 1,
-        chunks: Array.isArray(parsed.chunks) ? parsed.chunks.filter(validChunk) : [],
-      };
-    } catch {
-      this.index = { version: 1, chunks: [] };
-    }
+    const info = await stat(this.indexPath()).catch(() => null);
+    const mtime = info?.mtimeMs ?? -1;
+    if (this.index && this.indexMtime === mtime) return this.index;
+    this.index = await this.readDisk();
+    this.indexMtime = mtime;
     return this.index;
   }
 
@@ -185,10 +179,10 @@ export class KnowledgeStore {
       updatedAt: Date.now(),
     };
     chunk.embedding = (await this.embed(chunk.text, settings).catch(() => null)) ?? undefined;
-    const index = await this.load();
-    index.chunks = [chunk, ...index.chunks.filter((item) => item.id !== chunk.id)];
-    capIndex(index);
-    await this.save();
+    await this.mutate((index) => {
+      index.chunks = [chunk, ...index.chunks.filter((item) => item.id !== chunk.id)];
+      capIndex(index);
+    });
     await this.appendMemorySection(section, { title, text: chunk.text, updatedAt: chunk.updatedAt });
     return chunk;
   }
@@ -199,21 +193,23 @@ export class KnowledgeStore {
   ): Promise<{ files: number; chunks: number }> {
     const root = await assertIndexableFolder(folder);
     const files = await collectFiles(root);
-    let count = 0;
-    for (const file of files) {
-      count += await this.indexFile(file, settings);
-    }
-    await this.save();
+    const produced: KnowledgeChunk[] = [];
+    for (const file of files) produced.push(...(await this.indexFile(file, settings)));
+    await this.mutate((index) => {
+      const sources = new Set(files);
+      index.chunks = index.chunks.filter((item) => !sources.has(item.source));
+      index.chunks.push(...produced);
+      capIndex(index);
+    });
     await this.writeDocumentManifest(files);
-    return { files: files.length, chunks: count };
+    return { files: files.length, chunks: produced.length };
   }
 
   async indexConversation(source: string, text: string, settings: Settings): Promise<number> {
     const clipped = text.trim().slice(0, MAX_CONVERSATION_CHARS);
     if (!clipped) return 0;
     const chunks = splitText(clipped);
-    const index = await this.load();
-    index.chunks = index.chunks.filter((item) => item.source !== source);
+    const built: KnowledgeChunk[] = [];
     for (const [i, part] of chunks.entries()) {
       const chunk: KnowledgeChunk = {
         id: hash(`${source}:${i}:${part}`),
@@ -224,72 +220,82 @@ export class KnowledgeStore {
         updatedAt: Date.now(),
       };
       chunk.embedding = (await this.embed(part, settings).catch(() => null)) ?? undefined;
-      index.chunks.push(chunk);
+      built.push(chunk);
     }
-    capIndex(index);
-    await this.save();
-    return chunks.length;
+    await this.mutate((index) => {
+      index.chunks = [...index.chunks.filter((item) => item.source !== source), ...built];
+      capIndex(index);
+    });
+    return built.length;
   }
 
   async listLearning(): Promise<LearningRecord[]> {
-    const index = await this.load();
-    const records = index.chunks.flatMap((chunk) => (chunk.learning ? [chunk.learning] : []));
+    const records = learningOf(await this.load());
     const fresh = markStale(records, Date.now());
     const changed = fresh.some((item, i) => item.status !== records[i]?.status);
-    if (changed) await this.saveLearning(fresh);
-    return changed ? fresh : records;
-  }
-
-  async saveLearning(records: readonly LearningRecord[]): Promise<void> {
-    const index = await this.load();
-    const rest = index.chunks.filter((chunk) => !chunk.learning);
-    const chunks: KnowledgeChunk[] = records.map((record) => ({
-      id: record.id,
-      source: `learning:${record.id}`,
-      title: record.type,
-      text: record.content.slice(0, 4_000),
-      kind: 'memory',
-      updatedAt: record.lastCheckedAt,
-      learning: record,
-    }));
-    index.chunks = [...chunks, ...rest];
-    capIndex(index);
-    await this.save();
+    if (!changed) return records;
+    let stored = fresh;
+    await this.mutate((index) => {
+      stored = markStale(learningOf(index), Date.now());
+      replaceLearning(index, stored);
+    });
+    return stored;
   }
 
   async applyLearning(incoming: LearningRecord | null): Promise<LearningRecord[]> {
-    const next = applyIncoming(await this.listLearning(), incoming);
-    await this.saveLearning(next.records);
-    return next.records;
+    let records: LearningRecord[] = [];
+    await this.mutate((index) => {
+      records = applyIncoming(markStale(learningOf(index), Date.now()), incoming).records;
+      replaceLearning(index, records);
+    });
+    return records;
   }
 
   async relevantLearning(query: string, limit = 4): Promise<LearningRecord[]> {
     const hits = relevantRecords(await this.listLearning(), query, limit);
-    if (hits.length) {
-      const byId = new Map(hits.map((item) => [item.id, item]));
-      const all = (await this.listLearning()).map((item) => byId.get(item.id) ?? item);
-      await this.saveLearning(all);
+    if (!hits.length) return hits;
+    try {
+      let fresh = hits;
+      await this.mutate((index) => {
+        const records = markStale(learningOf(index), Date.now());
+        fresh = relevantRecords(records, query, limit);
+        const byId = new Map(fresh.map((item) => [item.id, item]));
+        replaceLearning(
+          index,
+          records.map((item) => byId.get(item.id) ?? item),
+        );
+      });
+      return fresh;
+    } catch {
+      // Le compteur de réutilisation ne doit pas empêcher d’utiliser la fiche déjà trouvée.
+      return hits;
     }
-    return hits;
   }
 
   async setLearningStatus(id: string, status: LearningRecord['status']): Promise<LearningRecord[]> {
-    const all = (await this.listLearning()).map((item) =>
-      item.id === id ? { ...item, status, lastCheckedAt: Date.now() } : item,
-    );
-    await this.saveLearning(all);
-    return all;
+    let records: LearningRecord[] = [];
+    await this.mutate((index) => {
+      records = learningOf(index).map((item) =>
+        item.id === id ? { ...item, status, lastCheckedAt: Date.now() } : item,
+      );
+      replaceLearning(index, records);
+    });
+    return records;
   }
 
   async deleteLearning(id: string): Promise<LearningRecord[]> {
-    const all = (await this.listLearning()).filter((item) => item.id !== id);
-    await this.saveLearning(all);
-    return all;
+    let records: LearningRecord[] = [];
+    await this.mutate((index) => {
+      records = learningOf(index).filter((item) => item.id !== id);
+      replaceLearning(index, records);
+    });
+    return records;
   }
 
   async clear(): Promise<void> {
-    this.index = { version: 1, chunks: [] };
-    await this.save();
+    await this.mutate((index) => {
+      index.chunks = [];
+    });
   }
 
   async stats(): Promise<KnowledgeStats> {
@@ -301,17 +307,16 @@ export class KnowledgeStore {
     };
   }
 
-  private async indexFile(file: string, settings: Settings): Promise<number> {
+  private async indexFile(file: string, settings: Settings): Promise<KnowledgeChunk[]> {
     const info = await stat(file);
-    if (!info.isFile() || info.size > MAX_FILE_BYTES) return 0;
+    if (!info.isFile() || info.size > MAX_FILE_BYTES) return [];
     const ext = extname(file).toLowerCase();
-    if (!TEXT_EXTENSIONS.has(ext)) return 0;
+    if (!TEXT_EXTENSIONS.has(ext)) return [];
     const text =
       ext === '.pdf' ? extractPdfText(await readFile(file)) : await this.readUtf8Document(file);
-    if (!text.trim()) return 0;
+    if (!text.trim()) return [];
     const parts = splitText(text);
-    const index = await this.load();
-    index.chunks = index.chunks.filter((item) => item.source !== file);
+    const chunks: KnowledgeChunk[] = [];
     for (const [i, part] of parts.entries()) {
       const chunk: KnowledgeChunk = {
         id: hash(`${file}:${info.mtimeMs}:${i}:${part}`),
@@ -322,10 +327,9 @@ export class KnowledgeStore {
         updatedAt: info.mtimeMs,
       };
       chunk.embedding = (await this.embed(part, settings).catch(() => null)) ?? undefined;
-      index.chunks.push(chunk);
+      chunks.push(chunk);
     }
-    capIndex(index);
-    return parts.length;
+    return chunks;
   }
 
   private async readUtf8Document(file: string): Promise<string> {
@@ -400,15 +404,94 @@ export class KnowledgeStore {
     return data.embedding;
   }
 
-  private async save(): Promise<void> {
-    this.writeQueue = this.writeQueue.then(async () => {
-      const snapshot = JSON.stringify(this.index ?? { version: 1, chunks: [] });
-      await mkdir(this.options.getUserDataPath(), { recursive: true });
-      const tmp = `${this.indexPath()}.tmp`;
-      await writeFile(tmp, snapshot, { encoding: 'utf8', mode: 0o600 });
-      await rename(tmp, this.indexPath());
-    });
-    await this.writeQueue;
+  private lockPath(): string {
+    return `${this.indexPath()}.lock`;
+  }
+
+  /** Relit le fichier sous un verrou, applique le changement, réécrit. Deux processus ne s’écrasent plus. */
+  private async mutate(change: (index: KnowledgeIndex) => void): Promise<void> {
+    const release = await acquireIndexLock(this.lockPath());
+    try {
+      const index = await this.readDisk();
+      change(index);
+      await this.writeDisk(index);
+      const info = await stat(this.indexPath()).catch(() => null);
+      this.index = index;
+      this.indexMtime = info?.mtimeMs ?? Date.now();
+    } finally {
+      await release();
+    }
+  }
+
+  private async readDisk(): Promise<KnowledgeIndex> {
+    try {
+      const raw = await readFile(this.indexPath(), 'utf8');
+      const parsed = JSON.parse(raw) as Partial<KnowledgeIndex>;
+      return {
+        version: 1,
+        chunks: Array.isArray(parsed.chunks) ? parsed.chunks.filter(validChunk) : [],
+      };
+    } catch {
+      return { version: 1, chunks: [] };
+    }
+  }
+
+  private async writeDisk(index: KnowledgeIndex): Promise<void> {
+    await mkdir(this.options.getUserDataPath(), { recursive: true });
+    const path = this.indexPath();
+    const tmp = `${path}.${process.pid}.${Date.now()}.${Math.random().toString(16).slice(2)}.tmp`;
+    await writeFile(tmp, JSON.stringify(index), { encoding: 'utf8', mode: 0o600 });
+    try {
+      await rename(tmp, path);
+    } catch (error) {
+      await rm(tmp, { force: true }).catch(() => undefined);
+      throw error;
+    }
+  }
+}
+
+function learningOf(index: KnowledgeIndex): LearningRecord[] {
+  return index.chunks.flatMap((chunk) => (chunk.learning ? [chunk.learning] : []));
+}
+
+function replaceLearning(index: KnowledgeIndex, records: readonly LearningRecord[]): void {
+  const rest = index.chunks.filter((chunk) => !chunk.learning);
+  const chunks: KnowledgeChunk[] = records.map((record) => ({
+    id: record.id,
+    source: `learning:${record.id}`,
+    title: record.type,
+    text: record.content.slice(0, 4_000),
+    kind: 'memory',
+    updatedAt: record.lastCheckedAt,
+    learning: record,
+  }));
+  index.chunks = [...chunks, ...rest];
+  capIndex(index);
+}
+
+const LOCK_STALE_MS = 8_000;
+
+async function acquireIndexLock(lockPath: string): Promise<() => Promise<void>> {
+  const started = Date.now();
+  for (;;) {
+    try {
+      const handle = await open(lockPath, 'wx');
+      await handle.writeFile(String(process.pid)).catch(() => undefined);
+      return async () => {
+        await handle.close().catch(() => undefined);
+        await rm(lockPath, { force: true }).catch(() => undefined);
+      };
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code !== 'EEXIST') throw error;
+      const info = await stat(lockPath).catch(() => null);
+      if (!info || Date.now() - info.mtimeMs > LOCK_STALE_MS) {
+        await rm(lockPath, { force: true }).catch(() => undefined);
+        continue;
+      }
+      if (Date.now() - started > 10_000) throw new Error('Le magasin de connaissances est occupé.');
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
   }
 }
 

@@ -26,6 +26,63 @@ describe('KnowledgeStore', () => {
     expect(removed).toEqual([]);
   });
 
+  it('garde les fiches écrites en même temps par deux magasins', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'jarvis-learning-race-'));
+    const { noteToRecord } = await import('@jarvis/core');
+    const options = {
+      getUserDataPath: () => dir,
+      fetchImpl: async () => new Response('nope', { status: 404 }),
+    };
+    const words = ['zero', 'deux', 'trois', 'quatre', 'cinq', 'six', 'sept', 'huit'];
+    const left = new KnowledgeStore(options);
+    const right = new KnowledgeStore(options);
+    await Promise.all(
+      words.map((word, i) =>
+        Promise.all([
+          left.applyLearning(
+            noteToRecord({ id: `alpha-${i}`, text: `Retiens fichealpha${word}`, now: i + 1 }),
+          ),
+          right.applyLearning(
+            noteToRecord({ id: `bravo-${i}`, text: `Retiens fichebravo${word}`, now: i + 50 }),
+          ),
+        ]),
+      ),
+    );
+    const third = new KnowledgeStore(options);
+    const ids = (await third.listLearning()).map((item) => item.id).sort();
+    expect(ids).toEqual(
+      [
+        ...Array.from({ length: 8 }, (_, i) => `alpha-${i}`),
+        ...Array.from({ length: 8 }, (_, i) => `bravo-${i}`),
+      ].sort(),
+    );
+  });
+
+  it('retrouve une fiche pendant qu’une autre instance réécrit la conversation', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'jarvis-learning-live-'));
+    const { noteToRecord } = await import('@jarvis/core');
+    const options = {
+      getUserDataPath: () => dir,
+      fetchImpl: async () => new Response('nope', { status: 404 }),
+    };
+    const first = new KnowledgeStore(options);
+    await first.applyLearning(
+      noteToRecord({
+        id: 'regle',
+        text: 'Retiens que les tests de ce projet utilisent node:test, pas jest.',
+        now: 1,
+      }),
+    );
+    const second = new KnowledgeStore(options);
+    const [hits] = await Promise.all([
+      second.relevantLearning('Ajoute un test node:test pour une addition de deux nombres.', 4),
+      first.indexConversation('conversation:campagne', 'user: autre\nassistant: ok', defaultSettings),
+    ]);
+    expect(hits.map((item) => item.id)).toEqual(['regle']);
+    const third = new KnowledgeStore(options);
+    expect((await third.listLearning()).map((item) => item.id)).toContain('regle');
+  });
+
   it('marque périmée une page web trop ancienne au rechargement', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'jarvis-learning-stale-'));
     const first = new KnowledgeStore({

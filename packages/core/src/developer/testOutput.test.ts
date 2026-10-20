@@ -70,6 +70,32 @@ describe('lecture des sorties de tests', () => {
     ]);
   });
 
+  it('node:test : une assertion et un module manquant restent deux échecs distincts', () => {
+    const assertion = [
+      '# AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:',
+      'not ok 1 - add.test.ts',
+      '# tests 1',
+      '# fail 1',
+    ].join('\n');
+    const missing = [
+      '# ReferenceError: expect is not defined',
+      'not ok 1 - add.test.ts',
+      '# tests 1',
+      '# fail 1',
+    ].join('\n');
+    const before = parseTestOutput(assertion, { exitCode: 1 });
+    const after = parseTestOutput(missing, { exitCode: 1 });
+    expect(before.failures[0]).toContain('AssertionError');
+    expect(after.failures[0]).toContain('ReferenceError');
+    expect(before.failures).not.toEqual(after.failures);
+    const comparison = compareRuns(
+      [run('test', before.failures)],
+      [run('test', after.failures)],
+    );
+    expect(comparison.ok).toBe(false);
+    expect(comparison.newFailures.length).toBeGreaterThan(0);
+  });
+
   it('un échec sans détail lisible reste un échec', () => {
     expect(parseTestOutput('npm ERR! missing script', { exitCode: 1 })).toEqual({
       failures: ['sortie 1'],
