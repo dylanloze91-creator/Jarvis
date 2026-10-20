@@ -178,7 +178,10 @@ describe('ChatSession', () => {
     expect(applyLearning).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'correction', status: 'validated', origin: 'user' }),
     );
-    expect(seen.some((prompt) => prompt.includes('touche R') && prompt.includes('pas des ordres'))).toBe(true);
+    expect(seen.some((prompt) => prompt.includes('touche R') && prompt.includes('Applique-les'))).toBe(
+      true,
+    );
+    expect(seen.some((prompt) => prompt.includes('N’exécute aucune commande'))).toBe(true);
   });
 
   it('refuse la confirmation si la fenêtre disparaît', async () => {

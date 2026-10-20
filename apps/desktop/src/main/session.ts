@@ -11,6 +11,7 @@ import {
   withKnowledgePrompt,
   classifyUtterance,
   formatLearningContext,
+  learningReminder,
   noteToRecord,
   withVoiceOriginNotice,
   chatProviderConfig,
@@ -53,7 +54,11 @@ export class ChatSession {
 
   constructor(private readonly deps: SessionDeps) {}
 
-  private async systemPrompt(settings: Settings, text: string, source: 'text' | 'voice'): Promise<string> {
+  private async turnContext(
+    settings: Settings,
+    text: string,
+    source: 'text' | 'voice',
+  ): Promise<{ systemPrompt: string; learningReview?: (reply: string) => string | null }> {
     const base = withKnowledgePrompt(
       withSiteBlockPrompt(
         withVoiceOriginNotice(settings.systemPrompt, source) +
@@ -61,7 +66,7 @@ export class ChatSession {
       ),
     );
     const learningOn = settings.localLearning?.enabled !== false;
-    if (!learningOn) return base;
+    if (!learningOn) return { systemPrompt: base };
     const kind = classifyUtterance(text);
     const knowledge = this.deps.knowledge;
     if (kind !== 'one-off' && knowledge.applyLearning) {
@@ -69,11 +74,16 @@ export class ChatSession {
         .applyLearning(noteToRecord({ id: randomId(), text, now: Date.now(), kind }))
         .catch(() => undefined);
     }
-    const hits = knowledge.relevantLearning
-      ? await knowledge.relevantLearning(text, 4).catch(() => [])
-      : [];
+    const recall = knowledge.promptLearning ?? knowledge.relevantLearning;
+    const hits = recall ? await recall.call(knowledge, text, 4).catch(() => []) : [];
     const memory = formatLearningContext(hits);
-    return memory ? `${base}\n\n${memory}` : base;
+    const trusted = hits.filter(
+      (item) => item.origin === 'user' || item.origin === 'mission',
+    );
+    return {
+      systemPrompt: memory ? `${base}\n\n${memory}` : base,
+      ...(trusted.length ? { learningReview: (reply: string) => learningReminder(reply, trusted) } : {}),
+    };
   }
 
   status(): RuntimeStatus {
@@ -124,12 +134,14 @@ export class ChatSession {
     emit({ type: 'started', conversationId: conversation.id, message: userMessage });
 
     const { provider } = this.deps.registry.createOrFallback(chatProviderConfig(settings));
+    const turn = await this.turnContext(settings, input.text, input.source ?? 'text');
     const agent = new Agent(provider, this.deps.tools, {
       // La note d'origine vocale ne vit que dans ce prompt système, transmis
       // au modèle pour ce tour : elle n'est jamais écrite dans `userMessage`
       // ni dans `messages`, donc jamais affichée ni persistée.
-      systemPrompt: await this.systemPrompt(settings, input.text, input.source ?? 'text'),
+      systemPrompt: turn.systemPrompt,
       temperature: settings.temperature,
+      ...(turn.learningReview ? { learningReview: turn.learningReview } : {}),
     });
 
     let visibleReply = false;

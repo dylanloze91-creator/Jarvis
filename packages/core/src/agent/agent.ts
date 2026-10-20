@@ -62,6 +62,11 @@ export interface AgentOptions {
   now?: () => Date;
   /** Fuseau d'affichage des dates. Défaut : celui du PC. */
   timeZone?: string;
+  /**
+   * Si la réponse contredit une règle déjà validée, renvoie le rappel pour
+   * un second essai. Un seul essai. Null : la réponse est gardée.
+   */
+  learningReview?: (reply: string) => string | null;
 }
 
 export const DEFAULT_SYSTEM_PROMPT = [
@@ -164,6 +169,8 @@ export class Agent {
     // Date et protocole seulement pour la recherche forcée : les autres tours gardent leur prompt.
     if (currentPlan) system = `${system} ${currentDatePrompt(now, timeZone)} ${CURRENT_INFO_TURN_PROMPT}`;
     let currentSearch: CurrentSearchResult | null = null;
+    let learningRetried = false;
+    let reviewSystem: string | null = null;
 
     for (let round = 0; round <= maxRounds; round += 1) {
       const forcedYoutube =
@@ -245,7 +252,7 @@ export class Agent {
       try {
         const stream = this.provider.streamChat({
           messages: [...conversation],
-          system,
+          system: reviewSystem ?? system,
           tools: toolSchemas,
           // Réponse tirée des sources : presque déterministe, pour ne pas glisser vers la mémoire.
           temperature: currentSearch
@@ -260,7 +267,7 @@ export class Agent {
         for await (const event of stream) {
           if (event.type === 'text') {
             text += event.delta;
-            yield { type: 'assistant_delta', delta: event.delta };
+            if (!this.options.learningReview) yield { type: 'assistant_delta', delta: event.delta };
           } else if (event.type === 'tool_call') {
             calls.push(event.call);
           } else if (event.type === 'error') {
@@ -299,12 +306,25 @@ export class Agent {
         calls.length > 0 ? { toolCalls: calls } : {},
       );
       conversation.push(assistantMessage);
-      yield { type: 'assistant_message', message: assistantMessage };
 
       if (calls.length === 0) {
+        const reminder =
+          this.options.learningReview && !learningRetried ? this.options.learningReview(text) : null;
+        if (reminder) {
+          learningRetried = true;
+          reviewSystem =
+            'Tu corriges ta dernière réponse. Suis uniquement les contraintes du dernier message. Si une seule ligne est demandée, n’ouvre pas un bloc de code.';
+          conversation.push(createMessage('user', reminder));
+          continue;
+        }
+        if (this.options.learningReview && text) yield { type: 'assistant_delta', delta: text };
+        yield { type: 'assistant_message', message: assistantMessage };
         yield { type: 'done' };
         return;
       }
+
+      if (this.options.learningReview && text) yield { type: 'assistant_delta', delta: text };
+      yield { type: 'assistant_message', message: assistantMessage };
 
       const outcomes: ToolCallOutcome[] = [];
       for (const call of calls) {

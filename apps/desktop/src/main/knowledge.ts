@@ -5,6 +5,7 @@ import {
   applyIncoming,
   markStale,
   relevantRecords,
+  selectPromptRecords,
   resolveLocalOllamaBase,
   type KnowledgeStats,
   type LearningRecord,
@@ -249,6 +250,26 @@ export class KnowledgeStore {
       replaceLearning(index, records);
     });
     return records;
+  }
+
+  async promptLearning(query: string, limit = 4): Promise<LearningRecord[]> {
+    const hits = selectPromptRecords(await this.listLearning(), query, limit);
+    if (!hits.length) return hits;
+    try {
+      let fresh = hits;
+      await this.mutate((index) => {
+        const records = markStale(learningOf(index), Date.now());
+        fresh = selectPromptRecords(records, query, limit);
+        const byId = new Map(fresh.map((item) => [item.id, item]));
+        replaceLearning(
+          index,
+          records.map((item) => byId.get(item.id) ?? item),
+        );
+      });
+      return fresh;
+    } catch {
+      return hits;
+    }
   }
 
   async relevantLearning(query: string, limit = 4): Promise<LearningRecord[]> {

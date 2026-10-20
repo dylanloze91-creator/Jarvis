@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { Agent, DEFAULT_SYSTEM_PROMPT, composeSystemPrompt, looksLikeWebResearchIntent, type AgentEvent } from './agent.js';
+import { learningReminder, noteToRecord } from '../learning/continuous.js';
 import { ToolManager, defineTool } from '../tools/manager.js';
 import type { ChatRequest, ChatStreamEvent, LLMProvider } from '../providers/types.js';
 import { createMessage } from '../types.js';
@@ -88,6 +89,34 @@ describe('Agent', () => {
     expect(DEFAULT_SYSTEM_PROMPT).toMatch(
       /n'affirme jamais qu'une information vient de la mémoire/i,
     );
+  });
+
+  it('réécrit une réponse qui contredit une règle validée, une seule fois', async () => {
+    const rule = noteToRecord({
+      id: 'rule',
+      text: 'Non, réutilise le helper formatCampagnePrix déjà présent. Ne crée pas un nouveau helper.',
+      now: 1,
+    })!;
+    const preference = noteToRecord({
+      id: 'pref',
+      text: 'Je préfère que chaque réponse commence par le mot ACCORD et tienne sur une seule ligne.',
+      now: 1,
+    })!;
+    const provider = new ScriptedProvider([
+      [{ type: 'text', delta: 'const formatCampagnePrix = (prix: number) => prix;' }],
+      [{ type: 'text', delta: 'ACCORD formatCampagnePrix(12.5);' }],
+    ]);
+    const agent = new Agent(provider, new ToolManager(), {
+      systemPrompt: 'test',
+      learningReview: (reply) => learningReminder(reply, [rule, preference]),
+    });
+    const events = await collect(agent, 'Affiche le prix 12.5 euros.');
+    const deltas = events.flatMap((event) => (event.type === 'assistant_delta' ? [event.delta] : []));
+    expect(deltas).toEqual(['ACCORD formatCampagnePrix(12.5);']);
+    expect(provider.requests).toHaveLength(2);
+    expect(provider.requests[1]?.messages.at(-1)?.content).toMatch(/sans le déclarer/);
+    expect(provider.requests[1]?.system).toMatch(/contraintes du dernier message/);
+    expect(events.filter((event) => event.type === 'assistant_message')).toHaveLength(1);
   });
 
   it('diffuse une réponse textuelle puis termine', async () => {
