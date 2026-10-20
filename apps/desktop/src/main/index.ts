@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   BrowserWindow,
@@ -14,6 +15,7 @@ import {
 } from 'electron';
 import {
   checkOllamaStatus,
+  formatLearningContext,
   createDefaultMarketDataRegistry,
   createDefaultRegistry,
   createWebSearchRegistry,
@@ -97,7 +99,36 @@ const localLearning = new LocalLearningController(
     return settings;
   },
   () => app.getPath('userData'),
+  {
+    listLearning: () => knowledge.listLearning(),
+    applyLearning: (record) => knowledge.applyLearning(record),
+    setLearningStatus: (id, status) => knowledge.setLearningStatus(id, status),
+    deleteLearning: (id) => knowledge.deleteLearning(id),
+    readRuns: async () => {
+      try {
+        const raw = await readFile(join(app.getPath('userData'), 'developer', 'code-model.json'), 'utf8');
+        const data = JSON.parse(raw) as { modelRuns?: Array<{ success?: boolean }> };
+        if (!Array.isArray(data.modelRuns)) return [];
+        return data.modelRuns.flatMap((run) => (typeof run.success === 'boolean' ? [{ success: run.success }] : []));
+      } catch {
+        return [];
+      }
+    },
+    search: async (query) => {
+      const { searchWithFallback, webProviderOrder } = await import('@jarvis/core');
+      const config = { provider: settings.searchProvider, apiKey: settings.searchApiKey };
+      const order = webProviderOrder(searchRegistry, config);
+      const response = await searchWithFallback(searchRegistry, order, config, { query, limit: 3 });
+      return response.results.map((item) => ({
+        title: item.title,
+        url: item.url,
+        snippet: item.snippet ?? '',
+        ...(item.publishedAt ? { publishedAt: item.publishedAt } : {}),
+      }));
+    },
+  },
 );
+localLearning.armPeriodic();
 const spotify = new SpotifyBridge(() => settings);
 const siteBlock = new SiteBlockBridge(() => settings);
 // Jetons chiffrés par safeStorage (DPAPI), consentement dans le navigateur système.
@@ -310,6 +341,17 @@ function createTray(): void {
 
 function registerIpc(): void {
   localLearning.registerIpc(ipcMain);
+  ipcMain.handle(IpcChannel.localLearningSnapshot, () => localLearning.snapshot());
+  ipcMain.handle(IpcChannel.localLearningTrain, () => localLearning.trainNow().then(() => localLearning.status()));
+  ipcMain.handle(IpcChannel.localLearningRollback, () => localLearning.rollback());
+  ipcMain.handle(IpcChannel.localLearningSetStatus, (_event, id: unknown, status: unknown) => {
+    if (typeof id !== 'string') return [];
+    if (status !== 'candidate' && status !== 'validated' && status !== 'stale' && status !== 'rejected') return [];
+    return localLearning.setRecordStatus(id, status);
+  });
+  ipcMain.handle(IpcChannel.localLearningRemove, (_event, id: unknown) =>
+    typeof id === 'string' ? localLearning.removeRecord(id) : [],
+  );
   localLearning.setBroadcast((status) => {
     const contents = overlay?.browserWindow.webContents;
     if (contents && !contents.isDestroyed()) {
@@ -525,6 +567,10 @@ function registerIpc(): void {
     searchRegistry,
     userDataPath: () => app.getPath('userData'),
     chat: chatActivity,
+    learningRecall: async (query) => formatLearningContext(await knowledge.relevantLearning(query, 4)),
+    rememberLearning: async (record) => {
+      await knowledge.applyLearning(record);
+    },
   });
   openPlayProject(pendingPlayProjectId);
 }

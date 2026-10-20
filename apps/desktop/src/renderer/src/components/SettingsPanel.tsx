@@ -296,7 +296,15 @@ export function SettingsPanel({ settings, status, onSaved, requestedTab, onAnaly
 
           <PersonalizationSettingsSection />
 
-          <KnowledgeSettingsSection />
+          <KnowledgeSettingsSection
+            learningEnabled={draft.localLearning.enabled}
+            autoTrain={draft.localLearning.autoTrain === true}
+            onLearningChange={(patch) => {
+              const localLearning = { ...draft.localLearning, ...patch };
+              setDraft((current) => ({ ...current, localLearning }));
+              void window.jarvis.settings.set({ localLearning }).then((payload) => onSavedRef.current(payload));
+            }}
+          />
       </TabPanel>
       <TabPanel id="spotify" active={tab}>
           <div className="mt-1 flex flex-col gap-1">

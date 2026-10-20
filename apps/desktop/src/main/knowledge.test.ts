@@ -6,6 +6,55 @@ import { defaultSettings } from '@jarvis/core';
 import { KnowledgeStore, assertIndexableFolder, extractPdfText } from './knowledge.js';
 
 describe('KnowledgeStore', () => {
+  it('garde une correction après redémarrage et retrouve la fiche pertinente', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'jarvis-learning-'));
+    const first = new KnowledgeStore({
+      getUserDataPath: () => dir,
+      fetchImpl: async () => new Response('nope', { status: 404 }),
+    });
+    const { noteToRecord } = await import('@jarvis/core');
+    await first.applyLearning(
+      noteToRecord({ id: 'corr', text: 'Non, le respawn est la touche R', now: 10 }),
+    );
+    const restarted = new KnowledgeStore({
+      getUserDataPath: () => dir,
+      fetchImpl: async () => new Response('nope', { status: 404 }),
+    });
+    const hits = await restarted.relevantLearning('quelle touche pour respawn');
+    expect(hits.map((item) => item.id)).toEqual(['corr']);
+    const removed = await restarted.deleteLearning('corr');
+    expect(removed).toEqual([]);
+  });
+
+  it('marque périmée une page web trop ancienne au rechargement', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'jarvis-learning-stale-'));
+    const first = new KnowledgeStore({
+      getUserDataPath: () => dir,
+      fetchImpl: async () => new Response('nope', { status: 404 }),
+    });
+    const { webHitToRecord } = await import('@jarvis/core');
+    await first.applyLearning(
+      webHitToRecord(
+        { title: 'doc', url: 'https://nodejs.org/api/test.html', snippet: 'node:test stable' },
+        'old-web',
+        1,
+      ),
+    );
+    const raw = JSON.parse(await readFile(join(dir, 'knowledge-index.json'), 'utf8')) as {
+      chunks: Array<{ learning?: { lastCheckedAt: number } }>;
+    };
+    const learning = raw.chunks.find((chunk) => chunk.learning)?.learning;
+    if (!learning) throw new Error('fiche absente');
+    learning.lastCheckedAt = 1;
+    await writeFile(join(dir, 'knowledge-index.json'), JSON.stringify(raw), 'utf8');
+    const restarted = new KnowledgeStore({
+      getUserDataPath: () => dir,
+      fetchImpl: async () => new Response('nope', { status: 404 }),
+    });
+    const items = await restarted.listLearning();
+    expect(items.find((item) => item.id === 'old-web')?.status).toBe('stale');
+  });
+
   it('mémorise et retrouve un fait en recherche lexicale sans embeddings', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'jarvis-knowledge-'));
     const store = new KnowledgeStore({

@@ -9,6 +9,9 @@ import {
   withMessages,
   withSiteBlockPrompt,
   withKnowledgePrompt,
+  classifyUtterance,
+  formatLearningContext,
+  noteToRecord,
   withVoiceOriginNotice,
   chatProviderConfig,
   type AuditLogStore,
@@ -49,6 +52,29 @@ export class ChatSession {
   private controller: AbortController | null = null;
 
   constructor(private readonly deps: SessionDeps) {}
+
+  private async systemPrompt(settings: Settings, text: string, source: 'text' | 'voice'): Promise<string> {
+    const base = withKnowledgePrompt(
+      withSiteBlockPrompt(
+        withVoiceOriginNotice(settings.systemPrompt, source) +
+          buildPersonalizationPrompt(await this.deps.personalization.get()),
+      ),
+    );
+    const learningOn = settings.localLearning?.enabled !== false;
+    if (!learningOn) return base;
+    const kind = classifyUtterance(text);
+    const knowledge = this.deps.knowledge;
+    if (kind !== 'one-off' && knowledge.applyLearning) {
+      await knowledge
+        .applyLearning(noteToRecord({ id: randomId(), text, now: Date.now(), kind }))
+        .catch(() => undefined);
+    }
+    const hits = knowledge.relevantLearning
+      ? await knowledge.relevantLearning(text, 4).catch(() => [])
+      : [];
+    const memory = formatLearningContext(hits);
+    return memory ? `${base}\n\n${memory}` : base;
+  }
 
   status(): RuntimeStatus {
     const settings = this.deps.getSettings();
@@ -102,12 +128,7 @@ export class ChatSession {
       // La note d'origine vocale ne vit que dans ce prompt système, transmis
       // au modèle pour ce tour : elle n'est jamais écrite dans `userMessage`
       // ni dans `messages`, donc jamais affichée ni persistée.
-      systemPrompt: withKnowledgePrompt(
-        withSiteBlockPrompt(
-          withVoiceOriginNotice(settings.systemPrompt, input.source ?? 'text') +
-            buildPersonalizationPrompt(await this.deps.personalization.get()),
-        ),
-      ),
+      systemPrompt: await this.systemPrompt(settings, input.text, input.source ?? 'text'),
       temperature: settings.temperature,
     });
 

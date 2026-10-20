@@ -16,6 +16,60 @@ import { CommandTester } from './CommandTester';
 import { DeveloperConfirmationCard } from './DeveloperConfirmationCard';
 import { CheckList, SectionTitle, StepTimeline } from './parts';
 
+function LearningCycle() {
+  const [line, setLine] = useState<string | null>(null);
+  const [rows, setRows] = useState<string[]>([]);
+  const refresh = (): void => {
+    void window.jarvis.localLearning.snapshot().then((snap) => {
+      const m = snap.metrics;
+      setLine(
+        [
+          snap.line,
+          m.waiting ? `${m.waiting} fiche(s) en attente` : 'aucune fiche en attente',
+          m.missionSuccessRate === null
+            ? null
+            : `${Math.round(m.missionSuccessRate * 100)} % de missions réussies`,
+          `${m.errorsSeen} erreur(s) vues, ${m.repeatResolved} corrigée(s)`,
+          `${m.reused} réutilisation(s)`,
+          m.webOfficialShare === null
+            ? 'pas encore de source web'
+            : `${Math.round(m.webOfficialShare * 100)} % de sources officielles`,
+        ]
+          .filter(Boolean)
+          .join(' · '),
+      );
+      setRows(
+        snap.records.slice(0, 6).map((item) => `${item.status} · ${item.type} · ${item.content.slice(0, 90)}`),
+      );
+    });
+  };
+  useEffect(() => {
+    refresh();
+  }, []);
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex flex-wrap gap-2">
+        <Button size="sm" variant="subtle" onClick={() => void window.jarvis.localLearning.train().then(() => refresh())}>
+          Cycle d’apprentissage
+        </Button>
+        <Button
+          size="sm"
+          variant="subtle"
+          onClick={() => void window.jarvis.localLearning.rollback().then(() => refresh())}
+        >
+          Restaurer l’adaptateur précédent
+        </Button>
+      </div>
+      {line ? <p className="text-xs leading-snug text-slate-400">{line}</p> : null}
+      {rows.map((row) => (
+        <p key={row} className="text-xs text-slate-300">
+          {row}
+        </p>
+      ))}
+    </div>
+  );
+}
+
 interface Props {
   developer: DeveloperSettings;
   /** Enregistre tout de suite (comme le choix du micro) : les actions en dépendent. */
@@ -215,10 +269,33 @@ export function DeveloperSettingsSection({
 
           <Toggle
             label="Mémoriser les solutions validées"
-            hint="Après une modification réussie (tests verts), enregistre une fiche locale. Coupé : aucune nouvelle fiche."
+            hint="Après une modification réussie (tests verts), enregistre une fiche locale. Coupé : aucune nouvelle fiche. Une correction du chat est reprise tout de suite, sans attendre un entraînement."
             checked={developer.knowledgeLearning !== false}
             onChange={(on) => onSave({ ...developer, knowledgeLearning: on })}
           />
+          <Toggle
+            label="Recherche web périodique"
+            hint="Coupée par défaut. Trois sujets au plus, sans télécharger de code. Les pages restent des candidats, pas des ordres."
+            checked={developer.periodicWebResearch === true}
+            onChange={(on) => onSave({ ...developer, periodicWebResearch: on })}
+          />
+          <Field label="Sujets à surveiller" hint="Séparés par des virgules. Trois sont interrogés.">
+            <Input
+              value={(developer.watchTopics ?? []).join(', ')}
+              onChange={(event) =>
+                onSave({
+                  ...developer,
+                  watchTopics: event.target.value
+                    .split(',')
+                    .map((item) => item.trim())
+                    .filter(Boolean)
+                    .slice(0, 8),
+                })
+              }
+              spellCheck={false}
+            />
+          </Field>
+          <LearningCycle />
 
           <CommandTester />
           </div>

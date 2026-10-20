@@ -86,6 +86,10 @@ export const localLearningSettingsSchema = z
     lastTrainExampleCount: z.number().int().optional(),
     /** Précision affichée une ligne dans la discussion après entraînement. */
     statusHint: z.string().max(240).optional(),
+    /** Absent ou faux : pas d’entraînement automatique après un message. */
+    autoTrain: z.boolean().optional(),
+    previousOllamaModel: z.string().max(200).optional(),
+    lastEvalNote: z.string().max(240).optional(),
     /** Venv + torch/peft/trl prêts sous userData (installés automatiquement). */
     pythonDepsReady: z.boolean().optional(),
   })
@@ -130,6 +134,10 @@ export const developerSettingsSchema = z.object({
    * Mémoriser une fiche « solution validée » après mission réussie (absent : activé).
    */
   knowledgeLearning: z.boolean().optional(),
+  /** Recherche web périodique. Absente ou fausse : coupée. */
+  periodicWebResearch: z.boolean().optional(),
+  /** Sujets surveillés, trois au plus sont vraiment interrogés. */
+  watchTopics: z.array(z.string().max(80)).max(8).optional(),
 });
 
 export type DeveloperSettings = z.infer<typeof developerSettingsSchema>;

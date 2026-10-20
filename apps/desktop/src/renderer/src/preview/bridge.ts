@@ -276,6 +276,26 @@ export function installPreviewBridge(): void {
     localLearning: {
       status: async () => ({ running: false, line: null }),
       onEvent: () => () => undefined,
+      snapshot: async () => ({
+        records: [],
+        metrics: {
+          missionSuccessRate: null,
+          testSuccessRate: null,
+          errorsSeen: 0,
+          repeatResolved: 0,
+          reused: 0,
+          webOfficialShare: null,
+          trainBefore: null,
+          trainAfter: null,
+          waiting: 0,
+        },
+        line: null,
+        running: false,
+      }),
+      train: async () => ({ running: false, line: null }),
+      rollback: async () => ({ running: false, line: null }),
+      setStatus: async () => [],
+      remove: async () => [],
     },
     wakeLearning: {
       status: async () => previewWakeLearningStatus,

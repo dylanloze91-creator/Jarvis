@@ -1,7 +1,15 @@
 import { createHash } from 'node:crypto';
 import { mkdir, readFile, readdir, stat, writeFile, rename } from 'node:fs/promises';
 import { extname, isAbsolute, join, relative, resolve } from 'node:path';
-import { resolveLocalOllamaBase, type KnowledgeStats, type Settings } from '@jarvis/core';
+import {
+  applyIncoming,
+  markStale,
+  relevantRecords,
+  resolveLocalOllamaBase,
+  type KnowledgeStats,
+  type LearningRecord,
+  type Settings,
+} from '@jarvis/core';
 
 export interface KnowledgeChunk {
   id: string;
@@ -11,6 +19,8 @@ export interface KnowledgeChunk {
   kind: 'file' | 'conversation' | 'memory';
   updatedAt: number;
   embedding?: number[];
+  /** Fiche d’apprentissage continu, dans le même index. Absente pour un document. */
+  learning?: LearningRecord;
 }
 
 interface KnowledgeIndex {
@@ -219,6 +229,62 @@ export class KnowledgeStore {
     capIndex(index);
     await this.save();
     return chunks.length;
+  }
+
+  async listLearning(): Promise<LearningRecord[]> {
+    const index = await this.load();
+    const records = index.chunks.flatMap((chunk) => (chunk.learning ? [chunk.learning] : []));
+    const fresh = markStale(records, Date.now());
+    const changed = fresh.some((item, i) => item.status !== records[i]?.status);
+    if (changed) await this.saveLearning(fresh);
+    return changed ? fresh : records;
+  }
+
+  async saveLearning(records: readonly LearningRecord[]): Promise<void> {
+    const index = await this.load();
+    const rest = index.chunks.filter((chunk) => !chunk.learning);
+    const chunks: KnowledgeChunk[] = records.map((record) => ({
+      id: record.id,
+      source: `learning:${record.id}`,
+      title: record.type,
+      text: record.content.slice(0, 4_000),
+      kind: 'memory',
+      updatedAt: record.lastCheckedAt,
+      learning: record,
+    }));
+    index.chunks = [...chunks, ...rest];
+    capIndex(index);
+    await this.save();
+  }
+
+  async applyLearning(incoming: LearningRecord | null): Promise<LearningRecord[]> {
+    const next = applyIncoming(await this.listLearning(), incoming);
+    await this.saveLearning(next.records);
+    return next.records;
+  }
+
+  async relevantLearning(query: string, limit = 4): Promise<LearningRecord[]> {
+    const hits = relevantRecords(await this.listLearning(), query, limit);
+    if (hits.length) {
+      const byId = new Map(hits.map((item) => [item.id, item]));
+      const all = (await this.listLearning()).map((item) => byId.get(item.id) ?? item);
+      await this.saveLearning(all);
+    }
+    return hits;
+  }
+
+  async setLearningStatus(id: string, status: LearningRecord['status']): Promise<LearningRecord[]> {
+    const all = (await this.listLearning()).map((item) =>
+      item.id === id ? { ...item, status, lastCheckedAt: Date.now() } : item,
+    );
+    await this.saveLearning(all);
+    return all;
+  }
+
+  async deleteLearning(id: string): Promise<LearningRecord[]> {
+    const all = (await this.listLearning()).filter((item) => item.id !== id);
+    await this.saveLearning(all);
+    return all;
   }
 
   async clear(): Promise<void> {

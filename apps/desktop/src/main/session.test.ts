@@ -20,7 +20,7 @@ function sender(events: ChatEvent[]) {
   } as unknown as Electron.WebContents;
 }
 
-function session(options: { save?: () => Promise<void> } = {}) {
+function session(options: { save?: () => Promise<void>; knowledge?: Record<string, unknown> } = {}) {
   const store = new InMemoryConversationStore();
   if (options.save) store.save = options.save;
   const executed = vi.fn(async () => ({ ok: true, content: 'Dossier créé.' }));
@@ -44,7 +44,7 @@ function session(options: { save?: () => Promise<void> } = {}) {
     getSettings: () => parseSettings({}),
     voice: { hasApiKey: () => false } as never,
     personalization: { get: async () => emptyPersonalization() } as never,
-    knowledge: { indexConversation: async () => 0 } as never,
+    knowledge: { indexConversation: async () => 0, ...options.knowledge } as never,
     localLearning: stubLocalLearning(),
   });
   return { chat, executed, audit, store };
@@ -135,6 +135,50 @@ describe('ChatSession', () => {
     const started = events.flatMap((event) => (event.type === 'started' ? [event.message.content] : []));
     expect(started).toEqual(['Crée un dossier nommé "Projet"', 'Bonjour']);
     expect(events.filter((event) => event.type === 'done')).toHaveLength(1);
+  });
+
+  it('range une correction et ignore une consigne ponctuelle', async () => {
+    const events: ChatEvent[] = [];
+    const applyLearning = vi.fn(async (_record: { type?: string; status?: string; origin?: string }) => []);
+    const relevantLearning = vi.fn(async () => [
+      {
+        id: 'corr',
+        type: 'correction',
+        content: 'Non, le respawn est la touche R',
+        origin: 'user',
+        createdAt: 1,
+        lastCheckedAt: 1,
+        confidence: 0.9,
+        confidenceReason: 'explicite',
+        status: 'validated',
+        sources: [],
+        links: [],
+      },
+    ]);
+    const seen: string[] = [];
+    const { chat } = session({ knowledge: { applyLearning, relevantLearning } });
+    const registry = (chat as unknown as { deps: { registry: { createOrFallback: (config: never) => { provider: { streamChat: (request: { system?: string }) => AsyncIterable<unknown> }; fellBack: boolean } } } }).deps.registry;
+    const original = registry.createOrFallback.bind(registry);
+    registry.createOrFallback = ((config: never) => {
+      const created = original(config);
+      const provider = created.provider;
+      const streamChat = provider.streamChat.bind(provider);
+      provider.streamChat = (request: { system?: string }) => {
+        if (request.system) seen.push(request.system);
+        return streamChat(request);
+      };
+      return created;
+    }) as typeof registry.createOrFallback;
+
+    await chat.send(sender(events), { conversationId: null, text: 'juste cette fois, réponds court' });
+    expect(applyLearning).not.toHaveBeenCalled();
+
+    await chat.send(sender(events), { conversationId: null, text: 'Non, le respawn est la touche R' });
+    expect(applyLearning).toHaveBeenCalledTimes(1);
+    expect(applyLearning).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'correction', status: 'validated', origin: 'user' }),
+    );
+    expect(seen.some((prompt) => prompt.includes('touche R') && prompt.includes('pas des ordres'))).toBe(true);
   });
 
   it('refuse la confirmation si la fenêtre disparaît', async () => {

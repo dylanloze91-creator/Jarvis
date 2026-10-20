@@ -68,6 +68,8 @@ import {
   memoryBlock,
   patchStep,
   randomId,
+  experienceFromMission,
+  type LearningRecord,
   resolveRoleModel,
   buildMissionModelPlan,
   modelRunCategory,
@@ -236,6 +238,9 @@ export interface MissionDeps {
     query: string,
     request: string,
   ) => Promise<{ chatLine: string; coderBlock: string } | null>;
+  /** Fiches validées déjà en mémoire, seulement celles qui recoupent la demande. */
+  learningRecall?: (query: string) => Promise<string>;
+  rememberLearning?: (record: LearningRecord) => Promise<void>;
   verifyWebGameRuntime?: (projectRoot: string) => Promise<{ ok: boolean; detail: string }>;
 }
 
@@ -1203,6 +1208,14 @@ export class MissionWorkflow {
     );
   }
 
+  private async learningContext(query: string): Promise<string> {
+    try {
+      return (await this.deps.learningRecall?.(query)) ?? '';
+    } catch {
+      return '';
+    }
+  }
+
   private brief(): MissionBrief {
     const mission = this.current!;
     return {
@@ -1691,6 +1704,7 @@ export class MissionWorkflow {
         (agent) =>
           `Agent ${agent.name} — brief : ${agent.brief}\nContexte propre : ${agent.context}`,
       ),
+      await this.learningContext(mission.request),
     ].join('\n');
     const fallbackPlan = template ? templatePlan(template, mission.request, project.name) : null;
     const platformer = template === 'web-game' && isPlatformerRequest(mission.request);
@@ -2244,6 +2258,20 @@ export class MissionWorkflow {
         checkpoint: task.checkpoints.at(-1)?.sha,
         now: this.now,
       });
+      const experience = experienceFromMission({
+        id: randomId(),
+        now: this.now,
+        ok: mission.learning?.saved === true,
+        request: mission.request,
+        errorSignature: task.runs.flatMap((run) => run.newFailures).join('\n'),
+        cause: task.runs.find((run) => run.newFailures.length)?.newFailures[0] ?? mission.request,
+        fix: task.plan?.summary ?? mission.summary ?? mission.request,
+        testCommands: task.plan?.tests ?? [],
+        beforeResult: task.runs.find((run) => run.newFailures.length)?.newFailures[0] ?? '',
+        afterResult: verdict === 'success' ? 'contrôles passés' : '',
+        files: task.diff.map((file) => file.path),
+      });
+      if (experience) await this.deps.rememberLearning?.(experience);
     }
     this.activeRole = null;
     await this.persist();

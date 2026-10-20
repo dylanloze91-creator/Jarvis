@@ -129,6 +129,8 @@ export interface ControllerDeps {
   chatGraceMs?: number;
   /** Injection de test du lancement réel ; production utilise Electron. */
   verifyWebGameRuntime?: (root: string) => Promise<{ ok: boolean; detail: string }>;
+  learningRecall?: (query: string) => Promise<string>;
+  rememberLearning?: (record: import('@jarvis/core').LearningRecord) => Promise<void>;
 }
 
 export const DEVELOPER_DISABLED_NOTICE =
@@ -417,13 +419,22 @@ export class DeveloperController {
                 const out = await verifyWebGameRuntime(this.run, node, root);
                 return { ok: out.ok, detail: out.detail };
               }),
-        webResearch: (query, request) =>
-          developerMissionWebResearch(
+        learningRecall: deps.learningRecall,
+        rememberLearning: deps.rememberLearning,
+        webResearch: async (query, request) => {
+          const outcome = await developerMissionWebResearch(
             deps.searchRegistry,
             deps.getSettings(),
             query,
             request,
-          ),
+          );
+          if (outcome?.records.length && deps.rememberLearning) {
+            for (const record of outcome.records) {
+              await deps.rememberLearning(record).catch(() => undefined);
+            }
+          }
+          return outcome;
+        },
       },
     );
   }

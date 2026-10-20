@@ -10,6 +10,8 @@ import type {
   OllamaStatusResult,
   PersonalizationProfile,
   KnowledgeStats,
+  LearningMetrics,
+  LearningRecord,
   ProviderDescriptor,
   RiskLevel,
   SearchProviderDescriptor,
@@ -111,6 +113,11 @@ export const IpcChannel = {
   wakeLearningReset: 'wake-learning:reset',
   localLearningStatus: 'local-learning:status',
   localLearningEvent: 'local-learning:event',
+  localLearningSnapshot: 'local-learning:snapshot',
+  localLearningTrain: 'local-learning:train',
+  localLearningRollback: 'local-learning:rollback',
+  localLearningSetStatus: 'local-learning:set-status',
+  localLearningRemove: 'local-learning:remove',
   listeningIndicator: 'listening:indicator',
   listeningLevel: 'listening:level',
   youtubeTranscribe: 'youtube:transcribe-audio',
@@ -474,6 +481,16 @@ export interface JarvisApi {
   localLearning: {
     status(): Promise<LocalLearningRuntimeStatus>;
     onEvent(listener: (status: LocalLearningRuntimeStatus) => void): () => void;
+    snapshot(): Promise<{
+      records: LearningRecord[];
+      metrics: LearningMetrics;
+      line: string | null;
+      running: boolean;
+    }>;
+    train(): Promise<LocalLearningRuntimeStatus>;
+    rollback(): Promise<LocalLearningRuntimeStatus>;
+    setStatus(id: string, status: LearningRecord['status']): Promise<LearningRecord[]>;
+    remove(id: string): Promise<LearningRecord[]>;
   };
   wakeLearning: {
     status(): Promise<WakeLearningStatus>;

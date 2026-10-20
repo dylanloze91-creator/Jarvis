@@ -2,13 +2,22 @@ import { useEffect, useState } from 'react';
 import { Loader2, Trash2 } from 'lucide-react';
 import type { KnowledgeStats } from '@jarvis/core';
 import { Button } from '@/components/ui/button';
+import { Toggle } from '@/components/ui/field';
 
 /**
  * Mémoire documentaire locale : consultation des stats et effacement.
  * L’indexation et l’enregistrement passent par la conversation (outils),
  * avec confirmation — rien n’est envoyé dans un nuage.
  */
-export function KnowledgeSettingsSection() {
+export function KnowledgeSettingsSection({
+  learningEnabled,
+  autoTrain,
+  onLearningChange,
+}: {
+  learningEnabled: boolean;
+  autoTrain: boolean;
+  onLearningChange: (patch: { enabled?: boolean; autoTrain?: boolean }) => void;
+}) {
   const [stats, setStats] = useState<KnowledgeStats | null>(null);
   const [loading, setLoading] = useState(false);
   const [clearing, setClearing] = useState(false);
@@ -76,6 +85,19 @@ export function KnowledgeSettingsSection() {
         </p>
       ) : null}
 
+      <Toggle
+        label="Apprentissage continu"
+        hint="Une correction ou une préférence est reprise au tour suivant. Un ordre ponctuel n’est pas mémorisé."
+        checked={learningEnabled}
+        onChange={(enabled) => onLearningChange({ enabled })}
+      />
+      <Toggle
+        label="Entraînement automatique"
+        hint="Coupé par défaut. Même activé, il attend assez d’exemples propres et ne part pas après chaque message."
+        checked={autoTrain}
+        onChange={(enabled) => onLearningChange({ autoTrain: enabled })}
+      />
+
       <div className="flex items-center gap-2">
         <Button size="sm" variant="subtle" onClick={refresh} disabled={loading}>
           Actualiser
@@ -85,6 +107,56 @@ export function KnowledgeSettingsSection() {
           Tout effacer
         </Button>
       </div>
+      <LearningItems />
+    </div>
+  );
+}
+
+function LearningItems() {
+  const [items, setItems] = useState<Array<{ id: string; label: string }>>([]);
+  const load = (): void => {
+    void window.jarvis.localLearning.snapshot().then((snap) => {
+      setItems(
+        snap.records.map((item) => ({
+          id: item.id,
+          label: `${item.status} · ${item.type} · ${item.content.slice(0, 80)}`,
+        })),
+      );
+    });
+  };
+  useEffect(() => {
+    load();
+  }, []);
+  if (!items.length) return null;
+  return (
+    <div className="flex flex-col gap-1">
+      <p className="text-[11px] font-medium tracking-wide text-slate-500 uppercase">Fiches récentes</p>
+      {items.map((item) => (
+        <div key={item.id} className="flex items-center gap-2">
+          <p className="min-w-0 flex-1 truncate text-xs text-slate-300">{item.label}</p>
+          <Button
+            size="sm"
+            variant="subtle"
+            onClick={() => void window.jarvis.localLearning.setStatus(item.id, 'validated').then(load)}
+          >
+            Valider
+          </Button>
+          <Button
+            size="sm"
+            variant="subtle"
+            onClick={() => void window.jarvis.localLearning.setStatus(item.id, 'rejected').then(load)}
+          >
+            Rejeter
+          </Button>
+          <Button
+            size="sm"
+            variant="subtle"
+            onClick={() => void window.jarvis.localLearning.remove(item.id).then(load)}
+          >
+            Supprimer
+          </Button>
+        </div>
+      ))}
     </div>
   );
 }

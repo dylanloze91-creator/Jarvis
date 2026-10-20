@@ -108,6 +108,12 @@ const api: JarvisApi = {
       ipcRenderer.on(IpcChannel.localLearningEvent, handler);
       return () => ipcRenderer.removeListener(IpcChannel.localLearningEvent, handler);
     },
+    snapshot: () => ipcRenderer.invoke(IpcChannel.localLearningSnapshot),
+    train: () => ipcRenderer.invoke(IpcChannel.localLearningTrain),
+    rollback: () => ipcRenderer.invoke(IpcChannel.localLearningRollback),
+    setStatus: (id: string, status: 'candidate' | 'validated' | 'stale' | 'rejected') =>
+      ipcRenderer.invoke(IpcChannel.localLearningSetStatus, id, status),
+    remove: (id: string) => ipcRenderer.invoke(IpcChannel.localLearningRemove, id),
   },
   wakeLearning: {
     status: () => ipcRenderer.invoke(IpcChannel.wakeLearningStatus),

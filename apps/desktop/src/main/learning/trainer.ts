@@ -64,12 +64,22 @@ export async function dryRunTrain(
   return { ok: true, ollamaModel: PERSONAL_OLLAMA_MODEL };
 }
 
+export async function publishTrainedAdapter(store: LocalLearningStore): Promise<TrainOutcome> {
+  try {
+    await runOllamaCreate(store.workDir(), PERSONAL_OLLAMA_MODEL);
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+  return { ok: true, ollamaModel: PERSONAL_OLLAMA_MODEL };
+}
+
 export async function runQloraTrain(
   store: LocalLearningStore,
   plan: LocalLearningTrainPlan,
   examples: LocalLearningExample[],
   onLog?: (line: string) => void,
   pythonPath?: string,
+  createModel = true,
 ): Promise<TrainOutcome> {
   if (process.env.JARVIS_LOCAL_LEARNING_DRY_RUN === '1') {
     return dryRunTrain(store, plan, examples);
@@ -117,14 +127,6 @@ export async function runQloraTrain(
   if (code !== 0) {
     return { ok: false, error: `Entraînement QLoRA interrompu (code ${code}).` };
   }
-
-  try {
-    await runOllamaCreate(work, PERSONAL_OLLAMA_MODEL);
-  } catch (error) {
-    return {
-      ok: false,
-      error: error instanceof Error ? error.message : String(error),
-    };
-  }
-  return { ok: true, ollamaModel: PERSONAL_OLLAMA_MODEL };
+  if (!createModel) return { ok: true };
+  return publishTrainedAdapter(store);
 }
