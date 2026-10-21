@@ -2,6 +2,7 @@
  * Apprentissage continu : décisions pures, sans nouveau stockage.
  * Les fiches vivent dans l’index documentaire déjà présent sur le PC.
  */
+import type { LearningMethod } from './methods.js';
 
 export const LEARNING_TYPES = [
   'preference',
@@ -13,7 +14,7 @@ export const LEARNING_TYPES = [
 ] as const;
 export type LearningType = (typeof LEARNING_TYPES)[number];
 
-export const LEARNING_STATUSES = ['candidate', 'validated', 'stale', 'rejected'] as const;
+export const LEARNING_STATUSES = ['candidate', 'validated', 'review', 'stale', 'rejected'] as const;
 export type LearningStatus = (typeof LEARNING_STATUSES)[number];
 
 export interface LearningSource {
@@ -54,6 +55,11 @@ export interface LearningRecord {
   };
   /** Trace du correctif. Une expérience rejetée n’est pas une solution. */
   trace?: ExperienceTrace;
+  /**
+   * Méthode réutilisable. Elle ne contient pas la ligne de l’ancien correctif :
+   * le prochain fichier se corrige à partir de ses propres tests.
+   */
+  method?: LearningMethod;
 }
 
 export interface ExperienceStep {
@@ -247,6 +253,9 @@ export function selectPromptRecords(
 }
 
 function recordLine(item: LearningRecord): string {
+  if (item.type === 'procedure' && item.method) {
+    return `- [procedure] ${item.method.kind} : ${item.method.steps.slice(0, 2).join(' ')} Limites : ${item.method.limits.slice(0, 180)}`;
+  }
   const extra = item.hint?.steps && item.hint.steps.length > 1 ? ` et ${item.hint.steps.length - 1} autre(s) ligne(s)` : '';
   const language = item.hint?.language ? ` Langage : ${item.hint.language}.` : '';
   const hint =

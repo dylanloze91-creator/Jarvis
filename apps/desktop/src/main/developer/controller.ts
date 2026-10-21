@@ -133,6 +133,10 @@ export interface ControllerDeps {
   learningRecall?: (query: string) => Promise<string>;
   learningRecords?: (query: string) => Promise<import('@jarvis/core').LearningRecord[]>;
   rememberLearning?: (record: import('@jarvis/core').LearningRecord) => Promise<void>;
+  settleLearning?: (
+    id: string,
+    outcome: { ok: boolean; uncertain?: boolean; context: string; cause?: string; now: number },
+  ) => Promise<void>;
   /** Disque du journal de mission. Les tests injectent un rename ou un rm qui ne revient pas. */
   journalIo?: JournalIo;
 }
@@ -429,6 +433,7 @@ export class DeveloperController {
         learningRecall: deps.learningRecall,
         learningRecords: deps.learningRecords,
         rememberLearning: deps.rememberLearning,
+        settleLearning: deps.settleLearning,
         webResearch: async (query, request) => {
           const outcome = await developerMissionWebResearch(
             deps.searchRegistry,

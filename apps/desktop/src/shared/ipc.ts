@@ -117,6 +117,7 @@ export const IpcChannel = {
   localLearningTrain: 'local-learning:train',
   localLearningRollback: 'local-learning:rollback',
   localLearningSetStatus: 'local-learning:set-status',
+  localLearningCorrect: 'local-learning:correct',
   localLearningRemove: 'local-learning:remove',
   listeningIndicator: 'listening:indicator',
   listeningLevel: 'listening:level',
@@ -490,6 +491,7 @@ export interface JarvisApi {
     train(): Promise<LocalLearningRuntimeStatus>;
     rollback(): Promise<LocalLearningRuntimeStatus>;
     setStatus(id: string, status: LearningRecord['status']): Promise<LearningRecord[]>;
+    correct(id: string, content: string): Promise<LearningRecord[]>;
     remove(id: string): Promise<LearningRecord[]>;
   };
   wakeLearning: {

@@ -71,6 +71,7 @@ import {
   experienceFromMission,
   experienceAttempt,
   experienceReplacement,
+  methodFromObservation,
   type LearningRecord,
   resolveRoleModel,
   buildMissionModelPlan,
@@ -245,6 +246,11 @@ export interface MissionDeps {
   /** Mêmes fiches, pour appliquer un indice dans les fichiers de CE projet. */
   learningRecords?: (query: string) => Promise<LearningRecord[]>;
   rememberLearning?: (record: LearningRecord) => Promise<void>;
+  /** Met à jour une méthode déjà enregistrée, par identifiant. */
+  settleLearning?: (
+    id: string,
+    outcome: { ok: boolean; uncertain?: boolean; context: string; cause?: string; now: number },
+  ) => Promise<void>;
   verifyWebGameRuntime?: (projectRoot: string) => Promise<{ ok: boolean; detail: string }>;
 }
 
@@ -292,6 +298,9 @@ export class MissionWorkflow {
   private open = new Map<TaskPhase, string>();
   /** Un seul nouvel essai d’écriture si le gabarit est encore intact. */
   private levelRetried = false;
+  /** Méthodes appliquées pendant la tâche, à régler après les tests. */
+  private appliedMethodIds: string[] = [];
+  private uncertainMethodIds: string[] = [];
   /** Déchargements en série : un modèle à la fois, même après un délai. */
   private readonly modelSwitch = createModelSwitch();
 
@@ -895,6 +904,8 @@ export class MissionWorkflow {
     this.counters.clear();
     this.open.clear();
     this.levelRetried = false;
+    this.appliedMethodIds = [];
+    this.uncertainMethodIds = [];
     await this.persist();
     if (link && project) {
       const source = await this.deps.store.load(project.id, link.missionId);
@@ -2194,6 +2205,12 @@ export class MissionWorkflow {
       recallExperiences: this.deps.learningRecords
         ? (query) => this.deps.learningRecords!(query)
         : undefined,
+      onMethodApplied: (id) => {
+        if (!this.appliedMethodIds.includes(id)) this.appliedMethodIds.push(id);
+      },
+      onMethodUncertain: (id) => {
+        if (!this.uncertainMethodIds.includes(id)) this.uncertainMethodIds.push(id);
+      },
       directRun: kind === 'new-project' || kind === 'modify' || kind === 'fix',
       autoApprovePlan: kind === 'new-project' || kind === 'modify' || kind === 'fix',
       docsOnly: this.current?.kind === 'document',
@@ -2371,6 +2388,21 @@ export class MissionWorkflow {
           },
         });
         if (experience) await this.deps.rememberLearning?.(experience);
+        const observed = replacement
+          ? methodFromObservation({
+              id: randomId(),
+              now: this.now,
+              ok: true,
+              request: mission.request,
+              beforeSource: replacement.from,
+              afterSource: replacement.to,
+              language: replacement.language ?? 'unknown',
+              tests: '',
+              originLabel: mission.projectId,
+              runtimeVersion: process.version,
+            })
+          : null;
+        if (observed) await this.deps.rememberLearning?.(observed);
       } else {
         const attempt = experienceAttempt({
           id: randomId(),
@@ -2386,6 +2418,27 @@ export class MissionWorkflow {
         await this.deps.rememberLearning?.(attempt);
       }
     }
+    const context = `${mission.projectId} ${mission.request}`.slice(0, 180);
+    for (const id of this.uncertainMethodIds) {
+      await this.deps.settleLearning?.(id, {
+        ok: false,
+        uncertain: true,
+        context,
+        cause: 'cause incertaine',
+        now: this.now,
+      });
+    }
+    for (const id of this.appliedMethodIds) {
+      if (this.uncertainMethodIds.includes(id)) continue;
+      await this.deps.settleLearning?.(id, {
+        ok: verdict === 'success',
+        context,
+        ...(verdict === 'success' ? {} : { cause: lastFail ?? mission.summary ?? 'échec' }),
+        now: this.now,
+      });
+    }
+    this.appliedMethodIds = [];
+    this.uncertainMethodIds = [];
     this.activeRole = null;
     await this.persist();
   }

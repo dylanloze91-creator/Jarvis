@@ -113,12 +113,15 @@ export function KnowledgeSettingsSection({
 }
 
 function LearningItems() {
-  const [items, setItems] = useState<Array<{ id: string; label: string }>>([]);
+  const [items, setItems] = useState<Array<{ id: string; type: string; content: string; label: string }>>([]);
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
   const load = (): void => {
     void window.jarvis.localLearning.snapshot().then((snap) => {
       setItems(
         snap.records.map((item) => ({
           id: item.id,
+          type: item.type,
+          content: item.content,
           label: `${item.status} · ${item.type} · ${item.content.slice(0, 80)}`,
         })),
       );
@@ -132,29 +135,50 @@ function LearningItems() {
     <div className="flex flex-col gap-1">
       <p className="text-[11px] font-medium tracking-wide text-slate-500 uppercase">Fiches récentes</p>
       {items.map((item) => (
-        <div key={item.id} className="flex items-center gap-2">
-          <p className="min-w-0 flex-1 truncate text-xs text-slate-300">{item.label}</p>
-          <Button
-            size="sm"
-            variant="subtle"
-            onClick={() => void window.jarvis.localLearning.setStatus(item.id, 'validated').then(load)}
-          >
-            Valider
-          </Button>
-          <Button
-            size="sm"
-            variant="subtle"
-            onClick={() => void window.jarvis.localLearning.setStatus(item.id, 'rejected').then(load)}
-          >
-            Rejeter
-          </Button>
-          <Button
-            size="sm"
-            variant="subtle"
-            onClick={() => void window.jarvis.localLearning.remove(item.id).then(load)}
-          >
-            Supprimer
-          </Button>
+        <div key={item.id} className="flex flex-col gap-1 rounded-md border border-white/5 px-2 py-1">
+          <div className="flex items-center gap-2">
+            <p className="min-w-0 flex-1 truncate text-xs text-slate-300">{item.label}</p>
+            <Button
+              size="sm"
+              variant="subtle"
+              onClick={() => void window.jarvis.localLearning.setStatus(item.id, 'validated').then(load)}
+            >
+              Valider
+            </Button>
+            <Button
+              size="sm"
+              variant="subtle"
+              onClick={() => void window.jarvis.localLearning.setStatus(item.id, 'rejected').then(load)}
+            >
+              Rejeter
+            </Button>
+            <Button
+              size="sm"
+              variant="subtle"
+              onClick={() => void window.jarvis.localLearning.remove(item.id).then(load)}
+            >
+              Supprimer
+            </Button>
+          </div>
+          {item.type === 'procedure' ? (
+            <div className="flex items-center gap-2">
+              <input
+                value={drafts[item.id] ?? item.content}
+                onChange={(event) => setDrafts((current) => ({ ...current, [item.id]: event.target.value }))}
+                className="min-w-0 flex-1 rounded border border-white/10 bg-transparent px-2 py-1 text-xs text-slate-200"
+                aria-label="Texte de la méthode"
+              />
+              <Button
+                size="sm"
+                variant="subtle"
+                onClick={() =>
+                  void window.jarvis.localLearning.correct(item.id, drafts[item.id] ?? item.content).then(load)
+                }
+              >
+                Corriger
+              </Button>
+            </div>
+          ) : null}
         </div>
       ))}
     </div>

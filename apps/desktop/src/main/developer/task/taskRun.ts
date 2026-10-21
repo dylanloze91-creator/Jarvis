@@ -83,6 +83,10 @@ export interface TaskHooks {
    * de ce projet. Sans ce rappel, la boucle ne change rien de plus.
    */
   recallExperiences?: (query: string) => Promise<import('@jarvis/core').LearningRecord[]>;
+  /** Méthode appliquée dans ce projet. Le règlement se fait après les tests. */
+  onMethodApplied?: (recordId: string) => void;
+  /** La méthode n’a pas tranché : ni les étapes ni le statut ne changent. */
+  onMethodUncertain?: (recordId: string) => void;
   onPhase?: (
     phase: TaskPhase,
     status: TaskPhaseStatus,

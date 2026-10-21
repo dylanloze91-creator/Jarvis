@@ -45,6 +45,7 @@ export class LocalLearningController {
       applyLearning?: (record: LearningRecord) => Promise<LearningRecord[]>;
       setLearningStatus?: (id: string, status: LearningRecord['status']) => Promise<LearningRecord[]>;
       deleteLearning?: (id: string) => Promise<LearningRecord[]>;
+      correctLearning?: (id: string, content: string) => Promise<LearningRecord[]>;
       readEval?: () => Promise<{ previous: number | null; next: number | null } | null>;
       /** Succès réels déjà enregistrés par modelRunMemory. Absent : les taux restent vides. */
       readRuns?: () => Promise<Array<{ success: boolean }>>;
@@ -271,6 +272,10 @@ export class LocalLearningController {
 
   async removeRecord(id: string): Promise<LearningRecord[]> {
     return (await this.extra?.deleteLearning?.(id)) ?? [];
+  }
+
+  async correctRecord(id: string, content: string): Promise<LearningRecord[]> {
+    return (await this.extra?.correctLearning?.(id, content)) ?? [];
   }
 
   armPeriodic(): void {

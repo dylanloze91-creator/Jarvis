@@ -15,7 +15,7 @@ import {
   type YoutubeTranscribeRequest,
   type YoutubeTranscribeResult,
 } from '../shared/ipc.js';
-import type { LocalLearningRuntimeStatus, Settings, WakeStatKind } from '@jarvis/core';
+import type { LearningRecord, LocalLearningRuntimeStatus, Settings, WakeStatKind } from '@jarvis/core';
 import { createDeveloperApi } from './developer.js';
 
 /**
@@ -111,8 +111,10 @@ const api: JarvisApi = {
     snapshot: () => ipcRenderer.invoke(IpcChannel.localLearningSnapshot),
     train: () => ipcRenderer.invoke(IpcChannel.localLearningTrain),
     rollback: () => ipcRenderer.invoke(IpcChannel.localLearningRollback),
-    setStatus: (id: string, status: 'candidate' | 'validated' | 'stale' | 'rejected') =>
+    setStatus: (id: string, status: LearningRecord['status']) =>
       ipcRenderer.invoke(IpcChannel.localLearningSetStatus, id, status),
+    correct: (id: string, content: string) =>
+      ipcRenderer.invoke(IpcChannel.localLearningCorrect, id, content),
     remove: (id: string) => ipcRenderer.invoke(IpcChannel.localLearningRemove, id),
   },
   wakeLearning: {

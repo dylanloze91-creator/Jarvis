@@ -104,6 +104,7 @@ const localLearning = new LocalLearningController(
     applyLearning: (record) => knowledge.applyLearning(record),
     setLearningStatus: (id, status) => knowledge.setLearningStatus(id, status),
     deleteLearning: (id) => knowledge.deleteLearning(id),
+    correctLearning: (id, content) => knowledge.correctLearning(id, content),
     readRuns: async () => {
       try {
         const raw = await readFile(join(app.getPath('userData'), 'developer', 'code-model.json'), 'utf8');
@@ -346,8 +347,12 @@ function registerIpc(): void {
   ipcMain.handle(IpcChannel.localLearningRollback, () => localLearning.rollback());
   ipcMain.handle(IpcChannel.localLearningSetStatus, (_event, id: unknown, status: unknown) => {
     if (typeof id !== 'string') return [];
-    if (status !== 'candidate' && status !== 'validated' && status !== 'stale' && status !== 'rejected') return [];
+    if (status !== 'candidate' && status !== 'validated' && status !== 'review' && status !== 'stale' && status !== 'rejected') return [];
     return localLearning.setRecordStatus(id, status);
+  });
+  ipcMain.handle(IpcChannel.localLearningCorrect, (_event, id: unknown, content: unknown) => {
+    if (typeof id !== 'string' || typeof content !== 'string') return [];
+    return localLearning.correctRecord(id, content);
   });
   ipcMain.handle(IpcChannel.localLearningRemove, (_event, id: unknown) =>
     typeof id === 'string' ? localLearning.removeRecord(id) : [],
@@ -571,6 +576,9 @@ function registerIpc(): void {
     learningRecords: async (query) => knowledge.applicableLearning(query, 4),
     rememberLearning: async (record) => {
       await knowledge.applyLearning(record);
+    },
+    settleLearning: async (id, outcome) => {
+      await knowledge.settleMethod(id, outcome);
     },
   });
   openPlayProject(pendingPlayProjectId);

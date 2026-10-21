@@ -55,7 +55,8 @@ import {
   symbolPlanCacheKey,
   classifyCommand,
   SAFETY_LABELS,
-  applyExperienceToSource,
+  applyMemoryToSource,
+  codeSymptomQuery,
   languageOfPath,
   type LearningRecord,
 } from '@jarvis/core';
@@ -774,18 +775,10 @@ export class TaskRun extends TaskRunBase {
     const recall = this.hooks.recallExperiences;
     const root = this.sandbox?.path;
     if (!recall || !root) return [];
-    const query = [this.state.request, ...notes].join('\n').slice(0, 4_000);
-    let records: LearningRecord[] = [];
-    try {
-      records = await recall(query);
-    } catch {
-      return [];
-    }
-    if (!records.some((item) => item.type === 'experience' && item.status === 'validated' && item.hint)) {
-      return [];
-    }
-    const written: string[] = [];
-    for (const rel of this.experienceSourcePaths(notes, root)) {
+    const paths = this.experienceSourcePaths(notes, root);
+    const snippets: string[] = [];
+    const testsBySource = new Map<string, string>();
+    for (const rel of paths) {
       const abs = join(root, rel);
       if (!existsSync(abs)) continue;
       let source = '';
@@ -794,20 +787,69 @@ export class TaskRun extends TaskRunBase {
       } catch {
         continue;
       }
-      const applied = applyExperienceToSource(source, records, {
+      let tests = '';
+      for (const testRel of siblingTestPaths(rel)) {
+        const testAbs = join(root, testRel);
+        if (!existsSync(testAbs)) continue;
+        try {
+          tests = await readFile(testAbs, 'utf8');
+          break;
+        } catch {
+          /* un test illisible n’empêche pas les autres fichiers */
+        }
+      }
+      testsBySource.set(rel, tests);
+      snippets.push(codeSymptomQuery(source, tests));
+    }
+    const query = [this.state.request, ...notes, ...snippets].join('\n').slice(0, 4_000);
+    let records: LearningRecord[] = [];
+    try {
+      records = await recall(query);
+    } catch {
+      return [];
+    }
+    const hasExperience = records.some(
+      (item) => item.type === 'experience' && item.status === 'validated' && item.hint,
+    );
+    const hasMethod = records.some(
+      (item) =>
+        item.type === 'procedure' &&
+        item.method &&
+        (item.status === 'candidate' || item.status === 'validated' || item.status === 'review'),
+    );
+    if (!hasExperience && !hasMethod) return [];
+    const written: string[] = [];
+    for (const rel of paths) {
+      const abs = join(root, rel);
+      if (!existsSync(abs)) continue;
+      let source = '';
+      try {
+        source = await readFile(abs, 'utf8');
+      } catch {
+        continue;
+      }
+      const applied = applyMemoryToSource(source, testsBySource.get(rel) ?? '', records, {
         language: languageOfPath(rel),
         version: process.version,
         role: /\.test\.|\.spec\.|__tests__\//.test(rel) ? 'test' : 'source',
       });
-      if (applied.uncertain) this.host.log(applied.uncertain);
-      if (!applied.applied) continue;
+      if (applied.uncertain) {
+        this.host.log(applied.uncertain);
+        if (applied.methodId) this.hooks.onMethodUncertain?.(applied.methodId);
+      } else if (applied.methodApplied && applied.methodId) {
+        this.hooks.onMethodApplied?.(applied.methodId);
+        this.host.log(
+          `Méthode appliquée dans ${rel}. Le correctif vient des tests de ce fichier, pas d’une ancienne ligne.`,
+        );
+      }
+      if (!applied.changed) continue;
       await writeFile(abs, applied.source, 'utf8');
       written.push(rel);
-    }
-    if (written.length) {
-      this.host.log(
-        `Indice d’une expérience validée appliqué dans ${written.join(', ')}. Le fichier de ce projet est modifié, l’ancien fichier n’est pas recopié.`,
-      );
+      if (applied.experienceApplied) {
+        this.host.log(
+          `Indice d’une expérience validée appliqué dans ${rel}. Le fichier de ce projet est modifié, l’ancien fichier n’est pas recopié.`,
+        );
+      }
     }
     return written;
   }
@@ -1467,4 +1509,13 @@ export class TaskRun extends TaskRunBase {
     if (!run.ok) throw new TaskStopped(message);
     return message;
   }
+}
+
+function siblingTestPaths(rel: string): string[] {
+  const slash = rel.lastIndexOf('/');
+  const dot = rel.lastIndexOf('.');
+  if (dot <= slash) return [];
+  const stem = rel.slice(0, dot);
+  const ext = rel.slice(dot);
+  return [`${stem}.test${ext}`, `${stem}.spec${ext}`];
 }

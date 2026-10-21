@@ -6,6 +6,9 @@ import {
   markStale,
   relevantRecords,
   retrieveExperiences,
+  retrieveMethods,
+  noteMethodOutcome,
+  correctMethod,
   selectPromptRecords,
   resolveLocalOllamaBase,
   type KnowledgeStats,
@@ -274,8 +277,44 @@ export class KnowledgeStore {
   }
 
   async applicableLearning(query: string, limit = 4): Promise<LearningRecord[]> {
-    const found = retrieveExperiences(await this.listLearning(), { query, version: process.version, limit });
-    return found.applicable;
+    const records = await this.listLearning();
+    const found = retrieveExperiences(records, { query, version: process.version, limit });
+    const methods = retrieveMethods(records, { query, version: process.version, limit });
+    return [...found.applicable, ...methods.applicable];
+  }
+
+  async settleMethod(
+    id: string,
+    outcome: { ok: boolean; uncertain?: boolean; context: string; cause?: string; now: number },
+  ): Promise<void> {
+    await this.mutate((index) => {
+      const records = learningOf(index);
+      const found = records.find((item) => item.id === id);
+      if (!found) return;
+      const next = noteMethodOutcome(found, {
+        ok: outcome.ok,
+        now: outcome.now,
+        context: outcome.context,
+        ...(outcome.uncertain ? { uncertain: true } : {}),
+        ...(outcome.cause ? { cause: outcome.cause } : {}),
+      });
+      replaceLearning(
+        index,
+        records.map((item) => (item.id === id ? next : item)),
+      );
+    });
+  }
+
+  async correctLearning(id: string, content: string): Promise<LearningRecord[]> {
+    let records: LearningRecord[] = [];
+    await this.mutate((index) => {
+      const current = learningOf(index);
+      records = current.map((item) =>
+        item.id === id ? correctMethod(item, content, Date.now()) : item,
+      );
+      replaceLearning(index, records);
+    });
+    return records;
   }
 
   async relevantLearning(query: string, limit = 4): Promise<LearningRecord[]> {
