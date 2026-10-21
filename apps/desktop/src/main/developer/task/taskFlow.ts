@@ -55,10 +55,12 @@ import {
   symbolPlanCacheKey,
   classifyCommand,
   SAFETY_LABELS,
+  applyExperienceToSource,
+  type LearningRecord,
 } from '@jarvis/core';
 import { invalidateProjectInventory } from './projectInventoryCache.js';
 import { existsSync } from 'node:fs';
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { CodeTaskRun, CodeTaskState } from '../../../shared/developerIpc.js';
 import { PROJECT_MODEL_TOOLS, TASK_MODEL_TOOLS } from '../tools/taskTools.js';
@@ -763,6 +765,77 @@ export class TaskRun extends TaskRunBase {
     return { written, usage, expired };
   }
 
+  /**
+   * Remplace, dans les sources de ce projet seulement, la ligne d’une expérience
+   * validée. Un magasin vide, ou une fiche non validée, ne change aucun fichier.
+   */
+  private async applyRecalledExperience(notes: readonly string[]): Promise<string[]> {
+    const recall = this.hooks.recallExperiences;
+    const root = this.sandbox?.path;
+    if (!recall || !root) return [];
+    const query = [this.state.request, ...notes].join('\n').slice(0, 4_000);
+    let records: LearningRecord[] = [];
+    try {
+      records = await recall(query);
+    } catch {
+      return [];
+    }
+    if (!records.some((item) => item.type === 'experience' && item.status === 'validated' && item.hint)) {
+      return [];
+    }
+    const written: string[] = [];
+    for (const rel of this.experienceSourcePaths(notes, root)) {
+      const abs = join(root, rel);
+      if (!existsSync(abs)) continue;
+      let source = '';
+      try {
+        source = await readFile(abs, 'utf8');
+      } catch {
+        continue;
+      }
+      const applied = applyExperienceToSource(source, records);
+      if (!applied.applied) continue;
+      await writeFile(abs, applied.source, 'utf8');
+      written.push(rel);
+    }
+    if (written.length) {
+      this.host.log(
+        `Indice d’une expérience validée appliqué dans ${written.join(', ')}. Le fichier de ce projet est modifié, l’ancien fichier n’est pas recopié.`,
+      );
+    }
+    return written;
+  }
+
+  private experienceSourcePaths(notes: readonly string[], root: string): string[] {
+    const seen = new Set<string>();
+    const out: string[] = [];
+    const rootNorm = root.replace(/\\/g, '/').replace(/\/$/, '');
+    const add = (raw: string) => {
+      let rel = raw.replace(/\\/g, '/').trim();
+      const at = rel.toLowerCase().indexOf(`${rootNorm.toLowerCase()}/`);
+      if (at >= 0) rel = rel.slice(at + rootNorm.length + 1);
+      rel = rel.replace(/^\.\//, '');
+      if (!rel || rel.startsWith('/') || /^[A-Za-z]:\//.test(rel) || rel.split('/').includes('..')) return;
+      if (/\.test\.|\.spec\.|__tests__\//.test(rel)) {
+        rel = rel.replace(/\.test\./, '.').replace(/\.spec\./, '.');
+      }
+      if (/\.test\.|\.spec\.|__tests__\//.test(rel)) return;
+      if (!/\.(ts|tsx|js|mjs|cjs|py)$/.test(rel)) return;
+      if (seen.has(rel)) return;
+      seen.add(rel);
+      out.push(rel);
+    };
+    for (const file of this.reviewed?.files ?? []) add(file.path);
+    for (const file of this.state.diff) add(file.path);
+    const pathRe = /([A-Za-z0-9_./\\-]+\.(?:test|spec)\.[cm]?[jt]sx?)/g;
+    for (const note of notes) {
+      for (const match of note.matchAll(pathRe)) {
+        if (match[1]) add(match[1]);
+      }
+    }
+    return out.slice(0, 12);
+  }
+
   private async refreshDiff(signal: AbortSignal): Promise<string> {
     const diff = await this.sandbox!.diff(signal);
     this.state.diff = trimDiffFiles(parseUnifiedDiff(diff));
@@ -1225,6 +1298,9 @@ export class TaskRun extends TaskRunBase {
         `Modification : délai atteint (${limitText(STEP_LIMITS.edit)}), on teste ce qui est écrit.`,
       );
     await this.checkpoint('Modification (plan validé)', signal);
+    const baselineNotes = (state.baseline ?? []).flatMap((item) => [...item.failures, item.excerpt]);
+    const hintedOnEdit = await this.applyRecalledExperience(baselineNotes);
+    if (hintedOnEdit.length) await this.checkpoint('Indice d’expérience', signal);
     if (state.diff.length === 0) {
       if (this.hooks.fileByFile) {
         const reason =
@@ -1335,6 +1411,8 @@ export class TaskRun extends TaskRunBase {
         throw new TaskStopped(`Le modèle de code a échoué : ${fix.error}`);
       }
       await this.checkpoint(`Correction ${n}`, signal);
+      const hinted = await this.applyRecalledExperience([...run.newFailures, ...excerpts]);
+      if (hinted.length) await this.checkpoint('Indice d’expérience', signal);
       this.hooks.onPhase?.('fix', 'done', `${fix.calls.length} action(s)`, {
         files: state.diff.map((f) => f.path),
         tokPerSec: speed(fix.usage),

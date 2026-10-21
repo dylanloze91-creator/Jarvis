@@ -568,6 +568,7 @@ function registerIpc(): void {
     userDataPath: () => app.getPath('userData'),
     chat: chatActivity,
     learningRecall: async (query) => formatLearningContext(await knowledge.relevantLearning(query, 4)),
+    learningRecords: async (query) => knowledge.relevantLearning(query, 4),
     rememberLearning: async (record) => {
       await knowledge.applyLearning(record);
     },

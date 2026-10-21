@@ -42,6 +42,11 @@ export interface LearningRecord {
   testCommands?: string[];
   beforeResult?: string;
   afterResult?: string;
+  /**
+   * Remplacement local validé (une ligne). On l’applique dans le fichier du
+   * projet courant. Ce n’est pas une copie de l’ancien fichier.
+   */
+  hint?: { from: string; to: string };
 }
 
 export type UtteranceKind = 'correction' | 'preference' | 'fact' | 'one-off';
@@ -115,7 +120,14 @@ export function applyIncoming(existing: readonly LearningRecord[], incoming: Lea
   const same = existing.find((item) => norm(item.content) === key && item.status !== 'rejected');
   if (same) {
     const records = existing.map((item) =>
-      item.id === same.id ? { ...item, lastCheckedAt: incoming.lastCheckedAt, reused: item.reused } : item,
+      item.id === same.id
+        ? {
+            ...item,
+            lastCheckedAt: incoming.lastCheckedAt,
+            reused: item.reused,
+            ...(incoming.hint ? { hint: incoming.hint } : {}),
+          }
+        : item,
     );
     return { records, action: 'duplicate' };
   }
@@ -125,6 +137,14 @@ export function applyIncoming(existing: readonly LearningRecord[], incoming: Lea
     const shared = tokens(item.content).filter((token) => incomingTokens.has(token)).length;
     return shared >= 2;
   });
+  if (
+    conflict &&
+    incoming.type === 'experience' &&
+    incoming.origin === 'mission' &&
+    incoming.status === 'validated'
+  ) {
+    return { records: [incoming, ...existing], action: 'stored' };
+  }
   if (conflict && (incoming.type === 'correction' || incoming.confidence > conflict.confidence)) {
     const records = existing.map((item) =>
       item.id === conflict.id
@@ -194,7 +214,11 @@ export function selectPromptRecords(
 }
 
 function recordLine(item: LearningRecord): string {
-  return `- [${item.type}] ${item.content.slice(0, 240)} (confiance ${item.confidence.toFixed(2)})`;
+  const hint =
+    item.hint && item.type === 'experience'
+      ? ` Indice pour CE projet seulement : remplacer « ${item.hint.from} » par « ${item.hint.to} », sans recopier l’ancien fichier.`
+      : '';
+  return `- [${item.type}] ${item.content.slice(0, 240)}${hint} (confiance ${item.confidence.toFixed(2)})`;
 }
 
 function isTrustedRule(item: LearningRecord): boolean {
@@ -411,12 +435,101 @@ export interface MissionExperienceInput {
   beforeResult: string;
   afterResult: string;
   files: readonly string[];
+  /** Ligne changée dans le projet qui a réussi. Absente si l’échec n’est pas validé. */
+  hint?: { from: string; to: string };
+}
+
+export interface ExperienceDiffFile {
+  path: string;
+  hunks: readonly { lines: readonly { kind: string; text: string }[] }[];
+}
+
+function isTestPath(path: string): boolean {
+  return /\.test\.|\.spec\.|__tests__\//.test(path);
+}
+
+function isDeclarationLine(line: string): boolean {
+  return /\b(function|class)\b/.test(line);
+}
+
+/** Une seule ligne changée dans un fichier source, pas dans un test et pas une déclaration. */
+export function experienceReplacement(
+  files: readonly ExperienceDiffFile[],
+): { from: string; to: string } | null {
+  const pairs: { from: string; to: string }[] = [];
+  for (const file of files) {
+    if (isTestPath(file.path)) continue;
+    if (!/\.(ts|tsx|js|mjs|cjs|py)$/.test(file.path)) continue;
+    for (const hunk of file.hunks) {
+      const lines = hunk.lines;
+      for (let i = 0; i < lines.length - 1; i += 1) {
+        const current = lines[i];
+        const next = lines[i + 1];
+        if (!current || !next || current.kind !== 'del' || next.kind !== 'add') continue;
+        const from = current.text.trim();
+        const to = next.text.trim();
+        if (!from || !to || from === to) continue;
+        if (isDeclarationLine(from) || isDeclarationLine(to)) continue;
+        pairs.push({ from, to });
+        i += 1;
+      }
+    }
+  }
+  const unique = new Map(pairs.map((pair) => [`${pair.from}=>${pair.to}`, pair]));
+  if (unique.size !== 1) return null;
+  return [...unique.values()][0] ?? null;
+}
+
+function replaceOneLine(source: string, from: string, to: string): string | null {
+  const fromTrim = from.trim();
+  const toTrim = to.trim();
+  if (!fromTrim || !toTrim || fromTrim === toTrim) return null;
+  if (isDeclarationLine(fromTrim) || isDeclarationLine(toTrim)) return null;
+  const lines = source.split('\n');
+  let count = 0;
+  const next = lines.map((line) => {
+    if (line.trim() !== fromTrim) return line;
+    count += 1;
+    const indent = /^\s*/.exec(line)?.[0] ?? '';
+    return `${indent}${toTrim}`;
+  });
+  if (count !== 1) return null;
+  return next.join('\n');
+}
+
+/**
+ * Applique l’indice retrouvé dans le source de CE projet.
+ * Une fiche non validée, ou qui renommerait une fonction, ne change rien.
+ */
+export function applyExperienceToSource(
+  source: string,
+  records: readonly LearningRecord[],
+): { source: string; applied: boolean } {
+  let next = source;
+  let applied = false;
+  for (const record of records) {
+    if (record.type !== 'experience' || record.status !== 'validated' || record.origin !== 'mission') continue;
+    const hint = record.hint;
+    if (!hint) continue;
+    const updated = replaceOneLine(next, hint.from, hint.to);
+    if (!updated || updated === next) continue;
+    next = updated;
+    applied = true;
+  }
+  return { source: next, applied };
 }
 
 /** Une correction de code n’est validée que si les contrôles ont passé. */
 export function experienceFromMission(input: MissionExperienceInput): LearningRecord | null {
   if (!input.ok) return null;
   if (!input.beforeResult.trim() || !input.afterResult.trim()) return null;
+  const hint =
+    input.hint &&
+    !isDeclarationLine(input.hint.from) &&
+    !isDeclarationLine(input.hint.to) &&
+    input.hint.from.trim() !== input.hint.to.trim()
+      ? { from: input.hint.from.trim(), to: input.hint.to.trim() }
+      : undefined;
   return {
     id: input.id,
     type: 'experience',
@@ -435,6 +548,7 @@ export function experienceFromMission(input: MissionExperienceInput): LearningRe
     testCommands: [...input.testCommands].slice(0, 8),
     beforeResult: input.beforeResult.slice(0, 400),
     afterResult: input.afterResult.slice(0, 400),
+    ...(hint ? { hint } : {}),
   };
 }
 

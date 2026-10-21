@@ -130,6 +130,7 @@ export interface ControllerDeps {
   /** Injection de test du lancement réel ; production utilise Electron. */
   verifyWebGameRuntime?: (root: string) => Promise<{ ok: boolean; detail: string }>;
   learningRecall?: (query: string) => Promise<string>;
+  learningRecords?: (query: string) => Promise<import('@jarvis/core').LearningRecord[]>;
   rememberLearning?: (record: import('@jarvis/core').LearningRecord) => Promise<void>;
 }
 
@@ -420,6 +421,7 @@ export class DeveloperController {
                 return { ok: out.ok, detail: out.detail };
               }),
         learningRecall: deps.learningRecall,
+        learningRecords: deps.learningRecords,
         rememberLearning: deps.rememberLearning,
         webResearch: async (query, request) => {
           const outcome = await developerMissionWebResearch(

@@ -69,6 +69,7 @@ import {
   patchStep,
   randomId,
   experienceFromMission,
+  experienceReplacement,
   type LearningRecord,
   resolveRoleModel,
   buildMissionModelPlan,
@@ -240,6 +241,8 @@ export interface MissionDeps {
   ) => Promise<{ chatLine: string; coderBlock: string } | null>;
   /** Fiches validées déjà en mémoire, seulement celles qui recoupent la demande. */
   learningRecall?: (query: string) => Promise<string>;
+  /** Mêmes fiches, pour appliquer un indice dans les fichiers de CE projet. */
+  learningRecords?: (query: string) => Promise<LearningRecord[]>;
   rememberLearning?: (record: LearningRecord) => Promise<void>;
   verifyWebGameRuntime?: (projectRoot: string) => Promise<{ ok: boolean; detail: string }>;
 }
@@ -2120,6 +2123,9 @@ export class MissionWorkflow {
     const template = this.project?.template;
     return {
       planContext,
+      recallExperiences: this.deps.learningRecords
+        ? (query) => this.deps.learningRecords!(query)
+        : undefined,
       directRun: kind === 'new-project' || kind === 'modify' || kind === 'fix',
       autoApprovePlan: kind === 'new-project' || kind === 'modify' || kind === 'fix',
       docsOnly: this.current?.kind === 'document',
@@ -2258,6 +2264,7 @@ export class MissionWorkflow {
         checkpoint: task.checkpoints.at(-1)?.sha,
         now: this.now,
       });
+      const replacement = experienceReplacement(task.diff);
       const experience = experienceFromMission({
         id: randomId(),
         now: this.now,
@@ -2265,11 +2272,14 @@ export class MissionWorkflow {
         request: mission.request,
         errorSignature: task.runs.flatMap((run) => run.newFailures).join('\n'),
         cause: task.runs.find((run) => run.newFailures.length)?.newFailures[0] ?? mission.request,
-        fix: task.plan?.summary ?? mission.summary ?? mission.request,
+        fix: replacement
+          ? 'Indice : dans le fichier de ce projet, remplacer la ligne fautive. Ne pas recopier l’ancien fichier.'
+          : (task.plan?.summary ?? mission.summary ?? mission.request),
         testCommands: task.plan?.tests ?? [],
         beforeResult: task.runs.find((run) => run.newFailures.length)?.newFailures[0] ?? '',
         afterResult: verdict === 'success' ? 'contrôles passés' : '',
         files: task.diff.map((file) => file.path),
+        ...(replacement ? { hint: replacement } : {}),
       });
       if (experience) await this.deps.rememberLearning?.(experience);
     }

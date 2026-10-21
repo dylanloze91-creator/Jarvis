@@ -78,6 +78,11 @@ export interface TaskHooks {
   ) => Promise<string>;
   /** Rafraîchit le manuel technique (ex. après de nouveaux échecs). */
   refreshManual?: (failures: string[]) => Promise<{ block: string; passages: ManualPassageView[] }>;
+  /**
+   * Fiches validées qui recoupent la demande. L’indice s’applique au fichier
+   * de ce projet. Sans ce rappel, la boucle ne change rien de plus.
+   */
+  recallExperiences?: (query: string) => Promise<import('@jarvis/core').LearningRecord[]>;
   onPhase?: (
     phase: TaskPhase,
     status: TaskPhaseStatus,
