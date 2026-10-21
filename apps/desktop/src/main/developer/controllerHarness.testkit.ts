@@ -10,6 +10,7 @@ import {
 } from '@jarvis/core';
 import type { DevConfirmation, DeveloperState } from '../../shared/developerIpc.js';
 import { DeveloperController } from './controller.js';
+import type { JournalIo } from './mission/history.js';
 import type { FakeOllama } from './models/fakeOllama.testkit.js';
 import {
   CommandRefusedError,
@@ -44,6 +45,8 @@ export interface HarnessOptions {
   /** Remplace une commande (npm hors ligne) ; null = la vraie. Le tri de sécurité s'applique quand même. */
   intercept?: (spec: RunSpec, display: string) => RunOutcome | null;
   verifyWebGameRuntime?: (root: string) => Promise<{ ok: boolean; detail: string }>;
+  /** Journal de mission : délai court, rename ou rm qui ne se termine pas. */
+  journalIo?: JournalIo;
 }
 
 /** Résultat de commande simulé, pour `intercept`. */
@@ -180,6 +183,7 @@ export function createHarness(options: HarnessOptions): Harness {
     chat,
     chatGraceMs: 0,
     verifyWebGameRuntime: options.verifyWebGameRuntime,
+    journalIo: options.journalIo,
     emit: (state) => {
       states.push(structuredClone(state));
       const card = state.confirmation;

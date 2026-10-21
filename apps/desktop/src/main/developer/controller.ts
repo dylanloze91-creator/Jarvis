@@ -81,6 +81,7 @@ import {
   gameFolderWritten,
   levelDelivered,
   presentWrittenGame,
+  type JournalIo,
 } from './mission/history.js';
 import { MissionWorkflow } from './mission/missionWorkflow.js';
 import { ProjectStore } from './project/projectStore.js';
@@ -132,6 +133,8 @@ export interface ControllerDeps {
   learningRecall?: (query: string) => Promise<string>;
   learningRecords?: (query: string) => Promise<import('@jarvis/core').LearningRecord[]>;
   rememberLearning?: (record: import('@jarvis/core').LearningRecord) => Promise<void>;
+  /** Disque du journal de mission. Les tests injectent un rename ou un rm qui ne revient pas. */
+  journalIo?: JournalIo;
 }
 
 export const DEVELOPER_DISABLED_NOTICE =
@@ -388,7 +391,10 @@ export class DeveloperController {
         run: this.run,
         settings: () => deps.getSettings(),
         modelOptions: (model) => this.models.optionsFor(model),
-        store: new MissionStore(() => join(deps.userDataPath(), 'developer', 'projects')),
+        store: new MissionStore(
+          () => join(deps.userDataPath(), 'developer', 'projects'),
+          deps.journalIo,
+        ),
         projects: this.projects,
         now: deps.now ? () => deps.now!().getTime() : undefined,
         realBenches: () => this.models.state().realBenches,
@@ -1843,6 +1849,8 @@ export class DeveloperController {
     };
     this.task = task;
     this.emit();
+    const taskStarted = Date.now();
+    this.appendLog(`Tâche ${title} : démarrage`);
     const step = (id: string, status: DevStepStatus, detail?: string): void => {
       const target = task.steps.find((item) => item.id === id);
       if (!target) return;
@@ -1870,6 +1878,8 @@ export class DeveloperController {
       task.outcome = cancelled ? 'cancelled' : 'failed';
       task.message = cancelled ? 'Annulé.' : error instanceof Error ? error.message : String(error);
     } finally {
+      const elapsed = Date.now() - taskStarted;
+      this.appendLog(`Tâche ${title} : ${task.outcome ?? 'sans issue'} (${elapsed} ms)`);
       task.finishedAt = Date.now();
       this.controller = null;
       if (this.pending.size === 0) this.confirmation = null;

@@ -13,6 +13,11 @@ const ID = /^[A-Za-z0-9_-]{1,80}$/;
 
 /** Quatre essais : le premier, puis trois pauses courtes. Les tests injectent un sommeil vide. */
 const RENAME_DELAYS_MS = [30, 90, 200];
+/**
+ * Un write, rename ou rm qui ne se termine pas ne doit pas laisser la mission
+ * « running » pour toujours. Huit secondes : assez pour un disque lent, pas pour un verrou muet.
+ */
+const JOURNAL_IO_DEADLINE_MS = 8_000;
 
 export type JournalWriteMode = 'renamed' | 'in-place';
 
@@ -37,6 +42,8 @@ export interface JournalIo {
   mkdir?: (path: string, options: { recursive: boolean }) => Promise<void>;
   rm?: (path: string, options: { force: boolean }) => Promise<void>;
   sleep?: (ms: number) => Promise<void>;
+  /** Délai max d’une opération disque. Défaut : 8 s. Les tests passent une valeur courte. */
+  deadlineMs?: number;
 }
 
 function lockCode(error: unknown): string | undefined {
@@ -157,6 +164,23 @@ export function creationJournalBanner(input: {
   return { kept: false, failedShort: false, retry: false, text: null };
 }
 
+function deadlineOf(io: JournalIo): number {
+  const value = io.deadlineMs;
+  if (typeof value === 'number' && Number.isFinite(value) && value >= 0) return value;
+  return JOURNAL_IO_DEADLINE_MS;
+}
+
+/** Une promesse disque qui ne se tranche pas devient un verrou de journal. */
+function settle(work: Promise<unknown>, ms: number): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new JournalLockError()), ms);
+  });
+  return Promise.race([work.then(() => undefined), timeout]).finally(() => {
+    if (timer !== undefined) clearTimeout(timer);
+  });
+}
+
 async function replaceJournal(
   target: string,
   temporary: string,
@@ -168,11 +192,12 @@ async function replaceJournal(
   const remove = io.rm ?? rm;
   const sleep =
     io.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
-  await write(temporary, body);
+  const ms = deadlineOf(io);
+  await settle(write(temporary, body), ms);
   let last: unknown;
   for (let attempt = 0; attempt <= RENAME_DELAYS_MS.length; attempt++) {
     try {
-      await ren(temporary, target);
+      await settle(ren(temporary, target), ms);
       return 'renamed';
     } catch (error) {
       last = error;
@@ -182,12 +207,12 @@ async function replaceJournal(
   }
   if (!isLockCode(last)) throw last;
   try {
-    await write(target, body);
+    await settle(write(target, body), ms);
   } catch (error) {
-    if (isLockCode(error)) throw new JournalLockError();
+    if (isLockCode(error) || error instanceof JournalLockError) throw new JournalLockError();
     throw error;
   }
-  await remove(temporary, { force: true }).catch(() => undefined);
+  await settle(remove(temporary, { force: true }), ms).catch(() => undefined);
   return 'in-place';
 }
 
@@ -217,7 +242,7 @@ export class MissionStore {
     const dir = this.dir(mission.projectId);
     const next = this.queue.then(async () => {
       const makeDir = this.io.mkdir ?? mkdir;
-      await makeDir(dir, { recursive: true });
+      await settle(makeDir(dir, { recursive: true }), deadlineOf(this.io));
       const target = join(dir, `${mission.id}.json`);
       this.written += 1;
       const temporary = `${target}.${this.written}.tmp`;
@@ -234,10 +259,17 @@ export class MissionStore {
   async move(mission: MissionState, from: string): Promise<void> {
     await this.save(mission);
     if (from === mission.projectId || !ID.test(mission.id)) return;
+    const remove = this.io.rm ?? rm;
     const next = this.queue.then(() =>
-      rm(join(this.dir(from), `${mission.id}.json`), { force: true }),
+      settle(
+        remove(join(this.dir(from), `${mission.id}.json`), { force: true }),
+        deadlineOf(this.io),
+      ),
     );
-    this.queue = next.catch(() => undefined);
+    this.queue = next.then(
+      () => undefined,
+      () => undefined,
+    );
     await next;
   }
 

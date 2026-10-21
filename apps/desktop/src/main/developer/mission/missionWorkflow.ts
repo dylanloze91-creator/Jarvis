@@ -393,14 +393,30 @@ export class MissionWorkflow {
 
   private async persist(): Promise<void> {
     if (!this.current) return;
+    const started = this.now;
+    let announced = false;
+    const announce = setTimeout(() => {
+      announced = true;
+      this.trace('journal-save', 'start');
+      this.host.emit();
+    }, 250);
     this.current.updatedAt = this.now;
     let mode: 'renamed' | 'in-place' | 'lost' = 'renamed';
     try {
       mode = await this.deps.store.save(this.current);
     } catch (error) {
-      if (!isJournalLock(error)) throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      clearTimeout(announce);
+      if (!isJournalLock(error)) {
+        this.trace('journal-save', 'error', { startedAt: started, error: message });
+        this.host.emit();
+        throw error;
+      }
+      this.trace('journal-save', 'timeout', { startedAt: started, error: message });
+      this.host.emit();
       mode = 'lost';
     }
+    clearTimeout(announce);
     if (mode !== 'renamed') {
       const delivered = this.levelIsDelivered();
       const line = delivered
@@ -408,17 +424,28 @@ export class MissionWorkflow {
         : this.gameFilesWritten()
           ? TEMPLATE_STILL_LINE
           : journalOutcomeLine(false, false);
-      const announce = this.current.journalNote !== line;
+      const noteChanged = this.current.journalNote !== line;
       this.current.journalNote = line;
-      if (announce) this.deps.onMissionChatLine?.(line);
-      if (announce && mode === 'in-place') {
+      if (noteChanged) this.deps.onMissionChatLine?.(line);
+      if (noteChanged && mode === 'in-place') {
         try {
           await this.deps.store.save(this.current);
         } catch (error) {
-          if (!isJournalLock(error)) throw error;
+          const message = error instanceof Error ? error.message : String(error);
+          if (!isJournalLock(error)) {
+            this.trace('journal-save', 'error', { startedAt: started, error: message });
+            this.host.emit();
+            throw error;
+          }
+          this.trace('journal-save', 'timeout', { startedAt: started, error: message });
+          this.host.emit();
         }
       }
       if (!delivered && !this.gameFilesWritten()) throw new Error(line);
+    }
+    if (announced && mode !== 'lost') {
+      this.trace('journal-save', 'end', { startedAt: started });
+      this.host.emit();
     }
     this.historyProject = this.current.projectId;
     try {
@@ -427,6 +454,30 @@ export class MissionWorkflow {
       /* la liste peut manquer : la mission en mémoire reste valable */
     }
     this.host.emit();
+  }
+
+  /**
+   * Déplacement du journal après un changement de projet.
+   * Un verrou ou un appel qui ne revient pas est tracé, puis relancé :
+   * l’appelant décide si le dossier du jeu existe déjà.
+   */
+  private async moveJournal(mission: MissionState, from: string): Promise<void> {
+    const started = this.now;
+    this.trace('journal-move', 'start');
+    this.host.emit();
+    try {
+      await this.deps.store.move(mission, from);
+      this.trace('journal-move', 'end', { startedAt: started });
+      this.host.emit();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.trace('journal-move', isJournalLock(error) ? 'timeout' : 'error', {
+        startedAt: started,
+        error: message,
+      });
+      this.host.emit();
+      throw error;
+    }
   }
 
   /** Écriture sans attente (ligne de mission, échec) : une erreur de disque ne casse pas la mission. */
@@ -1103,7 +1154,7 @@ export class MissionWorkflow {
           // Avant le déplacement du journal : la phrase du Superviseur est déjà en file,
           // et ce déplacement rend la main. Le chat doit connaître le dossier avant ça.
           this.deps.onMissionFocusProject?.(scaffoldOutcome.projectId);
-          if (fromScope !== mission.projectId) await this.deps.store.move(mission, fromScope);
+          if (fromScope !== mission.projectId) await this.moveJournal(mission, fromScope);
           this.patch('scaffold', { status: 'done', detail: scaffoldOutcome.path });
           this.trace('folder', 'end', { agentId: 'prepare' });
           this.setAgentRole(
@@ -1581,8 +1632,9 @@ export class MissionWorkflow {
           this.patch('create', { status: 'done', detail: project.root, files: [project.root] });
           mission.projectId = project.id;
           this.project = project;
+          step('create', 'done', 'journal : déplacement');
           try {
-            await this.deps.store.move(mission, from);
+            await this.moveJournal(mission, from);
             await this.persist();
           } catch (error) {
             if (!isJournalLock(error) || !gameFolderWritten(project.root)) throw error;
@@ -1615,11 +1667,25 @@ export class MissionWorkflow {
     }
     this.project = project;
     mission.status = 'task';
-    await this.persist();
+    try {
+      await this.persist();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (!(isJournalLock(error) && this.gameFilesWritten())) {
+        mission.status = 'failed';
+        mission.verdict = 'stopped';
+        mission.summary = message;
+        this.closeOpenAgents(message, 'failed');
+        this.trace('mission', 'end', { error: message });
+        this.persistLater();
+        return this.host.emit();
+      }
+    }
     try {
     const coder = this.modelFor('CODER');
     const codeAgents = (mission.agents ?? []).filter((agent) => agent.role === 'code');
     this.trace('code-prep', 'start', { model: coder, agentId: codeAgents[0]?.id });
+    this.host.emit();
     const readyCodeAgents: typeof codeAgents = [];
     for (const agent of codeAgents) {
       const blocked = agent.dependsOn.some((id) => {
@@ -1682,6 +1748,7 @@ export class MissionWorkflow {
       }
     }
     this.trace('code-prep', 'end', { model: coder, agentId: codeAgents[0]?.id });
+    this.host.emit();
     if (
       codeAgents.length > 0 &&
       codeAgents.every((agent) => agent.status === 'failed' || agent.status === 'cancelled')

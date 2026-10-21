@@ -167,4 +167,40 @@ describe('journal de mission sous EPERM', () => {
     });
     await expect(store.save(finishedMission())).rejects.toThrow(/^Journal de mission verrouillé\.$/);
   });
+
+  it('un rename qui ne revient pas libère la file au lieu de laisser la mission en attente', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'jarvis-journal-'));
+    roots.push(root);
+    const store = new MissionStore(() => join(root, 'data'), {
+      deadlineMs: 80,
+      sleep: async () => undefined,
+      rename: () => new Promise(() => {}),
+    });
+    const started = Date.now();
+    await expect(store.save(finishedMission())).rejects.toThrow(/^Journal de mission verrouillé\.$/);
+    await expect(store.save(finishedMission())).rejects.toThrow(/^Journal de mission verrouillé\.$/);
+    expect(Date.now() - started).toBeLessThan(1_000);
+  });
+
+  it('un déplacement dont le retrait ne revient pas ne bloque pas l’enregistrement suivant', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'jarvis-journal-'));
+    roots.push(root);
+    const store = new MissionStore(() => join(root, 'data'), {
+      deadlineMs: 80,
+      sleep: async () => undefined,
+      rm: () => new Promise(() => {}),
+    });
+    const mission = finishedMission();
+    mission.projectId = 'jeu-plateforme-2d';
+    const started = Date.now();
+    await expect(store.move(mission, 'nouveau-projet')).rejects.toThrow(
+      /^Journal de mission verrouillé\.$/,
+    );
+    expect(Date.now() - started).toBeLessThan(1_000);
+    const loaded = await store.load(mission.projectId, mission.id);
+    expect(loaded?.status).toBe('finished');
+    const again = Date.now();
+    await expect(store.save(mission)).resolves.toBe('renamed');
+    expect(Date.now() - again).toBeLessThan(1_000);
+  });
 });

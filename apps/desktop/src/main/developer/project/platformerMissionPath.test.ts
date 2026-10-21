@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { rename as realRename, writeFile as realWriteFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -7,6 +8,7 @@ import {
   FACTORY_MARKER,
   GOAL_MARKER,
   isCreateOrBuildOrder,
+  isNeutralPlatformerLevel,
   newProjectMissionFromProjectChat,
   EDIT_MARKER,
   PLAN_MARKER,
@@ -24,6 +26,7 @@ const projectsRoot = join(base, 'Projets');
 const CODE = 'scripte:plateforme';
 const REQUEST =
   'Pour thedexios : un jeu de plateforme 2D vue de côté sur le gabarit (saut, sol, un collectable, un piège, victoire). Compose un niveau jouable avec des plateformes à franchir, formes simples uniquement.';
+const OCTOBER_REQUEST = 'Je souhaiterais un jeu type jeu de plateforme 2D';
 
 const EXTENDED_LEVEL = `import type { LevelData } from './types.js';
 
@@ -328,6 +331,95 @@ describe('chemin mission plateforme 2D (thedexios)', () => {
       expect(done.codeTask?.report?.verdict).not.toBe('success');
       expect(done.codeTask?.diff.length).toBeGreaterThan(0);
       await h.instance.discardTask();
+    },
+    300_000,
+  );
+
+  it(
+    'phrase du 15 octobre : statut explicite, succès seulement si le niveau est vérifié',
+    async () => {
+      const h = createHarness({
+        base,
+        repo: jarvis,
+        fake,
+        developer: { codeModel: CODE, projectsRoot },
+        intercept: hybridNpm,
+      });
+      await h.instance.validate(jarvis);
+      const done = await h.instance.startMission('new-project', OCTOBER_REQUEST, true);
+      const status = done.mission?.status;
+      expect(status, String(done.mission?.summary ?? done.notice ?? '')).toBe('finished');
+      expect(done.mission?.verdict).toBe('success');
+      expect(done.codeTask?.report?.verdict).toBe('success');
+      const view = (await h.instance.listProjects()).projects!.find(
+        (item) => item.id === done.mission!.projectId,
+      )!;
+      const level = readFileSync(join(view.path, 'src', 'level.ts'), 'utf8');
+      expect(isNeutralPlatformerLevel(level)).toBe(false);
+      expect(level).toMatch(/580,\s*y:\s*200/);
+    },
+    300_000,
+  );
+
+  it(
+    'un journal qui ne revient plus après la création ne laisse pas la mission running',
+    async () => {
+      let createDoneRenames = 0;
+      const h = createHarness({
+        base,
+        repo: jarvis,
+        fake,
+        developer: { codeModel: CODE, projectsRoot },
+        intercept: hybridNpm,
+        journalIo: {
+          deadlineMs: 200,
+          sleep: async () => undefined,
+          rename: async (from, to) => {
+            let text = '';
+            try {
+              text = readFileSync(from, 'utf8');
+            } catch {
+              text = '';
+            }
+            const match = text.match(
+              /"id": "create"[\s\S]{0,400}?"status": "(done|pending|running|failed|skipped|waiting)"/,
+            );
+            if (match?.[1] === 'done') {
+              createDoneRenames += 1;
+              if (createDoneRenames > 1) return new Promise(() => {});
+            }
+            await realRename(from, to);
+          },
+        },
+      });
+      await h.instance.validate(jarvis);
+      const done = await h.instance.startMission('new-project', OCTOBER_REQUEST, true);
+      const status = done.mission?.status;
+      expect(['finished', 'failed', 'cancelled']).toContain(status);
+      expect(createDoneRenames).toBeGreaterThan(1);
+      const logs = h.states.flatMap((state) => state.task?.log ?? []);
+      const traced = logs.filter((line) => line.includes('step=')).join('\n');
+      expect(
+        logs.some((line) => line.includes('step=journal-move') && line.includes('status=start')),
+        traced,
+      ).toBe(true);
+      expect(
+        logs.some((line) => line.includes('step=journal-move') && line.includes('status=timeout')),
+        traced,
+      ).toBe(true);
+      expect(
+        logs.some((line) => line.includes('step=code-prep') && line.includes('status=start')),
+        `status=${status} résumé=${done.mission?.summary ?? ''}\n${traced}`,
+      ).toBe(true);
+      if (status === 'finished' || done.mission?.verdict === 'success') {
+        expect(done.codeTask?.report?.verdict).toBe('success');
+        const view = (await h.instance.listProjects()).projects!.find(
+          (item) => item.id === done.mission!.projectId,
+        )!;
+        const level = readFileSync(join(view.path, 'src', 'level.ts'), 'utf8');
+        expect(isNeutralPlatformerLevel(level)).toBe(false);
+        expect(level).toMatch(/580,\s*y:\s*200/);
+      }
     },
     300_000,
   );
