@@ -79,7 +79,8 @@ describe('expérience réutilisée sur un autre projet', () => {
         ].join('\n'),
       );
       const replacement = experienceReplacement(diff);
-      expect(replacement).toEqual({ from: 'return a * b;', to: 'return a + b;' });
+      expect(replacement).toMatchObject({ from: 'return a * b;', to: 'return a + b;' });
+      expect(replacement?.language).toBe('typescript');
       expect(
         experienceReplacement([
           {
@@ -117,7 +118,8 @@ describe('expérience réutilisée sur un autre projet', () => {
       expect(experienceFromMission({ ...input, ok: false })).toBeNull();
       const saved = experienceFromMission({ ...input, ok: true });
       expect(saved?.status).toBe('validated');
-      expect(saved?.hint).toEqual({ from: 'return a * b;', to: 'return a + b;' });
+      expect(saved?.hint).toMatchObject({ from: 'return a * b;', to: 'return a + b;' });
+      expect(saved?.trace?.outcome).toBe('passed');
       expect(saved?.fix).not.toContain('function add');
 
       const stronger = noteToRecord({
@@ -137,7 +139,7 @@ describe('expérience réutilisée sur un autre projet', () => {
       const hits = relevantRecords(restarted, REQUEST_B);
       const card = hits.find((item) => item.id === 'fix-add');
       expect(card?.status).toBe('validated');
-      expect(card?.hint).toEqual({ from: 'return a * b;', to: 'return a + b;' });
+      expect(card?.hint).toMatchObject({ from: 'return a * b;', to: 'return a + b;' });
       expect(formatLearningContext(card ? [card] : [])).toContain('return a + b');
       expect(formatLearningContext(card ? [card] : [])).toMatch(/sans recopier/);
 

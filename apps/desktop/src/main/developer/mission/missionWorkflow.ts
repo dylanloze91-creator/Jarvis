@@ -69,6 +69,7 @@ import {
   patchStep,
   randomId,
   experienceFromMission,
+  experienceAttempt,
   experienceReplacement,
   type LearningRecord,
   resolveRoleModel,
@@ -2265,23 +2266,58 @@ export class MissionWorkflow {
         now: this.now,
       });
       const replacement = experienceReplacement(task.diff);
-      const experience = experienceFromMission({
-        id: randomId(),
-        now: this.now,
-        ok: mission.learning?.saved === true,
-        request: mission.request,
-        errorSignature: task.runs.flatMap((run) => run.newFailures).join('\n'),
-        cause: task.runs.find((run) => run.newFailures.length)?.newFailures[0] ?? mission.request,
-        fix: replacement
-          ? 'Indice : dans le fichier de ce projet, remplacer la ligne fautive. Ne pas recopier l’ancien fichier.'
-          : (task.plan?.summary ?? mission.summary ?? mission.request),
-        testCommands: task.plan?.tests ?? [],
-        beforeResult: task.runs.find((run) => run.newFailures.length)?.newFailures[0] ?? '',
-        afterResult: verdict === 'success' ? 'contrôles passés' : '',
-        files: task.diff.map((file) => file.path),
-        ...(replacement ? { hint: replacement } : {}),
-      });
-      if (experience) await this.deps.rememberLearning?.(experience);
+      const errors = task.runs.flatMap((run) => run.newFailures).join('\n');
+      const firstFailure = task.runs.find((run) => run.newFailures.length)?.newFailures[0] ?? '';
+      const happened = lastFail ?? mission.summary ?? 'échec';
+      if (mission.learning?.saved === true && verdict === 'success') {
+        const experience = experienceFromMission({
+          id: randomId(),
+          now: this.now,
+          ok: true,
+          request: mission.request,
+          errorSignature: errors,
+          cause: firstFailure || mission.request,
+          fix: replacement
+            ? 'Indice : dans le fichier de ce projet, remplacer la ligne fautive. Ne pas recopier l’ancien fichier.'
+            : (task.plan?.summary ?? mission.summary ?? mission.request),
+          testCommands: task.plan?.tests ?? [],
+          beforeResult: firstFailure,
+          afterResult: 'contrôles passés',
+          files: task.diff.map((file) => file.path),
+          ...(replacement ? { hint: replacement } : {}),
+          trace: {
+            problem: mission.request,
+            context: task.diff.map((file) => file.path).slice(0, 8).join(', '),
+            firstTry: firstFailure,
+            observedErrors: errors,
+            appliedFix: replacement
+              ? 'Remplacement local dans le fichier de ce projet.'
+              : (task.plan?.summary ?? mission.request),
+            testsRun: task.plan?.tests ?? [],
+            finalResult: 'contrôles passés',
+            limits:
+              'Même langage seulement. Une autre version rend l’indice périmé. Le fichier d’origine n’est pas recopié.',
+            language: replacement?.language ?? 'unknown',
+            problemType: 'expérience',
+            runtimeVersion: process.version,
+            outcome: 'passed',
+          },
+        });
+        if (experience) await this.deps.rememberLearning?.(experience);
+      } else {
+        const attempt = experienceAttempt({
+          id: randomId(),
+          now: this.now,
+          request: mission.request,
+          expected: 'les tests de ce projet passent',
+          happened,
+          likelyCause: firstFailure || happened,
+          nextHypothesis: `Reprendre cet échec sans le valider : ${happened.slice(0, 180)}`,
+          language: replacement?.language,
+          testCommands: task.plan?.tests ?? [],
+        });
+        await this.deps.rememberLearning?.(attempt);
+      }
     }
     this.activeRole = null;
     await this.persist();

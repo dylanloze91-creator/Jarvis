@@ -56,6 +56,7 @@ import {
   classifyCommand,
   SAFETY_LABELS,
   applyExperienceToSource,
+  languageOfPath,
   type LearningRecord,
 } from '@jarvis/core';
 import { invalidateProjectInventory } from './projectInventoryCache.js';
@@ -793,7 +794,12 @@ export class TaskRun extends TaskRunBase {
       } catch {
         continue;
       }
-      const applied = applyExperienceToSource(source, records);
+      const applied = applyExperienceToSource(source, records, {
+        language: languageOfPath(rel),
+        version: process.version,
+        role: /\.test\.|\.spec\.|__tests__\//.test(rel) ? 'test' : 'source',
+      });
+      if (applied.uncertain) this.host.log(applied.uncertain);
       if (!applied.applied) continue;
       await writeFile(abs, applied.source, 'utf8');
       written.push(rel);

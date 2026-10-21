@@ -5,6 +5,7 @@ import {
   applyIncoming,
   markStale,
   relevantRecords,
+  retrieveExperiences,
   selectPromptRecords,
   resolveLocalOllamaBase,
   type KnowledgeStats,
@@ -270,6 +271,11 @@ export class KnowledgeStore {
     } catch {
       return hits;
     }
+  }
+
+  async applicableLearning(query: string, limit = 4): Promise<LearningRecord[]> {
+    const found = retrieveExperiences(await this.listLearning(), { query, version: process.version, limit });
+    return found.applicable;
   }
 
   async relevantLearning(query: string, limit = 4): Promise<LearningRecord[]> {

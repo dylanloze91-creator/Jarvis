@@ -43,10 +43,43 @@ export interface LearningRecord {
   beforeResult?: string;
   afterResult?: string;
   /**
-   * Remplacement local validé (une ligne). On l’applique dans le fichier du
-   * projet courant. Ce n’est pas une copie de l’ancien fichier.
+   * Remplacement local validé. Plusieurs lignes du même correctif, jamais
+   * la copie de l’ancien fichier. `language` empêche de l’appliquer ailleurs.
    */
-  hint?: { from: string; to: string };
+  hint?: {
+    from: string;
+    to: string;
+    language?: string;
+    steps?: ExperienceStep[];
+  };
+  /** Trace du correctif. Une expérience rejetée n’est pas une solution. */
+  trace?: ExperienceTrace;
+}
+
+export interface ExperienceStep {
+  from: string;
+  to: string;
+  role?: 'source' | 'test';
+}
+
+export interface ExperienceTrace {
+  problem: string;
+  context: string;
+  firstTry: string;
+  observedErrors: string;
+  appliedFix: string;
+  testsRun: string[];
+  finalResult: string;
+  limits: string;
+  language: string;
+  problemType: string;
+  runtimeVersion?: string;
+  symptomIds?: string[];
+  outcome: 'passed' | 'failed';
+  expected?: string;
+  happened?: string;
+  likelyCause?: string;
+  nextHypothesis?: string;
 }
 
 export type UtteranceKind = 'correction' | 'preference' | 'fact' | 'one-off';
@@ -214,9 +247,11 @@ export function selectPromptRecords(
 }
 
 function recordLine(item: LearningRecord): string {
+  const extra = item.hint?.steps && item.hint.steps.length > 1 ? ` et ${item.hint.steps.length - 1} autre(s) ligne(s)` : '';
+  const language = item.hint?.language ? ` Langage : ${item.hint.language}.` : '';
   const hint =
-    item.hint && item.type === 'experience'
-      ? ` Indice pour CE projet seulement : remplacer « ${item.hint.from} » par « ${item.hint.to} », sans recopier l’ancien fichier.`
+    item.hint && item.type === 'experience' && item.status === 'validated'
+      ? ` Indice pour CE projet seulement : remplacer « ${item.hint.from.slice(0, 160)} » par « ${item.hint.to.slice(0, 160)} »${extra}, sans recopier l’ancien fichier.${language}`
       : '';
   return `- [${item.type}] ${item.content.slice(0, 240)}${hint} (confiance ${item.confidence.toFixed(2)})`;
 }
@@ -435,8 +470,9 @@ export interface MissionExperienceInput {
   beforeResult: string;
   afterResult: string;
   files: readonly string[];
-  /** Ligne changée dans le projet qui a réussi. Absente si l’échec n’est pas validé. */
-  hint?: { from: string; to: string };
+  /** Lignes changées dans le projet qui a réussi. Absentes si l’échec n’est pas validé. */
+  hint?: LearningRecord['hint'];
+  trace?: ExperienceTrace;
 }
 
 export interface ExperienceDiffFile {
@@ -452,84 +488,350 @@ function isDeclarationLine(line: string): boolean {
   return /\b(function|class)\b/.test(line);
 }
 
-/** Une seule ligne changée dans un fichier source, pas dans un test et pas une déclaration. */
+function declares(text: string): boolean {
+  return text.split('\n').some((line) => isDeclarationLine(line));
+}
+
+export function languageOfPath(path: string): string | undefined {
+  if (path.endsWith('.py')) return 'python';
+  if (/\.tsx?$/.test(path)) return 'typescript';
+  if (/\.(mjs|cjs|js)$/.test(path)) return 'javascript';
+  return undefined;
+}
+
+const KEYWORDS = new Set([
+  'return', 'const', 'let', 'var', 'if', 'else', 'new', 'typeof', 'await', 'async',
+  'from', 'import', 'export', 'try', 'catch', 'throw', 'null', 'undefined', 'true',
+  'false', 'of', 'in', 'for', 'while', 'switch', 'case', 'break', 'continue',
+]);
+
+function identsOf(line: string): string[] {
+  return [...line.matchAll(/\b[A-Za-z_][A-Za-z0-9_]*\b/g)]
+    .map((match) => match[0] ?? '')
+    .filter((word) => word && !KEYWORDS.has(word));
+}
+
+/** Un changement qui ne fait que remplacer un opérateur ne devient pas une règle générale. */
+function operatorOnly(from: string, to: string): boolean {
+  const mask = (line: string) => line.replace(/\b[A-Za-z_][A-Za-z0-9_]*\b/g, '#').replace(/\s+/g, '');
+  const left = mask(from);
+  const right = mask(to);
+  if (left === right) return false;
+  const ops = new Set(['*', '+', '-', '/', '%']);
+  let diffs = 0;
+  const max = Math.max(left.length, right.length);
+  for (let i = 0; i < max; i += 1) {
+    if (left[i] === right[i]) continue;
+    diffs += 1;
+    if (!ops.has(left[i] ?? '') && !ops.has(right[i] ?? '')) return false;
+  }
+  return diffs > 0 && diffs <= 2;
+}
+
+function canSlot(from: string, to: string): boolean {
+  if (from.trim() === to.trim() || from.includes('\n') || to.includes('\n')) return false;
+  if (operatorOnly(from, to)) return false;
+  const left = identsOf(from);
+  const right = identsOf(to);
+  if (!left.length || left.join('|') !== right.join('|')) return false;
+  return from.trim() !== to.trim();
+}
+
+function applySlot(source: string, from: string, to: string): string | null {
+  if (!canSlot(from, to)) return null;
+  const names: string[] = [];
+  const seen = new Map<string, number>();
+  const pieces: string[] = [];
+  const token = /\b[A-Za-z_][A-Za-z0-9_]*\b|\s+|[^\sA-Za-z_]+/g;
+  for (const part of from.trim().match(token) ?? []) {
+    if (/^[A-Za-z_]/.test(part) && !KEYWORDS.has(part)) {
+      const index = seen.get(part);
+      if (index === undefined) {
+        seen.set(part, names.length);
+        names.push(part);
+        pieces.push('([A-Za-z_][A-Za-z0-9_]*)');
+      } else {
+        pieces.push(`\\${index + 1}`);
+      }
+    } else if (/^\s+$/.test(part)) pieces.push('\\s+');
+    else pieces.push(part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  }
+  let pattern: RegExp;
+  try {
+    pattern = new RegExp(`^${pieces.join('')}$`);
+  } catch {
+    return null;
+  }
+  const lines = source.split('\n');
+  const hits: { index: number; groups: string[] }[] = [];
+  lines.forEach((line, index) => {
+    const match = pattern.exec(line.trim());
+    if (!match) return;
+    hits.push({ index, groups: match.slice(1) });
+  });
+  if (hits.length !== 1) return null;
+  const hit = hits[0];
+  if (!hit) return null;
+  const values = new Map(names.map((name, index) => [name, hit.groups[index] ?? name]));
+  const rebuilt = to
+    .trim()
+    .split(/(\b[A-Za-z_][A-Za-z0-9_]*\b)/g)
+    .map((part) => (values.get(part) && !KEYWORDS.has(part) ? values.get(part) : part))
+    .join('');
+  const indent = /^\s*/.exec(lines[hit.index] ?? '')?.[0] ?? '';
+  const next = lines.slice();
+  next[hit.index] = `${indent}${rebuilt}`;
+  return next.join('\n');
+}
+
+/** Jusqu’à six lignes d’un correctif validé, tests compris. Au-delà, ce serait recopier le fichier. */
 export function experienceReplacement(
   files: readonly ExperienceDiffFile[],
-): { from: string; to: string } | null {
-  const pairs: { from: string; to: string }[] = [];
+): { from: string; to: string; language?: string; steps: ExperienceStep[] } | null {
+  const steps: ExperienceStep[] = [];
+  const languages = new Set<string>();
   for (const file of files) {
-    if (isTestPath(file.path)) continue;
-    if (!/\.(ts|tsx|js|mjs|cjs|py)$/.test(file.path)) continue;
+    const language = languageOfPath(file.path);
+    if (!language) continue;
+    languages.add(language);
+    const role: ExperienceStep['role'] = isTestPath(file.path) ? 'test' : 'source';
     for (const hunk of file.hunks) {
       const lines = hunk.lines;
-      for (let i = 0; i < lines.length - 1; i += 1) {
+      let i = 0;
+      while (i < lines.length) {
         const current = lines[i];
-        const next = lines[i + 1];
-        if (!current || !next || current.kind !== 'del' || next.kind !== 'add') continue;
-        const from = current.text.trim();
-        const to = next.text.trim();
-        if (!from || !to || from === to) continue;
-        if (isDeclarationLine(from) || isDeclarationLine(to)) continue;
-        pairs.push({ from, to });
-        i += 1;
+        if (!current || current.kind !== 'del') {
+          i += 1;
+          continue;
+        }
+        const deleted: string[] = [];
+        while (i < lines.length && lines[i]?.kind === 'del') {
+          deleted.push(lines[i]?.text.trim() ?? '');
+          i += 1;
+        }
+        const added: string[] = [];
+        while (i < lines.length && lines[i]?.kind === 'add') {
+          added.push(lines[i]?.text.trim() ?? '');
+          i += 1;
+        }
+        if (!deleted.length || !added.length) continue;
+        if (deleted.length === 1 && added.length >= 1) {
+          const from = deleted[0] ?? '';
+          const to = added.join('\n');
+          if (!from || !to || from === to || declares(from) || declares(to)) continue;
+          steps.push({ from, to, role });
+          continue;
+        }
+        if (deleted.length === added.length) {
+          for (let j = 0; j < deleted.length; j += 1) {
+            const from = deleted[j] ?? '';
+            const to = added[j] ?? '';
+            if (!from || !to || from === to || declares(from) || declares(to)) continue;
+            steps.push({ from, to, role });
+          }
+        }
       }
     }
   }
-  const unique = new Map(pairs.map((pair) => [`${pair.from}=>${pair.to}`, pair]));
-  if (unique.size !== 1) return null;
-  return [...unique.values()][0] ?? null;
+  const unique = new Map(steps.map((step) => [`${step.role}|${step.from}=>${step.to}`, step]));
+  const kept = [...unique.values()];
+  if (!kept.length || kept.length > 6 || languages.size > 1) return null;
+  const first = kept[0];
+  if (!first) return null;
+  return {
+    from: first.from,
+    to: first.to,
+    language: [...languages][0],
+    steps: kept,
+  };
 }
 
 function replaceOneLine(source: string, from: string, to: string): string | null {
   const fromTrim = from.trim();
   const toTrim = to.trim();
   if (!fromTrim || !toTrim || fromTrim === toTrim) return null;
-  if (isDeclarationLine(fromTrim) || isDeclarationLine(toTrim)) return null;
+  if (declares(fromTrim) || declares(toTrim)) return null;
   const lines = source.split('\n');
   let count = 0;
   const next = lines.map((line) => {
     if (line.trim() !== fromTrim) return line;
     count += 1;
     const indent = /^\s*/.exec(line)?.[0] ?? '';
-    return `${indent}${toTrim}`;
+    return toTrim
+      .split('\n')
+      .map((part) => `${indent}${part}`)
+      .join('\n');
   });
   if (count !== 1) return null;
   return next.join('\n');
 }
 
+function renamePair(from: string, to: string): { oldName: string; newName: string } | null {
+  const left = from.trim().split(/(\b[A-Za-z_][A-Za-z0-9_]*\b)/g);
+  const right = to.trim().split(/(\b[A-Za-z_][A-Za-z0-9_]*\b)/g);
+  if (left.length !== right.length || from.includes('\n') || to.includes('\n')) return null;
+  let oldName = '';
+  let newName = '';
+  for (let i = 0; i < left.length; i += 1) {
+    if (left[i] === right[i]) continue;
+    if (!/^[A-Za-z_]/.test(left[i] ?? '') || KEYWORDS.has(left[i] ?? '') || KEYWORDS.has(right[i] ?? '')) return null;
+    if (oldName) return null;
+    oldName = left[i] ?? '';
+    newName = right[i] ?? '';
+  }
+  if (!oldName || oldName === newName) return null;
+  return { oldName, newName };
+}
+
+function leavesDanglingRename(result: string, steps: readonly ExperienceStep[]): boolean {
+  for (const step of steps) {
+    const rename = renamePair(step.from, step.to);
+    if (!rename) continue;
+    const still = new RegExp(`\\b${rename.oldName}\\b`).test(result);
+    if (still) return true;
+  }
+  return false;
+}
+
+function applyStepList(source: string, steps: readonly ExperienceStep[]): string | null {
+  let next = source;
+  for (const step of steps) {
+    const exact = replaceOneLine(next, step.from, step.to);
+    const updated = exact ?? applySlot(next, step.from, step.to);
+    if (!updated) return null;
+    next = updated;
+  }
+  if (next === source || leavesDanglingRename(next, steps)) return null;
+  return next;
+}
+
+function recordLanguage(record: LearningRecord): string | undefined {
+  return record.trace?.language && record.trace.language !== 'unknown'
+    ? record.trace.language
+    : record.hint?.language;
+}
+
+function recordSteps(record: LearningRecord, role: 'source' | 'test'): ExperienceStep[] {
+  const hint = record.hint;
+  if (!hint) return [];
+  const steps = hint.steps?.length ? hint.steps : [{ from: hint.from, to: hint.to, role: 'source' as const }];
+  return steps.filter((step) => (step.role ?? 'source') === role);
+}
+
+export interface ApplyExperienceOptions {
+  language?: string;
+  version?: string;
+  role?: 'source' | 'test';
+}
+
 /**
- * Applique l’indice retrouvé dans le source de CE projet.
- * Une fiche non validée, ou qui renommerait une fonction, ne change rien.
+ * Applique l’indice retrouvé dans le fichier de CE projet.
+ * Une fiche non validée, un autre langage, une version différente,
+ * ou un renommage incomplet, ne change rien.
  */
 export function applyExperienceToSource(
   source: string,
   records: readonly LearningRecord[],
-): { source: string; applied: boolean } {
+  options: ApplyExperienceOptions = {},
+): { source: string; applied: boolean; uncertain?: string } {
+  const role = options.role ?? 'source';
+  const python = /^\s*def\s+\w+\s*\(/m.test(source) && !/\bfunction\b/.test(source);
+  const usable = records.filter((record) => {
+    if (record.type !== 'experience' || record.status !== 'validated' || record.origin !== 'mission') return false;
+    if (!record.hint) return false;
+    const language = recordLanguage(record);
+    if (options.language && language && language !== options.language) return false;
+    if (python && language && language !== 'python') return false;
+    const version = record.trace?.runtimeVersion;
+    if (options.version && version && version !== options.version) return false;
+    return recordSteps(record, role).length > 0;
+  });
+  const byFrom = new Map<string, Set<string>>();
+  for (const record of usable) {
+    for (const step of recordSteps(record, role)) {
+      const set = byFrom.get(step.from) ?? new Set<string>();
+      set.add(step.to);
+      byFrom.set(step.from, set);
+    }
+  }
+  const conflicts = [...byFrom.entries()].filter(([, targets]) => targets.size > 1).map(([from]) => from);
+  if (conflicts.length) {
+    return {
+      source,
+      applied: false,
+      uncertain: 'Indices contradictoires sur la même ligne : rien n’est appliqué.',
+    };
+  }
   let next = source;
   let applied = false;
-  for (const record of records) {
-    if (record.type !== 'experience' || record.status !== 'validated' || record.origin !== 'mission') continue;
-    const hint = record.hint;
-    if (!hint) continue;
-    const updated = replaceOneLine(next, hint.from, hint.to);
-    if (!updated || updated === next) continue;
+  for (const record of usable) {
+    const updated = applyStepList(next, recordSteps(record, role));
+    if (!updated) continue;
     next = updated;
     applied = true;
   }
   return { source: next, applied };
 }
 
+const SYMPTOMS: readonly { id: string; re: RegExp }[] = [
+  { id: 'empty-division', re: /liste vide|collection vide|sans [ée]l[ée]ment|aucun [ée]l[ée]ment|\bnan\b|pas un nombre|n['’]est pas un nombre|\binfinity\b/i },
+  { id: 'last-element', re: /dernier [ée]l[ée]ment|apr[èe]s le dernier|d[ée]passe la fin|hors limite/i },
+  { id: 'parse-failure', re: /pas du json|texte inutilisable|unexpected token|syntaxerror/i },
+  { id: 'missing-export', re: /symbole absent|n['’]existe pas dans le module|does not provide an export/i },
+  { id: 'text-on-number', re: /m[ée]thode de (?:texte|cha[îi]ne)|trim is not a function/i },
+  { id: 'fraction-side', re: /partie fractionnaire|partie haute/i },
+  { id: 'weak-assert', re: /assertion qui se compare [àa] elle-m[êe]me|test trop faible|ne contr[ôo]le pas le r[ée]sultat/i },
+];
+
+export function symptomIds(text: string): string[] {
+  return SYMPTOMS.filter((rule) => rule.re.test(text)).map((rule) => rule.id);
+}
+
+function cleanHint(hint: LearningRecord['hint']): LearningRecord['hint'] | undefined {
+  if (!hint) return undefined;
+  const from = hint.from.trim();
+  const to = hint.to.trim();
+  if (!from || !to || from === to || declares(from) || declares(to)) return undefined;
+  const steps = (hint.steps ?? [])
+    .map((step) => ({ from: step.from.trim(), to: step.to.trim(), ...(step.role ? { role: step.role } : {}) }))
+    .filter((step) => step.from && step.to && step.from !== step.to && !declares(step.from) && !declares(step.to))
+    .slice(0, 6);
+  return {
+    from,
+    to,
+    ...(hint.language ? { language: hint.language } : {}),
+    ...(steps.length ? { steps } : {}),
+  };
+}
+
+const EXPERIENCE_LIMITS =
+  'Même langage seulement. Une autre version rend l’indice périmé. Un renommage incomplet n’est pas recopié. Le fichier d’origine n’est pas recopié.';
+
+function passedTrace(input: MissionExperienceInput, hint: LearningRecord['hint']): ExperienceTrace {
+  const blob = `${input.request}\n${input.errorSignature}\n${input.cause}`;
+  const symptoms = symptomIds(blob);
+  return {
+    problem: input.trace?.problem ?? input.request.slice(0, 400),
+    context: input.trace?.context ?? input.files.slice(0, 8).join(', '),
+    firstTry: input.trace?.firstTry ?? input.beforeResult.slice(0, 400),
+    observedErrors: input.trace?.observedErrors ?? input.errorSignature.slice(0, 800),
+    appliedFix: input.trace?.appliedFix ?? input.fix.slice(0, 400),
+    testsRun: input.trace?.testsRun ?? [...input.testCommands].slice(0, 8),
+    finalResult: input.trace?.finalResult ?? input.afterResult.slice(0, 400),
+    limits: input.trace?.limits ?? EXPERIENCE_LIMITS,
+    language: input.trace?.language ?? hint?.language ?? 'unknown',
+    problemType: input.trace?.problemType ?? symptoms[0] ?? 'inconnu',
+    ...(input.trace?.runtimeVersion ? { runtimeVersion: input.trace.runtimeVersion } : {}),
+    symptomIds: input.trace?.symptomIds ?? symptoms,
+    outcome: 'passed',
+  };
+}
+
 /** Une correction de code n’est validée que si les contrôles ont passé. */
 export function experienceFromMission(input: MissionExperienceInput): LearningRecord | null {
   if (!input.ok) return null;
   if (!input.beforeResult.trim() || !input.afterResult.trim()) return null;
-  const hint =
-    input.hint &&
-    !isDeclarationLine(input.hint.from) &&
-    !isDeclarationLine(input.hint.to) &&
-    input.hint.from.trim() !== input.hint.to.trim()
-      ? { from: input.hint.from.trim(), to: input.hint.to.trim() }
-      : undefined;
+  const hint = cleanHint(input.hint);
   return {
     id: input.id,
     type: 'experience',
@@ -548,8 +850,134 @@ export function experienceFromMission(input: MissionExperienceInput): LearningRe
     testCommands: [...input.testCommands].slice(0, 8),
     beforeResult: input.beforeResult.slice(0, 400),
     afterResult: input.afterResult.slice(0, 400),
+    trace: passedTrace(input, hint),
     ...(hint ? { hint } : {}),
   };
+}
+
+export interface FailedExperienceInput {
+  id: string;
+  now: number;
+  request: string;
+  expected: string;
+  happened: string;
+  likelyCause: string;
+  nextHypothesis: string;
+  language?: string;
+  testCommands?: readonly string[];
+}
+
+/** Un essai raté est conservé, jamais comme solution validée, et sans indice applicable. */
+export function experienceAttempt(input: FailedExperienceInput): LearningRecord {
+  const symptoms = symptomIds(`${input.request}\n${input.happened}\n${input.likelyCause}`);
+  return {
+    id: input.id,
+    type: 'experience',
+    content: `${input.request.slice(0, 200)} — essai non validé`,
+    origin: 'mission',
+    createdAt: input.now,
+    lastCheckedAt: input.now,
+    confidence: 0.2,
+    confidenceReason: 'Essai en échec. Ce n’est pas une solution.',
+    status: 'rejected',
+    sources: [{ label: 'mission', fetchedAt: input.now }],
+    links: [],
+    errorSignature: input.happened.slice(0, 1_500),
+    cause: input.likelyCause.slice(0, 400),
+    fix: '',
+    testCommands: [...(input.testCommands ?? [])].slice(0, 8),
+    beforeResult: input.happened.slice(0, 400),
+    afterResult: '',
+    trace: {
+      problem: input.request.slice(0, 400),
+      context: '',
+      firstTry: input.happened.slice(0, 400),
+      observedErrors: input.happened.slice(0, 800),
+      appliedFix: '',
+      testsRun: [...(input.testCommands ?? [])].slice(0, 8),
+      finalResult: 'échec',
+      limits: EXPERIENCE_LIMITS,
+      language: input.language ?? 'unknown',
+      problemType: symptoms[0] ?? 'inconnu',
+      symptomIds: symptoms,
+      outcome: 'failed',
+      expected: input.expected.slice(0, 400),
+      happened: input.happened.slice(0, 400),
+      likelyCause: input.likelyCause.slice(0, 400),
+      nextHypothesis: input.nextHypothesis.slice(0, 400),
+    },
+  };
+}
+
+export interface ExperienceQuery {
+  query: string;
+  errors?: string;
+  language?: string;
+  version?: string;
+  limit?: number;
+}
+
+export interface ExperienceRetrieval {
+  applicable: LearningRecord[];
+  stale: LearningRecord[];
+  uncertain: string | null;
+}
+
+/**
+ * Quelques fiches validées, par symptômes, erreurs et langage.
+ * Pas tout l’index. Une version différente est périmée, pas appliquée.
+ */
+export function retrieveExperiences(
+  records: readonly LearningRecord[],
+  input: ExperienceQuery,
+): ExperienceRetrieval {
+  const limit = input.limit ?? 4;
+  const ask = `${input.query}\n${input.errors ?? ''}`;
+  const asked = new Set(symptomIds(ask));
+  const qTokens = tokens(ask);
+  const ranked: { item: LearningRecord; score: number }[] = [];
+  const stale: LearningRecord[] = [];
+  for (const item of records) {
+    if (item.status !== 'validated' || item.type !== 'experience') continue;
+    const language = recordLanguage(item);
+    if (input.language && language && language !== input.language) continue;
+    const version = item.trace?.runtimeVersion;
+    if (input.version && version && version !== input.version) {
+      stale.push(item);
+      continue;
+    }
+    const hay = tokens(
+      [item.content, item.errorSignature, item.fix, item.cause, item.trace?.problem, item.trace?.observedErrors, item.trace?.context]
+        .filter(Boolean)
+        .join(' '),
+    );
+    const overlap = qTokens.length ? qTokens.filter((token) => hay.includes(token)).length / qTokens.length : 0;
+    const stored = new Set(item.trace?.symptomIds ?? symptomIds(`${item.content} ${item.errorSignature ?? ''} ${item.cause ?? ''}`));
+    const symptomHit = [...asked].some((id) => stored.has(id));
+    if (overlap < 0.2 && !symptomHit) continue;
+    ranked.push({ item, score: overlap + (symptomHit ? 0.35 : 0) });
+  }
+  ranked.sort((a, b) => b.score - a.score || b.item.confidence - a.item.confidence);
+  let applicable = ranked.slice(0, limit).map((row) => ({ ...row.item, reused: (row.item.reused ?? 0) + 1 }));
+  const byFrom = new Map<string, Set<string>>();
+  for (const item of applicable) {
+    const steps = item.hint?.steps?.length ? item.hint.steps : item.hint ? [{ from: item.hint.from, to: item.hint.to }] : [];
+    for (const step of steps) {
+      const set = byFrom.get(step.from) ?? new Set<string>();
+      set.add(step.to);
+      byFrom.set(step.from, set);
+    }
+  }
+  const conflicts = [...byFrom.entries()].filter(([, targets]) => targets.size > 1).map(([from]) => from);
+  let uncertain: string | null = null;
+  if (conflicts.length) {
+    uncertain = 'Indices contradictoires : ils ne sont pas appliqués.';
+    applicable = applicable.filter((item) => {
+      const steps = item.hint?.steps?.length ? item.hint.steps : item.hint ? [{ from: item.hint.from, to: item.hint.to }] : [];
+      return !steps.some((step) => conflicts.includes(step.from));
+    });
+  }
+  return { applicable, stale, uncertain };
 }
 
 export interface TrainRow {
