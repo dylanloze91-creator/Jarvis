@@ -14,6 +14,8 @@ import {
   reviseSkill,
   selectPromptRecords,
   settleSkill,
+  buildFinetuneDataset,
+  datasetSourceFromRecord,
   skillTrainRows,
   randomId,
   resolveLocalOllamaBase,
@@ -363,6 +365,12 @@ export class KnowledgeStore {
 
   async exportSkillRows(): Promise<SkillTrainRow[]> {
     return skillTrainRows(await this.listLearning());
+  }
+
+  /** Jeu régénéré depuis l’index déjà là. Les missions et les bancs se relisent à part. */
+  async exportFinetuneDataset(): Promise<ReturnType<typeof buildFinetuneDataset>> {
+    const records = await this.listLearning();
+    return buildFinetuneDataset(records.map(datasetSourceFromRecord));
   }
 
   async relevantLearning(query: string, limit = 4): Promise<LearningRecord[]> {
