@@ -9,6 +9,7 @@ import {
   retrieveExperiences,
   retrieveMethods,
   correctMethod,
+  noteSkillUse,
   restoreSkillVersion,
   reviseSkill,
   selectPromptRecords,
@@ -306,13 +307,21 @@ export class KnowledgeStore {
       const records = learningOf(index);
       const found = records.find((item) => item.id === id);
       if (!found) return;
-      const next = settleSkill(found, {
-        ok: outcome.ok,
-        now: outcome.now,
-        context: outcome.context,
-        ...(outcome.uncertain ? { uncertain: true } : {}),
-        ...(outcome.cause ? { cause: outcome.cause } : {}),
-      });
+      const next =
+        !outcome.ok && !outcome.uncertain && found.skill && found.status === 'validated'
+          ? noteSkillUse(found, {
+              ok: false,
+              context: outcome.context,
+              now: outcome.now,
+              ...(outcome.cause ? { cause: outcome.cause } : {}),
+            }).record
+          : settleSkill(found, {
+              ok: outcome.ok,
+              now: outcome.now,
+              context: outcome.context,
+              ...(outcome.uncertain ? { uncertain: true } : {}),
+              ...(outcome.cause ? { cause: outcome.cause } : {}),
+            });
       replaceLearning(
         index,
         records.map((item) => (item.id === id ? next : item)),

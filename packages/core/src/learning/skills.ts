@@ -25,6 +25,8 @@ export interface SkillResult {
   detail: string;
   at: number;
   uncertain?: boolean;
+  /** validation : jeu indépendant. use : mission ultérieure. L’origine n’est pas ici. */
+  phase?: 'validation' | 'use';
 }
 
 export interface SkillSnapshot {
@@ -59,6 +61,10 @@ export interface LearningSkill {
   results: SkillResult[];
   history: SkillSnapshot[];
   previousId?: string;
+  /** category, diagnosis ou tool-version. Un correctif d’un seul fichier n’est pas stocké. */
+  scope?: 'category' | 'diagnosis' | 'tool-version';
+  /** Preuve de la mission d’origine. Pas la ligne du correctif. */
+  evidence?: string[];
 }
 
 export interface SkillRun {
@@ -238,7 +244,14 @@ export function settleSkill(record: LearningRecord, outcome: MethodOutcome): Lea
         ...noted.skill!,
         results: [
           ...noted.skill!.results,
-          { context: context.slice(0, 180) || 'contexte', ok: false, detail: 'cause incertaine', at: outcome.now, uncertain: true },
+          {
+            context: context.slice(0, 180) || 'contexte',
+            ok: false,
+            detail: 'cause incertaine',
+            at: outcome.now,
+            uncertain: true,
+            ...(outcome.phase ? { phase: outcome.phase } : {}),
+          },
         ].slice(-8),
       },
     };
@@ -259,7 +272,16 @@ export function settleSkill(record: LearningRecord, outcome: MethodOutcome): Lea
       skill: {
         ...skill,
         limits: [...skill.limits, cause].slice(-8),
-        results: [...skill.results, { context: context.slice(0, 180) || 'contexte', ok: false, detail: cause, at: outcome.now }].slice(-8),
+        results: [
+          ...skill.results,
+          {
+            context: context.slice(0, 180) || 'contexte',
+            ok: false,
+            detail: cause,
+            at: outcome.now,
+            ...(outcome.phase ? { phase: outcome.phase } : {}),
+          },
+        ].slice(-8),
       },
     };
   }
@@ -270,7 +292,13 @@ export function settleSkill(record: LearningRecord, outcome: MethodOutcome): Lea
       ...noted.skill!,
       results: [
         ...noted.skill!.results,
-        { context: context.slice(0, 180) || 'contexte', ok: true, detail: 'les tests de ce contexte ont passé', at: outcome.now },
+        {
+          context: context.slice(0, 180) || 'contexte',
+          ok: true,
+          detail: 'les tests de ce contexte ont passé',
+          at: outcome.now,
+          ...(outcome.phase ? { phase: outcome.phase } : {}),
+        },
       ].slice(-8),
     },
   };

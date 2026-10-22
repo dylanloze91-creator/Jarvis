@@ -49,7 +49,7 @@ function fullRule(source: string): boolean {
 describe('contrainte structurée', () => {
   it('ne grave pas la convention synthétique dans le moteur', () => {
     const dir = fileURLToPath(new URL('.', import.meta.url));
-    for (const name of ['constraints.ts', 'continuous.ts', 'injection.ts', 'methods.ts', 'skills.ts']) {
+    for (const name of ['constraints.ts', 'continuous.ts', 'injection.ts', 'methods.ts', 'skills.ts', 'skillProof.ts']) {
       const text = readFileSync(join(dir, name), 'utf8');
       expect(text, name).not.toContain(MARKER);
       expect(text, name).not.toContain(WRAP);

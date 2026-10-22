@@ -896,6 +896,7 @@ export class TaskRun extends TaskRunBase {
       }
     }
     this.injectionBackup.clear();
+    for (const id of this.pendingSkills) this.hooks.onSkillFailed?.(id);
     this.pendingSkills = [];
     this.injectionBlocked = true;
     const cause = 'l’indice appliqué a échoué aux tests de ce projet';

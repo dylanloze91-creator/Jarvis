@@ -58,6 +58,8 @@ export interface MethodOutcome {
   cause?: string;
   uncertain?: boolean;
   now: number;
+  /** validation : jeu indépendant. use : mission ultérieure. */
+  phase?: 'validation' | 'use';
 }
 
 export interface ApplyMethodOptions {

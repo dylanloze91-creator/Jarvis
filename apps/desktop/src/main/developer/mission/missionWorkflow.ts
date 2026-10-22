@@ -73,7 +73,7 @@ import {
   memoryRetrievalEnabled,
   skillLibraryEnabled,
   experienceReplacement,
-  skillFromObservation,
+  proposeSkillFromMission,
   type LearningRecord,
   resolveRoleModel,
   buildMissionModelPlan,
@@ -305,6 +305,7 @@ export class MissionWorkflow {
   /** Méthodes appliquées pendant la tâche, à régler après les tests. */
   private appliedMethodIds: string[] = [];
   private uncertainMethodIds: string[] = [];
+  private failedSkillIds: string[] = [];
   /** Déchargements en série : un modèle à la fois, même après un délai. */
   private readonly modelSwitch = createModelSwitch();
 
@@ -910,6 +911,7 @@ export class MissionWorkflow {
     this.levelRetried = false;
     this.appliedMethodIds = [];
     this.uncertainMethodIds = [];
+    this.failedSkillIds = [];
     await this.persist();
     if (link && project) {
       const source = await this.deps.store.load(project.id, link.missionId);
@@ -2232,6 +2234,9 @@ export class MissionWorkflow {
       onMethodUncertain: (id) => {
         if (!this.uncertainMethodIds.includes(id)) this.uncertainMethodIds.push(id);
       },
+      onSkillFailed: (id) => {
+        if (!this.failedSkillIds.includes(id)) this.failedSkillIds.push(id);
+      },
       directRun: kind === 'new-project' || kind === 'modify' || kind === 'fix',
       autoApprovePlan: kind === 'new-project' || kind === 'modify' || kind === 'fix',
       docsOnly: this.current?.kind === 'document',
@@ -2409,21 +2414,31 @@ export class MissionWorkflow {
           },
         });
         if (experience) await this.deps.rememberLearning?.(experience);
-        const observed = replacement
-          ? skillFromObservation({
+        const attempts = task.runs
+          .map((run, index) => {
+            const failure = run.newFailures[0];
+            return failure ? `essai ${index + 1}: ${failure}` : `essai ${index + 1}: aucun échec nouveau`;
+          })
+          .filter((line) => line.trim());
+        const proposal = replacement
+          ? proposeSkillFromMission({
               id: randomId(),
               now: this.now,
               ok: true,
+              language: replacement.language ?? 'unknown',
               request: mission.request,
+              constraints: (task.plan?.criteria ?? []).join('\n') || task.plan?.summary || '',
+              attempts,
+              errors: errors || firstFailure || '',
               beforeSource: replacement.from,
               afterSource: replacement.to,
-              language: replacement.language ?? 'unknown',
-              tests: '',
+              testsRun: task.plan?.tests ?? [],
+              finalResult: 'contrôles passés',
               originLabel: mission.projectId,
               runtimeVersion: process.version,
             })
           : null;
-        if (observed) await this.deps.rememberLearning?.(observed);
+        if (proposal?.action === 'candidate' && proposal.record) await this.deps.rememberLearning?.(proposal.record);
       } else {
         const attempt = experienceAttempt({
           id: randomId(),
@@ -2458,8 +2473,17 @@ export class MissionWorkflow {
         now: this.now,
       });
     }
+    for (const id of this.failedSkillIds) {
+      await this.deps.settleLearning?.(id, {
+        ok: false,
+        context,
+        cause: 'la compétence a échoué aux tests de ce projet',
+        now: this.now,
+      });
+    }
     this.appliedMethodIds = [];
     this.uncertainMethodIds = [];
+    this.failedSkillIds = [];
     this.activeRole = null;
     await this.persist();
   }

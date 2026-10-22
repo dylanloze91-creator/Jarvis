@@ -95,6 +95,8 @@ export interface TaskHooks {
   onMethodApplied?: (recordId: string) => void;
   /** La méthode n’a pas tranché : ni les étapes ni le statut ne changent. */
   onMethodUncertain?: (recordId: string) => void;
+  /** Compétence appliquée puis tests rouges. Le même essai ne doit pas être rejoué à l’aveugle. */
+  onSkillFailed?: (recordId: string) => void;
   onPhase?: (
     phase: TaskPhase,
     status: TaskPhaseStatus,
