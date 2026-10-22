@@ -286,6 +286,11 @@ export class KnowledgeStore {
     }
   }
 
+  async ruleLearning(query: string, limit = 4): Promise<LearningRecord[]> {
+    const hits = await this.promptLearning(query, limit);
+    return hits.filter((item) => item.type === 'preference' || item.type === 'correction');
+  }
+
   async applicableLearning(query: string, limit = 4): Promise<LearningRecord[]> {
     const records = await this.listLearning();
     const found = retrieveExperiences(records, { query, version: process.version, limit });

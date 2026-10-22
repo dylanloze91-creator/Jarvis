@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { Agent, DEFAULT_SYSTEM_PROMPT, composeSystemPrompt, looksLikeWebResearchIntent, type AgentEvent } from './agent.js';
 import { learningReminder, noteToRecord } from '../learning/continuous.js';
+import { enforceConstraints } from '../learning/constraints.js';
 import { ToolManager, defineTool } from '../tools/manager.js';
 import type { ChatRequest, ChatStreamEvent, LLMProvider } from '../providers/types.js';
 import { createMessage } from '../types.js';
@@ -117,6 +118,32 @@ describe('Agent', () => {
     expect(provider.requests[1]?.messages.at(-1)?.content).toMatch(/sans le déclarer/);
     expect(provider.requests[1]?.system).toMatch(/contraintes du dernier message/);
     expect(events.filter((event) => event.type === 'assistant_message')).toHaveLength(1);
+  });
+
+  it('remplace la réponse par le texte dont les contraintes sont vertes, sans troisième essai', async () => {
+    const preference = noteToRecord({
+      id: 'forme',
+      text: 'Retiens que chaque fonction exportée porte le préfixe zz_ et chaque return s’écrit return zzWrap( ... ).',
+      now: 1,
+    })!;
+    const provider = new ScriptedProvider([
+      [{ type: 'text', delta: 'function add(a, b) { return a + b; }' }],
+      [{ type: 'text', delta: 'function add(a, b) { return a + b; }' }],
+    ]);
+    const agent = new Agent(provider, new ToolManager(), {
+      systemPrompt: 'test',
+      learningReview: (reply) => learningReminder(reply, [preference]),
+      learningFinalize: (reply) => {
+        const checked = enforceConstraints(reply, [preference]);
+        return checked.ok ? checked.source : reply;
+      },
+    });
+    const events = await collect(agent, 'Écris une fonction qui additionne deux nombres.');
+    const deltas = events.flatMap((event) => (event.type === 'assistant_delta' ? [event.delta] : []));
+    expect(deltas).toEqual(['export function zz_add(a, b) { return zzWrap(a + b); }']);
+    expect(provider.requests).toHaveLength(2);
+    const message = events.find((event) => event.type === 'assistant_message');
+    expect(message && message.type === 'assistant_message' ? message.message.content : '').toContain('zzWrap');
   });
 
   it('diffuse une réponse textuelle puis termine', async () => {

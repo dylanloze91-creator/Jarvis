@@ -67,6 +67,11 @@ export interface AgentOptions {
    * un second essai. Un seul essai. Null : la réponse est gardée.
    */
   learningReview?: (reply: string) => string | null;
+  /**
+   * Après le rappel, applique les contraintes que le vérificateur peut tester.
+   * Le texte n’est remplacé que si l’appelant renvoie une réponse.
+   */
+  learningFinalize?: (reply: string) => string;
 }
 
 export const DEFAULT_SYSTEM_PROMPT = [
@@ -316,6 +321,11 @@ export class Agent {
             'Tu corriges ta dernière réponse. Suis uniquement les contraintes du dernier message. Si une seule ligne est demandée, n’ouvre pas un bloc de code.';
           conversation.push(createMessage('user', reminder));
           continue;
+        }
+        const finalized = this.options.learningFinalize?.(text);
+        if (finalized && finalized !== text) {
+          text = finalized;
+          assistantMessage.content = finalized;
         }
         if (this.options.learningReview && text) yield { type: 'assistant_delta', delta: text };
         yield { type: 'assistant_message', message: assistantMessage };

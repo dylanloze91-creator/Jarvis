@@ -15,6 +15,8 @@ import {
   skillLibraryEnabled,
   learningReminder,
   noteToRecord,
+  enforceConstraints,
+  debugLog,
   withVoiceOriginNotice,
   chatProviderConfig,
   type AuditLogStore,
@@ -60,7 +62,11 @@ export class ChatSession {
     settings: Settings,
     text: string,
     source: 'text' | 'voice',
-  ): Promise<{ systemPrompt: string; learningReview?: (reply: string) => string | null }> {
+  ): Promise<{
+    systemPrompt: string;
+    learningReview?: (reply: string) => string | null;
+    learningFinalize?: (reply: string) => string;
+  }> {
     const base = withKnowledgePrompt(
       withSiteBlockPrompt(
         withVoiceOriginNotice(settings.systemPrompt, source) +
@@ -89,9 +95,18 @@ export class ChatSession {
         (item.origin === 'user' || item.origin === 'mission') &&
         !(item.type === 'experience' && item.hint),
     );
+    const finalize = (reply: string): string => {
+      const checked = enforceConstraints(reply, trusted, { limit: dev?.maxFixAttempts });
+      if (settings.debugLogging) {
+        for (const line of checked.trace) debugLog(true, 'contrainte', `${line.stage} : ${line.detail}`);
+      }
+      return checked.ok ? checked.source : reply;
+    };
     return {
       systemPrompt: memory ? `${base}\n\n${memory}` : base,
-      ...(trusted.length ? { learningReview: (reply: string) => learningReminder(reply, trusted) } : {}),
+      ...(trusted.length
+        ? { learningReview: (reply: string) => learningReminder(reply, trusted), learningFinalize: finalize }
+        : {}),
     };
   }
 
@@ -151,6 +166,7 @@ export class ChatSession {
       systemPrompt: turn.systemPrompt,
       temperature: settings.temperature,
       ...(turn.learningReview ? { learningReview: turn.learningReview } : {}),
+      ...(turn.learningFinalize ? { learningFinalize: turn.learningFinalize } : {}),
     });
 
     let visibleReply = false;

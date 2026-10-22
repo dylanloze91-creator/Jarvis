@@ -6,3 +6,4 @@ export * from './continuous.js';
 export * from './methods.js';
 export * from './skills.js';
 export * from './injection.js';
+export * from './constraints.js';

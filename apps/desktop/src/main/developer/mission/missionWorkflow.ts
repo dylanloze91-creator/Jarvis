@@ -247,6 +247,8 @@ export interface MissionDeps {
   learningRecall?: (query: string) => Promise<string>;
   /** Mêmes fiches, pour appliquer un indice dans les fichiers de CE projet. */
   learningRecords?: (query: string) => Promise<LearningRecord[]>;
+  /** Préférences et corrections explicites, pour les vérifier après génération. */
+  ruleLearning?: (query: string) => Promise<LearningRecord[]>;
   rememberLearning?: (record: LearningRecord) => Promise<void>;
   /** Met à jour une méthode déjà enregistrée, par identifiant. */
   settleLearning?: (
@@ -2207,6 +2209,7 @@ export class MissionWorkflow {
       recallExperiences: this.deps.learningRecords
         ? (query) => this.deps.learningRecords!(query)
         : undefined,
+      recallRules: this.deps.ruleLearning ? (query) => this.deps.ruleLearning!(query) : undefined,
       injectionMemory: memoryRetrievalEnabled(this.developer()),
       injectionSkills: skillLibraryEnabled(this.developer()),
       onInjectionRejected: (cause) => {

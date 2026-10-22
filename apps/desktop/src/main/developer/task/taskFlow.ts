@@ -60,6 +60,8 @@ import {
   codeSymptomQuery,
   selectInjection,
   languageOfPath,
+  enforceConstraints,
+  checkConstraints,
   type LearningRecord,
 } from '@jarvis/core';
 import { invalidateProjectInventory } from './projectInventoryCache.js';
@@ -139,6 +141,7 @@ export class TaskRun extends TaskRunBase {
   private readonly adoptedWrites = new Set<string>();
   private readonly injectionBackup = new Map<string, string>();
   private injectionBlocked = false;
+  private ruleRecords: LearningRecord[] | null = null;
   private pendingSkills: string[] = [];
 
   constructor(
@@ -906,6 +909,77 @@ export class TaskRun extends TaskRunBase {
     this.pendingSkills = [];
   }
 
+  private async loadRules(): Promise<LearningRecord[]> {
+    if (this.ruleRecords) return this.ruleRecords;
+    const recall = this.hooks.recallRules;
+    if (!recall) {
+      this.ruleRecords = [];
+      return this.ruleRecords;
+    }
+    try {
+      this.ruleRecords = await recall(this.state.request);
+    } catch {
+      this.ruleRecords = [];
+    }
+    return this.ruleRecords;
+  }
+
+  private constraintPaths(): string[] {
+    if (!this.sandbox?.path) return [];
+    return this.state.diff
+      .map((file) => file.path)
+      .filter((rel) => /\.(?:[cm]?js|jsx|ts|tsx)$/.test(rel) && !/\.(?:test|spec)\.[cm]?[jt]sx?$/.test(rel));
+  }
+
+  /** Édite seulement un fichier dont une contrainte de code est encore rouge. */
+  private async applyRetrievedConstraints(): Promise<void> {
+    const root = this.sandbox?.path;
+    const records = await this.loadRules();
+    if (!root || !records.length) return;
+    for (const rel of this.constraintPaths()) {
+      const abs = join(root, rel);
+      if (!existsSync(abs)) continue;
+      let source = '';
+      try {
+        source = await readFile(abs, 'utf8');
+      } catch {
+        continue;
+      }
+      const checked = enforceConstraints(source, records, { limit: this.state.maxAttempts, path: rel });
+      const retrieved = checked.trace.some((line) => line.stage === 'retrieve' && line.ok);
+      if (!retrieved) continue;
+      for (const line of checked.trace) this.host.log(`${line.stage} : ${line.detail}`);
+      if (!checked.changed || checked.source === source) continue;
+      await writeFile(abs, checked.source, 'utf8');
+      this.host.log(
+        checked.ok
+          ? `Contrainte tenue dans ${rel}.`
+          : `Contrainte encore rouge dans ${rel}. La mission ne sera pas marquée réussie.`,
+      );
+    }
+  }
+
+  private async unmetConstraints(): Promise<string[]> {
+    const root = this.sandbox?.path;
+    const records = await this.loadRules();
+    if (!root || !records.length) return [];
+    const unmet: string[] = [];
+    for (const rel of this.constraintPaths()) {
+      const abs = join(root, rel);
+      if (!existsSync(abs)) continue;
+      let source = '';
+      try {
+        source = await readFile(abs, 'utf8');
+      } catch {
+        continue;
+      }
+      for (const failure of checkConstraints(source, records, { path: rel })) {
+        if (failure.verify === 'name-prefix' || failure.verify === 'return-wrapper') unmet.push(`${rel} : ${failure.message}`);
+      }
+    }
+    return unmet;
+  }
+
   private experienceSourcePaths(notes: readonly string[], root: string): string[] {
     const seen = new Set<string>();
     const out: string[] = [];
@@ -1061,13 +1135,14 @@ export class TaskRun extends TaskRunBase {
   ): Promise<CodeTaskRun> {
     const results = await this.testSeries(stepId, step, signal, pause);
     const comparison = compareRuns(this.state.baseline ?? [], results);
+    const unmet = await this.unmetConstraints();
     const run: CodeTaskRun = {
       label,
       at: Date.now(),
       results,
-      newFailures: comparison.newFailures,
+      newFailures: [...comparison.newFailures, ...unmet],
       fixed: comparison.fixed,
-      ok: comparison.ok,
+      ok: comparison.ok && unmet.length === 0,
     };
     this.state.runs.push(run);
     step(
@@ -1401,6 +1476,7 @@ export class TaskRun extends TaskRunBase {
     const baselineNotes = (state.baseline ?? []).flatMap((item) => [...item.failures, item.excerpt]);
     const hintedOnEdit = await this.applyRecalledExperience(baselineNotes);
     if (hintedOnEdit.length) await this.checkpoint('Indice d’expérience', signal);
+    await this.applyRetrievedConstraints();
     if (state.diff.length === 0) {
       if (this.hooks.fileByFile) {
         const reason =
@@ -1523,6 +1599,7 @@ export class TaskRun extends TaskRunBase {
       await this.checkpoint(`Correction ${n}`, signal);
       const hinted = await this.applyRecalledExperience([...run.newFailures, ...excerpts]);
       if (hinted.length) await this.checkpoint('Indice d’expérience', signal);
+      await this.applyRetrievedConstraints();
       this.hooks.onPhase?.('fix', 'done', `${fix.calls.length} action(s)`, {
         files: state.diff.map((f) => f.path),
         tokPerSec: speed(fix.usage),

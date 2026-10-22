@@ -586,6 +586,7 @@ function registerIpc(): void {
         skills: skillLibraryEnabled(settings.developer),
       }),
     learningRecords: async (query) => knowledge.applicableLearning(query, 4),
+    ruleLearning: async (query) => knowledge.ruleLearning(query, 4),
     rememberLearning: async (record) => {
       await knowledge.applyLearning(record);
     },

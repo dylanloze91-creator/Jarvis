@@ -83,6 +83,8 @@ export interface TaskHooks {
    * de ce projet. Sans ce rappel, la boucle ne change rien de plus.
    */
   recallExperiences?: (query: string) => Promise<import('@jarvis/core').LearningRecord[]>;
+  /** Règles explicites retrouvées pour cette demande. Absentes : aucun contrôle de convention. */
+  recallRules?: (query: string) => Promise<import('@jarvis/core').LearningRecord[]>;
   /** Récupération des expériences. Absente ou fausse : aucun indice écrit. */
   injectionMemory?: boolean;
   /** Bibliothèque de compétences. Absente ou fausse : aucune compétence lancée. */

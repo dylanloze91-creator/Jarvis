@@ -132,6 +132,8 @@ export interface ControllerDeps {
   verifyWebGameRuntime?: (root: string) => Promise<{ ok: boolean; detail: string }>;
   learningRecall?: (query: string) => Promise<string>;
   learningRecords?: (query: string) => Promise<import('@jarvis/core').LearningRecord[]>;
+  /** Règles explicites (préférences et corrections), séparées des expériences. */
+  ruleLearning?: (query: string) => Promise<import('@jarvis/core').LearningRecord[]>;
   rememberLearning?: (record: import('@jarvis/core').LearningRecord) => Promise<void>;
   settleLearning?: (
     id: string,
@@ -432,6 +434,7 @@ export class DeveloperController {
               }),
         learningRecall: deps.learningRecall,
         learningRecords: deps.learningRecords,
+        ruleLearning: deps.ruleLearning,
         rememberLearning: deps.rememberLearning,
         settleLearning: deps.settleLearning,
         webResearch: async (query, request) => {

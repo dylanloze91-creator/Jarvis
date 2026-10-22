@@ -4,6 +4,7 @@
  */
 import type { LearningMethod } from './methods.js';
 import type { LearningSkill } from './skills.js';
+import { checkConstraints } from './constraints.js';
 
 export const LEARNING_TYPES = [
   'preference',
@@ -355,6 +356,9 @@ export function learningIssues(reply: string, records: readonly LearningRecord[]
         issues.push('La réponse doit tenir sur une seule ligne.');
       }
     }
+  }
+  for (const failure of checkConstraints(text, records)) {
+    if (failure.verify === 'name-prefix' || failure.verify === 'return-wrapper') issues.push(failure.message);
   }
   return [...new Set(issues)];
 }
