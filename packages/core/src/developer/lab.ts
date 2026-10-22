@@ -64,11 +64,17 @@ export interface LabBrief {
 
 const ID = /^[a-z0-9-]{3,80}$/;
 
+/** Le brief nomme le chemin relatif attendu et la règle du dossier. Pas la solution. */
+export function labPathRule(paths: readonly string[]): string {
+  const list = paths.map((path) => path.trim()).filter(Boolean).join(', ');
+  return `Chemins relatifs autorisés : ${list}. Écris ces chemins dans le dossier de travail. Un chemin hors dossier est refusé et n'est pas recopié ailleurs.`;
+}
+
 export function labBrief(mission: LabMission): LabBrief {
   return {
     id: mission.id,
     goal: mission.goal,
-    constraints: [...mission.constraints],
+    constraints: [...mission.constraints, labPathRule(mission.starterFiles.map((file) => file.path))],
     passCriteria: [...mission.passCriteria],
     files: mission.starterFiles.map((file) => ({ ...file })),
   };

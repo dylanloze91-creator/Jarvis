@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process';
+import { existsSync, readFileSync } from 'node:fs';
 import { mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -16,7 +17,7 @@ import {
   skillBrief,
   validateLabMission,
 } from './lab.js';
-import { ollamaLabModel, probeLabModel, runLabMission, type LabModel } from './labRunner.js';
+import { ollamaLabModel, probeLabModel, resolveWorkPath, runLabMission, type LabModel } from './labRunner.js';
 
 function stub(write: { path: string; content: string } | null, text = ''): LabModel {
   return {
@@ -211,6 +212,105 @@ describe('laboratoire de missions', () => {
     expect(
       levelSound([{ excluded: false, evidenceId: 'x', promptHasHidden: false, verifiedWithoutExit: false }]),
     ).toBe(true);
+  });
+
+  it('accepte un chemin dans le dossier, refuse l’extérieur, signale un fichier inchangé, et exige les tests', async () => {
+    const root = '/tmp/jarvis-lab-root';
+    expect(resolveWorkPath(root, `${root}/src/keel.mjs`)).toEqual({
+      ok: true,
+      full: `${root}/src/keel.mjs`,
+      relative: 'src/keel.mjs',
+    });
+    expect(resolveWorkPath(root, '/tmp/keel.js').ok).toBe(false);
+    expect(resolveWorkPath(root, '/path/to/keel.mjs').ok).toBe(false);
+    expect(resolveWorkPath(root, 'src/../../tmp/keel.js').ok).toBe(false);
+    expect(resolveWorkPath(`${root}/work`, `${root}/work-evil/src/keel.mjs`).ok).toBe(false);
+
+    const mission = referenceMissions().find((item) => item.id === 'l1-keel-sign')!;
+    const dir = await mkdtemp(join(tmpdir(), 'jarvis-lab-path-'));
+    const correct = 'export function keel(n) {\n  if (n > 0) return 1;\n  if (n < 0) return -1;\n  return 0;\n}\n';
+    const insideRoot = join(dir, 'inside');
+    const inside = await runLabMission({
+      mission,
+      model: stub({ path: join(insideRoot, 'src/keel.mjs'), content: correct }),
+      arm: 'alone',
+      workRoot: insideRoot,
+      synthetic: true,
+      maxAttempts: 1,
+    });
+    expect(inside.prompt).toContain('Chemins relatifs autorisés : src/keel.mjs');
+    expect(inside.evidence?.status).toBe('success_verified');
+    expect(inside.status).not.toBe('accepted');
+    expect(await readFile(join(insideRoot, 'src/keel.mjs'), 'utf8')).toContain('return 1');
+
+    const beforeTmp = existsSync('/tmp/keel.js') ? readFileSync('/tmp/keel.js', 'utf8') : null;
+    const outside = await runLabMission({
+      mission,
+      model: stub({ path: '/tmp/keel.js', content: correct }),
+      arm: 'alone',
+      workRoot: join(dir, 'outside'),
+      synthetic: true,
+      maxAttempts: 2,
+    });
+    expect(outside.evidence?.status).not.toBe('success_verified');
+    expect(outside.attempts).toHaveLength(2);
+    expect(outside.prompt).toContain('chemin refusé');
+    expect(outside.prompt).toContain('Chemin autorisé : src/keel.mjs');
+    expect(outside.prompt).toMatch(/expected|Expected/);
+    expect(outside.prompt).not.toContain('assert.equal');
+    expect(outside.prompt).not.toContain('hidden/keel.test.mjs');
+    expect(await readFile(join(dir, 'outside/src/keel.mjs'), 'utf8')).toContain('return 0');
+    expect(existsSync('/tmp/keel.js') ? readFileSync('/tmp/keel.js', 'utf8') : null).toBe(beforeTmp);
+
+    const foreign = await runLabMission({
+      mission,
+      model: stub({ path: '/path/to/keel.mjs', content: correct }),
+      arm: 'alone',
+      workRoot: join(dir, 'foreign'),
+      synthetic: true,
+      maxAttempts: 1,
+    });
+    expect(foreign.evidence?.status).not.toBe('success_verified');
+    expect(foreign.attempts[0]?.toolFeedback).toContain('Chemin autorisé : src/keel.mjs');
+    expect(existsSync('/path/to/keel.mjs')).toBe(false);
+    expect(await readFile(join(dir, 'foreign/src/keel.mjs'), 'utf8')).toContain('return 0');
+
+    const unchanged = await runLabMission({
+      mission,
+      model: stub({ path: 'src/keel.mjs', content: mission.starterFiles[0]!.content }),
+      arm: 'alone',
+      workRoot: join(dir, 'same'),
+      synthetic: true,
+      maxAttempts: 2,
+    });
+    expect(unchanged.prompt).toContain('n’a pas changé');
+    expect(unchanged.prompt).toContain('src/keel.mjs');
+    expect(unchanged.prompt).toMatch(/expected|Expected/);
+    expect(unchanged.evidence?.status).not.toBe('success_verified');
+    expect(unchanged.attempts).toHaveLength(2);
+
+    const quote = referenceMissions().find((item) => item.id === 'l3-quote-fee')!;
+    const stripped = await runLabMission({
+      mission: quote,
+      model: stub({
+        path: 'src/quote.mjs',
+        content: 'export function quote(cents) {\n  return cents + fee(cents) + fee(cents);\n}\n',
+      }),
+      arm: 'alone',
+      workRoot: join(dir, 'quote'),
+      synthetic: true,
+      maxAttempts: 1,
+    });
+    expect(stripped.evidence?.status).not.toBe('success_verified');
+    const doubled = await runLabMission({
+      mission: quote,
+      model: stub({ path: 'src/quote.mjs', content: quote.starterFiles[1]!.content }),
+      arm: 'alone',
+      workRoot: join(dir, 'double'),
+      synthetic: true,
+      maxAttempts: 1,
+    });
+    expect(doubled.evidence?.status).not.toBe('success_verified');
   });
 
   it('appelle le modèle réel, ou dit que la série est bloquée', async () => {

@@ -46,6 +46,7 @@ export interface LabAttempt {
   failed: number | null;
   summary: string;
   shownToModel: string;
+  toolFeedback: string;
   regressionFailed?: boolean;
 }
 
@@ -84,7 +85,7 @@ const TOOLS = [
   },
   {
     name: 'write_file',
-    description: 'Écrit un fichier du dossier de travail. Pas de test, pas de chemin hors dossier.',
+    description: 'Écrit un chemin relatif autorisé du dossier, ou un chemin absolu déjà dans ce dossier. Pas de test.',
     parameters: {
       type: 'object',
       properties: { path: { type: 'string' }, content: { type: 'string' } },
@@ -118,13 +119,50 @@ export function sanitizeTestFeedback(output: string): string {
   return kept || 'Un test a échoué. Le fichier de test n’est pas montré.';
 }
 
-function safePath(root: string, rel: string): string | null {
-  if (!rel || rel.includes('..') || rel.startsWith('/') || rel.includes('\\') || rel.includes('hidden')) return null;
-  if (/\.test\.mjs$/.test(rel)) return null;
-  const full = join(root, rel);
-  const prefix = root.endsWith('/') ? root : `${root}/`;
-  if (!full.startsWith(prefix)) return null;
-  return full;
+function posixParts(input: string): string[] | null {
+  const parts: string[] = [];
+  for (const part of input.split('/')) {
+    if (!part || part === '.') continue;
+    if (part === '..') {
+      if (parts.length === 0) return null;
+      parts.pop();
+      continue;
+    }
+    if (part.includes('\\')) return null;
+    parts.push(part);
+  }
+  return parts;
+}
+
+/** Chemin relatif, ou absolu déjà dans la racine. Un chemin étranger n’est pas réécrit dedans. */
+export function resolveWorkPath(
+  root: string,
+  requested: string,
+): { ok: true; full: string; relative: string } | { ok: false } {
+  if (!requested || requested.includes('\\') || requested.includes('\0')) return { ok: false };
+  const rootParts = posixParts(root.startsWith('/') ? root : `/${root}`);
+  if (!rootParts || rootParts.length === 0) return { ok: false };
+  const rootNorm = `/${rootParts.join('/')}`;
+  let relative = '';
+  if (requested.startsWith('/')) {
+    const absParts = posixParts(requested);
+    if (!absParts) return { ok: false };
+    const abs = `/${absParts.join('/')}`;
+    if (abs !== rootNorm && !abs.startsWith(`${rootNorm}/`)) return { ok: false };
+    relative = abs === rootNorm ? '' : abs.slice(rootNorm.length + 1);
+  } else {
+    const relParts = posixParts(requested);
+    if (!relParts) return { ok: false };
+    relative = relParts.join('/');
+  }
+  if (!relative || relative.includes('hidden') || relative.endsWith('.test.mjs')) return { ok: false };
+  const full = `${rootNorm}/${relative}`;
+  if (!full.startsWith(`${rootNorm}/`)) return { ok: false };
+  return { ok: true, full, relative };
+}
+
+function pathRefusal(requested: string, allowed: readonly string[]): string {
+  return `chemin refusé : ${requested || '(vide)'} est hors du dossier. Chemin autorisé : ${allowed.join(', ')}`;
 }
 
 function nodeProcess(): { execPath: string; version: string; env: { PATH?: string } } {
@@ -160,24 +198,45 @@ async function listRel(dir: string, prefix = ''): Promise<string[]> {
   return out.sort();
 }
 
-async function applyTool(root: string, call: ToolCall): Promise<string> {
+async function readAllowed(root: string, allowed: readonly string[]): Promise<Map<string, string | null>> {
+  const found = new Map<string, string | null>();
+  for (const path of allowed) {
+    const resolved = resolveWorkPath(root, path);
+    found.set(path, resolved.ok ? await readFile(resolved.full, 'utf8').catch(() => null) : null);
+  }
+  return found;
+}
+
+function sameBytes(left: Map<string, string | null>, right: Map<string, string | null>, allowed: readonly string[]): boolean {
+  return allowed.every((path) => left.get(path) === right.get(path));
+}
+
+async function applyTool(root: string, call: ToolCall, allowed: readonly string[]): Promise<string> {
   if (call.name === 'list_files') return (await listRel(root)).join('\n') || '(vide)';
   if (call.name === 'read_file') {
-    const full = safePath(root, String(call.arguments.path ?? ''));
-    if (!full) return 'chemin refusé';
-    return readFile(full, 'utf8').catch(() => 'fichier absent');
+    const resolved = resolveWorkPath(root, String(call.arguments.path ?? ''));
+    if (!resolved.ok) return pathRefusal(String(call.arguments.path ?? ''), allowed);
+    return readFile(resolved.full, 'utf8').catch(() => 'fichier absent');
   }
   if (call.name === 'write_file') {
-    const rel = String(call.arguments.path ?? '');
-    const full = safePath(root, rel);
+    const requested = String(call.arguments.path ?? '');
+    const resolved = resolveWorkPath(root, requested);
+    if (!resolved.ok) return pathRefusal(requested, allowed);
     const content = String(call.arguments.content ?? '');
-    if (!full) return 'chemin refusé';
     if (new TextEncoder().encode(content).byteLength > LAB_LIMITS.maxFileBytes) return 'fichier trop grand';
-    await mkdir(join(full, '..'), { recursive: true });
-    await writeFile(full, content);
+    const before = await readAllowed(root, allowed);
+    await mkdir(join(resolved.full, '..'), { recursive: true });
+    await writeFile(resolved.full, content);
     if ((await dirBytes(root)) > LAB_LIMITS.maxDirBytes) {
-      await rm(full, { force: true });
+      await rm(resolved.full, { force: true });
       return 'dossier de travail trop grand';
+    }
+    const after = await readAllowed(root, allowed);
+    if (allowed.some((path) => after.get(path) == null)) {
+      return `vérification : un fichier attendu est absent. Chemin autorisé : ${allowed.join(', ')}`;
+    }
+    if (sameBytes(before, after, allowed)) {
+      return `vérification : ${allowed.join(', ')} n’a pas changé. Chemin autorisé : ${allowed.join(', ')}`;
     }
     return 'écrit';
   }
@@ -382,13 +441,18 @@ export async function runLabMission(input: {
       { id: 'user', role: 'user', content: prompt, createdAt: Date.now() },
     ];
     let rounds = 0;
+    const notes: string[] = [];
+    const allowed = mission.starterFiles.map((file) => file.path);
+    const remember = (content: string) => {
+      if (content.startsWith('chemin refusé') || content.startsWith('vérification')) notes.push(content);
+    };
     try {
       while (rounds < LAB_LIMITS.maxRounds) {
         rounds += 1;
         let reply: { text: string; toolCalls: ToolCall[] };
         try {
           reply = await input.model.complete({
-            system: 'Tu n’as pas les tests. Écris le code avec write_file. N’annonce pas un succès.',
+            system: 'Tu n’as pas les tests. Écris le code avec write_file sur le chemin relatif indiqué. N’annonce pas un succès.',
             messages,
             signal: controller.signal,
           });
@@ -399,7 +463,7 @@ export async function runLabMission(input: {
         base.modelCalls += 1;
         if (reply.toolCalls.length === 0) {
           const fence = fenceWrite(reply.text, mission);
-          if (fence) await applyTool(input.workRoot, { id: 'fence', name: 'write_file', arguments: fence });
+          if (fence) remember(await applyTool(input.workRoot, { id: 'fence', name: 'write_file', arguments: fence }, allowed));
           break;
         }
         messages.push({
@@ -410,7 +474,8 @@ export async function runLabMission(input: {
           createdAt: Date.now(),
         });
         for (const call of reply.toolCalls) {
-          const content = await applyTool(input.workRoot, call);
+          const content = await applyTool(input.workRoot, call, allowed);
+          remember(content);
           messages.push({
             id: `t${rounds}-${call.id}`,
             role: 'tool',
@@ -436,16 +501,18 @@ export async function runLabMission(input: {
             : `${counts.total} tests réussis`;
     const shown = run.exitCode === 0 ? '' : sanitizeTestFeedback(run.output);
     const regressionFailed = /✖[^\n]*fee inchangé/.test(run.output);
+    const toolFeedback = notes.join('\n');
     attempts.push({
       exitCode: run.exitCode,
       testsRan: counts.total,
       failed: counts.failed,
       summary,
       shownToModel: shown,
+      toolFeedback,
       regressionFailed,
     });
     if (run.exitCode === 0 && counts.failed === 0 && counts.total) break;
-    feedback = shown;
+    feedback = [toolFeedback, shown].filter(Boolean).join('\n');
   }
 
   const files: LabFile[] = [];
@@ -502,16 +569,16 @@ export async function probeLabModel(fetchImpl: typeof fetch = fetch): Promise<
   }
 }
 
-export function ollamaLabModel(digest: string, fetchImpl?: typeof fetch): LabModel {
+export function ollamaLabModel(digest: string, fetchImpl?: typeof fetch, modelName: string = LAB_MODEL_NAME): LabModel {
   const provider = new OllamaProvider({
     provider: 'ollama',
-    model: LAB_MODEL_NAME,
+    model: modelName,
     baseUrl: 'http://127.0.0.1:11434',
     ollama: { numCtx: LAB_LIMITS.numCtx, think: false, keepAlive: '10m' },
     ...(fetchImpl ? { fetch: fetchImpl } : {}),
   });
   return {
-    name: LAB_MODEL_NAME,
+    name: modelName,
     digest,
     async complete(input) {
       let text = '';
