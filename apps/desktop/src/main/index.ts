@@ -105,6 +105,7 @@ const localLearning = new LocalLearningController(
     setLearningStatus: (id, status) => knowledge.setLearningStatus(id, status),
     deleteLearning: (id) => knowledge.deleteLearning(id),
     correctLearning: (id, content) => knowledge.correctLearning(id, content),
+    restoreLearning: (id) => knowledge.restoreLearning(id),
     readRuns: async () => {
       try {
         const raw = await readFile(join(app.getPath('userData'), 'developer', 'code-model.json'), 'utf8');
@@ -354,6 +355,10 @@ function registerIpc(): void {
     if (typeof id !== 'string' || typeof content !== 'string') return [];
     return localLearning.correctRecord(id, content);
   });
+  ipcMain.handle(IpcChannel.localLearningRestore, (_event, id: unknown) =>
+    typeof id === 'string' ? localLearning.restoreRecord(id) : [],
+  );
+  ipcMain.handle(IpcChannel.localLearningExportSkills, () => localLearning.exportSkillRows());
   ipcMain.handle(IpcChannel.localLearningRemove, (_event, id: unknown) =>
     typeof id === 'string' ? localLearning.removeRecord(id) : [],
   );

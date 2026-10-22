@@ -14,6 +14,7 @@ import {
   randomId,
   rollbackAdapter,
   selectTrainRows,
+  skillTrainRows,
   type ChatMessage,
   type LearningRecord,
   type LocalLearningRuntimeStatus,
@@ -46,6 +47,7 @@ export class LocalLearningController {
       setLearningStatus?: (id: string, status: LearningRecord['status']) => Promise<LearningRecord[]>;
       deleteLearning?: (id: string) => Promise<LearningRecord[]>;
       correctLearning?: (id: string, content: string) => Promise<LearningRecord[]>;
+      restoreLearning?: (id: string) => Promise<LearningRecord[]>;
       readEval?: () => Promise<{ previous: number | null; next: number | null } | null>;
       /** Succès réels déjà enregistrés par modelRunMemory. Absent : les taux restent vides. */
       readRuns?: () => Promise<Array<{ success: boolean }>>;
@@ -276,6 +278,15 @@ export class LocalLearningController {
 
   async correctRecord(id: string, content: string): Promise<LearningRecord[]> {
     return (await this.extra?.correctLearning?.(id, content)) ?? [];
+  }
+
+  async restoreRecord(id: string): Promise<LearningRecord[]> {
+    return (await this.extra?.restoreLearning?.(id)) ?? [];
+  }
+
+  async exportSkillRows(): Promise<ReturnType<typeof skillTrainRows>> {
+    const records = (await this.extra?.listLearning?.().catch(() => [])) ?? [];
+    return skillTrainRows(records);
   }
 
   armPeriodic(): void {

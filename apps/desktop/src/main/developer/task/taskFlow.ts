@@ -55,7 +55,9 @@ import {
   symbolPlanCacheKey,
   classifyCommand,
   SAFETY_LABELS,
-  applyMemoryToSource,
+  applyExperienceToSource,
+  applySkill,
+  applySkillTrial,
   codeSymptomQuery,
   languageOfPath,
   type LearningRecord,
@@ -828,24 +830,46 @@ export class TaskRun extends TaskRunBase {
       } catch {
         continue;
       }
-      const applied = applyMemoryToSource(source, testsBySource.get(rel) ?? '', records, {
-        language: languageOfPath(rel),
+      const tests = testsBySource.get(rel) ?? '';
+      const language = languageOfPath(rel);
+      const experienced = applyExperienceToSource(source, records, {
+        language,
         version: process.version,
         role: /\.test\.|\.spec\.|__tests__\//.test(rel) ? 'test' : 'source',
       });
-      if (applied.uncertain) {
-        this.host.log(applied.uncertain);
-        if (applied.methodId) this.hooks.onMethodUncertain?.(applied.methodId);
-      } else if (applied.methodApplied && applied.methodId) {
-        this.hooks.onMethodApplied?.(applied.methodId);
+      const skill = applySkill(experienced.source, tests, records, {
+        language,
+        version: process.version,
+        query: this.state.request,
+      });
+      const trial = skill.selectedId
+        ? null
+        : applySkillTrial(experienced.source, tests, records, {
+            language,
+            version: process.version,
+            query: this.state.request,
+          });
+      const chosen = trial?.used ? trial : skill;
+      if (chosen.uncertain) {
+        this.host.log(chosen.uncertain);
+        if (chosen.recordId) this.hooks.onMethodUncertain?.(chosen.recordId);
+      } else if (chosen.used && chosen.recordId) {
+        this.hooks.onMethodApplied?.(chosen.recordId);
         this.host.log(
-          `Méthode appliquée dans ${rel}. Le correctif vient des tests de ce fichier, pas d’une ancienne ligne.`,
+          trial?.used
+            ? `Compétence candidate « ${chosen.selectedName} » essayée dans ${rel}. Elle n’est retenue que si les tests de ce projet passent.`
+            : `Compétence « ${chosen.selectedName} » utilisée dans ${rel}. Le correctif vient des tests de ce fichier.`,
+        );
+      } else if (skill.selectedId) {
+        this.host.log(
+          `Compétence « ${skill.selectedName} » sélectionnée dans ${rel}, non appliquée : aucune modification sûre.`,
         );
       }
-      if (!applied.changed) continue;
-      await writeFile(abs, applied.source, 'utf8');
+      const next = chosen.used ? chosen.source : experienced.source;
+      if (next === source) continue;
+      await writeFile(abs, next, 'utf8');
       written.push(rel);
-      if (applied.experienceApplied) {
+      if (experienced.applied) {
         this.host.log(
           `Indice d’une expérience validée appliqué dans ${rel}. Le fichier de ce projet est modifié, l’ancien fichier n’est pas recopié.`,
         );

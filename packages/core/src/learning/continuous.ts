@@ -3,6 +3,7 @@
  * Les fiches vivent dans l’index documentaire déjà présent sur le PC.
  */
 import type { LearningMethod } from './methods.js';
+import type { LearningSkill } from './skills.js';
 
 export const LEARNING_TYPES = [
   'preference',
@@ -60,6 +61,11 @@ export interface LearningRecord {
    * le prochain fichier se corrige à partir de ses propres tests.
    */
   method?: LearningMethod;
+  /**
+   * Compétence exécutable. Même fiche, pas un second magasin.
+   * Le texte n’est pas une consigne de prompt : le fichier est modifié par la procédure.
+   */
+  skill?: LearningSkill;
 }
 
 export interface ExperienceStep {
@@ -213,7 +219,7 @@ export function relevantRecords(
   const q = tokens(query);
   if (!q.length) return [];
   const scored = records
-    .filter((item) => item.status === 'validated')
+    .filter((item) => item.status === 'validated' && item.type !== 'procedure')
     .map((item) => {
       const hay = tokens(`${item.content} ${item.errorSignature ?? ''} ${item.fix ?? ''}`);
       const hits = q.filter((token) => hay.includes(token)).length;
@@ -274,9 +280,10 @@ function isTrustedRule(item: LearningRecord): boolean {
 }
 
 export function formatLearningContext(records: readonly LearningRecord[]): string {
-  if (!records.length) return '';
-  const rules = records.filter(isTrustedRule);
-  const data = records.filter((item) => !isTrustedRule(item));
+  const visible = records.filter((item) => item.type !== 'procedure');
+  if (!visible.length) return '';
+  const rules = visible.filter(isTrustedRule);
+  const data = visible.filter((item) => !isTrustedRule(item));
   const parts: string[] = [];
   if (rules.length) {
     parts.push(

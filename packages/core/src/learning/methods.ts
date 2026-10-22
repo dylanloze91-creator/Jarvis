@@ -260,7 +260,9 @@ export function codeSymptomIds(source: string, tests: string): string[] {
   if (/\/\s*[A-Za-z_][A-Za-z0-9_]*\.length/.test(source) && /\[\s*\]/.test(tests)) ids.push('empty-division');
   if (/\.join\s*\(/.test(source)) ids.push('join-separator');
   if (/JSON\.parse\s*\(/.test(source)) ids.push('parse-failure');
-  if (/\.(?:concat|trim|toUpperCase|toLowerCase)\s*\(/.test(source)) ids.push('text-on-number');
+  if (/\.(?:concat|trim|toUpperCase|toLowerCase|slice|startsWith|endsWith|includes|charAt|repeat|padStart|padEnd)\s*\(/.test(source)) {
+    ids.push('text-on-number');
+  }
   if (/from\s+['"](?:node:)?path['"]/.test(source) || /does not provide an export/.test(`${source}\n${tests}`)) {
     ids.push('missing-export');
   }

@@ -296,6 +296,8 @@ export function installPreviewBridge(): void {
       rollback: async () => ({ running: false, line: null }),
       setStatus: async () => [],
       correct: async () => [],
+      restore: async () => [],
+      exportSkills: async () => [],
       remove: async () => [],
     },
     wakeLearning: {

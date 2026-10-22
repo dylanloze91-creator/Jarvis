@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Loader2, Trash2 } from 'lucide-react';
-import type { KnowledgeStats } from '@jarvis/core';
+import type { KnowledgeStats, LearningRecord } from '@jarvis/core';
 import { Button } from '@/components/ui/button';
 import { Toggle } from '@/components/ui/field';
 
@@ -22,6 +22,7 @@ export function KnowledgeSettingsSection({
   const [loading, setLoading] = useState(false);
   const [clearing, setClearing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [exportNote, setExportNote] = useState<string | null>(null);
 
   const refresh = (): void => {
     setLoading(true);
@@ -98,33 +99,42 @@ export function KnowledgeSettingsSection({
         onChange={(enabled) => onLearningChange({ autoTrain: enabled })}
       />
 
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <Button size="sm" variant="subtle" onClick={refresh} disabled={loading}>
           Actualiser
+        </Button>
+        <Button
+          size="sm"
+          variant="subtle"
+          onClick={() => {
+            void window.jarvis.localLearning.exportSkills().then((rows) => {
+              setExportNote(
+                rows.length
+                  ? `${rows.length} compétence(s) validée(s) peuvent servir d’exemples. Rien n’est entraîné.`
+                  : 'Aucune compétence validée à exporter. Rien n’est entraîné.',
+              );
+            });
+          }}
+        >
+          Exporter les compétences
         </Button>
         <Button size="sm" variant="subtle" onClick={clear} disabled={clearing || empty}>
           <Trash2 className="size-3.5" />
           Tout effacer
         </Button>
       </div>
+      {exportNote ? <p className="text-xs text-slate-400">{exportNote}</p> : null}
       <LearningItems />
     </div>
   );
 }
 
 function LearningItems() {
-  const [items, setItems] = useState<Array<{ id: string; type: string; content: string; label: string }>>([]);
+  const [items, setItems] = useState<LearningRecord[]>([]);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const load = (): void => {
     void window.jarvis.localLearning.snapshot().then((snap) => {
-      setItems(
-        snap.records.map((item) => ({
-          id: item.id,
-          type: item.type,
-          content: item.content,
-          label: `${item.status} · ${item.type} · ${item.content.slice(0, 80)}`,
-        })),
-      );
+      setItems(snap.records);
     });
   };
   useEffect(() => {
@@ -137,7 +147,11 @@ function LearningItems() {
       {items.map((item) => (
         <div key={item.id} className="flex flex-col gap-1 rounded-md border border-white/5 px-2 py-1">
           <div className="flex items-center gap-2">
-            <p className="min-w-0 flex-1 truncate text-xs text-slate-300">{item.label}</p>
+            <p className="min-w-0 flex-1 truncate text-xs text-slate-300">
+              {item.skill
+                ? `${item.status} · ${item.skill.name} · v${item.skill.version}`
+                : `${item.status} · ${item.type} · ${item.content.slice(0, 80)}`}
+            </p>
             <Button
               size="sm"
               variant="subtle"
@@ -160,13 +174,26 @@ function LearningItems() {
               Supprimer
             </Button>
           </div>
+          {item.skill ? (
+            <div className="flex flex-col gap-1 text-[11px] leading-snug text-slate-400">
+              <p>{item.skill.appliesWhen}</p>
+              <p>Limites : {item.skill.limits.join(' · ') || 'aucune'}</p>
+              <p>
+                Résultats :{' '}
+                {item.skill.results.length
+                  ? item.skill.results.map((result) => `${result.context} ${result.ok ? 'ok' : 'échec'}`).join(', ')
+                  : 'aucun'}
+              </p>
+              {item.skill.previousId ? <p>Version candidate, l’ancienne fiche validée reste en place.</p> : null}
+            </div>
+          ) : null}
           {item.type === 'procedure' ? (
             <div className="flex items-center gap-2">
               <input
                 value={drafts[item.id] ?? item.content}
                 onChange={(event) => setDrafts((current) => ({ ...current, [item.id]: event.target.value }))}
                 className="min-w-0 flex-1 rounded border border-white/10 bg-transparent px-2 py-1 text-xs text-slate-200"
-                aria-label="Texte de la méthode"
+                aria-label="Texte de la compétence"
               />
               <Button
                 size="sm"
@@ -177,6 +204,15 @@ function LearningItems() {
               >
                 Corriger
               </Button>
+              {item.skill?.history.length ? (
+                <Button
+                  size="sm"
+                  variant="subtle"
+                  onClick={() => void window.jarvis.localLearning.restore(item.id).then(load)}
+                >
+                  Rétablir
+                </Button>
+              ) : null}
             </div>
           ) : null}
         </div>

@@ -12,6 +12,7 @@ import type {
   KnowledgeStats,
   LearningMetrics,
   LearningRecord,
+  SkillTrainRow,
   ProviderDescriptor,
   RiskLevel,
   SearchProviderDescriptor,
@@ -118,6 +119,8 @@ export const IpcChannel = {
   localLearningRollback: 'local-learning:rollback',
   localLearningSetStatus: 'local-learning:set-status',
   localLearningCorrect: 'local-learning:correct',
+  localLearningRestore: 'local-learning:restore',
+  localLearningExportSkills: 'local-learning:export-skills',
   localLearningRemove: 'local-learning:remove',
   listeningIndicator: 'listening:indicator',
   listeningLevel: 'listening:level',
@@ -492,6 +495,8 @@ export interface JarvisApi {
     rollback(): Promise<LocalLearningRuntimeStatus>;
     setStatus(id: string, status: LearningRecord['status']): Promise<LearningRecord[]>;
     correct(id: string, content: string): Promise<LearningRecord[]>;
+    restore(id: string): Promise<LearningRecord[]>;
+    exportSkills(): Promise<SkillTrainRow[]>;
     remove(id: string): Promise<LearningRecord[]>;
   };
   wakeLearning: {

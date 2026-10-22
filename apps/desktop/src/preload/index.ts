@@ -115,6 +115,8 @@ const api: JarvisApi = {
       ipcRenderer.invoke(IpcChannel.localLearningSetStatus, id, status),
     correct: (id: string, content: string) =>
       ipcRenderer.invoke(IpcChannel.localLearningCorrect, id, content),
+    restore: (id: string) => ipcRenderer.invoke(IpcChannel.localLearningRestore, id),
+    exportSkills: () => ipcRenderer.invoke(IpcChannel.localLearningExportSkills),
     remove: (id: string) => ipcRenderer.invoke(IpcChannel.localLearningRemove, id),
   },
   wakeLearning: {

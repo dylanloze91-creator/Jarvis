@@ -71,7 +71,7 @@ import {
   experienceFromMission,
   experienceAttempt,
   experienceReplacement,
-  methodFromObservation,
+  skillFromObservation,
   type LearningRecord,
   resolveRoleModel,
   buildMissionModelPlan,
@@ -2389,7 +2389,7 @@ export class MissionWorkflow {
         });
         if (experience) await this.deps.rememberLearning?.(experience);
         const observed = replacement
-          ? methodFromObservation({
+          ? skillFromObservation({
               id: randomId(),
               now: this.now,
               ok: true,

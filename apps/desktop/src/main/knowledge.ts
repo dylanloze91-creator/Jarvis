@@ -2,18 +2,24 @@ import { createHash } from 'node:crypto';
 import { mkdir, open, readFile, readdir, rm, stat, writeFile, rename } from 'node:fs/promises';
 import { extname, isAbsolute, join, relative, resolve } from 'node:path';
 import {
+  admitSkill,
   applyIncoming,
   markStale,
   relevantRecords,
   retrieveExperiences,
   retrieveMethods,
-  noteMethodOutcome,
   correctMethod,
+  restoreSkillVersion,
+  reviseSkill,
   selectPromptRecords,
+  settleSkill,
+  skillTrainRows,
+  randomId,
   resolveLocalOllamaBase,
   type KnowledgeStats,
   type LearningRecord,
   type Settings,
+  type SkillTrainRow,
 } from '@jarvis/core';
 
 export interface KnowledgeChunk {
@@ -250,7 +256,11 @@ export class KnowledgeStore {
   async applyLearning(incoming: LearningRecord | null): Promise<LearningRecord[]> {
     let records: LearningRecord[] = [];
     await this.mutate((index) => {
-      records = applyIncoming(markStale(learningOf(index), Date.now()), incoming).records;
+      const current = markStale(learningOf(index), Date.now());
+      records =
+        incoming?.type === 'procedure' && incoming.skill
+          ? admitSkill(current, incoming).records
+          : applyIncoming(current, incoming).records;
       replaceLearning(index, records);
     });
     return records;
@@ -291,7 +301,7 @@ export class KnowledgeStore {
       const records = learningOf(index);
       const found = records.find((item) => item.id === id);
       if (!found) return;
-      const next = noteMethodOutcome(found, {
+      const next = settleSkill(found, {
         ok: outcome.ok,
         now: outcome.now,
         context: outcome.context,
@@ -309,12 +319,36 @@ export class KnowledgeStore {
     let records: LearningRecord[] = [];
     await this.mutate((index) => {
       const current = learningOf(index);
-      records = current.map((item) =>
-        item.id === id ? correctMethod(item, content, Date.now()) : item,
-      );
+      const found = current.find((item) => item.id === id);
+      if (found?.skill && found.status === 'validated') {
+        const { created } = reviseSkill(found, content, Date.now(), randomId());
+        records = created ? [created, ...current] : current;
+      } else if (found?.skill) {
+        records = current.map((item) => (item.id === id ? reviseSkill(item, content, Date.now(), randomId()).kept : item));
+      } else {
+        records = current.map((item) => (item.id === id ? correctMethod(item, content, Date.now()) : item));
+      }
       replaceLearning(index, records);
     });
     return records;
+  }
+
+  async restoreLearning(id: string): Promise<LearningRecord[]> {
+    let records: LearningRecord[] = [];
+    await this.mutate((index) => {
+      const current = learningOf(index);
+      records = current.map((item) => {
+        if (item.id !== id || !item.skill?.history.length) return item;
+        const revision = item.skill.history.at(-1)?.revision;
+        return revision === undefined ? item : restoreSkillVersion(item, revision);
+      });
+      replaceLearning(index, records);
+    });
+    return records;
+  }
+
+  async exportSkillRows(): Promise<SkillTrainRow[]> {
+    return skillTrainRows(await this.listLearning());
   }
 
   async relevantLearning(query: string, limit = 4): Promise<LearningRecord[]> {
