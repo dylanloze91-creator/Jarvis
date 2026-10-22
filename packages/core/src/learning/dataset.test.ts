@@ -16,9 +16,9 @@ import {
   recommendLocalQlora,
   renderDataset,
   unverifiedExport,
-  writeDatasetDir,
   type DatasetSource,
 } from './dataset.js';
+import { loadDatasetTree, writeDatasetDir } from './datasetFiles.js';
 import { settleSkill, skillFromObservation } from './skills.js';
 
 function source(over: Partial<DatasetSource> & Pick<DatasetSource, 'id' | 'group'>): DatasetSource {

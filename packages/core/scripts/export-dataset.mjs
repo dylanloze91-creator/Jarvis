@@ -5,7 +5,8 @@
  * N’entraîne pas et ne télécharge rien.
  */
 import { mkdir, writeFile } from 'node:fs/promises';
-import { buildFinetuneDataset, loadDatasetTree, writeDatasetDir } from '../dist/index.js';
+import { buildFinetuneDataset } from '../dist/index.js';
+import { loadDatasetTree, writeDatasetDir } from '../dist/learning/datasetFiles.js';
 
 function args(name) {
   const values = [];
