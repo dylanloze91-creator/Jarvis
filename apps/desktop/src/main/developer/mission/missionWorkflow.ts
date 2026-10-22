@@ -68,8 +68,12 @@ import {
   memoryBlock,
   patchStep,
   randomId,
+  evidenceFromTask,
   experienceFromMission,
   experienceAttempt,
+  judgeMissionEvidence,
+  missionVerdictFromEvidence,
+  EVIDENCE_STATUS_LABELS,
   memoryRetrievalEnabled,
   skillLibraryEnabled,
   experienceReplacement,
@@ -264,6 +268,31 @@ function createsProject(kind: MissionKind): boolean {
   return kind === 'new-project' || kind === 'skill';
 }
 
+function missionIsProven(mission: MissionState): boolean {
+  return (
+    mission.evidence?.status === 'success_verified' ||
+    (mission.verdict === 'success' && mission.evidence == null)
+  );
+}
+
+function evidenceDiff(
+  files: readonly { path: string; hunks: readonly { lines: readonly { kind: string; text: string }[] }[] }[],
+): string {
+  const header = files.map((file) => file.path).join('\n');
+  const body = files
+    .map((file) =>
+      file.hunks
+        .map((hunk) =>
+          hunk.lines
+            .map((line) => `${line.kind === 'add' ? '+' : line.kind === 'del' ? '-' : ' '}${line.text}`)
+            .join('\n'),
+        )
+        .join('\n'),
+    )
+    .join('\n');
+  return `${header}\n${body}`;
+}
+
 function speed(usage: ChatUsage): number | null {
   return usage.outputMs > 0
     ? Math.round(tokensPerSecond(usage.outputTokens, usage.outputMs) * 10) / 10
@@ -306,6 +335,8 @@ export class MissionWorkflow {
   private appliedMethodIds: string[] = [];
   private uncertainMethodIds: string[] = [];
   private failedSkillIds: string[] = [];
+  /** Lignes écrites par cette mission, pas un journal externe. */
+  private auditLines: string[] = [];
   /** Déchargements en série : un modèle à la fois, même après un délai. */
   private readonly modelSwitch = createModelSwitch();
 
@@ -525,6 +556,8 @@ export class MissionWorkflow {
     ]
       .filter(Boolean)
       .join(' ');
+    this.auditLines.push(line);
+    if (this.auditLines.length > 40) this.auditLines.shift();
     this.deps.log?.(line);
   }
 
@@ -953,6 +986,16 @@ export class MissionWorkflow {
   private fail(message: string, signal?: AbortSignal): void {
     if (!this.current) return;
     if (signal?.aborted) {
+      this.current.evidence = judgeMissionEvidence({
+        id: this.current.id,
+        at: this.now,
+        goal: this.current.request,
+        passCriteria: this.current.goal?.criteria ?? [],
+        kind: this.current.kind === 'question' || this.current.kind === 'improve' ? 'non-code' : 'programming',
+        cancelled: true,
+        audit: this.auditLines,
+        toolVersion: process.version,
+      });
       this.current.status = 'cancelled';
       this.current.verdict = 'stopped';
       this.current.summary = message;
@@ -979,11 +1022,10 @@ export class MissionWorkflow {
         this.persistLater();
         return;
       }
-      const keep =
-        this.current.verdict === 'success' || this.current.status === 'finished';
-      if (keep || this.current.verdict === 'failed') {
+      const proven = missionIsProven(this.current);
+      if (proven || this.current.verdict === 'failed' || this.current.evidence) {
         if (!this.current.journalNote?.startsWith('Jeu écrit')) this.rememberJournal(false);
-        if (keep) {
+        if (proven) {
           this.current.status = 'finished';
           this.current.verdict = 'success';
         }
@@ -1047,9 +1089,36 @@ export class MissionWorkflow {
             detail: `${result.checked.verified}/${result.checked.citations.length} citation(s) vérifiée(s)`,
             resources: await this.resources(model, root),
           });
-          mission.status = 'finished';
-          mission.verdict = result.checked.verified > 0 ? 'success' : 'failed';
-          mission.summary = result.checked.answer;
+          const verified = result.checked.verified > 0;
+          mission.evidence = judgeMissionEvidence({
+            id: mission.id,
+            at: this.now,
+            goal: mission.request,
+            passCriteria: ['au moins une citation relue dans le dépôt'],
+            kind: 'non-code',
+            declaredSuccess: verified,
+            initialState: 'lecture seule, sans copie isolée',
+            checks: [
+              {
+                name: 'citations relues',
+                kind: 'criterion',
+                required: true,
+                ran: true,
+                passed: verified,
+                exitCode: null,
+                testsRan: null,
+                reason: `${result.checked.verified} citation(s) vérifiée(s) sur ${result.checked.citations.length}`,
+              },
+            ],
+            finalResult: result.checked.answer,
+            model,
+            toolVersion: process.version,
+            audit: this.auditLines,
+          });
+          const proven = missionVerdictFromEvidence(mission.evidence.status);
+          mission.status = proven === 'success' ? 'finished' : 'failed';
+          mission.verdict = proven;
+          mission.summary = proven === 'success' ? result.checked.answer : mission.evidence.statusReason;
           await this.persist();
           step('answer', 'done');
           return 'Réponse prête (onglet Missions).';
@@ -1932,7 +2001,8 @@ export class MissionWorkflow {
       const keep =
         journal &&
         this.levelIsDelivered() &&
-        (this.current?.verdict === 'success' || this.current?.status === 'finished');
+        this.current != null &&
+        missionIsProven(this.current);
       if (!keep) {
         const text = journal
           ? this.gameFilesWritten()
@@ -2032,8 +2102,37 @@ export class MissionWorkflow {
             status: 'done',
             detail: `${retained} retenue(s) sur ${checked.length} ; sans preuve vérifiée : « avis non retenu »`,
           });
-          mission.status = 'finished';
-          mission.verdict = retained > 0 ? 'success' : 'failed';
+          const proved = retained > 0;
+          mission.evidence = judgeMissionEvidence({
+            id: mission.id,
+            at: this.now,
+            goal: mission.request,
+            passCriteria: ['chaque proposition retenue a une preuve relue dans les fichiers'],
+            kind: 'non-code',
+            declaredSuccess: proved,
+            initialState: 'mesures du dépôt, sans modification',
+            checks: [
+              {
+                name: 'preuves relues',
+                kind: 'criterion',
+                required: true,
+                ran: true,
+                passed: proved,
+                exitCode: null,
+                testsRan: null,
+                reason: `${retained} retenue(s) sur ${checked.length}`,
+              },
+            ],
+            finalResult:
+              proved
+                ? `${retained} proposition(s) retenue(s) sur ${checked.length}`
+                : 'Aucune proposition retenue',
+            toolVersion: process.version,
+            audit: this.auditLines,
+          });
+          const proven = missionVerdictFromEvidence(mission.evidence.status);
+          mission.status = proven === 'success' ? 'finished' : 'failed';
+          mission.verdict = proven;
           mission.summary =
             retained > 0
               ? `${retained} proposition(s) retenue(s) sur ${checked.length}, chacune avec une preuve relue. Choisis celles qui deviennent des missions.`
@@ -2318,12 +2417,65 @@ export class MissionWorkflow {
     if (!mission) return;
     const task = this.host.currentTask();
     mission.taskId = task?.id ?? null;
-    const verdict = task?.report?.verdict ?? (task?.status === 'refused' ? 'stopped' : 'failed');
+    const declared = task?.report?.verdict ?? (task?.status === 'refused' ? 'stopped' : 'failed');
+    const replacement = task ? experienceReplacement(task.diff) : null;
+    const seen = (this.history ?? [])
+      .filter((item) => item.id !== mission.id && item.evidenceFingerprint)
+      .map((item) => item.evidenceFingerprint!);
+    const evidence = task
+      ? evidenceFromTask({
+          id: mission.id,
+          at: this.now,
+          goal: mission.request,
+          criteria: task.plan?.criteria ?? mission.goal?.criteria ?? [],
+          model: task.model,
+          runtimeVersion: process.version,
+          declaredVerdict: declared === 'stopped' ? 'stopped' : declared,
+          cancelled: task.status === 'cancelled' || task.status === 'refused',
+          files: task.diff,
+          diffText: evidenceDiff(task.diff),
+          plannedChecks: task.plan?.tests ?? [],
+          runs: task.runs.map((run) => ({
+            label: run.label,
+            ok: run.ok,
+            results: run.results.map((result) => ({
+              suite: result.suite,
+              command: result.command,
+              exitCode: result.exitCode,
+              summary: result.summary,
+              failures: result.failures,
+              excerpt: result.excerpt,
+            })),
+          })),
+          errors: task.runs.flatMap((run) => run.newFailures),
+          fixes: task.runs.flatMap((run) => run.fixed),
+          skillsUsed: this.appliedMethodIds,
+          initialState: task.plan?.summary,
+          beforeSource: replacement?.from,
+          afterSource: replacement?.to,
+          language: replacement?.language,
+          seenFingerprints: seen,
+          audit: this.auditLines,
+          lastSeriesOk: task.runs.length ? task.runs.at(-1)?.ok === true : undefined,
+        })
+      : judgeMissionEvidence({
+          id: mission.id,
+          at: this.now,
+          goal: mission.request,
+          passCriteria: mission.goal?.criteria ?? [],
+          kind: 'programming',
+          declaredSuccess: declared === 'success',
+          cancelled: false,
+          audit: this.auditLines,
+          toolVersion: process.version,
+        });
+    mission.evidence = evidence;
+    const verdict = missionVerdictFromEvidence(evidence.status);
     mission.verdict = verdict;
     mission.status =
-      task?.status === 'refused' || task?.status === 'cancelled'
+      task?.status === 'refused' || task?.status === 'cancelled' || evidence.status === 'cancelled'
         ? 'cancelled'
-        : verdict === 'success'
+        : verdict === 'success' || evidence.status === 'success_partial' || evidence.status === 'unverified'
           ? 'finished'
           : 'failed';
     const failedNew =
@@ -2340,6 +2492,8 @@ export class MissionWorkflow {
         ? 'Plan refusé : rien n’a été écrit.'
         : verdict === 'success'
           ? `Réussie : ${task?.diff.length ?? 0} fichier(s) modifié(s), tests et aperçu OK${task?.review ? ', revue sans point bloquant' : ''}.`
+          : evidence.status === 'success_partial' || evidence.status === 'unverified' || evidence.status === 'failed' || evidence.status === 'blocked'
+            ? `${EVIDENCE_STATUS_LABELS[evidence.status]} : ${evidence.statusReason}`
           : failedNew
             ? lastFail
               ? `Échec : ${lastFail}`
@@ -2365,7 +2519,8 @@ export class MissionWorkflow {
         request: mission.request,
         model: task.model,
         templateId: this.project?.template,
-        reportVerdict: task.report?.verdict ?? verdict,
+        reportVerdict: task.report?.verdict ?? (verdict === 'success' ? 'success' : 'failed'),
+        evidenceStatus: evidence.status,
         repeatedFailure: Boolean(task.repeatedFailure),
         reviewBlocking: task.review?.blocking ?? [],
         planSummary: task.plan?.summary ?? mission.request,
@@ -2375,7 +2530,6 @@ export class MissionWorkflow {
         checkpoint: task.checkpoints.at(-1)?.sha,
         now: this.now,
       });
-      const replacement = experienceReplacement(task.diff);
       const errors = task.runs.flatMap((run) => run.newFailures).join('\n');
       const firstFailure = task.runs.find((run) => run.newFailures.length)?.newFailures[0] ?? '';
       const happened = lastFail ?? mission.summary ?? 'échec';

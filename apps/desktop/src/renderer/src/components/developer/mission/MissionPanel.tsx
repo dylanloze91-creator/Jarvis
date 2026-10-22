@@ -9,6 +9,7 @@ import {
   SPECIALIST_ROLES,
   resolveRoleModel,
   suggestMissionKind,
+  EVIDENCE_STATUS_LABELS,
   MISSION_LIFECYCLE_LABELS,
   resolveMissionLifecyclePhase,
   type MissionKind,
@@ -19,6 +20,7 @@ import type { DeveloperApi, DeveloperState } from '../../../../../shared/develop
 import { TaskPanel } from '../task/TaskPanel';
 import { ProposalList } from './ProposalList';
 import { MissionGateCard } from './MissionGateCard';
+import { EvidenceCard } from './EvidenceCard';
 import { MissionLearningCard } from './MissionLearningCard';
 import { SpecialistRow } from './SpecialistRow';
 import { SupervisorAgentList } from './SupervisorAgentList';
@@ -273,6 +275,7 @@ export function MissionPanel({
             ))}
           </ul>
           {mission.summary ? <p className="text-xs text-slate-200">{mission.summary}</p> : null}
+          {mission.evidence ? <EvidenceCard evidence={mission.evidence} /> : null}
           {mission.learning ? <MissionLearningCard learning={mission.learning} /> : null}
           <ProposalList mission={mission} busy={state.busy} act={act} />
         </section>
@@ -295,6 +298,11 @@ export function MissionPanel({
         <section className="flex flex-col gap-1 rounded-xl border border-white/8 bg-white/[0.02] px-3.5 py-3">
           <span className="flex items-center gap-1.5 text-[13px] font-medium text-slate-100">
             <History className="size-4" /> Missions précédentes
+            <span className="font-normal text-slate-500">
+              {state.missions.filter((item) => item.evidenceStatus === 'success_verified').length} vérifiées ·{' '}
+              {state.missions.filter((item) => item.evidenceStatus === 'success_partial').length} partielles ·{' '}
+              {state.missions.filter((item) => item.evidenceStatus === 'unverified').length} non vérifiées
+            </span>
           </span>
           <ul className="flex flex-col gap-1">
             {state.missions.map((m) => (
@@ -305,6 +313,11 @@ export function MissionPanel({
                 <span>{MISSION_LABELS[m.kind]}</span>
                 <span className="truncate text-slate-400">« {m.request} »</span>
                 <span className="text-slate-500">{STATUS[m.status] ?? m.status}</span>
+                {m.evidenceStatus ? (
+                  <span data-evidence-status={m.evidenceStatus}>
+                    {EVIDENCE_STATUS_LABELS[m.evidenceStatus]}
+                  </span>
+                ) : null}
                 <Button
                   size="sm"
                   variant="ghost"

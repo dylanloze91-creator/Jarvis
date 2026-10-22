@@ -118,8 +118,11 @@ describe('missions sur Jarvis (0.5.2)', () => {
 
     const done = await h.instance.answerMission(['1.0.0']);
     const mission = done.mission!;
-    expect(mission.status, mission.summary ?? '').toBe('finished');
-    expect(mission.verdict).toBe('success');
+    expect(done.codeTask?.report?.verdict).toBe('success');
+    expect(mission.evidence?.status).not.toBe('success_verified');
+    expect(mission.verdict).not.toBe('success');
+    expect(mission.status, mission.summary ?? '').toBe('failed');
+    expect(mission.evidence?.declaredSuccess).toBe(true);
     expect(mission.answers).toEqual([
       { question: 'Quelle valeur pour VERSION ?', answer: '1.0.0' },
     ]);
@@ -185,8 +188,9 @@ describe('missions sur Jarvis (0.5.2)', () => {
     const listed = await restarted.instance.listMissions();
     expect(listed.missions?.[0]).toMatchObject({
       id: mission.id,
-      verdict: 'success',
-      status: 'finished',
+      verdict: 'failed',
+      status: 'failed',
+      evidenceStatus: mission.evidence?.status,
     });
     const reopened = await restarted.instance.openMission(mission.id);
     expect(reopened.mission?.steps).toHaveLength(14);

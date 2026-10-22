@@ -37,6 +37,8 @@ export interface LearningGateInput {
   reviewBlockingCount: number;
   /** Au moins une série de tests a signalé de nouveaux échecs avant le succès. */
   hadNewFailures: boolean;
+  /** Présent : un succès déclaré sans preuve vérifiée n’est pas mémorisé. */
+  evidenceStatus?: 'success_verified' | 'success_partial' | 'failed' | 'blocked' | 'unverified' | 'cancelled';
 }
 
 export function canSaveValidatedFix(input: LearningGateInput): { ok: true } | { ok: false; reason: string } {
@@ -48,6 +50,9 @@ export function canSaveValidatedFix(input: LearningGateInput): { ok: true } | { 
   }
   if (input.reportVerdict !== 'success') {
     return { ok: false, reason: 'tests ou revue non réussis : rien n’est mémorisé' };
+  }
+  if (input.evidenceStatus && input.evidenceStatus !== 'success_verified') {
+    return { ok: false, reason: 'succès déclaré sans preuve vérifiée : rien n’est mémorisé' };
   }
   if (input.reviewBlockingCount > 0) {
     return { ok: false, reason: 'revue avec points bloquants : rien n’est mémorisé' };

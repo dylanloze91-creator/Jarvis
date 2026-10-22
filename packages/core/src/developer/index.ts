@@ -60,6 +60,24 @@ export * from './knowledge/learning.js';
 export * from './projectInventory.js';
 export * from './projectValidation.js';
 export * from './missionLifecycle.js';
+export {
+  EVIDENCE_STATUSES,
+  EVIDENCE_STATUS_LABELS,
+  testsCounted,
+  testsLookWeakened,
+  judgeMissionEvidence,
+  exportStagedEvidence,
+  missionVerdictFromEvidence,
+  evidenceFromTask,
+  recheckStoredEvidence,
+  type EvidenceCheck,
+  type EvidenceCheckKind,
+  type EvidenceCommand,
+  type EvidenceDraft,
+  type DatasetStaging,
+  type MissionEvidence,
+  type TaskEvidenceInput,
+} from './evidence.js';
 export * from './planScope.js';
 export * from './editSymbolContext.js';
 export * from './symbolSearchCache.js';

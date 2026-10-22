@@ -382,6 +382,7 @@ export class DeveloperManualStore {
     runs: ReadonlyArray<{ newFailures: readonly string[] }>;
     checkpoint?: string;
     now: number;
+    evidenceStatus?: 'success_verified' | 'success_partial' | 'failed' | 'blocked' | 'unverified' | 'cancelled';
   }): Promise<MissionLearning> {
     const hadNewFailures = input.runs.some((r) => r.newFailures.length > 0);
     const gate = canSaveValidatedFix({
@@ -390,6 +391,7 @@ export class DeveloperManualStore {
       repeatedFailure: input.repeatedFailure,
       reviewBlockingCount: input.reviewBlocking.length,
       hadNewFailures,
+      evidenceStatus: input.evidenceStatus,
     });
     if (!gate.ok) return missionLearningOutcome(gate);
     const fix = buildValidatedFix({

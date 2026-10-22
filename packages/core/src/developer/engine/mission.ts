@@ -1,3 +1,4 @@
+import type { MissionEvidence } from '../evidence.js';
 import { MISSION_CHAINS, type ChainActor, type MissionKind } from './router.js';
 import type { MissionGate } from './difficulty.js';
 import type { CheckedProposal } from './improve.js';
@@ -70,6 +71,8 @@ export interface MissionState {
    * n’annule pas une création dont les fichiers sont déjà écrits.
    */
   journalNote?: string;
+  /** Preuve lue sur les contrôles, pas sur la phrase du modèle (5.0.51). */
+  evidence?: MissionEvidence;
 }
 
 export interface MissionSummary {
@@ -80,6 +83,10 @@ export interface MissionSummary {
   verdict: MissionState['verdict'];
   createdAt: number;
   updatedAt: number;
+  evidenceStatus?: MissionEvidence['status'];
+  datasetStatus?: MissionEvidence['staging']['validationStatus'];
+  datasetReason?: string;
+  evidenceFingerprint?: string;
 }
 
 export function createMission(input: {
@@ -109,8 +116,24 @@ export function createMission(input: {
 }
 
 export function summarizeMission(mission: MissionState): MissionSummary {
-  const { id, kind, request, status, verdict, createdAt, updatedAt } = mission;
-  return { id, kind, request, status, verdict, createdAt, updatedAt };
+  const { id, kind, request, status, verdict, createdAt, updatedAt, evidence } = mission;
+  return {
+    id,
+    kind,
+    request,
+    status,
+    verdict,
+    createdAt,
+    updatedAt,
+    ...(evidence
+      ? {
+          evidenceStatus: evidence.status,
+          datasetStatus: evidence.staging.validationStatus,
+          datasetReason: evidence.staging.reason,
+          evidenceFingerprint: evidence.fingerprint,
+        }
+      : {}),
+  };
 }
 
 export function upsertStep(mission: MissionState, step: MissionStep, now: number): MissionStep {

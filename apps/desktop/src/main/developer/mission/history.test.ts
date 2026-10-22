@@ -1,8 +1,9 @@
+import { spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { rename as realRename } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createMission } from '@jarvis/core';
+import { createMission, judgeMissionEvidence } from '@jarvis/core';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   JOURNAL_KEPT_LINE,
@@ -202,5 +203,51 @@ describe('journal de mission sous EPERM', () => {
     const again = Date.now();
     await expect(store.save(mission)).resolves.toBe('renamed');
     expect(Date.now() - again).toBeLessThan(1_000);
+  });
+
+  it('relit le dossier de preuve après un autre processus', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'jarvis-evidence-store-'));
+    roots.push(root);
+    const mission = finishedMission();
+    mission.evidence = judgeMissionEvidence({
+      id: mission.id,
+      at: mission.createdAt,
+      goal: mission.request,
+      passCriteria: ['le niveau n’est plus le gabarit'],
+      kind: 'non-code',
+      declaredSuccess: true,
+      checks: [
+        {
+          name: 'niveau relu',
+          kind: 'criterion',
+          required: true,
+          ran: true,
+          passed: true,
+          exitCode: null,
+          testsRan: null,
+        },
+      ],
+      finalResult: 'niveau relu',
+    });
+    const store = new MissionStore(() => join(root, 'data'));
+    await store.save(mission);
+    const folder = join(root, 'data', mission.projectId, 'missions', mission.id);
+    expect(existsSync(join(folder, 'evidence.json'))).toBe(true);
+    expect(existsSync(join(folder, 'diff.txt'))).toBe(true);
+    const reader = spawnSync(
+      process.execPath,
+      [
+        '-e',
+        `const fs=require('node:fs'); const data=JSON.parse(fs.readFileSync(process.argv[1],'utf8')); if(data.finalResult.includes('secret')||JSON.stringify(data).includes('ghp_')) process.exit(2); process.stdout.write(data.status);`,
+        join(folder, 'evidence.json'),
+      ],
+      { encoding: 'utf8' },
+    );
+    expect(reader.status).toBe(0);
+    expect(reader.stdout).toBe('success_verified');
+    const restarted = new MissionStore(() => join(root, 'data'));
+    const loaded = await restarted.load(mission.projectId, mission.id);
+    expect(loaded?.evidence?.status).toBe('success_verified');
+    expect(loaded?.verdict).toBe('success');
   });
 });

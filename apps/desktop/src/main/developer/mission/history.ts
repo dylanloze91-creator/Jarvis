@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import {
   isMissionState,
   isNeutralPlatformerLevel,
+  recheckStoredEvidence,
   summarizeMission,
   type MissionState,
   type MissionSummary,
@@ -40,7 +41,7 @@ export interface JournalIo {
   writeFile?: (path: string, data: string) => Promise<void>;
   rename?: (from: string, to: string) => Promise<void>;
   mkdir?: (path: string, options: { recursive: boolean }) => Promise<void>;
-  rm?: (path: string, options: { force: boolean }) => Promise<void>;
+  rm?: (path: string, options: { force: boolean; recursive?: boolean }) => Promise<void>;
   sleep?: (ms: number) => Promise<void>;
   /** Délai max d’une opération disque. Défaut : 8 s. Les tests passent une valeur courte. */
   deadlineMs?: number;
@@ -246,7 +247,27 @@ export class MissionStore {
       const target = join(dir, `${mission.id}.json`);
       this.written += 1;
       const temporary = `${target}.${this.written}.tmp`;
-      return replaceJournal(target, temporary, body, this.io);
+      const mode = await replaceJournal(target, temporary, body, this.io);
+      if (mission.evidence) {
+        const folder = join(dir, mission.id);
+        await settle(makeDir(folder, { recursive: true }), deadlineOf(this.io));
+        const write = this.io.writeFile ?? writeFile;
+        const evidence = mission.evidence;
+        const commands = evidence.commands
+          .map((command) =>
+            command.exitCode === null
+              ? `${command.command}\tnon lancé`
+              : `${command.command}\texit ${command.exitCode}`,
+          )
+          .join('\n');
+        await settle(
+          write(join(folder, 'evidence.json'), JSON.stringify(evidence, null, 2)),
+          deadlineOf(this.io),
+        );
+        await settle(write(join(folder, 'diff.txt'), evidence.diff ?? ''), deadlineOf(this.io));
+        await settle(write(join(folder, 'commands.txt'), commands), deadlineOf(this.io));
+      }
+      return mode;
     });
     this.queue = next.then(
       () => undefined,
@@ -260,12 +281,16 @@ export class MissionStore {
     await this.save(mission);
     if (from === mission.projectId || !ID.test(mission.id)) return;
     const remove = this.io.rm ?? rm;
-    const next = this.queue.then(() =>
-      settle(
+    const next = this.queue.then(async () => {
+      await settle(
         remove(join(this.dir(from), `${mission.id}.json`), { force: true }),
         deadlineOf(this.io),
-      ),
-    );
+      );
+      await settle(
+        remove(join(this.dir(from), mission.id), { force: true, recursive: true }),
+        deadlineOf(this.io),
+      ).catch(() => undefined);
+    });
     this.queue = next.then(
       () => undefined,
       () => undefined,
@@ -277,7 +302,25 @@ export class MissionStore {
     if (!ID.test(id)) return null;
     try {
       const value = JSON.parse(await readFile(join(this.dir(projectId), `${id}.json`), 'utf8'));
-      return isMissionState(value) ? value : null;
+      if (!isMissionState(value)) return null;
+      if (!value.evidence) {
+        try {
+          const extra = JSON.parse(
+            await readFile(join(this.dir(projectId), id, 'evidence.json'), 'utf8'),
+          ) as MissionState['evidence'];
+          if (extra && extra.id === id && extra.status) value.evidence = extra;
+        } catch {
+          /* Le dossier peut manquer : le journal reste lisible. */
+        }
+      }
+      if (value.evidence) {
+        try {
+          value.evidence = recheckStoredEvidence(value.evidence);
+        } catch {
+          /* Une preuve illisible ne remplace pas le journal. */
+        }
+      }
+      return value;
     } catch {
       return null;
     }

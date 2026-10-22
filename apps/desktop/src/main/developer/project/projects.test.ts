@@ -217,7 +217,9 @@ describe('projets (0.5.3)', () => {
       'photos',
     );
     const mission = done.mission!;
-    expect(mission.status, mission.summary ?? '').toBe('finished');
+    expect(done.codeTask?.report?.verdict).toBe('success');
+    expect(mission.evidence?.status).not.toBe('success_verified');
+    expect(mission.status, mission.summary ?? '').toBe('failed');
     expect(mission.projectId).toBe('photos');
     const task = done.codeTask!;
     expect(task.projectId).toBe('photos');

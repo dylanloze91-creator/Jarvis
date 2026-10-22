@@ -176,7 +176,9 @@ describe('« Améliorer » et « Compétence » (0.5.5)', () => {
       /^Exporter une constante VERSION\. Preuves : src\/index\.ts/,
     );
     expect(linked.mission?.fromProposal).toEqual({ missionId: mission.id, index: 0 });
-    expect(linked.mission?.status, linked.mission?.summary ?? '').toBe('finished');
+    expect(linked.codeTask?.report?.verdict).toBe('success');
+    expect(linked.mission?.evidence?.status).not.toBe('success_verified');
+    expect(linked.mission?.status, linked.mission?.summary ?? '').toBe('failed');
     const reopened = await h.instance.openMission(mission.id, 'jarvis');
     expect(reopened.mission?.proposals?.[0]?.missionId).toBe(linked.mission!.id);
     expect((await h.instance.startProposal(mission.id, 0, 'jarvis')).notice).toMatch(
