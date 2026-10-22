@@ -15,7 +15,9 @@ import {
 } from 'electron';
 import {
   checkOllamaStatus,
-  formatLearningContext,
+  coderLearningPrompt,
+  memoryRetrievalEnabled,
+  skillLibraryEnabled,
   createDefaultMarketDataRegistry,
   createDefaultRegistry,
   createWebSearchRegistry,
@@ -577,7 +579,12 @@ function registerIpc(): void {
     searchRegistry,
     userDataPath: () => app.getPath('userData'),
     chat: chatActivity,
-    learningRecall: async (query) => formatLearningContext(await knowledge.relevantLearning(query, 4)),
+    learningRecall: async (query) =>
+      coderLearningPrompt(await knowledge.relevantLearning(query, 4), {
+        query,
+        memory: memoryRetrievalEnabled(settings.developer),
+        skills: skillLibraryEnabled(settings.developer),
+      }),
     learningRecords: async (query) => knowledge.applicableLearning(query, 4),
     rememberLearning: async (record) => {
       await knowledge.applyLearning(record);

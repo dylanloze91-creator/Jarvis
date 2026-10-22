@@ -134,6 +134,16 @@ export const developerSettingsSchema = z.object({
    * Mémoriser une fiche « solution validée » après mission réussie (absent : activé).
    */
   knowledgeLearning: z.boolean().optional(),
+  /**
+   * Injecter une expérience dans le codeur. Absent : le défaut du banc 5.0.47.
+   * Indépendant de la bibliothèque de compétences. Les fiches restent en mémoire.
+   */
+  memoryRetrieval: z.boolean().optional(),
+  /**
+   * Injecter ou lancer une compétence. Absent : le défaut du banc 5.0.47.
+   * Indépendant de la récupération des expériences.
+   */
+  skillLibrary: z.boolean().optional(),
   /** Recherche web périodique. Absente ou fausse : coupée. */
   periodicWebResearch: z.boolean().optional(),
   /** Sujets surveillés, trois au plus sont vraiment interrogés. */
@@ -141,6 +151,21 @@ export const developerSettingsSchema = z.object({
 });
 
 export type DeveloperSettings = z.infer<typeof developerSettingsSchema>;
+
+/**
+ * Défaut après le banc 5.0.47. A (modèle seul) tant que la mémoire sélective
+ * ou les compétences ne font pas mieux. Les fiches restent stockées.
+ */
+export const DEFAULT_MEMORY_RETRIEVAL = false;
+export const DEFAULT_SKILL_LIBRARY = false;
+
+export function memoryRetrievalEnabled(developer: { memoryRetrieval?: boolean } | undefined): boolean {
+  return developer?.memoryRetrieval ?? DEFAULT_MEMORY_RETRIEVAL;
+}
+
+export function skillLibraryEnabled(developer: { skillLibrary?: boolean } | undefined): boolean {
+  return developer?.skillLibrary ?? DEFAULT_SKILL_LIBRARY;
+}
 
 export const settingsSchema = z.object({
   provider: z.string().min(1).default('mock'),

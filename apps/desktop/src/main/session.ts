@@ -10,7 +10,9 @@ import {
   withSiteBlockPrompt,
   withKnowledgePrompt,
   classifyUtterance,
-  formatLearningContext,
+  coderLearningPrompt,
+  memoryRetrievalEnabled,
+  skillLibraryEnabled,
   learningReminder,
   noteToRecord,
   withVoiceOriginNotice,
@@ -76,9 +78,16 @@ export class ChatSession {
     }
     const recall = knowledge.promptLearning ?? knowledge.relevantLearning;
     const hits = recall ? await recall.call(knowledge, text, 4).catch(() => []) : [];
-    const memory = formatLearningContext(hits);
+    const dev = settings.developer;
+    const memory = coderLearningPrompt(hits, {
+      query: text,
+      memory: memoryRetrievalEnabled(dev),
+      skills: skillLibraryEnabled(dev),
+    });
     const trusted = hits.filter(
-      (item) => item.origin === 'user' || item.origin === 'mission',
+      (item) =>
+        (item.origin === 'user' || item.origin === 'mission') &&
+        !(item.type === 'experience' && item.hint),
     );
     return {
       systemPrompt: memory ? `${base}\n\n${memory}` : base,

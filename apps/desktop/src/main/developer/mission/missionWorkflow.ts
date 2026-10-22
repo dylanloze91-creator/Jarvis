@@ -70,6 +70,8 @@ import {
   randomId,
   experienceFromMission,
   experienceAttempt,
+  memoryRetrievalEnabled,
+  skillLibraryEnabled,
   experienceReplacement,
   skillFromObservation,
   type LearningRecord,
@@ -2205,6 +2207,22 @@ export class MissionWorkflow {
       recallExperiences: this.deps.learningRecords
         ? (query) => this.deps.learningRecords!(query)
         : undefined,
+      injectionMemory: memoryRetrievalEnabled(this.developer()),
+      injectionSkills: skillLibraryEnabled(this.developer()),
+      onInjectionRejected: (cause) => {
+        const mission = this.current;
+        if (!mission) return;
+        const attempt = experienceAttempt({
+          id: randomId(),
+          now: this.now,
+          request: mission.request,
+          expected: 'les tests de ce projet passent',
+          happened: cause,
+          likelyCause: cause,
+          nextHypothesis: 'Ne pas réappliquer cet indice : les tests de ce fichier l’ont refusé.',
+        });
+        void this.deps.rememberLearning?.(attempt);
+      },
       onMethodApplied: (id) => {
         if (!this.appliedMethodIds.includes(id)) this.appliedMethodIds.push(id);
       },

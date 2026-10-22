@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { codeModelById, type DeveloperSettings } from '@jarvis/core';
+import { codeModelById, memoryRetrievalEnabled, skillLibraryEnabled, type DeveloperSettings } from '@jarvis/core';
 import {
   Download,
   FolderSearch,
@@ -272,6 +272,18 @@ export function DeveloperSettingsSection({
             hint="Après une modification réussie (tests verts), enregistre une fiche locale. Coupé : aucune nouvelle fiche. Une correction du chat est reprise tout de suite, sans attendre un entraînement."
             checked={developer.knowledgeLearning !== false}
             onChange={(on) => onSave({ ...developer, knowledgeLearning: on })}
+          />
+          <Toggle
+            label="Récupération de la mémoire"
+            hint="Indépendante de la bibliothèque. Un indice n’est proposé que si sa ligne est dans le fichier courant. Sinon rien n’est injecté. Les fiches restent enregistrées."
+            checked={memoryRetrievalEnabled(developer)}
+            onChange={(on) => onSave({ ...developer, memoryRetrieval: on })}
+          />
+          <Toggle
+            label="Bibliothèque de compétences"
+            hint="Indépendante de la mémoire. Une compétence n’est lancée que si elle convient aux tests de ce fichier. Un échec la retire et ne la valide pas."
+            checked={skillLibraryEnabled(developer)}
+            onChange={(on) => onSave({ ...developer, skillLibrary: on })}
           />
           <Toggle
             label="Recherche web périodique"

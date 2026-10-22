@@ -83,6 +83,12 @@ export interface TaskHooks {
    * de ce projet. Sans ce rappel, la boucle ne change rien de plus.
    */
   recallExperiences?: (query: string) => Promise<import('@jarvis/core').LearningRecord[]>;
+  /** Récupération des expériences. Absente ou fausse : aucun indice écrit. */
+  injectionMemory?: boolean;
+  /** Bibliothèque de compétences. Absente ou fausse : aucune compétence lancée. */
+  injectionSkills?: boolean;
+  /** L’indice a échoué aux tests de ce projet. Ce n’est pas une compétence validée. */
+  onInjectionRejected?: (cause: string) => void;
   /** Méthode appliquée dans ce projet. Le règlement se fait après les tests. */
   onMethodApplied?: (recordId: string) => void;
   /** La méthode n’a pas tranché : ni les étapes ni le statut ne changent. */

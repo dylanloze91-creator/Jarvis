@@ -57,8 +57,8 @@ import {
   SAFETY_LABELS,
   applyExperienceToSource,
   applySkill,
-  applySkillTrial,
   codeSymptomQuery,
+  selectInjection,
   languageOfPath,
   type LearningRecord,
 } from '@jarvis/core';
@@ -137,6 +137,9 @@ export class TaskRun extends TaskRunBase {
   private readonly acknowledged = new Set<string>();
   private pendingWrite: string | null = null;
   private readonly adoptedWrites = new Set<string>();
+  private readonly injectionBackup = new Map<string, string>();
+  private injectionBlocked = false;
+  private pendingSkills: string[] = [];
 
   constructor(
     host: TaskHost,
@@ -776,7 +779,9 @@ export class TaskRun extends TaskRunBase {
   private async applyRecalledExperience(notes: readonly string[]): Promise<string[]> {
     const recall = this.hooks.recallExperiences;
     const root = this.sandbox?.path;
-    if (!recall || !root) return [];
+    const memory = this.hooks.injectionMemory === true;
+    const skills = this.hooks.injectionSkills === true;
+    if (!recall || !root || this.injectionBlocked || (!memory && !skills)) return [];
     const paths = this.experienceSourcePaths(notes, root);
     const snippets: string[] = [];
     const testsBySource = new Map<string, string>();
@@ -810,16 +815,6 @@ export class TaskRun extends TaskRunBase {
     } catch {
       return [];
     }
-    const hasExperience = records.some(
-      (item) => item.type === 'experience' && item.status === 'validated' && item.hint,
-    );
-    const hasMethod = records.some(
-      (item) =>
-        item.type === 'procedure' &&
-        item.method &&
-        (item.status === 'candidate' || item.status === 'validated' || item.status === 'review'),
-    );
-    if (!hasExperience && !hasMethod) return [];
     const written: string[] = [];
     for (const rel of paths) {
       const abs = join(root, rel);
@@ -832,50 +827,83 @@ export class TaskRun extends TaskRunBase {
       }
       const tests = testsBySource.get(rel) ?? '';
       const language = languageOfPath(rel);
-      const experienced = applyExperienceToSource(source, records, {
-        language,
-        version: process.version,
-        role: /\.test\.|\.spec\.|__tests__\//.test(rel) ? 'test' : 'source',
-      });
-      const skill = applySkill(experienced.source, tests, records, {
-        language,
-        version: process.version,
+      const decision = selectInjection(records, {
         query: this.state.request,
+        source,
+        tests,
+        language,
+        version: process.version,
+        memory,
+        skills,
       });
-      const trial = skill.selectedId
-        ? null
-        : applySkillTrial(experienced.source, tests, records, {
-            language,
-            version: process.version,
-            query: this.state.request,
-          });
-      const chosen = trial?.used ? trial : skill;
-      if (chosen.uncertain) {
-        this.host.log(chosen.uncertain);
-        if (chosen.recordId) this.hooks.onMethodUncertain?.(chosen.recordId);
-      } else if (chosen.used && chosen.recordId) {
-        this.hooks.onMethodApplied?.(chosen.recordId);
-        this.host.log(
-          trial?.used
-            ? `Compétence candidate « ${chosen.selectedName} » essayée dans ${rel}. Elle n’est retenue que si les tests de ce projet passent.`
-            : `Compétence « ${chosen.selectedName} » utilisée dans ${rel}. Le correctif vient des tests de ce fichier.`,
-        );
-      } else if (skill.selectedId) {
-        this.host.log(
-          `Compétence « ${skill.selectedName} » sélectionnée dans ${rel}, non appliquée : aucune modification sûre.`,
-        );
+      if (!decision.experience && !decision.skill) continue;
+      let next = source;
+      let skillId: string | null = null;
+      let skillName = '';
+      if (decision.skill) {
+        const skilled = applySkill(source, tests, [decision.skill], {
+          language,
+          version: process.version,
+          query: this.state.request,
+          validatedOnly: true,
+        });
+        if (skilled.used) {
+          next = skilled.source;
+          skillId = skilled.recordId ?? null;
+          skillName = skilled.selectedName ?? decision.skill.skill?.name ?? '';
+        }
       }
-      const next = chosen.used ? chosen.source : experienced.source;
+      if (next === source && decision.experience) {
+        const card = applyExperienceToSource(source, [decision.experience], {
+          language,
+          version: process.version,
+          role: 'source',
+        });
+        if (card.applied) next = card.source;
+      }
       if (next === source) continue;
+      if (!this.injectionBackup.has(rel)) this.injectionBackup.set(rel, source);
       await writeFile(abs, next, 'utf8');
       written.push(rel);
-      if (experienced.applied) {
-        this.host.log(
-          `Indice d’une expérience validée appliqué dans ${rel}. Le fichier de ce projet est modifié, l’ancien fichier n’est pas recopié.`,
-        );
-      }
+      if (skillId) this.pendingSkills.push(skillId);
+      this.host.log(
+        skillId
+          ? `Compétence « ${skillName} » essayée dans ${rel}. Elle n’est retenue que si les tests de ce projet passent.`
+          : `Indice essayé dans ${rel}. Il est retiré si les tests de ce projet échouent.`,
+      );
     }
     return written;
+  }
+
+  /** Tests rouges : on retire l’indice et on n’en fait pas une compétence validée. */
+  private async rejectInjectionIfRed(ok: boolean): Promise<boolean> {
+    if (!this.injectionBackup.size) {
+      if (ok) this.commitPendingSkills();
+      return false;
+    }
+    if (ok) {
+      this.injectionBackup.clear();
+      this.commitPendingSkills();
+      return false;
+    }
+    const root = this.sandbox?.path;
+    if (root) {
+      for (const [rel, content] of this.injectionBackup) {
+        await writeFile(join(root, rel), content, 'utf8');
+      }
+    }
+    this.injectionBackup.clear();
+    this.pendingSkills = [];
+    this.injectionBlocked = true;
+    const cause = 'l’indice appliqué a échoué aux tests de ce projet';
+    this.host.log('Indice retiré : les tests de ce projet ont échoué. Ce n’est pas une compétence validée.');
+    this.hooks.onInjectionRejected?.(cause);
+    return true;
+  }
+
+  private commitPendingSkills(): void {
+    for (const id of this.pendingSkills) this.hooks.onMethodApplied?.(id);
+    this.pendingSkills = [];
   }
 
   private experienceSourcePaths(notes: readonly string[], root: string): string[] {
@@ -1404,6 +1432,16 @@ export class TaskRun extends TaskRunBase {
       step,
       signal,
     );
+    if (await this.rejectInjectionIfRed(run.ok)) {
+      run = await this.runtimeGate(
+        await this.reviewGate(
+          await this.testRun('Après retrait de l’indice', 'test', step, signal, pause),
+          signal,
+        ),
+        step,
+        signal,
+      );
+    }
     let previous = failureSignature(run.newFailures);
     while (!run.ok && state.attempts < state.maxAttempts) {
       const n = (state.attempts += 1);
@@ -1504,6 +1542,16 @@ export class TaskRun extends TaskRunBase {
         step,
         signal,
       );
+      if (await this.rejectInjectionIfRed(run.ok)) {
+        run = await this.runtimeGate(
+          await this.reviewGate(
+            await this.testRun(`Correction ${n}, indice retiré`, `retest-${n}`, step, signal, pause),
+            signal,
+          ),
+          step,
+          signal,
+        );
+      }
       const current = failureSignature(run.newFailures);
       if (!run.ok && current === previous && n < state.maxAttempts) {
         const launchFailure = run.newFailures.some((failure) =>
