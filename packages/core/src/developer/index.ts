@@ -78,6 +78,29 @@ export {
   type MissionEvidence,
   type TaskEvidenceInput,
 } from './evidence.js';
+export {
+  LAB_LIMITS,
+  LAB_MODEL_DIGEST_PREFIX,
+  LAB_MODEL_NAME,
+  classifyLabRow,
+  hiddenTestsIsolated,
+  labBrief,
+  labContamination,
+  labRealExport,
+  levelSound,
+  missionsForLevel,
+  nearDuplicate,
+  referenceMissions,
+  skillBrief,
+  validateLabMission,
+  type LabBrief,
+  type LabCategory,
+  type LabFile,
+  type LabLevel,
+  type LabMission,
+  type LabRowStatus,
+  type LabSplit,
+} from './lab.js';
 export * from './planScope.js';
 export * from './editSymbolContext.js';
 export * from './symbolSearchCache.js';
