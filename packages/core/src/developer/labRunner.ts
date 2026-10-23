@@ -5,7 +5,7 @@
  */
 import { spawnSync } from 'node:child_process';
 import { mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, posix, win32 } from 'node:path';
 import { createMission, type MissionState } from './engine/mission.js';
 import { judgeMissionEvidence, missionVerdictFromEvidence, type MissionEvidence } from './evidence.js';
 import { selectSkill } from '../learning/skills.js';
@@ -119,19 +119,43 @@ export function sanitizeTestFeedback(output: string): string {
   return kept || 'Un test a échoué. Le fichier de test n’est pas montré.';
 }
 
-function posixParts(input: string): string[] | null {
-  const parts: string[] = [];
-  for (const part of input.split('/')) {
-    if (!part || part === '.') continue;
-    if (part === '..') {
-      if (parts.length === 0) return null;
-      parts.pop();
-      continue;
-    }
-    if (part.includes('\\')) return null;
-    parts.push(part);
+type PathApi = {
+  readonly sep: string;
+  isAbsolute(path: string): boolean;
+  resolve(...paths: string[]): string;
+  relative(from: string, to: string): string;
+};
+
+/** Racine ou demande au format Windows. Sur Linux, ce n’est pas un disque : seulement la règle de chemin. */
+function isWindowsPath(value: string): boolean {
+  return /^[A-Za-z]:[\\/]/.test(value) || value.startsWith('\\\\');
+}
+
+/**
+ * Résout avec les règles POSIX ou Windows. Un chemin d’un autre système n’est pas
+ * recopié dans la racine. `..` qui sort, et un préfixe voisin, sont refusés.
+ */
+function resolveWith(
+  api: PathApi,
+  root: string,
+  requested: string,
+): { ok: true; full: string; relative: string } | { ok: false } {
+  if (!requested || requested.includes('\0')) return { ok: false };
+  if (api.sep === '/' && requested.includes('\\')) return { ok: false };
+  const rootAbsolute = api.resolve(root);
+  const full = api.isAbsolute(requested) ? api.resolve(requested) : api.resolve(rootAbsolute, requested);
+  const relativeNative = api.relative(rootAbsolute, full);
+  if (
+    !relativeNative ||
+    relativeNative === '..' ||
+    relativeNative.startsWith(`..${api.sep}`) ||
+    api.isAbsolute(relativeNative)
+  ) {
+    return { ok: false };
   }
-  return parts;
+  const relative = relativeNative.split(api.sep).join('/');
+  if (relative.toLowerCase().includes('hidden') || relative.toLowerCase().endsWith('.test.mjs')) return { ok: false };
+  return { ok: true, full, relative };
 }
 
 /** Chemin relatif, ou absolu déjà dans la racine. Un chemin étranger n’est pas réécrit dedans. */
@@ -139,30 +163,27 @@ export function resolveWorkPath(
   root: string,
   requested: string,
 ): { ok: true; full: string; relative: string } | { ok: false } {
-  if (!requested || requested.includes('\\') || requested.includes('\0')) return { ok: false };
-  const rootParts = posixParts(root.startsWith('/') ? root : `/${root}`);
-  if (!rootParts || rootParts.length === 0) return { ok: false };
-  const rootNorm = `/${rootParts.join('/')}`;
-  let relative = '';
-  if (requested.startsWith('/')) {
-    const absParts = posixParts(requested);
-    if (!absParts) return { ok: false };
-    const abs = `/${absParts.join('/')}`;
-    if (abs !== rootNorm && !abs.startsWith(`${rootNorm}/`)) return { ok: false };
-    relative = abs === rootNorm ? '' : abs.slice(rootNorm.length + 1);
-  } else {
-    const relParts = posixParts(requested);
-    if (!relParts) return { ok: false };
-    relative = relParts.join('/');
-  }
-  if (!relative || relative.includes('hidden') || relative.endsWith('.test.mjs')) return { ok: false };
-  const full = `${rootNorm}/${relative}`;
-  if (!full.startsWith(`${rootNorm}/`)) return { ok: false };
-  return { ok: true, full, relative };
+  if (!requested || requested.includes('\0')) return { ok: false };
+  if (!isWindowsPath(root) && isWindowsPath(requested)) return { ok: false };
+  const api: PathApi = isWindowsPath(root) || isWindowsPath(requested) ? win32 : posix;
+  return resolveWith(api, root, requested);
+}
+
+function hostIsWindows(): boolean {
+  const platform = (globalThis as unknown as { process?: { platform?: string } }).process?.platform;
+  return platform === 'win32';
+}
+
+function isAllowedLabPath(path: string, allowed: readonly string[]): boolean {
+  const normalized = path.replace(/\\/g, '/');
+  return allowed.some((candidate) => {
+    const expected = candidate.replace(/\\/g, '/');
+    return hostIsWindows() ? normalized.toLowerCase() === expected.toLowerCase() : normalized === expected;
+  });
 }
 
 function pathRefusal(requested: string, allowed: readonly string[]): string {
-  return `chemin refusé : ${requested || '(vide)'} est hors du dossier. Chemin autorisé : ${allowed.join(', ')}`;
+  return `chemin refusé : ${requested || '(vide)'} n’est pas un chemin de fichier autorisé dans le dossier. Chemin autorisé : ${allowed.join(', ')}`;
 }
 
 function nodeProcess(): { execPath: string; version: string; env: { PATH?: string } } {
@@ -214,21 +235,28 @@ function sameBytes(left: Map<string, string | null>, right: Map<string, string |
 async function applyTool(root: string, call: ToolCall, allowed: readonly string[]): Promise<string> {
   if (call.name === 'list_files') return (await listRel(root)).join('\n') || '(vide)';
   if (call.name === 'read_file') {
-    const resolved = resolveWorkPath(root, String(call.arguments.path ?? ''));
-    if (!resolved.ok) return pathRefusal(String(call.arguments.path ?? ''), allowed);
+    const requested = String(call.arguments.path ?? '');
+    const resolved = resolveWorkPath(root, requested);
+    if (!resolved.ok || !isAllowedLabPath(resolved.relative, allowed)) {
+      return pathRefusal(requested, allowed);
+    }
     return readFile(resolved.full, 'utf8').catch(() => 'fichier absent');
   }
   if (call.name === 'write_file') {
     const requested = String(call.arguments.path ?? '');
     const resolved = resolveWorkPath(root, requested);
-    if (!resolved.ok) return pathRefusal(requested, allowed);
+    if (!resolved.ok || !isAllowedLabPath(resolved.relative, allowed)) {
+      return pathRefusal(requested, allowed);
+    }
     const content = String(call.arguments.content ?? '');
     if (new TextEncoder().encode(content).byteLength > LAB_LIMITS.maxFileBytes) return 'fichier trop grand';
     const before = await readAllowed(root, allowed);
+    const previous = await readFile(resolved.full, 'utf8').catch(() => null);
     await mkdir(join(resolved.full, '..'), { recursive: true });
     await writeFile(resolved.full, content);
     if ((await dirBytes(root)) > LAB_LIMITS.maxDirBytes) {
-      await rm(resolved.full, { force: true });
+      if (previous === null) await rm(resolved.full, { force: true });
+      else await writeFile(resolved.full, previous, 'utf8');
       return 'dossier de travail trop grand';
     }
     const after = await readAllowed(root, allowed);
@@ -444,7 +472,9 @@ export async function runLabMission(input: {
     const notes: string[] = [];
     const allowed = mission.starterFiles.map((file) => file.path);
     const remember = (content: string) => {
-      if (content.startsWith('chemin refusé') || content.startsWith('vérification')) notes.push(content);
+      if (/^(chemin refusé|vérification|fichier trop grand|dossier de travail trop grand|outil refusé|fichier absent)/i.test(content)) {
+        notes.push(content);
+      }
     };
     try {
       while (rounds < LAB_LIMITS.maxRounds) {
@@ -452,7 +482,7 @@ export async function runLabMission(input: {
         let reply: { text: string; toolCalls: ToolCall[] };
         try {
           reply = await input.model.complete({
-            system: 'Tu n’as pas les tests. Écris le code avec write_file sur le chemin relatif indiqué. N’annonce pas un succès.',
+            system: `Tu n’as pas les tests. Écris le code avec write_file en utilisant exclusivement un chemin relatif autorisé : ${allowed.join(', ')}. N’utilise jamais un chemin hors de cette liste. Si un outil refuse le chemin, relis son retour puis réessaie avec le chemin autorisé. Ne prétends pas que les tests passent et n’annonce pas un succès.`,
             messages,
             signal: controller.signal,
           });

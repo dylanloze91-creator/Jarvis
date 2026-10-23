@@ -16,7 +16,14 @@ declare module 'node:path' {
     normalize(path: string): string;
     relative(from: string, to: string): string;
     isAbsolute(path: string): boolean;
+    resolve(...paths: string[]): string;
+    readonly sep: string;
   }
-  const path: { posix: PosixPath };
+  export const posix: PosixPath;
+  export const win32: PosixPath;
+  export function resolve(...paths: string[]): string;
+  export function relative(from: string, to: string): string;
+  export function isAbsolute(path: string): boolean;
+  const path: { posix: PosixPath; win32: PosixPath };
   export default path;
 }
