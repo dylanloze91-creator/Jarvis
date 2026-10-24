@@ -383,6 +383,108 @@ describe('laboratoire de missions', () => {
     expect(doubled.evidence?.status).not.toBe('success_verified');
   }, 60_000);
 
+  it('renvoie au nouvel essai l’erreur, le chemin, la relecture, et confirme l’écriture', async () => {
+    const mission = referenceMissions().find((item) => item.id === 'l1-keel-sign')!;
+    const dir = await mkdtemp(join(tmpdir(), 'jarvis-lab-retry-'));
+    let attempt = -1;
+    const model: LabModel = {
+      name: 'stub',
+      digest: 'synthetic',
+      async complete(input) {
+        const fresh = input.messages.every((message) => message.role === 'user');
+        if (fresh) attempt += 1;
+        const round = input.messages.filter((message) => message.role === 'assistant').length;
+        if (round > 0) return { text: '', toolCalls: [] };
+        const bodies = [
+          'export function keel(n) {\n  return 4;\n}\n',
+          'export function keel(n) {\n  return -1;\n}\n',
+          'export function keel(n) {\n  return 7;\n}\n',
+        ];
+        const content = bodies[attempt] ?? bodies[bodies.length - 1]!;
+        return { text: '', toolCalls: [{ id: `w${attempt}`, name: 'write_file', arguments: { path: 'src/keel.mjs', content } }] };
+      },
+    };
+    const retried = await runLabMission({
+      mission,
+      model,
+      arm: 'alone',
+      workRoot: join(dir, 'retry'),
+      synthetic: true,
+      maxAttempts: 3,
+    });
+    expect(retried.technicalSuccess).toBe(false);
+    expect(retried.trainingAdmission).toBe('rejected');
+    expect(retried.skillAdmission).toBe('none');
+    expect(retried.prompt).toContain('src/keel.mjs');
+    expect(retried.prompt).toContain('return -1');
+    expect(retried.prompt).toContain('écriture confirmée');
+    expect(retried.prompt).toMatch(/actual:\s*-1|actual: -1/);
+    expect(retried.prompt).not.toContain('return 4');
+    expect(retried.prompt).not.toContain('actual: 4');
+    expect(retried.prompt).not.toContain('assert.equal');
+    expect(retried.prompt).not.toContain('hidden/keel.test.mjs');
+    expect(retried.attempts[2]?.filesBefore[0]?.content).toContain('return -1');
+    expect(retried.attempts[1]?.filesAfter[0]?.content).toContain('return -1');
+
+    const silent: LabModel = {
+      name: 'stub',
+      digest: 'synthetic',
+      async complete() {
+        return { text: 'je ne touche pas au fichier', toolCalls: [] };
+      },
+    };
+    const untouched = await runLabMission({
+      mission,
+      model: silent,
+      arm: 'alone',
+      workRoot: join(dir, 'silent'),
+      synthetic: true,
+      maxAttempts: 2,
+    });
+    expect(untouched.prompt).toContain('src/keel.mjs');
+    expect(untouched.prompt).toContain('return 0');
+    expect(untouched.prompt).toContain('aucune écriture confirmée');
+    expect(untouched.prompt).toMatch(/expected|Expected/);
+    expect(untouched.prompt).not.toContain('écriture confirmée, le fichier relu a changé');
+    expect(untouched.prompt).not.toContain('assert.equal');
+    expect(untouched.technicalSuccess).toBe(false);
+
+    const correct = 'export function keel(n) {\n  if (n > 0) return 1;\n  if (n < 0) return -1;\n  return 0;\n}\n';
+    const passed = await runLabMission({
+      mission,
+      model: stub({ path: 'src/keel.mjs', content: correct }),
+      arm: 'alone',
+      workRoot: join(dir, 'pass'),
+      synthetic: true,
+      maxAttempts: 1,
+    });
+    expect(passed.technicalSuccess).toBe(true);
+    expect(passed.evidence?.status).toBe('success_verified');
+    expect(passed.status).toBe('verified');
+    expect(passed.skillAdmission).toBe('none');
+    expect(passed.skillAdmission).not.toBe('candidate');
+    expect(passed.trainingAdmission).toBe('rejected');
+    expect(passed.evidence?.staging.reason).toMatch(/un seul fichier/);
+    expect(passed.evidence?.skill.reason).toMatch(/fichier d’avant/);
+
+    const quote = referenceMissions().find((item) => item.id === 'l3-quote-fee')!;
+    const fixedQuote = 'import { fee } from "./fee.mjs";\nexport function quote(cents) {\n  return cents + fee(cents);\n}\n';
+    const quoted = await runLabMission({
+      mission: quote,
+      model: stub({ path: 'src/quote.mjs', content: fixedQuote }),
+      arm: 'alone',
+      workRoot: join(dir, 'quote-ok'),
+      synthetic: true,
+      maxAttempts: 1,
+    });
+    expect(quoted.technicalSuccess).toBe(true);
+    expect(quoted.status).toBe('candidate');
+    expect(quoted.trainingAdmission).toBe('candidate');
+    expect(quoted.trainingAdmission).not.toBe('accepted');
+    expect(quoted.skillAdmission).toBe('none');
+    expect(quoted.evidence?.staging.reason).toMatch(/n’entre pas dans le jeu/);
+  }, 60_000);
+
   it('appelle le modèle réel, ou dit que la série est bloquée', async () => {
     const probe = await probeLabModel();
     if (!probe.ok) {

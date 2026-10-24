@@ -47,6 +47,10 @@ export interface LabAttempt {
   summary: string;
   shownToModel: string;
   toolFeedback: string;
+  /** Sortie brute du test, pour le journal. Elle n’est pas renvoyée au modèle. */
+  testOutput: string;
+  filesBefore: LabFile[];
+  filesAfter: LabFile[];
   regressionFailed?: boolean;
 }
 
@@ -65,6 +69,12 @@ export interface LabRunResult {
   status: LabRowStatus;
   reason: string;
   declaredSuccess: boolean;
+  /** Tests cachés verts sur les fichiers finaux. Indépendant du jeu et de la compétence. */
+  technicalSuccess: boolean;
+  /** Porte compétence, inchangée. Un succès technique ne l’ouvre pas. */
+  skillAdmission: 'candidate' | 'refused' | 'one-file' | 'duplicate' | 'none';
+  /** Porte du jeu, inchangée. Un succès technique ne devient pas une ligne. */
+  trainingAdmission: 'candidate' | 'accepted' | 'rejected' | 'none';
 }
 
 const TOOLS = [
@@ -314,8 +324,8 @@ export async function executeHiddenTests(
   }
 }
 
-function promptOf(brief: LabBrief, skillText: string, feedback: string): string {
-  const files = brief.files.map((file) => `Fichier ${file.path} :\n${file.content}`).join('\n\n');
+function promptOf(brief: LabBrief, skillText: string, feedback: string, currentFiles?: readonly LabFile[]): string {
+  const files = (currentFiles ?? brief.files).map((file) => `Fichier ${file.path} :\n${file.content}`).join('\n\n');
   return [
     brief.goal,
     brief.constraints.length ? `Contraintes :\n${brief.constraints.join('\n')}` : '',
@@ -327,6 +337,27 @@ function promptOf(brief: LabBrief, skillText: string, feedback: string): string 
   ]
     .filter(Boolean)
     .join('\n\n');
+}
+
+async function readAllowedFile(root: string, path: string): Promise<string | null> {
+  const resolved = resolveWorkPath(root, path);
+  if (!resolved.ok) return null;
+  return readFile(resolved.full, 'utf8').catch(() => null);
+}
+
+async function snapshotAllowed(root: string, allowed: readonly string[]): Promise<LabFile[]> {
+  const files: LabFile[] = [];
+  for (const path of allowed) {
+    files.push({ path, content: (await readAllowedFile(root, path)) ?? '' });
+  }
+  return files;
+}
+
+/** Confirmation de cet essai seulement. Pas le fichier de départ, pas une erreur plus ancienne. */
+function landedLine(path: string, before: string | null, after: string | null): string {
+  if (after == null) return `Chemin ${path} : fichier absent après l’essai.`;
+  if (before !== after) return `Chemin ${path} : écriture confirmée, le fichier relu a changé.`;
+  return `Chemin ${path} : aucune écriture confirmée, le fichier relu est inchangé.`;
 }
 
 function evidenceFor(input: {
@@ -413,6 +444,9 @@ export async function runLabMission(input: {
     files: [] as LabFile[],
     evidence: null as MissionEvidence | null,
     declaredSuccess: false,
+    technicalSuccess: false,
+    skillAdmission: 'none' as const,
+    trainingAdmission: 'none' as const,
   };
   if (!shape.ok) {
     return { ...base, excluded: true, excludeReason: shape.reason, status: 'rejected', reason: shape.reason };
@@ -459,10 +493,13 @@ export async function runLabMission(input: {
 
   const maxAttempts = input.maxAttempts ?? LAB_LIMITS.maxAttempts;
   let feedback = '';
+  let currentFiles: LabFile[] | undefined;
   const attempts: LabAttempt[] = [];
   let prompt = '';
+  const allowedPaths = mission.starterFiles.map((file) => file.path);
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-    prompt = promptOf(labBrief(mission), skill.text, feedback);
+    const filesBefore = await snapshotAllowed(input.workRoot, allowedPaths);
+    prompt = promptOf(labBrief(mission), skill.text, feedback, attempt === 0 ? undefined : currentFiles);
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), input.timeoutMs ?? LAB_LIMITS.timeoutMs);
     const messages: ChatMessage[] = [
@@ -532,6 +569,13 @@ export async function runLabMission(input: {
     const shown = run.exitCode === 0 ? '' : sanitizeTestFeedback(run.output);
     const regressionFailed = /✖[^\n]*fee inchangé/.test(run.output);
     const toolFeedback = notes.join('\n');
+    const filesAfter = await snapshotAllowed(input.workRoot, allowedPaths);
+    const beforeByPath = new Map(filesBefore.map((file) => [file.path, file.content]));
+    const landed = allowedPaths.map((path) => {
+      const after = filesAfter.find((file) => file.path === path)?.content ?? null;
+      const before = beforeByPath.get(path) ?? null;
+      return landedLine(path, before, after);
+    });
     attempts.push({
       exitCode: run.exitCode,
       testsRan: counts.total,
@@ -539,10 +583,14 @@ export async function runLabMission(input: {
       summary,
       shownToModel: shown,
       toolFeedback,
+      testOutput: run.output,
+      filesBefore,
+      filesAfter,
       regressionFailed,
     });
     if (run.exitCode === 0 && counts.failed === 0 && counts.total) break;
-    feedback = [toolFeedback, shown].filter(Boolean).join('\n');
+    currentFiles = filesAfter;
+    feedback = [toolFeedback, shown, ...landed].filter(Boolean).join('\n');
   }
 
   const files: LabFile[] = [];
@@ -567,6 +615,7 @@ export async function runLabMission(input: {
     synthetic: input.synthetic === true,
     acceptedByGates: false,
   });
+  const technicalSuccess = evidence.status === 'success_verified';
   return {
     ...base,
     excluded: false,
@@ -578,6 +627,9 @@ export async function runLabMission(input: {
     evidence,
     status: row.status,
     reason: row.reason,
+    technicalSuccess,
+    skillAdmission: evidence.skill.action,
+    trainingAdmission: evidence.staging.validationStatus,
   };
 }
 
