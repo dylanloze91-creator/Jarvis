@@ -114,19 +114,74 @@ function countNodeTests(output: string): { total: number | null; failed: number 
   return { total: null, failed: null };
 }
 
+function yamlScalar(value: string): string {
+  const text = value.trim();
+  return text === '~' ? 'null' : text;
+}
+
+/** Contrôle échoué et message, sans le fichier de test et sans le correctif. */
 export function sanitizeTestFeedback(output: string): string {
-  const kept = output
-    .split(/\r?\n/)
-    .filter((line) => {
-      const text = line.trim();
-      if (!text) return false;
-      if (/assert\.|node:test|hidden\/|\.test\.mjs|import /.test(text)) return false;
-      return /fail|Error|expected|Expected|actual|Assertion/.test(text);
-    })
-    .slice(0, 8)
-    .join('\n')
-    .slice(0, 400);
+  const blocks: string[] = [];
+  for (const chunk of output.split(/\r?\n(?=not ok )/g)) {
+    const title = /^not ok \d+ - (.+)$/m.exec(chunk);
+    if (!title) continue;
+    const lines = [`Contrôle échoué : ${title[1]!.trim()}`];
+    const inline = /^[ ]*error:\s*'([^']*)'/m.exec(chunk);
+    const folded = /^[ ]*error:\s*\|-\s*\n([\s\S]*?)\n[ ]*code:/m.exec(chunk);
+    const errorBody = (inline?.[1] ?? folded?.[1] ?? '')
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .join('\n');
+    if (errorBody) lines.push(errorBody);
+    const expected = /^[ ]*expected:\s*(.+)$/m.exec(chunk);
+    const actual = /^[ ]*actual:\s*(.+)$/m.exec(chunk);
+    const errName = /^[ ]*name:\s*'([^']+)'/m.exec(chunk);
+    if (expected) lines.push(`expected: ${yamlScalar(expected[1]!)}`);
+    if (actual) lines.push(`actual: ${yamlScalar(actual[1]!)}`);
+    if (errName && errName[1] !== 'AssertionError') lines.push(`name: ${errName[1]}`);
+    const text = lines.filter((line) => !/hidden\/|\.test\.mjs|assert\.|node:test|node:internal/.test(line)).join('\n');
+    if (text) blocks.push(text);
+  }
+  const kept = blocks.join('\n').slice(0, 700);
   return kept || 'Un test a échoué. Le fichier de test n’est pas montré.';
+}
+
+function crashSet(output: string): Set<string> {
+  const found = new Set<string>();
+  for (const match of output.matchAll(/^[ \t]*name:\s*'([^']+)'/gm)) {
+    const name = match[1];
+    if (name && name !== 'AssertionError') found.add(name);
+  }
+  if (/\bSyntaxError\b/.test(output)) found.add('SyntaxError');
+  return found;
+}
+
+function regressed(
+  before: { failed: number; crashes: ReadonlySet<string> },
+  run: { exitCode: number | null; output: string },
+): boolean {
+  if (run.exitCode === null) return true;
+  const counts = countNodeTests(run.output);
+  if (counts.failed === null) return true;
+  if (counts.failed > before.failed) return true;
+  for (const name of crashSet(run.output)) {
+    if (!before.crashes.has(name)) return true;
+  }
+  return false;
+}
+
+function regressionNote(
+  before: { failed: number; crashes: ReadonlySet<string> },
+  run: { exitCode: number | null; output: string },
+): string {
+  const counts = countNodeTests(run.output);
+  const crashes = [...crashSet(run.output)].filter((name) => !before.crashes.has(name));
+  const bits: string[] = [];
+  if (counts.failed !== null && counts.failed > before.failed) bits.push(`${counts.failed} échecs contre ${before.failed}`);
+  if (crashes.length > 0) bits.push(`plantage ${crashes.join(', ')}`);
+  if (run.exitCode === null || counts.failed === null) bits.push('sortie de test inutilisable');
+  return `Régression : ${bits.join(' ; ') || 'échec aggravé'}. Les octets précédents sont gardés.`;
 }
 
 type PathApi = {
@@ -242,6 +297,63 @@ function sameBytes(left: Map<string, string | null>, right: Map<string, string |
   return allowed.every((path) => left.get(path) === right.get(path));
 }
 
+function stripFileEnd(value: string): string {
+  return value.replace(/[ \t\r\n]+$/g, '');
+}
+
+/** Même corps : seul le blanc final a bougé. Ce n’est pas une correction. */
+function bodyDelta(before: string, after: string): 'same' | 'newline' | 'changed' {
+  if (before === after) return 'same';
+  if (stripFileEnd(before) === stripFileEnd(after)) return 'newline';
+  return 'changed';
+}
+
+function importedLocals(source: string): string[] {
+  const names: string[] = [];
+  for (const line of source.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith('import ')) continue;
+    const clause = /^import\s+([\s\S]*?)\s+from\s+['"][^'"]+['"]/.exec(trimmed)?.[1]?.trim();
+    if (!clause) continue;
+    const named = /\{([^}]*)\}/.exec(clause);
+    if (named) {
+      for (const part of named[1]!.split(',')) {
+        const bits = part.trim().split(/\s+as\s+/);
+        const local = (bits[bits.length - 1] ?? '').trim();
+        if (/^[A-Za-z_$][\w$]*$/.test(local)) names.push(local);
+      }
+    }
+    const star = /\*\s+as\s+([A-Za-z_$][\w$]*)/.exec(clause);
+    if (star?.[1]) names.push(star[1]);
+    const rest = clause
+      .replace(/\{[^}]*\}/g, ' ')
+      .replace(/\*\s+as\s+[A-Za-z_$][\w$]*/g, ' ')
+      .replace(/,/g, ' ')
+      .trim();
+    if (/^[A-Za-z_$][\w$]*$/.test(rest)) names.push(rest);
+  }
+  return names;
+}
+
+function definesName(source: string, name: string): boolean {
+  return new RegExp(`(?:function|class|const|let|var)\\s+${name}\\b`).test(source);
+}
+
+function usesName(source: string, name: string): boolean {
+  const body = source
+    .split(/\r?\n/)
+    .filter((line) => !line.trim().startsWith('import '))
+    .join('\n');
+  return new RegExp(`\\b${name}\\b`).test(body);
+}
+
+/** Noms d’import retirés, encore utilisés, et sans autre lien dans le fichier. */
+function unresolvedImportedNames(before: string, after: string): string[] {
+  const kept = new Set(importedLocals(after));
+  const missing = importedLocals(before).filter((name) => !kept.has(name));
+  return [...new Set(missing.filter((name) => usesName(after, name) && !definesName(after, name)))];
+}
+
 async function applyTool(root: string, call: ToolCall, allowed: readonly string[]): Promise<string> {
   if (call.name === 'list_files') return (await listRel(root)).join('\n') || '(vide)';
   if (call.name === 'read_file') {
@@ -269,12 +381,27 @@ async function applyTool(root: string, call: ToolCall, allowed: readonly string[
       else await writeFile(resolved.full, previous, 'utf8');
       return 'dossier de travail trop grand';
     }
+    const unresolved = unresolvedImportedNames(previous ?? '', content);
+    if (unresolved.length > 0) {
+      if (previous === null) await rm(resolved.full, { force: true });
+      else await writeFile(resolved.full, previous, 'utf8');
+      const names = unresolved.join(', ');
+      const detail =
+        unresolved.length === 1
+          ? `${names} est utilisé et le fichier ne le résout pas`
+          : `${names} sont utilisés et le fichier ne les résout pas`;
+      return `vérification : import encore nécessaire, ${detail}. Écriture annulée, les octets précédents sont gardés.`;
+    }
     const after = await readAllowed(root, allowed);
     if (allowed.some((path) => after.get(path) == null)) {
       return `vérification : un fichier attendu est absent. Chemin autorisé : ${allowed.join(', ')}`;
     }
     if (sameBytes(before, after, allowed)) {
       return `vérification : ${allowed.join(', ')} n’a pas changé. Chemin autorisé : ${allowed.join(', ')}`;
+    }
+    const written = after.get(resolved.relative) ?? content;
+    if (bodyDelta(previous ?? '', written) === 'newline') {
+      return `relecture : seul un saut de ligne final a changé dans ${resolved.relative}. Le corps est resté le même. Ce n’est pas une correction.`;
     }
     return 'écrit';
   }
@@ -289,11 +416,13 @@ function fenceWrite(text: string, mission: LabMission): { path: string; content:
   return { path: mission.starterFiles[0]!.path, content: `${content}\n` };
 }
 
+let verifySerial = 0;
+
 export async function executeHiddenTests(
   workRoot: string,
   mission: LabMission,
 ): Promise<{ exitCode: number | null; output: string; broken: boolean }> {
-  const verify = join(workRoot, '..', `verify-${mission.id}-${Date.now()}`);
+  const verify = join(workRoot, '..', `verify-${mission.id}-${Date.now()}-${verifySerial += 1}`);
   try {
     await mkdir(verify, { recursive: true });
     for (const rel of await listRel(workRoot)) {
@@ -353,11 +482,24 @@ async function snapshotAllowed(root: string, allowed: readonly string[]): Promis
   return files;
 }
 
-/** Confirmation de cet essai seulement. Pas le fichier de départ, pas une erreur plus ancienne. */
+/** Confirmation de cet essai seulement. Un saut de ligne final n’est pas une correction. */
 function landedLine(path: string, before: string | null, after: string | null): string {
   if (after == null) return `Chemin ${path} : fichier absent après l’essai.`;
-  if (before !== after) return `Chemin ${path} : écriture confirmée, le fichier relu a changé.`;
+  const delta = bodyDelta(before ?? '', after);
+  if (delta === 'newline') {
+    return `Chemin ${path} : seul un saut de ligne final a changé. Le corps relu est le même. Ce n’est pas une correction.`;
+  }
+  if (delta === 'changed') return `Chemin ${path} : écriture confirmée, le fichier relu a changé.`;
   return `Chemin ${path} : aucune écriture confirmée, le fichier relu est inchangé.`;
+}
+
+async function writeAllowed(root: string, files: readonly LabFile[]): Promise<void> {
+  for (const file of files) {
+    const resolved = resolveWorkPath(root, file.path);
+    if (!resolved.ok) continue;
+    await mkdir(join(resolved.full, '..'), { recursive: true });
+    await writeFile(resolved.full, file.content);
+  }
 }
 
 function evidenceFor(input: {
@@ -497,6 +639,39 @@ export async function runLabMission(input: {
   const attempts: LabAttempt[] = [];
   let prompt = '';
   const allowedPaths = mission.starterFiles.map((file) => file.path);
+  let keptFiles = await snapshotAllowed(input.workRoot, allowedPaths);
+  let keptFailed = screenCount.failed ?? 0;
+  let keptCrashes = crashSet(screen.output);
+  const anchor = () => ({ failed: keptFailed, crashes: keptCrashes });
+  const frozenWrite = (message: string) =>
+    message.includes('Écriture annulée') ||
+    message.includes('n’a pas changé') ||
+    message.includes('fichier attendu est absent') ||
+    message.includes('trop grand');
+  const reviewLandedWrite = async (
+    toolMessage: string,
+  ): Promise<{ message: string; regression: boolean; passed: boolean }> => {
+    if (!/^(écrit|relecture|vérification)/.test(toolMessage)) {
+      return { message: toolMessage, regression: false, passed: false };
+    }
+    const runNow = await executeHiddenTests(input.workRoot, mission);
+    const countsNow = countNodeTests(runNow.output);
+    const passed = runNow.exitCode === 0 && countsNow.failed === 0 && (countsNow.total ?? 0) > 0;
+    if (regressed(anchor(), runNow)) {
+      await writeAllowed(input.workRoot, keptFiles);
+      return { message: `${toolMessage}\n${regressionNote(anchor(), runNow)}`, regression: true, passed: false };
+    }
+    if (!frozenWrite(toolMessage)) {
+      keptFiles = await snapshotAllowed(input.workRoot, allowedPaths);
+      if (countsNow.failed !== null) keptFailed = countsNow.failed;
+      keptCrashes = crashSet(runNow.output);
+    }
+    const reread = (await snapshotAllowed(input.workRoot, allowedPaths))
+      .map((file) => `Relecture ${file.path} :\n${file.content}`)
+      .join('\n\n');
+    const shownNow = passed ? '' : sanitizeTestFeedback(runNow.output);
+    return { message: [toolMessage, reread, shownNow].filter(Boolean).join('\n'), regression: false, passed };
+  };
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
     const filesBefore = await snapshotAllowed(input.workRoot, allowedPaths);
     prompt = promptOf(labBrief(mission), skill.text, feedback, attempt === 0 ? undefined : currentFiles);
@@ -509,17 +684,21 @@ export async function runLabMission(input: {
     const notes: string[] = [];
     const allowed = mission.starterFiles.map((file) => file.path);
     const remember = (content: string) => {
-      if (/^(chemin refusé|vérification|fichier trop grand|dossier de travail trop grand|outil refusé|fichier absent)/i.test(content)) {
-        notes.push(content);
+      for (const line of content.split(/\r?\n/)) {
+        if (/^(chemin refusé|vérification|fichier trop grand|dossier de travail trop grand|outil refusé|fichier absent|relecture|Régression)/i.test(line)) {
+          notes.push(line);
+        }
       }
     };
+    let abortedRegression = false;
+    let solved = false;
     try {
-      while (rounds < LAB_LIMITS.maxRounds) {
+      while (rounds < LAB_LIMITS.maxRounds && !abortedRegression && !solved) {
         rounds += 1;
         let reply: { text: string; toolCalls: ToolCall[] };
         try {
           reply = await input.model.complete({
-            system: `Tu n’as pas les tests. Écris le code avec write_file en utilisant exclusivement un chemin relatif autorisé : ${allowed.join(', ')}. N’utilise jamais un chemin hors de cette liste. Si un outil refuse le chemin, relis son retour puis réessaie avec le chemin autorisé. Ne prétends pas que les tests passent et n’annonce pas un succès.`,
+            system: `Tu n’as pas les tests. Écris le code avec write_file en utilisant exclusivement un chemin relatif autorisé : ${allowed.join(', ')}. N’utilise jamais un chemin hors de cette liste. Si un outil refuse le chemin, relis son retour puis réessaie avec le chemin autorisé. Un saut de ligne final seul n’est pas une correction. Ne retire pas un import dont le nom est encore utilisé et non résolu. Ne prétends pas que les tests passent et n’annonce pas un succès.`,
             messages,
             signal: controller.signal,
           });
@@ -530,7 +709,14 @@ export async function runLabMission(input: {
         base.modelCalls += 1;
         if (reply.toolCalls.length === 0) {
           const fence = fenceWrite(reply.text, mission);
-          if (fence) remember(await applyTool(input.workRoot, { id: 'fence', name: 'write_file', arguments: fence }, allowed));
+          if (fence) {
+            const reviewed = await reviewLandedWrite(
+              await applyTool(input.workRoot, { id: 'fence', name: 'write_file', arguments: fence }, allowed),
+            );
+            remember(reviewed.message);
+            abortedRegression = reviewed.regression;
+            solved = reviewed.passed;
+          }
           break;
         }
         messages.push({
@@ -541,21 +727,25 @@ export async function runLabMission(input: {
           createdAt: Date.now(),
         });
         for (const call of reply.toolCalls) {
-          const content = await applyTool(input.workRoot, call, allowed);
-          remember(content);
+          const reviewed = await reviewLandedWrite(await applyTool(input.workRoot, call, allowed));
+          remember(reviewed.message);
           messages.push({
             id: `t${rounds}-${call.id}`,
             role: 'tool',
-            content,
+            content: reviewed.message,
             toolCallId: call.id,
             toolName: call.name,
             createdAt: Date.now(),
           });
+          abortedRegression = reviewed.regression;
+          solved = reviewed.passed;
+          if (abortedRegression || solved) break;
         }
       }
     } finally {
       clearTimeout(timer);
     }
+    if (abortedRegression) await writeAllowed(input.workRoot, keptFiles);
     const run = await executeHiddenTests(input.workRoot, mission);
     const counts = countNodeTests(run.output);
     const summary =
@@ -589,6 +779,7 @@ export async function runLabMission(input: {
       regressionFailed,
     });
     if (run.exitCode === 0 && counts.failed === 0 && counts.total) break;
+    if (abortedRegression) break;
     currentFiles = filesAfter;
     feedback = [toolFeedback, shown, ...landed].filter(Boolean).join('\n');
   }

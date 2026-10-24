@@ -396,9 +396,9 @@ describe('laboratoire de missions', () => {
         const round = input.messages.filter((message) => message.role === 'assistant').length;
         if (round > 0) return { text: '', toolCalls: [] };
         const bodies = [
-          'export function keel(n) {\n  return 4;\n}\n',
+          'export function keel(n) {\n  return 1;\n}\n',
           'export function keel(n) {\n  return -1;\n}\n',
-          'export function keel(n) {\n  return 7;\n}\n',
+          'export function keel(n) {\n  return 4;\n}\n',
         ];
         const content = bodies[attempt] ?? bodies[bodies.length - 1]!;
         return { text: '', toolCalls: [{ id: `w${attempt}`, name: 'write_file', arguments: { path: 'src/keel.mjs', content } }] };
@@ -425,6 +425,9 @@ describe('laboratoire de missions', () => {
     expect(retried.prompt).not.toContain('hidden/keel.test.mjs');
     expect(retried.attempts[2]?.filesBefore[0]?.content).toContain('return -1');
     expect(retried.attempts[1]?.filesAfter[0]?.content).toContain('return -1');
+    expect(retried.files.find((file) => file.path === 'src/keel.mjs')?.content).toContain('return -1');
+    expect(retried.files.find((file) => file.path === 'src/keel.mjs')?.content).not.toContain('return 4');
+    expect(retried.attempts[2]?.toolFeedback).toMatch(/Régression/);
 
     const silent: LabModel = {
       name: 'stub',
@@ -483,6 +486,152 @@ describe('laboratoire de missions', () => {
     expect(quoted.trainingAdmission).not.toBe('accepted');
     expect(quoted.skillAdmission).toBe('none');
     expect(quoted.evidence?.staging.reason).toMatch(/n’entre pas dans le jeu/);
+  }, 60_000);
+
+  it('une réparation ne retire pas un import encore nécessaire, sauf si le nom se résout', async () => {
+    const quote = referenceMissions().find((item) => item.id === 'l3-quote-fee')!;
+    const dir = await mkdtemp(join(tmpdir(), 'jarvis-lab-import-'));
+    const dropping = 'export function quote(cents) {\n  return cents + fee(cents);\n}\n';
+    const kept = await runLabMission({
+      mission: quote,
+      model: stub({ path: 'src/quote.mjs', content: dropping }),
+      arm: 'alone',
+      workRoot: join(dir, 'kept'),
+      synthetic: true,
+      maxAttempts: 2,
+    });
+    const quoteText = kept.files.find((file) => file.path === 'src/quote.mjs')?.content ?? '';
+    expect(quoteText).toContain('import { fee } from "./fee.mjs"');
+    expect(quoteText).toContain('fee(cents) + fee(cents)');
+    expect(kept.technicalSuccess).toBe(false);
+    expect(kept.skillAdmission).toBe('none');
+    expect(kept.trainingAdmission).not.toBe('accepted');
+    expect(kept.prompt).toContain('ne le résout pas');
+    expect(kept.prompt).toContain('Contrôle échoué : un seul fee');
+    expect(kept.prompt).toContain('actual: 220');
+    expect(kept.prompt).not.toContain('assert.equal');
+    expect(kept.prompt).not.toContain('hidden/quote.test.mjs');
+    expect(kept.promptHasHidden).toBe(false);
+    expect(kept.attempts.some((attempt) => attempt.testOutput.includes('fee is not defined'))).toBe(false);
+
+    const localFee = 'function fee(cents) {\n  return 1;\n}\nexport function quote(cents) {\n  return cents + fee(cents);\n}\n';
+    const resolved = await runLabMission({
+      mission: quote,
+      model: stub({ path: 'src/quote.mjs', content: localFee }),
+      arm: 'alone',
+      workRoot: join(dir, 'resolved'),
+      synthetic: true,
+      maxAttempts: 1,
+    });
+    const resolvedText = resolved.files.find((file) => file.path === 'src/quote.mjs')?.content ?? '';
+    expect(resolvedText).not.toContain('import { fee }');
+    expect(resolvedText).toContain('function fee');
+    expect(resolved.technicalSuccess).toBe(false);
+
+    const unused = 'export function quote(cents) {\n  return cents;\n}\n';
+    const dropped = await runLabMission({
+      mission: quote,
+      model: stub({ path: 'src/quote.mjs', content: unused }),
+      arm: 'alone',
+      workRoot: join(dir, 'unused'),
+      synthetic: true,
+      maxAttempts: 1,
+    });
+    const droppedText = dropped.files.find((file) => file.path === 'src/quote.mjs')?.content ?? '';
+    expect(droppedText).not.toContain('import { fee }');
+    expect(droppedText).toContain('return cents');
+    expect(dropped.technicalSuccess).toBe(false);
+    expect(dropped.prompt).not.toContain('assert.equal');
+  }, 60_000);
+
+  it('dit qu’un saut de ligne seul n’est pas une correction', async () => {
+    const mission = referenceMissions().find((item) => item.id === 'l1-span-clamp')!;
+    const dir = await mkdtemp(join(tmpdir(), 'jarvis-lab-nl-'));
+    const sameBody = 'export function span(value, low, high) {\n  return value;\n}';
+    const result = await runLabMission({
+      mission,
+      model: stub({ path: 'src/span.mjs', content: sameBody }),
+      arm: 'alone',
+      workRoot: join(dir, 'nl'),
+      synthetic: true,
+      maxAttempts: 2,
+    });
+    expect(result.technicalSuccess).toBe(false);
+    expect(result.prompt).toContain('Ce n’est pas une correction');
+    expect(result.prompt).toContain('Contrôle échoué : sous le plancher');
+    expect(result.prompt).toContain('actual: -4');
+    expect(result.prompt).toContain('return value');
+    expect(result.prompt).not.toContain('écriture confirmée, le fichier relu a changé');
+    expect(result.prompt).not.toContain('assert.equal');
+    expect(result.prompt).not.toContain('hidden/span.test.mjs');
+    expect(result.promptHasHidden).toBe(false);
+  }, 60_000);
+
+  it('une régression garde les octets précédents et s’arrête', async () => {
+    const mission = referenceMissions().find((item) => item.id === 'l1-keel-sign')!;
+    const dir = await mkdtemp(join(tmpdir(), 'jarvis-lab-reg-'));
+    let calls = 0;
+    const worse: LabModel = {
+      name: 'stub',
+      digest: 'synthetic',
+      async complete() {
+        calls += 1;
+        return {
+          text: '',
+          toolCalls: [
+            {
+              id: 'w',
+              name: 'write_file',
+              arguments: { path: 'src/keel.mjs', content: 'export function keel(n) {\n  return 4;\n}\n' },
+            },
+          ],
+        };
+      },
+    };
+    const result = await runLabMission({
+      mission,
+      model: worse,
+      arm: 'alone',
+      workRoot: join(dir, 'worse'),
+      synthetic: true,
+      maxAttempts: 2,
+    });
+    expect(calls).toBe(1);
+    expect(result.attempts).toHaveLength(1);
+    expect(result.files.find((file) => file.path === 'src/keel.mjs')?.content).toContain('return 0');
+    expect(result.attempts[0]?.toolFeedback).toMatch(/3 échecs contre 2/);
+    expect(result.technicalSuccess).toBe(false);
+    expect(result.prompt).not.toContain('assert.equal');
+
+    const crashed: LabModel = {
+      name: 'stub',
+      digest: 'synthetic',
+      async complete() {
+        return {
+          text: '',
+          toolCalls: [
+            {
+              id: 'w',
+              name: 'write_file',
+              arguments: { path: 'src/keel.mjs', content: 'export function keel(n) {\n  return ;\n}\n' },
+            },
+          ],
+        };
+      },
+    };
+    const syntax = await runLabMission({
+      mission,
+      model: crashed,
+      arm: 'alone',
+      workRoot: join(dir, 'syntax'),
+      synthetic: true,
+      maxAttempts: 2,
+    });
+    expect(syntax.attempts).toHaveLength(1);
+    expect(syntax.files.find((file) => file.path === 'src/keel.mjs')?.content).toContain('return 0');
+    expect(syntax.attempts[0]?.toolFeedback).toMatch(/Régression/);
+    expect(syntax.attempts[0]?.testOutput).not.toContain('SyntaxError');
+    expect(syntax.technicalSuccess).toBe(false);
   }, 60_000);
 
   it('appelle le modèle réel, ou dit que la série est bloquée', async () => {
