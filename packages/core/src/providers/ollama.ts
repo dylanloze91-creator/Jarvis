@@ -1,6 +1,7 @@
 import type { ChatMessage, ToolCall } from '../types.js';
 import { parseNDJSON } from './ndjson.js';
 import { safeJsonParse } from './sse.js';
+import { parseLooseJson, recoverToolCallsFromText } from './toolCallRecovery.js';
 import type { ToolSchema } from './types.js';
 import {
   ProviderError,
@@ -149,21 +150,25 @@ export class OllamaProvider implements LLMProvider {
       );
     }
 
-    yield* this.consume(response.body, code !== undefined);
+    yield* this.consume(response.body, code !== undefined, request.tools ?? []);
   }
 
   private async *consume(
     body: ReadableStream<Uint8Array>,
     reportUsage: boolean,
+    offeredTools: readonly ToolSchema[],
   ): AsyncGenerator<ChatStreamEvent> {
     const pending = new Map<number, ToolCall>();
     let sawStructuredToolCall = false;
     let malformedDetail: string | null = null;
     let doneReason: string | undefined;
     let usage: ChatUsage | undefined;
+    const recover = this.codeOptions?.recoverToolCalls === true;
+    // Sans outil proposé, un texte qui commence par `{"name":` est une réponse JSON, pas un appel.
+    const plainTextOnly = recover && offeredTools.length === 0;
 
     let fullText = '';
-    let sniffed = false;
+    let sniffed = plainTextOnly;
     let leakedMode = false;
     let holdBuffer = '';
 
@@ -204,7 +209,7 @@ export class OllamaProvider implements LLMProvider {
           malformedDetail = "un appel d'outil sans nom de fonction";
           continue;
         }
-        const args = normalizeToolArguments(call.function?.arguments);
+        const args = normalizeToolArguments(call.function?.arguments, recover);
         if (args === undefined) {
           malformedDetail = `des arguments illisibles (JSON invalide) pour l'outil « ${name} »`;
           continue;
@@ -235,6 +240,27 @@ export class OllamaProvider implements LLMProvider {
     if (!sniffed) {
       const event = emitSniffed();
       if (event) yield event;
+    }
+
+    if (recover && offeredTools.length > 0) {
+      const recovered = recoverToolCallsFromText(fullText, offeredTools);
+      if (recovered.length > 0) {
+        for (const [index, call] of recovered.entries()) {
+          yield {
+            type: 'tool_call',
+            call: { id: `${RECOVERED_CALL_PREFIX}${call.name}-${index}`, name: call.name, arguments: call.arguments },
+          };
+        }
+        yield usage
+          ? { type: 'done', finishReason: 'tool_calls', usage }
+          : { type: 'done', finishReason: 'tool_calls' };
+        return;
+      }
+    }
+    if (plainTextOnly) {
+      const finishReason: FinishReason = doneReason === 'length' ? 'length' : 'stop';
+      yield usage ? { type: 'done', finishReason, usage } : { type: 'done', finishReason };
+      return;
     }
 
     const leaked = detectLeakedToolCallAttempt(fullText);
@@ -294,17 +320,20 @@ function convert(message: ChatMessage): Record<string, unknown> {
  * on l'accepte si elle se laisse encore interpréter, on refuse sinon plutôt
  * que de transmettre `{}` en silence à l'outil.
  */
-function normalizeToolArguments(raw: unknown): Record<string, unknown> | undefined {
+function normalizeToolArguments(raw: unknown, loose = false): Record<string, unknown> | undefined {
   if (raw === undefined || raw === null) return {};
   if (typeof raw === 'object' && !Array.isArray(raw)) return raw as Record<string, unknown>;
   if (typeof raw === 'string') {
     if (raw.trim().length === 0) return {};
-    const parsed = safeJsonParse<Record<string, unknown>>(raw);
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
+    const parsed = loose ? parseLooseJson(raw) : safeJsonParse<Record<string, unknown>>(raw);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed as Record<string, unknown>;
     return undefined;
   }
   return undefined;
 }
+
+/** Préfixe des identifiants d'appels relus dans le texte (`recoverToolCalls`), visible dans les journaux et le banc. */
+export const RECOVERED_CALL_PREFIX = 'recovered-';
 
 /** Amorce d'une syntaxe d'appel d'outil échappée dans le texte, avant qu'on l'ait laissée fuiter à l'écran. */
 function leakedTagStart(text: string): boolean {

@@ -17,3 +17,11 @@ declare module 'node:child_process' {
     },
   ): LabSpawnResult;
 }
+
+/** 5.0.56 : dossier temporaire du générateur d'exercices. */
+declare module 'node:fs/promises' {
+  export function mkdtemp(prefix: string): Promise<string>;
+}
+declare module 'node:os' {
+  export function tmpdir(): string;
+}

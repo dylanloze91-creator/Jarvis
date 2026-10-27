@@ -10,7 +10,7 @@ import { createMission, type MissionState } from './engine/mission.js';
 import { judgeMissionEvidence, missionVerdictFromEvidence, type MissionEvidence } from './evidence.js';
 import { selectSkill } from '../learning/skills.js';
 import type { LearningRecord } from '../learning/continuous.js';
-import { OllamaProvider } from '../providers/ollama.js';
+import { OllamaProvider, RECOVERED_CALL_PREFIX } from '../providers/ollama.js';
 import type { ChatMessage, ToolCall } from '../types.js';
 import {
   LAB_LIMITS,
@@ -52,6 +52,11 @@ export interface LabAttempt {
   filesBefore: LabFile[];
   filesAfter: LabFile[];
   regressionFailed?: boolean;
+  /** 5.0.54 : diagnostic de l'essai (le banc dit pourquoi il échoue). */
+  wrote?: boolean;
+  recoveredCalls?: number;
+  fenceUsed?: boolean;
+  modelError?: string;
 }
 
 export interface LabRunResult {
@@ -77,7 +82,8 @@ export interface LabRunResult {
   trainingAdmission: 'candidate' | 'accepted' | 'rejected' | 'none';
 }
 
-const TOOLS = [
+/** Outils montrés au modèle du laboratoire (exportés pour les exemples d'entraînement, 5.0.55). */
+export const LAB_TOOLS = [
   {
     name: 'list_files',
     description: 'Liste les fichiers du dossier de travail.',
@@ -453,6 +459,20 @@ export async function executeHiddenTests(
   }
 }
 
+/** Consigne courte des exemples d'entraînement (5.0.56). */
+export const LAB_SYSTEM_PROMPT =
+  'Tu n’as pas les tests. Écris le code avec write_file sur le chemin relatif indiqué. N’annonce pas un succès.';
+
+/** Consigne du modèle : chemins autorisés, saut de ligne, import. */
+export function labSystemPrompt(allowed: readonly string[]): string {
+  return `Tu n’as pas les tests. Écris le code avec write_file en utilisant exclusivement un chemin relatif autorisé : ${allowed.join(', ')}. N’utilise jamais un chemin hors de cette liste. Si un outil refuse le chemin, relis son retour puis réessaie avec le chemin autorisé. Un saut de ligne final seul n’est pas une correction. Ne retire pas un import dont le nom est encore utilisé et non résolu. Ne prétends pas que les tests passent et n’annonce pas un succès.`;
+}
+
+/** Demande du premier essai, sans retour de test ni compétence : celle d'un exemple d'entraînement. */
+export function labFirstPrompt(mission: LabMission): string {
+  return promptOf(labBrief(mission), '', '');
+}
+
 function promptOf(brief: LabBrief, skillText: string, feedback: string, currentFiles?: readonly LabFile[]): string {
   const files = (currentFiles ?? brief.files).map((file) => `Fichier ${file.path} :\n${file.content}`).join('\n\n');
   return [
@@ -681,6 +701,10 @@ export async function runLabMission(input: {
       { id: 'user', role: 'user', content: prompt, createdAt: Date.now() },
     ];
     let rounds = 0;
+    let wrote = false;
+    let fenceUsed = false;
+    let recoveredCalls = 0;
+    let modelError: string | undefined;
     const notes: string[] = [];
     const allowed = mission.starterFiles.map((file) => file.path);
     const remember = (content: string) => {
@@ -698,21 +722,28 @@ export async function runLabMission(input: {
         let reply: { text: string; toolCalls: ToolCall[] };
         try {
           reply = await input.model.complete({
-            system: `Tu n’as pas les tests. Écris le code avec write_file en utilisant exclusivement un chemin relatif autorisé : ${allowed.join(', ')}. N’utilise jamais un chemin hors de cette liste. Si un outil refuse le chemin, relis son retour puis réessaie avec le chemin autorisé. Un saut de ligne final seul n’est pas une correction. Ne retire pas un import dont le nom est encore utilisé et non résolu. Ne prétends pas que les tests passent et n’annonce pas un succès.`,
+            system: labSystemPrompt(allowed),
             messages,
             signal: controller.signal,
           });
-        } catch {
+        } catch (error) {
           base.modelCalls += 1;
+          modelError = controller.signal.aborted
+            ? `délai de ${Math.round((input.timeoutMs ?? LAB_LIMITS.timeoutMs) / 1000)} s dépassé`
+            : error instanceof Error
+              ? error.message.slice(0, 300)
+              : String(error).slice(0, 300);
           break;
         }
         base.modelCalls += 1;
+        recoveredCalls += reply.toolCalls.filter((call) => call.id.startsWith(RECOVERED_CALL_PREFIX)).length;
         if (reply.toolCalls.length === 0) {
           const fence = fenceWrite(reply.text, mission);
           if (fence) {
-            const reviewed = await reviewLandedWrite(
-              await applyTool(input.workRoot, { id: 'fence', name: 'write_file', arguments: fence }, allowed),
-            );
+            fenceUsed = true;
+            const written = await applyTool(input.workRoot, { id: 'fence', name: 'write_file', arguments: fence }, allowed);
+            if (written === 'écrit') wrote = true;
+            const reviewed = await reviewLandedWrite(written);
             remember(reviewed.message);
             abortedRegression = reviewed.regression;
             solved = reviewed.passed;
@@ -727,7 +758,9 @@ export async function runLabMission(input: {
           createdAt: Date.now(),
         });
         for (const call of reply.toolCalls) {
-          const reviewed = await reviewLandedWrite(await applyTool(input.workRoot, call, allowed));
+          const written = await applyTool(input.workRoot, call, allowed);
+          if (call.name === 'write_file' && written === 'écrit') wrote = true;
+          const reviewed = await reviewLandedWrite(written);
           remember(reviewed.message);
           messages.push({
             id: `t${rounds}-${call.id}`,
@@ -777,6 +810,10 @@ export async function runLabMission(input: {
       filesBefore,
       filesAfter,
       regressionFailed,
+      wrote,
+      recoveredCalls,
+      fenceUsed,
+      ...(modelError ? { modelError } : {}),
     });
     if (run.exitCode === 0 && counts.failed === 0 && counts.total) break;
     if (abortedRegression) break;
@@ -824,30 +861,57 @@ export async function runLabMission(input: {
   };
 }
 
-export async function probeLabModel(fetchImpl: typeof fetch = fetch): Promise<
-  { ok: true; name: string; digest: string } | { ok: false; reason: string }
-> {
+/**
+ * Modèle présent sur le serveur local. Le digest n'est imposé que pour le modèle de
+ * référence (série comparable) ; un autre modèle est accepté tel qu'installé (5.0.54).
+ */
+export async function probeLabModel(
+  fetchImpl: typeof fetch = fetch,
+  modelName: string = LAB_MODEL_NAME,
+  baseUrl = 'http://127.0.0.1:11434',
+): Promise<{ ok: true; name: string; digest: string } | { ok: false; reason: string }> {
   try {
-    const response = await fetchImpl('http://127.0.0.1:11434/api/tags', { signal: AbortSignal.timeout(5_000) });
+    const response = await fetchImpl(`${baseUrl.replace(/\/+$/, '')}/api/tags`, { signal: AbortSignal.timeout(5_000) });
     if (!response.ok) return { ok: false, reason: 'Ollama ne répond pas : série bloquée' };
     const body = (await response.json()) as { models?: { name?: string; digest?: string }[] };
-    const found = (body.models ?? []).find((model) => model.name === LAB_MODEL_NAME);
-    if (!found?.digest) return { ok: false, reason: `${LAB_MODEL_NAME} est absent : série bloquée, aucun score inventé` };
-    if (!found.digest.startsWith(LAB_MODEL_DIGEST_PREFIX)) {
+    const wanted = modelName.includes(':') ? modelName : `${modelName}:latest`;
+    const found = (body.models ?? []).find((model) => model.name === modelName || model.name === wanted);
+    if (!found?.digest) return { ok: false, reason: `${modelName} est absent : série bloquée, aucun score inventé` };
+    if (modelName === LAB_MODEL_NAME && !found.digest.startsWith(LAB_MODEL_DIGEST_PREFIX)) {
       return { ok: false, reason: `digest inattendu pour ${LAB_MODEL_NAME} : série bloquée` };
     }
-    return { ok: true, name: LAB_MODEL_NAME, digest: found.digest };
+    return { ok: true, name: modelName, digest: found.digest };
   } catch {
     return { ok: false, reason: 'Ollama est injoignable : série bloquée' };
   }
 }
 
-export function ollamaLabModel(digest: string, fetchImpl?: typeof fetch, modelName: string = LAB_MODEL_NAME): LabModel {
+export interface LabModelOptions {
+  /** Appels d'outils écrits en texte relus (5.0.54). Défaut : oui. `false` = comportement 5.0.53. */
+  recoverToolCalls?: boolean;
+  numCtx?: number;
+  /** `think` n'est envoyé que s'il est défini ; défaut : false (Qwen3 sans réflexion). */
+  think?: boolean | null;
+  baseUrl?: string;
+}
+
+export function ollamaLabModel(
+  digest: string,
+  fetchImpl?: typeof fetch,
+  modelName: string = LAB_MODEL_NAME,
+  options: LabModelOptions = {},
+): LabModel {
+  const think = options.think === undefined ? false : options.think;
   const provider = new OllamaProvider({
     provider: 'ollama',
     model: modelName,
-    baseUrl: 'http://127.0.0.1:11434',
-    ollama: { numCtx: LAB_LIMITS.numCtx, think: false, keepAlive: '10m' },
+    baseUrl: options.baseUrl ?? 'http://127.0.0.1:11434',
+    ollama: {
+      numCtx: options.numCtx ?? LAB_LIMITS.numCtx,
+      ...(think === null ? {} : { think }),
+      keepAlive: '10m',
+      recoverToolCalls: options.recoverToolCalls ?? true,
+    },
     ...(fetchImpl ? { fetch: fetchImpl } : {}),
   });
   return {
@@ -859,7 +923,7 @@ export function ollamaLabModel(digest: string, fetchImpl?: typeof fetch, modelNa
       for await (const event of provider.streamChat({
         system: input.system,
         messages: input.messages,
-        tools: TOOLS,
+        tools: LAB_TOOLS,
         temperature: LAB_LIMITS.temperature,
         maxTokens: LAB_LIMITS.numPredict,
         signal: input.signal,
@@ -963,6 +1027,13 @@ export async function runLabBatch(input: {
   maxLevel?: LabLevel;
   origins?: readonly { missionId?: string; goal?: string; skillId?: string }[];
   records?: readonly LearningRecord[];
+  /** 5.0.54 : passés à chaque mission (absents : LAB_LIMITS). */
+  maxAttempts?: number;
+  timeoutMs?: number;
+  /** 5.0.54 : appelé après chaque mission (progression du banc). */
+  onResult?: (mission: LabMission, result: LabRunResult) => void;
+  /** 5.0.55 : missions à lancer (absent : les 9 de référence). Toujours groupées par niveau. */
+  missions?: readonly LabMission[];
 }): Promise<{ blocked: false; rows: LabBatchRow[]; levels: Record<LabLevel, { ran: boolean; sound: boolean }> }> {
   const rows: LabBatchRow[] = [];
   const levels: Record<LabLevel, { ran: boolean; sound: boolean }> = {
@@ -977,7 +1048,8 @@ export async function runLabBatch(input: {
     if (level === 2 && !levels[1].sound) break;
     if (level === 3 && !levels[2].sound) break;
     levels[level].ran = true;
-    for (const mission of missionsForLevel(level)) {
+    const pool = input.missions ? input.missions.filter((mission) => mission.level === level) : missionsForLevel(level);
+    for (const mission of pool) {
       const origins = [...(input.origins ?? []), ...priorGoals];
       const result = await runLabMission({
         mission,
@@ -985,8 +1057,11 @@ export async function runLabBatch(input: {
         arm: 'alone',
         workRoot: join(input.workParent, `${mission.id}-alone`),
         origins,
+        ...(input.maxAttempts !== undefined ? { maxAttempts: input.maxAttempts } : {}),
+        ...(input.timeoutMs !== undefined ? { timeoutMs: input.timeoutMs } : {}),
       });
       rows.push(batchRow(mission, result));
+      input.onResult?.(mission, result);
       const journal = labJournalMission(mission, result);
       if (input.journalSave && journal) await input.journalSave(journal);
       const skillSteps = skillStepsFor(mission, input.records ?? []);
@@ -1019,4 +1094,84 @@ export async function runLabBatch(input: {
     levels[level].sound = levelSound(rows.filter((row) => row.level === level && row.arm === 'alone'));
   }
   return { blocked: false, rows, levels };
+}
+
+/**
+ * Exemple d'entraînement tiré d'une mission réussie (5.0.55), au format conversation
+ * avec appel d'outil, lisible par les outils d'affinage courants (gabarit de chat de Qwen) :
+ * consigne système, demande du premier essai, puis la réponse = `write_file` du fichier
+ * final vérifié par les tests cachés. `null` si la mission ne doit pas servir :
+ * mission d'évaluation, écartée, non réussie, ou sans fichier changé.
+ */
+export interface LabTrainingExample {
+  id: string;
+  messages: [
+    { role: 'system'; content: string },
+    { role: 'user'; content: string },
+    {
+      role: 'assistant';
+      content: string;
+      tool_calls: { type: 'function'; function: { name: 'write_file'; arguments: { path: string; content: string } } }[];
+    },
+  ];
+  tools: { type: 'function'; function: (typeof LAB_TOOLS)[number] }[];
+  meta: {
+    mission: string;
+    level: LabLevel;
+    category: string;
+    model: string;
+    attempts: number;
+    firstTry: boolean;
+    /** 5.0.56 : `lab` = mission résolue au banc ; `generated` = exercice et solution écrits par le professeur. */
+    source?: 'lab' | 'generated';
+  };
+}
+
+/** Exemple au format commun à partir des fichiers finaux vérifiés (5.0.56). */
+export function trainingExampleFromFiles(
+  mission: LabMission,
+  changed: readonly LabFile[],
+  meta: { model: string; attempts: number; source: 'lab' | 'generated' },
+): LabTrainingExample {
+  return {
+    id: `${mission.id}:${meta.model}:${changed.map((item) => item.content.length).join('-')}`,
+    messages: [
+      { role: 'system', content: LAB_SYSTEM_PROMPT },
+      { role: 'user', content: labFirstPrompt(mission) },
+      {
+        role: 'assistant',
+        content: '',
+        tool_calls: changed.map((item) => ({
+          type: 'function' as const,
+          function: { name: 'write_file' as const, arguments: { path: item.path, content: item.content } },
+        })),
+      },
+    ],
+    tools: LAB_TOOLS.map((tool) => ({ type: 'function' as const, function: tool })),
+    meta: {
+      mission: mission.id,
+      level: mission.level,
+      category: mission.category,
+      model: meta.model,
+      attempts: meta.attempts,
+      firstTry: meta.attempts === 1,
+      source: meta.source,
+    },
+  };
+}
+
+export function labTrainingExample(
+  mission: LabMission,
+  result: LabRunResult,
+  options: { trainable: boolean; model: string },
+): LabTrainingExample | null {
+  if (!options.trainable || mission.split !== 'development') return null;
+  if (result.excluded || result.promptHasHidden) return null;
+  if (result.evidence?.status !== 'success_verified') return null;
+  const last = result.attempts.at(-1);
+  if (!last || last.exitCode !== 0 || (last.failed ?? 1) !== 0 || !(last.testsRan ?? 0)) return null;
+  const starters = new Map(mission.starterFiles.map((item) => [item.path, item.content]));
+  const changed = result.files.filter((item) => starters.has(item.path) && starters.get(item.path) !== item.content);
+  if (changed.length === 0) return null;
+  return trainingExampleFromFiles(mission, changed, { model: options.model, attempts: result.attempts.length, source: 'lab' });
 }

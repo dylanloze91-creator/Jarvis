@@ -210,7 +210,9 @@ describe('mission avec un petit modèle bavard (5.0.1)', () => {
     );
     expect(done.mission?.status, done.mission?.summary ?? '').toBe('finished');
     expect(done.codeTask?.model).toBe(LEAK);
-    expect(done.codeTask?.planFallback).toMatch(/appel d’outil inutilisable/);
+    // 5.0.54 : l'appel écrit en texte est relu et exécuté (recoverToolCalls) ; ce modèle
+    // le répète sans jamais rendre de plan, le plan de secours prend donc le relais.
+    expect(done.codeTask?.planFallback).toMatch(/plan de secours/);
     expect(done.codeTask?.diff.map((file) => file.path)).toContain('src/game.ts');
     await h.instance.discardTask();
   }, 180_000);

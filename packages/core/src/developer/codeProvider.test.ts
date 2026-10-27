@@ -79,7 +79,8 @@ describe('fournisseur IA de code : local seulement', () => {
       provider: 'ollama',
       model: 'qwen3.5:4b',
       baseUrl: 'http://192.168.1.20:11434',
-      ollama: { numCtx: 32_768, think: false },
+      // 5.0.54 : le modèle de code relit les appels d'outils écrits en texte.
+      ollama: { numCtx: 32_768, think: false, recoverToolCalls: true },
     });
     expect(createCodeAIProvider(registry, { model: 'x' }).baseUrl).toBe('http://127.0.0.1:11434');
   });
