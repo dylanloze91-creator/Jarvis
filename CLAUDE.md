@@ -24,6 +24,19 @@ Google (Gmail, Agenda, Drive, Docs, Sheets) est arrivé en 0.4.20 : voir la sect
 
 ---
 
+## Travail à deux agents
+
+Claude Code (PC Windows) et Cursor (souvent agent cloud) travaillent sur ce dépôt. Le registre est `AGENTS-COORDINATION.md` ; les mêmes règles sont dans `.cursor/rules/coordination.mdc`.
+
+- **Avant toute tâche :** `git fetch`, lire `AGENTS-COORDINATION.md`, ne pas toucher aux fichiers réservés par l'autre agent.
+- **Toujours sa propre branche :** `claude/...` pour Claude Code, `cursor/...` pour Cursor. Jamais directement sur `main`.
+- **Inscrire sa tâche** dans `AGENTS-COORDINATION.md`, commiter et pousser ce fichier tout de suite.
+- **GPU / Ollama :** ne pas lancer le banc (`npm run lab`) ni le générateur (`npm run lab:generate`) si la ressource est marquée occupée. La réserver avant, la libérer après.
+- **En fin de tâche :** pousser la branche, mettre le statut à « terminé », libérer les fichiers.
+- **Conflit Git :** ne rien écraser (pas de `--force`, pas de `reset --hard`), s'arrêter et demander à l'utilisateur.
+
+---
+
 ## Installer les deps et lancer
 
 Node `>= 20.19.0` (`package.json` racine). Workspaces : `packages/*` et `apps/*`. Depuis cette racine :

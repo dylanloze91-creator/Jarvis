@@ -1,0 +1,15 @@
+---
+description: Règles de travail à deux agents (Claude Code et Cursor) sur ce dépôt
+alwaysApply: true
+---
+
+# Travail à deux agents
+
+Claude Code (PC Windows) et Cursor (souvent agent cloud) travaillent sur ce dépôt. Le registre est `AGENTS-COORDINATION.md` à la racine ; les mêmes règles sont dans `CLAUDE.md` (section « Travail à deux agents »).
+
+- **Avant toute tâche :** `git fetch`, lire `AGENTS-COORDINATION.md`, ne pas toucher aux fichiers réservés par l'autre agent.
+- **Toujours sa propre branche :** `cursor/...` pour Cursor, `claude/...` pour Claude Code. Jamais directement sur `main`.
+- **Inscrire sa tâche** dans `AGENTS-COORDINATION.md`, commiter et pousser ce fichier tout de suite.
+- **GPU / Ollama :** ne pas lancer le banc (`npm run lab`) ni le générateur (`npm run lab:generate`) si la ressource est marquée occupée. La réserver avant, la libérer après.
+- **En fin de tâche :** pousser la branche, mettre le statut à « terminé », libérer les fichiers.
+- **Conflit Git :** ne rien écraser (pas de `--force`, pas de `reset --hard`), s'arrêter et demander à l'utilisateur.
