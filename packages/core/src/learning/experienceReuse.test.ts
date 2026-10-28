@@ -15,6 +15,12 @@ import {
   type LearningRecord,
 } from './continuous.js';
 
+/** `--experimental-strip-types` n'existe qu'à partir de Node 22.6 ; le projet accepte Node 20 (environmentCheck). */
+const STRIP_TYPES = (() => {
+  const [major = 0, minor = 0] = process.versions.node.split('.').map(Number);
+  return major > 22 || (major === 22 && minor >= 6);
+})();
+
 const REQUEST_A =
   'La fonction add multiplie au lieu d’additionner. Le test node echoue.';
 const REQUEST_B =
@@ -41,7 +47,7 @@ function runProjectTest(cwd: string, file: string): { status: number | null; out
 }
 
 describe('expérience réutilisée sur un autre projet', () => {
-  it(
+  it.skipIf(!STRIP_TYPES)(
     'applique l’indice validé de A dans le fichier de B, et laisse B rouge sans mémoire',
     async () => {
       expect(REQUEST_B).not.toContain('a + b');

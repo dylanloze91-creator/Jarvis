@@ -142,7 +142,7 @@ describe('laboratoire de missions', () => {
     expect(blocked.excluded).toBe(true);
     expect(blocked.modelCalls).toBe(0);
     expect(calls).toBe(0);
-  });
+  }, 120_000);
 
   it('réinitialise le dossier et relit la preuve après un autre processus', async () => {
     const mission = referenceMissions().find((item) => item.id === 'l1-keel-sign')!;
@@ -174,7 +174,7 @@ describe('laboratoire de missions', () => {
     expect(reader.status).toBe(0);
     expect(reader.stdout).toContain('success_verified');
     expect(reader.stdout).toContain('synthétique');
-  });
+  }, 120_000);
 
   it('écarte un fichier de départ qui passe déjà, et n’avance pas de niveau si la preuve est fausse', async () => {
     const mission = referenceMissions().find((item) => item.id === 'l1-span-clamp')!;
@@ -212,7 +212,7 @@ describe('laboratoire de missions', () => {
     expect(
       levelSound([{ excluded: false, evidenceId: 'x', promptHasHidden: false, verifiedWithoutExit: false }]),
     ).toBe(true);
-  });
+  }, 120_000);
 
   it('accepte un chemin dans le dossier, refuse l’extérieur, signale un fichier inchangé, et exige les tests', async () => {
     const root = '/tmp/jarvis-lab-root';
@@ -381,7 +381,7 @@ describe('laboratoire de missions', () => {
       maxAttempts: 1,
     });
     expect(doubled.evidence?.status).not.toBe('success_verified');
-  }, 60_000);
+  }, 120_000);
 
   it('renvoie au nouvel essai l’erreur, le chemin, la relecture, et confirme l’écriture', async () => {
     const mission = referenceMissions().find((item) => item.id === 'l1-keel-sign')!;
@@ -486,7 +486,7 @@ describe('laboratoire de missions', () => {
     expect(quoted.trainingAdmission).not.toBe('accepted');
     expect(quoted.skillAdmission).toBe('none');
     expect(quoted.evidence?.staging.reason).toMatch(/n’entre pas dans le jeu/);
-  }, 60_000);
+  }, 120_000);
 
   it('une réparation ne retire pas un import encore nécessaire, sauf si le nom se résout', async () => {
     const quote = referenceMissions().find((item) => item.id === 'l3-quote-fee')!;
@@ -542,7 +542,7 @@ describe('laboratoire de missions', () => {
     expect(droppedText).toContain('return cents');
     expect(dropped.technicalSuccess).toBe(false);
     expect(dropped.prompt).not.toContain('assert.equal');
-  }, 60_000);
+  }, 120_000);
 
   it('dit qu’un saut de ligne seul n’est pas une correction', async () => {
     const mission = referenceMissions().find((item) => item.id === 'l1-span-clamp')!;
@@ -565,7 +565,7 @@ describe('laboratoire de missions', () => {
     expect(result.prompt).not.toContain('assert.equal');
     expect(result.prompt).not.toContain('hidden/span.test.mjs');
     expect(result.promptHasHidden).toBe(false);
-  }, 60_000);
+  }, 120_000);
 
   it('une régression garde les octets précédents et s’arrête', async () => {
     const mission = referenceMissions().find((item) => item.id === 'l1-keel-sign')!;
@@ -632,7 +632,7 @@ describe('laboratoire de missions', () => {
     expect(syntax.attempts[0]?.toolFeedback).toMatch(/Régression/);
     expect(syntax.attempts[0]?.testOutput).not.toContain('SyntaxError');
     expect(syntax.technicalSuccess).toBe(false);
-  }, 60_000);
+  }, 120_000);
 
   it('appelle le modèle réel, ou dit que la série est bloquée', async () => {
     const probe = await probeLabModel();

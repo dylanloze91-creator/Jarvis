@@ -19,6 +19,12 @@ import {
   skillTrainRows,
 } from './skills.js';
 
+/** `--experimental-strip-types` n'existe qu'à partir de Node 22.6 ; le projet accepte Node 20 (environmentCheck). */
+const STRIP_TYPES = (() => {
+  const [major = 0, minor = 0] = process.versions.node.split('.').map(Number);
+  return major > 22 || (major === 22 && minor >= 6);
+})();
+
 function runTest(cwd: string, file: string): { status: number | null } {
   const result = spawnSync(process.execPath, ['--experimental-strip-types', '--test', file], {
     cwd,
@@ -89,7 +95,7 @@ async function project(name: string, source: string, body: string): Promise<stri
 const options = { language: 'typescript', version: process.version, validatedOnly: true };
 
 describe('compétences exécutables', () => {
-  it('crée une candidate, la valide sur un autre problème, et s’en sert sans l’ancienne ligne', async () => {
+  it.skipIf(!STRIP_TYPES)('crée une candidate, la valide sur un autre problème, et s’en sert sans l’ancienne ligne', async () => {
     expect(skillFromObservation({
       id: 'rate',
       now: 1,
@@ -248,7 +254,7 @@ test('zero', () => { assert.equal(offset(0, 0), 0); });`,
     expect(JSON.stringify(skillTrainRows([align]))).not.toContain('return a + b');
   });
 
-  it('reconnaît repeat comme la même compétence que trim, sans coller trim', async () => {
+  it.skipIf(!STRIP_TYPES)('reconnaît repeat comme la même compétence que trim, sans coller trim', async () => {
     const validated = settleSkill(
       candidate('texte', 'return value.trim();', 'return String(value).trim();', 'projet-texte', 'afficher le nombre'),
       { ok: true, context: 'show', now: 3 },
@@ -265,7 +271,7 @@ test('zero', () => { assert.equal(offset(0, 0), 0); });`,
     expect(runTest(dir, 'mark.test.ts').status).toBe(0);
   });
 
-  it('après redémarrage, un nouveau projet sélectionne la compétence validée', async () => {
+  it.skipIf(!STRIP_TYPES)('après redémarrage, un nouveau projet sélectionne la compétence validée', async () => {
     const validated = settleSkill(
       candidate('align', 'return a * b;', 'return a + b;', 'projet-produit', 'addition'),
       { ok: true, context: 'somme', now: 3 },
@@ -295,7 +301,8 @@ import { pathToFileURL } from 'node:url';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 register(pathToFileURL(process.argv[2]));
-const { applySkill, selectSkill } = await import(process.argv[3]);
+// Windows : import() exige une URL file:// (un chemin C:\\… lève ERR_UNSUPPORTED_ESM_URL_SCHEME).
+const { applySkill, selectSkill } = await import(pathToFileURL(process.argv[3]).href);
 const dir = process.argv[4];
 const store = JSON.parse(readFileSync(join(dir, 'store.json'), 'utf8'));
 const source = readFileSync(join(dir, 'total.ts'), 'utf8');
