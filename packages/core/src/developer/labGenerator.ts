@@ -115,6 +115,9 @@ export const GENERATOR_SYSTEM_PROMPT = [
   '- Les fichiers de départ et de solution sont dans src/ ; le fichier de tests est hidden/<nom>.test.mjs.',
   '- Les tests utilisent node:test et node:assert/strict, importent depuis ../src/, et contiennent au moins trois assertions.',
   '- Les tests doivent échouer sur les fichiers de départ et réussir avec la solution. Le départ garde les mêmes noms exportés que la solution.',
+  '- Le départ est volontairement incomplet ou faux (fonction qui rend une valeur fixe, cas oublié, bogue) mais il se charge sans erreur. La SOLUTION est différente du départ.',
+  '- Avant de répondre, exécute la solution à la main sur chaque test et vérifie chaque valeur attendue.',
+  '- Extension .mjs partout, y compris dans les imports entre fichiers (./autre.mjs, ../src/nom.mjs).',
   '- L’objectif décrit précisément le comportement attendu, y compris les cas particuliers vérifiés par les tests, sans recopier les tests.',
   '- Imports autorisés : node:fs, node:path, node:test, node:assert/strict et les fichiers du projet. Rien d’autre.',
   '- Interdit : réseau, processus, Math.random, l’heure courante, setInterval, process.exit, eval.',
@@ -251,6 +254,25 @@ function importsOf(code: string): string[] {
 export interface StaticCheck {
   ok: boolean;
   reason: string;
+  /** 5.0.57 : sortie des tests (rejets à l'exécution), pour le professeur et pour rejets.jsonl. */
+  detail?: string;
+}
+
+/**
+ * 5.0.57 : `.js` devient `.mjs` (chemins et imports relatifs). Le professeur l'oublie souvent ;
+ * en `.js`, Node lirait le fichier comme CommonJS et l'exercice serait refusé pour rien.
+ */
+export function normalizeExtensions(parsed: ParsedExercise): ParsedExercise {
+  const path = (value: string) => value.replace(/\.test\.js$/, '.test.mjs').replace(/^(src\/[\w-]+)\.js$/, '$1.mjs');
+  const code = (content: string) =>
+    content.replace(/(['"])(\.{1,2}\/[\w./-]+?)\.js\1/g, (_all, quote: string, base: string) => `${quote}${base}.mjs${quote}`);
+  const file = (item: LabFile): LabFile => ({ path: path(item.path), content: code(item.content) });
+  return {
+    ...parsed,
+    starters: parsed.starters.map(file),
+    test: parsed.test ? file(parsed.test) : null,
+    solutions: parsed.solutions.map(file),
+  };
 }
 
 function rejected(reason: string): StaticCheck {
@@ -400,6 +422,13 @@ async function writeTree(root: string, files: readonly LabFile[]): Promise<void>
   }
 }
 
+/** Sortie de test lisible : sans chemins temporaires, bornée. */
+function testDetail(output: string, workParent: string): string {
+  const cleaned = output.split(workParent).join('.').replace(/\/verify-[\w-]+?-\d+/g, '');
+  const lines = cleaned.split(/\r?\n/).filter((line) => line.trim() && !/^#\s+(?:suites|cancelled|skipped|todo|duration_ms)\b/.test(line));
+  return lines.join('\n').slice(-2_000);
+}
+
 export async function runtimeCheck(mission: LabMission, solutions: readonly LabFile[], workParent: string): Promise<StaticCheck> {
   const root = join(workParent, mission.id);
   try {
@@ -407,11 +436,11 @@ export async function runtimeCheck(mission: LabMission, solutions: readonly LabF
     const before = await executeHiddenTests(root, mission);
     const counted = countTests(before.output);
     if (before.broken || before.exitCode === null || counted.total === null || counted.total === 0) {
-      return rejected('tests cassés sur le départ (import, syntaxe ou délai)');
+      return { ...rejected('tests cassés sur le départ (import, syntaxe ou délai)'), detail: testDetail(before.output, workParent) };
     }
     if (before.exitCode === 0 || !counted.failed) return rejected('les tests passent déjà sur le départ');
     if (counted.failed === counted.total && /SyntaxError|ReferenceError|does not provide an export/.test(before.output)) {
-      return rejected('départ illisible (erreur de syntaxe ou export manquant)');
+      return { ...rejected('départ illisible (erreur de syntaxe ou export manquant)'), detail: testDetail(before.output, workParent) };
     }
     const solved = new Map(mission.starterFiles.map((item) => [item.path, item]));
     for (const item of solutions) solved.set(item.path, item);
@@ -420,7 +449,10 @@ export async function runtimeCheck(mission: LabMission, solutions: readonly LabF
       const after = await executeHiddenTests(root, mission);
       const afterCount = countTests(after.output);
       if (after.exitCode !== 0 || afterCount.failed !== 0 || !afterCount.total) {
-        return rejected(pass === 1 ? 'la solution ne passe pas ses propres tests' : 'tests instables (rouges au second passage)');
+        return {
+          ...rejected(pass === 1 ? 'la solution ne passe pas ses propres tests' : 'tests instables (rouges au second passage)'),
+          detail: testDetail(after.output, workParent),
+        };
       }
     }
     return { ok: true, reason: '' };
@@ -440,12 +472,35 @@ export interface GeneratedExercise {
 }
 
 export type GenerationOutcome =
-  | { ok: true; exercise: GeneratedExercise; example: LabTrainingExample }
-  | { ok: false; reason: string; raw: string };
+  | { ok: true; exercise: GeneratedExercise; example: LabTrainingExample; repaired?: boolean }
+  | { ok: false; reason: string; raw: string; detail?: string; firstReason?: string; firstDetail?: string; firstRaw?: string };
+
+export interface TeacherTurn {
+  role: 'user' | 'assistant';
+  content: string;
+}
 
 export interface TeacherModel {
   name: string;
-  complete(input: { system: string; prompt: string; signal?: AbortSignal }): Promise<string>;
+  /** `history` (5.0.57) : échanges précédents, pour une demande de correction. */
+  complete(input: { system: string; prompt: string; history?: readonly TeacherTurn[]; signal?: AbortSignal }): Promise<string>;
+}
+
+/** Un refus qui se corrige en montrant le problème au professeur (pas un doublon ni une erreur du modèle). */
+export function repairable(reason: string): boolean {
+  return !/^doublon|déjà utilisé par l’évaluation|trop proche de l’évaluation|^erreur du modèle|^délai/.test(reason);
+}
+
+export function repairPrompt(reason: string, detail?: string): string {
+  return [
+    `Ton exercice a été refusé par la vérification automatique : ${reason}.`,
+    detail ? `Sortie des tests :\n\`\`\`\n${detail}\n\`\`\`` : '',
+    'Corrige-le et renvoie l’exercice complet dans le même format, de @@ OBJECTIF à @@ FIN.',
+    'Garde le même objectif. Les tests doivent échouer sur le départ (qui se charge sans erreur) et réussir avec la solution, qui doit être différente du départ.',
+    'Corrige d’abord la solution ; ne change un test que s’il contredit l’objectif.',
+  ]
+    .filter(Boolean)
+    .join('\n');
 }
 
 /** Vérifie un texte de professeur. Séparé de l'appel au modèle pour être testé sans modèle. */
@@ -457,7 +512,7 @@ export async function acceptExercise(input: {
   workParent: string;
   now?: Date;
 }): Promise<GenerationOutcome> {
-  const parsed = parseExercise(input.text);
+  const parsed = normalizeExtensions(parseExercise(input.text));
   const shape = staticCheck(parsed);
   if (!shape.ok) return { ok: false, reason: shape.reason, raw: input.text };
   const mission = missionFromParsed(parsed, input.seed);
@@ -473,7 +528,9 @@ export async function acceptExercise(input: {
   const novel = noveltyCheck(mission, input.accepted);
   if (!novel.ok) return { ok: false, reason: novel.reason, raw: input.text };
   const runtime = await runtimeCheck(mission, parsed.solutions, input.workParent);
-  if (!runtime.ok) return { ok: false, reason: runtime.reason, raw: input.text };
+  if (!runtime.ok) {
+    return { ok: false, reason: runtime.reason, raw: input.text, ...(runtime.detail ? { detail: runtime.detail } : {}) };
+  }
   const starters = new Map(mission.starterFiles.map((item) => [item.path, item.content]));
   const changed = parsed.solutions.filter((item) => starters.get(item.path) !== item.content);
   const exercise: GeneratedExercise = {
@@ -495,21 +552,45 @@ export async function generateExercise(input: {
   accepted: readonly Pick<LabMission, 'id' | 'goal' | 'category' | 'starterFiles'>[];
   workParent?: string;
   signal?: AbortSignal;
+  /** 5.0.57 : une demande de correction au professeur après un refus corrigeable. Défaut : oui. */
+  repair?: boolean;
 }): Promise<GenerationOutcome> {
   const avoid = [...new Set(input.accepted.flatMap((mission) => exportedNames(mission.starterFiles)))];
-  let text = '';
-  try {
-    text = await input.teacher.complete({
-      system: GENERATOR_SYSTEM_PROMPT,
-      prompt: generatorPrompt(input.seed, avoid),
-      ...(input.signal ? { signal: input.signal } : {}),
-    });
-  } catch (error) {
-    return { ok: false, reason: `erreur du modèle : ${error instanceof Error ? error.message.slice(0, 160) : String(error)}`, raw: '' };
-  }
+  const prompt = generatorPrompt(input.seed, avoid);
+  const ask = async (request: { prompt: string; history?: readonly TeacherTurn[] }): Promise<string | { error: string }> => {
+    try {
+      return await input.teacher.complete({
+        system: GENERATOR_SYSTEM_PROMPT,
+        ...request,
+        ...(input.signal ? { signal: input.signal } : {}),
+      });
+    } catch (error) {
+      return { error: `erreur du modèle : ${error instanceof Error ? error.message.slice(0, 160) : String(error)}` };
+    }
+  };
+  const first = await ask({ prompt });
+  if (typeof first !== 'string') return { ok: false, reason: first.error, raw: '' };
   const workParent = input.workParent ?? (await mkdtemp(join(tmpdir(), 'jarvis-gen-')));
   try {
-    return await acceptExercise({ text, seed: input.seed, model: input.teacher.name, accepted: input.accepted, workParent });
+    const check = (text: string) =>
+      acceptExercise({ text, seed: input.seed, model: input.teacher.name, accepted: input.accepted, workParent });
+    const outcome = await check(first);
+    if (outcome.ok || input.repair === false || !repairable(outcome.reason)) return outcome;
+    const second = await ask({
+      prompt: repairPrompt(outcome.reason, outcome.detail),
+      history: [
+        { role: 'user', content: prompt },
+        { role: 'assistant', content: first },
+      ],
+    });
+    const first$ = {
+      firstReason: outcome.reason,
+      firstRaw: first,
+      ...(outcome.detail ? { firstDetail: outcome.detail } : {}),
+    };
+    if (typeof second !== 'string') return { ...outcome, ...first$, reason: second.error };
+    const retried = await check(second);
+    return retried.ok ? { ...retried, repaired: true } : { ...retried, ...first$ };
   } finally {
     if (!input.workParent) await rm(workParent, { recursive: true, force: true });
   }
@@ -534,11 +615,11 @@ export function ollamaTeacher(
   });
   return {
     name: model,
-    async complete({ system, prompt, signal }) {
+    async complete({ system, prompt, history, signal }) {
       let text = '';
       for await (const event of provider.streamChat({
         system,
-        messages: [createMessage('user', prompt)],
+        messages: [...(history ?? []).map((turn) => createMessage(turn.role, turn.content)), createMessage('user', prompt)],
         temperature: options.temperature ?? 0.7,
         maxTokens: options.maxTokens ?? 3000,
         ...(signal ? { signal } : {}),

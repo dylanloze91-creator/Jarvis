@@ -19,6 +19,8 @@
  *   --temperature T   créativité du professeur (défaut : 0.7)
  *   --ctx N           num_ctx (défaut : 8192)
  *   --think           laisse la réflexion des modèles Qwen3 qui la gèrent (défaut : coupée)
+ *   --no-repair       pas de seconde chance (5.0.57 : par défaut, un exercice refusé pour une raison
+ *                     corrigeable est renvoyé une fois au professeur avec l’erreur exacte des tests)
  *   --url URL         serveur Ollama (défaut : http://127.0.0.1:11434)
  *
  * Rien n'est téléchargé. Aucun exercice ne ressemble aux missions d'évaluation (vérifié).
@@ -49,6 +51,7 @@ function parseArgs(argv) {
     temperature: 0.7,
     ctx: 8192,
     think: false,
+    repair: true,
     url: 'http://127.0.0.1:11434',
   };
   for (let index = 0; index < argv.length; index += 1) {
@@ -67,6 +70,7 @@ function parseArgs(argv) {
     else if (arg === '--temperature') options.temperature = Math.min(1.5, Math.max(0, Number(next())));
     else if (arg === '--ctx') options.ctx = Math.max(2048, Number(next()) || 8192);
     else if (arg === '--think') options.think = null;
+    else if (arg === '--no-repair') options.repair = false;
     else if (arg === '--url') options.url = next().replace(/\/+$/, '');
     else if (arg === '--help' || arg === '-h') {
       console.log('Voir l’en-tête de packages/core/scripts/lab-generate.mjs pour les options.');
@@ -128,6 +132,7 @@ const salt = Math.floor(Date.now() / 1000) % 1_000_003;
 const workParent = await mkdtemp(join(tmpdir(), 'jarvis-gen-'));
 const reasons = new Map();
 let fresh = 0;
+let repairedCount = 0;
 let tries = 0;
 let stopping = false;
 process.on('SIGINT', () => {
@@ -149,7 +154,7 @@ try {
     const timer = setTimeout(() => controller.abort(), options.timeoutS * 1000);
     let outcome;
     try {
-      outcome = await gen.generateExercise({ teacher, seed, accepted, workParent, signal: controller.signal });
+      outcome = await gen.generateExercise({ teacher, seed, accepted, workParent, signal: controller.signal, repair: options.repair });
     } finally {
       clearTimeout(timer);
     }
@@ -157,10 +162,11 @@ try {
     const label = `demandé : niv. ${seed.level} · ${seed.category} · ${seed.theme}`;
     if (outcome.ok) {
       fresh += 1;
+      if (outcome.repaired) repairedCount += 1;
       accepted.push(outcome.exercise.mission);
       await appendFile(files.exercises, `${JSON.stringify(outcome.exercise)}\n`);
       await appendFile(files.examples, `${JSON.stringify(outcome.example)}\n`);
-      console.log(`  ✔ ${String(tries).padStart(3)} · ${seconds} s · ${outcome.exercise.mission.id} (${label})`);
+      console.log(`  ✔ ${String(tries).padStart(3)} · ${seconds} s · ${outcome.exercise.mission.id}${outcome.repaired ? ' (après correction)' : ''} (${label})`);
     } else {
       const reason = controller.signal.aborted ? `délai de ${options.timeoutS} s dépassé` : outcome.reason;
       const family = reason
@@ -169,8 +175,23 @@ try {
         .replace(/ :.*$| \(.*\)$| dans .*$/, '')
         .trim();
       reasons.set(family, (reasons.get(family) ?? 0) + 1);
-      await appendFile(files.rejects, `${JSON.stringify({ at: new Date().toISOString(), seed, reason, raw: outcome.raw.slice(0, 6000) })}\n`);
-      console.log(`  ✘ ${String(tries).padStart(3)} · ${seconds} s · ${reason} (${label})`);
+      const entry = {
+        at: new Date().toISOString(),
+        seed,
+        reason,
+        ...(outcome.detail ? { detail: outcome.detail } : {}),
+        raw: outcome.raw.slice(0, 6000),
+        ...(outcome.firstReason
+          ? {
+              firstReason: outcome.firstReason,
+              ...(outcome.firstDetail ? { firstDetail: outcome.firstDetail } : {}),
+              firstRaw: (outcome.firstRaw ?? '').slice(0, 6000),
+            }
+          : {}),
+      };
+      await appendFile(files.rejects, `${JSON.stringify(entry)}\n`);
+      const before = outcome.firstReason && outcome.firstReason !== reason ? ` (d’abord : ${outcome.firstReason})` : '';
+      console.log(`  ✘ ${String(tries).padStart(3)} · ${seconds} s · ${reason}${outcome.firstReason ? ' après correction' : ''}${before} (${label})`);
     }
   }
 } finally {
@@ -179,7 +200,7 @@ try {
 
 const minutes = ((Date.now() - started) / 60000).toFixed(0);
 console.log('\n================ RÉSUMÉ ================');
-console.log(`${fresh} exercice(s) accepté(s) sur ${tries} essai(s) (${tries ? Math.round((fresh / tries) * 100) : 0} %) en ${minutes} min.`);
+console.log(`${fresh} exercice(s) accepté(s) sur ${tries} essai(s) (${tries ? Math.round((fresh / tries) * 100) : 0} %) en ${minutes} min, dont ${repairedCount} sauvé(s) par la seconde chance.`);
 console.log(`Total dans le cahier : ${accepted.length} exercice(s) · exemples d’entraînement : ${files.examples}`);
 if (reasons.size) {
   console.log('Rejets : ' + [...reasons].sort((a, b) => b[1] - a[1]).map(([reason, count]) => `${reason} ×${count}`).join(' · '));

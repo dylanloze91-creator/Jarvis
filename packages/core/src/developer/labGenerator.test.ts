@@ -7,6 +7,7 @@ import {
   generateExercise,
   generatorPrompt,
   parseExercise,
+  repairable,
   seedFor,
   type GeneratorSeed,
   type TeacherModel,
@@ -187,6 +188,65 @@ describe('générateur d’exercices', () => {
     const outcome = await acceptExercise({ text: exercise({ name: 'gateCode' }), seed: { level: 3, category: 'strings', theme: 'parking' }, model: 'prof', accepted: [], workParent: work });
     expect(outcome.ok).toBe(true);
     if (outcome.ok) expect(outcome.exercise.mission).toMatchObject({ level: 2, difficulty: 2 });
+  });
+
+  it('5.0.57 : .js devient .mjs (chemins et imports), l’exercice est accepté', async () => {
+    const text = exercise({ name: 'ticketTag' }).replace(/src\/ticketTag\.mjs/g, 'src/ticketTag.js').replace("'../src/ticketTag.js'", "'../src/ticketTag.js'");
+    expect(text).toContain('@@ DEPART src/ticketTag.js');
+    const outcome = await accept(text);
+    expect(outcome.ok, outcome.ok ? '' : outcome.reason).toBe(true);
+    if (outcome.ok) {
+      expect(outcome.exercise.mission.starterFiles[0]?.path).toBe('src/ticketTag.mjs');
+      expect(outcome.exercise.mission.hiddenTests[0]?.content).toContain("from '../src/ticketTag.mjs'");
+    }
+  });
+
+  it('5.0.57 : un refus à l’exécution porte la sortie des tests', async () => {
+    const outcome = await accept(exercise({ name: 'laneCode', solution: 'export function laneCode(plate) {\n  return plate.toUpperCase();\n}' }));
+    expect(outcome.ok).toBe(false);
+    if (!outcome.ok) {
+      expect(outcome.reason).toBe('la solution ne passe pas ses propres tests');
+      expect(outcome.detail).toMatch(/not ok|AssertionError|fail/i);
+      expect(outcome.detail).not.toContain(work);
+    }
+  });
+
+  it('5.0.57 : seconde chance — l’erreur exacte est renvoyée au professeur, qui corrige', async () => {
+    const calls: { prompt: string; history?: readonly { role: string; content: string }[] }[] = [];
+    const wrong = exercise({ name: 'dockCode', solution: 'export function dockCode(plate) {\n  return plate.toUpperCase();\n}' });
+    const right = exercise({ name: 'dockCode' });
+    const teacher: TeacherModel = {
+      name: 'prof',
+      async complete({ prompt, history }) {
+        calls.push({ prompt, ...(history ? { history } : {}) });
+        return calls.length === 1 ? wrong : right;
+      },
+    };
+    const outcome = await generateExercise({ teacher, seed: SEED, accepted: [], workParent: work });
+    expect(outcome).toMatchObject({ ok: true, repaired: true });
+    expect(calls).toHaveLength(2);
+    expect(calls[1]!.prompt).toContain('la solution ne passe pas ses propres tests');
+    expect(calls[1]!.prompt).toContain('Sortie des tests');
+    expect(calls[1]!.history).toEqual([
+      { role: 'user', content: calls[0]!.prompt },
+      { role: 'assistant', content: wrong },
+    ]);
+  });
+
+  it('5.0.57 : seconde chance ratée → refus avec la première raison ; pas de seconde chance pour un doublon ni avec --no-repair', async () => {
+    const same = exercise({ name: 'kioskCode', solution: 'export function kioskCode(plate) {\n  return plate;\n}' });
+    let n = 0;
+    const stubborn: TeacherModel = { name: 'prof', complete: async () => ((n += 1), same) };
+    const failed = await generateExercise({ teacher: stubborn, seed: SEED, accepted: [], workParent: work });
+    expect(failed).toMatchObject({ ok: false, reason: 'la solution est identique au départ', firstReason: 'la solution est identique au départ', firstRaw: same });
+    expect(n).toBe(2);
+    n = 0;
+    await generateExercise({ teacher: stubborn, seed: SEED, accepted: [], workParent: work, repair: false });
+    expect(n).toBe(1);
+    expect(repairable('doublon de g1-x-abcdef')).toBe(false);
+    expect(repairable('nom median déjà utilisé par l’évaluation')).toBe(false);
+    expect(repairable('la solution ne passe pas ses propres tests')).toBe(true);
+    expect(repairable('chemin de départ refusé : lib/x.mjs')).toBe(true);
   });
 
   it('les graines varient niveau, domaine et thème', () => {

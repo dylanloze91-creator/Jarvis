@@ -456,6 +456,17 @@ Les missions du catalogue (5.0.55) ont été écrites avec Claude. Les condition
 
 **Règle** : une donnée d'entraînement ne contient jamais un texte écrit par Claude (énoncé ou solution). Le générateur, les contrôles et le banc sont du code de Jarvis ; leurs sorties d'entraînement viennent du professeur ouvert.
 
+## 5.0.57 — générateur : seconde chance et détail des refus
+
+Premier essai réel (qwen3-coder:30b, RTX 2060) : 5 exercices acceptés sur 17 (29 %), environ 1 min 30 par essai. 12 refus sur 14 portaient sur la solution (identique au départ, ou rouge sur ses propres tests) ; un sur un fichier `.js`.
+
+- **Seconde chance** (`generateExercise`, option `repair`, défaut oui) : un refus corrigeable (`repairable` : tout sauf doublon, proximité de l'évaluation, erreur ou délai du modèle) renvoie au professeur sa propre réponse et `repairPrompt(raison, sortie des tests)`, une seule fois ; la réponse corrigée repasse **tous** les contrôles. `TeacherModel.complete` accepte `history`. Accepté après correction : `repaired: true`. Refusé : `firstReason`, `firstDetail`, `firstRaw` gardent le premier échec.
+- **Extensions** (`normalizeExtensions`) : `src/x.js` → `src/x.mjs`, `hidden/x.test.js` → `.test.mjs`, et les imports relatifs `./x.js` / `../src/x.js` → `.mjs`.
+- **Sortie des tests** (`StaticCheck.detail`, `testDetail`) : sans chemin temporaire, 2 000 caractères au plus ; écrite dans `rejets.jsonl` (`detail`, `firstDetail`).
+- **Consigne** : départ qui se charge sans erreur et différent de la solution, valeurs attendues vérifiées à la main, `.mjs` partout.
+- Script : `--no-repair` ; « (après correction) » dans le journal ; résumé « dont N sauvé(s) par la seconde chance ».
+- Tests (`labGenerator.test.ts`) : `.js` accepté et renommé, sortie des tests sur un refus, correction réussie (historique transmis), correction ratée (première raison gardée), aucune seconde chance pour un doublon ni avec `repair: false`.
+
 ## Updater / GitHub
 
 Dernière publication : **5.0.5** (`https://github.com/dylanloze91-creator/Jarvis/releases/tag/v5.0.5`) — exe, `.blockmap` et `latest.yml` publiés : l’updater intégré la propose.
