@@ -60,8 +60,8 @@ const CATEGORY_HINTS: Record<LabCategory, string> = {
 
 const LEVEL_HINTS: Record<LabLevel, string> = {
   1: 'Niveau 1 : une seule fonction courte dans un seul fichier, quelques lignes de solution.',
-  2: 'Niveau 2 : une fonction avec plusieurs cas particuliers (vide, erreurs, bornes), un seul fichier.',
-  3: 'Niveau 3 : deux ou trois fichiers qui s’importent entre eux ; un bogue à corriger dans l’un, sans changer les autres. Les tests vérifient aussi la partie qui ne doit pas changer.',
+  2: 'Niveau 2 : une fonction avec plusieurs cas particuliers (vide, erreurs, bornes), un seul fichier. Les tests vérifient chaque borne exactement (valeur limite incluse ou exclue) et chaque entrée refusée.',
+  3: 'Niveau 3 : OBLIGATOIREMENT deux ou trois fichiers @@ DEPART qui s’importent entre eux ; un bogue à corriger dans l’un, sans changer les autres. Les tests vérifient aussi la partie qui ne doit pas changer.',
 };
 
 /** Thèmes de départ, pour varier les exercices (le professeur invente le reste). */
@@ -146,7 +146,7 @@ export interface GeneratorSeed {
   theme: string;
 }
 
-export function generatorPrompt(seed: GeneratorSeed, avoid: readonly string[] = []): string {
+export function generatorPrompt(seed: GeneratorSeed, avoid: readonly string[] = [], sameTheme: readonly string[] = []): string {
   const lines = [
     `Crée un nouvel exercice. ${LEVEL_HINTS[seed.level]}`,
     `Domaine : ${CATEGORY_HINTS[seed.category]}.`,
@@ -154,6 +154,13 @@ export function generatorPrompt(seed: GeneratorSeed, avoid: readonly string[] = 
   ];
   if (avoid.length) {
     lines.push(`Ne reprends pas ces noms de fonctions, déjà utilisés : ${avoid.slice(-40).join(', ')}.`);
+  }
+  if (sameTheme.length) {
+    // 5.0.59 : le professeur reprenait le même sujet sur un thème (conversion de température ×4).
+    lines.push(
+      'Exercices déjà faits sur ce thème : invente un sujet et une fonction vraiment différents.',
+      ...sameTheme.slice(-8).map((goal) => `- ${goal.length > 140 ? `${goal.slice(0, 140)}…` : goal}`),
+    );
   }
   return lines.join('\n');
 }
@@ -166,10 +173,13 @@ export function seedFor(index: number, salt = 0): GeneratorSeed {
     x = Math.imul(x ^ (x >>> 16), 0x45d9f3b);
     return (x ^ (x >>> 16)) >>> 0;
   };
-  const levels: LabLevel[] = [1, 2, 2, 2, 3, 3];
+  // 5.0.59 : plus de niveau 3 et de corrections de code existant (audit de la première nuit :
+  // 22 exercices de niveau 3 sur 147, 32 départs avec du vrai code à corriger).
+  const levels: LabLevel[] = [1, 2, 2, 3, 3, 3];
+  const categories = [...GENERATOR_CATEGORIES, 'bugfix', 'regression'] as const;
   return {
     level: levels[mix(index * 3 + 1) % levels.length]!,
-    category: GENERATOR_CATEGORIES[mix(index * 3 + 2) % GENERATOR_CATEGORIES.length]!,
+    category: categories[mix(index * 3 + 2) % categories.length]!,
     theme: GENERATOR_THEMES[mix(index * 3 + 3) % GENERATOR_THEMES.length]!,
   };
 }
@@ -275,6 +285,26 @@ export function normalizeExtensions(parsed: ParsedExercise): ParsedExercise {
   };
 }
 
+/**
+ * 5.0.59 : le professeur écrit souvent « Le fichier de test est hidden/x.test.mjs » dans les
+ * contraintes. Le contrôle des tests cachés refusait tout l'exercice (8 refus la première nuit) ;
+ * ces phrases sont retirées, le reste de l'exercice est gardé.
+ */
+export function scrubTestMentions(parsed: ParsedExercise): ParsedExercise {
+  const mentions = (text: string) => /\bhidden\//.test(text) || (parsed.test ? text.includes(parsed.test.path) : false);
+  const sentences = (text: string) =>
+    text
+      .split(/(?<=[.!?])\s+/)
+      .filter((sentence) => !mentions(sentence))
+      .join(' ');
+  return {
+    ...parsed,
+    goal: mentions(parsed.goal) ? sentences(parsed.goal) : parsed.goal,
+    constraints: parsed.constraints.filter((line) => !mentions(line)),
+    criteria: parsed.criteria.filter((line) => !mentions(line)),
+  };
+}
+
 function rejected(reason: string): StaticCheck {
   return { ok: false, reason };
 }
@@ -374,14 +404,54 @@ function evalReference() {
   return evalIndex;
 }
 
+/** Exercice déjà accepté, tel que le générateur le compare (5.0.59 : tests et thème facultatifs). */
+export type AcceptedExercise = Pick<LabMission, 'id' | 'goal' | 'category' | 'starterFiles'> & {
+  hiddenTests?: readonly LabFile[];
+  theme?: string;
+};
+
+const SIMILARITY_STOP = new Set([
+  'test', 'assert', 'import', 'from', 'node', 'const', 'strict', 'equal', 'deepequal', 'strictequal', 'throws',
+  'return', 'function', 'export', 'await', 'async', 'join', 'dirname', 'meta', 'writefile', 'promises', 'path',
+]);
+
+function similarityTokens(text: string): Set<string> {
+  return new Set(
+    (text
+      .replace(/([a-z])([A-Z])/g, '$1 $2')
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/\p{M}/gu, '')
+      .match(/[a-z]{4,}/g) ?? []).filter((word) => !SIMILARITY_STOP.has(word)),
+  );
+}
+
+/**
+ * 5.0.59 : ressemblance de deux exercices (mots de l'objectif et des tests, 0 à 1).
+ * Calibrée sur la première nuit (147 exercices) : au-dessus de 0,40, ou de 0,30 avec un
+ * nom exporté commun, ce sont des quasi-doublons (conversion de température ×4, calcul de durée ×2…).
+ */
+export function exerciseSimilarity(
+  left: Pick<AcceptedExercise, 'goal' | 'hiddenTests'>,
+  right: Pick<AcceptedExercise, 'goal' | 'hiddenTests'>,
+): number {
+  const words = (item: Pick<AcceptedExercise, 'goal' | 'hiddenTests'>) =>
+    similarityTokens(`${item.goal} ${(item.hiddenTests ?? []).map((file) => file.content).join(' ')}`);
+  const a = words(left);
+  const b = words(right);
+  if (a.size === 0 || b.size === 0) return 0;
+  let shared = 0;
+  for (const word of a) if (b.has(word)) shared += 1;
+  return shared / (a.size + b.size - shared);
+}
+
+export const DUPLICATE_SIMILARITY = { alone: 0.4, sameName: 0.3 };
+
 /**
  * Un exercice généré ne doit ressembler à aucune mission d'évaluation (sinon le banc
  * mesurerait la mémoire du futur modèle) ni à un exercice déjà accepté.
  */
-export function noveltyCheck(
-  mission: LabMission,
-  accepted: readonly Pick<LabMission, 'id' | 'goal' | 'category' | 'starterFiles'>[],
-): StaticCheck {
+export function noveltyCheck(mission: LabMission, accepted: readonly AcceptedExercise[]): StaticCheck {
   const reference = evalReference();
   for (const name of exportedNames(mission.starterFiles)) {
     if (reference.names.has(name)) return rejected(`nom ${name} déjà utilisé par l’évaluation`);
@@ -395,8 +465,13 @@ export function noveltyCheck(
   const names = new Set(exportedNames(mission.starterFiles));
   for (const other of accepted) {
     if (other.id === mission.id || nearDuplicate(mission, other)) return rejected(`doublon de ${other.id}`);
-    if (exportedNames(other.starterFiles).some((name) => names.has(name)) && nearDuplicate({ ...mission, category: 'logic' }, { ...other, category: 'logic' })) {
+    const sameName = exportedNames(other.starterFiles).some((name) => names.has(name));
+    if (sameName && nearDuplicate({ ...mission, category: 'logic' }, { ...other, category: 'logic' })) {
       return rejected(`doublon de ${other.id}`);
+    }
+    const similarity = exerciseSimilarity(mission, other);
+    if (similarity >= DUPLICATE_SIMILARITY.alone || (sameName && similarity >= DUPLICATE_SIMILARITY.sameName)) {
+      return rejected(`doublon de ${other.id} (ressemblance ${similarity.toFixed(2)})`);
     }
   }
   return { ok: true, reason: '' };
@@ -427,6 +502,134 @@ function testDetail(output: string, workParent: string): string {
   const cleaned = output.split(workParent).join('.').replace(/\/verify-[\w-]+?-\d+/g, '');
   const lines = cleaned.split(/\r?\n/).filter((line) => line.trim() && !/^#\s+(?:suites|cancelled|skipped|todo|duration_ms)\b/.test(line));
   return lines.join('\n').slice(-2_000);
+}
+
+/* ------------------------------------------------------------------ */
+/* 5.0.59 : solidité des tests (petites erreurs glissées)             */
+/* ------------------------------------------------------------------ */
+
+/** Une petite erreur glissée dans la solution : les tests doivent la voir. */
+export interface Mutant {
+  path: string;
+  line: number;
+  label: string;
+  content: string;
+}
+
+const MUTATIONS: { pattern: RegExp; replace: string; label: string }[] = [
+  { pattern: / >= /, replace: ' > ', label: '>= devient >' },
+  { pattern: / <= /, replace: ' < ', label: '<= devient <' },
+  { pattern: / > /, replace: ' >= ', label: '> devient >=' },
+  { pattern: / < /, replace: ' <= ', label: '< devient <=' },
+  { pattern: / === /, replace: ' !== ', label: '=== devient !==' },
+  { pattern: / !== /, replace: ' === ', label: '!== devient ===' },
+  { pattern: / && /, replace: ' || ', label: '&& devient ||' },
+  { pattern: / \|\| /, replace: ' && ', label: '|| devient &&' },
+  { pattern: / \+ 1\b/, replace: ' + 2', label: '+ 1 devient + 2' },
+  { pattern: / - 1\b/, replace: ' - 2', label: '- 1 devient - 2' },
+  { pattern: /\breturn true\b/, replace: 'return false', label: 'return true devient return false' },
+  { pattern: /\breturn false\b/, replace: 'return true', label: 'return false devient return true' },
+  { pattern: /\.trim\(\)/, replace: '', label: '.trim() retiré' },
+  { pattern: /\.toLowerCase\(\)/, replace: '', label: '.toLowerCase() retiré' },
+  { pattern: /Math\.round\(/, replace: 'Math.floor(', label: 'Math.round devient Math.floor' },
+  { pattern: /\bthrow new \w*Error\(.*?\);/, replace: ';', label: 'throw retiré' },
+];
+
+/** Partie d'une ligne hors chaînes et commentaire de fin (les mutations n'y touchent pas). */
+function codePart(line: string): string {
+  let out = '';
+  let quote: string | null = null;
+  for (let index = 0; index < line.length; index += 1) {
+    const char = line[index]!;
+    if (quote) {
+      if (char === '\\') {
+        out += '  ';
+        index += 1;
+        continue;
+      }
+      if (char === quote) {
+        quote = null;
+        out += char;
+      } else {
+        out += ' ';
+      }
+      continue;
+    }
+    if (char === '/' && line[index + 1] === '/') break;
+    if (char === '"' || char === "'" || char === '`') quote = char;
+    out += char;
+  }
+  return out.padEnd(line.length, ' ');
+}
+
+/**
+ * Au plus `limit` mutants des fichiers changés : une règle par mutant, à sa première
+ * ligne de code (hors import, commentaire et chaîne). Déterministe, sans modèle.
+ */
+export function mutantsOf(files: readonly LabFile[], limit = 8): Mutant[] {
+  const out: Mutant[] = [];
+  for (const rule of MUTATIONS) {
+    if (out.length >= limit) break;
+    search: for (const file of files) {
+      const lines = file.content.split('\n');
+      for (let index = 0; index < lines.length; index += 1) {
+        const line = lines[index]!;
+        if (/^\s*(?:import\b|\/\/|\*|\/\*)/.test(line)) continue;
+        const match = rule.pattern.exec(codePart(line));
+        if (!match) continue;
+        const mutated = line.slice(0, match.index) + match[0].replace(rule.pattern, rule.replace) + line.slice(match.index + match[0].length);
+        if (mutated === line) continue;
+        const copy = [...lines];
+        copy[index] = mutated;
+        out.push({ path: file.path, line: index + 1, label: rule.label, content: copy.join('\n') });
+        break search;
+      }
+    }
+  }
+  return out;
+}
+
+export interface StrengthResult {
+  total: number;
+  killed: number;
+  /** Mutations que les tests n'ont pas vues (« src/x.mjs, ligne 4 : > devient >= »). */
+  survivors: string[];
+}
+
+/** Rejoue les tests sur chaque mutant de la solution ; un mutant est « vu » si les tests échouent. */
+export async function testStrength(
+  mission: LabMission,
+  solutions: readonly LabFile[],
+  workParent: string,
+  limit = 8,
+): Promise<StrengthResult> {
+  const starters = new Map(mission.starterFiles.map((item) => [item.path, item]));
+  const changed = solutions.filter((item) => starters.get(item.path)?.content !== item.content);
+  const mutants = mutantsOf(changed, limit);
+  const root = join(workParent, `${mission.id}-mutant`);
+  const survivors: string[] = [];
+  let killed = 0;
+  try {
+    for (const mutant of mutants) {
+      const files = new Map(starters);
+      for (const item of solutions) files.set(item.path, item);
+      files.set(mutant.path, { path: mutant.path, content: mutant.content });
+      await writeTree(root, [...files.values()]);
+      const run = await executeHiddenTests(root, mission);
+      if (run.exitCode !== 0 || run.broken) killed += 1;
+      else survivors.push(`${mutant.path}, ligne ${mutant.line} : ${mutant.label}`);
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+  return { total: mutants.length, killed, survivors };
+}
+
+/** Seuil de refus : avec au moins 3 mutants, les tests doivent en voir au moins un tiers. */
+export const MIN_TEST_STRENGTH = { mutants: 3, ratio: 1 / 3 };
+
+export function weakTests(strength: StrengthResult): boolean {
+  return strength.total >= MIN_TEST_STRENGTH.mutants && strength.killed / strength.total < MIN_TEST_STRENGTH.ratio;
 }
 
 export async function runtimeCheck(mission: LabMission, solutions: readonly LabFile[], workParent: string): Promise<StaticCheck> {
@@ -469,6 +672,8 @@ export interface GeneratedExercise {
   mission: LabMission;
   solution: LabFile[];
   provenance: { model: string; seed: GeneratorSeed; at: string };
+  /** 5.0.59 : petites erreurs glissées dans la solution, et combien les tests en ont vues. */
+  strength?: { total: number; killed: number };
 }
 
 export type GenerationOutcome =
@@ -492,6 +697,17 @@ export function repairable(reason: string): boolean {
 }
 
 export function repairPrompt(reason: string, detail?: string): string {
+  if (/^tests trop faibles/.test(reason)) {
+    return [
+      `Ton exercice a été refusé par la vérification automatique : ${reason}.`,
+      detail ? `Erreurs glissées dans ta solution que tes tests n’ont pas vues :\n${detail}` : '',
+      'Ajoute des assertions qui échouent pour ces erreurs : valeur exactement à la limite, juste à côté, entrées refusées.',
+      'Garde le même objectif et la même solution, précise l’objectif si une limite n’y est pas dite. Vérifie chaque valeur attendue à la main.',
+      'Renvoie l’exercice complet dans le même format, de @@ OBJECTIF à @@ FIN.',
+    ]
+      .filter(Boolean)
+      .join('\n');
+  }
   return [
     `Ton exercice a été refusé par la vérification automatique : ${reason}.`,
     detail ? `Sortie des tests :\n\`\`\`\n${detail}\n\`\`\`` : '',
@@ -508,11 +724,13 @@ export async function acceptExercise(input: {
   text: string;
   seed: GeneratorSeed;
   model: string;
-  accepted: readonly Pick<LabMission, 'id' | 'goal' | 'category' | 'starterFiles'>[];
+  accepted: readonly AcceptedExercise[];
   workParent: string;
   now?: Date;
+  /** 5.0.59 : contrôle de solidité des tests (défaut : oui). */
+  strength?: boolean;
 }): Promise<GenerationOutcome> {
-  const parsed = normalizeExtensions(parseExercise(input.text));
+  const parsed = scrubTestMentions(normalizeExtensions(parseExercise(input.text)));
   const shape = staticCheck(parsed);
   if (!shape.ok) return { ok: false, reason: shape.reason, raw: input.text };
   const mission = missionFromParsed(parsed, input.seed);
@@ -531,12 +749,25 @@ export async function acceptExercise(input: {
   if (!runtime.ok) {
     return { ok: false, reason: runtime.reason, raw: input.text, ...(runtime.detail ? { detail: runtime.detail } : {}) };
   }
+  let strength: StrengthResult | null = null;
+  if (input.strength !== false) {
+    strength = await testStrength(mission, parsed.solutions, input.workParent);
+    if (weakTests(strength)) {
+      return {
+        ok: false,
+        reason: `tests trop faibles (${strength.killed} erreur(s) glissée(s) vue(s) sur ${strength.total})`,
+        raw: input.text,
+        detail: strength.survivors.map((line) => `- ${line}`).join('\n'),
+      };
+    }
+  }
   const starters = new Map(mission.starterFiles.map((item) => [item.path, item.content]));
   const changed = parsed.solutions.filter((item) => starters.get(item.path) !== item.content);
   const exercise: GeneratedExercise = {
     mission,
     solution: parsed.solutions,
     provenance: { model: input.model, seed: input.seed, at: (input.now ?? new Date()).toISOString() },
+    ...(strength ? { strength: { total: strength.total, killed: strength.killed } } : {}),
   };
   const example = trainingExampleFromFiles(mission, changed, {
     model: input.model,
@@ -549,14 +780,17 @@ export async function acceptExercise(input: {
 export async function generateExercise(input: {
   teacher: TeacherModel;
   seed: GeneratorSeed;
-  accepted: readonly Pick<LabMission, 'id' | 'goal' | 'category' | 'starterFiles'>[];
+  accepted: readonly AcceptedExercise[];
   workParent?: string;
   signal?: AbortSignal;
   /** 5.0.57 : une demande de correction au professeur après un refus corrigeable. Défaut : oui. */
   repair?: boolean;
+  /** 5.0.59 : contrôle de solidité des tests. Défaut : oui. */
+  strength?: boolean;
 }): Promise<GenerationOutcome> {
   const avoid = [...new Set(input.accepted.flatMap((mission) => exportedNames(mission.starterFiles)))];
-  const prompt = generatorPrompt(input.seed, avoid);
+  const sameTheme = input.accepted.filter((item) => item.theme === input.seed.theme).map((item) => item.goal);
+  const prompt = generatorPrompt(input.seed, avoid, sameTheme);
   const ask = async (request: { prompt: string; history?: readonly TeacherTurn[] }): Promise<string | { error: string }> => {
     try {
       return await input.teacher.complete({
@@ -573,7 +807,14 @@ export async function generateExercise(input: {
   const workParent = input.workParent ?? (await mkdtemp(join(tmpdir(), 'jarvis-gen-')));
   try {
     const check = (text: string) =>
-      acceptExercise({ text, seed: input.seed, model: input.teacher.name, accepted: input.accepted, workParent });
+      acceptExercise({
+        text,
+        seed: input.seed,
+        model: input.teacher.name,
+        accepted: input.accepted,
+        workParent,
+        ...(input.strength === false ? { strength: false } : {}),
+      });
     const outcome = await check(first);
     if (outcome.ok || input.repair === false || !repairable(outcome.reason)) return outcome;
     const second = await ask({

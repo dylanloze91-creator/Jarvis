@@ -265,7 +265,7 @@ export class OllamaProvider implements LLMProvider {
 
     const leaked = detectLeakedToolCallAttempt(fullText);
     if (leaked) {
-      throw new ProviderError(buildLeakedToolCallMessage(leaked));
+      throw new ProviderError(buildLeakedToolCallMessage(leaked), undefined, leaked.raw);
     }
 
     const finishReason: FinishReason = doneReason === 'length' ? 'length' : 'stop';
