@@ -16,7 +16,7 @@ Statuts possibles : `en cours`, `en pause`, `bloqué`, `terminé`.
 | Agent | Branche | Tâche | Fichiers concernés | Début | Statut |
 | --- | --- | --- | --- | --- | --- |
 | Claude Code | `claude/coordination-agents-v2` | Règles de travail à deux agents | — | 2026-10-28 | terminé |
-| Claude Code | `claude/donnees-code` | Générateur d'exercices (5.0.54 à 5.0.56) | — | 2026-10-27 | en attente de test sur le PC |
+| Claude Code | `claude/donnees-code` | Générateur d'exercices (5.0.54 à 5.0.58), fusionné dans main | — | 2026-10-27 | terminé |
 | Cursor | `cursor/maj-developpeur-def9` | Ancienne branche de travail : 3 corrections du labo après la 5.0.53 | — | 2026-10-23 | en pause |
 
 ## Ressource GPU / Ollama
@@ -25,6 +25,6 @@ Une seule carte (RTX 2060 6 Go) : un seul agent à la fois lance le banc (`npm r
 
 | État | Par qui | Pour quoi | Depuis |
 | --- | --- | --- | --- |
-| libre | — | — | — |
+| occupée | Claude Code | Mesure de départ sur l'évaluation (`lab --set eval`, 3 modèles, 3 passages) | 2026-10-29 |
 
 Pour réserver : passer l'état à `occupée`, remplir les colonnes, commiter et pousser **avant** de lancer. Pour libérer : remettre `libre` et `—`, commiter et pousser.
