@@ -74,6 +74,13 @@ export interface OllamaCodeOptions {
   /** `false` coupe la « réflexion » des modèles qui la gèrent (Qwen3.5, Qwen3.6) ; absent = non envoyé. */
   think?: boolean;
   keepAlive?: string | number;
+  /**
+   * 5.0.54 : relire un appel d'outil écrit en texte (`<tool_call>`, JSON nu ou en bloc,
+   * XML de Qwen3-Coder) au lieu d'arrêter le tour, et ne plus prendre une réponse
+   * JSON pour un appel quand aucun outil n'est proposé. Jamais envoyé à Ollama.
+   * Absent : comportement d'avant (le chat ne le passe jamais).
+   */
+  recoverToolCalls?: boolean;
 }
 
 export interface ProviderDescriptor {

@@ -19,7 +19,9 @@
     "build": "tsc -p tsconfig.json",
     "dev": "tsc -p tsconfig.json --watch",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "lab": "tsc -p tsconfig.json && node scripts/lab-bench.mjs",
+    "lab:generate": "tsc -p tsconfig.json && node scripts/lab-generate.mjs"
   },
   "dependencies": {
     "zod": "^4.6.5"

@@ -435,6 +435,59 @@ Correctif du test 5.0.0 (mission « Nouveau projet » Pong bloquée sur le Raiso
 - **Projets (pas Jarvis)** : outil `dev_write_file`, consigne `editHints`, relances quand le modèle annonce sans écrire, conseil après un échec d'outil répété.
 - Tests : `engine/difficulty.test.ts`, `engine/limits.test.ts`, `mission/fallbackMission.test.ts` (modèle bavard ; modèle qui vise Jarvis ; mission trop grande refusée puis version ciblée), `models/patientFetch.test.ts`. Un seul test existant a changé d'attente, à la demande de l'utilisateur : `task/taskWorkflow.test.ts` (un modèle qui ne corrige rien s'arrête après la première correction au lieu de trois).
 
+## 5.0.54 — appels d'outils écrits en texte relus, banc du laboratoire sur n'importe quel modèle
+
+Constat : un petit Qwen écrit souvent son appel d'outil dans le texte (`<tool_call>{…}</tool_call>`, bloc ```json, XML `<function=…>` de Qwen3-Coder) avec le code du fichier sur plusieurs lignes non échappées. Avant 5.0.54, `OllamaProvider` levait une erreur : le laboratoire sortait de l'essai sans rien écrire (`catch { break; }`), `runToolLoop` s'arrêtait en `stoppedBy: 'error'`. Une partie des échecs mesurés venait de là, pas du code produit.
+
+- **Récupération** (`providers/toolCallRecovery.ts`, pur) : `recoverToolCallsFromText(text, outils)` relit `<tool_call>` (même non refermée), le XML de Qwen3-Coder (valeurs converties d'après le schéma), un objet JSON nu ou une liste, un bloc ```json ; `arguments` en chaîne ou `parameters` acceptés ; JSON réparé (`repairJsonText` : contrôles bruts échappés dans les chaînes, virgules finales). **Seuls les outils proposés au modèle** sont acceptés ; un appel illisible n'est jamais inventé.
+- **Option `OllamaCodeOptions.recoverToolCalls`** (jamais envoyée à Ollama) : appel relu → événements `tool_call` d'identifiant `recovered-…` (`RECOVERED_CALL_PREFIX`) ; arguments structurés en chaîne réparés ; **sans outil proposé, aucun texte n'est pris pour un appel** (une réponse JSON qui commence par `{"name":` arrive entière : l'ancien contournement « clé `skill`, jamais `name` en tête » n'est plus nécessaire, il reste sans dommage). Activée par `createCodeAIProvider` (toutes les étapes de Jarvis Développeur) et par `ollamaLabModel`. **Le chat ne la passe pas** : son comportement et le corps de ses requêtes sont ceux de 5.0.53 (`ollama-unchanged.test.ts` vert sans régénération).
+- **Laboratoire** : chaque essai garde `wrote`, `recoveredCalls`, `fenceUsed`, `modelError` (l'erreur du modèle n'est plus avalée). `probeLabModel(fetch, modèle, url)` accepte un autre modèle que `qwen2.5:1.5b` (digest imposé seulement pour celui-ci). `ollamaLabModel(digest, fetch, modèle, { recoverToolCalls, numCtx, think, baseUrl })`. `runLabBatch` accepte `maxAttempts`, `timeoutMs`, `onResult`.
+- **Banc** (`packages/core/scripts/lab-bench.mjs`) : `npm run lab --workspace @jarvis/core -- --model a,b --runs 3` ; chargement et part du modèle sur la carte (`/api/ps`), score par passage et par mission, cause de chaque échec (appel illisible, rien écrit, code faux, délai), `--compare-recover` pour mesurer 5.0.53 contre 5.0.54 sur le même modèle, rapport JSON. Rien n'est téléchargé.
+- Tests : `providers/toolCallRecovery.test.ts`, `providers/ollama-recover.test.ts`. Deux attentes changées, conséquence directe : `developer/codeProvider.test.ts` (la configuration transmise contient `recoverToolCalls: true`) et `mission/fallbackMission.test.ts` (« appel d'outil en texte brut au PLAN » : l'appel est maintenant exécuté ; le modèle scripté le répète sans plan, le plan de secours prend le relais, message « plan de secours » au lieu d'« appel d'outil inutilisable »).
+
+## 5.0.55 — catalogue de missions et exemples d'entraînement de code
+
+Objectif : faire tourner la boucle « missions → réussites vérifiées → exemples → affinage → modèle à soi ». Constat de départ : le jeu d'affinage restait à 0 ligne, pour deux raisons. Une mission du laboratoire ne touche qu'un fichier, et `stagingFor` (`evidence.ts`) rejette tout succès sur un seul fichier. Et la réponse d'un exemple était `finalResult` (« Les tests cachés sont au vert. ») : jamais le code. Ce circuit reste en place pour les méthodes et les compétences ; le code a désormais le sien.
+
+- **Catalogue** (`developer/labCatalog.ts`, pur) : `trainCatalog()` = 104 missions (36 niveau 1, 48 niveau 2, 20 niveau 3 sur plusieurs fichiers : correction, non-régression, asynchrone, fichiers) ; `evalCatalog()` = 29 missions **tenues à l'écart** (les 9 de `referenceMissions()` puis 20 nouvelles, `split: 'validation'`). Chaque mission a une **solution de référence** que le modèle ne voit jamais. `catalogMissions('reference' | 'eval' | 'train' | 'all')`, `trainable(mission)`.
+- **Contrôle du catalogue** (`labCatalog.test.ts`) : forme valide (`validateLabMission`), tests rouges sur le départ et verts avec la solution (vrai `node --test`), aucune variante d'une autre mission (`labContamination`), ni tests cachés ni solution dans la demande, jeux disjoints. Une mission ajoutée sans solution juste fait échouer ce test.
+- **Lanceur** : `runLabBatch({ missions })` (absent : les 9 de référence) ; `LAB_TOOLS`, `LAB_SYSTEM_PROMPT`, `labFirstPrompt(mission)` exportés.
+- **Exemple d'entraînement** (`labTrainingExample(mission, résultat, { trainable, model })`) : conversation système + demande du premier essai + réponse `write_file` du ou des fichiers finaux (format `tool_calls` lu par le gabarit de chat de Qwen et les outils d'affinage courants), avec `tools` et `meta`. `null` pour une mission d'évaluation, écartée, non réussie ou sans fichier changé (`labTraining.test.ts`).
+- **Banc** : `--set reference|eval|train|all` (défaut `reference`, comparable aux séries d'avant) ; `--collect FICHIER.jsonl` ajoute les exemples sans doublon (même mission, même contenu) et **refuse** `--set eval|reference`. Diagnostic : « code faux, répété sans changement » distingué de « n'a rien écrit ».
+
+**Règle** : une mission de `evalCatalog()` n'entre jamais dans un jeu d'entraînement. Le score sur `--set eval` est la mesure du modèle ; s'il a vu ces missions, la mesure ne vaut plus rien.
+
+## 5.0.56 — générateur d'exercices : les données d'entraînement viennent d'un modèle ouvert
+
+Les missions du catalogue (5.0.55) ont été écrites avec Claude. Les conditions d'Anthropic interdisent d'utiliser ses réponses pour entraîner un modèle : **le catalogue sert uniquement à mesurer**. `trainable()` rend toujours `false` ; `--collect` du banc est retiré (message d'erreur qui renvoie au générateur). Les exemples d'entraînement viennent maintenant d'un modèle ouvert, le « professeur » (Qwen3-Coder, Apache 2.0), qui écrit lui-même l'énoncé, les tests et la solution.
+
+- **Générateur** (`developer/labGenerator.ts`, Node, hors index) : `GENERATOR_SYSTEM_PROMPT` + `generatorPrompt(graine, noms à éviter)` ; graine = niveau, domaine, thème (`seedFor(i, sel)`, 40 thèmes, 10 domaines). Réponse au **format à balises** (`@@ OBJECTIF`, `@@ CONTRAINTES`, `@@ CRITERES`, `@@ DEPART src/…`, `@@ TEST hidden/….test.mjs`, `@@ SOLUTION src/…`, `@@ FIN`) : pas de JSON, car du code dans une chaîne JSON est la première cause d'échec des modèles locaux. `parseExercise` tolère les blocs ``` et les accents des titres.
+- **Contrôles, sans modèle** (`acceptExercise`) : forme (`staticCheck` : chemins `src/*.mjs` et `hidden/*.test.mjs`, 1 à 3 fichiers de départ, 3 assertions au moins, imports limités à `node:fs|path|test|assert|os|util` et aux fichiers du projet ; interdits : réseau, processus, `eval`, `Math.random`, heure courante, `setInterval`, suppression absolue) ; `validateLabMission` ; solution absente de la consigne ; **nouveauté** (`noveltyCheck` : aucun nom exporté ni objectif proche d'une mission d'évaluation, pas de doublon des exercices acceptés) ; **exécution** (`runtimeCheck` : tests qui tournent et échouent sur le départ, départ lisible, solution verte **deux fois** contre les tests instables). Niveau = celui produit (`producedLevel` : plusieurs fichiers = 3, un seul fichier ≤ 2).
+- **Exemple** : `trainingExampleFromFiles` (partagé avec `labTrainingExample`, `meta.source` = `generated` | `lab`) : consigne du premier essai + `write_file` des fichiers de la solution.
+- **Script de nuit** (`scripts/lab-generate.mjs`, `npm run lab:generate --workspace @jarvis/core -- --model qwen3-coder:30b --count 200 --dir C:\dev\jarvis-data`) : écrit chaque exercice accepté tout de suite (`exercices.jsonl`, `entrainement.jsonl`), les refus avec leur raison (`rejets.jsonl`), reprend sans doublon, Ctrl+C finit l'exercice en cours ; résumé des rejets groupés par cause.
+- Tests : `labGenerator.test.ts` (format, acceptation, chaque cause de refus, niveau 3 sur deux fichiers, doublon, nom de l'évaluation, professeur en erreur, graines). `labCatalog.test.ts` et `labTraining.test.ts` vérifient que le catalogue n'est pas entraînable.
+
+**Règle** : une donnée d'entraînement ne contient jamais un texte écrit par Claude (énoncé ou solution). Le générateur, les contrôles et le banc sont du code de Jarvis ; leurs sorties d'entraînement viennent du professeur ouvert.
+
+## 5.0.57 — générateur : seconde chance et détail des refus
+
+Premier essai réel (qwen3-coder:30b, RTX 2060) : 5 exercices acceptés sur 17 (29 %), environ 1 min 30 par essai. 12 refus sur 14 portaient sur la solution (identique au départ, ou rouge sur ses propres tests) ; un sur un fichier `.js`.
+
+- **Seconde chance** (`generateExercise`, option `repair`, défaut oui) : un refus corrigeable (`repairable` : tout sauf doublon, proximité de l'évaluation, erreur ou délai du modèle) renvoie au professeur sa propre réponse et `repairPrompt(raison, sortie des tests)`, une seule fois ; la réponse corrigée repasse **tous** les contrôles. `TeacherModel.complete` accepte `history`. Accepté après correction : `repaired: true`. Refusé : `firstReason`, `firstDetail`, `firstRaw` gardent le premier échec.
+- **Extensions** (`normalizeExtensions`) : `src/x.js` → `src/x.mjs`, `hidden/x.test.js` → `.test.mjs`, et les imports relatifs `./x.js` / `../src/x.js` → `.mjs`.
+- **Sortie des tests** (`StaticCheck.detail`, `testDetail`) : sans chemin temporaire, 2 000 caractères au plus ; écrite dans `rejets.jsonl` (`detail`, `firstDetail`).
+- **Consigne** : départ qui se charge sans erreur et différent de la solution, valeurs attendues vérifiées à la main, `.mjs` partout.
+- Script : `--no-repair` ; « (après correction) » dans le journal ; résumé « dont N sauvé(s) par la seconde chance ».
+- Tests (`labGenerator.test.ts`) : `.js` accepté et renommé, sortie des tests sur un refus, correction réussie (historique transmis), correction ratée (première raison gardée), aucune seconde chance pour un doublon ni avec `repair: false`.
+
+## 5.0.58 — suite de tests verte sous Windows
+
+Relevé sur le PC (Windows, Node 22.23) : 6 échecs, aucun dans le code testé.
+
+- **Import d'un chemin Windows** (`skills.test.ts`, `experienceMethods.test.ts`, `skillProof.test.ts`) : le programme enfant faisait `await import(process.argv[3])` avec un chemin `C:\…` ; sous Windows, `import()` exige une URL `file://` (`ERR_UNSUPPORTED_ESM_URL_SCHEME`). Corrigé par `pathToFileURL(…).href`. **Règle : jamais `import()` d'un chemin brut, toujours `pathToFileURL`.**
+- **Délais** : les tests qui lancent de vrais processus (`node --test`, programme enfant) avaient la limite par défaut de 5 s ou 60 s ; sous Windows, chargé, ils la dépassaient. `skillProof.test.ts` : 60 s ; `lab.test.ts` : 120 s pour chaque test qui lance des processus.
+- **Node 20** : le projet accepte Node 20.19 (`environmentCheck.ts`, avec un conseil), mais six fichiers de `learning/` lancent `node --experimental-strip-types`, qui n'existe qu'à partir de Node 22.6. Ces 24 tests sont maintenant `it.skipIf(!STRIP_TYPES)` : ignorés sous Node 20, exécutés à partir de 22.6. Aucun test n'est retiré ni affaibli.
+
 ## Updater / GitHub
 
 Dernière publication : **5.0.5** (`https://github.com/dylanloze91-creator/Jarvis/releases/tag/v5.0.5`) — exe, `.blockmap` et `latest.yml` publiés : l’updater intégré la propose.
@@ -562,6 +615,10 @@ Corrections de la revue complète (détail : `docs/audit-0410.md` du store du pr
 - **.NET (0.5.4)** : seules `dotnet build|test <solution> --no-restore` sont automatiques, et seulement dans la copie isolée ; tout ce qui télécharge, lance ou installe redemande ; jamais de publication NuGet ni de MSBuild direct ; jamais de droits administrateur ni de vrai fichier hosts dans les tests ; le SDK n'est jamais installé par Jarvis.
 - **Projets (0.5.3)** : la copie de l’utilisateur ne change qu’avec « Appliquer » (ou « Annuler l’application »), toujours après une carte, copie propre exigée, conflit annulé ; « Construire » jamais publié ; rien de Jarvis dans les dépôts des projets ; un projet n’a ni la mémoire, ni les missions, ni les copies isolées de Jarvis.
 - **Missions (0.5.2)** : une seule boucle de modification (`TaskRun`), les spécialistes s’y branchent par `TaskHooks` ; aucun modèle choisi par Jarvis (rôle sans modèle = mission refusée) ; un seul modèle chargé à la fois ; un point bloquant du REVIEWER ne passe jamais pour une réussite.
+
+- **Générateur (5.0.56)** : un exercice n'est accepté que vert deux fois avec sa solution et rouge sur le départ ; rien de proche de l'évaluation ; le catalogue écrit avec Claude ne devient jamais un exemple d'entraînement.
+- **Catalogue et entraînement (5.0.55)** : chaque mission du catalogue garde une solution de référence vérifiée par `labCatalog.test.ts` ; une mission d'évaluation ne devient jamais un exemple ; un exemple n'est écrit que si les tests cachés sont au vert.
+- **Appels relus (5.0.54)** : `recoverToolCalls` reste une option du modèle de code et du laboratoire, jamais du chat sans décision ; un appel relu ne vise qu'un outil proposé à ce tour ; un texte illisible reste une erreur, jamais un appel deviné.
 
 Travaux **hors scope** de cet arbre (ne pas les reprendre ici) : publication GitHub.
 

@@ -18,6 +18,12 @@ import {
   type SkillCase,
 } from './skillProof.js';
 
+/** `--experimental-strip-types` n'existe qu'à partir de Node 22.6 ; le projet accepte Node 20 (environmentCheck). */
+const STRIP_TYPES = (() => {
+  const [major = 0, minor = 0] = process.versions.node.split('.').map(Number);
+  return major > 22 || (major === 22 && minor >= 6);
+})();
+
 function spec(file: string, names: string, body: string): string {
   return `import assert from 'node:assert/strict';\nimport { test } from 'node:test';\nimport { ${names} } from './${file}.ts';\n${body}\n`;
 }
@@ -187,7 +193,7 @@ describe('preuve de compétence', () => {
     expect(again.record?.id).toBe(created.record?.id);
   });
 
-  it('valide sur cinq cas indépendants, rejette une compétence inutile, et ignore le jeu tenu à l’écart', async () => {
+  it.skipIf(!STRIP_TYPES)('valide sur cinq cas indépendants, rejette une compétence inutile, et ignore le jeu tenu à l’écart', async () => {
     const created = proposeSkillFromMission(proof());
     expect(created.record).toBeTruthy();
     const held = caseOf(
@@ -245,9 +251,9 @@ describe('preuve de compétence', () => {
     expect(rejected.record.status).toBe('rejected');
     expect(rejected.targets.withPass).toBe(rejected.targets.withoutPass);
     expect(rejected.record.skill?.steps).toEqual(useless.record?.skill?.steps);
-  });
+  }, 60_000);
 
-  it('retrouve une seule compétence, note l’échec, et revient à la version précédente', async () => {
+  it.skipIf(!STRIP_TYPES)('retrouve une seule compétence, note l’échec, et revient à la version précédente', async () => {
     const created = proposeSkillFromMission(proof());
     const judged = await judgeSkill(created.record!, { cases: [...targets, ...controls], run: execute, now: 30 });
     expect(judged.decision).toBe('validated');
@@ -306,9 +312,9 @@ describe('preuve de compétence', () => {
     expect(ledger.validated).toBe(2);
     expect(ledger.failureAfterUse).toBe(1);
     expect(ledger.byCategory['align-return']?.failureAfterUse).toBe(1);
-  });
+  }, 60_000);
 
-  it('relit la compétence validée dans un autre processus', async () => {
+  it.skipIf(!STRIP_TYPES)('relit la compétence validée dans un autre processus', async () => {
     const created = proposeSkillFromMission(proof());
     const judged = await judgeSkill(created.record!, { cases: [...targets, ...controls], run: execute, now: 40 });
     const dir = await mkdtemp(join(tmpdir(), 'jarvis-proof-restart-'));
@@ -331,7 +337,8 @@ import { pathToFileURL } from 'node:url';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 register(pathToFileURL(process.argv[2]));
-const { selectSkill } = await import(process.argv[3]);
+// Windows : import() exige une URL file:// (un chemin C:\\… lève ERR_UNSUPPORTED_ESM_URL_SCHEME).
+const { selectSkill } = await import(pathToFileURL(process.argv[3]).href);
 const store = JSON.parse(readFileSync(join(process.argv[4], 'store.json'), 'utf8'));
 const source = ${JSON.stringify(targets[0]!.source)};
 const tests = ${JSON.stringify(targets[0]!.tests)};
@@ -347,5 +354,5 @@ if (!selected.skill.evidence || !selected.skill.evidence.length) process.exit(4)
       { encoding: 'utf8' },
     );
     expect(child.status, `${child.stdout}\n${child.stderr}`).toBe(0);
-  });
+  }, 60_000);
 });

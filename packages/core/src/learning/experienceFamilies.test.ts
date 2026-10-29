@@ -16,6 +16,12 @@ import {
   type LearningRecord,
 } from './continuous.js';
 
+/** `--experimental-strip-types` n'existe qu'à partir de Node 22.6 ; le projet accepte Node 20 (environmentCheck). */
+const STRIP_TYPES = (() => {
+  const [major = 0, minor = 0] = process.versions.node.split('.').map(Number);
+  return major > 22 || (major === 22 && minor >= 6);
+})();
+
 function runTest(cwd: string, file: string): { status: number | null; output: string } {
   const result = spawnSync(process.execPath, ['--experimental-strip-types', '--test', file], {
     cwd,
@@ -83,7 +89,7 @@ function learned(input: {
 }
 
 describe('réutilisation au-delà d’une addition', () => {
-  it('retrouve une division par une liste vide malgré une autre formulation', async () => {
+  it.skipIf(!STRIP_TYPES)('retrouve une division par une liste vide malgré une autre formulation', async () => {
     const { a, b, empty } = await dirs();
     const before = `export function ratio(items: number[]): number {\n  const sum = items.reduce((x, y) => x + y, 0);\n  return sum / items.length;\n}\n`;
     const after = `export function ratio(items: number[]): number {\n  const sum = items.reduce((x, y) => x + y, 0);\n  return items.length === 0 ? 0 : sum / items.length;\n}\n`;
@@ -137,7 +143,7 @@ describe('réutilisation au-delà d’une addition', () => {
     expect(runTest(empty, 'mean.test.ts').status).not.toBe(0);
   });
 
-  it('corrige un mauvais appel et une méthode de texte sans écrire la solution dans la demande', async () => {
+  it.skipIf(!STRIP_TYPES)('corrige un mauvais appel et une méthode de texte sans écrire la solution dans la demande', async () => {
     const floorDiff = [
       'diff --git a/hausse.ts b/hausse.ts',
       '--- a/hausse.ts',
@@ -209,7 +215,7 @@ describe('réutilisation au-delà d’une addition', () => {
     expect(runTest(a, 'tag.test.ts').status).toBe(0);
   });
 
-  it('reporte un index de fin sur un autre nom, et un bloc quand le texte explose', async () => {
+  it.skipIf(!STRIP_TYPES)('reporte un index de fin sur un autre nom, et un bloc quand le texte explose', async () => {
     const diff = [
       'diff --git a/last.ts b/last.ts',
       '--- a/last.ts',
@@ -292,7 +298,7 @@ describe('réutilisation au-delà d’une addition', () => {
     expect(applyExperienceToSource(bare, []).applied).toBe(false);
   });
 
-  it('ne casse pas un renommage, remplace un test faible, et utilise basename', async () => {
+  it.skipIf(!STRIP_TYPES)('ne casse pas un renommage, remplace un test faible, et utilise basename', async () => {
     const rename = [
       'diff --git a/clean.ts b/clean.ts',
       '--- a/clean.ts',

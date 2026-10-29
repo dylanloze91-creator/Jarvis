@@ -15,6 +15,12 @@ import {
 } from './methods.js';
 import { applyExperienceToSource } from './continuous.js';
 
+/** `--experimental-strip-types` n'existe qu'à partir de Node 22.6 ; le projet accepte Node 20 (environmentCheck). */
+const STRIP_TYPES = (() => {
+  const [major = 0, minor = 0] = process.versions.node.split('.').map(Number);
+  return major > 22 || (major === 22 && minor >= 6);
+})();
+
 function runTest(cwd: string, file: string): { status: number | null; output: string } {
   const result = spawnSync(process.execPath, ['--experimental-strip-types', '--test', file], {
     cwd,
@@ -90,7 +96,7 @@ function spec(fn: string, body: string): string {
 }
 
 describe('méthodes extraites, pas la ligne d’origine', () => {
-  it('corrige un autre opérateur sans coller return a + b', async () => {
+  it.skipIf(!STRIP_TYPES)('corrige un autre opérateur sans coller return a + b', async () => {
     const record = methodFor({
       id: 'align',
       request: 'la fonction devrait additionner',
@@ -136,7 +142,7 @@ test('negatif', () => { assert.equal(offset(-2, 5), 3); });`,
     expect(reused.method?.steps).toEqual(record.method?.steps);
   });
 
-  it('protège une liste vide avec la valeur de CE test, pas 0', async () => {
+  it.skipIf(!STRIP_TYPES)('protège une liste vide avec la valeur de CE test, pas 0', async () => {
     const record = methodFor({
       id: 'vide',
       request: 'une liste vide ne doit pas donner un nombre illisible',
@@ -168,7 +174,7 @@ test('un', () => { assert.equal(mean([5]), 5); });`,
     expect(runTest(dir, 'mean.test.ts').status).toBe(0);
   });
 
-  it('la méthode bat l’absence de mémoire ; la carte exacte reste le repère', async () => {
+  it.skipIf(!STRIP_TYPES)('la méthode bat l’absence de mémoire ; la carte exacte reste le repère', async () => {
     const source =
       'export function mean(values) {\n  const total = values.reduce((s, n) => s + n, 0);\n  return total / values.length;\n}\n';
     const tests = spec(
@@ -228,7 +234,7 @@ test('un', () => { assert.equal(mean([5]), 5); });`,
     expect(runTest(green.dir, 'mean.test.ts').status).toBe(0);
   });
 
-  it('déduit le séparateur des tests au lieu de coller le tiret', async () => {
+  it.skipIf(!STRIP_TYPES)('déduit le séparateur des tests au lieu de coller le tiret', async () => {
     const record = methodFor({
       id: 'join',
       request: 'joindre les mots',
@@ -261,7 +267,7 @@ test('vide', () => { assert.equal(label([]), ''); });`,
     expect(runTest(green.dir, 'label.test.ts').status).toBe(0);
   });
 
-  it('remplace un JSON illisible par la valeur des tests, pas null', async () => {
+  it.skipIf(!STRIP_TYPES)('remplace un JSON illisible par la valeur des tests, pas null', async () => {
     const record = methodFor({
       id: 'parse',
       request: 'un texte inutilisable ne doit pas lever',
@@ -291,7 +297,7 @@ test('inutilisable', () => { assert.deepEqual(read('not-json'), []); });`,
     expect(runTest(dir, 'read.test.ts').status).toBe(0);
   });
 
-  it('convertit le reçu de CE fichier sans coller trim', async () => {
+  it.skipIf(!STRIP_TYPES)('convertit le reçu de CE fichier sans coller trim', async () => {
     const record = methodFor({
       id: 'coerce',
       request: 'une méthode de texte est appelée sur un nombre',
@@ -319,7 +325,7 @@ test('zero', () => { assert.equal(show(0), '0!'); });`,
     expect(runTest(dir, 'show.test.ts').status).toBe(0);
   });
 
-  it('choisit dirname parce que les tests l’attendent, pas basename', async () => {
+  it.skipIf(!STRIP_TYPES)('choisit dirname parce que les tests l’attendent, pas basename', async () => {
     const record = methodFor({
       id: 'api',
       request: 'le symbole absent doit être la fonction documentée',
@@ -350,7 +356,7 @@ test('seul', () => { assert.equal(directory('c.txt'), '.'); });`,
     expect(runTest(dir, 'directory.test.ts').status).toBe(0);
   });
 
-  it('ne change pas un fichier dont les tests passent déjà', async () => {
+  it.skipIf(!STRIP_TYPES)('ne change pas un fichier dont les tests passent déjà', async () => {
     const record = methodFor({
       id: 'vert',
       request: 'refactor qui ne doit pas casser les tests',
@@ -373,7 +379,7 @@ test('zero', () => { assert.equal(area(0, 5), 0); });`,
     expect(runTest(dir, 'area.test.ts').status).toBe(0);
   });
 
-  it('recule d’un cran avec le nom local, et la carte exacte le fait aussi', async () => {
+  it.skipIf(!STRIP_TYPES)('recule d’un cran avec le nom local, et la carte exacte le fait aussi', async () => {
     const record = methodFor({
       id: 'fin',
       request: 'lire le dernier élément',
@@ -554,7 +560,7 @@ test('zero', () => { assert.equal(offset(0, 0), 0); });`,
     expect(dropped.applied).toBe(false);
   });
 
-  it('après redémarrage, un nouveau problème utilise la méthode validée', async () => {
+  it.skipIf(!STRIP_TYPES)('après redémarrage, un nouveau problème utilise la méthode validée', async () => {
     const record = methodFor({
       id: 'align',
       request: 'la fonction devrait additionner',
@@ -594,7 +600,8 @@ import { pathToFileURL } from 'node:url';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 register(pathToFileURL(process.argv[2]));
-const { applyMethod } = await import(process.argv[3]);
+// Windows : import() exige une URL file:// (un chemin C:\\… lève ERR_UNSUPPORTED_ESM_URL_SCHEME).
+const { applyMethod } = await import(pathToFileURL(process.argv[3]).href);
 const dir = process.argv[4];
 const store = JSON.parse(readFileSync(join(dir, 'store.json'), 'utf8'));
 const source = readFileSync(join(dir, 'total.ts'), 'utf8');

@@ -9,6 +9,12 @@ import { learningIssues, noteToRecord, type LearningRecord } from './continuous.
 import { checkConstraints, enforceConstraints, extractConstraints } from './constraints.js';
 import { applySkill, settleSkill, skillFromObservation } from './skills.js';
 
+/** `--experimental-strip-types` n'existe qu'à partir de Node 22.6 ; le projet accepte Node 20 (environmentCheck). */
+const STRIP_TYPES = (() => {
+  const [major = 0, minor = 0] = process.versions.node.split('.').map(Number);
+  return major > 22 || (major === 22 && minor >= 6);
+})();
+
 const MARKER = 'brq_';
 const WRAP = 'brqWrap';
 const RULE =
@@ -156,7 +162,7 @@ describe('contrainte structurée', () => {
     expect(extractConstraints([example])).toEqual([]);
   });
 
-  it('nomme la contrainte rouge et s’arrête à la limite sans déclarer un succès', () => {
+  it.skipIf(!STRIP_TYPES)('nomme la contrainte rouge et s’arrête à la limite sans déclarer un succès', () => {
     const source = 'function add(a, b) { return a + b; }';
     const issues = learningIssues(source, [ruleRecord()]);
     expect(issues.some((issue) => issue.includes('name-prefix') || issue.includes(MARKER))).toBe(true);
@@ -262,7 +268,7 @@ describe('projets indépendants, connaissances séparées de la règle', () => {
     },
   ] as const;
 
-  it('avec une compétence retrouvée les tests passent, sans elle ils échouent', async () => {
+  it.skipIf(!STRIP_TYPES)('avec une compétence retrouvée les tests passent, sans elle ils échouent', async () => {
     for (const item of cases) {
       const skill = item.skill();
       expect(JSON.stringify(skill)).not.toContain(item.golden);
@@ -287,7 +293,7 @@ describe('projets indépendants, connaissances séparées de la règle', () => {
     }
   });
 
-  it('corrige le calcul sans réécrire la fonction déjà verte', async () => {
+  it.skipIf(!STRIP_TYPES)('corrige le calcul sans réécrire la fonction déjà verte', async () => {
     const skill = validatedSkill('align-garde', 'return a * b;', 'return a + b;', 'projet-produit', 'addition', 'somme');
     const source = 'export function garde(n) {\n  return n + 1;\n}\nexport function total(a, b) {\n  return a - b;\n}\n';
     const body = `test('garde', () => { assert.equal(garde(1), 2); });

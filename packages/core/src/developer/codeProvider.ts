@@ -107,7 +107,8 @@ export function createCodeAIProvider(
     provider: 'ollama',
     model: config.model,
     baseUrl,
-    ollama: config.options ?? {},
+    // 5.0.54 : un appel d'outil écrit en texte est relu au lieu d'arrêter l'étape.
+    ollama: { ...(config.options ?? {}), recoverToolCalls: true },
     ...(config.fetch ? { fetch: config.fetch } : {}),
   });
 
