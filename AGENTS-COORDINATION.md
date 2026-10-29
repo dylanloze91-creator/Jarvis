@@ -18,6 +18,7 @@ Statuts possibles : `en cours`, `en pause`, `bloqué`, `terminé`.
 | Claude Code | `claude/coordination-agents-v2` | Règles de travail à deux agents | — | 2026-10-28 | terminé |
 | Claude Code | `claude/donnees-code` | Générateur d'exercices (5.0.54 à 5.0.58), fusionné dans main | — | 2026-10-27 | terminé |
 | Cursor | `cursor/maj-developpeur-def9` | Ancienne branche de travail : 3 corrections du labo après la 5.0.53 | — | 2026-10-23 | en pause |
+| Claude Code | `claude/generateur-5059` | Intégrer la 5.0.59 (appels relus, générateur exigeant, nettoyage du cahier) et remesurer le 7B | CLAUDE.md, packages/core/package.json, packages/core/scripts/lab-clean.mjs, packages/core/scripts/lab-generate.mjs, packages/core/src/developer/labGenerator.ts, packages/core/src/developer/labGenerator.test.ts, packages/core/src/developer/labRunner.ts, packages/core/src/providers/ollama.ts, packages/core/src/providers/toolCallRecovery.ts, packages/core/src/providers/toolCallRecovery.test.ts, packages/core/src/providers/types.ts | 2026-10-29 | en cours |
 
 ## Ressource GPU / Ollama
 
