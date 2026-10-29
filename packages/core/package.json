@@ -21,7 +21,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "lab": "tsc -p tsconfig.json && node scripts/lab-bench.mjs",
-    "lab:generate": "tsc -p tsconfig.json && node scripts/lab-generate.mjs"
+    "lab:generate": "tsc -p tsconfig.json && node scripts/lab-generate.mjs",
+    "lab:clean": "tsc -p tsconfig.json && node scripts/lab-clean.mjs"
   },
   "dependencies": {
     "zod": "^4.6.5"

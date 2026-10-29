@@ -19,6 +19,9 @@
  *   --temperature T   créativité du professeur (défaut : 0.7)
  *   --ctx N           num_ctx (défaut : 8192)
  *   --think           laisse la réflexion des modèles Qwen3 qui la gèrent (défaut : coupée)
+ *   --no-strength     pas de contrôle de solidité des tests (5.0.59 : par défaut, de petites erreurs sont
+ *                     glissées dans la solution ; si les tests en voient moins d’un tiers, l’exercice est refusé
+ *                     ou renvoyé au professeur pour qu’il ajoute des tests)
  *   --no-repair       pas de seconde chance (5.0.57 : par défaut, un exercice refusé pour une raison
  *                     corrigeable est renvoyé une fois au professeur avec l’erreur exacte des tests)
  *   --url URL         serveur Ollama (défaut : http://127.0.0.1:11434)
@@ -52,6 +55,7 @@ function parseArgs(argv) {
     ctx: 8192,
     think: false,
     repair: true,
+    strength: true,
     url: 'http://127.0.0.1:11434',
   };
   for (let index = 0; index < argv.length; index += 1) {
@@ -71,6 +75,7 @@ function parseArgs(argv) {
     else if (arg === '--ctx') options.ctx = Math.max(2048, Number(next()) || 8192);
     else if (arg === '--think') options.think = null;
     else if (arg === '--no-repair') options.repair = false;
+    else if (arg === '--no-strength') options.strength = false;
     else if (arg === '--url') options.url = next().replace(/\/+$/, '');
     else if (arg === '--help' || arg === '-h') {
       console.log('Voir l’en-tête de packages/core/scripts/lab-generate.mjs pour les options.');
@@ -121,7 +126,10 @@ if (!probe.ok) {
 }
 
 const previous = await readJsonl(files.exercises);
-const accepted = previous.map((row) => row.mission).filter(Boolean);
+// 5.0.59 : le thème de chaque exercice accompagne sa mission (le professeur voit ce qui a déjà été fait sur ce thème).
+const accepted = previous
+  .filter((row) => row.mission)
+  .map((row) => ({ ...row.mission, ...(row.provenance?.seed?.theme ? { theme: row.provenance.seed.theme } : {}) }));
 const teacher = gen.ollamaTeacher(options.model, {
   baseUrl: options.url,
   numCtx: options.ctx,
@@ -154,7 +162,15 @@ try {
     const timer = setTimeout(() => controller.abort(), options.timeoutS * 1000);
     let outcome;
     try {
-      outcome = await gen.generateExercise({ teacher, seed, accepted, workParent, signal: controller.signal, repair: options.repair });
+      outcome = await gen.generateExercise({
+        teacher,
+        seed,
+        accepted,
+        workParent,
+        signal: controller.signal,
+        repair: options.repair,
+        strength: options.strength,
+      });
     } finally {
       clearTimeout(timer);
     }
@@ -163,10 +179,11 @@ try {
     if (outcome.ok) {
       fresh += 1;
       if (outcome.repaired) repairedCount += 1;
-      accepted.push(outcome.exercise.mission);
+      accepted.push({ ...outcome.exercise.mission, theme: seed.theme });
       await appendFile(files.exercises, `${JSON.stringify(outcome.exercise)}\n`);
       await appendFile(files.examples, `${JSON.stringify(outcome.example)}\n`);
-      console.log(`  ✔ ${String(tries).padStart(3)} · ${seconds} s · ${outcome.exercise.mission.id}${outcome.repaired ? ' (après correction)' : ''} (${label})`);
+      const strength = outcome.exercise.strength?.total ? ` · tests : ${outcome.exercise.strength.killed}/${outcome.exercise.strength.total} erreurs vues` : '';
+      console.log(`  ✔ ${String(tries).padStart(3)} · ${seconds} s · ${outcome.exercise.mission.id}${outcome.repaired ? ' (après correction)' : ''}${strength} (${label})`);
     } else {
       const reason = controller.signal.aborted ? `délai de ${options.timeoutS} s dépassé` : outcome.reason;
       const family = reason

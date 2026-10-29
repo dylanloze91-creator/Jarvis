@@ -50,6 +50,19 @@ describe('réparation du JSON', () => {
     expect(parseLooseJson('{"a": "x, }", "b": [1, 2,],}')).toEqual({ a: 'x, }', b: [1, 2] });
   });
 
+  it('5.0.59 : un échappement inconnu (regex recopiée) devient une barre oblique littérale', () => {
+    // Texte tel qu'écrit par qwen2.5-coder:7b (mesure de départ, mission l1-fold-label).
+    const raw = String.raw`{"content": "return text.trim().replace(/\s+/g, ' ').split(/\d\./);\n"}`;
+    expect(() => JSON.parse(raw)).toThrow();
+    expect(parseLooseJson(raw)).toEqual({ content: "return text.trim().replace(/\\s+/g, ' ').split(/\\d\\./);\n" });
+  });
+
+  it('5.0.59 : les échappements valides ne changent pas, y compris \\\\ et \\u', () => {
+    const raw = String.raw`{"a": "x\\s é \"q\" \/ \t", "b": "\w",}`;
+    expect(parseLooseJson(raw)).toEqual({ a: 'x\\s é "q" / \t', b: '\\w' });
+    expect(parseLooseJson(String.raw`{"c": "\u00zz"}`)).toEqual({ c: '\\u00zz' });
+  });
+
   it('rend undefined pour un texte qui n’est pas du JSON', () => {
     expect(parseLooseJson('Bonjour')).toBeUndefined();
     expect(parseLooseJson('{"a": ')).toBeUndefined();
@@ -142,6 +155,19 @@ describe('appels d’outils relus dans le texte', () => {
 
   it('sans outil proposé, rien n’est relu', () => {
     expect(recoverToolCallsFromText('<tool_call>{"name": "read_file", "arguments": {"path": "x"}}</tool_call>', [])).toEqual([]);
+  });
+
+  it('5.0.59 : JSON nu avec une regex non échappée (cas réel du 7B) : l’appel est relu', () => {
+    const text = String.raw`{"name": "write_file", "arguments": {"path": "src/foldLabel.mjs", "content": "export function foldLabel(text) {\n  return text.trim().replace(/\s+/g, ' ');\n}"}}`;
+    expect(recoverToolCallsFromText(text, TOOLS)).toEqual([
+      {
+        name: 'write_file',
+        arguments: {
+          path: 'src/foldLabel.mjs',
+          content: "export function foldLabel(text) {\n  return text.trim().replace(/\\s+/g, ' ');\n}",
+        },
+      },
+    ]);
   });
 
   it('arguments irréparables : pas d’appel plutôt qu’un appel faux', () => {

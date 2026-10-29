@@ -4,8 +4,10 @@ import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   acceptExercise,
+  exerciseSimilarity,
   generateExercise,
   generatorPrompt,
+  mutantsOf,
   parseExercise,
   repairable,
   seedFor,
@@ -19,7 +21,8 @@ beforeAll(async () => {
   work = await mkdtemp(join(tmpdir(), 'jarvis-gen-test-'));
 });
 afterAll(async () => {
-  await rm(work, { recursive: true, force: true });
+  // Windows garde parfois le dossier verrouillé un instant après node --test.
+  await rm(work, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 });
 
 const SEED: GeneratorSeed = { level: 1, category: 'strings', theme: 'parking' };
@@ -67,7 +70,8 @@ async function accept(text: string, accepted: Parameters<typeof acceptExercise>[
   return acceptExercise({ text, seed: SEED, model: 'prof', accepted, workParent: work, now: new Date('2026-10-28T00:00:00Z') });
 }
 
-describe('générateur d’exercices', () => {
+// 5.0.59 : le contrôle de solidité relance node --test jusqu'à 8 fois dans chaque test qui accepte un exercice.
+describe('générateur d’exercices', { timeout: 60_000 }, () => {
   it('lit le format à balises, avec blocs de code et accents dans les titres', () => {
     const parsed = parseExercise(`Voici :\n${exercise({})}`);
     expect(parsed.goal).toMatch(/^plateLabel\(plate\)/);
@@ -254,5 +258,127 @@ describe('générateur d’exercices', () => {
     expect(new Set(seeds.map((s) => s.category)).size).toBeGreaterThanOrEqual(8);
     expect(new Set(seeds.map((s) => s.level))).toEqual(new Set([1, 2, 3]));
     expect(new Set(seeds.map((s) => s.theme)).size).toBeGreaterThanOrEqual(20);
+  });
+});
+
+describe('5.0.59 : corrections de l’audit de la première nuit', { timeout: 60_000 }, () => {
+  const adult = (tests: string[]) =>
+    exercise({
+      name: 'isAdult',
+      goal: 'isAdult(age) rend true à partir de 18 ans inclus, false avant. Un âge négatif ou qui n’est pas un nombre lève TypeError.',
+      starter: 'export function isAdult(age) {\n  return false;\n}',
+      test: [
+        "import test from 'node:test';",
+        "import assert from 'node:assert/strict';",
+        "import { isAdult } from '../src/isAdult.mjs';",
+        ...tests,
+      ].join('\n'),
+      solution:
+        "export function isAdult(age) {\n  if (typeof age !== 'number' || age < 0) throw new TypeError('âge');\n  return age >= 18;\n}",
+    });
+  const WEAK = [
+    "test('adulte', () => assert.equal(isAdult(30), true));",
+    "test('adulte aussi', () => assert.equal(isAdult(40), true));",
+    "test('enfant', () => assert.equal(isAdult(5), false));",
+  ];
+  const STRONG = [
+    ...WEAK,
+    "test('limite', () => { assert.equal(isAdult(18), true); assert.equal(isAdult(17), false); assert.equal(isAdult(0), false); });",
+    "test('refus', () => { assert.throws(() => isAdult(-1), TypeError); assert.throws(() => isAdult('x'), TypeError); });",
+  ];
+
+  it('la phrase qui cite le fichier de tests est retirée, l’exercice est accepté', async () => {
+    const text = exercise({ name: 'bayCode' }).replace(
+      '@@ CRITÈRES',
+      '- Le fichier de test est `hidden/bayCode.test.mjs`.\n@@ CRITÈRES',
+    );
+    const outcome = await accept(text);
+    expect(outcome.ok, outcome.ok ? '' : outcome.reason).toBe(true);
+    if (outcome.ok) expect(outcome.exercise.mission.constraints).toEqual(['Ne change pas le nom bayCode.']);
+  });
+
+  it('mutants : une règle par mutant, jamais dans une chaîne, un commentaire ou un import', () => {
+    const mutants = mutantsOf([
+      {
+        path: 'src/a.mjs',
+        content: "import { b } from './b.mjs';\n// x > y\nexport function a(x) {\n  const label = 'x > y && z';\n  if (x > 3 && b(x)) return true;\n  return x.trim();\n}\n",
+      },
+    ]);
+    expect(mutants.map((m) => `${m.line} ${m.label}`)).toEqual([
+      '5 > devient >=',
+      '5 && devient ||',
+      '5 return true devient return false',
+      '6 .trim() retiré',
+    ]);
+    expect(mutants[0]!.content).toContain("const label = 'x > y && z';");
+    expect(mutants[0]!.content).toContain('if (x >= 3 && b(x)) return true;');
+  });
+
+  it('tests trop faibles : refusés, avec les erreurs que les tests n’ont pas vues', async () => {
+    const outcome = await accept(adult(WEAK));
+    expect(outcome.ok).toBe(false);
+    if (!outcome.ok) {
+      expect(outcome.reason).toMatch(/^tests trop faibles \(1 erreur\(s\) glissée\(s\) vue\(s\) sur 5\)$/);
+      expect(outcome.detail).toContain('src/isAdult.mjs, ligne 3 : >= devient >');
+      expect(repairable(outcome.reason)).toBe(true);
+    }
+    const unchecked = await acceptExercise({ text: adult(WEAK), seed: SEED, model: 'prof', accepted: [], workParent: work, strength: false });
+    expect(unchecked.ok).toBe(true);
+  });
+
+  it('tests solides : accepté, et la solidité est notée dans l’exercice', async () => {
+    const outcome = await accept(adult(STRONG));
+    expect(outcome.ok, outcome.ok ? '' : `${outcome.reason}\n${outcome.detail ?? ''}`).toBe(true);
+    if (outcome.ok) expect(outcome.exercise.strength).toEqual({ total: 5, killed: 5 });
+  });
+
+  it('seconde chance pour des tests trop faibles : le professeur reçoit les erreurs non vues', async () => {
+    const prompts: string[] = [];
+    const teacher: TeacherModel = {
+      name: 'prof',
+      async complete({ prompt }) {
+        prompts.push(prompt);
+        return prompts.length === 1 ? adult(WEAK) : adult(STRONG);
+      },
+    };
+    const outcome = await generateExercise({ teacher, seed: SEED, accepted: [], workParent: work });
+    expect(outcome).toMatchObject({ ok: true, repaired: true });
+    expect(prompts[1]).toContain('Erreurs glissées dans ta solution que tes tests n’ont pas vues');
+    expect(prompts[1]).toContain('>= devient >');
+  });
+
+  it('quasi-doublon : même sujet écrit autrement, refusé d’après les tests et l’objectif', async () => {
+    const first = await accept(exercise({}));
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
+    const reworded = exercise({
+      name: 'plateTag',
+      goal: 'plateTag(plate) met la plaque en majuscules et remplace chaque espace par un tiret ; une plaque vide rend une chaîne vide.',
+    });
+    const again = await accept(reworded, [first.exercise.mission]);
+    expect(again.ok).toBe(false);
+    if (!again.ok) expect(again.reason).toMatch(/^doublon de g1-plate-label-\w+ \(ressemblance 0\.\d\d\)$/);
+    const other = parseExercise(adult(STRONG));
+    expect(exerciseSimilarity({ goal: other.goal, hiddenTests: [other.test!] }, first.exercise.mission)).toBeLessThan(0.3);
+  });
+
+  it('le professeur voit les exercices déjà faits sur le même thème', async () => {
+    const first = await accept(exercise({}));
+    if (!first.ok) throw new Error(first.reason);
+    const prompts: string[] = [];
+    const teacher: TeacherModel = { name: 'prof', complete: async ({ prompt }) => (prompts.push(prompt), adult(STRONG)) };
+    await generateExercise({ teacher, seed: SEED, accepted: [{ ...first.exercise.mission, theme: 'parking' }], workParent: work });
+    expect(prompts[0]).toContain('Exercices déjà faits sur ce thème');
+    expect(prompts[0]).toContain(`- ${first.exercise.mission.goal.slice(0, 100)}`);
+    prompts.length = 0;
+    await generateExercise({ teacher, seed: SEED, accepted: [{ ...first.exercise.mission, theme: 'cinéma' }], workParent: work });
+    expect(prompts[0]).not.toContain('Exercices déjà faits sur ce thème');
+  });
+
+  it('les graines demandent plus de niveau 3 et de corrections de code', () => {
+    const seeds = Array.from({ length: 600 }, (_, i) => seedFor(i, 11));
+    const share = (test: (seed: GeneratorSeed) => boolean) => seeds.filter(test).length / seeds.length;
+    expect(share((s) => s.level === 3)).toBeGreaterThan(0.4);
+    expect(share((s) => s.category === 'bugfix' || s.category === 'regression')).toBeGreaterThan(0.25);
   });
 });
