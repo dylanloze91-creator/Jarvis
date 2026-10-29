@@ -19,6 +19,7 @@ Statuts possibles : `en cours`, `en pause`, `bloqué`, `terminé`.
 | Claude Code | `claude/donnees-code` | Générateur d'exercices (5.0.54 à 5.0.58), fusionné dans main | — | 2026-10-27 | terminé |
 | Cursor | `cursor/maj-developpeur-def9` | Ancienne branche de travail : 3 corrections du labo après la 5.0.53 | — | 2026-10-23 | en pause |
 | Cursor | `cursor/jarvis-rover` | Intégration du module Robot (patch de Claude) | — | 2026-10-29 | terminé |
+| Cursor | `cursor/jarvis-rover` | Fusion du module Robot dans main | `CLAUDE.md`, `apps/desktop/src/main/index.ts`, `apps/desktop/src/main/rover/*`, `apps/desktop/src/main/tools/index.ts`, `apps/desktop/src/main/tools/rover.ts`, `apps/desktop/src/main/tools/rover.test.ts`, `apps/desktop/src/main/tools/catalog-rover.test.ts`, `apps/desktop/src/preload/index.ts`, `apps/desktop/src/renderer/src/components/RoverSettings.tsx`, `SettingsPanel.tsx`, `SettingsTabs.tsx`, `apps/desktop/src/renderer/src/preview/bridge.ts`, `apps/desktop/src/shared/ipc.ts`, `packages/core/src/agent/agent.ts`, `packages/core/src/agent/roverTurn.test.ts`, `packages/core/src/index.ts`, `packages/core/src/rover/*`, `packages/core/src/security/redact.ts`, `packages/core/src/security/redact.test.ts`, `packages/core/src/settings.ts` | 2026-10-29 | en cours |
 
 ## Ressource GPU / Ollama
 
