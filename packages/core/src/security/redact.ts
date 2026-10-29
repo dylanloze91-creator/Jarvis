@@ -5,7 +5,7 @@
  */
 
 const SECRET_KEY =
-  /^(api[_-]?key|access[_-]?token|refresh[_-]?token|id[_-]?token|client[_-]?secret|authorization|auth|token|siteblocktoken|site[_-]?block[_-]?token|spotifytoken|bearer|google[_-]?client[_-]?secret|code[_-]?verifier)$/i;
+  /^(api[_-]?key|access[_-]?token|refresh[_-]?token|id[_-]?token|client[_-]?secret|authorization|auth|token|siteblocktoken|site[_-]?block[_-]?token|rover[_-]?token|spotifytoken|bearer|google[_-]?client[_-]?secret|code[_-]?verifier)$/i;
 
 /** Noms préfixés de settings.json : `searchApiKey` (Tavily, Brave), `marketDataApiKey` (Finnhub)… */
 const SECRET_KEY_SUFFIX = /(api[_-]?key|client[_-]?secret)$/i;
@@ -25,7 +25,7 @@ const INLINE_PATTERNS: Array<{ pattern: RegExp; replace: string }> = [
   {
     // Préfixe facultatif (`searchApiKey`, `marketDataApiKey`, `x-api-key`), borné à 40 caractères : le texte lu reste parcouru en temps linéaire.
     pattern:
-      /\b((?:[a-z][a-z0-9_-]{0,40}?)?(?:api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|site[_-]?block[_-]?token|authorization|id[_-]?token))(\s*["']?\s*[:=]\s*["']?)([^\s"',}]+)(["']?)/gi,
+      /\b((?:[a-z][a-z0-9_-]{0,40}?)?(?:api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|site[_-]?block[_-]?token|rover[_-]?token|authorization|id[_-]?token))(\s*["']?\s*[:=]\s*["']?)([^\s"',}]+)(["']?)/gi,
     replace: '$1$2[REDACTED]$4',
   },
   {

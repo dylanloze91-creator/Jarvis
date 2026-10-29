@@ -78,6 +78,7 @@ export const IpcChannel = {
   settingsSpotifyConnect: 'settings:spotify-connect',
   settingsSpotifyDisconnect: 'settings:spotify-disconnect',
   settingsSiteBlockStatus: 'settings:siteblock-status',
+  settingsRoverStatus: 'settings:rover-status',
   settingsGoogleStatus: 'settings:google-status',
   settingsGoogleConnect: 'settings:google-connect',
   settingsGoogleCancel: 'settings:google-cancel',
@@ -203,6 +204,25 @@ export interface SiteBlockStatus {
 }
 
 export interface SiteBlockCredentials {
+  baseUrl?: string;
+  token?: string;
+}
+
+/** Robot Jarvis Rover : réponse du test de connexion des réglages. */
+export interface RoverConnectionStatus {
+  /** Une adresse est renseignée. */
+  configured: boolean;
+  /** Le service du robot a répondu (`/api/sante`). */
+  reachable: boolean;
+  /** Le jeton est accepté (`/api/verifier`). */
+  authorized: boolean;
+  /** `simulation` ou `materiel`. */
+  mode?: string;
+  version?: string;
+  error?: string;
+}
+
+export interface RoverCredentials {
   baseUrl?: string;
   token?: string;
 }
@@ -422,6 +442,8 @@ export interface JarvisApi {
     spotifyDisconnect(clientId?: string): Promise<void>;
     /** Sonde l’API locale SiteBlock. Les champs optionnels testent un brouillon non encore enregistré. */
     siteBlockStatus(credentials?: SiteBlockCredentials): Promise<SiteBlockStatus>;
+    /** Teste le robot (adresse puis jeton). Les champs optionnels testent un brouillon non encore enregistré. */
+    roverStatus(credentials?: RoverCredentials): Promise<RoverConnectionStatus>;
     /** État de la connexion Google. Le brouillon teste des valeurs pas encore enregistrées. */
     googleStatus(draft?: GoogleConfigDraft): Promise<GoogleStatus>;
     /** Consentement Google dans le navigateur système (PKCE, retour sur 127.0.0.1:53125). */

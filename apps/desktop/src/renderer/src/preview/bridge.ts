@@ -205,6 +205,7 @@ export function installPreviewBridge(): void {
       spotifyConnect: async () => ({ ok: false, error: 'Aperçu hors Electron.' }),
       spotifyDisconnect: async () => undefined,
       siteBlockStatus: async () => ({ configured: false, reachable: false }),
+      roverStatus: async () => ({ configured: false, reachable: false, authorized: false }),
       googleStatus: async () => googleStatus(),
       googleConnect: async () => {
         googleConnected = Boolean(settings.googleClientId);

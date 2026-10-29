@@ -53,6 +53,8 @@ const api: JarvisApi = {
       ipcRenderer.invoke(IpcChannel.settingsSpotifyDisconnect, clientId),
     siteBlockStatus: (credentials?: { baseUrl?: string; token?: string }) =>
       ipcRenderer.invoke(IpcChannel.settingsSiteBlockStatus, credentials),
+    roverStatus: (credentials?: { baseUrl?: string; token?: string }) =>
+      ipcRenderer.invoke(IpcChannel.settingsRoverStatus, credentials),
     googleStatus: (draft?: GoogleConfigDraft) => ipcRenderer.invoke(IpcChannel.settingsGoogleStatus, draft),
     googleConnect: (draft?: GoogleConfigDraft) => ipcRenderer.invoke(IpcChannel.settingsGoogleConnect, draft),
     googleCancel: () => ipcRenderer.invoke(IpcChannel.settingsGoogleCancel),

@@ -4,6 +4,8 @@ import type { ToolContext } from '../tools/types.js';
 import { extractKnowledgeIntent } from '../knowledge/intent.js';
 import { isGoogleToolName, looksLikeGoogleIntent, recentlyUsedGoogleTools } from '../google/intent.js';
 import { googleTurnPrompt } from '../google/prompt.js';
+import { isRoverToolName, looksLikeRoverIntent, recentlyUsedRoverTools } from '../rover/intent.js';
+import { roverTurnPrompt } from '../rover/prompt.js';
 import { isCurrentTrackQuestion } from '../media/currentTrackIntent.js';
 import { extractSpotifyPlayQuery, isMusicIntent } from '../media/playIntent.js';
 import { extractYoutubeUrl } from '../youtube/url.js';
@@ -154,23 +156,31 @@ export class Agent {
     );
     const lastUser = lastUserMessage(conversation);
     const youtubeTurn = extractYoutubeUrl(lastUser) !== null;
-    const musicTurn = !youtubeTurn && isMusicIntent(lastUser);
+    // Robot réglé seulement : sans outil rover_* disponible, ce tour est celui d'avant.
+    const roverAvailable = this.tools.schemas().some((tool) => isRoverToolName(tool.name));
+    const roverTurn =
+      roverAvailable && !youtubeTurn && (looksLikeRoverIntent(lastUser) || recentlyUsedRoverTools(conversation));
+    // « Arrête le robot » ne doit jamais partir vers Spotify.
+    const musicTurn = !youtubeTurn && !roverTurn && isMusicIntent(lastUser);
     const now = this.options.now?.() ?? new Date();
     const timeZone = this.options.timeZone ?? localTimeZone();
     const googleTurn = looksLikeGoogleIntent(lastUser) || recentlyUsedGoogleTools(conversation);
     // Gmail, Agenda, Drive (ou leur suivi) gardent les outils google_* : jamais déroutés vers le web.
     const currentPlan =
-      youtubeTurn || musicTurn || googleTurn ? null : this.currentInfoPlan(conversation, now);
-    const webTurn = !youtubeTurn && currentPlan === null && looksLikeWebResearchIntent(lastUser);
+      youtubeTurn || musicTurn || googleTurn || roverTurn ? null : this.currentInfoPlan(conversation, now);
+    const webTurn = !youtubeTurn && !roverTurn && currentPlan === null && looksLikeWebResearchIntent(lastUser);
     let toolSchemas = this.tools
       .schemas()
       .filter((tool) => musicTurn || !isSpotifyToolName(tool.name))
-      .filter((tool) => googleTurn || !isGoogleToolName(tool.name));
+      .filter((tool) => googleTurn || !isGoogleToolName(tool.name))
+      .filter((tool) => roverTurn || !isRoverToolName(tool.name));
     // Sans compte Google connecté, aucun outil google_* n'est disponible :
     // prompt et catalogue restent ceux d'avant.
     const googleOffered = toolSchemas.some((tool) => isGoogleToolName(tool.name));
+    const roverOffered = toolSchemas.some((tool) => isRoverToolName(tool.name));
     const composed = composeSystemPrompt(this.options.systemPrompt, musicTurn, webTurn, youtubeTurn);
     let system = googleOffered ? `${composed} ${googleTurnPrompt()}` : composed;
+    if (roverOffered) system = `${system} ${roverTurnPrompt()}`;
     // Date et protocole seulement pour la recherche forcée : les autres tours gardent leur prompt.
     if (currentPlan) system = `${system} ${currentDatePrompt(now, timeZone)} ${CURRENT_INFO_TURN_PROMPT}`;
     let currentSearch: CurrentSearchResult | null = null;
@@ -262,7 +272,7 @@ export class Agent {
           // Réponse tirée des sources : presque déterministe, pour ne pas glisser vers la mémoire.
           temperature: currentSearch
             ? Math.min(temperatureForTurn(lastUser, this.options.temperature), 0.1)
-            : googleOffered
+            : googleOffered || roverOffered
               ? Math.min(temperatureForTurn(lastUser, this.options.temperature), 0.2)
               : temperatureForTurn(lastUser, this.options.temperature),
           maxTokens: this.options.maxTokens,

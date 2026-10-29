@@ -234,6 +234,16 @@ export const settingsSchema = z.object({
    */
   siteBlockToken: z.string().default(''),
   /**
+   * Adresse du service du robot Jarvis Rover (Raspberry Pi, réseau local
+   * seulement : `checkRoverBaseUrl`). Vide = robot absent : outils `rover_*`
+   * hors catalogue, prompt inchangé. Pas de défaut Zod : les réglages par
+   * défaut restent ceux de 0.4.22 (`chat-unchanged.test.ts`) et un ancien
+   * `settings.json` relu ne gagne pas de clé.
+   */
+  roverBaseUrl: z.string().optional(),
+  /** Jeton Bearer affiché par l'installation du robot. Comme les autres clés : `settings.json` seulement. */
+  roverToken: z.string().optional(),
+  /**
    * Garder la fenêtre visible quand une autre application prend le focus.
    * Masquage uniquement via Ctrl+Espace, Échap, ou le bouton fermer.
    * Remplace l'ancien `hideOnBlur` (défaut true) : la clé historique est

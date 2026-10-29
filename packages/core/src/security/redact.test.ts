@@ -52,6 +52,7 @@ describe('settings.json : aucune clé en clair', () => {
     marketDataApiKey: 'finnhubkey0123456789abcd',
     googleClientSecret: 'GOCSPX-googlesecret0123456789',
     siteBlockToken: 'siteblock-local-token-0123456789',
+    roverToken: 'rover-token-0123456789abcdef',
     voiceApiKey: 'voice-openai-key-0123456789abcdef',
   };
   const settings = parseSettings({
@@ -64,6 +65,8 @@ describe('settings.json : aucune clé en clair', () => {
     googleClientId: '1234-abc.apps.googleusercontent.com',
     googleClientSecret: secrets.googleClientSecret,
     siteBlockToken: secrets.siteBlockToken,
+    roverBaseUrl: 'http://jarvis-rover.local:8765',
+    roverToken: secrets.roverToken,
     spotifyClientId: '0123456789abcdef0123456789abcdef',
     voice: { apiKey: secrets.voiceApiKey },
   });
@@ -81,6 +84,7 @@ describe('settings.json : aucune clé en clair', () => {
       expect(safe).toMatch(/"googleClientId": ?"1234-abc\.apps\.googleusercontent\.com"/);
       expect(safe).toMatch(/"spotifyClientId": ?"0123456789abcdef0123456789abcdef"/);
       expect(safe).toMatch(/"searchProvider": ?"brave"/);
+      expect(safe).toMatch(/"roverBaseUrl": ?"http:\/\/jarvis-rover\.local:8765"/);
       expect(safe).toMatch(/"marketDataProvider": ?"finnhub"/);
     },
   );
