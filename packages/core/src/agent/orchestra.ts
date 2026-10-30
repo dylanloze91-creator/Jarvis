@@ -333,4 +333,3 @@ export function activeOrchestra(settings: {
   if (!orchestra?.enabled || settings.provider !== 'ollama' || !orchestra.brain.trim()) return null;
   return { brain: orchestra.brain.trim(), teams: orchestra.teams ?? {} };
 }
-
