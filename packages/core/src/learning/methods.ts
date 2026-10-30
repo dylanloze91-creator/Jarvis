@@ -726,7 +726,7 @@ function samplesFor(tests: string, name: string): Sample[] {
 
 function editAlign(source: string, tests: string): Edit {
   let seen = false;
-  let next = source;
+  const next = source;
   for (const fn of findFunctions(next)) {
     const returns = returnsOf(next, fn);
     if (returns.length !== 1) continue;
@@ -779,7 +779,7 @@ function applyOp(op: string, left: number, right: number): number | null {
 
 function editGuard(source: string, tests: string): Edit {
   let seen = false;
-  let next = source;
+  const next = source;
   for (const fn of findFunctions(next)) {
     const returns = returnsOf(next, fn);
     if (returns.length !== 1) continue;
@@ -832,7 +832,7 @@ function separatorOf(parts: unknown[], expected: unknown): string | null {
 
 function editJoin(source: string, tests: string): Edit {
   let seen = false;
-  let next = source;
+  const next = source;
   for (const fn of findFunctions(next)) {
     const returns = returnsOf(next, fn);
     if (returns.length !== 1) continue;
@@ -880,7 +880,7 @@ function currentSeparator(inner: string): string | undefined {
 
 function editParse(source: string, tests: string): Edit {
   let seen = false;
-  let next = source;
+  const next = source;
   for (const fn of findFunctions(next)) {
     const returns = returnsOf(next, fn);
     const direct = returns.filter((ret) => /^JSON\.parse\(([A-Za-z_][A-Za-z0-9_]*)\)$/.test(ret.expr));
@@ -934,7 +934,7 @@ function escapeReg(text: string): string {
 
 function editCoerce(source: string, tests: string): Edit {
   let seen = false;
-  let next = source;
+  const next = source;
   for (const fn of findFunctions(next)) {
     const returns = returnsOf(next, fn);
     if (returns.length !== 1) continue;
@@ -1099,7 +1099,7 @@ function argsFromCall(inner: string, params: readonly string[], sampleArgs: read
 
 function editLast(source: string, tests: string): Edit {
   let seen = false;
-  let next = source;
+  const next = source;
   for (const fn of findFunctions(next)) {
     const returns = returnsOf(next, fn);
     if (returns.length !== 1) continue;

@@ -446,7 +446,6 @@ function readFunction(source: string, keywordAt: number): FoundFn | null {
   }
   while (j < source.length && source[j] !== '{') j += 1;
   if (source[j] !== '{') return null;
-  const bodyOpen = j;
   const returns: ReturnSite[] = [];
   let depth = 1;
   j += 1;
@@ -797,7 +796,6 @@ function enforceCode(source: string, records: readonly LearningRecord[], options
   let current = source;
   const attempts: ConstraintAttempt[] = [];
   const prefix = items.find((item) => item.verify === 'name-prefix')?.value;
-  const wrapper = items.find((item) => item.verify === 'return-wrapper')?.value;
   const order: ConstraintVerify[] = ['name-prefix', 'return-wrapper'];
   for (let turn = 0; turn < limit; turn += 1) {
     const broken = codeFailures(current, items, requireFunction).sort(

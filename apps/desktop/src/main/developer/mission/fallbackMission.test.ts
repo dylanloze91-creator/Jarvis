@@ -5,17 +5,12 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   FACTORY_MARKER,
   GOAL_MARKER,
-  JARVIS_PROJECT_PROFILE,
-  NEW_PROJECT_CONTEXT,
   PLAN_MARKER,
   REVIEW_MARKER,
-  STEP_LIMITS,
-  WRITE_MARKER,
 } from '@jarvis/core';
 import { createHarness, fakeOutcome } from '../controllerHarness.testkit.js';
 import { FakeOllama, type ChatBody, type Reply } from '../models/fakeOllama.testkit.js';
 import {
-  codeBlock,
   createFixtureRepo,
   replyForPlannedFileWrite,
   writeRequest,

@@ -23,7 +23,7 @@ import {
 import { createHarness, fakeOutcome } from '../controllerHarness.testkit.js';
 import { FakeOllama, type ChatBody, type Reply } from '../models/fakeOllama.testkit.js';
 import type { RunOutcome, RunSpec } from '../runner.js';
-import { codeBlock, createFixtureRepo, replyForPlannedFileWrite } from '../task/taskWorkflow.testkit.js';
+import { createFixtureRepo, replyForPlannedFileWrite } from '../task/taskWorkflow.testkit.js';
 
 const base = mkdtempSync(join(tmpdir(), 'jarvis-win-path-'));
 const jarvis = join(base, 'Jarvis');

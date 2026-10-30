@@ -105,7 +105,7 @@ describe('journal du laboratoire', () => {
           console.log(`${mission.id} ${mission.evidence?.status ?? 'sans preuve'} ${mission.summary ?? ''}`);
         },
       });
-      const rows = batch.rows.map(({ prompt, ...row }) => row);
+      const rows = batch.rows.map(({ prompt: _prompt, ...row }) => row);
       writeFileSync(
         join(EVIDENCE_ROOT, 'batch.json'),
         JSON.stringify(

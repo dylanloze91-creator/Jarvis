@@ -1,6 +1,5 @@
 import { Star } from 'lucide-react';
 import { codeModelById } from '@jarvis/core';
-import { Button } from '@/components/ui/button';
 import type { CodeModelState } from '../../../../../shared/developerIpc';
 import { benchFor, benchStatus } from './format';
 import { StepCard, type FlowStatus } from './StepCard';

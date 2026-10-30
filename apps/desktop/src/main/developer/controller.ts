@@ -37,6 +37,7 @@ import {
   type Settings,
   type ToolCallOutcome,
   type ToolManager,
+  type LearningRecord,
 } from '@jarvis/core';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
@@ -131,10 +132,10 @@ export interface ControllerDeps {
   /** Injection de test du lancement réel ; production utilise Electron. */
   verifyWebGameRuntime?: (root: string) => Promise<{ ok: boolean; detail: string }>;
   learningRecall?: (query: string) => Promise<string>;
-  learningRecords?: (query: string) => Promise<import('@jarvis/core').LearningRecord[]>;
+  learningRecords?: (query: string) => Promise<LearningRecord[]>;
   /** Règles explicites (préférences et corrections), séparées des expériences. */
-  ruleLearning?: (query: string) => Promise<import('@jarvis/core').LearningRecord[]>;
-  rememberLearning?: (record: import('@jarvis/core').LearningRecord) => Promise<void>;
+  ruleLearning?: (query: string) => Promise<LearningRecord[]>;
+  rememberLearning?: (record: LearningRecord) => Promise<void>;
   settleLearning?: (
     id: string,
     outcome: { ok: boolean; uncertain?: boolean; context: string; cause?: string; now: number },
