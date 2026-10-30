@@ -19,6 +19,24 @@ import {
   debugLog,
   withVoiceOriginNotice,
   chatProviderConfig,
+  activeOrchestra,
+  availableTeams,
+  clockReply,
+  expressTeam,
+  orchestraBasePrompt,
+  orchestraProviderConfig,
+  parseRouterReply,
+  routerSystemPrompt,
+  routerUserPrompt,
+  solveArithmetic,
+  teamAssignment,
+  teamHasTool,
+  teamPrompt,
+  TEAM_SPECS,
+  type AgentEvent,
+  type LLMProvider,
+  type OrchestraConfig,
+  type OrchestraTeam,
   type AuditLogStore,
   type ChatMessage,
   type ConfirmationRequest,
@@ -34,6 +52,26 @@ import type { PersonalizationStore } from './personalization.js';
 import type { KnowledgeStore } from './knowledge.js';
 import type { VoiceBridge } from './voice.js';
 import type { LocalLearningController } from './learning/controller.js';
+
+/** Délai du cerveau pour choisir une équipe, chargement compris. */
+const BRAIN_DEADLINE_MS = 90_000;
+
+interface TurnRoute {
+  team: OrchestraTeam | 'calcul' | 'horloge';
+  label: string;
+  model: string;
+  how: 'calcul' | 'express' | 'cerveau';
+  /** Réponse déjà prête (calcul) : aucun modèle n'est appelé. */
+  reply?: string;
+  provider?: LLMProvider;
+}
+
+/** Réponse fixe, au même format que les événements de l'agent. */
+async function* fixedReply(text: string): AsyncGenerator<AgentEvent> {
+  yield { type: 'assistant_delta', delta: text };
+  yield { type: 'assistant_message', message: createMessage('assistant', text) };
+  yield { type: 'done' };
+}
 
 interface SessionDeps {
   registry: ProviderRegistry;
@@ -62,17 +100,22 @@ export class ChatSession {
     settings: Settings,
     text: string,
     source: 'text' | 'voice',
+    /** 5.0.60 (orchestre) : consigne de base et fragments à ajouter. Absent : le prompt d'avant. */
+    orchestra?: { base: string; siteBlock: boolean; knowledge: boolean },
   ): Promise<{
     systemPrompt: string;
     learningReview?: (reply: string) => string | null;
     learningFinalize?: (reply: string) => string;
   }> {
-    const base = withKnowledgePrompt(
-      withSiteBlockPrompt(
-        withVoiceOriginNotice(settings.systemPrompt, source) +
-          buildPersonalizationPrompt(await this.deps.personalization.get()),
-      ),
-    );
+    const personal =
+      withVoiceOriginNotice(orchestra?.base ?? settings.systemPrompt, source) +
+      buildPersonalizationPrompt(await this.deps.personalization.get());
+    const base = orchestra
+      ? [personal, orchestra.siteBlock ? withSiteBlockPrompt('') : '', orchestra.knowledge ? withKnowledgePrompt('') : '']
+          .map((part) => part.trim())
+          .filter(Boolean)
+          .join(' ')
+      : withKnowledgePrompt(withSiteBlockPrompt(personal));
     const learningOn = settings.localLearning?.enabled !== false;
     if (!learningOn) return { systemPrompt: base };
     const kind = classifyUtterance(text);
@@ -157,26 +200,67 @@ export class ChatSession {
 
     emit({ type: 'started', conversationId: conversation.id, message: userMessage });
 
-    const { provider } = this.deps.registry.createOrFallback(chatProviderConfig(settings));
-    const turn = await this.turnContext(settings, input.text, input.source ?? 'text');
-    const agent = new Agent(provider, this.deps.tools, {
-      // La note d'origine vocale ne vit que dans ce prompt système, transmis
-      // au modèle pour ce tour : elle n'est jamais écrite dans `userMessage`
-      // ni dans `messages`, donc jamais affichée ni persistée.
-      systemPrompt: turn.systemPrompt,
-      temperature: settings.temperature,
-      ...(turn.learningReview ? { learningReview: turn.learningReview } : {}),
-      ...(turn.learningFinalize ? { learningFinalize: turn.learningFinalize } : {}),
-    });
+    const source = input.source ?? 'text';
+    const orchestra = activeOrchestra(settings);
+    const route = orchestra
+      ? await this.routeTurn(settings, orchestra, input.text, messages, controller.signal)
+      : null;
+    if (route) {
+      emit({
+        type: 'route',
+        team: route.team,
+        label: route.label,
+        model: route.model,
+        how: route.how,
+      });
+    }
 
-    let visibleReply = false;
-    try {
-      for await (const event of agent.run(messages, {
+    let run: AsyncGenerator<AgentEvent>;
+    if (route?.reply !== undefined) {
+      run = fixedReply(route.reply);
+    } else if (route?.provider && route.team !== 'calcul' && route.team !== 'horloge') {
+      const team = route.team;
+      const turn = await this.turnContext(settings, input.text, source, {
+        base: orchestraBasePrompt(settings.systemPrompt),
+        siteBlock: team === 'concentration',
+        knowledge: team === 'memoire',
+      });
+      const agent = new Agent(route.provider, this.deps.tools, {
+        systemPrompt: `${turn.systemPrompt}\n\n${teamPrompt(team)}`,
+        temperature: settings.temperature,
+        allowedTools: (name) => teamHasTool(team, name),
+        ...(turn.learningReview ? { learningReview: turn.learningReview } : {}),
+        ...(turn.learningFinalize ? { learningFinalize: turn.learningFinalize } : {}),
+      });
+      run = agent.run(messages, {
         signal: controller.signal,
         policies: settings.toolPolicies,
         debug: settings.debugLogging,
         requestConfirmation: (request) => this.askUser(sender, emit, request, controller.signal),
-      })) {
+      });
+    } else {
+      const { provider } = this.deps.registry.createOrFallback(chatProviderConfig(settings));
+      const turn = await this.turnContext(settings, input.text, source);
+      const agent = new Agent(provider, this.deps.tools, {
+        // La note d'origine vocale ne vit que dans ce prompt système, transmis
+        // au modèle pour ce tour : elle n'est jamais écrite dans `userMessage`
+        // ni dans `messages`, donc jamais affichée ni persistée.
+        systemPrompt: turn.systemPrompt,
+        temperature: settings.temperature,
+        ...(turn.learningReview ? { learningReview: turn.learningReview } : {}),
+        ...(turn.learningFinalize ? { learningFinalize: turn.learningFinalize } : {}),
+      });
+      run = agent.run(messages, {
+        signal: controller.signal,
+        policies: settings.toolPolicies,
+        debug: settings.debugLogging,
+        requestConfirmation: (request) => this.askUser(sender, emit, request, controller.signal),
+      });
+    }
+
+    let visibleReply = false;
+    try {
+      for await (const event of run) {
         switch (event.type) {
           case 'assistant_delta':
             if (event.delta.trim()) visibleReply = true;
@@ -260,6 +344,81 @@ export class ChatSession {
       });
       emit({ type: 'done', conversationId, messages: [] });
     }
+  }
+
+  /**
+   * 5.0.60 — chef d'orchestre. Calcul exact sans modèle, puis règles express, puis le cerveau.
+   * `null` : le cerveau n'a pas pu choisir (Ollama arrêté, réponse illisible) ; le tour suit
+   * le chemin d'avant, avec le modèle et le catalogue habituels.
+   */
+  private async routeTurn(
+    settings: Settings,
+    orchestra: OrchestraConfig,
+    text: string,
+    messages: ChatMessage[],
+    signal: AbortSignal,
+  ): Promise<TurnRoute | null> {
+    const calc = solveArithmetic(text);
+    if (calc) {
+      return { team: 'calcul', label: 'Calcul', model: 'sans modèle', how: 'calcul', reply: `${calc.reply}.` };
+    }
+    const clock = clockReply(text, new Date());
+    if (clock) return { team: 'horloge', label: 'Horloge', model: 'sans modèle', how: 'express', reply: clock };
+    const teams = availableTeams(this.deps.tools.schemas().map((tool) => tool.name));
+    const available = new Set(teams);
+    let team: OrchestraTeam | null = expressTeam({ text, history: messages, available });
+    const how: TurnRoute['how'] = team ? 'express' : 'cerveau';
+    if (!team) team = await this.askBrain(settings, orchestra, teams, text, messages.slice(0, -1), signal);
+    if (!team) {
+      if (settings.debugLogging) debugLog(true, 'orchestre', 'le cerveau n’a pas choisi d’équipe : chemin habituel');
+      return null;
+    }
+    const assignment = teamAssignment(orchestra, team);
+    const brain = assignment.model === orchestra.brain && assignment.place === 'carte';
+    const { provider } = this.deps.registry.createOrFallback(
+      orchestraProviderConfig(settings, assignment.model, assignment.place, brain),
+    );
+    if (settings.debugLogging) {
+      debugLog(true, 'orchestre', `${how} → ${team} · ${assignment.model} (${assignment.place})`);
+    }
+    return { team, label: TEAM_SPECS[team].label, model: assignment.model, how, provider };
+  }
+
+  private async askBrain(
+    settings: Settings,
+    orchestra: OrchestraConfig,
+    teams: OrchestraTeam[],
+    text: string,
+    history: ChatMessage[],
+    signal: AbortSignal,
+  ): Promise<OrchestraTeam | null> {
+    const { provider } = this.deps.registry.createOrFallback(
+      orchestraProviderConfig(settings, orchestra.brain, 'carte', true),
+    );
+    // Premier chargement du cerveau compris (environ 20 s sur la RTX 2060).
+    const deadline = new AbortController();
+    const timer = setTimeout(() => deadline.abort(), BRAIN_DEADLINE_MS);
+    const onAbort = (): void => deadline.abort();
+    signal.addEventListener('abort', onAbort, { once: true });
+    let reply = '';
+    try {
+      for await (const event of provider.streamChat({
+        system: routerSystemPrompt(teams),
+        messages: [createMessage('user', routerUserPrompt(text, history))],
+        temperature: 0,
+        maxTokens: 12,
+        signal: deadline.signal,
+      })) {
+        if (event.type === 'text') reply += event.delta;
+        if (event.type === 'error') break;
+      }
+    } catch {
+      return null;
+    } finally {
+      clearTimeout(timer);
+      signal.removeEventListener('abort', onAbort);
+    }
+    return parseRouterReply(reply, teams);
   }
 
   private askUser(

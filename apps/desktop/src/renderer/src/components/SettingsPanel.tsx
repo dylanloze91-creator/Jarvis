@@ -15,6 +15,7 @@ import { Lock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Field, Input, Select, Textarea, Toggle } from '@/components/ui/field';
 import { OllamaSettingsSection } from '@/components/OllamaSettings';
+import { OrchestraSettingsSection } from '@/components/OrchestraSettings';
 import { SpotifySettingsSection } from '@/components/SpotifySettings';
 import { GoogleSettingsSection } from '@/components/GoogleSettings';
 import { SiteBlockSettingsSection } from '@/components/SiteBlockSettings';
@@ -198,6 +199,16 @@ export function SettingsPanel({ settings, status, onSaved, requestedTab, onAnaly
               model={draft.model}
               active={tab === 'model'}
               onChange={(values) => patch(values)}
+            />
+          ) : null}
+
+          {draft.provider === 'ollama' ? (
+            <OrchestraSettingsSection
+              baseUrl={draft.baseUrl}
+              chatModel={draft.model}
+              value={draft.orchestra}
+              active={tab === 'model'}
+              onChange={(orchestra) => patch({ orchestra })}
             />
           ) : null}
 

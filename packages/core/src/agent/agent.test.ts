@@ -687,3 +687,24 @@ describe('Agent', () => {
     });
   });
 });
+
+describe('Agent — outils d’une équipe (5.0.60, chef d’orchestre)', () => {
+  const tool = (name: string) =>
+    defineTool({ name, description: name, risk: 'safe', schema: z.object({}), execute: async () => ({ ok: true, content: name }) });
+
+  it('allowedTools remplace le tri habituel : seuls les outils de l’équipe sont proposés', async () => {
+    const tools = new ToolManager().registerAll([systemInfo, tool('spotify_pause'), tool('read_file')]);
+    const provider = new ScriptedProvider([[{ type: 'text', delta: 'ok' }, { type: 'done', finishReason: 'stop' }]]);
+    const agent = new Agent(provider, tools, { systemPrompt: 'test', allowedTools: (name) => name.startsWith('spotify_') });
+    await collect(agent, 'Baisse un peu');
+    // Sans orchestre, spotify_pause serait retiré (la demande n'est pas une intention musicale).
+    expect(provider.requests[0]!.tools?.map((item) => item.name)).toEqual(['spotify_pause']);
+  });
+
+  it('sans allowedTools : catalogue d’avant, Spotify retiré hors intention musicale', async () => {
+    const tools = new ToolManager().registerAll([systemInfo, tool('spotify_pause'), tool('read_file')]);
+    const provider = new ScriptedProvider([[{ type: 'text', delta: 'ok' }, { type: 'done', finishReason: 'stop' }]]);
+    await collect(new Agent(provider, tools, { systemPrompt: 'test' }), 'Baisse un peu');
+    expect(provider.requests[0]!.tools?.map((item) => item.name)).toEqual(['get_system_info', 'read_file']);
+  });
+});
