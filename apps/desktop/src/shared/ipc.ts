@@ -269,6 +269,11 @@ export type ChatEvent =
       /** Confirmation incompressible : l'interface le signale distinctement. */
       forced?: boolean;
     }
+  /**
+   * 5.0.60 — chef d'orchestre : l'équipe qui traite la demande et son modèle, avant la réponse.
+   * `how` : calcul exact sans modèle, règle express, ou choix du cerveau. Jamais envoyé sans orchestre.
+   */
+  | { type: 'route'; team: string; label: string; model: string; how: 'calcul' | 'express' | 'cerveau' }
   | { type: 'tool_start'; callId: string; toolName: string }
   | { type: 'tool_progress'; callId: string; message: string }
   | {

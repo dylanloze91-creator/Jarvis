@@ -72,6 +72,12 @@ export interface AgentOptions {
    * Le texte n’est remplacé que si l’appelant renvoie une réponse.
    */
   learningFinalize?: (reply: string) => string;
+  /**
+   * 5.0.60 (chef d'orchestre) : outils proposés au modèle pour ce tour, à la place du tri
+   * habituel (Spotify et Google selon la demande). Absent : catalogue et prompt d'avant.
+   * Les chemins forcés (Spotify, YouTube, actualité) restent ceux d'avant.
+   */
+  allowedTools?: (name: string) => boolean;
 }
 
 export const DEFAULT_SYSTEM_PROMPT = [
@@ -162,10 +168,13 @@ export class Agent {
     const currentPlan =
       youtubeTurn || musicTurn || googleTurn ? null : this.currentInfoPlan(conversation, now);
     const webTurn = !youtubeTurn && currentPlan === null && looksLikeWebResearchIntent(lastUser);
-    let toolSchemas = this.tools
-      .schemas()
-      .filter((tool) => musicTurn || !isSpotifyToolName(tool.name))
-      .filter((tool) => googleTurn || !isGoogleToolName(tool.name));
+    const allowed = this.options.allowedTools;
+    let toolSchemas = allowed
+      ? this.tools.schemas().filter((tool) => allowed(tool.name))
+      : this.tools
+          .schemas()
+          .filter((tool) => musicTurn || !isSpotifyToolName(tool.name))
+          .filter((tool) => googleTurn || !isGoogleToolName(tool.name));
     // Sans compte Google connecté, aucun outil google_* n'est disponible :
     // prompt et catalogue restent ceux d'avant.
     const googleOffered = toolSchemas.some((tool) => isGoogleToolName(tool.name));
