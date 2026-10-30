@@ -57,7 +57,6 @@ export function CodeModelPanel({
   }, [validationKey]);
   useEffect(() => {
     act((api) => api.refreshOllamaModels());
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- une fois à l’ouverture de l’onglet
   }, []);
   const [saving, setSaving] = useState(false);
 

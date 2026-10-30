@@ -12,7 +12,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
-  EDIT_MARKER,
   FACTORY_MARKER,
   GOAL_MARKER,
   PLAN_MARKER,

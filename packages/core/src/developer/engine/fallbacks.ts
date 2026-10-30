@@ -15,7 +15,6 @@ import {
 } from './templates.js';
 import {
   DESKTOP_WINDOWS_EXE,
-  dotnetProjectBaseName,
   dotnetTemplateEntryFiles,
 } from './dotnetDesktop.js';
 import { DOTNET_TEMPLATE_IDS } from './dotnetTemplates.js';
@@ -281,7 +280,7 @@ const OTHER_GAME_NAME =
 /** Empêche de remplacer la demande (ex. plateforme 2D) par Snake/Pong via le modèle. */
 export function lockFactoryToRequest(request: string, chosen: FactoryOutput): FactoryOutput {
   const text = request.toLowerCase();
-  let out: FactoryOutput = { ...chosen };
+  const out: FactoryOutput = { ...chosen };
   if (/\bmario\b/i.test(out.name)) out.name = platformerProjectTitle();
   if (/\bmario\b/i.test(out.description)) {
     out.description = out.description

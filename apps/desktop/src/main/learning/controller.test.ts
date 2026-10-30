@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { parseSettings, type Settings } from '@jarvis/core';
+import { parseSettings, type LearningRecord, type Settings } from '@jarvis/core';
 import { LocalLearningController } from './controller.js';
 import { LocalLearningStore } from './store.js';
 
@@ -81,7 +81,7 @@ describe('LocalLearningController', () => {
 
   it('note une erreur réseau et n’enregistre rien', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'jarvis-watch-net-'));
-    const applyLearning = vi.fn(async (record: import('@jarvis/core').LearningRecord) => [record]);
+    const applyLearning = vi.fn(async (record: LearningRecord) => [record]);
     const { controller } = harness(
       dir,
       parseSettings({

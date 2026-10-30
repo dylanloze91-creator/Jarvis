@@ -103,7 +103,7 @@ export function createProjectChatTools(deps: ProjectChatToolDeps): RegisteredToo
           return fail('definitive', 'Une recherche a déjà été faite dans cette discussion.');
         const settings = deps.getSettings();
         const config = searchConfig(settings);
-        const { provider, fellBack } = deps.searchRegistry.createOrFallback(config);
+        const { provider } = deps.searchRegistry.createOrFallback(config);
         let response;
         try {
           response = await provider.search({ query, limit: 5 });

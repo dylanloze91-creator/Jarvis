@@ -14,7 +14,6 @@ const require = createRequire(import.meta.url);
 const {
   attenuateClipping,
   normalizeDictationLevel,
-  preprocessDictationPcm,
   refineFrenchDictation,
 } = require('@jarvis/core');
 

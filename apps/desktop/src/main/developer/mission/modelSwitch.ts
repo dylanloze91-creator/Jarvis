@@ -1,5 +1,5 @@
 import type { OllamaStatusResult } from '@jarvis/core';
-import type { OllamaApi, RunningModel } from '../models/ollamaApi.js';
+import type { RunningModel } from '../models/ollamaApi.js';
 
 /** 20 s pour lister ou décharger. La génération de code garde ses propres plafonds. */
 export const MODEL_PREP_TIMEOUT_MS = 20_000;
