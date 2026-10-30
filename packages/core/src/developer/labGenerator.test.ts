@@ -382,3 +382,35 @@ describe('5.0.59 : corrections de l’audit de la première nuit', { timeout: 60
     expect(share((s) => s.category === 'bugfix' || s.category === 'regression')).toBeGreaterThan(0.25);
   });
 });
+
+describe('5.0.61 : variété des exercices', () => {
+  it('chaque graine impose une forme, et les formes varient', () => {
+    const seeds = Array.from({ length: 200 }, (_, i) => seedFor(i, 5));
+    expect(seeds.every((seed) => typeof seed.form === 'string' && seed.form.length > 10)).toBe(true);
+    expect(new Set(seeds.map((seed) => seed.form)).size).toBeGreaterThanOrEqual(20);
+    expect(new Set(seeds.map((seed) => seed.theme)).size).toBeGreaterThanOrEqual(60);
+    expect(new Set(seeds.map((seed) => `${seed.theme}|${seed.form}`)).size).toBeGreaterThan(190);
+  });
+
+  it('la forme est dite au professeur ; une graine d’avant (sans forme) donne la consigne d’avant', () => {
+    const seed = seedFor(0, 5);
+    expect(generatorPrompt(seed)).toContain(`Forme de l’exercice : ${seed.form}.`);
+    expect(generatorPrompt(SEED)).not.toContain('Forme de l’exercice');
+  });
+
+  it('les noms déjà pris sur le même thème sont tous montrés au professeur, même anciens', async () => {
+    const prompts: string[] = [];
+    const teacher: TeacherModel = { name: 'prof', complete: async ({ prompt }) => (prompts.push(prompt), '@@ FIN') };
+    const old = (index: number, theme: string) => ({
+      id: `g1-x${index}-aaaaaa`,
+      goal: `Objectif numéro ${index} assez long pour être lisible.`,
+      category: 'logic' as const,
+      starterFiles: [{ path: `src/f${index}.mjs`, content: `export function ancienNom${index}() {}\n` }],
+      theme,
+    });
+    const accepted = [old(0, 'parking'), ...Array.from({ length: 60 }, (_, i) => old(i + 1, 'cinéma'))];
+    await generateExercise({ teacher, seed: SEED, accepted, workParent: work, repair: false });
+    expect(prompts[0]).toContain('ancienNom0');
+    expect(prompts[0]).not.toContain('ancienNom1,');
+  });
+});

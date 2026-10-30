@@ -106,6 +106,78 @@ export const GENERATOR_THEMES: readonly string[] = [
   'consommation électrique',
   'jeu de plateau',
   'carnet d’adresses',
+  // 5.0.61 : 40 thèmes de plus (la deuxième nuit, le professeur reprenait les mêmes sujets).
+  'pharmacie (stocks seulement)',
+  'club de sport',
+  'bibliothèque musicale',
+  'colis et livraisons',
+  'réservation de restaurant',
+  'aquarium',
+  'chantier de toiture',
+  'atelier d’impression 3D',
+  'stickers et découpe vinyle',
+  'garage automobile',
+  'covoiturage',
+  'élevage de poules',
+  'cave à vin',
+  'randonnée et dénivelé',
+  'observatoire astronomique',
+  'salle d’escalade',
+  'festival de musique',
+  'boulangerie',
+  'banque alimentaire',
+  'tri des déchets',
+  'parc éolien',
+  'laverie automatique',
+  'concours de cuisine',
+  'jeu vidéo rétro',
+  'collection de timbres',
+  'brasserie artisanale',
+  'location de matériel',
+  'école de musique',
+  'fermes et récoltes',
+  'compétition de natation',
+  'cabinet vétérinaire (rendez-vous)',
+  'serre connectée',
+  'robot aspirateur',
+  'drone de livraison',
+  'billetterie de théâtre',
+  'menu de cantine',
+  'auto-école',
+  'marché aux puces',
+  'refuge pour animaux',
+  'planning de garde',
+];
+
+/**
+ * 5.0.61 : forme imposée de l'exercice, en plus du domaine et du thème. Sans elle, le professeur
+ * revenait toujours au même exercice pour un thème (« validateBook » 6 fois, « calculateDuration » 15 fois).
+ */
+export const GENERATOR_FORMS: readonly string[] = [
+  'analyser un texte ligne par ligne (format maison à découper)',
+  'machine à états (transitions permises et refusées)',
+  'récursion sur une structure imbriquée',
+  'fusionner ou comparer deux listes',
+  'pagination et découpage en pages',
+  'tri sur plusieurs critères, avec égalités',
+  'regrouper puis calculer des totaux par groupe',
+  'convertir un format en un autre (CSV, lignes clé=valeur, objets)',
+  'valider une saisie avec un message d’erreur précis par règle',
+  'file de priorité ou planification par ordre',
+  'calcul de dates à partir de dates données (jamais la date du jour)',
+  'parcours d’un graphe ou d’un réseau (chemin, voisins, accessibilité)',
+  'grille à deux dimensions (voisins, lignes, colonnes)',
+  'différences entre deux versions d’une liste ou d’un objet',
+  'montants en centimes et arrondis',
+  'encoder et décoder (code simple, abréviations, compression naïve)',
+  'créneaux qui se chevauchent',
+  'statistiques sur une fenêtre glissante',
+  'classe avec un état interne et plusieurs méthodes',
+  'fonctions asynchrones avec des promesses (sans minuterie réelle)',
+  'fonction d’ordre supérieur qui reçoit ou rend une fonction',
+  'recherche avec filtres combinés',
+  'normaliser des données sales (espaces, casse, doublons)',
+  'simulation pas à pas avec des règles fixes',
 ];
 
 export const GENERATOR_SYSTEM_PROMPT = [
@@ -144,6 +216,8 @@ export interface GeneratorSeed {
   level: LabLevel;
   category: LabCategory;
   theme: string;
+  /** 5.0.61 : forme imposée (absente dans les graines d'avant). */
+  form?: string;
 }
 
 export function generatorPrompt(seed: GeneratorSeed, avoid: readonly string[] = [], sameTheme: readonly string[] = []): string {
@@ -151,6 +225,7 @@ export function generatorPrompt(seed: GeneratorSeed, avoid: readonly string[] = 
     `Crée un nouvel exercice. ${LEVEL_HINTS[seed.level]}`,
     `Domaine : ${CATEGORY_HINTS[seed.category]}.`,
     `Thème de l’histoire : ${seed.theme}.`,
+    ...(seed.form ? [`Forme de l’exercice : ${seed.form}.`] : []),
   ];
   if (avoid.length) {
     lines.push(`Ne reprends pas ces noms de fonctions, déjà utilisés : ${avoid.slice(-40).join(', ')}.`);
@@ -159,7 +234,7 @@ export function generatorPrompt(seed: GeneratorSeed, avoid: readonly string[] = 
     // 5.0.59 : le professeur reprenait le même sujet sur un thème (conversion de température ×4).
     lines.push(
       'Exercices déjà faits sur ce thème : invente un sujet et une fonction vraiment différents.',
-      ...sameTheme.slice(-8).map((goal) => `- ${goal.length > 140 ? `${goal.slice(0, 140)}…` : goal}`),
+      ...sameTheme.slice(-12).map((goal) => `- ${goal.length > 140 ? `${goal.slice(0, 140)}…` : goal}`),
     );
   }
   return lines.join('\n');
@@ -181,6 +256,7 @@ export function seedFor(index: number, salt = 0): GeneratorSeed {
     level: levels[mix(index * 3 + 1) % levels.length]!,
     category: categories[mix(index * 3 + 2) % categories.length]!,
     theme: GENERATOR_THEMES[mix(index * 3 + 3) % GENERATOR_THEMES.length]!,
+    form: GENERATOR_FORMS[mix(index * 3 + 2_000_003) % GENERATOR_FORMS.length]!,
   };
 }
 
@@ -788,8 +864,15 @@ export async function generateExercise(input: {
   /** 5.0.59 : contrôle de solidité des tests. Défaut : oui. */
   strength?: boolean;
 }): Promise<GenerationOutcome> {
-  const avoid = [...new Set(input.accepted.flatMap((mission) => exportedNames(mission.starterFiles)))];
-  const sameTheme = input.accepted.filter((item) => item.theme === input.seed.theme).map((item) => item.goal);
+  // 5.0.61 : d'abord tous les noms du même thème (ceux que le professeur reprenait), puis les plus récents.
+  const themed = input.accepted.filter((item) => item.theme === input.seed.theme);
+  const avoid = [
+    ...new Set([
+      ...input.accepted.flatMap((mission) => exportedNames(mission.starterFiles)).slice(-25),
+      ...themed.flatMap((mission) => exportedNames(mission.starterFiles)),
+    ]),
+  ];
+  const sameTheme = themed.map((item) => item.goal);
   const prompt = generatorPrompt(input.seed, avoid, sameTheme);
   const ask = async (request: { prompt: string; history?: readonly TeacherTurn[] }): Promise<string | { error: string }> => {
     try {

@@ -517,6 +517,16 @@ Demande de l'utilisateur : un Jarvis plus simple et plus fiable sur les tâches 
 - **Interface** : `components/OrchestraSettings.tsx` (onglet Modèle IA, Ollama seulement) : interrupteur, cerveau et modèle/emplacement par équipe parmi les modèles installés (`ollamaStatus`), bouton « Proposition pour ce PC », enregistré avec « Enregistrer ». Discussion : événement `route` (`shared/ipc.ts`) → pastille « Équipe · modèle · calcul exact | express | choisi par le cerveau » (`Messages.tsx`). Journal de débogage : `orchestre` (chemin, équipe, modèle, emplacement).
 - Tests : `agent/orchestra.test.ts` (calculs justes et faux positifs refusés, express, prompts et lecture du cerveau, outils par équipe, options Ollama, réglages absents ou coupés), `agent/agent.test.ts` (`allowedTools`), `apps/desktop/src/main/orchestra-session.test.ts` (vraie session : calcul et heure sans modèle, Spotify en express sans cerveau, cerveau → PC avec les seuls outils du PC et la consigne courte, cerveau → code sur le processeur, réponse illisible → chat d'avant, orchestre coupé).
 
+## 5.0.61 — générateur : plus de variété
+
+Deuxième nuit (5.0.59, qwen3-coder:30b) : 66 exercices acceptés sur 400 essais (17 %) en 12 h, contre 46 % la première nuit. 197 refus sur 334 étaient des doublons, et un examen à la main des refus confirme que ce sont de vrais doublons : le filtre est juste, mais le professeur revient toujours au même exercice pour un thème (`calculateDuration` 15 fois, `validateBook` 6 fois). Bonne nouvelle : 18 exercices de niveau 3, et une solidité moyenne des tests de 68 % (55 % la première nuit).
+
+- **Forme imposée** (`GENERATOR_FORMS`, 24 formes : machine à états, récursion, tri multi-critères, créneaux qui se chevauchent, montants en centimes, classe avec état…) : `GeneratorSeed.form` (facultatif, une graine d'avant reste valable) tirée par `seedFor`, dite au professeur (« Forme de l’exercice : … »).
+- **80 thèmes** au lieu de 40 (`GENERATOR_THEMES`).
+- **Noms à éviter** : tous les noms déjà pris **sur le même thème**, plus les 25 plus récents (avant : seulement les 40 derniers, si bien que les doublons anciens revenaient) ; jusqu'à 12 objectifs du même thème montrés (8 avant).
+- Le filtre de doublons (`DUPLICATE_SIMILARITY`) ne change pas.
+- Tests (`labGenerator.test.ts`) : formes variées (au moins 20 sur 200 graines, plus de 190 couples thème-forme différents), forme dite au professeur, consigne d'avant pour une graine sans forme, noms anciens du même thème montrés.
+
 ## Updater / GitHub
 
 Dernière publication : **5.0.5** (`https://github.com/dylanloze91-creator/Jarvis/releases/tag/v5.0.5`) — exe, `.blockmap` et `latest.yml` publiés : l’updater intégré la propose.
