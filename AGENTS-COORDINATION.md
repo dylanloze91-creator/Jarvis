@@ -20,7 +20,7 @@ Statuts possibles : `en cours`, `en pause`, `bloqué`, `terminé`.
 | Cursor | `cursor/maj-developpeur-def9` | Ancienne branche de travail : 3 corrections du labo après la 5.0.53 | — | 2026-10-23 | en pause |
 | Claude Code | `claude/generateur-5059` | Intégrer la 5.0.59 (appels relus, générateur exigeant, nettoyage du cahier) et remesurer le 7B, fusionné dans main | — | 2026-10-29 | terminé |
 | Cursor | `cursor/integration-5060` | Intégration 5.0.60 chef d'orchestre | — | 2026-10-30 | terminé |
-| Cursor | `cursor/lint-propre` | Lint à zéro | apps/desktop, packages/core | 2026-10-30 | en cours |
+| Cursor | `cursor/lint-propre` | Lint à zéro | — | 2026-10-30 | terminé |
 
 ## Ressource GPU / Ollama
 

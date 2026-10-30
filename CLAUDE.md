@@ -29,6 +29,7 @@ Google (Gmail, Agenda, Drive, Docs, Sheets) est arrivé en 0.4.20 : voir la sect
 Claude Code (PC Windows) et Cursor (souvent agent cloud) travaillent sur ce dépôt. Le registre est `AGENTS-COORDINATION.md` ; les mêmes règles sont dans `.cursor/rules/coordination.mdc`.
 
 - **Avant toute tâche :** `git fetch`, lire `AGENTS-COORDINATION.md`, ne pas toucher aux fichiers réservés par l'autre agent.
+- **Avant toute fusion dans main :** `npm run typecheck`, `npm test` et `npm run lint`. Les 5 tests dotnet échouent sur une machine sans SDK .NET : c'est attendu, tout autre échec bloque la fusion.
 - **Toujours sa propre branche :** `claude/...` pour Claude Code, `cursor/...` pour Cursor. Jamais directement sur `main`.
 - **Inscrire sa tâche** dans `AGENTS-COORDINATION.md`, commiter et pousser ce fichier tout de suite.
 - **GPU / Ollama :** ne pas lancer le banc (`npm run lab`) ni le générateur (`npm run lab:generate`) si la ressource est marquée occupée. La réserver avant, la libérer après.
