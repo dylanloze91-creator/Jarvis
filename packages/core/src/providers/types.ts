@@ -99,6 +99,8 @@ export class ProviderError extends Error {
   constructor(
     message: string,
     readonly status?: number,
+    /** 5.0.59 : texte brut du modèle quand l'erreur vient de lui (appel d'outil illisible), pour le diagnostic. */
+    readonly rawText?: string,
   ) {
     super(message);
     this.name = 'ProviderError';

@@ -11,6 +11,7 @@ import { judgeMissionEvidence, missionVerdictFromEvidence, type MissionEvidence 
 import { selectSkill } from '../learning/skills.js';
 import type { LearningRecord } from '../learning/continuous.js';
 import { OllamaProvider, RECOVERED_CALL_PREFIX } from '../providers/ollama.js';
+import { ProviderError } from '../providers/types.js';
 import type { ChatMessage, ToolCall } from '../types.js';
 import {
   LAB_LIMITS,
@@ -57,6 +58,8 @@ export interface LabAttempt {
   recoveredCalls?: number;
   fenceUsed?: boolean;
   modelError?: string;
+  /** 5.0.59 : texte brut du modèle quand son appel d'outil est resté illisible (6 000 caractères au plus). */
+  modelErrorRaw?: string;
 }
 
 export interface LabRunResult {
@@ -705,6 +708,7 @@ export async function runLabMission(input: {
     let fenceUsed = false;
     let recoveredCalls = 0;
     let modelError: string | undefined;
+    let modelErrorRaw: string | undefined;
     const notes: string[] = [];
     const allowed = mission.starterFiles.map((file) => file.path);
     const remember = (content: string) => {
@@ -733,6 +737,7 @@ export async function runLabMission(input: {
             : error instanceof Error
               ? error.message.slice(0, 300)
               : String(error).slice(0, 300);
+          if (error instanceof ProviderError && error.rawText) modelErrorRaw = error.rawText.slice(0, 6000);
           break;
         }
         base.modelCalls += 1;
@@ -814,6 +819,7 @@ export async function runLabMission(input: {
       recoveredCalls,
       fenceUsed,
       ...(modelError ? { modelError } : {}),
+      ...(modelErrorRaw ? { modelErrorRaw } : {}),
     });
     if (run.exitCode === 0 && counts.failed === 0 && counts.total) break;
     if (abortedRegression) break;

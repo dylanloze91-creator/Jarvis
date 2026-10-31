@@ -28,7 +28,8 @@ function isObject(value: unknown): value is JsonObject {
 
 /**
  * Rend un JSON presque valide lisible : caractères de contrôle bruts échappés
- * dans les chaînes, virgules finales retirées hors des chaînes.
+ * dans les chaînes, échappements inconnus (`\s` d'une regex) gardés comme une
+ * barre oblique littérale, virgules finales retirées hors des chaînes.
  */
 export function repairJsonText(text: string): string {
   let out = '';
@@ -43,8 +44,19 @@ export function repairJsonText(text: string): string {
         continue;
       }
       if (char === '\\') {
-        out += char;
-        escaped = true;
+        // 5.0.59 : un échappement que JSON ne connaît pas (`\s`, `\d`, `\.` d'une
+        // expression régulière recopiée telle quelle, ou `\` en fin de texte) est
+        // gardé comme une barre oblique littérale au lieu de rendre l'appel illisible.
+        const next = text[index + 1];
+        const valid =
+          next !== undefined &&
+          ('"\\/bfnrt'.includes(next) || (next === 'u' && /^[0-9a-fA-F]{4}$/.test(text.slice(index + 2, index + 6))));
+        if (valid) {
+          out += char;
+          escaped = true;
+        } else {
+          out += '\\\\';
+        }
         continue;
       }
       if (char === '"') {
