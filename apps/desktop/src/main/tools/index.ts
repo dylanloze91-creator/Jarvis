@@ -34,6 +34,8 @@ import type { KnowledgeStore } from '../knowledge.js';
 import { createKnowledgeTools } from './knowledge.js';
 import type { GoogleRuntime } from '../google/runtime.js';
 import { createGoogleTools } from './google.js';
+import type { RoverClient } from '../rover/RoverClient.js';
+import { createRoverTools } from './rover.js';
 
 export interface YoutubeSummarize {
   (
@@ -55,6 +57,8 @@ export interface ToolManagerDeps {
   summarizeYoutube?: YoutubeSummarize;
   /** Google Workspace. Ses outils ne sont proposés au modèle qu'une fois un compte connecté. */
   google?: GoogleRuntime;
+  /** Robot Jarvis Rover. Ses outils ne sont proposés qu'une fois son adresse réglée, et seulement sur un tour qui parle du robot. */
+  rover?: RoverClient;
   /**
    * Profil modeste seulement : Spotify reste enregistré mais absent du prompt
    * tant que le compte n’est pas connecté. Ignoré sur les autres profils.
@@ -113,6 +117,8 @@ function createFullToolManager(deps: ToolManagerDeps): ToolManager {
     runCommandTool,
     // Google Workspace — absents du catalogue tant qu'aucun compte n'est connecté
     ...(deps.google ? createGoogleTools(deps.google) : []),
+    // Robot — absents du catalogue tant qu'aucune adresse n'est réglée
+    ...(deps.rover ? createRoverTools(deps.rover) : []),
   ]);
 }
 
@@ -135,5 +141,6 @@ function createModestToolManager(deps: ToolManagerDeps): ToolManager {
     createCurrentInfoSearchTool(deps),
     ...spotify,
     ...(deps.google ? createGoogleTools(deps.google) : []),
+    ...(deps.rover ? createRoverTools(deps.rover) : []),
   ]);
 }

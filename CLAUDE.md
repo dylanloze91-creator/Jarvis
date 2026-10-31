@@ -527,6 +527,16 @@ Deuxième nuit (5.0.59, qwen3-coder:30b) : 66 exercices acceptés sur 400 essais
 - Le filtre de doublons (`DUPLICATE_SIMILARITY`) ne change pas.
 - Tests (`labGenerator.test.ts`) : formes variées (au moins 20 sur 200 graines, plus de 190 couples thème-forme différents), forme dite au professeur, consigne d'avant pour une graine sans forme, noms anciens du même thème montrés.
 
+## Robot Jarvis Rover (ajout seul)
+
+Jarvis pilote le robot Jarvis Rover (Raspberry Pi 5 + ESP32, propulsion arrière, direction avant type voiture) par le réseau local. Le service du robot (Python, sans dépendance) vit hors de ce dépôt (`jarvis-rover/`, installé sur le Pi ; il tourne aussi en simulateur sur le PC : `python -m jarvis_rover --simulation --hote 127.0.0.1`). **Sans adresse de robot, catalogue, prompt, température et réglages par défaut sont ceux d'avant** (`catalog-rover.test.ts`, `roverTurn.test.ts`, `chat-unchanged.test.ts` vert sans régénération).
+
+- **Réglages** : `roverBaseUrl`, `roverToken` dans `settings.json`, **sans défaut Zod** (les réglages par défaut figés de `chat-unchanged.test.ts` ne bougent pas). Adresse vide = robot absent. Réseau local seulement (`packages/core/src/rover/url.ts`, `checkRoverBaseUrl` : localhost, IP privée, nom `.local`/`.lan`/`.home`/`.internal` ou nom court ; ni Internet, ni identifiants dans l'URL). `roverToken` est masqué par `redactSecrets` / `redactValue`. Onglet Réglages « Robot » (`components/RoverSettings.tsx`), test de connexion par l'IPC `settings:rover-status` (adresse puis jeton, brouillon non enregistré).
+- **Client** (`apps/desktop/src/main/rover/RoverClient.ts`) : HTTP JSON vers `/api/sante`, `/api/verifier`, `/api/etat`, `/api/avancer`, `/api/tourner`, `/api/stop`, `/api/arret_urgence`, jeton Bearer. Un mouvement attend sa fin (`attendre: true`, 240 s au plus). **Mouvement annulé (tour arrêté), délai dépassé, coupure ou réponse « en cours » : `/api/stop` est envoyé avant de rendre la main.**
+- **Outils** (`tools/rover.ts`, ajoutés en fin de catalogue, profils complet et modeste, `isAvailable` = adresse valide) : `rover_status`, `rover_stop`, `rover_emergency_stop` (`safe` : un « stop » n'attend jamais un clic) ; `rover_move`, `rover_turn` (`confirm` **sans catégorie** : aucune politique ne retire la carte) ; `rover_release_emergency` (`forceConfirm`). « Terminé » seulement si le robot le mesure ; bloqué, interrompu ou refusé est dit tel quel.
+- **Agent** (`agent.ts`, comme Google) : outils `rover_*` proposés seulement sur un tour qui parle du robot (`looksLikeRoverIntent` : « robot », « rover », ordres chiffrés « avance de 50 cm », « tourne à gauche de 90° ») ou son suivi (`recentlyUsedRoverTools`, deux échanges). Ce tour-là : consignes `roverTurnPrompt()`, température ≤ 0,2, jamais Spotify (« arrête le robot »), jamais la recherche d'actualité.
+- Tests : `packages/core/src/rover/rover.test.ts`, `agent/roverTurn.test.ts`, `security/redact.test.ts`, `apps/desktop/src/main/tools/rover.test.ts` (faux robot `rover/fakeRover.testkit.ts` : confirmation, refus, jeton, blocage, annulation et délai → stop), `tools/catalog-rover.test.ts`.
+
 ## Updater / GitHub
 
 Dernière publication : **5.0.61** (`https://github.com/dylanloze91-creator/Jarvis/releases/tag/v5.0.61`) — exe, `.blockmap` et `latest.yml` publiés : l’updater intégré la propose.
@@ -601,6 +611,8 @@ Enregistrés dans `apps/desktop/src/main/tools/index.ts` :
 | `google_gmail_search/read`, `google_calendar_list`, `google_drive_search/read`, `google_docs_read`, `google_sheets_read` (0.4.20, si connecté) | safe |
 | `google_gmail_draft`, `google_calendar_create/update`, `google_docs_create/append`, `google_sheets_append` (0.4.20, sans catégorie) | confirm |
 | `google_gmail_send`, `google_calendar_delete`, `google_sheets_write` (force) | confirm |
+| `rover_status`, `rover_stop`, `rover_emergency_stop` (robot, si son adresse est réglée) | safe |
+| `rover_move`, `rover_turn` (sans catégorie), `rover_release_emergency` (force) | confirm |
 
 ---
 
@@ -659,6 +671,7 @@ Corrections de la revue complète (détail : `docs/audit-0410.md` du store du pr
 - **Catalogue et entraînement (5.0.55)** : chaque mission du catalogue garde une solution de référence vérifiée par `labCatalog.test.ts` ; une mission d'évaluation ne devient jamais un exemple ; un exemple n'est écrit que si les tests cachés sont au vert.
 - **Chef d'orchestre (5.0.60)** : coupé ou absent, le chat est celui d'avant à l'identique (tests figés sans régénération) ; une équipe ne reçoit que ses outils ; un calcul n'est fait sans modèle que si la demande n'est qu'une opération ; une réponse illisible du cerveau renvoie au chat d'avant, jamais à une équipe devinée ; `recoverToolCalls` n'est passé au chat qu'en mode orchestre.
 - **Générateur exigeant (5.0.59)** : une phrase qui cite le test caché est retirée, jamais l'exercice accepté avec elle ; un quasi-doublon ou des tests qui laissent passer plus des deux tiers des erreurs glissées ne sont jamais acceptés ; le nettoyage du cahier garde toujours une copie et la raison de chaque écart.
+- **Robot** : outils `rover_*` absents sans adresse et hors des tours sans rapport ; mouvements toujours confirmés (sans catégorie), arrêts jamais ; un mouvement annulé ou sans réponse envoie `/api/stop` ; réseau local seulement ; `roverBaseUrl`/`roverToken` sans défaut Zod.
 - **Appels relus (5.0.54)** : `recoverToolCalls` reste une option du modèle de code et du laboratoire, jamais du chat sans décision ; un appel relu ne vise qu'un outil proposé à ce tour ; un texte illisible reste une erreur, jamais un appel deviné.
 
 Travaux **hors scope** de cet arbre (ne pas les reprendre ici) : publication GitHub.

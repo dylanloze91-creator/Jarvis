@@ -40,6 +40,7 @@ import {
 import { FileAuditLogStore } from './audit-store.js';
 import { SpotifyBridge } from './media/SpotifyBridge.js';
 import { SiteBlockBridge } from './siteblock/SiteBlockBridge.js';
+import { RoverClient } from './rover/RoverClient.js';
 import { createGoogleRuntime } from './google/runtime.js';
 import { PersonalizationStore } from './personalization.js';
 import { KnowledgeStore } from './knowledge.js';
@@ -135,6 +136,7 @@ const localLearning = new LocalLearningController(
 localLearning.armPeriodic();
 const spotify = new SpotifyBridge(() => settings);
 const siteBlock = new SiteBlockBridge(() => settings);
+const rover = new RoverClient(() => settings);
 // Jetons chiffrés par safeStorage (DPAPI), consentement dans le navigateur système.
 const google = createGoogleRuntime({
   userDataPath: () => app.getPath('userData'),
@@ -170,6 +172,7 @@ function buildTools() {
     personalization,
     knowledge,
     google,
+    rover,
     spotifyConnected: () => spotify.connectedNow(),
     summarizeYoutube: (url, onProgress, signal) =>
       summarizeYoutubeLink({
@@ -461,6 +464,11 @@ function registerIpc(): void {
     (_event, credentials?: { baseUrl?: string; token?: string }) =>
       siteBlock.connectionStatus(credentials),
   );
+  ipcMain.handle(
+    IpcChannel.settingsRoverStatus,
+    (_event, credentials?: { baseUrl?: string; token?: string }) =>
+      rover.connectionStatus(sanitizeRoverCredentials(credentials)),
+  );
   ipcMain.handle(IpcChannel.settingsGoogleStatus, (_event, draft?: GoogleConfigDraft) => {
     ensureGoogleLoaded();
     return google.account.status(sanitizeGoogleDraft(draft));
@@ -604,6 +612,16 @@ function sanitizeGoogleDraft(draft: unknown): GoogleConfigDraft | undefined {
     clientId: typeof value.clientId === 'string' ? value.clientId.slice(0, 300) : undefined,
     clientSecret: typeof value.clientSecret === 'string' ? value.clientSecret.slice(0, 300) : undefined,
     access: value.access === 'readonly' || value.access === 'full' ? value.access : undefined,
+  };
+}
+
+/** Brouillon du renderer pour le test du robot : deux chaînes bornées, rien d'autre. */
+function sanitizeRoverCredentials(credentials: unknown): { baseUrl?: string; token?: string } | undefined {
+  if (!credentials || typeof credentials !== 'object') return undefined;
+  const value = credentials as Record<string, unknown>;
+  return {
+    baseUrl: typeof value.baseUrl === 'string' ? value.baseUrl.slice(0, 300) : undefined,
+    token: typeof value.token === 'string' ? value.token.slice(0, 300) : undefined,
   };
 }
 

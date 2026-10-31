@@ -18,10 +18,13 @@ Statuts possibles : `en cours`, `en pause`, `bloqué`, `terminé`.
 | Claude Code | `claude/coordination-agents-v2` | Règles de travail à deux agents | — | 2026-10-28 | terminé |
 | Claude Code | `claude/donnees-code` | Générateur d'exercices (5.0.54 à 5.0.58), fusionné dans main | — | 2026-10-27 | terminé |
 | Cursor | `cursor/maj-developpeur-def9` | Ancienne branche de travail : 3 corrections du labo après la 5.0.53 | — | 2026-10-23 | en pause |
+| Cursor | `cursor/jarvis-rover` | Intégration du module Robot (patch de Claude) | — | 2026-10-29 | terminé |
 | Claude Code | `claude/generateur-5059` | Intégrer la 5.0.59 (appels relus, générateur exigeant, nettoyage du cahier) et remesurer le 7B, fusionné dans main | — | 2026-10-29 | terminé |
+| Cursor | `cursor/jarvis-rover` | Fusion du module Robot dans main | `CLAUDE.md`, `apps/desktop/src/main/index.ts`, `apps/desktop/src/main/rover/*`, `apps/desktop/src/main/tools/index.ts`, `apps/desktop/src/main/tools/rover.ts`, `apps/desktop/src/main/tools/rover.test.ts`, `apps/desktop/src/main/tools/catalog-rover.test.ts`, `apps/desktop/src/preload/index.ts`, `apps/desktop/src/renderer/src/components/RoverSettings.tsx`, `SettingsPanel.tsx`, `SettingsTabs.tsx`, `apps/desktop/src/renderer/src/preview/bridge.ts`, `apps/desktop/src/shared/ipc.ts`, `packages/core/src/agent/agent.ts`, `packages/core/src/agent/roverTurn.test.ts`, `packages/core/src/index.ts`, `packages/core/src/rover/*`, `packages/core/src/security/redact.ts`, `packages/core/src/security/redact.test.ts`, `packages/core/src/settings.ts` | 2026-10-29 | en cours |
 | Cursor | `cursor/integration-5060` | Intégration 5.0.60 chef d'orchestre | — | 2026-10-30 | terminé |
 | Cursor | `cursor/lint-propre` | Lint à zéro | — | 2026-10-30 | terminé |
 | Claude Code | `claude/generateur-5061` | Intégration terminée, 5.0.61 publiée | — | 2026-10-30 | terminé |
+| Cursor | `cursor/jarvis-rover` | Publier le module Robot dans main | `AGENTS-COORDINATION.md`, `CLAUDE.md`, `packages/core/src/agent/agent.ts` | 2026-10-31 | en cours |
 
 ## Ressource GPU / Ollama
 

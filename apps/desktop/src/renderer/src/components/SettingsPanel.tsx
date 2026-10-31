@@ -19,6 +19,7 @@ import { OrchestraSettingsSection } from '@/components/OrchestraSettings';
 import { SpotifySettingsSection } from '@/components/SpotifySettings';
 import { GoogleSettingsSection } from '@/components/GoogleSettings';
 import { SiteBlockSettingsSection } from '@/components/SiteBlockSettings';
+import { RoverSettingsSection } from '@/components/RoverSettings';
 import { PersonalizationSettingsSection } from '@/components/PersonalizationSettings';
 import { KnowledgeSettingsSection } from '@/components/KnowledgeSettings';
 import { UpdateSettingsSection } from '@/components/UpdateSettings';
@@ -338,6 +339,13 @@ export function SettingsPanel({ settings, status, onSaved, requestedTab, onAnaly
             clientId={draft.googleClientId}
             clientSecret={draft.googleClientSecret}
             access={draft.googleAccess}
+            onChange={(values) => patch(values)}
+          />
+      </TabPanel>
+      <TabPanel id="robot" active={tab}>
+          <RoverSettingsSection
+            baseUrl={draft.roverBaseUrl ?? ''}
+            token={draft.roverToken ?? ''}
             onChange={(values) => patch(values)}
           />
       </TabPanel>
