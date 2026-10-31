@@ -72,6 +72,16 @@ export const voiceSettingsSchema = z.object({
    * fournisseur de modèle si celui-ci est déjà OpenAI.
    */
   apiKey: z.string().default(''),
+  /**
+   * 5.0.62 — secondes, après la fin d'une réponse, pour enchaîner sans redire « Jarvis ».
+   * Absent = 8 s ; 0 = « Jarvis » à chaque fois. Sans défaut Zod (réglages figés).
+   */
+  followUpSeconds: z.number().int().min(0).max(120).optional(),
+  /**
+   * 5.0.62 — vérifie qu'une phrase dite sans « Jarvis » pendant la discussion lui est adressée
+   * (règles, puis une question courte au modèle). Absent = activé ; `false` = tout est envoyé.
+   */
+  addresseeCheck: z.boolean().optional(),
 });
 
 export type VoiceSettings = z.infer<typeof voiceSettingsSchema>;

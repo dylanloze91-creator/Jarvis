@@ -4,6 +4,7 @@ import {
   END_OF_SPEECH_RMS,
   EndOfSpeechDetector,
   captureFailureText,
+  followUpWindowMs,
   splitWakeWordWindow,
   type Settings,
   type SpeechToTextProvider,
@@ -37,8 +38,12 @@ export interface UseVoiceOptions {
   settings: Settings | null;
   /** Vrai si une clé OpenAI est configurée côté main pour la voix (jamais la clé elle-même). */
   voiceKeyConfigured: boolean;
-  /** Envoie un texte dans la boucle de conversation, exactement comme un message tapé. */
-  onTranscript: (text: string) => void;
+  /**
+   * Envoie un texte dans la boucle de conversation, exactement comme un message tapé.
+   * `followUp` (5.0.62) : dit sans « Jarvis » pendant la discussion — la session vérifie
+   * qu'il lui est adressé avant de répondre.
+   */
+  onTranscript: (text: string, meta?: { followUp?: boolean }) => void;
 }
 
 export interface UseVoiceResult {
@@ -154,7 +159,7 @@ export function useVoice({
   const timingRef = useRef<{ wakeAt: number; endAt: number | null } | null>(null);
   const levelRef = useRef(0);
   const levelShownAtRef = useRef(0);
-  const conversationRef = useRef(new ConversationSession());
+  const conversationRef = useRef(new ConversationSession({ followUpMs: followUpWindowMs(settings?.voice) }));
   const syncVoiceConversation = useCallback(() => {
     setInVoiceConversation(conversationRef.current.showListening);
   }, []);
@@ -164,6 +169,11 @@ export function useVoice({
   const ttsGenerationRef = useRef(0);
 
   useEffect(() => microphone.subscribe(setMic), []);
+
+  // 5.0.62 : délai pour enchaîner sans « Jarvis », appliqué sans couper la discussion en cours.
+  useEffect(() => {
+    conversationRef.current.followUpMs = followUpWindowMs(settings?.voice);
+  }, [settings?.voice.followUpSeconds]);
 
   const setVoiceError = useCallback((message: string | null) => {
     if (voiceErrorTimerRef.current !== null) window.clearTimeout(voiceErrorTimerRef.current);
@@ -280,6 +290,7 @@ export function useVoice({
       setLiveTranscript('');
       pendingWakeWordStripRef.current = null;
       closingRef.current = false;
+      const followUp = conversationRef.current.phase === 'follow-up';
       const decision = conversationRef.current.deliver(text, wakeMatch());
       const sent = decision.kind === 'send' ? decision.text : '';
       const timing = timingRef.current;
@@ -292,13 +303,13 @@ export function useVoice({
         );
       }
       microphoneLog(
-        `dictée terminée : ${decision.kind === 'send' ? `commande de ${sent.length} caractères envoyée` : decision.kind === 'stop' ? 'arrêt, retour en veille' : 'rien à envoyer'}`,
+        `dictée terminée : ${decision.kind === 'send' ? `${followUp ? 'suite' : 'commande'} de ${sent.length} caractères envoyée` : decision.kind === 'stop' ? 'arrêt, retour en veille' : decision.reason === 'mention' ? 'Jarvis mentionné, pas appelé : rien envoyé' : 'rien à envoyer'}`,
       );
       if (settingsRef.current?.voice.wakeLearning) {
         wakeLearningSession.outcome(decision.kind === 'stop' ? 'stop' : sent, failed);
       }
       if (decision.kind === 'send') {
-        onTranscriptRef.current(sent);
+        onTranscriptRef.current(sent, followUp ? { followUp: true } : undefined);
         armHot();
         syncVoiceConversation();
         return;
@@ -476,7 +487,13 @@ export function useVoice({
               ttsGenerationRef.current += 1;
               stopPlayback();
               beginFollowUp(hotTailRef.current.drain(), sampleRate);
+              return;
             }
+          }
+          // 5.0.62 : plus personne ne lui parle depuis la fin de la réponse → veille.
+          if (!detector.commandStarted && session.pollHot(at) === 'standby') {
+            microphoneLog(`fin de la discussion : ${Math.round(session.followUpMs / 1000)} s sans parole après la réponse`);
+            returnToStandby();
           }
           return;
         }

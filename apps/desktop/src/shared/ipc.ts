@@ -182,6 +182,11 @@ export interface SendChatInput {
    * touche jamais le contenu affiché ni celui persisté dans l'historique.
    */
   source?: 'voice' | 'text';
+  /**
+   * 5.0.62 — phrase vocale dite **sans** « Jarvis », pendant la discussion. La session vérifie
+   * d'abord qu'elle lui est adressée ; sinon `not_addressed` et rien n'est enregistré.
+   */
+  followUp?: boolean;
 }
 
 export interface SpotifyStatus {
@@ -284,6 +289,11 @@ export type ChatEvent =
       content: string;
     }
   | { type: 'error'; message: string }
+  /**
+   * 5.0.62 — la phrase de suivi ne s'adressait pas à Jarvis (conversation dans la pièce) :
+   * pas de tour, pas d'historique, et la discussion vocale se ferme. Seul événement envoyé.
+   */
+  | { type: 'not_addressed'; text: string }
   | { type: 'done'; conversationId: string; messages: ChatMessage[] };
 
 export type WindowChrome = 'compact' | 'dashboard';

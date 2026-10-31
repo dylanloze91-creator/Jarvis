@@ -16,7 +16,9 @@ export type ChatItem =
     }
   | { kind: 'error'; id: string; text: string }
   /** 5.0.60 : équipe et modèle choisis par le chef d'orchestre pour ce tour. */
-  | { kind: 'route'; id: string; label: string; model: string; how: 'calcul' | 'express' | 'cerveau' };
+  | { kind: 'route'; id: string; label: string; model: string; how: 'calcul' | 'express' | 'cerveau' }
+  /** 5.0.62 : phrase entendue pendant la discussion vocale, jugée pas pour Jarvis (rien n'est enregistré). */
+  | { kind: 'ignored'; id: string; text: string };
 
 export interface PendingConfirmation {
   requestId: string;
@@ -32,6 +34,8 @@ const nextId = (): string => `local-${(localId += 1)}`;
 export interface UseChatOptions {
   /** Appelé avec le texte final de l'assistant à chaque tour, pour la réponse vocale. */
   onAssistantFinal?: (text: string) => void;
+  /** 5.0.62 : une phrase de suivi vocale ne s'adressait pas à Jarvis (aucun tour lancé). */
+  onNotAddressed?: (text: string) => void;
 }
 
 export function useChat(options: UseChatOptions = {}) {
@@ -41,11 +45,16 @@ export function useChat(options: UseChatOptions = {}) {
   const [confirmation, setConfirmation] = useState<PendingConfirmation | null>(null);
   const onAssistantFinal = useRef(options.onAssistantFinal);
   onAssistantFinal.current = options.onAssistantFinal;
+  const onNotAddressed = useRef(options.onNotAddressed);
+  onNotAddressed.current = options.onNotAddressed;
+  /** Un tour est en cours côté main (entre `started` et `done`). */
+  const turnRunning = useRef(false);
 
   useEffect(() => {
     return window.jarvis.chat.onEvent((event: ChatEvent) => {
       switch (event.type) {
         case 'started': {
+          turnRunning.current = true;
           setConversationId(event.conversationId);
           setItems((current) => [
             ...closeStreaming(current),
@@ -112,7 +121,15 @@ export function useChat(options: UseChatOptions = {}) {
           setItems((current) => [...current, { kind: 'error', id: nextId(), text: event.message }]);
           break;
         }
+        case 'not_addressed': {
+          // Aucun tour n'a démarré pour cette phrase : on ne libère que si rien d'autre ne tourne.
+          if (!turnRunning.current) setBusy(false);
+          setItems((current) => [...current, { kind: 'ignored', id: nextId(), text: event.text }]);
+          onNotAddressed.current?.(event.text);
+          break;
+        }
         case 'done': {
+          turnRunning.current = false;
           setConfirmation(null);
           setBusy(false);
           setConversationId(event.conversationId);
@@ -128,23 +145,25 @@ export function useChat(options: UseChatOptions = {}) {
   }, []);
 
   const send = useCallback(
-    (text: string, source: 'voice' | 'text' = 'text') => {
+    (text: string, source: 'voice' | 'text' = 'text', extra: { followUp?: boolean } = {}) => {
       const trimmed = text.trim();
       if (trimmed.length === 0 || (busy && source !== 'voice')) return;
       setBusy(true);
-      void window.jarvis.chat.send({ conversationId, text: trimmed, source }).catch(() => {
-        setItems((current) => [
-          ...current,
-          {
-            kind: 'error',
-            id: nextId(),
-            text: "Le message n'a pas pu être envoyé. Réessaie dans un instant.",
-          },
-        ]);
-        setConfirmation(null);
-        setBusy(false);
-        onAssistantFinal.current?.('');
-      });
+      void window.jarvis.chat
+        .send({ conversationId, text: trimmed, source, ...(extra.followUp ? { followUp: true } : {}) })
+        .catch(() => {
+          setItems((current) => [
+            ...current,
+            {
+              kind: 'error',
+              id: nextId(),
+              text: "Le message n'a pas pu être envoyé. Réessaie dans un instant.",
+            },
+          ]);
+          setConfirmation(null);
+          setBusy(false);
+          onAssistantFinal.current?.('');
+        });
     },
     [busy, conversationId],
   );
