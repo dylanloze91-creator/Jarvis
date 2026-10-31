@@ -14,7 +14,9 @@ export type ChatItem =
       /** Dernière étape française, affichée pendant que l'outil tourne. */
       progress?: string;
     }
-  | { kind: 'error'; id: string; text: string };
+  | { kind: 'error'; id: string; text: string }
+  /** 5.0.60 : équipe et modèle choisis par le chef d'orchestre pour ce tour. */
+  | { kind: 'route'; id: string; label: string; model: string; how: 'calcul' | 'express' | 'cerveau' };
 
 export interface PendingConfirmation {
   requestId: string;
@@ -54,6 +56,13 @@ export function useChat(options: UseChatOptions = {}) {
         case 'delta': {
           const id = nextId();
           setItems((current) => appendDelta(current, id, event.text));
+          break;
+        }
+        case 'route': {
+          setItems((current) => [
+            ...closeStreaming(current),
+            { kind: 'route', id: nextId(), label: event.label, model: event.model, how: event.how },
+          ]);
           break;
         }
         case 'tool_start': {

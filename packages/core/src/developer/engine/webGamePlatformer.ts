@@ -44,10 +44,6 @@ export function isNeutralPlatformerLevel(source: string): boolean {
   return compact.includes(needle);
 }
 
-function json(value: unknown): string {
-  return `${JSON.stringify(value, null, 2)}\n`;
-}
-
 /** Fichiers du gabarit « jeu navigateur » : base plateforme 2D jouable + niveau modifiable. */
 export function platformerWebGameFiles(input: PlatformerTemplateInput): TemplateFile[] {
   const title = input.title.replace(/[<>&"]/g, '');

@@ -29,6 +29,7 @@ Google (Gmail, Agenda, Drive, Docs, Sheets) est arrivé en 0.4.20 : voir la sect
 Claude Code (PC Windows) et Cursor (souvent agent cloud) travaillent sur ce dépôt. Le registre est `AGENTS-COORDINATION.md` ; les mêmes règles sont dans `.cursor/rules/coordination.mdc`.
 
 - **Avant toute tâche :** `git fetch`, lire `AGENTS-COORDINATION.md`, ne pas toucher aux fichiers réservés par l'autre agent.
+- **Avant toute fusion dans main :** `npm run typecheck`, `npm test` et `npm run lint`. Les 5 tests dotnet échouent sur une machine sans SDK .NET : c'est attendu, tout autre échec bloque la fusion.
 - **Toujours sa propre branche :** `claude/...` pour Claude Code, `cursor/...` pour Cursor. Jamais directement sur `main`.
 - **Inscrire sa tâche** dans `AGENTS-COORDINATION.md`, commiter et pousser ce fichier tout de suite.
 - **GPU / Ollama :** ne pas lancer le banc (`npm run lab`) ni le générateur (`npm run lab:generate`) si la ressource est marquée occupée. La réserver avant, la libérer après.
@@ -504,6 +505,28 @@ Mesure de départ (`--set eval`, 3 passages) : qwen2.5:3b 20/87, qwen2.5-coder:7
 
 **Évaluation** : `l2-need-name` (ratée 3 fois par le 30B : il bloque `''` mais pas `'  '`) n'est pas modifiée ; changer une mission d'évaluation rendrait les mesures incomparables.
 
+## 5.0.60 — chef d'orchestre du chat (réglage, coupé par défaut)
+
+Demande de l'utilisateur : un Jarvis plus simple et plus fiable sur les tâches faciles. Avant, chaque demande envoyait au même petit modèle tout le catalogue d'outils et un très long mode d'emploi. Désormais, si `settings.orchestra.enabled` (Réglages → Modèle IA → « Chef d'orchestre »), un modèle **cerveau** trie chaque demande et la confie à une **équipe** qui n'a que son modèle et ses outils. **Réglage absent ou coupé : le chat d'avant, à l'identique** (`chat-unchanged.test.ts` vert sans régénération ; `parseSettings({})` ne gagne pas de clé).
+
+- **Équipes** (`core/agent/orchestraTeams.ts`, pur) : `conversation` (aucun outil), `pc`, `fichiers`, `web`, `musique` (`spotify_*`), `concentration` (`siteblock_*`), `memoire` (mémoire et personnalisation), `google` (`google_*`), `code` (aucun outil). `TEAM_SPECS` : nom, description lue par le cerveau, outils (nom exact ou préfixe `*`), consigne courte. `teamHasTool`, `availableTeams` (une équipe à outils n'existe que si l'un d'eux est enregistré).
+- **Chemin d'une demande** (`core/agent/orchestra.ts`, `apps/desktop/src/main/session.ts` `routeTurn`) : (1) **calcul exact sans modèle** (`solveArithmetic` : « combien font 12 fois 37 », « 15 % de 240 », parenthèses, puissances ; analyse descendante, jamais `eval` ; une phrase avec un autre mot n'est jamais un calcul) ; (1 bis) **heure et date depuis l'horloge du PC** (`clockReply` : « Quelle heure est-il ? », « On est quel jour ? » et leurs variantes exactes, sans modèle ; pastille « Horloge ») ; (2) **express** (`expressTeam`) : règles existantes (YouTube, Spotify, Google, SiteBlock, mémoire, actualité/web) sans appeler de modèle ; (3) **cerveau** : `routerSystemPrompt` (une ligne par équipe disponible) + `routerUserPrompt` (4 derniers échanges, pour « et ferme-le ») ; température 0, 12 jetons, 90 s au plus (premier chargement compris) ; `parseRouterReply` (accents et majuscules tolérés). Réponse illisible, Ollama arrêté ou délai : **le tour suit le chemin d'avant** (modèle, catalogue et prompt habituels), jamais une équipe devinée.
+- **L'équipe répond** : `Agent` reçoit `allowedTools` (nouvelle option : remplace le tri Spotify/Google habituel ; absente = comportement d'avant) ; prompt = `ORCHESTRA_BASE_PROMPT` (4 phrases ; une « Personnalité » modifiée par l'utilisateur est gardée telle quelle, `orchestraBasePrompt`) + note vocale + personnalisation + mémoire apprise, fragments SiteBlock et mémoire **seulement** pour leurs équipes, puis `teamPrompt(équipe)`. Les chemins forcés de l'agent (Spotify, YouTube, actualité) sont inchangés.
+- **Modèles** (`orchestraProviderConfig`) : Ollama seulement ; `place: 'processeur'` = `num_gpu: 0` ; cerveau `keep_alive` 30 min, autres 10 min ; `think: false` pour les modèles `qwen3*` ; **`recoverToolCalls: true` en mode orchestre** (décision de l'utilisateur pour 5.0.60 : les petits modèles écrivent souvent leurs appels en texte ; le chat sans orchestre ne le passe toujours pas). Équipe sans modèle choisi = le cerveau, sur la carte (`teamAssignment`).
+- **Réglage** `orchestra: { enabled, brain, teams?: { [équipe]: { model, place: 'carte' | 'processeur' } } }`, facultatif, sans défaut Zod ; une équipe inconnue dans `settings.json` fait retomber le seul bloc `orchestra` (le reste des réglages est gardé). Proposition pour le PC de l'utilisateur (`SUGGESTED_ORCHESTRA`) : cerveau `qwen2.5:7b` sur la carte (conversation, PC, fichiers, web, Google) ; musique et concentration `qwen2.5:3b`, mémoire `qwen3.5:4b`, code `qwen2.5-coder:7b`, sur le processeur. Les missions de Jarvis Développeur gardent leurs propres modèles (`developer.roleModels`).
+- **Interface** : `components/OrchestraSettings.tsx` (onglet Modèle IA, Ollama seulement) : interrupteur, cerveau et modèle/emplacement par équipe parmi les modèles installés (`ollamaStatus`), bouton « Proposition pour ce PC », enregistré avec « Enregistrer ». Discussion : événement `route` (`shared/ipc.ts`) → pastille « Équipe · modèle · calcul exact | express | choisi par le cerveau » (`Messages.tsx`). Journal de débogage : `orchestre` (chemin, équipe, modèle, emplacement).
+- Tests : `agent/orchestra.test.ts` (calculs justes et faux positifs refusés, express, prompts et lecture du cerveau, outils par équipe, options Ollama, réglages absents ou coupés), `agent/agent.test.ts` (`allowedTools`), `apps/desktop/src/main/orchestra-session.test.ts` (vraie session : calcul et heure sans modèle, Spotify en express sans cerveau, cerveau → PC avec les seuls outils du PC et la consigne courte, cerveau → code sur le processeur, réponse illisible → chat d'avant, orchestre coupé).
+
+## 5.0.61 — générateur : plus de variété
+
+Deuxième nuit (5.0.59, qwen3-coder:30b) : 66 exercices acceptés sur 400 essais (17 %) en 12 h, contre 46 % la première nuit. 197 refus sur 334 étaient des doublons, et un examen à la main des refus confirme que ce sont de vrais doublons : le filtre est juste, mais le professeur revient toujours au même exercice pour un thème (`calculateDuration` 15 fois, `validateBook` 6 fois). Bonne nouvelle : 18 exercices de niveau 3, et une solidité moyenne des tests de 68 % (55 % la première nuit).
+
+- **Forme imposée** (`GENERATOR_FORMS`, 24 formes : machine à états, récursion, tri multi-critères, créneaux qui se chevauchent, montants en centimes, classe avec état…) : `GeneratorSeed.form` (facultatif, une graine d'avant reste valable) tirée par `seedFor`, dite au professeur (« Forme de l’exercice : … »).
+- **80 thèmes** au lieu de 40 (`GENERATOR_THEMES`).
+- **Noms à éviter** : tous les noms déjà pris **sur le même thème**, plus les 25 plus récents (avant : seulement les 40 derniers, si bien que les doublons anciens revenaient) ; jusqu'à 12 objectifs du même thème montrés (8 avant).
+- Le filtre de doublons (`DUPLICATE_SIMILARITY`) ne change pas.
+- Tests (`labGenerator.test.ts`) : formes variées (au moins 20 sur 200 graines, plus de 190 couples thème-forme différents), forme dite au professeur, consigne d'avant pour une graine sans forme, noms anciens du même thème montrés.
+
 ## Robot Jarvis Rover (ajout seul)
 
 Jarvis pilote le robot Jarvis Rover (Raspberry Pi 5 + ESP32, propulsion arrière, direction avant type voiture) par le réseau local. Le service du robot (Python, sans dépendance) vit hors de ce dépôt (`jarvis-rover/`, installé sur le Pi ; il tourne aussi en simulateur sur le PC : `python -m jarvis_rover --simulation --hote 127.0.0.1`). **Sans adresse de robot, catalogue, prompt, température et réglages par défaut sont ceux d'avant** (`catalog-rover.test.ts`, `roverTurn.test.ts`, `chat-unchanged.test.ts` vert sans régénération).
@@ -516,7 +539,7 @@ Jarvis pilote le robot Jarvis Rover (Raspberry Pi 5 + ESP32, propulsion arrière
 
 ## Updater / GitHub
 
-Dernière publication : **5.0.5** (`https://github.com/dylanloze91-creator/Jarvis/releases/tag/v5.0.5`) — exe, `.blockmap` et `latest.yml` publiés : l’updater intégré la propose.
+Dernière publication : **5.0.61** (`https://github.com/dylanloze91-creator/Jarvis/releases/tag/v5.0.61`) — exe, `.blockmap` et `latest.yml` publiés : l’updater intégré la propose.
 
 - `apps/desktop/electron-builder.yml` : `publish.provider: github`, owner `dylanloze91-creator`, repo `Jarvis`, `releaseType: release`, artifact `Jarvis-Setup-${version}.exe`
 - `apps/desktop/src/main/updater.ts` : contrôle 15 s après le démarrage puis toutes les 4 h ; téléchargement auto ; **installation seulement si l’utilisateur clique**
@@ -646,6 +669,7 @@ Corrections de la revue complète (détail : `docs/audit-0410.md` du store du pr
 
 - **Générateur (5.0.56)** : un exercice n'est accepté que vert deux fois avec sa solution et rouge sur le départ ; rien de proche de l'évaluation ; le catalogue écrit avec Claude ne devient jamais un exemple d'entraînement.
 - **Catalogue et entraînement (5.0.55)** : chaque mission du catalogue garde une solution de référence vérifiée par `labCatalog.test.ts` ; une mission d'évaluation ne devient jamais un exemple ; un exemple n'est écrit que si les tests cachés sont au vert.
+- **Chef d'orchestre (5.0.60)** : coupé ou absent, le chat est celui d'avant à l'identique (tests figés sans régénération) ; une équipe ne reçoit que ses outils ; un calcul n'est fait sans modèle que si la demande n'est qu'une opération ; une réponse illisible du cerveau renvoie au chat d'avant, jamais à une équipe devinée ; `recoverToolCalls` n'est passé au chat qu'en mode orchestre.
 - **Générateur exigeant (5.0.59)** : une phrase qui cite le test caché est retirée, jamais l'exercice accepté avec elle ; un quasi-doublon ou des tests qui laissent passer plus des deux tiers des erreurs glissées ne sont jamais acceptés ; le nettoyage du cahier garde toujours une copie et la raison de chaque écart.
 - **Robot** : outils `rover_*` absents sans adresse et hors des tours sans rapport ; mouvements toujours confirmés (sans catégorie), arrêts jamais ; un mouvement annulé ou sans réponse envoie `/api/stop` ; réseau local seulement ; `roverBaseUrl`/`roverToken` sans défaut Zod.
 - **Appels relus (5.0.54)** : `recoverToolCalls` reste une option du modèle de code et du laboratoire, jamais du chat sans décision ; un appel relu ne vise qu'un outil proposé à ce tour ; un texte illisible reste une erreur, jamais un appel deviné.

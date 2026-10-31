@@ -316,7 +316,7 @@ export class CodeTaskWorkflow {
     planContext?: string,
   ): Promise<DeveloperState> {
     const hooks = planContext ? { planContext } : {};
-    const first = await this.start(request, { model: primary, project, hooks });
+    await this.start(request, { model: primary, project, hooks });
     const run = this.current;
     if (!run || run.state.status !== 'finished') {
       return this.host.notice(

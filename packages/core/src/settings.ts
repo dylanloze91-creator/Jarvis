@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { DEFAULT_SYSTEM_PROMPT } from './agent/agent.js';
 import { FIX_ATTEMPTS_MAX, FIX_ATTEMPTS_MIN } from './developer/taskPlan.js';
 import { SPECIALIST_ROLES } from './developer/engine/roles.js';
+import { MODEL_PLACES, ORCHESTRA_TEAMS } from './agent/orchestraTeams.js';
 import { DEFAULT_SITEBLOCK_BASE_URL } from './siteblock/url.js';
 import { defaultCategoryPolicies } from './tools/permissions.js';
 
@@ -271,6 +272,23 @@ export const settingsSchema = z.object({
    * Profil matériel enregistré au premier lancement. Absent : installation
    * déjà configurée, le comportement reste celui d’avant ce réglage.
    */
+  /**
+   * 5.0.60 — chef d'orchestre : le modèle `brain` choisit l'équipe de chaque demande, chaque
+   * équipe a son modèle (`teams`) et ses seuls outils. Absent ou `enabled: false` : le chat
+   * d'avant, à l'identique. Pas de défaut Zod : un ancien `settings.json` ne gagne pas de clé.
+   */
+  orchestra: z
+    .object({
+      enabled: z.boolean(),
+      brain: z.string().max(200),
+      teams: z
+        .partialRecord(
+          z.enum(ORCHESTRA_TEAMS),
+          z.object({ model: z.string().max(200), place: z.enum(MODEL_PLACES) }),
+        )
+        .optional(),
+    })
+    .optional(),
   machine: z
     .object({
       profile: z.enum(['modest', 'standard', 'full']),

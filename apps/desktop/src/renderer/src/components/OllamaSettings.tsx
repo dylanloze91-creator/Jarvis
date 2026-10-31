@@ -56,7 +56,6 @@ export function OllamaSettingsSection({
 
   useEffect(() => {
     if (active) refreshStatus();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- actualiser à l’ouverture de l’onglet
   }, [baseUrl, active]);
 
   const runTest = (): void => {

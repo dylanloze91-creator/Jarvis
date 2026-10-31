@@ -17,6 +17,7 @@ import {
   skillTrainRows,
   type ChatMessage,
   type LearningRecord,
+  type LocalLearningExample,
   type LocalLearningRuntimeStatus,
   type Settings,
   type WebHit,
@@ -158,7 +159,7 @@ export class LocalLearningController {
       outcome = await runQloraTrain(
         this.store,
         plan,
-        selected.train as import('@jarvis/core').LocalLearningExample[],
+        selected.train as LocalLearningExample[],
         (log) => {
           if (log.startsWith('OK')) this.line = `Apprentissage local : finalisation…`;
           this.emit();

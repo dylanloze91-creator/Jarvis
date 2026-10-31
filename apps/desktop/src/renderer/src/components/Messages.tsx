@@ -1,4 +1,4 @@
-import { AlertTriangle, Check, ShieldOff, Wrench } from 'lucide-react';
+import { AlertTriangle, Check, Compass, ShieldOff, Wrench } from 'lucide-react';
 import { useEffect, useRef, useState, type RefObject } from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -84,8 +84,28 @@ function Item({ item, sources }: { item: ChatItem; sources: SourcePill[] }) {
     );
   }
 
+  if (item.kind === 'route') {
+    return (
+      <div className="tool-row">
+        <span className="tool-chip" title="Chef d’orchestre : équipe et modèle de cette réponse">
+          <Compass className="size-3.5 text-cyan-300" />
+          <span className="max-w-[440px] truncate">
+            {item.label} · {item.model}
+          </span>
+          <span className="tool-status">{ROUTE_HOW[item.how]}</span>
+        </span>
+      </div>
+    );
+  }
+
   return <ToolItem item={item} />;
 }
+
+const ROUTE_HOW: Record<Extract<ChatItem, { kind: 'route' }>['how'], string> = {
+  calcul: 'calcul exact',
+  express: 'express',
+  cerveau: 'choisi par le cerveau',
+};
 
 function ToolItem({ item }: { item: Extract<ChatItem, { kind: 'tool' }> }) {
   const [open, setOpen] = useState(false);

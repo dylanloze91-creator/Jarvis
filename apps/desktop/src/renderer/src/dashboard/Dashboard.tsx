@@ -31,7 +31,6 @@ import { DeveloperSimpleView } from '@/components/developer/DeveloperSimpleView'
 import { SetupGuideView } from '@/components/SetupGuideView';
 import { SettingsPanel, openSettingsOnTab } from '@/components/SettingsPanel';
 import type { SettingsTabId } from '@/components/SettingsTabs';
-import { VoiceBar } from '@/components/VoiceBar';
 import { formatBytes, formatModelTemperature, formatPercent } from '@/dashboard/format';
 import { useMachineSnapshot } from '@/dashboard/useMachine';
 import { isDemoRuntime } from '@/lib/runtimeStatus';

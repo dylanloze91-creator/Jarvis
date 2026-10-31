@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Download, RefreshCw, Server } from 'lucide-react';
-import { codeModelById, formatModelSize } from '@jarvis/core';
+import { formatModelSize } from '@jarvis/core';
 import { Button } from '@/components/ui/button';
 import type { CodeModelState } from '../../../../../shared/developerIpc';
 import { gb, percent } from './format';

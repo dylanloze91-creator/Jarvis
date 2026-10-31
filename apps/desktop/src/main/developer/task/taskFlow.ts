@@ -314,7 +314,7 @@ export class TaskRun extends TaskRunBase {
   }
 
   /** Plan validé (comparaison de modèles). */
-  get reviewedPlan(): import('@jarvis/core').ReviewedPlan | null {
+  get reviewedPlan(): ReviewedPlan | null {
     return this.reviewed;
   }
 

@@ -18,14 +18,12 @@ import {
   GOAL_MARKER,
   PLAN_MARKER,
   REVIEW_MARKER,
-  WRITE_MARKER,
 } from '@jarvis/core';
 import { createHarness, fakeOutcome } from '../controllerHarness.testkit.js';
 import { FakeOllama, type ChatBody, type Reply } from '../models/fakeOllama.testkit.js';
 import {
   codeBlock,
   createFixtureRepo,
-  replyForPlannedFileWrite,
   taskScript,
   writeRequest,
 } from '../task/taskWorkflow.testkit.js';

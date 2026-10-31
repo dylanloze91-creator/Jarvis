@@ -1,4 +1,4 @@
-﻿# Coordination des agents
+# Coordination des agents
 
 Deux agents travaillent sur ce dépôt : **Claude Code** (sur le PC Windows) et **Cursor** (souvent en agent cloud). Ce fichier dit qui travaille sur quoi. Les règles sont dans `CLAUDE.md` (section « Travail à deux agents ») et dans `.cursor/rules/coordination.mdc`.
 
@@ -21,6 +21,10 @@ Statuts possibles : `en cours`, `en pause`, `bloqué`, `terminé`.
 | Cursor | `cursor/jarvis-rover` | Intégration du module Robot (patch de Claude) | — | 2026-10-29 | terminé |
 | Claude Code | `claude/generateur-5059` | Intégrer la 5.0.59 (appels relus, générateur exigeant, nettoyage du cahier) et remesurer le 7B, fusionné dans main | — | 2026-10-29 | terminé |
 | Cursor | `cursor/jarvis-rover` | Fusion du module Robot dans main | `CLAUDE.md`, `apps/desktop/src/main/index.ts`, `apps/desktop/src/main/rover/*`, `apps/desktop/src/main/tools/index.ts`, `apps/desktop/src/main/tools/rover.ts`, `apps/desktop/src/main/tools/rover.test.ts`, `apps/desktop/src/main/tools/catalog-rover.test.ts`, `apps/desktop/src/preload/index.ts`, `apps/desktop/src/renderer/src/components/RoverSettings.tsx`, `SettingsPanel.tsx`, `SettingsTabs.tsx`, `apps/desktop/src/renderer/src/preview/bridge.ts`, `apps/desktop/src/shared/ipc.ts`, `packages/core/src/agent/agent.ts`, `packages/core/src/agent/roverTurn.test.ts`, `packages/core/src/index.ts`, `packages/core/src/rover/*`, `packages/core/src/security/redact.ts`, `packages/core/src/security/redact.test.ts`, `packages/core/src/settings.ts` | 2026-10-29 | en cours |
+| Cursor | `cursor/integration-5060` | Intégration 5.0.60 chef d'orchestre | — | 2026-10-30 | terminé |
+| Cursor | `cursor/lint-propre` | Lint à zéro | — | 2026-10-30 | terminé |
+| Claude Code | `claude/generateur-5061` | Intégration terminée, 5.0.61 publiée | — | 2026-10-30 | terminé |
+| Cursor | `cursor/jarvis-rover` | Publier le module Robot dans main | `AGENTS-COORDINATION.md`, `CLAUDE.md`, `packages/core/src/agent/agent.ts` | 2026-10-31 | en cours |
 
 ## Ressource GPU / Ollama
 
@@ -28,6 +32,6 @@ Une seule carte (RTX 2060 6 Go) : un seul agent à la fois lance le banc (`npm r
 
 | État | Par qui | Pour quoi | Depuis |
 | --- | --- | --- | --- |
-| occupée | Claude Code | Génération de nuit 5.0.59 (lab:generate, 100 exercices) | 2026-10-29 |
+| libre | — | — | — |
 
 Pour réserver : passer l'état à `occupée`, remplir les colonnes, commiter et pousser **avant** de lancer. Pour libérer : remettre `libre` et `—`, commiter et pousser.

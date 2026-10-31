@@ -19,6 +19,8 @@ import {
   type TaskPlan,
   type ToolCallOutcome,
   type ToolManager,
+  type LearningRecord,
+  type ModelRunRecord,
 } from '@jarvis/core';
 import type { ManualPassageView } from '@jarvis/core';
 import type { CodeTaskState, DevStepStatus, DeveloperState } from '../../../shared/developerIpc.js';
@@ -82,9 +84,9 @@ export interface TaskHooks {
    * Fiches validées qui recoupent la demande. L’indice s’applique au fichier
    * de ce projet. Sans ce rappel, la boucle ne change rien de plus.
    */
-  recallExperiences?: (query: string) => Promise<import('@jarvis/core').LearningRecord[]>;
+  recallExperiences?: (query: string) => Promise<LearningRecord[]>;
   /** Règles explicites retrouvées pour cette demande. Absentes : aucun contrôle de convention. */
-  recallRules?: (query: string) => Promise<import('@jarvis/core').LearningRecord[]>;
+  recallRules?: (query: string) => Promise<LearningRecord[]>;
   /** Récupération des expériences. Absente ou fausse : aucun indice écrit. */
   injectionMemory?: boolean;
   /** Bibliothèque de compétences. Absente ou fausse : aucune compétence lancée. */
@@ -136,8 +138,8 @@ export interface TaskDeps {
   modelOptions(model: string): OllamaCodeOptions;
   /** Fenêtre après un tour de chat avant de reprendre (question de suite à la voix). */
   graceMs?: number;
-  modelRuns?(): Promise<readonly import('@jarvis/core').ModelRunRecord[]>;
-  recordModelRun?: (record: Omit<import('@jarvis/core').ModelRunRecord, 'at'>) => Promise<void>;
+  modelRuns?(): Promise<readonly ModelRunRecord[]>;
+  recordModelRun?: (record: Omit<ModelRunRecord, 'at'>) => Promise<void>;
 }
 
 const FILE_TOOLS = new Set([

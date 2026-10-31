@@ -54,7 +54,6 @@ import {
   fallbackGoal,
   fallbackSkill,
   steerFactory,
-  webResearchChatLine,
   webResearchQueryForRequest,
   templatePlan,
   type FactoryOutput,
@@ -846,7 +845,7 @@ export class MissionWorkflow {
     link?: { missionId: string; index: number },
     chatExtras?: MissionStartExtras,
   ): Promise<DeveloperState> {
-    let text = briefWithoutTrademark(request);
+    const text = briefWithoutTrademark(request);
     if (kind === 'new-project') skipQuestions = true;
     if (text.length < (kind === 'question' ? 4 : 8))
       return this.host.notice('Décris la mission en une phrase au moins.');
