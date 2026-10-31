@@ -21,7 +21,7 @@ Statuts possibles : `en cours`, `en pause`, `bloqué`, `terminé`.
 | Claude Code | `claude/generateur-5059` | Intégrer la 5.0.59 (appels relus, générateur exigeant, nettoyage du cahier) et remesurer le 7B, fusionné dans main | — | 2026-10-29 | terminé |
 | Cursor | `cursor/integration-5060` | Intégration 5.0.60 chef d'orchestre | — | 2026-10-30 | terminé |
 | Cursor | `cursor/lint-propre` | Lint à zéro | — | 2026-10-30 | terminé |
-| Claude Code | `claude/generateur-5061` | Intégrer la 5.0.61 (formes imposées, 80 thèmes) dans main, puis génération de nuit | `packages/core/src/developer/labGenerator.ts`, `labGenerator.test.ts`, `CLAUDE.md` | 2026-10-30 | en cours |
+| Claude Code | `claude/generateur-5061` | Intégration terminée, 5.0.61 publiée | — | 2026-10-30 | terminé |
 
 ## Ressource GPU / Ollama
 

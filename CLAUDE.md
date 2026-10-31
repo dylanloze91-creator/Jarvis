@@ -529,7 +529,7 @@ Deuxième nuit (5.0.59, qwen3-coder:30b) : 66 exercices acceptés sur 400 essais
 
 ## Updater / GitHub
 
-Dernière publication : **5.0.5** (`https://github.com/dylanloze91-creator/Jarvis/releases/tag/v5.0.5`) — exe, `.blockmap` et `latest.yml` publiés : l’updater intégré la propose.
+Dernière publication : **5.0.61** (`https://github.com/dylanloze91-creator/Jarvis/releases/tag/v5.0.61`) — exe, `.blockmap` et `latest.yml` publiés : l’updater intégré la propose.
 
 - `apps/desktop/electron-builder.yml` : `publish.provider: github`, owner `dylanloze91-creator`, repo `Jarvis`, `releaseType: release`, artifact `Jarvis-Setup-${version}.exe`
 - `apps/desktop/src/main/updater.ts` : contrôle 15 s après le démarrage puis toutes les 4 h ; téléchargement auto ; **installation seulement si l’utilisateur clique**
