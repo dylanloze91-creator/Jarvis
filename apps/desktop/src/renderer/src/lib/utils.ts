@@ -14,5 +14,11 @@ export function formatRelativeDate(timestamp: number): string {
   if (hours < 24) return `il y a ${hours} h`;
   const days = Math.round(hours / 24);
   if (days < 7) return `il y a ${days} j`;
-  return new Date(timestamp).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
+  const date = new Date(timestamp);
+  const sameYear = date.getFullYear() === new Date().getFullYear();
+  return date.toLocaleDateString('fr-FR', {
+    day: 'numeric',
+    month: 'short',
+    ...(sameYear ? {} : { year: 'numeric' }),
+  });
 }

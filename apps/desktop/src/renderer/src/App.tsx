@@ -394,6 +394,10 @@ export default function App() {
                 }}
                 chat={chat}
                 onOpenDeveloper={openDeveloper}
+                onOpenVoiceSettings={() => {
+                  openSettingsOnTab('voice');
+                  setView('settings');
+                }}
               />
             </div>
           )

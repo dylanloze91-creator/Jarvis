@@ -2,6 +2,7 @@ import { MessageSquare, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import type { Conversation, ConversationSummary } from '@jarvis/core';
 import { Button } from '@/components/ui/button';
+import { ConfirmButton } from '@/components/ui/confirmButton';
 import { formatRelativeDate } from '@/lib/utils';
 
 interface HistoryPanelProps {
@@ -35,13 +36,11 @@ export function HistoryPanel({ onOpen }: HistoryPanelProps) {
         <p className="text-[11px] font-medium tracking-wide text-slate-500 uppercase">
           {conversations.length} conversation{conversations.length > 1 ? 's' : ''}
         </p>
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={() => void window.jarvis.history.clear().then(refresh)}
-        >
-          Tout effacer
-        </Button>
+        <ConfirmButton
+          label="Tout effacer"
+          confirmLabel="Effacer toutes les conversations"
+          onConfirm={() => void window.jarvis.history.clear().then(refresh)}
+        />
       </div>
 
       {conversations.map((conversation) => (
@@ -67,8 +66,9 @@ export function HistoryPanel({ onOpen }: HistoryPanelProps) {
           <Button
             size="icon"
             variant="ghost"
-            className="opacity-0 group-hover:opacity-100"
-            title="Supprimer"
+            className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+            title="Supprimer cette conversation"
+            aria-label={`Supprimer la conversation « ${conversation.title} »`}
             onClick={() => void window.jarvis.history.remove(conversation.id).then(refresh)}
           >
             <Trash2 className="size-3.5" />

@@ -13,6 +13,8 @@ export type ChatItem =
       content: string;
       /** Dernière étape française, affichée pendant que l'outil tourne. */
       progress?: string;
+      /** 5.0.64 : phrase française de l'outil (`summarize`), à la place du nom technique. */
+      summary?: string;
     }
   | { kind: 'error'; id: string; text: string }
   /** 5.0.60 : équipe et modèle choisis par le chef d'orchestre pour ce tour. */
@@ -83,6 +85,7 @@ export function useChat(options: UseChatOptions = {}) {
               name: event.toolName,
               status: 'running',
               content: '',
+              ...(event.summary ? { summary: event.summary } : {}),
             },
           ]);
           break;

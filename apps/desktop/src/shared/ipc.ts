@@ -331,7 +331,13 @@ export type ChatEvent =
    * `how` : calcul exact sans modèle, règle express, ou choix du cerveau. Jamais envoyé sans orchestre.
    */
   | { type: 'route'; team: string; label: string; model: string; how: 'calcul' | 'express' | 'cerveau' }
-  | { type: 'tool_start'; callId: string; toolName: string }
+  | {
+      type: 'tool_start';
+      callId: string;
+      toolName: string;
+      /** 5.0.64 — phrase française de l'outil (`summarize`), affichée à la place du nom technique. */
+      summary?: string;
+    }
   | { type: 'tool_progress'; callId: string; message: string }
   | {
       type: 'tool_result';
