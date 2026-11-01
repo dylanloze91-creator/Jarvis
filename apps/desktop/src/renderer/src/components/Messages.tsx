@@ -1,4 +1,4 @@
-import { AlertTriangle, Check, Compass, ShieldOff, Wrench } from 'lucide-react';
+import { AlertTriangle, Check, Compass, MicOff, ShieldOff, Wrench } from 'lucide-react';
 import { useEffect, useRef, useState, type RefObject } from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -93,6 +93,21 @@ function Item({ item, sources }: { item: ChatItem; sources: SourcePill[] }) {
             {item.label} · {item.model}
           </span>
           <span className="tool-status">{ROUTE_HOW[item.how]}</span>
+        </span>
+      </div>
+    );
+  }
+
+  if (item.kind === 'ignored') {
+    return (
+      <div className="tool-row">
+        <span
+          className="tool-chip opacity-70"
+          title="Phrase dite sans « Jarvis » pendant la discussion, jugée adressée à quelqu’un d’autre : pas de réponse. Redis « Jarvis » pour reprendre."
+        >
+          <MicOff className="size-3.5 text-slate-400" />
+          <span className="max-w-[440px] truncate">Pas pour Jarvis : « {item.text} »</span>
+          <span className="tool-status">écoute fermée</span>
         </span>
       </div>
     );

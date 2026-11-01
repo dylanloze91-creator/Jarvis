@@ -1,4 +1,4 @@
-import { WHISPER_MODEL_REPO, openWakeWordSensitivityToThreshold } from '@jarvis/core';
+import { DEFAULT_FOLLOW_UP_SECONDS, WHISPER_MODEL_REPO, openWakeWordSensitivityToThreshold } from '@jarvis/core';
 import type { VoiceDescriptor, VoiceSettings } from '@jarvis/core';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Field, Input, Range, Select, Textarea, Toggle } from '@/components/ui/field';
@@ -172,6 +172,8 @@ export function VoiceSettingsSection({
     }
   };
 
+  const followUpSeconds = Math.min(30, Math.max(0, voice.followUpSeconds ?? DEFAULT_FOLLOW_UP_SECONDS));
+
   return (
     <div className="flex flex-col gap-4">
       <Toggle
@@ -195,6 +197,40 @@ export function VoiceSettingsSection({
         wakeWord={voice.wakeWord}
         onChange={(wakeLearning) => onChange({ wakeLearning })}
       />
+
+      <div className="rounded-lg border border-white/8 bg-white/[0.02] p-3">
+        <p className="mb-3 text-[11px] font-medium tracking-wide text-slate-500 uppercase">
+          Discussion
+        </p>
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-1.5">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-medium tracking-wide text-slate-400 uppercase">
+                Enchaîner sans « Jarvis »
+              </span>
+              <span className="text-xs text-slate-400">
+                {followUpSeconds === 0 ? '« Jarvis » à chaque fois' : `${followUpSeconds} s après la réponse`}
+              </span>
+            </div>
+            <Range
+              min={0}
+              max={30}
+              value={followUpSeconds}
+              onChange={(event) => onChange({ followUpSeconds: Number(event.target.value) })}
+            />
+            <p className="text-[11px] text-slate-500">
+              Après sa réponse, Jarvis écoute encore ce temps-là sans mot de réveil, puis se remet en
+              veille tout seul. « Stop » ou « tais-toi » le coupent tout de suite.
+            </p>
+          </div>
+          <Toggle
+            label="Vérifier que c’est à Jarvis que je parle"
+            hint="Pendant ce temps d’écoute, une phrase dite sans « Jarvis » (à quelqu’un d’autre, au téléphone) est vérifiée avant qu’il réponde. S’il juge qu’elle n’est pas pour lui, il se tait et se remet en veille."
+            checked={voice.addresseeCheck !== false}
+            onChange={(addresseeCheck) => onChange({ addresseeCheck })}
+          />
+        </div>
+      </div>
 
       <div className="rounded-lg border border-white/8 bg-white/[0.02] p-3">
         <p className="mb-3 text-[11px] font-medium tracking-wide text-slate-500 uppercase">
