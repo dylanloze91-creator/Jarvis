@@ -30,6 +30,7 @@ Claude Code (PC Windows) et Cursor (souvent agent cloud) travaillent sur ce dép
 
 - **Avant toute tâche :** `git fetch`, lire `AGENTS-COORDINATION.md`, ne pas toucher aux fichiers réservés par l'autre agent.
 - **Avant toute fusion dans main :** `npm run typecheck`, `npm test` et `npm run lint`. Les 5 tests dotnet échouent sur une machine sans SDK .NET : c'est attendu, tout autre échec bloque la fusion.
+- **Après chaque changement de code :** appliquer la routine de vérification de `.cursor/rules/verification.mdc` (lancement `npm run build`, types, style, tests, secrets, relecture) et terminer par le « RAPPORT DE VÉRIFICATION » en français qu'elle impose, y compris la ligne « Testé en vrai (à la voix, sur le PC) : FAIT / PAS FAIT ».
 - **Toujours sa propre branche :** `claude/...` pour Claude Code, `cursor/...` pour Cursor. Jamais directement sur `main`.
 - **Inscrire sa tâche** dans `AGENTS-COORDINATION.md`, commiter et pousser ce fichier tout de suite.
 - **GPU / Ollama :** ne pas lancer le banc (`npm run lab`) ni le générateur (`npm run lab:generate`) si la ressource est marquée occupée. La réserver avant, la libérer après.
