@@ -1,0 +1,12 @@
+# Dépendances du Pi, sans openWakeWord : sur Linux son paquet exige
+# tflite-runtime, qui n'a pas de roue pour toutes les versions de Python
+# du Pi 5. L'installateur ajoute openWakeWord sans cette dépendance et
+# force le moteur ONNX (voir installer.sh).
+onnxruntime==1.20.1
+numpy==1.26.4
+vosk==0.3.45
+sounddevice==0.5.6
+tqdm==4.67.1
+scipy==1.13.1
+scikit-learn==1.5.2
+requests==2.32.3

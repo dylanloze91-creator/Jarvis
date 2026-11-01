@@ -1,0 +1,16 @@
+[Unit]
+Description=Voix du robot Jarvis (enceinte)
+After=network-online.target sound.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=jarvis-voix
+Group=audio
+WorkingDirectory=/opt/jarvis-robot-voix
+ExecStart=/opt/jarvis-robot-voix/.venv/bin/python -m jarvis_robot_voix --config /etc/jarvis-robot-voix/config.toml
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

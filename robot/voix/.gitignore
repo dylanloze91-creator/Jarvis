@@ -1,0 +1,7 @@
+config.toml
+modeles/
+.venv/
+__pycache__/
+.pytest_cache/
+*.wav
+*.pyc
