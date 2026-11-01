@@ -21,6 +21,7 @@ import { GoogleSettingsSection } from '@/components/GoogleSettings';
 import { SiteBlockSettingsSection } from '@/components/SiteBlockSettings';
 import { RoverSettingsSection } from '@/components/RoverSettings';
 import { PhoneSettingsSection } from '@/components/PhoneSettings';
+import { SpeakerSettingsSection } from '@/components/SpeakerSettings';
 import { PersonalizationSettingsSection } from '@/components/PersonalizationSettings';
 import { KnowledgeSettingsSection } from '@/components/KnowledgeSettings';
 import { UpdateSettingsSection } from '@/components/UpdateSettings';
@@ -352,6 +353,9 @@ export function SettingsPanel({ settings, status, onSaved, requestedTab, onAnaly
       </TabPanel>
       <TabPanel id="phone" active={tab}>
           <PhoneSettingsSection />
+      </TabPanel>
+      <TabPanel id="speakers" active={tab}>
+          <SpeakerSettingsSection />
       </TabPanel>
       <TabPanel id="tools" active={tab}>
           <div className="flex flex-col gap-3">

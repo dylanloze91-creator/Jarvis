@@ -147,7 +147,12 @@ export interface TextToSpeechProvider {
   speak: (
     text: string,
     handlers: TextToSpeechHandlers,
-    options?: { voice?: string; signal?: AbortSignal },
+    options?: {
+      voice?: string;
+      signal?: AbortSignal;
+      /** 5.0.64 — `wav` pour l'enceinte (fichier à transmettre) ; absent = le format habituel du moteur. */
+      format?: 'mp3' | 'wav';
+    },
   ) => TextToSpeechController;
 }
 

@@ -1,5 +1,19 @@
 import type { ReactNode } from 'react';
-import { AppWindow, Bot, Car, Code2, Mail, Mic, Music, RefreshCw, Search, ShieldCheck, Smartphone, type LucideIcon } from 'lucide-react';
+import {
+  AppWindow,
+  Bot,
+  Car,
+  Code2,
+  Mail,
+  Mic,
+  Music,
+  RefreshCw,
+  Search,
+  ShieldCheck,
+  Smartphone,
+  Speaker,
+  type LucideIcon,
+} from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export const SETTINGS_TABS = [
@@ -10,6 +24,7 @@ export const SETTINGS_TABS = [
   { id: 'google', label: 'Google', icon: Mail },
   { id: 'robot', label: 'Robot', icon: Car },
   { id: 'phone', label: 'Téléphone', icon: Smartphone },
+  { id: 'speakers', label: 'Enceintes', icon: Speaker },
   { id: 'tools', label: 'Outils et sécurité', icon: ShieldCheck },
   { id: 'general', label: 'Fenêtre et démarrage', icon: AppWindow },
   { id: 'updates', label: 'Mises à jour', icon: RefreshCw },

@@ -7,6 +7,9 @@ import {
   type MachinePullProgress,
   type PhoneStatus,
   type SendChatInput,
+  type SpeakerStatus,
+  type SpeakerTranscribeRequest,
+  type SpeakerTranscribeResult,
   type UpdateState,
   type VoiceSpeakInput,
   type VoiceTranscribeInput,
@@ -165,6 +168,23 @@ const api: JarvisApi = {
       ipcRenderer.on(IpcChannel.phoneEvent, handler);
       return () => ipcRenderer.removeListener(IpcChannel.phoneEvent, handler);
     },
+  },
+  speaker: {
+    status: () => ipcRenderer.invoke(IpcChannel.speakerStatus),
+    setEnabled: (enabled: boolean) => ipcRenderer.invoke(IpcChannel.speakerSetEnabled, enabled),
+    add: (name: string) => ipcRenderer.invoke(IpcChannel.speakerAdd, name),
+    remove: (speakerId: string) => ipcRenderer.invoke(IpcChannel.speakerRemove, speakerId),
+    onEvent: (listener) => {
+      const handler = (_event: Electron.IpcRendererEvent, payload: SpeakerStatus): void => listener(payload);
+      ipcRenderer.on(IpcChannel.speakerEvent, handler);
+      return () => ipcRenderer.removeListener(IpcChannel.speakerEvent, handler);
+    },
+    onTranscribe: (listener) => {
+      const handler = (_event: Electron.IpcRendererEvent, payload: SpeakerTranscribeRequest): void => listener(payload);
+      ipcRenderer.on(IpcChannel.speakerTranscribeRequest, handler);
+      return () => ipcRenderer.removeListener(IpcChannel.speakerTranscribeRequest, handler);
+    },
+    reportTranscript: (payload: SpeakerTranscribeResult) => ipcRenderer.send(IpcChannel.speakerTranscribeResult, payload),
   },
   developer: createDeveloperApi(ipcRenderer),
   machine: {

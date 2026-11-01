@@ -57,14 +57,14 @@ export class OpenAITtsProvider implements TextToSpeechProvider {
   speak(
     text: string,
     handlers: TextToSpeechHandlers,
-    options: { voice?: string; signal?: AbortSignal } = {},
+    options: { voice?: string; signal?: AbortSignal; format?: 'mp3' | 'wav' } = {},
   ): TextToSpeechController {
     const controller = new AbortController();
     const signal = options.signal
       ? mergeSignals(options.signal, controller.signal)
       : controller.signal;
 
-    void this.run(text, handlers, options.voice, signal);
+    void this.run(text, handlers, options.voice, signal, options.format ?? 'mp3');
 
     return { stop: () => controller.abort() };
   }
@@ -74,6 +74,7 @@ export class OpenAITtsProvider implements TextToSpeechProvider {
     handlers: TextToSpeechHandlers,
     voice: string | undefined,
     signal: AbortSignal,
+    format: 'mp3' | 'wav',
   ): Promise<void> {
     if (!this.apiKey) {
       handlers.onError('Clé API manquante pour la synthèse OpenAI.');
@@ -92,7 +93,7 @@ export class OpenAITtsProvider implements TextToSpeechProvider {
           model: this.model,
           voice: voice || OPENAI_TTS_VOICES[0]!.id,
           input: text,
-          response_format: 'mp3',
+          response_format: format,
         }),
         signal,
       });
@@ -102,7 +103,7 @@ export class OpenAITtsProvider implements TextToSpeechProvider {
       }
 
       const data = new Uint8Array(await response.arrayBuffer());
-      handlers.onAudio?.({ data, mimeType: 'audio/mpeg' });
+      handlers.onAudio?.({ data, mimeType: format === 'wav' ? 'audio/wav' : 'audio/mpeg' });
       handlers.onEnd?.();
     } catch (error) {
       if (signal.aborted) {
