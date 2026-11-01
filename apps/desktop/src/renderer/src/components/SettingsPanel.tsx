@@ -20,6 +20,7 @@ import { SpotifySettingsSection } from '@/components/SpotifySettings';
 import { GoogleSettingsSection } from '@/components/GoogleSettings';
 import { SiteBlockSettingsSection } from '@/components/SiteBlockSettings';
 import { RoverSettingsSection } from '@/components/RoverSettings';
+import { PhoneSettingsSection } from '@/components/PhoneSettings';
 import { PersonalizationSettingsSection } from '@/components/PersonalizationSettings';
 import { KnowledgeSettingsSection } from '@/components/KnowledgeSettings';
 import { UpdateSettingsSection } from '@/components/UpdateSettings';
@@ -348,6 +349,9 @@ export function SettingsPanel({ settings, status, onSaved, requestedTab, onAnaly
             token={draft.roverToken ?? ''}
             onChange={(values) => patch(values)}
           />
+      </TabPanel>
+      <TabPanel id="phone" active={tab}>
+          <PhoneSettingsSection />
       </TabPanel>
       <TabPanel id="tools" active={tab}>
           <div className="flex flex-col gap-3">

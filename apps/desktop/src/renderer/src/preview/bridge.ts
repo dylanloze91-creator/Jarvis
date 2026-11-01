@@ -13,6 +13,7 @@ import type {
   GoogleStatus,
   JarvisApi,
   MachineSnapshot,
+  PhoneStatus,
   ToolInfo,
   WakeLearningStatus,
   WindowChrome,
@@ -35,6 +36,17 @@ export function installPreviewBridge(): void {
     stayVisibleOnBlur: true,
   };
   const listeners = new Set<(event: ChatEvent) => void>();
+  let phone: PhoneStatus = {
+    enabled: false,
+    running: false,
+    port: 53130,
+    error: null,
+    tailscale: { installed: true, online: true, dnsName: 'pc-de-dylan.tail1a2b.ts.net', served: true },
+    url: 'https://pc-de-dylan.tail1a2b.ts.net/',
+    serveCommand: 'tailscale serve --bg 53130',
+    devices: [],
+    pairing: null,
+  };
 
   const status = () => ({
     providerId: settings.provider,
@@ -314,6 +326,18 @@ export function installPreviewBridge(): void {
       onTranscribe: () => () => undefined,
       reportProgress: () => undefined,
       reportResult: () => undefined,
+    },
+    phone: {
+      status: async () => phone,
+      setEnabled: async (enabled: boolean) => (phone = { ...phone, enabled, running: enabled, pairing: enabled ? phone.pairing : null }),
+      startPairing: async () =>
+        (phone = {
+          ...phone,
+          pairing: { code: '482913', expiresAt: Date.now() + 600_000, url: 'https://pc-de-dylan.tail1a2b.ts.net/#code=482913' },
+        }),
+      cancelPairing: async () => (phone = { ...phone, pairing: null }),
+      revoke: async (id: string) => (phone = { ...phone, devices: phone.devices.filter((device) => device.id !== id) }),
+      onEvent: () => () => undefined,
     },
     update: {
       getState: async () => ({

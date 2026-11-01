@@ -467,8 +467,22 @@ export {
 export * from './speech/wakeLearning/index.js';
 export * from './speech/endOfSpeech.js';
 export {
+  ADDRESSEE_SYSTEM_PROMPT,
+  DEFAULT_FOLLOW_UP_SECONDS,
+  addresseeCheckEnabled,
+  addresseeUserPrompt,
+  followUpAddressee,
+  followUpWindowMs,
+  parseAddresseeReply,
+  stripTrailingWakeWord,
+  wakeWordAddress,
+  type AddresseeVerdict,
+  type WakeAddress,
+} from './speech/addressee.js';
+export {
   ConversationSession,
   FOLLOW_UP_WINDOW_MS,
+  type ConversationSessionOptions,
   WAKE_GRACE_MS,
   classifySpokenTurn,
   isConversationStop,
@@ -476,5 +490,7 @@ export {
   type SpokenTurnDecision,
 } from './speech/conversationSession.js';
 export * from './google/index.js';
+export * from './phone/phone.js';
+export { encodeQr, qrSvgPath, QR_MAX_VERSION, type QrMatrix } from './qr/qrCode.js';
 export * from './rover/index.js';
 export * from './developer/index.js';

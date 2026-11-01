@@ -138,7 +138,39 @@ export const IpcChannel = {
   machinePullCancel: 'machine:pull-cancel',
   machinePullEvent: 'machine:pull-event',
   machineApply: 'machine:apply',
+  phoneStatus: 'phone:status',
+  phoneSetEnabled: 'phone:set-enabled',
+  phoneStartPairing: 'phone:start-pairing',
+  phoneCancelPairing: 'phone:cancel-pairing',
+  phoneRevoke: 'phone:revoke',
+  phoneEvent: 'phone:event',
 } as const;
+
+/** 5.0.63 — Jarvis sur le téléphone : état montré dans Réglages → Téléphone. */
+export interface PhoneStatus {
+  /** Interrupteur « Accès depuis le téléphone » (coupé par défaut). */
+  enabled: boolean;
+  /** Le serveur local (127.0.0.1) tourne. */
+  running: boolean;
+  port: number;
+  /** Raison d'un démarrage raté (port pris…), sinon `null`. */
+  error: string | null;
+  tailscale: {
+    installed: boolean;
+    online: boolean;
+    /** Nom du PC sur le réseau Tailscale (ex. `pc-de-dylan.tail1a2b.ts.net`). */
+    dnsName: string | null;
+    /** Jarvis est publié en HTTPS par `tailscale serve` ; `null` = inconnu. */
+    served: boolean | null;
+  };
+  /** Adresse à ouvrir sur le téléphone. */
+  url: string | null;
+  /** Commande à taper une fois dans PowerShell. */
+  serveCommand: string;
+  devices: Array<{ id: string; name: string; createdAt: number }>;
+  /** Code de jumelage en cours (6 chiffres, 10 minutes) et adresse du QR code. */
+  pairing: { code: string; expiresAt: number; url: string | null } | null;
+}
 
 export interface MachineSetupStatus {
   /** Vrai seulement au premier lancement, tant que le profil n’est pas enregistré. */
@@ -183,6 +215,11 @@ export interface SendChatInput {
    * touche jamais le contenu affiché ni celui persisté dans l'historique.
    */
   source?: 'voice' | 'text';
+  /**
+   * 5.0.62 — phrase vocale dite **sans** « Jarvis », pendant la discussion. La session vérifie
+   * d'abord qu'elle lui est adressée ; sinon `not_addressed` et rien n'est enregistré.
+   */
+  followUp?: boolean;
 }
 
 export interface SpotifyStatus {
@@ -304,6 +341,11 @@ export type ChatEvent =
       content: string;
     }
   | { type: 'error'; message: string }
+  /**
+   * 5.0.62 — la phrase de suivi ne s'adressait pas à Jarvis (conversation dans la pièce) :
+   * pas de tour, pas d'historique, et la discussion vocale se ferme. Seul événement envoyé.
+   */
+  | { type: 'not_addressed'; text: string }
   | { type: 'done'; conversationId: string; messages: ChatMessage[] };
 
 export type WindowChrome = 'compact' | 'dashboard';
@@ -540,6 +582,16 @@ export interface JarvisApi {
     onTranscribe(listener: (request: YoutubeTranscribeRequest) => void): () => void;
     reportProgress(payload: YoutubeTranscribeProgress): void;
     reportResult(payload: YoutubeTranscribeResult): void;
+  };
+  /** 5.0.63 — accès depuis le téléphone (Tailscale). */
+  phone: {
+    status(): Promise<PhoneStatus>;
+    setEnabled(enabled: boolean): Promise<PhoneStatus>;
+    startPairing(): Promise<PhoneStatus>;
+    cancelPairing(): Promise<PhoneStatus>;
+    revoke(deviceId: string): Promise<PhoneStatus>;
+    /** Appareil relié depuis le téléphone pendant que les réglages sont ouverts. */
+    onEvent(listener: (status: PhoneStatus) => void): () => void;
   };
   update: {
     getState(): Promise<UpdateState>;

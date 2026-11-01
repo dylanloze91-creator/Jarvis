@@ -45,6 +45,8 @@ import { createGoogleRuntime } from './google/runtime.js';
 import { PersonalizationStore } from './personalization.js';
 import { KnowledgeStore } from './knowledge.js';
 import { ChatSession } from './session.js';
+import { PhoneService } from './phone/service.js';
+import { PhoneStore } from './phone/store.js';
 import { FileConversationStore, readSettings, settingsFileExists, writeSettings } from './store.js';
 import { readMachineSnapshot } from './machineStats.js';
 import { createToolManager } from './tools/index.js';
@@ -217,6 +219,45 @@ const session = new ChatSession({
   localLearning,
 });
 
+// 5.0.63 — téléphone : une session de chat à part (un tour sur le téléphone n'annule pas celui de
+// la fenêtre), mêmes outils, même historique, mêmes confirmations (affichées sur le téléphone).
+const phoneSession = new ChatSession({
+  registry,
+  get tools() {
+    return tools;
+  },
+  store,
+  auditLog,
+  voice,
+  getSettings: () => settings,
+  personalization,
+  knowledge,
+  localLearning,
+});
+const phone = new PhoneService({
+  store: PhoneStore.inUserData(() => app.getPath('userData')),
+  chat: {
+    send: async (sender, input) => {
+      chatActivity.begin();
+      try {
+        await phoneSession.send(sender as unknown as Electron.WebContents, input);
+      } finally {
+        chatActivity.end();
+      }
+    },
+    respondConfirmation: (requestId, approved) => phoneSession.respondConfirmation(requestId, approved),
+    cancel: () => phoneSession.cancel(),
+  },
+  conversation: (id) => store.get(id),
+  icon: () => readFile(join(__dirname, '../../resources/icon.png')),
+  version: () => app.getVersion(),
+  log: (line) => console.info(line),
+  broadcast: (status) => {
+    const contents = overlay?.browserWindow.webContents;
+    if (contents && !contents.isDestroyed()) contents.send(IpcChannel.phoneEvent, status);
+  },
+});
+
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
@@ -245,6 +286,8 @@ async function bootstrap(): Promise<void> {
   // Pas attendu : la fenêtre ne patiente pas pour lire les jetons Google.
   // Profil modeste et premier lancement : Google n’est chargé qu’à l’ouverture des réglages.
   startGoogleIfAllowed();
+  // Coupé par défaut : sans « Accès depuis le téléphone », aucun port n'est ouvert.
+  void phone.init().catch((error: unknown) => console.error(error));
   registerVoiceAssetsProtocol();
   voiceCaptureLog.append(
     `[démarrage] Jarvis ${app.getVersion()} · Electron ${process.versions.electron} · Chromium ${process.versions.chrome} · ${process.platform} ${process.arch} · écoute ${settings.voice.enabled ? 'activée' : 'coupée'}`,
@@ -569,6 +612,14 @@ function registerIpc(): void {
     if (typeof level === 'number' && Number.isFinite(level)) listeningIndicator?.setLevel(level);
   });
 
+  ipcMain.handle(IpcChannel.phoneStatus, () => phone.status());
+  ipcMain.handle(IpcChannel.phoneSetEnabled, (_event, enabled: unknown) => phone.setEnabled(enabled === true));
+  ipcMain.handle(IpcChannel.phoneStartPairing, () => phone.startPairing());
+  ipcMain.handle(IpcChannel.phoneCancelPairing, () => phone.cancelPairing());
+  ipcMain.handle(IpcChannel.phoneRevoke, (_event, id: unknown) =>
+    typeof id === 'string' && id.length <= 100 ? phone.revoke(id) : phone.status(false),
+  );
+
   ipcMain.handle(IpcChannel.updateGetState, () => updateManager.getState());
   ipcMain.handle(IpcChannel.updateCheck, () => updateManager.checkNow());
   ipcMain.handle(IpcChannel.updateInstall, () => updateManager.quitAndInstall());
@@ -631,5 +682,6 @@ app.on('window-all-closed', () => {
 
 app.on('will-quit', () => {
   globalShortcut.unregisterAll();
+  void phone.stop();
   updateManager.stop();
 });
