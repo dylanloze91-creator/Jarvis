@@ -25,6 +25,7 @@ Statuts possibles : `en cours`, `en pause`, `bloqué`, `terminé`.
 | Cursor | `cursor/lint-propre` | Lint à zéro | — | 2026-10-30 | terminé |
 | Claude Code | `claude/generateur-5061` | Intégration terminée, 5.0.61 publiée | — | 2026-10-30 | terminé |
 | Cursor | `cursor/jarvis-rover` | Publier le module Robot dans main | — | 2026-10-31 | terminé |
+| Cursor | `cursor/publication-5063` | Publication 5.0.63 | `release.sh`, `package.json`, `apps/desktop/package.json`, `CLAUDE.md`, `AGENTS-COORDINATION.md`, `rapports/2026-11-01-publication-5063.md` | 2026-11-01 | en cours |
 
 ## Ressource GPU / Ollama
 
