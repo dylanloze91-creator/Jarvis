@@ -99,10 +99,12 @@ export function UnifiedJarvisChat({
             <div className="dash-loading">Démarrage de Jarvis…</div>
           ) : chat.items.length === 0 ? (
             <div className="dash-empty">
-              Aucune conversation.
-              <br />
-              Dis « Jarvis », puis pose une question. Pour coder une appli, un jeu de plateforme ou un
-              .exe Windows, ouvre l’onglet <strong>Développeur</strong>.
+              <p>
+                Aucune conversation.
+                <br />
+                Dis « Jarvis », puis pose une question. Pour coder une appli, un jeu de plateforme ou
+                un .exe Windows, ouvre l’onglet <strong>Développeur</strong>.
+              </p>
             </div>
           ) : (
             <Messages items={chat.items} scrollParentRef={scrollRef} />

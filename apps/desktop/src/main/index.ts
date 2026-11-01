@@ -322,7 +322,7 @@ async function bootstrap(): Promise<void> {
   );
 
   // En développement, garder la fenêtre visible quand le focus part (devtools, éditeur).
-  overlay = createOverlayWindow(!settings.stayVisibleOnBlur && !isDev);
+  overlay = createOverlayWindow(!settings.stayVisibleOnBlur && !isDev, () => quitting);
   registerIpc();
   const window = overlay.browserWindow;
   listeningIndicator = new ListeningIndicatorWindow(
@@ -337,7 +337,12 @@ async function bootstrap(): Promise<void> {
     },
     () => loadRenderer(window),
   );
-  registerHotkey(settings.hotkey);
+  // 5.0.64 : un raccourci déjà pris au démarrage (ou mal écrit) laissait Jarvis sans
+  // porte d'entrée ; comme à l'enregistrement, on retombe sur Control+Space.
+  if (!registerHotkey(settings.hotkey) && settings.hotkey !== 'Control+Space') {
+    console.warn(`[jarvis] raccourci « ${settings.hotkey} » refusé par le système : Control+Space`);
+    registerHotkey('Control+Space');
+  }
   createTray();
 
   // Poussé à l'interface dès qu'un état change (vérification, téléchargement,
@@ -675,6 +680,12 @@ function sanitizeRoverCredentials(credentials: unknown): { baseUrl?: string; tok
     token: typeof value.token === 'string' ? value.token.slice(0, 300) : undefined,
   };
 }
+
+/** Vrai dès `before-quit` : la fenêtre principale se laisse fermer (voir `window.ts`). */
+let quitting = false;
+app.on('before-quit', () => {
+  quitting = true;
+});
 
 app.on('window-all-closed', () => {
   // L'assistant vit dans la zone de notification : fermer la fenêtre ne quitte pas.

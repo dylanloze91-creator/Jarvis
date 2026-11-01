@@ -26,7 +26,15 @@ const INTERJECTIONS = new Set([
   'bon', 'ok', 'okay', 'oke', 'alors', 'eh', 'he', 'hey', 'dis', 'euh', 'heu', 'salut', 'bonjour', 'bonsoir',
   'coucou', 'allez', 'oui', 'non', 'bah', 'ben', 'bref', 'donc', 'hop', 'yo', 'merci', 'stp', 'pardon', 'ecoute',
   'dismoi', 'moi', 'aussi', 'et', 'ah', 'oh',
+  // 5.0.64 : « Attends Jarvis », « Voilà Jarvis », « Maintenant Jarvis ouvre Chrome », « Allô Jarvis »,
+  // « Excuse-moi Jarvis », « Au fait Jarvis », « Et toi Jarvis » ; avant, tout cela passait pour une mention.
+  'attends', 'attend', 'voila', 'maintenant', 'allo', 'excuse', 'excusemoi', 'excusez', 'excusezmoi',
+  'sil', 'te', 'plait', 'vous', 'au', 'fait', 'toi', 'sinon', 'puis', 'ensuite', 'bien', 'ouais', 'super',
+  'parfait', 'daccord', 'ecoutez', 'tiens', 'hum', 'hmm', 'putain', 'is',
 ]);
+
+/** Mots de politesse après « Jarvis » en fin de phrase : « Quelle heure est-il Jarvis s'il te plaît ». */
+const TRAILING_POLITENESS = new Set(['sil', 'te', 'vous', 'plait', 'stp', 'svp', 'merci', 'sil-te-plait', 'silteplait']);
 
 /** Mots qui, juste avant « Jarvis », disent qu'on parle de lui (« le Jarvis », « tu connais Jarvis »). */
 const MENTION_MARKERS = new Set([
@@ -52,7 +60,7 @@ function words(text: string): Word[] {
     const after = text.slice(match.index + match[0].length).trimStart();
     out.push({
       plain: normalizeForWakeWordMatch(match[0]).replace(/\s+/g, ''),
-      commaBefore: /[,;:—–-]$/.test(before),
+      commaBefore: /[,;:—–\-.?!…]$/.test(before),
       commaAfter: /^[,;:—–-]/.test(after) || /^[?!.…]/.test(after),
     });
   }
@@ -86,8 +94,11 @@ export function wakeWordAddress(transcript: string, config: WakeWordTextMatchCon
   if (MENTION_MARKERS.has(previous)) return 'mention';
   // En apostrophe : « Dis-moi, Jarvis, quelle heure… », « Quelle heure est-il, Jarvis ? ».
   if (wake.commaBefore && (after.length === 0 || wake.commaAfter)) return 'address';
-  // En fin de phrase sans virgule : « C'est quoi la météo Jarvis ».
-  if (after.length === 0) return 'address';
+  // 5.0.64 : une virgule ou une ponctuation juste après = on l'appelle (« Attends Jarvis, ouvre Chrome »,
+  // fragment Whisper « is Jarvis, ouvre Chrome »), sauf après un mot qui parle de lui (testé plus haut).
+  if (wake.commaAfter) return 'address';
+  // En fin de phrase sans virgule : « C'est quoi la météo Jarvis », « … Jarvis s'il te plaît ».
+  if (after.every((word) => TRAILING_POLITENESS.has(word.plain))) return 'address';
   return 'mention';
 }
 
@@ -109,7 +120,7 @@ const COMMAND_START =
   /^(?:et\s+)?(?:ouvre|ferme|lance|mets|met|joue|arr[eê]te|coupe|baisse|monte|augmente|diminue|cherche|trouve|lis|montre|affiche|dis[- ]moi|donne|calcule|rappelle|ajoute|supprime|enl[eè]ve|cr[ée]e|envoie|[ée]cris|r[ée]sume|traduis|explique|continue|recommence|refais|r[ée]p[eè]te|passe|reprends|pause|suivant|pr[ée]c[ée]dent|bloque|d[ée]bloque|active|d[ée]sactive|v[ée]rifie|regarde|note|retiens|oublie|programme|planifie|annule|valide|confirme|r[ée]ponds)\b/iu;
 const SECOND_PERSON_QUESTION =
   /^(?:et\s+)?(?:est[- ]ce que (?:tu|vous)|peux[- ]tu|pourrais[- ]tu|tu (?:peux|pourrais|sais|connais|as|veux|penses|crois)|sais[- ]tu|as[- ]tu|connais[- ]tu)\b/iu;
-const SHORT_FOLLOW_UP = /^(?:et\s+(?:demain|apr[eè]s|maintenant|ensuite|pour|si|le|la|les|l['’]|en|avec|celui|celle|[àa])\b|merci\b|oui\b|non\b|d['’]accord\b|ok\b|vas[- ]y\b|parfait\b|super\b)/iu;
+const SHORT_FOLLOW_UP = /^(?:et\s+(?:(?:demain|apr[eè]s|maintenant|ensuite|pour|si|le|la|les|l['’]|en|avec|celui|celle|a)\b|à)|merci\b|oui\b|non\b|d['’]accord\b|ok\b|vas[- ]y\b|parfait\b|super\b)/iu;
 
 /**
  * Règles sûres pour une parole sans mot de réveil, pendant la discussion. `unsure` : la session

@@ -249,9 +249,10 @@ export function dedupeResults(results: SearchResultItem[]): SearchResultItem[] {
       // URL déjà validée par le fournisseur ; clé brute à défaut.
     }
     const titleKey = item.title.toLowerCase().replace(/\s+/g, ' ').trim();
-    if (seen.has(key) || seen.has(titleKey)) continue;
+    // 5.0.64 : un résultat sans titre ne doit pas faire « doublon » avec tous les suivants sans titre.
+    if (seen.has(key) || (titleKey && seen.has(titleKey))) continue;
     seen.add(key);
-    seen.add(titleKey);
+    if (titleKey) seen.add(titleKey);
     out.push(item);
   }
   return out;

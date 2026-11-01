@@ -5,14 +5,15 @@
  */
 
 const SECRET_KEY =
-  /^(api[_-]?key|access[_-]?token|refresh[_-]?token|id[_-]?token|client[_-]?secret|authorization|auth|token|siteblocktoken|site[_-]?block[_-]?token|rover[_-]?token|spotifytoken|bearer|google[_-]?client[_-]?secret|code[_-]?verifier)$/i;
+  /^(api[_-]?key|access[_-]?token|refresh[_-]?token|id[_-]?token|client[_-]?secret|authorization|auth|token|siteblocktoken|site[_-]?block[_-]?token|rover[_-]?token|spotifytoken|bearer|google[_-]?client[_-]?secret|code[_-]?verifier|password|passwd|mot[_-]?de[_-]?passe|secret|api[_-]?secret|private[_-]?key)$/i;
 
 /** Noms préfixés de settings.json : `searchApiKey` (Tavily, Brave), `marketDataApiKey` (Finnhub)… */
 const SECRET_KEY_SUFFIX = /(api[_-]?key|client[_-]?secret)$/i;
 
 const INLINE_PATTERNS: Array<{ pattern: RegExp; replace: string }> = [
   { pattern: /\b(Bearer\s+)[A-Za-z0-9._~+/-]{8,}/gi, replace: '$1[REDACTED]' },
-  { pattern: /\b(sk-[A-Za-z0-9]{8,})/g, replace: '[REDACTED]' },
+  // `sk-proj-…` (OpenAI depuis 2024) : le tiret arrêtait l'ancien motif après « sk-proj ».
+  { pattern: /\b(sk-[A-Za-z0-9_-]{8,})/g, replace: '[REDACTED]' },
   { pattern: /\b(sk-ant-[A-Za-z0-9_-]{8,})/g, replace: '[REDACTED]' },
   { pattern: /\b(AIza[0-9A-Za-z_-]{10,})/g, replace: '[REDACTED]' },
   { pattern: /\b(ghp_[A-Za-z0-9]{8,})/g, replace: '[REDACTED]' },

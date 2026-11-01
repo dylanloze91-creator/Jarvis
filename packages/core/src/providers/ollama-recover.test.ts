@@ -126,3 +126,21 @@ describe('récupération des appels d’outils écrits en texte (option du modè
     expect(events[0]).toMatchObject({ type: 'tool_call', call: { arguments: { path: 'a.mjs', content: 'x\ny' } } });
   });
 });
+
+describe('5.0.64 — texte retenu puis rendu', () => {
+  it('une réponse JSON qui commence par {"name": sans être un appel est affichée (bulle vide avant)', async () => {
+    const { error, events } = await run(undefined, '{"name": "Jarvis", "version": "5.0.5", "auteur": "Dylan"}', undefined);
+    expect(error).toBeNull();
+    const text = events.filter((event) => event.type === 'text').map((event) => (event as { delta: string }).delta).join('');
+    expect(text).toContain('"auteur": "Dylan"');
+  });
+
+  it('en mode relu, la balise <tool_call> et son JSON ne sont pas affichés comme du texte', async () => {
+    const { error, events } = await run({ recoverToolCalls: true }, `Je vais lire le fichier maintenant, attends. ${LEAKED}`, TOOLS);
+    expect(error).toBeNull();
+    const text = events.filter((event) => event.type === 'text').map((event) => (event as { delta: string }).delta).join('');
+    expect(text).not.toContain('<tool_call');
+    expect(text).toContain('Je vais lire le fichier');
+    expect(events.filter((event) => event.type === 'tool_call')).toHaveLength(1);
+  });
+});

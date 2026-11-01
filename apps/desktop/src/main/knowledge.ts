@@ -91,22 +91,32 @@ export const MEMORY_SECTIONS: MemorySection[] = [
   'conversations',
 ];
 
-const BLOCKED_FOLDER_NAMES = new Set([
+/**
+ * Dossiers système refusés à l'indexation, reconnus **à la racine du chemin**
+ * seulement : `C:\Windows\…`, `C:\Program Files\…`, `/etc/…`. Avant 5.0.64,
+ * un segment interdit n'importe où suffisait, et `C:\dev\Jarvis` (le chemin
+ * proposé par Jarvis lui-même) ou tout dossier `bin/` étaient refusés.
+ */
+const BLOCKED_WINDOWS_ROOTS = new Set([
   'windows',
   'program files',
   'program files (x86)',
   'programdata',
-  'system32',
-  'syswow64',
   '$recycle.bin',
+  'system volume information',
+]);
+const BLOCKED_POSIX_ROOTS = new Set([
   'etc',
   'usr',
   'bin',
   'sbin',
+  'lib',
+  'lib64',
   'sys',
   'proc',
   'dev',
   'root',
+  'boot',
 ]);
 
 export class KnowledgeStore {
@@ -418,6 +428,9 @@ export class KnowledgeStore {
     await this.mutate((index) => {
       index.chunks = [];
     });
+    // 5.0.64 : les textes de `remember_jarvis` sont aussi copiés dans `memory/*.json` ;
+    // « effacer la mémoire » les retirait de l'index mais les laissait sur le disque.
+    await rm(this.memoryRoot(), { recursive: true, force: true }).catch(() => undefined);
   }
 
   async stats(): Promise<KnowledgeStats> {
@@ -641,11 +654,15 @@ function isAbsolutePath(value: string): boolean {
   return isAbsolute(value) || /^[a-zA-Z]:[\\/]/.test(value);
 }
 
-function isBlockedFolder(folder: string): boolean {
+export function isBlockedFolder(folder: string): boolean {
   const parts = folder.replace(/\\/g, '/').split('/').filter(Boolean);
   if (parts.length === 0) return true;
-  if (parts.length === 1 && /^[a-zA-Z]:$/.test(parts[0] ?? '')) return true;
-  return parts.some((part) => BLOCKED_FOLDER_NAMES.has(part.toLowerCase()));
+  const drive = /^[a-zA-Z]:$/.test(parts[0] ?? '');
+  if (drive) {
+    if (parts.length === 1) return true;
+    return BLOCKED_WINDOWS_ROOTS.has((parts[1] ?? '').toLowerCase());
+  }
+  return BLOCKED_POSIX_ROOTS.has((parts[0] ?? '').toLowerCase());
 }
 
 function validChunk(value: unknown): value is KnowledgeChunk {

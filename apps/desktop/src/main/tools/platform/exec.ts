@@ -53,7 +53,15 @@ export function run(
       child.kill('SIGTERM');
       // Laisse une seconde pour un arrêt propre avant de forcer.
       setTimeout(() => {
-        if (!settled) child.kill('SIGKILL');
+        if (settled) return;
+        // 5.0.64 : sous Windows, `kill` n'atteint que `cmd.exe` ; le programme lancé par
+        // lui continuait alors que l'outil annonçait « commande interrompue ».
+        if (process.platform === 'win32' && child.pid) {
+          spawn('taskkill', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' })
+            .on('error', () => child.kill('SIGKILL'));
+          return;
+        }
+        child.kill('SIGKILL');
       }, 1000);
     }, timeoutMs);
 

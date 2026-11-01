@@ -14,7 +14,7 @@
 import type { ChatMessage } from '../types.js';
 import type { ProviderConfig } from '../providers/types.js';
 import { extractKnowledgeIntent } from '../knowledge/intent.js';
-import { looksLikeGoogleIntent, recentlyUsedGoogleTools } from '../google/intent.js';
+import { looksLikeGoogleIntent } from '../google/intent.js';
 import { isCurrentTrackQuestion } from '../media/currentTrackIntent.js';
 import { isMusicIntent } from '../media/playIntent.js';
 import { extractSiteBlockIntent } from '../siteblock/intent.js';
@@ -44,17 +44,19 @@ export interface ArithmeticAnswer {
   reply: string;
 }
 
+/** Formes « date / plage / numéro » sans mot d'appel : jamais un calcul. */
+const DATE_OR_RANGE = /^(?:\d{1,4}(?:-\d{1,4}){1,}|\d{1,2}\/\d{1,2}\/\d{2,4}|\d{2}(?:[ .]\d{2}){4})$/u;
+
 const LEAD = /^(?:dis[- ]moi\s+)?(?:combien\s+(?:font|fait|ça fait|ca fait|donne)|calcule(?:\s+moi)?|ça fait combien|ca fait combien|c['’]est combien|quel est le résultat de|résultat de)\s*:?\s*/iu;
 
 /** Convertit une phrase en opération (`*`, `/`, `^`) ; `null` si un mot reste. */
 export function arithmeticExpression(text: string): string | null {
-  let expression = text
-    .trim()
-    .replace(/[?!.\s]+$/u, '')
-    .replace(LEAD, '')
-    .replace(/^jarvis[,\s]+/iu, '')
-    .replace(LEAD, '');
+  const trimmed = text.trim().replace(/[?!.\s]+$/u, '');
+  let expression = trimmed.replace(LEAD, '').replace(/^jarvis[,\s]+/iu, '').replace(LEAD, '');
   if (!/\d/.test(expression)) return null;
+  // 5.0.64 : une date, un numéro ou une plage tapés seuls (« 2024-11-01 », « 06-12-34-56-78 »,
+  // « 14-18 », « 12/10/2024 ») ne sont pas des soustractions ni des divisions.
+  if (expression === trimmed && DATE_OR_RANGE.test(expression)) return null;
   expression = expression
     .replace(/(\d)[\s\u202f\u00a0](?=\d{3}\b)/gu, '$1')
     .replace(/(\d),(\d)/g, '$1.$2')
@@ -184,7 +186,7 @@ export function clockReply(text: string, now: Date, timeZone?: string): string |
       year: 'numeric',
       ...(timeZone ? { timeZone } : {}),
     }).format(now);
-    return `Nous sommes le ${date}.`;
+    return `Nous sommes le ${firstOfMonth(date)}.`;
   }
   return null;
 }
@@ -208,7 +210,9 @@ export function expressTeam(input: ExpressInput): OrchestraTeam | null {
   const pick = (team: OrchestraTeam) => (input.available.has(team) ? team : null);
   if (extractYoutubeUrl(text)) return pick('web');
   if (isMusicIntent(text) || isCurrentTrackQuestion(text)) return pick('musique');
-  if (looksLikeGoogleIntent(text) || recentlyUsedGoogleTools([...input.history])) {
+  // 5.0.64 : le suivi d'un tour Google n'est plus forcé vers l'équipe Google (« ouvre Chrome »
+  // juste après un mail y partait, sans outil du PC) : le cerveau tranche avec les derniers échanges.
+  if (looksLikeGoogleIntent(text)) {
     const google = pick('google');
     if (google) return google;
   }
@@ -332,4 +336,9 @@ export function activeOrchestra(settings: {
   const orchestra = settings.orchestra;
   if (!orchestra?.enabled || settings.provider !== 'ollama' || !orchestra.brain.trim()) return null;
   return { brain: orchestra.brain.trim(), teams: orchestra.teams ?? {} };
+}
+
+/** 5.0.64 : « 1 novembre » → « 1er novembre » (dit par la synthèse, lu dans les prompts). */
+export function firstOfMonth(formatted: string): string {
+  return formatted.replace(/(^|\s)1 (?=\p{L})/u, '$11er ');
 }

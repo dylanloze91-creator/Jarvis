@@ -321,7 +321,9 @@ export class ChatSession {
               status: event.outcome.status,
               content: event.outcome.content,
             });
-            void this.deps.auditLog.append(buildAuditEntry(event.outcome));
+            void this.deps.auditLog
+              .append(buildAuditEntry(event.outcome))
+              .catch((error: unknown) => console.error('[jarvis] journal d’audit non écrit :', error));
             break;
           case 'error':
             visibleReply = true;
@@ -363,7 +365,8 @@ export class ChatSession {
       )
       .catch(() => undefined);
     void this.deps.localLearning.recordTurn(updated.id, updated.messages).catch(() => undefined);
-    if (!visibleReply) {
+    // 5.0.64 : un tour interrompu par l'utilisateur (bouton Arrêter) n'est pas un échec.
+    if (!visibleReply && !controller.signal.aborted) {
       emit({
         type: 'error',
         message: 'Je n’ai pas pu répondre. Réessaie dans un instant.',

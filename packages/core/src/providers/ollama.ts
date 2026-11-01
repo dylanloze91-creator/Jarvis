@@ -170,6 +170,7 @@ export class OllamaProvider implements LLMProvider {
     let fullText = '';
     let sniffed = plainTextOnly;
     let leakedMode = false;
+    let recoverHold = false;
     let holdBuffer = '';
 
     const emitSniffed = (): ChatStreamEvent | null => {
@@ -198,7 +199,16 @@ export class OllamaProvider implements LLMProvider {
             if (event) yield event;
           }
         } else if (!leakedMode) {
-          yield { type: 'text', delta: content };
+          // 5.0.64 (mode « appels relus ») : dès qu'un `<tool_call>` écrit en texte commence, on
+          // garde le reste pour la relecture au lieu d'afficher la balise et son JSON.
+          if (recover && !recoverHold && fullText.includes('<tool_call')) {
+            recoverHold = true;
+            const start = fullText.indexOf('<tool_call') - (fullText.length - content.length);
+            const visible = start > 0 ? content.slice(0, start) : '';
+            if (visible) yield { type: 'text', delta: visible };
+          } else if (!recoverHold) {
+            yield { type: 'text', delta: content };
+          }
         }
       }
 
@@ -266,6 +276,11 @@ export class OllamaProvider implements LLMProvider {
     const leaked = detectLeakedToolCallAttempt(fullText);
     if (leaked) {
       throw new ProviderError(buildLeakedToolCallMessage(leaked), undefined, leaked.raw);
+    }
+    // 5.0.64 : une réponse qui commence comme un appel d'outil (`{"name": …`) sans en être un
+    // (réponse JSON demandée par l'utilisateur) était retenue puis jamais affichée : bulle vide.
+    if ((leakedMode || recoverHold) && fullText.trim()) {
+      yield { type: 'text', delta: recoverHold ? fullText.slice(fullText.indexOf('<tool_call')) : fullText };
     }
 
     const finishReason: FinishReason = doneReason === 'length' ? 'length' : 'stop';

@@ -27,6 +27,7 @@ import { UpdateSettingsSection } from '@/components/UpdateSettings';
 import { VoiceSettingsSection } from '@/components/VoiceSettings';
 import { SettingsTabBar, TabPanel, type SettingsTabId } from '@/components/SettingsTabs';
 import { DeveloperSettingsSection } from '@/components/developer/DeveloperSettings';
+import { settingsPatch } from '@/lib/settingsPatch';
 import type { RuntimeStatus } from '../../../shared/ipc';
 
 /** Onglet rouvert à la prochaine visite des réglages (session en cours). */
@@ -136,7 +137,7 @@ export function SettingsPanel({ settings, status, onSaved, requestedTab, onAnaly
     const wanted = { ...draft, fallbackModel: draft.fallbackModel.trim() || 'qwen2.5:3b' };
     setSaveNotice(null);
     void window.jarvis.settings
-      .set(wanted)
+      .set(settingsPatch(settings, wanted))
       .then((payload) => {
         dirty.current = false;
         keptDraft = null;

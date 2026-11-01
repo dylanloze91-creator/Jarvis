@@ -131,6 +131,8 @@ export interface RegisteredTool {
   jsonSchema: Record<string, unknown>;
   summarize: (input: unknown) => string;
   describeCommand: (input: unknown) => string | undefined;
+  /** 5.0.64 : message d'erreur si les arguments ne passent pas le schéma, `null` sinon. */
+  validate?: (input: unknown) => string | null;
   /** Voir `ToolDefinition.isAvailable`. Absent = toujours disponible. */
   isAvailable?: () => boolean;
   unavailableMessage?: () => string;

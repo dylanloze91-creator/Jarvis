@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { defaultSettings } from '@jarvis/core';
-import { KnowledgeStore, assertIndexableFolder, extractPdfText } from './knowledge.js';
+import { KnowledgeStore, assertIndexableFolder, extractPdfText, isBlockedFolder } from './knowledge.js';
 
 describe('KnowledgeStore', () => {
   it('garde une correction après redémarrage et retrouve la fiche pertinente', async () => {
@@ -154,8 +154,19 @@ describe('KnowledgeStore', () => {
 
   it('refuse d’indexer la racine ou un dossier Windows', async () => {
     await expect(assertIndexableFolder('C:\\Windows')).rejects.toThrow(/système/i);
+    await expect(assertIndexableFolder('C:\\Program Files\\Jarvis')).rejects.toThrow(/système/i);
     await expect(assertIndexableFolder('/')).rejects.toThrow();
+    await expect(assertIndexableFolder('/etc/nginx')).rejects.toThrow(/système/i);
     await expect(assertIndexableFolder('docs')).rejects.toThrow(/absolu/i);
+  });
+
+  it('5.0.64 : un segment « dev », « bin » ou « root » au milieu du chemin ne bloque plus', () => {
+    expect(isBlockedFolder('C:\\dev\\Jarvis\\docs')).toBe(false);
+    expect(isBlockedFolder('C:\\Users\\dylan\\bin')).toBe(false);
+    expect(isBlockedFolder('/home/user/dev/projets')).toBe(false);
+    expect(isBlockedFolder('C:\\')).toBe(true);
+    expect(isBlockedFolder('D:\\ProgramData\\x')).toBe(true);
+    expect(isBlockedFolder('/usr/share')).toBe(true);
   });
 
   it('indexe le texte lisible d’un PDF simple et ignore le binaire', () => {
