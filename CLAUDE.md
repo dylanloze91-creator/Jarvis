@@ -564,12 +564,13 @@ Demande de l'utilisateur : utiliser Jarvis depuis son iPhone. **Le cerveau reste
 
 ## Updater / GitHub
 
-Dernière publication : **5.0.61** (`https://github.com/dylanloze91-creator/Jarvis/releases/tag/v5.0.61`) — exe, `.blockmap` et `latest.yml` publiés : l’updater intégré la propose.
+Dernière publication : **5.0.63** (`https://github.com/dylanloze91-creator/Jarvis/releases/tag/v5.0.63`) — exe, `.blockmap` et `latest.yml` publiés : l’updater intégré la propose.
 
 - `apps/desktop/electron-builder.yml` : `publish.provider: github`, owner `dylanloze91-creator`, repo `Jarvis`, `releaseType: release`, artifact `Jarvis-Setup-${version}.exe`
 - `apps/desktop/src/main/updater.ts` : contrôle 15 s après le démarrage puis toutes les 4 h ; téléchargement auto ; **installation seulement si l’utilisateur clique**
 - Hors exe packagé, le bouton « Vérifier » lit `latest.yml` public (`packages/core/src/update/feed.ts`, `githubLatestYmlUrl`) **sans jeton**
 - Ne pas committer ni lire un jeton GitHub. Les clés de publication ne font pas partie de cet arbre.
+- `release.sh` (racine) : s'appuie sur le compte déjà connecté dans `gh` (`gh auth status`), aucun fichier de jeton ; typecheck, lint, tests du cœur et du bureau obligatoires ; sans SDK .NET, seuls `dotnetProject.test.ts` et `windowsDesktopMissionPath.test.ts` sont exclus (`vitest --exclude`), tout autre test rouge arrête la publication ; le tag n'est jamais forcé (tag déjà présent sur origin à un autre commit = arrêt) ; `latest.yml` doit annoncer la version publiée.
 
 ---
 

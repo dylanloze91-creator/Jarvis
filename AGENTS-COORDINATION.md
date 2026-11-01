@@ -26,8 +26,8 @@ Statuts possibles : `en cours`, `en pause`, `bloqué`, `terminé`.
 | Claude Code | `claude/generateur-5061` | Intégration terminée, 5.0.61 publiée | — | 2026-10-30 | terminé |
 | Cursor | `cursor/jarvis-rover` | Publier le module Robot dans main | — | 2026-10-31 | terminé |
 | Claude | `claude/voix-5062` | 5.0.62 écoute et avis franc (incluse dans `claude/mobile-5063`) | — | 2026-10-31 | terminé |
-| Claude | `claude/mobile-5063` | 5.0.63 Jarvis sur le téléphone (Tailscale), à fusionner et publier par Cursor | — | 2026-11-01 | terminé |
-| Cursor | `cursor/publication-5063` | Publication 5.0.63 | `release.sh`, `package.json`, `apps/desktop/package.json`, `CLAUDE.md`, `AGENTS-COORDINATION.md`, `rapports/2026-11-01-publication-5063.md` | 2026-11-01 | en cours |
+| Claude | `claude/mobile-5063` | 5.0.63 Jarvis sur le téléphone (Tailscale), fusionnée dans main et publiée (5.0.63) | — | 2026-11-01 | terminé |
+| Cursor | `cursor/publication-5063` | Publication 5.0.63 terminée (fusion de `claude/mobile-5063`, `release.sh` via `gh`, release `v5.0.63`) | — | 2026-11-01 | terminé |
 
 ## Ressource GPU / Ollama
 
