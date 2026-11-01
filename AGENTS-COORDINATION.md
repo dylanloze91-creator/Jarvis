@@ -28,7 +28,7 @@ Statuts possibles : `en cours`, `en pause`, `bloqué`, `terminé`.
 | Claude | `claude/voix-5062` | 5.0.62 écoute et avis franc (incluse dans `claude/mobile-5063`) | — | 2026-10-31 | terminé |
 | Claude | `claude/mobile-5063` | 5.0.63 Jarvis sur le téléphone (Tailscale), fusionnée dans main et publiée (5.0.63) | — | 2026-11-01 | terminé |
 | Cursor | `cursor/publication-5063` | Publication 5.0.63 terminée (fusion de `claude/mobile-5063`, `release.sh` via `gh`, release `v5.0.63`) | — | 2026-11-01 | terminé |
-| Cursor | `cursor/entrainement-5065` | Outils d'entraînement du modèle (5.0.65) | `docs/specs/entrainement-eleve.md`, `packages/core/src/developer/labTrainPrep*.ts`, `packages/core/src/developer/labCompare*.ts`, `packages/core/scripts/lab-prepare.mjs`, `packages/core/scripts/lab-compare.mjs`, `packages/core/package.json`, `training/`, `.gitignore`, `rapports/2026-11-02-entrainement-5065.md`, `CLAUDE.md` (section 5.0.65 seulement) | 2026-11-02 | en cours |
+| Cursor | `cursor/entrainement-5065` | Outils d'entraînement du modèle (5.0.65) : `lab:prepare`, `training/` (QLoRA, export Ollama, carte louée), `lab:compare` ; rien entraîné, pas fusionnée | — | 2026-11-02 | terminé |
 
 ## Ressource GPU / Ollama
 
