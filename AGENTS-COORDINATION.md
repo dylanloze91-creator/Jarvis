@@ -28,6 +28,7 @@ Statuts possibles : `en cours`, `en pause`, `bloqué`, `terminé`.
 | Claude | `claude/voix-5062` | 5.0.62 écoute et avis franc (incluse dans `claude/mobile-5063`) | — | 2026-10-31 | terminé |
 | Claude | `claude/mobile-5063` | 5.0.63 Jarvis sur le téléphone (Tailscale), fusionnée dans main et publiée (5.0.63) | — | 2026-11-01 | terminé |
 | Cursor | `cursor/publication-5063` | Publication 5.0.63 terminée (fusion de `claude/mobile-5063`, `release.sh` via `gh`, release `v5.0.63`) | — | 2026-11-01 | terminé |
+| Cursor | `cursor/verification` | Routine de vérification (ECC 01) | `.cursor/rules/verification.mdc`, `CLAUDE.md` (section « Travail à deux agents »), `AGENTS-COORDINATION.md` | 2026-11-01 | en cours |
 
 ## Ressource GPU / Ollama
 
