@@ -28,7 +28,7 @@ Statuts possibles : `en cours`, `en pause`, `bloqué`, `terminé`.
 | Claude | `claude/voix-5062` | 5.0.62 écoute et avis franc (incluse dans `claude/mobile-5063`) | — | 2026-10-31 | terminé |
 | Claude | `claude/mobile-5063` | 5.0.63 Jarvis sur le téléphone (Tailscale), fusionnée dans main et publiée (5.0.63) | — | 2026-11-01 | terminé |
 | Cursor | `cursor/publication-5063` | Publication 5.0.63 terminée (fusion de `claude/mobile-5063`, `release.sh` via `gh`, release `v5.0.63`) | — | 2026-11-01 | terminé |
-| Claude | `claude/audit-ux-5064` | Audit de l'appli : bogues, lisibilité et ergonomie (interface, session, cœur) | `apps/desktop/src/renderer/src/**`, `apps/desktop/src/main/session.ts`, `apps/desktop/src/shared/ipc.ts`, `apps/desktop/src/main/phone/page.ts`, `packages/core/src/agent/**` | 2026-11-01 | en cours |
+| Claude | `claude/audit-ux-5064` | Audit de l'appli : 35 bogues corrigés + ergonomie (interface, processus principal, cœur), rapport `rapports/2026-11-01-audit-ux-5064.md`, à fusionner après rejeu des tests sur le PC | — | 2026-11-01 | terminé |
 
 ## Ressource GPU / Ollama
 

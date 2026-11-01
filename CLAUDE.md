@@ -1,8 +1,8 @@
-# Jarvis 5.0.5 — contexte pour un autre développeur
+# Jarvis 5.0.63 — contexte pour un autre développeur
 
 Ce fichier est à la **racine du code**. Les chemins ci-dessous partent de ce dossier. Ce n’est pas un résumé marketing : c’est l’état réel de cet arbre. La voix a été refaite dans cet arbre (publiée en 0.4.11, section « Voix ») : la transcription restait « Chargement… 100 % » sur l’installateur Windows. La refonte du tableau de bord est dans cet arbre : fenêtre étroite = overlay, fenêtre large = tableau de bord.
 
-**Version confirmée :** `apps/desktop/package.json` → `"version": "5.0.5"` (correctif de Jarvis 5.0, décision D1 : jamais de suffixe `-beta`). Le `package.json` racine est aligné sur la même version depuis 0.5.0 (il était resté à `0.3.0`), mais il n’est lu par rien : la version qui compte pour l’exe, l’updater et GitHub est celle de `@jarvis/desktop`. `@jarvis/core` reste à `0.1.0`. La voix corrigée en 0.4.11 (installateur Windows) est inchangée. Le modèle par défaut reste `qwen2.5:3b`. `qwen3.5:4b` est le modèle recommandé documenté ; le repli est réglable (`fallbackModel`, défaut `qwen2.5:3b`).
+**Version confirmée :** `apps/desktop/package.json` → `"version": "5.0.63"` (décision D1 : jamais de suffixe `-beta`). La 5.0.64 (audit) est dans cet arbre, pas encore publiée : le numéro sera monté à la publication. Le `package.json` racine est aligné sur la même version depuis 0.5.0 (il était resté à `0.3.0`), mais il n’est lu par rien : la version qui compte pour l’exe, l’updater et GitHub est celle de `@jarvis/desktop`. `@jarvis/core` reste à `0.1.0`. La voix corrigée en 0.4.11 (installateur Windows) est inchangée. Le modèle par défaut reste `qwen2.5:3b`. `qwen3.5:4b` est le modèle recommandé documenté ; le repli est réglable (`fallbackModel`, défaut `qwen2.5:3b`).
 
 Lis ce fichier avant de modifier le code.
 
@@ -62,7 +62,7 @@ Scripts utiles (racine) :
 
 Le script `setup:voice` remplit `apps/desktop/voice-assets/` (runtime ONNX, Whisper, openWakeWord, modèle Vosk français ; non commité, voir `.gitignore`). Premier `dev` / `build` : besoin de réseau.
 
-L’installateur publié est `Jarvis-Setup-5.0.5.exe` (release GitHub `v5.0.5`).
+L’installateur publié est `Jarvis-Setup-5.0.63.exe` (release GitHub `v5.0.63`).
 
 Données utilisateur (Electron `userData`, typiquement `%APPDATA%\Jarvis`) :
 
@@ -96,7 +96,7 @@ Données utilisateur (Electron `userData`, typiquement `%APPDATA%\Jarvis`) :
     src/media/                 intent Spotify
     src/update/                lecture latest.yml GitHub
     src/history/  src/audit/
-  apps/desktop/                Electron (version 5.0.5)
+  apps/desktop/                Electron (version 5.0.63)
     electron-builder.yml       NSIS, extraResources, publish GitHub
     electron.vite.config.ts    aliases onnxruntime-web (wasm, pas JSEP)
     scripts/setup-whisper.mjs
@@ -562,6 +562,20 @@ Demande de l'utilisateur : utiliser Jarvis depuis son iPhone. **Le cerveau reste
 - **Interface PC** : onglet Réglages « Téléphone » (`components/PhoneSettings.tsx`) : interrupteur, trois étapes cochées (Tailscale connecté, Jarvis publié avec la commande à copier, iPhone relié), QR code et compte à rebours, appareils reliés.
 - Tests : `core/qr/qrCode.test.ts`, `core/phone/phone.test.ts`, `apps/desktop/src/main/phone/server.test.ts` (vrai port : page et politique, hôte refusé, jeton, jumelage et essais, empreinte seule sur disque, flux, erreur, confirmation, arrêt, historique filtré, appareil retiré, déconnexion vue par la session, interrupteur, Tailscale absent/arrêté/non publié), `main/phone-session.test.ts` (vraie `ChatSession` : carte reçue et refusée sur le téléphone, outil non exécuté, discussion enregistrée).
 
+## 5.0.64 — audit : bogues, lisibilité, ergonomie (ajout seul)
+
+Demande de l'utilisateur : « analyse l'application et trouve des bugs et des problèmes de lisibilité, facilite l'expérience utilisateur ». Trois audits (interface, processus principal, cœur), chaque point vérifié dans le code ou en l'exécutant avant correction. Rapport : `rapports/2026-11-01-audit-ux-5064.md`. Chat, prompts, catalogue et réglages par défaut inchangés (`chat-unchanged.test.ts`, `ollama-unchanged.test.ts` verts sans régénération).
+
+- **Bulles d'outil en français** : `tool_start` porte `summary` (la phrase de `summarize`, première ligne, secrets masqués, résumé de secours JSON ignoré) ; le renderer affiche ce résumé, sinon un libellé (`lib/toolLabels.ts`, 72 outils ; inconnu = nom en mots, jamais vide). Carte de confirmation et journal d'audit : libellé + nom technique. La page du téléphone l'affiche aussi.
+- **Préremplissage** (`lib/composerDraft.ts`) : une carte dont la demande finit par « : » (« Analyse cette vidéo YouTube : ») pose le texte dans le champ, curseur à la fin, au lieu d'envoyer une demande sans lien.
+- **Saisie courte** : un texte tapé d'un caractère part ; seule une transcription vocale d'une lettre reste ignorée.
+- **Actions irréversibles de l'interface** : `ui/confirmButton.tsx` (deux temps, 5 s) pour « Tout effacer » et « Vider le journal » ; bouton Supprimer d'une conversation visible au clavier. Carte de confirmation : focus sur « Refuser » (Entrée refuse, Tab puis Entrée autorise), plus d'autorisation par un Entrée tapé au mauvais moment.
+- **Réglages** : « Enregistrer » envoie seulement les clés changées (`lib/settingsPatch.ts` ; les blocs écrits par le processus principal, `localLearning`, `machine`, ne sont plus écrasés) ; échec affiché ; « Modifications non enregistrées » ; brouillon gardé en mémoire quand on quitte le panneau (`keptDraft`) ; avertissement si Windows refuse le raccourci (retombé sur Control+Space) ; « Modèle de repli » éditable (défaut à l'enregistrement) ; message de démonstration distinct au premier lancement.
+- **Tableau de bord** : tutoiement partout (« Prêt à t'aider »), « Micro et voix » et « Activer l'écoute » ouvrent Réglages → Voix, barre vocale coupée avec « Activer » ; pastille d'état sans chevauchement ; état vide sans point orphelin ; dates anciennes avec l'année. `EmptyState.tsx` (jamais monté) retiré.
+- **Processus principal** : `app.quit()` n'est plus annulé par le handler `close` (`before-quit` → `isQuitting`) ; raccourci refusé au démarrage → Control+Space ; un tour arrêté pendant une carte n'est plus un « refus » (Tool Manager : `decision: 'blocked'`, `outcome: 'cancelled'`, l'agent s'arrête sans « tu as refusé ») et un arrêt avant le premier mot n'affiche plus « Je n'ai pas pu répondre » ; `isBlockedFolder` reconnaît les dossiers système **à la racine** seulement (`C:\dev\Jarvis`, `bin/` acceptés) ; `clear()` de la mémoire supprime aussi `userData/memory/` ; `settings.json` écrit par tmp + `rename`, fichier illisible copié en `settings.json.corrompu` ; `run_command` : délai dépassé = `taskkill /T /F` sous Windows ; `close_application` : « Fermé » seulement si le processus a disparu (`describeCloseResult`) ; `siteblock_add_period` : même nom par défaut (« Jarvis ») dans la carte et l'action ; échec d'écriture du journal d'audit journalisé.
+- **Cœur** : `wakeWordAddress` — interjections élargies (« attends », « maintenant », « allô », « au fait », « et toi »…), ponctuation de fin de phrase avant le mot = en tête, virgule après = on l'appelle, politesse après (« s'il te plaît ») = en fin de phrase ; `SHORT_FOLLOW_UP` accepte « Et à Lyon ? ». `currentInfo` : salutation en tête retirée (« Bonjour, quelle est la météo… »), ville en minuscules reconnue, toutes les prépositions essayées, mot collé après la ville retiré, requête sans ville = la question. Orchestre : `DATE_OR_RANGE` (date, numéro, plage tapés seuls ≠ calcul), `firstOfMonth` (« 1er novembre » dans `clockReply` seulement ; les prompts gardent « 1 novembre », tests figés), suivi d'un tour Google → le cerveau. Ollama : réponse `{"name": …}` sans être un appel affichée ; en mode relu, `<tool_call>` retenu. `recoverToolCallsFromText` : JSON nu après une phrase, hors blocs de code. Tool Manager : `validate` (schéma) avant la carte, `summarize`/`describeCommand` qui lèvent → résumé de secours. `redactSecrets` : `sk-proj-…` ; `redactValue` : `password`, `secret`, `apiSecret`, `privateKey`. `dedupeResults` : titre vide ≠ doublon.
+- Tests : `packages/core/src/audit-5064.test.ts`, `ollama-recover.test.ts` (2 cas), `apps/desktop/src/renderer/src/lib/toolLabels.test.ts`, `settingsPatch.test.ts`, `session.test.ts` (résumé), `knowledge.test.ts`, `store.test.ts`, `windows-tools.test.ts`. Non corrigé, documenté dans le rapport : voir « Reste à faire ».
+
 ## Updater / GitHub
 
 Dernière publication : **5.0.63** (`https://github.com/dylanloze91-creator/Jarvis/releases/tag/v5.0.63`) — exe, `.blockmap` et `latest.yml` publiés : l’updater intégré la propose.
@@ -700,6 +714,7 @@ Corrections de la revue complète (détail : `docs/audit-0410.md` du store du pr
 - **Robot** : outils `rover_*` absents sans adresse et hors des tours sans rapport ; mouvements toujours confirmés (sans catégorie), arrêts jamais ; un mouvement annulé ou sans réponse envoie `/api/stop` ; réseau local seulement ; `roverBaseUrl`/`roverToken` sans défaut Zod.
 - **Écoute (5.0.62)** : la discussion vocale se ferme seule après `followUpSeconds` sans parole (jamais d'écoute infinie) ; une mention de Jarvis n'envoie rien ; une phrase de suivi n'est écartée que sur un « non » clair, jamais sur une erreur ou un délai ; la vérification ne touche ni au texte tapé ni à la commande qui suit « Jarvis » ; l'avis franc reste dans les équipes du chef d'orchestre, le chat sans orchestre ne change pas.
 - **Téléphone (5.0.63)** : coupé par défaut, coupé = aucun port ; serveur sur 127.0.0.1 uniquement, publié par Tailscale que l'utilisateur configure lui-même ; aucun appel `/api/*` sans jeton (sauf le jumelage, borné par un code de 6 chiffres, 10 minutes, 5 essais) ; seule l'empreinte des jetons sur le PC ; les confirmations restent les mêmes sur le téléphone ; le texte du modèle n'est jamais injecté comme HTML ; l'état du téléphone reste hors de `settings.json`.
+- **Audit (5.0.64)** : un tour arrêté par l'utilisateur n'est ni un refus ni un échec ; « Fermé » / « fait » seulement après vérification ; « Enregistrer » n'envoie que les clés changées ; une commande vocale qui appelle Jarvis (« Attends Jarvis, … ») n'est jamais jetée comme mention ; les bulles d'outil restent en français.
 - **Appels relus (5.0.54)** : `recoverToolCalls` reste une option du modèle de code et du laboratoire, jamais du chat sans décision ; un appel relu ne vise qu'un outil proposé à ce tour ; un texte illisible reste une erreur, jamais un appel deviné.
 
 Travaux **hors scope** de cet arbre (ne pas les reprendre ici) : publication GitHub.
