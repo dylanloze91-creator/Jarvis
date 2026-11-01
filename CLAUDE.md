@@ -562,6 +562,18 @@ Demande de l'utilisateur : utiliser Jarvis depuis son iPhone. **Le cerveau reste
 - **Interface PC** : onglet Réglages « Téléphone » (`components/PhoneSettings.tsx`) : interrupteur, trois étapes cochées (Tailscale connecté, Jarvis publié avec la commande à copier, iPhone relié), QR code et compte à rebours, appareils reliés.
 - Tests : `core/qr/qrCode.test.ts`, `core/phone/phone.test.ts`, `apps/desktop/src/main/phone/server.test.ts` (vrai port : page et politique, hôte refusé, jeton, jumelage et essais, empreinte seule sur disque, flux, erreur, confirmation, arrêt, historique filtré, appareil retiré, déconnexion vue par la session, interrupteur, Tailscale absent/arrêté/non publié), `main/phone-session.test.ts` (vraie `ChatSession` : carte reçue et refusée sur le téléphone, outil non exécuté, discussion enregistrée).
 
+## 5.0.66 — le robot comme enceinte
+
+Le robot (Pi 5 + ESP32) peut servir d'enceinte Jarvis, comme une enceinte de pièce. **Le cerveau reste sur le PC.** Ce programme est `robot/voix/`, à côté du service de pilotage : il ne modifie pas `jarvis_rover` (hors de ce dépôt) ni le pont du PC (`apps/desktop/src/main/speaker/`, autre branche).
+
+- **Contrat** : celui de l'enceinte, Phase 1 « Serveur » (`docs/specs/enceinte-jarvis.md`). `GET /api/speaker/hello` donne `followUpMs`. `POST /api/speaker/turn` envoie un WAV 16 kHz mono 16 bits, avec `X-Jarvis-Follow-Up: 1` seulement pour une phrase dite sans « Jarvis » pendant le suivi. `200` = WAV à jouer (`X-Jarvis-Continue`, `X-Jarvis-Transcript`) ; `204` = rien à dire. Port 53131, jeton Bearer.
+- **Réveil** : openWakeWord, modèle `hey_jarvis`, sur le processeur du Pi (Apache 2.0). Rien n'est envoyé au PC avant lui. Le modèle officiel vise « hey jarvis » ; « Jarvis » seul passe moins souvent.
+- **Fin de parole** : mêmes durées que `endOfSpeech.ts` (650 ms après la parole, 1,5 s avant, 15 s au plus). Micro fermé pendant la lecture. Suivi sans mot de réveil pendant `followUpMs` si `X-Jarvis-Continue: 1`.
+- **« stop » local** : après le réveil, « stop », « arrête », « arrête-toi », « stop robot » appellent `POST /api/stop` du pilotage sur le Pi (127.0.0.1, jeton du robot) **avant** et **sans** le PC. Grammaire fermée Vosk français (`vosk-model-small-fr-0.22`). Sans le modèle, ce n'est pas un arrêt (rien n'est coupé au hasard). Le bouton d'urgence physique reste la vraie sécurité.
+- **PC injoignable** : un bip généré, pas de blocage. `config.example.toml` est versionné ; `config.toml` est ignoré dans `robot/voix/.gitignore` (le `.gitignore` racine est réservé par un autre agent).
+- **Confirmations** : le pont du PC refuse une action qui demande un accord quand elle vient d'une enceinte. « Avance de 50 cm » dit au robot ne le fait pas bouger. Cette règle n'est pas changée.
+- Tests : `robot/voix/tests/test_voix.py` (pytest, WAV synthétiques, faux PC, faux robot). Pas de voix réelle dans le dépôt.
+
 ## Updater / GitHub
 
 Dernière publication : **5.0.63** (`https://github.com/dylanloze91-creator/Jarvis/releases/tag/v5.0.63`) — exe, `.blockmap` et `latest.yml` publiés : l’updater intégré la propose.
@@ -700,6 +712,7 @@ Corrections de la revue complète (détail : `docs/audit-0410.md` du store du pr
 - **Robot** : outils `rover_*` absents sans adresse et hors des tours sans rapport ; mouvements toujours confirmés (sans catégorie), arrêts jamais ; un mouvement annulé ou sans réponse envoie `/api/stop` ; réseau local seulement ; `roverBaseUrl`/`roverToken` sans défaut Zod.
 - **Écoute (5.0.62)** : la discussion vocale se ferme seule après `followUpSeconds` sans parole (jamais d'écoute infinie) ; une mention de Jarvis n'envoie rien ; une phrase de suivi n'est écartée que sur un « non » clair, jamais sur une erreur ou un délai ; la vérification ne touche ni au texte tapé ni à la commande qui suit « Jarvis » ; l'avis franc reste dans les équipes du chef d'orchestre, le chat sans orchestre ne change pas.
 - **Téléphone (5.0.63)** : coupé par défaut, coupé = aucun port ; serveur sur 127.0.0.1 uniquement, publié par Tailscale que l'utilisateur configure lui-même ; aucun appel `/api/*` sans jeton (sauf le jumelage, borné par un code de 6 chiffres, 10 minutes, 5 essais) ; seule l'empreinte des jetons sur le PC ; les confirmations restent les mêmes sur le téléphone ; le texte du modèle n'est jamais injecté comme HTML ; l'état du téléphone reste hors de `settings.json`.
+- **Robot enceinte (5.0.66)** : la voix est `robot/voix/`, jamais le service de pilotage ; rien n'est envoyé au PC avant le mot de réveil ; un « stop » reconnu sur le Pi appelle `/api/stop` avant le PC ; le micro est coupé pendant la lecture ; une action à confirmer dite depuis l'enceinte reste refusée par le pont du PC.
 - **Appels relus (5.0.54)** : `recoverToolCalls` reste une option du modèle de code et du laboratoire, jamais du chat sans décision ; un appel relu ne vise qu'un outil proposé à ce tour ; un texte illisible reste une erreur, jamais un appel deviné.
 
 Travaux **hors scope** de cet arbre (ne pas les reprendre ici) : publication GitHub.
