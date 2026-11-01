@@ -84,28 +84,58 @@ describe('suivi sans mot de réveil', () => {
     expect(session.acceptsWakeWord).toBe(false);
   });
 
-  it('une parole longtemps après la réponse part sans mot de réveil', () => {
+  it('une parole dans la fenêtre après la réponse part sans mot de réveil', () => {
     const session = sent();
     session.replyFinished(4_000);
-    expect(session.noteHotSpeech(4_000 + FOLLOW_UP_WINDOW_MS + 60_000, 200)).toBe('capture');
+    expect(session.pollHot(4_000 + FOLLOW_UP_WINDOW_MS - 1)).toBe('stay');
+    expect(session.noteHotSpeech(4_000 + FOLLOW_UP_WINDOW_MS - 1, 200)).toBe('capture');
     expect(session.deliver('et demain', wake)).toEqual({ kind: 'send', text: 'et demain' });
     expect(session.acceptsWakeWord).toBe(false);
     expect(session.showListening).toBe(true);
   });
 
-  it('le silence prolongé ne ferme pas la session : seul un arrêt explicite', () => {
-    expect(FOLLOW_UP_WINDOW_MS).toBe(2_000);
+  it('5.0.62 : 8 s de silence après la réponse → veille, « Jarvis » redevient nécessaire', () => {
+    expect(FOLLOW_UP_WINDOW_MS).toBe(8_000);
     const session = sent();
-    session.replyFinished(4_000);
-    expect(session.pollHot(4_000 + FOLLOW_UP_WINDOW_MS - 1)).toBe('stay');
-    expect(session.acceptsWakeWord).toBe(false);
-    expect(session.pollHot(4_000 + FOLLOW_UP_WINDOW_MS + 120_000)).toBe('stay');
-    expect(session.acceptsWakeWord).toBe(false);
+    // Pendant la réponse, le silence ne ferme rien, même long.
+    expect(session.pollHot(60_000)).toBe('stay');
+    session.replyFinished(64_000);
+    expect(session.pollHot(64_000 + FOLLOW_UP_WINDOW_MS - 1)).toBe('stay');
     expect(session.showListening).toBe(true);
-    expect(session.phase).toBe('hot');
-    session.standby();
+    expect(session.pollHot(64_000 + FOLLOW_UP_WINDOW_MS)).toBe('standby');
+    expect(session.phase).toBe('standby');
     expect(session.acceptsWakeWord).toBe(true);
     expect(session.showListening).toBe(false);
+  });
+
+  it('fenêtre réglable ; 0 = « Jarvis » à chaque fois', () => {
+    const long = sent(new ConversationSession({ followUpMs: 20_000 }));
+    long.replyFinished(1_000);
+    expect(long.pollHot(15_000)).toBe('stay');
+    expect(long.pollHot(21_000)).toBe('standby');
+
+    const strict = sent(new ConversationSession({ followUpMs: 0 }));
+    strict.replyFinished(1_000);
+    expect(strict.pollHot(1_000)).toBe('standby');
+    expect(strict.acceptsWakeWord).toBe(true);
+  });
+
+  it('une phrase jugée « pas pour Jarvis » ferme la discussion', () => {
+    const session = sent();
+    session.replyFinished(0);
+    expect(session.noteHotSpeech(1_000, 200)).toBe('capture');
+    expect(session.deliver('Chérie, tu as vu mes clés ?', wake).kind).toBe('send');
+    session.notAddressed();
+    expect(session.phase).toBe('standby');
+    expect(session.acceptsWakeWord).toBe(true);
+  });
+
+  it('parler de Jarvis à quelqu’un d’autre pendant la discussion : rien n’est envoyé, retour en veille', () => {
+    const session = sent();
+    session.replyFinished(0);
+    expect(session.noteHotSpeech(1_000, 200)).toBe('capture');
+    expect(session.deliver('Tu vois, Jarvis il répond tout seul', wake)).toEqual({ kind: 'ignore', reason: 'mention' });
+    expect(session.phase).toBe('standby');
   });
 
   it('« stop », « tais-toi » et « merci c’est bon » reviennent en veille', () => {
@@ -129,8 +159,33 @@ describe('suivi sans mot de réveil', () => {
     expect(session.noteHotSpeech(1_500, 200)).toBe('capture');
     expect(session.deliver('you', wake).kind).toBe('ignore');
     expect(session.phase).toBe('hot');
-    expect(session.pollHot(FOLLOW_UP_WINDOW_MS + 99_000)).toBe('stay');
+    expect(session.pollHot(FOLLOW_UP_WINDOW_MS - 1)).toBe('stay');
     expect(session.showListening).toBe(true);
+  });
+});
+
+describe('5.0.62 : réveil par une mention', () => {
+  it('« Tu connais Jarvis ? » réveille Vosk mais rien n’est envoyé', () => {
+    const session = new ConversationSession();
+    session.acceptWake(0);
+    expect(session.deliver('Tu connais Jarvis ?', wake)).toEqual({ kind: 'ignore', reason: 'mention' });
+    expect(session.phase).toBe('standby');
+    expect(session.acceptsWakeWord).toBe(true);
+  });
+
+  it('« Tu connais Jarvis, c’est mon assistant » : ignoré aussi (avant : « c’est mon assistant » partait)', () => {
+    const session = new ConversationSession();
+    session.acceptWake(0);
+    expect(session.deliver('Tu connais Jarvis, c’est mon assistant', wake).kind).toBe('ignore');
+  });
+
+  it('le mot de réveil en fin de phrase est retiré de la commande', () => {
+    const session = new ConversationSession();
+    session.acceptWake(0);
+    expect(session.deliver('Quelle heure est-il, Jarvis ?', wake)).toEqual({
+      kind: 'send',
+      text: 'Quelle heure est-il',
+    });
   });
 });
 

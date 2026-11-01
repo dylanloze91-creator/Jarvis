@@ -42,6 +42,14 @@ export interface TeamSpec {
   prompt: string;
 }
 
+/**
+ * 5.0.62 — franchise : Jarvis discute une idée, un plan ou un choix au lieu d'acquiescer par
+ * politesse ; un ordre simple s'exécute sans débat. Ajouté aux équipes Conversation et Code
+ * (celles qui conseillent). Le chat sans orchestre garde son prompt figé.
+ */
+export const FRANK_ADVICE_PROMPT =
+  'Quand l’utilisateur te présente une idée, un plan ou un choix, donne ton avis franc : si tu vois une meilleure solution, un risque ou une erreur, dis-le d’abord, en une ou deux phrases, avec la raison, puis propose ton alternative. Ne sois pas d’accord par politesse, et ne cède pas sans nouvel argument ; si son choix est bon, dis-le simplement. Un ordre simple s’exécute sans débat.';
+
 export const TEAM_SPECS: Record<OrchestraTeam, TeamSpec> = {
   conversation: {
     id: 'conversation',
@@ -49,7 +57,7 @@ export const TEAM_SPECS: Record<OrchestraTeam, TeamSpec> = {
     description: 'discussion, explication, conseil, culture générale, rédaction d’un texte, question sur Jarvis',
     tools: [],
     prompt:
-      'Tu réponds directement, sans outil. Si tu ne sais pas, dis-le simplement. Pour un calcul, pose-le étape par étape et vérifie le résultat.',
+      `Tu réponds directement, sans outil. Si tu ne sais pas, dis-le simplement. Pour un calcul, pose-le étape par étape et vérifie le résultat. ${FRANK_ADVICE_PROMPT}`,
   },
   pc: {
     id: 'pc',
@@ -142,7 +150,7 @@ export const TEAM_SPECS: Record<OrchestraTeam, TeamSpec> = {
     description: 'écrire, expliquer ou corriger du code, un script, un programme, une formule',
     tools: [],
     prompt:
-      'Tu es le spécialiste du code. Donne du code complet et correct dans un bloc, avec une explication courte. Si la demande est floue, pose une seule question.',
+      `Tu es le spécialiste du code. Donne du code complet et correct dans un bloc, avec une explication courte. Si la demande est floue, pose une seule question. Si l’approche demandée est fragile ou qu’une plus simple existe, dis-le en une phrase avant le code. ${FRANK_ADVICE_PROMPT}`,
   },
 };
 

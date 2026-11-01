@@ -20,6 +20,11 @@ import {
   withVoiceOriginNotice,
   chatProviderConfig,
   activeOrchestra,
+  addresseeCheckEnabled,
+  addresseeUserPrompt,
+  ADDRESSEE_SYSTEM_PROMPT,
+  followUpAddressee,
+  parseAddresseeReply,
   availableTeams,
   clockReply,
   expressTeam,
@@ -55,6 +60,11 @@ import type { LocalLearningController } from './learning/controller.js';
 
 /** Délai du cerveau pour choisir une équipe, chargement compris. */
 const BRAIN_DEADLINE_MS = 90_000;
+/**
+ * 5.0.62 — délai de la question « est-ce pour Jarvis ? ». Au-delà, la phrase est traitée comme
+ * une demande : mieux vaut répondre pour rien que perdre une vraie question.
+ */
+const ADDRESSEE_DEADLINE_MS = 10_000;
 
 interface TurnRoute {
   team: OrchestraTeam | 'calcul' | 'horloge';
@@ -93,6 +103,8 @@ interface SessionDeps {
 export class ChatSession {
   private readonly pendingConfirmations = new Map<string, (approved: boolean) => void>();
   private controller: AbortController | null = null;
+  /** 5.0.62 : un envoi plus récent rend caduque une vérification de destinataire en cours. */
+  private sendSeq = 0;
 
   constructor(private readonly deps: SessionDeps) {}
 
@@ -180,13 +192,29 @@ export class ChatSession {
   }
 
   async send(sender: WebContents, input: SendChatInput): Promise<void> {
-    this.cancel();
-    const controller = new AbortController();
-    this.controller = controller;
-
     const emit = (event: ChatEvent): void => {
       if (!sender.isDestroyed()) sender.send(IpcChannel.chatEvent, event);
     };
+
+    // 5.0.62 — une phrase dite sans « Jarvis » pendant la discussion : lui est-elle adressée ?
+    // Vérifié avant d'annuler quoi que ce soit : une conversation dans la pièce ne coupe rien.
+    const seq = (this.sendSeq += 1);
+    if (input.source === 'voice' && input.followUp) {
+      const checkSettings = this.deps.getSettings();
+      if (addresseeCheckEnabled(checkSettings.voice)) {
+        const addressed = await this.addressedToJarvis(checkSettings, input).catch(() => true);
+        if (seq !== this.sendSeq) return;
+        if (!addressed) {
+          if (checkSettings.debugLogging) debugLog(true, 'voix', 'phrase de suivi pas pour Jarvis : ignorée');
+          emit({ type: 'not_addressed', text: input.text });
+          return;
+        }
+      }
+    }
+
+    this.cancel();
+    const controller = new AbortController();
+    this.controller = controller;
 
     let conversationId = input.conversationId ?? '';
     const superseded = (): boolean =>
@@ -344,6 +372,46 @@ export class ChatSession {
       });
       emit({ type: 'done', conversationId, messages: [] });
     }
+  }
+
+  /**
+   * 5.0.62 — règles sûres d'abord (un ordre, une question en « tu », « et demain ? » = oui ;
+   * une mention de Jarvis = non), puis une question d'un mot au modèle (le cerveau de l'orchestre
+   * s'il est actif, sinon le modèle du chat). Tout échec ou doute = oui.
+   */
+  private async addressedToJarvis(settings: Settings, input: SendChatInput): Promise<boolean> {
+    const wake = { word: settings.voice.wakeWord, variants: settings.voice.wakeWordVariants };
+    const rule = followUpAddressee(input.text, wake);
+    if (rule !== 'unsure') return rule === 'yes';
+    const history = input.conversationId
+      ? ((await this.deps.store.get(input.conversationId).catch(() => null))?.messages ?? [])
+      : [];
+    const orchestra = activeOrchestra(settings);
+    const { provider } = this.deps.registry.createOrFallback(
+      orchestra ? orchestraProviderConfig(settings, orchestra.brain, 'carte', true) : chatProviderConfig(settings),
+    );
+    const deadline = new AbortController();
+    const timer = setTimeout(() => deadline.abort(), ADDRESSEE_DEADLINE_MS);
+    let reply = '';
+    try {
+      for await (const event of provider.streamChat({
+        system: ADDRESSEE_SYSTEM_PROMPT,
+        messages: [createMessage('user', addresseeUserPrompt(input.text, history))],
+        temperature: 0,
+        maxTokens: 4,
+        signal: deadline.signal,
+      })) {
+        if (event.type === 'text') reply += event.delta;
+        if (event.type === 'error') return true;
+      }
+    } catch {
+      return true;
+    } finally {
+      clearTimeout(timer);
+    }
+    const verdict = parseAddresseeReply(reply);
+    if (settings.debugLogging) debugLog(true, 'voix', `destinataire (modèle) : ${verdict === 'yes' ? 'Jarvis' : 'autre'}`);
+    return verdict === 'yes';
   }
 
   /**

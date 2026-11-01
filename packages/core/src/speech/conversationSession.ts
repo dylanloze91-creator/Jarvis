@@ -5,15 +5,19 @@
  *
  * - grâce de 3 s : la captation de la commande ne peut pas se fermer, même
  *   si l'audio ressemble à du silence ;
- * - une fois la commande envoyée, le micro reste chaud jusqu'à ce que
- *   l'utilisateur ferme la session (phrase d'arrêt ou action explicite).
- *   Les tours suivants n'exigent pas le mot de réveil ;
+ * - une fois la commande envoyée, le micro reste chaud pendant la réponse
+ *   puis `followUpMs` après sa fin (8 s par défaut, 5.0.62) : les tours
+ *   suivants n'exigent pas le mot de réveil. Passé ce délai sans parole,
+ *   retour en veille (avant la 5.0.62, le micro restait ouvert sans fin) ;
+ * - « tu connais Jarvis ? » réveille Vosk mais parle **de** lui : ignoré
+ *   (`wakeWordAddress`, 5.0.62) ;
  * - « stop », « tais-toi », « merci c'est bon » reviennent en veille ;
  * - une hallucination Whisper ne compte pas comme un tour.
  *
  * Le temps est celui de l'audio (ms depuis le début de la capture), le même
  * que la fin de parole : les tests avancent ce temps sans horloge murale.
  */
+import { DEFAULT_FOLLOW_UP_SECONDS, stripTrailingWakeWord, wakeWordAddress } from './addressee.js';
 import { COMMAND_STARTED_SPEECH_MS } from './endOfSpeech.js';
 import {
   commandAfterWakeWord,
@@ -26,10 +30,10 @@ import {
 /** La captation ouverte par un réveil ne peut pas se fermer avant ça. */
 export const WAKE_GRACE_MS = 3_000;
 /**
- * Conservé pour compatibilité des tests et exports ; le micro ne se ferme
- * plus automatiquement après ce délai.
+ * Après la fin d'une réponse, l'utilisateur a ce délai pour enchaîner sans
+ * dire « Jarvis » (réglage `voice.followUpSeconds`, 8 s par défaut).
  */
-export const FOLLOW_UP_WINDOW_MS = 2_000;
+export const FOLLOW_UP_WINDOW_MS = DEFAULT_FOLLOW_UP_SECONDS * 1_000;
 
 const STOP_PHRASES = new Set(['stop', 'tais toi', 'merci c est bon']);
 
@@ -38,7 +42,7 @@ export type ConversationPhase = 'standby' | 'command' | 'hot' | 'follow-up';
 export type SpokenTurnDecision =
   | { kind: 'send'; text: string }
   | { kind: 'stop' }
-  | { kind: 'ignore' };
+  | { kind: 'ignore'; reason?: 'mention' };
 
 /** « stop », « tais-toi », « merci c'est bon » — retour immédiat en veille. */
 export function isConversationStop(text: string): boolean {
@@ -69,8 +73,11 @@ export function classifySpokenTurn(
     return { kind: 'stop' };
   }
 
+  // « Tu connais Jarvis ? », « le Jarvis de mon frère » : on parle de lui, pas à lui.
+  if (wakeWordAddress(trimmed, wake) === 'mention') return { kind: 'ignore', reason: 'mention' };
+
   if (role === 'command') {
-    const command = commandAfterWakeWord(trimmed, wake);
+    const command = stripTrailingWakeWord(commandAfterWakeWord(trimmed, wake), wake);
     if (!command) return { kind: 'ignore' };
     if (isConversationStop(command)) return { kind: 'stop' };
     return { kind: 'send', text: command };
@@ -79,7 +86,7 @@ export function classifySpokenTurn(
   if (!trimmed || isWhisperHallucination(trimmed)) return { kind: 'ignore' };
   if (!stripped || isWhisperHallucination(stripped)) return { kind: 'ignore' };
   if (isConversationStop(stripped)) return { kind: 'stop' };
-  return { kind: 'send', text: stripped };
+  return { kind: 'send', text: stripTrailingWakeWord(stripped, wake) };
 }
 
 /**
@@ -87,13 +94,23 @@ export function classifySpokenTurn(
  * cette classe ne décide que si la captation a le droit de se fermer, et
  * si un texte transcrit est un tour, un arrêt, ou rien.
  */
+export interface ConversationSessionOptions {
+  /** Délai après la fin d'une réponse pour enchaîner sans mot de réveil. 0 : « Jarvis » à chaque fois. */
+  followUpMs?: number;
+}
+
 export class ConversationSession {
   phase: ConversationPhase = 'standby';
   /** Vrai tant que la réponse (texte ou synthèse) n'est pas terminée. */
   awaitingReply = false;
+  followUpMs: number;
 
   private wakeAt = 0;
   private replyEndsAt: number | null = null;
+
+  constructor(options: ConversationSessionOptions = {}) {
+    this.followUpMs = Math.max(0, options.followUpMs ?? FOLLOW_UP_WINDOW_MS);
+  }
 
   /** Veille : le mot de réveil est de nouveau obligatoire, l'orbe au repos. */
   get acceptsWakeWord(): boolean {
@@ -146,9 +163,15 @@ export class ConversationSession {
     return 'capture';
   }
 
-  /** Le micro chaud reste ouvert jusqu'à fermeture explicite par l'utilisateur. */
-  pollHot(_atMs: number): 'stay' | 'standby' {
-    return 'stay';
+  /**
+   * Micro chaud : reste ouvert pendant la réponse, puis `followUpMs` après
+   * sa fin. Au-delà, sans nouvelle parole, retour en veille.
+   */
+  pollHot(atMs: number): 'stay' | 'standby' {
+    if (this.phase !== 'hot' || this.awaitingReply || this.replyEndsAt === null) return 'stay';
+    if (atMs - this.replyEndsAt < this.followUpMs) return 'stay';
+    this.enterStandby();
+    return 'standby';
   }
 
   /**
@@ -171,7 +194,8 @@ export class ConversationSession {
       return decision;
     }
     if (decision.kind === 'ignore') {
-      if (role === 'follow-up') {
+      // En suivi, parler de Jarvis à quelqu'un d'autre clôt la discussion.
+      if (role === 'follow-up' && decision.reason !== 'mention') {
         this.phase = 'hot';
         return decision;
       }
@@ -185,6 +209,14 @@ export class ConversationSession {
   }
 
   standby(): void {
+    this.enterStandby();
+  }
+
+  /**
+   * La phrase de suivi ne lui était pas destinée (vérification du destinataire
+   * côté session) : la discussion s'arrête, « Jarvis » redevient nécessaire.
+   */
+  notAddressed(): void {
     this.enterStandby();
   }
 

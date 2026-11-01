@@ -62,13 +62,16 @@ export default function App() {
     (text: string) => voiceRef.current?.noteAssistantReply(stripSourcesFooter(text)),
     [],
   );
-  const chat = useChat({ onAssistantFinal: handleAssistantFinal });
+  // 5.0.62 : la phrase de suivi était pour quelqu'un d'autre → fin de la discussion vocale.
+  const handleNotAddressed = useCallback(() => voiceRef.current?.endConversation(), []);
+  const chat = useChat({ onAssistantFinal: handleAssistantFinal, onNotAddressed: handleNotAddressed });
   const update = useUpdate();
   // Marque explicitement l'origine vocale : le modèle en est averti côté
   // prompt système (voir `withVoiceOriginNotice`), jamais dans le texte
   // affiché ou enregistré, qui reste la transcription telle quelle.
   const onVoiceTranscript = useCallback(
-    (text: string) => deliverVoiceTranscript(text, (t) => chat.send(t, 'voice')),
+    (text: string, meta?: { followUp?: boolean }) =>
+      deliverVoiceTranscript(text, (t) => chat.send(t, 'voice', { followUp: meta?.followUp === true })),
     [chat.send],
   );
   const voice = useVoice({
