@@ -5,6 +5,7 @@ import {
   type GoogleConfigDraft,
   type JarvisApi,
   type MachinePullProgress,
+  type PhoneStatus,
   type SendChatInput,
   type UpdateState,
   type VoiceSpeakInput,
@@ -151,6 +152,18 @@ const api: JarvisApi = {
         listener(payload);
       ipcRenderer.on(IpcChannel.updateEvent, handler);
       return () => ipcRenderer.removeListener(IpcChannel.updateEvent, handler);
+    },
+  },
+  phone: {
+    status: () => ipcRenderer.invoke(IpcChannel.phoneStatus),
+    setEnabled: (enabled: boolean) => ipcRenderer.invoke(IpcChannel.phoneSetEnabled, enabled),
+    startPairing: () => ipcRenderer.invoke(IpcChannel.phoneStartPairing),
+    cancelPairing: () => ipcRenderer.invoke(IpcChannel.phoneCancelPairing),
+    revoke: (deviceId: string) => ipcRenderer.invoke(IpcChannel.phoneRevoke, deviceId),
+    onEvent: (listener) => {
+      const handler = (_event: Electron.IpcRendererEvent, payload: PhoneStatus): void => listener(payload);
+      ipcRenderer.on(IpcChannel.phoneEvent, handler);
+      return () => ipcRenderer.removeListener(IpcChannel.phoneEvent, handler);
     },
   },
   developer: createDeveloperApi(ipcRenderer),
