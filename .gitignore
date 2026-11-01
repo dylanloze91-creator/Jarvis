@@ -20,3 +20,12 @@ apps/desktop/test-fixtures/*.wav
 # Runtime ONNX, Whisper et openWakeWord (téléchargés par setup:voice).
 apps/desktop/voice-assets/*
 !apps/desktop/voice-assets/README.md
+
+# Entraînement de l'élève (5.0.65) : environnement Python, llama.cpp, runs et exports
+# (plusieurs Go, et les runs contiennent des copies des exemples) — rien de tout cela en dépôt.
+training/.venv/
+training/llama.cpp/
+training/runs/
+training/export/
+__pycache__/
+.pytest_cache/
