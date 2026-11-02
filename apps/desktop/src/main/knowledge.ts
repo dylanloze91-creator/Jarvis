@@ -615,6 +615,12 @@ function replaceLearning(index: KnowledgeIndex, records: readonly LearningRecord
 }
 
 const LOCK_STALE_MS = 8_000;
+/** Attente maximale du verrou de l'index (exportée pour les tests). */
+export let LOCK_WAIT_MS = 10_000;
+/** Réservé aux tests : raccourcit l'attente du verrou. */
+export function setLockWaitMsForTests(ms: number): void {
+  LOCK_WAIT_MS = ms;
+}
 
 async function acquireIndexLock(lockPath: string): Promise<() => Promise<void>> {
   const started = Date.now();
@@ -629,12 +635,19 @@ async function acquireIndexLock(lockPath: string): Promise<() => Promise<void>> 
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
       if (code !== 'EEXIST' && code !== 'EPERM') throw error;
+      // Délai vérifié avant tout nouvel essai : un EPERM qui dure (droits du dossier, antivirus)
+      // ne doit pas faire tourner cette boucle sans fin.
+      if (Date.now() - started > LOCK_WAIT_MS) {
+        if (code === 'EPERM') throw error;
+        throw new Error('Le magasin de connaissances est occupé.');
+      }
       const info = await stat(lockPath).catch(() => null);
       if (!info || Date.now() - info.mtimeMs > LOCK_STALE_MS) {
         await rm(lockPath, { force: true }).catch(() => undefined);
+        // Sous Windows, EPERM = verrou en cours de suppression : laisser le système finir.
+        if (code === 'EPERM') await new Promise((resolve) => setTimeout(resolve, 25));
         continue;
       }
-      if (Date.now() - started > 10_000) throw new Error('Le magasin de connaissances est occupé.');
       await new Promise((resolve) => setTimeout(resolve, 25));
     }
   }
