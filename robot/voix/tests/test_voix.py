@@ -12,7 +12,7 @@ import pytest
 
 from jarvis_robot_voix.arret import DetecteurArret, est_arret, grammaire_json
 from jarvis_robot_voix.boucle import Boucle
-from jarvis_robot_voix.config import charger
+from jarvis_robot_voix.config import charger, version_python_acceptee
 from jarvis_robot_voix.contrat import ClientPc, ClientRobot
 from jarvis_robot_voix.fin_parole import FinDeParole
 from jarvis_robot_voix.service import ServiceVoix
@@ -192,6 +192,16 @@ def test_wav_contrat_et_phrases_d_arret():
     assert not est_arret("[unk]")
     mots = json.loads(grammaire_json())
     assert "[unk]" in mots and "stop" in mots
+
+
+def test_point5_python_3_11_a_3_13_seulement():
+    assert version_python_acceptee(3, 11) and version_python_acceptee(3, 12) and version_python_acceptee(3, 13)
+    assert not version_python_acceptee(3, 10)
+    assert not version_python_acceptee(3, 14)
+    texte = (RACINE / "requirements.txt").read_text(encoding="utf-8")
+    assert "numpy==2.4.6" in texte and "scipy==1.17.1" in texte and "onnxruntime==1.31.1" in texte
+    assert "numpy==1.26.4" not in texte
+    assert "11<=v[1]<=13" in (RACINE / "installer.sh").read_text(encoding="utf-8")
 
 
 def test_point1_entetes_minuscules_comme_le_pont():

@@ -16,8 +16,8 @@ MODELE="$DEST/modeles/vosk-model-small-fr-0.22"
 VOSK_URL="https://alphacephei.com/vosk/models/vosk-model-small-fr-0.22.zip"
 VOSK_SHA="cabf6180e177eb9b3a9a9d43a437bd5e549f3a7d09525e5d69a3fed787be12ad"
 
-python3 -c 'import sys; assert sys.version_info >= (3, 11)' || {
-  echo "Python 3.11 ou plus requis (Raspberry Pi OS Bookworm)." >&2
+python3 -c 'import sys; v=sys.version_info; raise SystemExit(0 if v[0]==3 and 11<=v[1]<=13 else 1)' || {
+  echo "Python 3.11, 3.12 ou 3.13 requis (roues aarch64). Version trop récente ou trop ancienne : le Pi compilerait numpy." >&2
   exit 1
 }
 

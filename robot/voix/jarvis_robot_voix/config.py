@@ -26,6 +26,15 @@ class Config:
         return 0.85 - 0.5 * valeur
 
 
+def version_python_acceptee(majeur: int, mineur: int) -> bool:
+    """3.11, 3.12 ou 3.13 : les versions qui ont des roues aarch64 pour les paquets épinglés."""
+    return majeur == 3 and 11 <= mineur <= 13
+
+
+def jetons_remplis(config: Config) -> bool:
+    return bool(config.jeton_enceinte.strip() and config.jeton_robot.strip())
+
+
 def charger(chemin: Path | str) -> Config:
     donnees = tomllib.loads(Path(chemin).read_text(encoding="utf-8"))
     return Config(
