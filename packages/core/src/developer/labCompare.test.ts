@@ -54,9 +54,11 @@ describe('examen : comparaison de deux modèles', () => {
   it('ne conseille pas un total meilleur qui perd plus de deux missions que la base réussissait', () => {
     const report = fakeReport({
       base: scores([3, 3, 3, 3, 0, 0, 0, 0]),
-      candidat: scores([0, 0, 0, 3, 3, 3, 3, 1]),
+      candidat: scores([0, 0, 0, 3, 3, 3, 3, 3]),
     });
     const result = compareBench(report, 'base', 'candidat');
+    expect(result.base.passed).toBe(12);
+    expect(result.candidate.passed).toBe(15);
     expect(result.verdict).toBe('meilleur');
     expect(result.lost).toEqual(['e1-a', 'e1-b', 'e1-c']);
     expect(result.lost.length).toBeGreaterThan(COMPARE_RULE.maxLost);
@@ -75,12 +77,56 @@ describe('examen : comparaison de deux modèles', () => {
     expect(worse.lost).toEqual(['e3-h']);
   });
 
-  it('une mission écartée d’un passage ne compte ni au total ni dans la majorité', () => {
+  it('« meilleur » exige une marge : au moins +3 au total et une moyenne au-dessus du meilleur passage de la base', () => {
+    // Base 20/24 (par passage 7, 7, 6). +2 → pareil ; +3 avec une moyenne 7,67 > 7 → meilleur.
+    const base = scores([3, 3, 3, 3, 3, 3, 2, 0]);
+    const plusDeux = compareBench(fakeReport({ base, candidat: scores([3, 3, 3, 3, 3, 3, 3, 1]) }), 'base', 'candidat');
+    expect(plusDeux.base).toMatchObject({ passed: 20, perRun: [7, 7, 6] });
+    expect(plusDeux.candidate.passed).toBe(22);
+    expect(plusDeux.verdict).toBe('pareil');
+    expect(plusDeux.advised).toBe(false);
+    expect(plusDeux.reason).toContain('variation normale');
+    const plusTrois = compareBench(fakeReport({ base, candidat: scores([3, 3, 3, 3, 3, 3, 3, 2]) }), 'base', 'candidat');
+    expect(plusTrois.candidate).toMatchObject({ passed: 23, perRun: [8, 8, 7] });
+    expect(plusTrois.verdict).toBe('meilleur');
+    expect(plusTrois.advised).toBe(true);
+    // +3 au total mais le meilleur passage de la base (8) n'est pas dépassé par la moyenne du candidat (7,67) → pareil.
+    const baseIrreguliere = scores([3, 3, 3, 3, 3, 3, 1, 1]);
+    const sansMarge = compareBench(fakeReport({ base: baseIrreguliere, candidat: scores([3, 3, 3, 3, 3, 3, 3, 2]) }), 'base', 'candidat');
+    expect(sansMarge.base).toMatchObject({ passed: 20, perRun: [8, 6, 6] });
+    expect(sansMarge.candidate.passed).toBe(23);
+    expect(sansMarge.verdict).toBe('pareil');
+    expect(sansMarge.reason).toContain('meilleur passage de la base (8)');
+    // −2 → pareil ; −3 → moins bon.
+    expect(compareBench(fakeReport({ base, candidat: scores([3, 3, 3, 3, 3, 3, 0, 0]) }), 'base', 'candidat').verdict).toBe('pareil');
+    expect(compareBench(fakeReport({ base, candidat: scores([3, 3, 3, 3, 3, 2, 0, 0]) }), 'base', 'candidat').verdict).toBe('moins bon');
+  });
+
+  it('une mission écartée pour les deux modèles ne compte ni au total ni dans la majorité', () => {
     const report = fakeReport({ base: scores([3, 'excluded', 3, 3, 3, 3, 3, 3]), candidat: scores([3, 'excluded', 3, 3, 3, 3, 3, 3]) });
     const result = compareBench(report, 'base', 'candidat');
     expect(result.base.total).toBe(21);
     expect(result.missions.map((mission) => mission.id)).not.toContain('e1-b');
+    expect(result.incomparable).toEqual([]);
     expect(result.verdict).toBe('pareil');
+  });
+
+  it('une mission écartée pour un seul modèle rend les totaux non comparables : pas de verdict', () => {
+    const report = fakeReport({ base: scores([3, 'excluded', 3, 3, 3, 3, 3, 3]), candidat: scores([3, 3, 3, 3, 3, 3, 3, 3]) });
+    const result = compareBench(report, 'base', 'candidat');
+    expect(result.base.total).toBe(21);
+    expect(result.candidate.total).toBe(24);
+    expect(result.incomparable).toEqual(['e1-b']);
+    expect(result.verdict).toBe('sans verdict');
+    expect(result.advised).toBe(false);
+    expect(result.reason).toContain('non comparables');
+    expect(result.reason).toContain('e1-b');
+    expect(result.reason).toContain('examen à refaire');
+    expect(comparisonMarkdown(result)).toContain('## Verdict : sans verdict (non conseillé)');
+    expect(comparisonReport(result)).toMatchObject({ verdict: 'sans verdict', incomparable: ['e1-b'] });
+    // Un passage de plus pour un modèle seulement : même refus.
+    const unequal: BenchReport = { results: [report.results[1]!, { ...report.results[1]!, model: 'autre', runs: report.results[1]!.runs.slice(0, 2) }] };
+    expect(compareBench(unequal, 'candidat', 'autre').verdict).toBe('sans verdict');
   });
 
   it('retrouve un modèle sans étiquette (:latest) et refuse un modèle absent, sauté ou identique', () => {
@@ -115,7 +161,7 @@ describe('examen : comparaison de deux modèles', () => {
     expect(text).toContain('Verdict : meilleur — conseillé');
     expect(text).toContain('e2-f');
     const json = comparisonReport(result, at);
-    expect(json).toMatchObject({ at: at.toISOString(), set: 'eval', rule: { maxLost: 2 }, verdict: 'meilleur', advised: true, won: ['e2-e', 'e2-f'], lost: [] });
+    expect(json).toMatchObject({ at: at.toISOString(), set: 'eval', rule: { maxLost: 2, minGain: 3 }, verdict: 'meilleur', advised: true, won: ['e2-e', 'e2-f'], lost: [], incomparable: [] });
     const serialized = JSON.stringify(json);
     expect(serialized).not.toMatch(/prompt|goal|content|Fichier|\\\\|\/tmp/);
   });

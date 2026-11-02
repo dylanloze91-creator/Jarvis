@@ -154,7 +154,9 @@ console.log(compare.comparisonText(comparison));
 console.log(`\nRapport : ${mdPath}\nChiffres : ${jsonPath}`);
 if (!options.input) console.log(`Détail complet du banc (non versionné, chemins temporaires) : ${reportPath}`);
 console.log(
-  comparison.advised
-    ? `\nLe candidat est conseillé. Pour l’utiliser dans Jarvis Développeur : panneau Développeur → onglet « Modèle de code » → choisir ${options.candidate}. Rien n’est changé automatiquement.`
-    : `\nLe candidat n’est pas conseillé : garder ${options.base}. Pour retirer le candidat : ollama rm ${options.candidate}.`,
+  comparison.verdict === 'sans verdict'
+    ? `\nPas de verdict : les deux modèles n’ont pas passé les mêmes missions (${comparison.incomparable.join(', ')}). Relancer l’examen ; garder ${options.base} en attendant.`
+    : comparison.advised
+      ? `\nLe candidat est conseillé. Pour l’utiliser dans Jarvis Développeur : panneau Développeur → onglet « Modèle de code » → choisir ${options.candidate}. Rien n’est changé automatiquement.`
+      : `\nLe candidat n’est pas conseillé : garder ${options.base}. Pour retirer le candidat : ollama rm ${options.candidate}.`,
 );

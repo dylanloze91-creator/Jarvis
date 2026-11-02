@@ -6,6 +6,15 @@
  * Règle de décision (cahier des charges) : le candidat n'est conseillé que s'il dépasse la base
  * sur le total **et** ne perd pas plus de `COMPARE_RULE.maxLost` missions qu'elle réussissait.
  * « Réussissait » = réussie à la majorité des passages (2 sur 3 avec trois passages).
+ *
+ * Marge (revue du 2026-11-02, point 4) : la base elle-même varie d'un examen à l'autre (66 à 69
+ * sur 87) ; « meilleur » exige donc au moins `COMPARE_RULE.minGain` réussites de plus au total
+ * **et** une moyenne par passage au-dessus du meilleur passage de la base ; « moins bon » exige
+ * `minGain` réussites de moins ; entre les deux, c'est « pareil ».
+ *
+ * Comparabilité (point 5) : si une mission a été écartée pour un seul des deux modèles (ou dans un
+ * nombre de passages différent), les totaux ne portent pas sur les mêmes missions : pas de verdict
+ * (« sans verdict »), la raison le dit, et l'examen est à refaire.
  */
 
 /** Forme du rapport écrit par `lab-bench.mjs` (seuls les champs lus ici). */
@@ -36,9 +45,11 @@ export interface BenchReport {
 export const COMPARE_RULE = {
   /** Missions que la base réussissait et que le candidat peut perdre sans être déconseillé. */
   maxLost: 2,
+  /** Réussites de plus (ou de moins) au total, tous passages confondus, pour sortir de « pareil » (3 sur 87). */
+  minGain: 3,
 } as const;
 
-export type Verdict = 'meilleur' | 'pareil' | 'moins bon';
+export type Verdict = 'meilleur' | 'pareil' | 'moins bon' | 'sans verdict';
 
 export interface MissionComparison {
   id: string;
@@ -68,6 +79,8 @@ export interface Comparison {
   missions: MissionComparison[];
   won: string[];
   lost: string[];
+  /** Missions comptées pour un seul des deux modèles, ou dans un nombre de passages différent : totaux non comparables. */
+  incomparable: string[];
   verdict: Verdict;
   /** `true` seulement si la règle du cahier des charges est satisfaite. */
   advised: boolean;
@@ -133,20 +146,40 @@ export function compareBench(report: BenchReport, baseName: string, candidateNam
   });
   const won = missions.filter((mission) => mission.change === 'gagnée').map((mission) => mission.id);
   const lost = missions.filter((mission) => mission.change === 'perdue').map((mission) => mission.id);
+  const incomparable = ids.filter((id) => (baseTable.get(id)?.runs ?? 0) !== (candidateTable.get(id)?.runs ?? 0));
   const baseScore = scoreOf(base, missions.filter((mission) => mission.baseSucceeded).length);
   const candidateScore = scoreOf(candidate, missions.filter((mission) => mission.candidateSucceeded).length);
-  const verdict: Verdict =
-    candidateScore.passed > baseScore.passed ? 'meilleur' : candidateScore.passed === baseScore.passed ? 'pareil' : 'moins bon';
-  const advised = verdict === 'meilleur' && lost.length <= COMPARE_RULE.maxLost;
   const totals = `${candidateScore.model} ${candidateScore.passed}/${candidateScore.total} contre ${baseScore.model} ${baseScore.passed}/${baseScore.total}`;
+  if (incomparable.length > 0) {
+    return {
+      base: baseScore,
+      candidate: candidateScore,
+      missions,
+      won,
+      lost,
+      incomparable,
+      verdict: 'sans verdict',
+      advised: false,
+      reason: `${totals} : totaux non comparables, ${incomparable.length} mission(s) écartée(s) pour un seul des deux modèles (${incomparable.join(', ')}) → pas de verdict, examen à refaire (garder la base en attendant).`,
+    };
+  }
+  const gain = candidateScore.passed - baseScore.passed;
+  const bestBaseRun = Math.max(...baseScore.perRun);
+  const candidateMean = candidateScore.passed / candidateScore.perRun.length;
+  const verdict: Verdict =
+    gain >= COMPARE_RULE.minGain && candidateMean > bestBaseRun ? 'meilleur' : gain <= -COMPARE_RULE.minGain ? 'moins bon' : 'pareil';
+  const advised = verdict === 'meilleur' && lost.length <= COMPARE_RULE.maxLost;
+  const margin = `(marge : au moins +${COMPARE_RULE.minGain} au total et une moyenne par passage au-dessus du meilleur passage de la base, ${bestBaseRun})`;
   const reason = advised
-    ? `${totals} : le candidat dépasse la base sur le total et perd ${lost.length} mission(s) qu’elle réussissait (${COMPARE_RULE.maxLost} au plus) → conseillé.`
+    ? `${totals} : le candidat dépasse la base de ${gain} ${margin} et perd ${lost.length} mission(s) qu’elle réussissait (${COMPARE_RULE.maxLost} au plus) → conseillé.`
     : verdict === 'meilleur'
-      ? `${totals} : total meilleur, mais ${lost.length} mission(s) perdue(s) que la base réussissait (${lost.join(', ')}), plus que ${COMPARE_RULE.maxLost} → non conseillé.`
+      ? `${totals} : total meilleur de ${gain} ${margin}, mais ${lost.length} mission(s) perdue(s) que la base réussissait (${lost.join(', ')}), plus que ${COMPARE_RULE.maxLost} → non conseillé.`
       : verdict === 'pareil'
-        ? `${totals} : même total → non conseillé (garder la base, rien ne change).`
-        : `${totals} : le candidat fait moins bien → non conseillé (garder la base).`;
-  return { base: baseScore, candidate: candidateScore, missions, won, lost, verdict, advised, reason };
+        ? gain >= COMPARE_RULE.minGain
+          ? `${totals} : +${gain} au total, mais la moyenne par passage du candidat (${candidateMean.toFixed(1)}) ne dépasse pas le meilleur passage de la base (${bestBaseRun}) : écart dans la variation normale → pareil, non conseillé (garder la base).`
+          : `${totals} : écart de ${gain >= 0 ? '+' : ''}${gain}, dans la variation normale de la base (moins de ${COMPARE_RULE.minGain}) → pareil, non conseillé (garder la base, rien ne change).`
+        : `${totals} : le candidat fait moins bien (${gain}) → non conseillé (garder la base).`;
+  return { base: baseScore, candidate: candidateScore, missions, won, lost, incomparable, verdict, advised, reason };
 }
 
 function pad(text: string | number, width: number): string {
@@ -177,7 +210,7 @@ export function comparisonMarkdown(comparison: Comparison, at = new Date()): str
     '',
     comparison.reason,
     '',
-    `Règle : le candidat n'est conseillé que s'il dépasse la base sur le total et ne perd pas plus de ${COMPARE_RULE.maxLost} missions qu'elle réussissait. Le choix final reste à l'utilisateur.`,
+    `Règle : le candidat n'est conseillé que s'il dépasse la base sur le total d'au moins ${COMPARE_RULE.minGain} réussites, avec une moyenne par passage au-dessus du meilleur passage de la base, et s'il ne perd pas plus de ${COMPARE_RULE.maxLost} missions qu'elle réussissait. Une mission écartée pour un seul des deux modèles rend les totaux non comparables : pas de verdict. Le choix final reste à l'utilisateur.`,
     '',
   ];
   return lines.join('\n');
@@ -212,6 +245,7 @@ export function comparisonReport(comparison: Comparison, at = new Date()): Recor
     missions: comparison.missions,
     won: comparison.won,
     lost: comparison.lost,
+    incomparable: comparison.incomparable,
     verdict: comparison.verdict,
     advised: comparison.advised,
     reason: comparison.reason,
