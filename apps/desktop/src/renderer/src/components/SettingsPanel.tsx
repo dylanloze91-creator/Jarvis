@@ -27,7 +27,7 @@ import { UpdateSettingsSection } from '@/components/UpdateSettings';
 import { VoiceSettingsSection } from '@/components/VoiceSettings';
 import { SettingsTabBar, TabPanel, type SettingsTabId } from '@/components/SettingsTabs';
 import { DeveloperSettingsSection } from '@/components/developer/DeveloperSettings';
-import { settingsPatch } from '@/lib/settingsPatch';
+import { absorbSavedSettings, settingsPatch, type SettingsDraft } from '@/lib/settingsPatch';
 import type { RuntimeStatus } from '../../../shared/ipc';
 
 /** Onglet rouvert à la prochaine visite des réglages (session en cours). */
@@ -42,8 +42,11 @@ export function openSettingsOnTab(tab: SettingsTabId): void {
  * 5.0.64 — brouillon non enregistré gardé pour la session : Échap ou un clic
  * ailleurs ferment le panneau, mais les modifications attendent le retour
  * (« Modifications non enregistrées ») au lieu de disparaître sans prévenir.
+ * Gardé avec l'instantané dont il est parti (`base`) : « Enregistrer » compare à cet
+ * instantané, pas aux réglages courants, pour ne pas défaire un réglage fait ailleurs
+ * entre-temps.
  */
-let keptDraft: Settings | null = null;
+let keptDraft: SettingsDraft | null = null;
 
 interface SettingsPanelProps {
   settings: Settings;
@@ -56,7 +59,9 @@ interface SettingsPanelProps {
 }
 
 export function SettingsPanel({ settings, status, onSaved, requestedTab, onAnalyzeMachine }: SettingsPanelProps) {
-  const [draft, setDraft] = useState<Settings>(() => keptDraft ?? settings);
+  const [draft, setDraft] = useState<Settings>(() => keptDraft?.draft ?? settings);
+  /** Instantané des réglages à la création du brouillon : la base de comparaison de « Enregistrer ». */
+  const baseRef = useRef<Settings>(keptDraft?.base ?? settings);
   const [providers, setProviders] = useState<ProviderDescriptor[]>([]);
   const [searchProviders, setSearchProviders] = useState<SearchProviderDescriptor[]>([]);
   const [marketDataProviders, setMarketDataProviders] = useState<MarketDataProviderDescriptor[]>(
@@ -79,7 +84,7 @@ export function SettingsPanel({ settings, status, onSaved, requestedTab, onAnaly
   draftRef.current = draft;
   useEffect(
     () => () => {
-      keptDraft = dirty.current ? draftRef.current : null;
+      keptDraft = dirty.current ? { base: baseRef.current, draft: draftRef.current } : null;
     },
     [],
   );
@@ -90,14 +95,19 @@ export function SettingsPanel({ settings, status, onSaved, requestedTab, onAnaly
     void window.jarvis.settings.marketDataProviders().then(setMarketDataProviders);
   }, []);
 
-  // Un choix de micro est enregistré tout de suite : les autres modifications
-  // non enregistrées du brouillon ne sont pas perdues pour autant.
+  // Un choix de micro ou le mode Développeur sont enregistrés tout de suite, et le
+  // processus principal écrit certains blocs de son côté : le brouillon prend ces
+  // nouvelles valeurs pour les clés que l'utilisateur n'a pas touchées, garde les siennes,
+  // et la base de comparaison devient les réglages enregistrés.
   useEffect(() => {
-    setDraft((current) =>
-      dirty.current
-        ? { ...current, developer: settings.developer, voice: { ...current.voice, microphoneId: settings.voice.microphoneId } }
-        : settings,
-    );
+    if (!dirty.current) {
+      baseRef.current = settings;
+      setDraft(settings);
+      return;
+    }
+    const next = absorbSavedSettings({ base: baseRef.current, draft: draftRef.current }, settings);
+    baseRef.current = next.base;
+    setDraft(next.draft);
   }, [settings]);
 
   // Comme le micro : enregistré tout de suite, les actions du mode Développeur en dépendent.
@@ -137,7 +147,7 @@ export function SettingsPanel({ settings, status, onSaved, requestedTab, onAnaly
     const wanted = { ...draft, fallbackModel: draft.fallbackModel.trim() || 'qwen2.5:3b' };
     setSaveNotice(null);
     void window.jarvis.settings
-      .set(settingsPatch(settings, wanted))
+      .set(settingsPatch(baseRef.current, wanted))
       .then((payload) => {
         dirty.current = false;
         keptDraft = null;
