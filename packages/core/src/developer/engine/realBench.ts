@@ -113,10 +113,11 @@ function insertBeforeFirst(text: string, pattern: RegExp, line: string): string 
 }
 
 function extractFunction(text: string, name: string): string | null {
-  const start = text.indexOf(`export function ${name}`);
+  const normalized = text.replace(/\r\n/g, '\n');
+  const start = normalized.indexOf(`export function ${name}`);
   if (start < 0) return null;
-  const end = text.indexOf('\n}\n', start);
-  return end < 0 ? null : text.slice(start, end + 2);
+  const end = normalized.indexOf('\n}\n', start);
+  return end < 0 ? null : normalized.slice(start, end + 2);
 }
 
 const CONTEXT_SOURCES = [

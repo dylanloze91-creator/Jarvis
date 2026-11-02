@@ -15,7 +15,7 @@ describe('dotnetDesktop', () => {
       'dotnet publish src/CompteurDeClics.App/CompteurDeClics.App.csproj -c Release -r win-x64 --no-self-contained',
     );
     expect(dotnetWinExeArtifactRelative('Compteur de clics')).toBe(
-      'src/CompteurDeClics.App/bin/Release/net10.0-windows/win-x64/publish/CompteurDeClics.App.exe',
+      'src/CompteurDeClics.App/bin/Release/net8.0-windows/win-x64/publish/CompteurDeClics.App.exe',
     );
   });
 

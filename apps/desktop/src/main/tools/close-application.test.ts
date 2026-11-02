@@ -89,6 +89,7 @@ describe('close_application (Windows simulé) : délai partagé et accès refus�
   });
 
   it('le délai partagé dépassé est dit comme tel, jamais « aucun processus »', async () => {
+    Object.defineProperty(process, 'platform', { value: 'linux' });
     const pending = closeWindows('Teams', false);
     await vi.advanceTimersByTimeAsync(CLOSE_WINDOWS_WAIT_MS + CLOSE_WINDOWS_SCRIPT_MARGIN_MS - 1);
     expect(child.kill).not.toHaveBeenCalled();
@@ -144,6 +145,11 @@ describe('close_application (Windows simulé) : délai partagé et accès refus�
       ok: true,
       content: 'Fermé : notepad',
     });
+
+    const partial = describeCloseResult('Discord', 'GONE=Discord\nSTILL=Discord\nDENIED=\n');
+    expect(partial.ok).toBe(false);
+    expect(partial.content).toMatch(/toujours ouvert/);
+    expect(partial.content).not.toMatch(/Fermé/);
   });
 
   it('un script qui lève « introuvable » (code ≠ 0, sans délai dépassé) reste « aucun processus »', async () => {

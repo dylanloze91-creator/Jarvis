@@ -210,28 +210,7 @@ export class GoogleOAuth {
   }
 
   private listen(): Promise<{ server: Server; port: number }> {
-    const preferred = this.deps.port ?? GOOGLE_OAUTH_PORT;
-    const attempt = (port: number): Promise<{ server: Server; port: number }> =>
-      new Promise((resolve, reject) => {
-        const server = createServer();
-        server.once('error', reject);
-        server.listen(port, '127.0.0.1', () => {
-          server.removeListener('error', reject);
-          resolve({ server, port: (server.address() as AddressInfo).port });
-        });
-      });
-    return attempt(preferred)
-      .catch((error: NodeJS.ErrnoException) => {
-        if (error.code !== 'EADDRINUSE' || preferred === 0) throw error;
-        return attempt(0);
-      })
-      .catch((error: unknown) => {
-        throw new GoogleError(
-          'network',
-          "Impossible d'ouvrir l'adresse locale de retour (127.0.0.1) pour la connexion Google. Un pare-feu bloque peut-être Jarvis.",
-          { technicalDetail: error instanceof Error ? error.message : String(error) },
-        );
-      });
+    return listenGoogleOAuthLoopback(this.deps.port ?? GOOGLE_OAUTH_PORT);
   }
 
   private waitForCode(server: Server, expectedState: string, onCancel: (abort: () => void) => void): Promise<string> {
@@ -302,6 +281,36 @@ export class GoogleOAuth {
       });
     });
   }
+}
+
+/** Boucle locale OAuth Google : port préféré, puis port libre si EADDRINUSE ou EACCES. */
+export function listenGoogleOAuthLoopback(
+  preferred: number = GOOGLE_OAUTH_PORT,
+  attemptListen: (port: number) => Promise<{ server: Server; port: number }> = defaultLoopbackListen,
+): Promise<{ server: Server; port: number }> {
+  return attemptListen(preferred)
+    .catch((error: NodeJS.ErrnoException) => {
+      if ((error.code !== 'EADDRINUSE' && error.code !== 'EACCES') || preferred === 0) throw error;
+      return attemptListen(0);
+    })
+    .catch((error: unknown) => {
+      throw new GoogleError(
+        'network',
+        "Impossible d'ouvrir l'adresse locale de retour (127.0.0.1) pour la connexion Google. Un pare-feu bloque peut-être Jarvis.",
+        { technicalDetail: error instanceof Error ? error.message : String(error) },
+      );
+    });
+}
+
+function defaultLoopbackListen(port: number): Promise<{ server: Server; port: number }> {
+  return new Promise((resolve, reject) => {
+    const server = createServer();
+    server.once('error', reject);
+    server.listen(port, '127.0.0.1', () => {
+      server.removeListener('error', reject);
+      resolve({ server, port: (server.address() as AddressInfo).port });
+    });
+  });
 }
 
 interface OAuthErrorBody {

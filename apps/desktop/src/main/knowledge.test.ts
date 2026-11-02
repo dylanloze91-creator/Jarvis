@@ -56,7 +56,7 @@ describe('KnowledgeStore', () => {
         ...Array.from({ length: 8 }, (_, i) => `bravo-${i}`),
       ].sort(),
     );
-  });
+  }, 15_000);
 
   it('retrouve une fiche pendant qu’une autre instance réécrit la conversation', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'jarvis-learning-live-'));

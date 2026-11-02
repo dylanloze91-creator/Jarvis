@@ -32,7 +32,7 @@ export function dotnetSolutionFile(projectTitle: string): string {
 /** Chemin relatif du .exe après `dotnet publish` (RID win-x64, hors Windows). */
 export function dotnetWinExeArtifactRelative(
   projectTitle: string,
-  tfmWindows = 'net10.0-windows',
+  tfmWindows = 'net8.0-windows',
 ): string {
   const n = dotnetProjectBaseName(projectTitle);
   return `src/${n}.App/bin/Release/${tfmWindows}/win-x64/publish/${n}.App.exe`;
