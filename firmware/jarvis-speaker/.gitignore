@@ -1,0 +1,11 @@
+# Le jeton de l'enceinte et le mot de passe Wi-Fi ne vont jamais dans le dépôt.
+include/secrets.h
+
+.pio/
+managed_components/
+sdkconfig
+sdkconfig.*
+!sdkconfig.defaults
+sdkconfig.old
+.vscode/
+__pycache__/
