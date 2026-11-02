@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import logging
 import signal
-import threading
 
 from .arret import ReconnaissanceVosk
 from .boucle import Boucle
@@ -35,32 +34,52 @@ def main(argv: list[str] | None = None) -> int:
             config.modele_vosk,
         )
 
+    from .service import ServiceVoix
     from .sortie_alsa import SortieAlsa
 
-    boucle = Boucle(
-        client,
-        robot,
-        reveil.declenche,
-        reconnaissance.texte,
-        SortieAlsa(config.peripherique),
-    )
-    arret = threading.Event()
-
-    def demander_arret(*_args: object) -> None:
-        arret.set()
-
-    signal.signal(signal.SIGINT, demander_arret)
-    signal.signal(signal.SIGTERM, demander_arret)
+    sortie = SortieAlsa(config.peripherique)
+    boucle = Boucle(client, robot, reveil.declenche, reconnaissance.texte, sortie)
+    service = ServiceVoix(boucle, reconnaissance.pousser, ouvrir_flux=lambda: None, fermer_flux=lambda: None)
+    peripherique = None if config.peripherique in ("", "default") else config.peripherique
+    flux = {"courant": None}
 
     import sounddevice as sd
-
-    peripherique = None if config.peripherique in ("", "default") else config.peripherique
 
     def rappel(entree, _frames, _temps, statut) -> None:
         if statut:
             logging.warning("audio : %s", statut)
-        boucle.pas(entree.tobytes() if hasattr(entree, "tobytes") else bytes(entree))
+        try:
+            service.recevoir(entree.tobytes() if hasattr(entree, "tobytes") else bytes(entree))
+        except Exception:
+            logging.exception("trame audio ignorée")
 
+    def ouvrir() -> None:
+        courant = sd.InputStream(
+            samplerate=TAUX,
+            channels=1,
+            dtype="int16",
+            blocksize=ECHANTILLONS_PAR_TRAME,
+            device=peripherique,
+            callback=rappel,
+        )
+        courant.start()
+        flux["courant"] = courant
+
+    def fermer() -> None:
+        courant = flux["courant"]
+        flux["courant"] = None
+        if courant is not None:
+            courant.stop()
+            courant.close()
+
+    service.ouvrir_flux = ouvrir
+    service.fermer_flux = fermer
+
+    def demander_arret(*_args: object) -> None:
+        service.arret.set()
+
+    signal.signal(signal.SIGINT, demander_arret)
+    signal.signal(signal.SIGTERM, demander_arret)
     logging.info(
         "voix du robot : PC %s:%s, robot %s:%s, périphérique %s",
         config.pc_hote,
@@ -69,17 +88,7 @@ def main(argv: list[str] | None = None) -> int:
         config.robot_port,
         config.peripherique,
     )
-    with sd.InputStream(
-        samplerate=TAUX,
-        channels=1,
-        dtype="int16",
-        blocksize=ECHANTILLONS_PAR_TRAME,
-        device=peripherique,
-        callback=rappel,
-    ):
-        while not arret.wait(0.5):
-            pass
-    return 0
+    return service.tourner()
 
 
 if __name__ == "__main__":

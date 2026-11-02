@@ -4,7 +4,9 @@ After=network-online.target sound.target
 Wants=network-online.target
 
 [Service]
-Type=simple
+Type=notify
+NotifyAccess=all
+WatchdogSec=15
 User=jarvis-voix
 Group=audio
 WorkingDirectory=/opt/jarvis-robot-voix

@@ -47,6 +47,10 @@ class ReconnaissanceVosk:
     def disponible(self) -> bool:
         return Path(self.dossier).is_dir()
 
+    def pousser(self, pcm: bytes) -> bool:
+        """Une trame. Point 3 remplace ceci par une lecture continue."""
+        return est_arret(self.texte(pcm))
+
     def texte(self, pcm: bytes) -> str:
         if not self.disponible():
             self._erreur = self._erreur or f"modèle Vosk absent : {self.dossier}"

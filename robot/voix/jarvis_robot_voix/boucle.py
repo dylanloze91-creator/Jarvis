@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 from collections import deque
 from collections.abc import Callable
 
@@ -45,6 +46,7 @@ class Boucle:
         self.trames_ignorees = 0
         self.arrets_locaux = 0
         self.erreurs_reseau = 0
+        self._annule = threading.Event()
         self._tampon = b""
         self._preroll: deque[bytes] = deque()
         self._preroll_octets = 0
@@ -109,23 +111,41 @@ class Boucle:
             return
         self._envoyer(self._capture, self.suivi)
 
-    def _stop_local(self) -> None:
+    def couper(self) -> None:
+        """Stop immédiat, depuis n'importe quel fil, sans attendre la fin de phrase."""
+        self._annule.set()
+        interrompre = getattr(self.sortie, "interrompre", None)
+        if interrompre is not None:
+            interrompre()
+        self._stop_local(revenir=False)
+
+    def _stop_local(self, revenir: bool = True) -> None:
         """Avant tout appel au PC, et sans l'attendre."""
         self.arrets_locaux += 1
         try:
             self.robot.stop()
         except ErreurReseau:
             journal.warning("le service du robot n'a pas pris l'arrêt")
-        self._revenir_veille()
+            self._jouer(bip_erreur())
+        if revenir:
+            self._revenir_veille()
 
     def _envoyer(self, pcm: bytes, suivi: bool) -> None:
         if not self.bonjour_fait:
             self._lire_bonjour()
+        if self._annule.is_set():
+            self._annule.clear()
+            self._revenir_veille()
+            return
         try:
             reponse = self.client.tour(pcm_vers_wav(pcm), suivi=suivi)
         except ErreurReseau:
             self.erreurs_reseau += 1
             self._jouer(bip_erreur())
+            self._revenir_veille()
+            return
+        if self._annule.is_set():
+            self._annule.clear()
             self._revenir_veille()
             return
         if reponse.statut == 204 or reponse.statut == 200 and not reponse.wav:
@@ -137,6 +157,10 @@ class Boucle:
             self._revenir_veille()
             return
         self._jouer(reponse.wav)
+        if self.etat == "veille" or self._annule.is_set():
+            self._annule.clear()
+            self._revenir_veille()
+            return
         if reponse.continuer:
             self.etat = "suivi"
             self.suivi = True
@@ -164,6 +188,9 @@ class Boucle:
             self.sortie.jouer(wav)
         finally:
             self.micro_ouvert = True
+        if self._annule.is_set():
+            self._annule.clear()
+            self._revenir_veille()
 
     def _suivi(self, trame: bytes) -> None:
         if rms(trame) >= SEUIL:

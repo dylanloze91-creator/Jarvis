@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -14,6 +15,7 @@ from jarvis_robot_voix.boucle import Boucle
 from jarvis_robot_voix.config import charger
 from jarvis_robot_voix.contrat import ClientPc, ClientRobot
 from jarvis_robot_voix.fin_parole import FinDeParole
+from jarvis_robot_voix.service import ServiceVoix
 from jarvis_robot_voix.wav import TAUX, bip_erreur, generer, pcm_vers_wav, silence, wav_vers_pcm
 
 RACINE = Path(__file__).resolve().parents[1]
@@ -58,6 +60,9 @@ class Journal(BaseHTTPRequestHandler):
     def do_POST(self):
         corps = self._corps()
         self._noter(corps)
+        if self.path.startswith("/api/speaker/turn") and getattr(self.server, "bloque", None) is not None:
+            self.server.entre.set()
+            self.server.bloque.wait(timeout=5)
         if self.path.startswith("/api/stop"):
             self.send_response(200)
             self.send_header("Content-Length", "0")
@@ -113,15 +118,25 @@ def config_vers(pc_port, robot_port, timeout=0.4):
 
 
 class Sortie:
-    def __init__(self, boucle=None, pendant=False):
+    def __init__(self, boucle=None, pendant=False, bloquer=False):
         self.joues = []
         self.boucle = boucle
         self.pendant = pendant
+        self._couper = threading.Event()
+        self.bloquer = bloquer
+        self.en_lecture = threading.Event()
+
+    def interrompre(self) -> None:
+        self._couper.set()
 
     def jouer(self, wav: bytes) -> None:
+        self._couper.clear()
         self.joues.append(wav)
+        self.en_lecture.set()
         if self.pendant and self.boucle is not None:
             self.boucle.pas(generer(80, amplitude=20000))
+        if self.bloquer:
+            self._couper.wait(timeout=3)
 
 
 def reveil_fort(pcm: bytes) -> bool:
@@ -302,6 +317,77 @@ def test_pc_injoignable_joue_une_erreur_sans_bloquer():
         assert robot.journal == []
     finally:
         robot.shutdown()
+
+
+def _marque_stop(pcm: bytes) -> bool:
+    if len(pcm) < 2:
+        return False
+    return int.from_bytes(pcm[:2], "little", signed=True) == 12345
+
+
+def _trame_stop() -> bytes:
+    brut = bytearray(generer(80, amplitude=1000))
+    brut[0:2] = (12345).to_bytes(2, "little", signed=True)
+    return bytes(brut)
+
+
+def test_point2_stop_pendant_la_requete_et_pendant_la_lecture():
+    bloque = threading.Event()
+    service = None
+    pc = servir(["fin", "fin"])
+    pc.bloque = bloque
+    pc.entre = threading.Event()
+    robot = servir([])
+    try:
+        _config, client, client_robot = config_vers(pc.server_address[1], robot.server_address[1], timeout=3)
+        sortie = Sortie()
+        boucle = Boucle(client, client_robot, reveil_fort, phrase("bonjour"), sortie)
+        service = ServiceVoix(boucle, _marque_stop, lambda: None, lambda: None, silence_s=30)
+        service.demarrer_fils()
+        for morceau in scenario_parole():
+            service.recevoir(morceau)
+        assert pc.entre.wait(2), "la requête PC aurait dû rester ouverte"
+        avant = time.monotonic()
+        service.recevoir(_trame_stop())
+        assert time.monotonic() - avant < 0.3
+        for _ in range(50):
+            if robot.journal:
+                break
+            time.sleep(0.02)
+        assert [e["chemin"] for e in robot.journal] == ["/api/stop"]
+        assert not bloque.is_set()
+        bloque.set()
+
+        robot.journal.clear()
+        pc.entre.clear()
+        pc.bloque = None
+        sortie.bloquer = True
+        for morceau in scenario_parole():
+            service.recevoir(morceau)
+        assert sortie.en_lecture.wait(2)
+        service.recevoir(_trame_stop())
+        for _ in range(50):
+            if robot.journal:
+                break
+            time.sleep(0.02)
+        assert robot.journal
+        assert sortie._couper.is_set()
+    finally:
+        bloque.set()
+        if service is not None:
+            service.arreter_fils()
+        pc.shutdown()
+        robot.shutdown()
+
+
+def test_point2_chien_de_garde_quitte_si_le_flux_ne_repart_pas():
+    def ouvrir():
+        raise RuntimeError("usb débranché")
+
+    service = ServiceVoix(None, lambda _pcm: False, ouvrir, lambda: None, silence_s=0, essais_flux=2)
+    service.dernier_son = 0
+    assert service.tick_garde() is None
+    assert service.tick_garde() == 1
 
 
 def test_micro_coupe_pendant_la_lecture():
