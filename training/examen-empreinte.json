@@ -1,0 +1,5 @@
+{
+  "note": "Empreinte SHA-256 du catalogue d'évaluation (evalCatalog(), 29 missions) telle que l'écrit « npm run lab:prepare » dans preparation/resume.json (champ examCatalog). train_lora.py refuse une preparation/ faite avec un autre catalogue. Tenue à jour par packages/core/src/developer/labTrainPrep.test.ts : si l'examen change, relancer la préparation.",
+  "missions": 29,
+  "sha256": "26432094b94e68e70433a53e5c7152cae8d824c6c9c20281e5c9fb68df2eee5f"
+}

@@ -22,7 +22,9 @@
     "test": "vitest run",
     "lab": "tsc -p tsconfig.json && node scripts/lab-bench.mjs",
     "lab:generate": "tsc -p tsconfig.json && node scripts/lab-generate.mjs",
-    "lab:clean": "tsc -p tsconfig.json && node scripts/lab-clean.mjs"
+    "lab:clean": "tsc -p tsconfig.json && node scripts/lab-clean.mjs",
+    "lab:prepare": "tsc -p tsconfig.json && node scripts/lab-prepare.mjs",
+    "lab:compare": "tsc -p tsconfig.json && node scripts/lab-compare.mjs"
   },
   "dependencies": {
     "zod": "^4.6.5"

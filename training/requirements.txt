@@ -1,0 +1,23 @@
+# Outils d'entraînement de l'élève de Jarvis (5.0.65) — versions épinglées le 2026-11-02 (PyPI).
+# torch est installé à part par setup-windows.ps1 (roue CUDA : https://download.pytorch.org/whl/cu128),
+# même version qu'ici ; ce fichier sert tel quel pour un environnement processeur (tests, Cursor).
+torch==2.11.0
+transformers==4.57.6
+tokenizers==0.22.2
+huggingface-hub==0.36.2
+safetensors==0.8.0
+peft==0.21.2
+bitsandbytes==0.50.2
+datasets==4.8.5
+accelerate==1.15.0
+numpy==2.2.6
+# Conversion GGUF (convert_hf_to_gguf.py de llama.cpp b12032 : gguf-py 0.19.0, sentencepiece, protobuf<5)
+gguf==0.19.0
+sentencepiece==0.2.2
+protobuf==4.25.9
+# Tests
+pytest==9.2.0
+# Note : trl (cité dans le cahier des charges) n'est pas utilisé. Le masque de perte « réponse de
+# l'assistant seulement » et le gabarit de chat avec outils sont faits à la main dans
+# jarvis_training/data.py avec le Trainer de transformers : le résultat est vérifié jeton par jeton
+# par training/tests/, ce que le SFTTrainer de trl n'aurait pas rendu plus simple.
