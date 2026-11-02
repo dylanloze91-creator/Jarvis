@@ -208,6 +208,36 @@ def test_wav_contrat_et_phrases_d_arret():
     assert "[unk]" in mots and "stop" in mots
 
 
+def test_point8_relit_le_bonjour_et_journalise_lechec(caplog):
+    pc = servir(["fin", "fin"])
+    robot = servir([])
+    try:
+        _config, client, client_robot = config_vers(pc.server_address[1], robot.server_address[1])
+        boucle = Boucle(client, client_robot, reveil_fort, phrase("bonjour"), Sortie())
+        alimenter(boucle, *scenario_parole())
+        assert boucle.suivi_ms == 1000
+        assert sum(1 for e in pc.journal if e["chemin"] == "/api/speaker/hello") == 1
+        pc.suivi_ms = 2500
+        boucle._bonjour_a = 0
+        boucle._reste_echo_ms = 0
+        alimenter(boucle, *scenario_parole())
+        assert boucle.suivi_ms == 2500
+        assert sum(1 for e in pc.journal if e["chemin"] == "/api/speaker/hello") == 2
+        prise = __import__("socket").socket()
+        prise.bind(("127.0.0.1", 0))
+        port = prise.getsockname()[1]
+        prise.close()
+        boucle.client = ClientPc(_config.__class__(**{**_config.__dict__, "pc_port": port}), timeout_connexion=0.2, timeout_lecture=0.2)
+        boucle.bonjour_fait = False
+        with caplog.at_level("WARNING"):
+            boucle._lire_bonjour()
+        assert "impossible" in caplog.text
+        assert boucle.bonjour_fait is False
+    finally:
+        pc.shutdown()
+        robot.shutdown()
+
+
 def test_point7_503_joue_le_wav_du_pc_et_401_est_nomme(caplog):
     from jarvis_robot_voix.boucle import LIBELLES_PC
 

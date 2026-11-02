@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
 from collections import deque
 from collections.abc import Callable
 
@@ -25,6 +26,7 @@ LIBELLES_PC = {
 
 PREROLL_MS = 300
 DELAI_ECHO_MS = 300
+BONJOUR_TOUTES_LES_S = 60.0
 
 
 class SortieAudio:
@@ -66,6 +68,7 @@ class Boucle:
         self._taille = taille_trame_reveil()
         self._plafond_preroll = int(TAUX * PREROLL_MS / 1000.0) * 2
         self._reste_echo_ms = 0.0
+        self._bonjour_a = 0.0
 
     def pas(self, trame: bytes) -> None:
         if not trame:
@@ -156,8 +159,7 @@ class Boucle:
             self._revenir_veille()
 
     def _envoyer(self, pcm: bytes, suivi: bool) -> None:
-        if not self.bonjour_fait:
-            self._lire_bonjour()
+        self._lire_bonjour()
         if self._annule.is_set():
             self._annule.clear()
             self._revenir_veille()
@@ -166,6 +168,7 @@ class Boucle:
             reponse = self.client.tour(pcm_vers_wav(pcm), suivi=suivi)
         except ErreurReseau:
             self.erreurs_reseau += 1
+            self.bonjour_fait = False
             self._jouer(bip_erreur())
             self._revenir_veille()
             return
@@ -207,15 +210,21 @@ class Boucle:
         self._revenir_veille()
 
     def _lire_bonjour(self) -> None:
+        maintenant = time.monotonic()
+        if self.bonjour_fait and maintenant - self._bonjour_a < BONJOUR_TOUTES_LES_S:
+            return
         try:
             info = self.client.bonjour()
         except ErreurReseau:
+            journal.warning("bonjour du PC impossible")
+            self.bonjour_fait = False
             return
         if "followUpMs" in info:
             try:
                 self.suivi_ms = float(info["followUpMs"])
             except (TypeError, ValueError):
                 pass
+        self._bonjour_a = maintenant
         self.bonjour_fait = True
 
     def _jouer(self, wav: bytes) -> None:
