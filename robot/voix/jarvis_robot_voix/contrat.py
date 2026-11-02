@@ -72,7 +72,8 @@ class ClientPc:
             self.config.pc_hote,
             self.config.pc_port,
         )
-        return ReponseTour(statut, corps if statut == 200 else b"", continuer, transcription)
+        wav = corps if statut == 200 or (statut == 503 and corps.startswith(b"RIFF")) else b""
+        return ReponseTour(statut, wav, continuer, transcription)
 
     def _demander(self, methode, chemin, corps, entetes, timeout, jeton, hote, port):
         tous = {"Authorization": f"Bearer {jeton}", **entetes}

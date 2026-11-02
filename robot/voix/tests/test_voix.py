@@ -75,6 +75,20 @@ class Journal(BaseHTTPRequestHandler):
             self.end_headers()
             return
         mode = self.server.modes.pop(0)
+        if mode == "503":
+            wav = pcm_vers_wav(generer(40, amplitude=50, frequence=660))
+            self.send_response(503)
+            self.send_header("Content-Type", "audio/wav")
+            self.send_header("x-jarvis-continue", "0")
+            self.send_header("Content-Length", str(len(wav)))
+            self.end_headers()
+            self.wfile.write(wav)
+            return
+        if mode == "401":
+            self.send_response(401)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
         if mode == "204":
             self.send_response(204)
             self.send_header("x-jarvis-continue", "0")
@@ -192,6 +206,32 @@ def test_wav_contrat_et_phrases_d_arret():
     assert not est_arret("[unk]")
     mots = json.loads(grammaire_json())
     assert "[unk]" in mots and "stop" in mots
+
+
+def test_point7_503_joue_le_wav_du_pc_et_401_est_nomme(caplog):
+    from jarvis_robot_voix.boucle import LIBELLES_PC
+
+    assert "refusé" in LIBELLES_PC[401]
+    attendu = pcm_vers_wav(generer(40, amplitude=50, frequence=660))
+    pc = servir(["503", "401"])
+    robot = servir([])
+    try:
+        _config, client, client_robot = config_vers(pc.server_address[1], robot.server_address[1])
+        sortie = Sortie()
+        boucle = Boucle(client, client_robot, reveil_fort, phrase("bonjour"), sortie)
+        with caplog.at_level("WARNING"):
+            alimenter(boucle, *scenario_parole())
+        assert sortie.joues == [attendu]
+        assert "503" in caplog.text and "écouter" in caplog.text
+        caplog.clear()
+        boucle._reste_echo_ms = 0
+        with caplog.at_level("WARNING"):
+            alimenter(boucle, *scenario_parole())
+        assert "401" in caplog.text and "refusé" in caplog.text
+        assert sortie.joues[-1] == bip_erreur()
+    finally:
+        pc.shutdown()
+        robot.shutdown()
 
 
 def test_point6_echo_doublon_et_reinitialisation():

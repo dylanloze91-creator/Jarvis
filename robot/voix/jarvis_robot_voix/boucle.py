@@ -15,6 +15,14 @@ from .wav import TAUX, bip_alerte, bip_erreur, duree_ms, pcm_vers_wav, rms
 
 journal = logging.getLogger("jarvis_robot_voix")
 
+LIBELLES_PC = {
+    401: "jeton d'enceinte refusé",
+    403: "adresse refusée, réseau local seulement",
+    413: "phrase trop longue pour le PC",
+    429: "une phrase est déjà en cours sur le PC",
+    503: "le PC n'a pas pu écouter",
+}
+
 PREROLL_MS = 300
 DELAI_ECHO_MS = 300
 
@@ -173,7 +181,15 @@ class Boucle:
             return
         if reponse.statut != 200:
             self.erreurs_reseau += 1
-            self._jouer(bip_erreur())
+            journal.warning(
+                "réponse du PC %s : %s",
+                reponse.statut,
+                LIBELLES_PC.get(reponse.statut, "inattendue"),
+            )
+            if reponse.statut == 503 and reponse.wav:
+                self._jouer(reponse.wav)
+            else:
+                self._jouer(bip_erreur())
             self._revenir_veille()
             return
         self._jouer(reponse.wav)
