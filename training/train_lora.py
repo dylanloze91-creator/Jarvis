@@ -13,10 +13,15 @@ Options principales (toutes ont une valeur par défaut raisonnable, expliquée d
     --dry-run   circuit complet sur un modèle Qwen2 minuscule et aléatoire, sur processeur, sans quantification :
                 sert aux tests et à vérifier l'installation sans carte graphique. Ne produit rien d'utilisable.
 
+Où ça tourne : le 7B en QLoRA demande de l'ordre de 9 Go de mémoire de carte (poids 4 bits,
+`embed_tokens` et `lm_head` en fp16, logits sur 152 064 mots) : **carte louée de 24 Go**
+(`cloud/README.md`). Sur la RTX 2060 (6 Go) : essai local avec `--base Qwen/Qwen2.5-Coder-3B-Instruct`,
+d'abord `--max-steps 20` pour lire le pic de mémoire réel dans le journal.
+
 Ce qui est fait : lecture de `train.jsonl` et `validation.jsonl`, mise au format exact du gabarit
 de chat du modèle (appels d'outils compris, `apply_chat_template(..., tools=...)`), perte calculée
 seulement sur la réponse de l'assistant, QLoRA 4 bits (nf4, calcul en fp16 : pas de bf16 sur une
-RTX 2060), lot de 1 avec accumulation, gradient checkpointing, perte de validation à chaque époque,
+carte Turing), lot de 1 avec accumulation, gradient checkpointing, perte de validation à chaque époque,
 arrêt dès qu'elle ne baisse plus et retour au meilleur point, journal lisible dans `journal.txt`.
 Rien n'est envoyé nulle part ; le modèle de production de Jarvis n'est pas touché : l'adaptateur
 est écrit dans `<out>/adaptateur/` et c'est `export_ollama.py` qui, sur demande, crée `jarvis-coder`.
@@ -36,6 +41,8 @@ from jarvis_training import data as donnees  # noqa: E402
 from jarvis_training import runs  # noqa: E402
 
 BASE_PAR_DEFAUT = "Qwen/Qwen2.5-Coder-7B-Instruct"
+# Pour un essai local sur une carte de 6 Go (RTX 2060) : le 7B n'y tient pas en QLoRA (voir memoire_estimee_go).
+BASE_LOCALE = "Qwen/Qwen2.5-Coder-3B-Instruct"
 # Qwen2 minuscule (2 couches, dimension 8) au gabarit de chat identique à celui de Qwen2.5-Coder-7B-Instruct.
 BASE_DRY_RUN = "yujiepan/qwen2.5-tiny-random"
 MODULES_LORA = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
@@ -48,7 +55,7 @@ def construire_parseur() -> argparse.ArgumentParser:
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parseur.add_argument("--data", required=True, type=Path, help="dossier preparation/ (train.jsonl, validation.jsonl)")
-    parseur.add_argument("--base", default=None, help=f"modèle de base Hugging Face (défaut : {BASE_PAR_DEFAUT} ; en --dry-run : {BASE_DRY_RUN})")
+    parseur.add_argument("--base", default=None, help=f"modèle de base Hugging Face (défaut : {BASE_PAR_DEFAUT}, à entraîner sur carte louée de 24 Go ; en local sur 6 Go : {BASE_LOCALE} ; en --dry-run : {BASE_DRY_RUN})")
     parseur.add_argument("--out", type=Path, default=None, help="dossier de l'entraînement (défaut : training/runs/<date>)")
     parseur.add_argument("--rank", type=int, default=16, help="rang LoRA : 16 suffit pour un format d'appel d'outil et du code court ; 32 apprend plus, plus lourd")
     parseur.add_argument("--alpha", type=int, default=32, help="échelle LoRA, deux fois le rang par habitude")
@@ -98,14 +105,56 @@ def charger_modele(base: str, *, quantifie: bool, sur_carte: bool, journal):
     return modele
 
 
-def preparer_lora(modele, args, *, quantifie: bool, checkpointing: bool):
-    from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
+def activer_checkpointing(modele) -> None:
+    """Gradient checkpointing + gradients sur les entrées, **sans** repasser de poids en fp32.
 
-    if quantifie:
-        modele = prepare_model_for_kbit_training(modele, use_gradient_checkpointing=checkpointing)
-    elif checkpointing:
-        modele.gradient_checkpointing_enable()
-        modele.enable_input_require_grads()
+    `prepare_model_for_kbit_training` de peft convertit en fp32 tous les paramètres non quantifiés ;
+    sur Qwen 7B ce sont `embed_tokens` et `lm_head` (152 064 × 3 584 chacun), soit ~4,4 Go en fp32
+    au lieu de ~2,2 Go en fp16 : le modèle ne tenait plus dans 6 Go (revue du 2026-11-02, point 2).
+    Les poids gelés restent donc en 4 bits / fp16 ; seuls les poids LoRA sont en fp32 (peft le fait
+    par défaut), ce que l'entraînement fp16 du Trainer exige.
+    """
+    modele.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
+    modele.enable_input_require_grads()
+
+
+def memoire_estimee_go(base: str) -> float | None:
+    """Ordre de grandeur de la mémoire de carte nécessaire pour l'entraînement QLoRA d'une base connue.
+
+    Poids 4 bits + `embed_tokens` et `lm_head` en fp16 + logits sur 2 048 jetons + activations et
+    optimiseur, avec une marge : chiffres de l'ordre du calcul, pas des mesures (rien n'a tourné sur
+    une carte). Un nom inconnu rend `None`.
+    """
+    nom = base.lower()
+    if "7b" in nom:
+        return 9.0
+    if "3b" in nom:
+        return 5.0
+    if "1.5b" in nom:
+        return 3.0
+    if "0.5b" in nom:
+        return 2.0
+    return None
+
+
+def conseil_memoire(base: str, vram_octets: int) -> str | None:
+    """Avertissement si la carte est trop petite pour la base, `None` sinon."""
+    besoin = memoire_estimee_go(base)
+    vram_go = vram_octets / 2**30
+    if besoin is None or vram_go >= besoin:
+        return None
+    return (
+        f"Carte de {vram_go:.1f} Go pour {base} : il faut environ {besoin:.0f} Go en QLoRA. "
+        f"Le 7B se fait sur carte louée (training/cloud/README.md) ; en local, essai sur --base {BASE_LOCALE}, "
+        "et --max-steps 20 pour mesurer la mémoire réellement prise avant une nuit complète."
+    )
+
+
+def preparer_lora(modele, args, *, quantifie: bool, checkpointing: bool):
+    from peft import LoraConfig, get_peft_model
+
+    if checkpointing:
+        activer_checkpointing(modele)
     config = LoraConfig(
         r=args.rank,
         lora_alpha=args.alpha,
@@ -141,6 +190,12 @@ def main(argv: list[str] | None = None) -> int:
         journal.info("Base : %s · %s", base, "DRY-RUN (modèle minuscule aléatoire, processeur)" if args.dry_run else ("QLoRA 4 bits" if quantifie else "LoRA fp16"))
         if point:
             journal.info("Reprise depuis %s", point)
+        if sur_carte:
+            vram = torch.cuda.get_device_properties(0).total_memory
+            journal.info("Carte : %s, %.1f Go.", torch.cuda.get_device_name(0), vram / 2**30)
+            avertissement = conseil_memoire(base, vram)
+            if avertissement:
+                journal.warning("ATTENTION : %s", avertissement)
         runs.ecrire_json(dossier / runs.PARAMETRES, {**{k: (str(v) if isinstance(v, Path) else v) for k, v in vars(args).items()}, "base": base})
 
         from transformers import AutoTokenizer
@@ -167,7 +222,7 @@ def main(argv: list[str] | None = None) -> int:
         journal.info("Perte calculée sur %d jetons de réponse sur %d au total (%.0f %%) : consigne et demande masquées.", appris, total, 100 * appris / max(1, total))
 
         modele = charger_modele(base, quantifie=quantifie, sur_carte=sur_carte, journal=journal)
-        modele = preparer_lora(modele, args, quantifie=quantifie, checkpointing=sur_carte)
+        modele = preparer_lora(modele, args, quantifie=quantifie, checkpointing=True)
         entrainables = sum(p.numel() for p in modele.parameters() if p.requires_grad)
         journal.info("LoRA rang %d, alpha %d, abandon %.2f sur %s : %s paramètres entraînables.", args.rank, args.alpha, args.dropout, ", ".join(MODULES_LORA), f"{entrainables:,}".replace(",", " "))
 
@@ -231,6 +286,9 @@ def main(argv: list[str] | None = None) -> int:
         resultat = entraineur.train(resume_from_checkpoint=str(point) if point else None)
         meilleur = entraineur.state.best_metric
         journal.info("Fin : %d pas, perte d'entraînement %.4f, meilleure perte de validation %s.", entraineur.state.global_step, resultat.training_loss, f"{meilleur:.4f}" if meilleur is not None else "—")
+        pic_go = round(torch.cuda.max_memory_allocated(0) / 2**30, 2) if sur_carte else None
+        if pic_go is not None:
+            journal.info("Pic de mémoire de carte : %.2f Go (à comparer à la mémoire totale avant une nuit complète).", pic_go)
 
         sortie = dossier / runs.ADAPTATEUR
         entraineur.model.save_pretrained(str(sortie))
@@ -245,6 +303,7 @@ def main(argv: list[str] | None = None) -> int:
             "meilleur_point": entraineur.state.best_model_checkpoint,
             "exemples": {"train": len(jeu_train), "validation": len(jeu_validation), "trop_longs": jeu_train.trop_longs + jeu_validation.trop_longs},
             "duree_s": round(time.time() - debut),
+            "pic_memoire_carte_go": pic_go,
             "adaptateur": str(sortie),
         }
         runs.ecrire_json(dossier / runs.BILAN, bilan)
