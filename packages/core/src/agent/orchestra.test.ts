@@ -4,6 +4,7 @@ import { parseSettings } from '../settings.js';
 import { DEFAULT_SYSTEM_PROMPT } from './agent.js';
 import {
   activeOrchestra,
+  activeRouter,
   arithmeticExpression,
   availableTeams,
   clockReply,
@@ -154,6 +155,7 @@ describe('chef d’orchestre — équipes, modèles et réglages', () => {
 
   it('réglage absent ou coupé : aucun orchestre, et les réglages par défaut ne gagnent pas de clé', () => {
     expect('orchestra' in parseSettings({})).toBe(false);
+    expect(activeRouter(parseSettings({}))).toBeNull();
     expect(activeOrchestra(parseSettings({ provider: 'ollama' }))).toBeNull();
     expect(
       activeOrchestra(parseSettings({ provider: 'ollama', orchestra: { enabled: false, brain: 'qwen2.5:7b' } })),
@@ -169,6 +171,18 @@ describe('chef d’orchestre — équipes, modèles et réglages', () => {
       brain: 'qwen2.5:7b',
       teams: { code: { model: 'qwen2.5-coder:7b', place: 'processeur' } },
     });
+  });
+
+  it('trieur : absent par défaut ; présent seulement si orchestre Ollama allumé', () => {
+    expect(activeRouter(parseSettings({ provider: 'ollama', orchestra: { enabled: true, brain: 'qwen2.5:7b' } }))).toBeNull();
+    expect(
+      activeRouter(
+        parseSettings({
+          provider: 'ollama',
+          orchestra: { enabled: true, brain: 'qwen2.5:7b', router: { model: 'jarvis-trieur', place: 'carte' } },
+        }),
+      ),
+    ).toEqual({ model: 'jarvis-trieur', place: 'carte' });
   });
 
   it('une équipe inconnue dans settings.json n’efface pas le reste des réglages', () => {

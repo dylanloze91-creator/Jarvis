@@ -167,4 +167,18 @@ describe('chef d’orchestre dans le chat (5.0.60)', () => {
     expect(requests).toHaveLength(1);
     expect(requests[0]!.model).toBe('qwen2.5:3b');
   });
+
+  it('trieur choisi : le triage part vers ce modèle ; réponse illisible → chat d’avant', async () => {
+    const orchestra = {
+      ...ORCHESTRA,
+      router: { model: 'jarvis-trieur', place: 'carte' as const },
+    };
+    const ok = await turn('Ouvre le Bloc-notes', 'pc', orchestra);
+    expect(ok.route).toMatchObject({ how: 'trieur', team: 'pc' });
+    expect(ok.requests[0]).toMatchObject({ model: 'jarvis-trieur' });
+    expect(ok.requests[0]?.system).toContain('chef d’orchestre');
+    const bad = await turn('Salut', '***', orchestra);
+    expect(bad.route).toBeUndefined();
+    expect(bad.requests[1]?.model).toBe('qwen2.5:3b');
+  });
 });
