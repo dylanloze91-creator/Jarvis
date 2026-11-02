@@ -1,0 +1,76 @@
+---
+description: Routine de vérification obligatoire après chaque changement de code (lancement, types, style, tests, secrets, relecture) et rapport final en français
+alwaysApply: true
+---
+
+# Routine de vérification
+
+Après **chaque** fonctionnalité ou correction, avant de dire « c'est fait », exécuter ces 6 étapes **dans l'ordre**, depuis la racine du dépôt, sur sa propre branche (`cursor/...`, jamais `main`). Rien n'est considéré terminé tant que le rapport ci-dessous n'a pas été donné.
+
+Le projet est un monorepo TypeScript (Electron 44, React 19, Vite 7, TypeScript 5.9, Vitest 3.2, ESLint 9, Node ≥ 20.19). Les outils existent déjà : ne pas en ajouter, ne pas en changer la configuration pour « faire passer » une étape.
+
+## Les 6 étapes
+
+### a. Lancement — `npm run build`
+
+Le projet est une application Electron : on ne lance pas l'interface, on prouve qu'elle se construit. `npm run build` compile `@jarvis/core` (tsc) puis `@jarvis/desktop` (`setup:voice`, icônes, `electron-vite build`). Il doit se terminer avec le code de sortie 0 et sans `error` dans la sortie.
+
+**Si ça échoue : STOP.** On corrige le lancement avant toute autre étape, et on ne corrige que ce qui bloque le lancement.
+
+### b. Types — `npm run typecheck`
+
+`tsc --noEmit` sur `@jarvis/core` et `@jarvis/desktop` (`tsconfig.node.json` + `tsconfig.web.json`). Objectif : 0 erreur. Corriger les erreurs graves ; ne pas les masquer avec `any`, `as unknown as`, `@ts-ignore` ou `@ts-expect-error` sans justification écrite.
+
+### c. Style — `npm run lint`
+
+`eslint .` à la racine. Objectif : 0 erreur et 0 avertissement (le dépôt est à zéro depuis `cursor/lint-propre`). Corriger plutôt que désactiver une règle ; pas de `eslint-disable` sans justification écrite.
+
+### d. Tests — `npm test`
+
+Vitest dans les deux workspaces. Donner le nombre **réussis / total**, en additionnant `@jarvis/core` et `@jarvis/desktop`.
+
+**Exception connue et unique :** sur une machine **sans SDK .NET** (`dotnet` introuvable, erreur `spawnSync dotnet ENOENT`), exactement **5 tests desktop** échouent et c'est attendu :
+
+- `apps/desktop/src/main/developer/project/dotnetProject.test.ts` : « Nouveau projet » WinForms
+- `apps/desktop/src/main/developer/project/windowsDesktopMissionPath.test.ts` : appli .exe ; chronomètre Core ; « fais-moi une appli Windows » ; « un programme sur le bureau »
+
+Dans ce cas le rapport indique `Tests : OK (X/Y réussis, 5 échecs .NET attendus)`. **Tout autre échec bloque**, y compris un 6e test en échec ou un test .NET qui échoue pour une autre raison que l'absence de `dotnet`. Interdit : supprimer, ignorer (`skip`, `only`), affaiblir ou réécrire un test pour qu'il passe.
+
+### e. Secrets — recherche dans les fichiers suivis
+
+Chercher des clés, mots de passe ou jetons écrits en clair dans les fichiers suivis par Git (pas `node_modules`, pas `package-lock.json`) :
+
+```bash
+git grep -n -I -i -E 'api[_-]?key|apikey|token|password|secret|sk-|ghp_|github_pat_' -- . ':!package-lock.json'
+git grep -n -I -E '(sk-[A-Za-z0-9_-]{16,}|ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{30,}|GOCSPX-[A-Za-z0-9_-]{20,}|-----BEGIN .*PRIVATE KEY)' -- . ':!package-lock.json'
+```
+
+Distinguer trois cas : **noms de variables, libellés d'interface et documentation** (normal), **valeurs factices dans les tests et `*.testkit.ts`** (normal : `FAKE_...`, `sk-abc...`, `GOCSPX-apercu`), et **vraies valeurs** (interdit). Aucune vraie valeur ne doit rester ; si une est trouvée, la retirer du code, la signaler avec **fichier et ligne seulement** (jamais la valeur), et rappeler qu'il faut la révoquer. Vérifier aussi que `git status` ne montre aucun fichier `.env`, `*-token.json` ou équivalent ajouté par erreur. Rappel du projet : les clés vivent dans `settings.json` (userData), jamais dans le code ni dans `process.env`.
+
+### f. Relecture — `git status` et `git diff`
+
+Relire la liste des fichiers modifiés (`git status --short`, `git diff --stat origin/main...HEAD`) et le diff de chacun. Vérifier qu'aucun changement involontaire n'a été fait : fichier touché hors du périmètre, comportement de Jarvis modifié alors que la tâche ne le demandait pas, fichier généré (`dist/`, `out/`, `voice-assets/`) ou de configuration modifié par un script, fichier réservé par l'autre agent dans `AGENTS-COORDINATION.md`.
+
+## Le rapport, obligatoire, en français
+
+Chaque tâche se termine par ce rapport, exactement dans ce format :
+
+```
+RAPPORT DE VÉRIFICATION
+Lancement : OK / ÉCHEC
+Types     : OK / ÉCHEC (nombre d'erreurs)
+Style     : OK / ÉCHEC (nombre d'avertissements)
+Tests     : OK / ÉCHEC (X/Y réussis)
+Secrets   : OK / ÉCHEC (nombre trouvés)
+Fichiers modifiés : liste
+Prêt à fusionner : OUI / NON
+À corriger : liste
+Testé en vrai (à la voix, sur le PC) : FAIT / PAS FAIT
+```
+
+Règles de remplissage :
+
+- `Prêt à fusionner : OUI` seulement si Lancement, Types, Style et Secrets sont OK et si Tests est OK (ou OK avec la seule exception des 5 tests .NET ci-dessus). Sinon `NON`, et `À corriger` liste ce qui manque.
+- `À corriger` liste aussi les problèmes **vus mais pas corrigés** (on ne corrige pas tout le projet d'un coup : seulement ce qui bloque, le reste est listé pour l'utilisateur).
+- **Règle importante : « tests OK » ne veut pas dire « ça marche en vrai ».** Si Jarvis n'a pas été testé réellement à la voix sur le PC Windows de l'utilisateur (c'est toujours le cas pour un agent cloud ou sur Linux), écrire `PAS FAIT` et dire **exactement** quoi tester soi-même : 2 ou 3 demandes vocales simples, concrètes, liées au changement, avec le résultat attendu pour chacune.
+- L'utilisateur n'est pas développeur : le rapport est suivi d'un résumé simple (ce qui a été fait, ce que ça change pour lui, ce qu'il doit faire). Pas de jargon sans explication.

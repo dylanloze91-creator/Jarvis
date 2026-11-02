@@ -33,6 +33,7 @@ Statuts possibles : `en cours`, `en pause`, `bloqué`, `terminé`.
 | Cursor | `cursor/enceinte-5064` | 5.0.64 Enceinte Jarvis (pont `main/speaker/`, programme ESP32-S3 `firmware/jarvis-speaker/`, guide), cahier `docs/specs/enceinte-jarvis.md` | `packages/core/src/speaker/`, `apps/desktop/src/main/speaker/`, `apps/desktop/src/renderer/src/components/SpeakerSettings.tsx`, `apps/desktop/scripts/fake-speaker.mjs`, `firmware/jarvis-speaker/`, `shared/ipc.ts`, `preload/index.ts`, `main/index.ts` (ajouts), `CLAUDE.md` (section 5.0.64) | 2026-11-02 | phases 1-3 faites, à relire (rapport `rapports/2026-11-02-enceinte-5064.md`) |
 | Cursor | `cursor/entrainement-5065` | Outils d'entraînement du modèle (5.0.65) : `lab:prepare`, `training/` (QLoRA, export Ollama, carte louée), `lab:compare` ; rien entraîné, pas fusionnée | — | 2026-11-02 | terminé |
 | Cursor | `cursor/robot-voix-5066` | Corrections après revue de la voix (5.0.66) | — | 2026-11-02 | terminé |
+| Cursor | `cursor/verification` | Routine de vérification (ECC 01) : règle `.cursor/rules/verification.mdc`, prête à fusionner après test à la voix | — | 2026-11-01 | terminé |
 | Cursor | `main` | Intégration 5.0.64 : branches de la nuit | `CLAUDE.md`, `AGENTS-COORDINATION.md`, `package.json`, `apps/desktop/package.json`, `apps/desktop/src/main/tools/platform/exec.ts`, `apps/desktop/src/main/tools/applications.ts`, `docs/specs/`, `docs/revues/`, `rapports/2026-11-02-integration-5064.md` | 2026-11-02 | en cours |
 
 ## Ressource GPU / Ollama
