@@ -20,6 +20,13 @@ export const SPEAKER_MAX_SPEECH_CHARS = 1_500;
 export const SPEAKER_SESSION_IDLE_MS = 10 * 60_000;
 /** Délai accordé au renderer (Whisper) pour transcrire une phrase. */
 export const SPEAKER_TRANSCRIBE_TIMEOUT_MS = 60_000;
+/**
+ * La carte attend la réponse au plus `SPEAKER_CARD_TIMEOUT_MS` (`HTTP_TIMEOUT_MS` dans
+ * `firmware/jarvis-speaker/include/config.h`, même valeur). Le PC s'arrête un peu avant : la session
+ * est annulée et la carte reçoit une erreur claire plutôt qu'une connexion morte.
+ */
+export const SPEAKER_CARD_TIMEOUT_MS = 120_000;
+export const SPEAKER_TURN_TIMEOUT_MS = 100_000;
 export const SPEAKER_MAX_SPEAKERS = 20;
 
 /** Ce que Jarvis dit quand une action demanderait une carte de confirmation. */

@@ -8,6 +8,7 @@ import {
   SPEAKER_NO_REPLY,
   SPEAKER_SESSION_IDLE_MS,
   SPEAKER_TRANSCRIBE_FAILED,
+  SPEAKER_TURN_TIMEOUT_MS,
   checkTurnWav,
   classifySpokenTurn,
   followUpWindowMs,
@@ -59,6 +60,8 @@ export interface SpeakerServerDeps {
   onTurn?: (speaker: Speaker, at: number) => void;
   log?: (line: string) => void;
   now?: () => number;
+  /** Délai maximal d'une phrase côté PC (défaut `SPEAKER_TURN_TIMEOUT_MS`) ; court dans les tests. */
+  turnTimeoutMs?: number;
   /** Adresse distante d'une requête ; remplaçable dans les tests (tout vient de 127.0.0.1). */
   remoteAddress?: (req: IncomingMessage) => string | undefined;
 }
@@ -79,6 +82,14 @@ interface SpeakerState {
   conversationId: string | null;
   lastTurnAt: number;
   busy: boolean;
+}
+
+/** Lien avec la carte pendant une phrase : rompu (fermé ou trop long) = plus rien ne lui est dû. */
+interface TurnLink {
+  gone: boolean;
+  timedOut: boolean;
+  listeners: Set<() => void>;
+  release(): void;
 }
 
 interface ChatOutcome {
@@ -238,6 +249,9 @@ export class SpeakerServer {
     const state = this.stateFor(speaker);
     if (state.busy) throw new HttpError(429, 'Une phrase de cette enceinte est déjà en cours.');
     state.busy = true;
+    // La carte abandonne après SPEAKER_CARD_TIMEOUT_MS ; le PC s'arrête un peu avant, et dès que la
+    // connexion se ferme : la session est annulée, et la phrase suivante n'est pas refusée en 429.
+    const link = this.watchLink(res, state);
     try {
       const check = checkTurnWav(body);
       if (!check.ok) throw new HttpError(400, `WAV refusé : ${check.error}`);
@@ -249,9 +263,11 @@ export class SpeakerServer {
       try {
         transcript = (await this.deps.transcribe(check.pcm)).trim();
       } catch (error) {
+        if (link.gone) return;
         this.deps.log?.(`[enceinte] ${speaker.name} : transcription impossible (${error instanceof Error ? error.message : String(error)})`);
         return this.errorWav(res, 503, SPEAKER_TRANSCRIBE_FAILED);
       }
+      if (link.gone) return;
       this.deps.log?.(`[enceinte] ${speaker.name}${followUp ? ' (suivi)' : ''} : « ${transcript.slice(0, 120)} »`);
 
       const voice = this.deps.voiceSettings();
@@ -264,18 +280,23 @@ export class SpeakerServer {
       state.lastTurnAt = now;
       const wasNew = state.conversationId === null;
 
-      const outcome = await this.runChat(state, decision.text, followUp);
-      if (outcome.notAddressed) return this.noReply(res, transcript);
+      const outcome = await this.runChat(state, decision.text, followUp, link);
       if (outcome.conversationId) {
         state.conversationId = outcome.conversationId;
         if (wasNew) await this.titleConversation(outcome.conversationId, speaker);
       }
+      if (link.gone) {
+        this.deps.log?.(`[enceinte] ${speaker.name} : ${link.timedOut ? 'trop long' : 'la carte a raccroché'}, réponse abandonnée`);
+        return;
+      }
+      if (outcome.notAddressed) return this.noReply(res, transcript);
 
       const spoken = outcome.refused
         ? SPEAKER_CONFIRMATION_REFUSAL
         : speechTextForSpeaker(outcome.reply) || (outcome.error ? SPEAKER_NO_REPLY : '');
       if (!spoken) return this.noReply(res, transcript);
       const wav = await this.deps.synthesizer.synthesize(spoken);
+      if (link.gone) return;
       res.writeHead(200, {
         'Content-Type': 'audio/wav',
         'Content-Length': String(wav.byteLength),
@@ -284,8 +305,46 @@ export class SpeakerServer {
       });
       res.end(Buffer.from(wav.buffer, wav.byteOffset, wav.byteLength));
     } finally {
+      link.release();
       state.busy = false;
     }
+  }
+
+  /**
+   * Suit la connexion d'une phrase : fermée par la carte, ou trop longue côté PC. Dans les deux cas
+   * la session de chat est annulée tout de suite (le modèle et les outils s'arrêtent, rien n'est
+   * exécuté pour personne) et `busy` est rendu par `turn`.
+   */
+  private watchLink(res: ServerResponse, state: SpeakerState): TurnLink {
+    const listeners = new Set<() => void>();
+    const link: TurnLink = {
+      gone: false,
+      timedOut: false,
+      listeners,
+      release: () => {
+        clearTimeout(timer);
+        res.off('close', onClose);
+        listeners.clear();
+      },
+    };
+    const drop = (): void => {
+      if (link.gone) return;
+      link.gone = true;
+      state.chat?.cancel();
+      for (const listener of listeners) listener();
+      listeners.clear();
+    };
+    const onClose = (): void => {
+      if (!res.writableEnded) drop();
+    };
+    const timer = setTimeout(() => {
+      link.timedOut = true;
+      drop();
+      if (!res.headersSent) sendJson(res, 504, { error: 'Jarvis a mis trop longtemps à répondre.' }, { [SPEAKER_HEADER_CONTINUE]: '0' });
+      else res.destroy();
+    }, this.deps.turnTimeoutMs ?? SPEAKER_TURN_TIMEOUT_MS);
+    res.on('close', onClose);
+    return link;
   }
 
   /** Rien à dire : 204, l'enceinte retourne en veille. */
@@ -317,13 +376,14 @@ export class SpeakerServer {
    * Un tour de la session de l'enceinte. Une carte de confirmation est **refusée** tout de suite
    * (aucun écran sur une enceinte) et Jarvis le dira ; `not_addressed` (5.0.62) = rien à dire.
    */
-  private runChat(state: SpeakerState, text: string, followUp: boolean): Promise<ChatOutcome> {
+  private runChat(state: SpeakerState, text: string, followUp: boolean, link: TurnLink): Promise<ChatOutcome> {
     const outcome: ChatOutcome = { reply: '', refused: false, notAddressed: false, error: null, conversationId: state.conversationId };
     let fromMessages = '';
     const chat = state.chat ?? (state.chat = this.deps.chatFor(state.speaker));
     const sender: SpeakerSender = {
-      isDestroyed: () => false,
+      isDestroyed: () => link.gone,
       send: (_channel, event) => {
+        if (link.gone) return;
         switch (event.type) {
           case 'started':
             outcome.conversationId = event.conversationId;
@@ -348,8 +408,12 @@ export class SpeakerServer {
             break;
         }
       },
-      once: () => undefined,
-      removeListener: () => undefined,
+      once: (_event, listener) => {
+        link.listeners.add(listener);
+      },
+      removeListener: (_event, listener) => {
+        link.listeners.delete(listener);
+      },
     };
     return chat
       .send(sender, { conversationId: state.conversationId, text, source: 'voice', ...(followUp ? { followUp: true } : {}) })

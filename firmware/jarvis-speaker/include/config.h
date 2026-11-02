@@ -47,8 +47,9 @@
 #define SPEECH_RMS            393
 // Audio gardé juste avant la détection (ms) : le début de la phrase collée à « Jarvis ».
 #define PRE_ROLL_MS           256
-// Si le PC ne répond pas dans ce délai (ms), on abandonne (Whisper + réponse + voix : patient).
-#define HTTP_TIMEOUT_MS       60000
+// Si le PC ne répond pas dans ce délai (ms), on abandonne. Le PC, lui, s'arrête à 100 s
+// (SPEAKER_TURN_TIMEOUT_MS) et répond une erreur : garder ici une valeur plus grande que la sienne.
+#define HTTP_TIMEOUT_MS       120000
 
 #define SAMPLE_RATE           16000
 #define SERIAL_TAG            "jarvis"

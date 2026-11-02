@@ -128,6 +128,7 @@ interface SetupOptions {
   remote?: string;
   followUpSeconds?: number;
   now?: () => number;
+  turnTimeoutMs?: number;
 }
 
 async function setup(options: SetupOptions = {}) {
@@ -152,6 +153,7 @@ async function setup(options: SetupOptions = {}) {
     conversations,
     onTurn: (speaker, at) => turns.push([speaker.name, at]),
     now: options.now,
+    ...(options.turnTimeoutMs ? { turnTimeoutMs: options.turnTimeoutMs } : {}),
     ...(options.remote ? { remoteAddress: () => options.remote } : {}),
   });
   await server.start(0);
@@ -370,6 +372,66 @@ describe('pont des enceintes (5.0.64)', () => {
     expect(second.status).toBe(429);
     release();
     expect((await first).status).toBe(200);
+  });
+
+  it('la carte raccroche pendant la réflexion : session annulée, verrou rendu, rien n’est envoyé', async () => {
+    let cancelledBy: FakeChat | null = null;
+    const { port, token, chats, synth } = await setup({
+      // Un chat qui ne finit que quand on l'annule (modèle lent, GPU pris).
+      script: (sender, _input, chat) =>
+        new Promise<void>((resolve) => {
+          // La deuxième phrase, elle, répond tout de suite.
+          if (chat.inputs.length > 1) return resolve();
+          sender.once('destroyed', () => {
+            cancelledBy = chat;
+            resolve();
+          });
+          sender.send('chat:event', { type: 'started', conversationId: 'c1', message: createMessage('user', 'x') });
+        }),
+    });
+    const body = voiceWav();
+    const aborted = new Promise<void>((resolve) => {
+      const req = request(
+        {
+          host: '127.0.0.1',
+          port,
+          path: '/api/speaker/turn',
+          method: 'POST',
+          headers: { 'Content-Type': 'audio/wav', 'Content-Length': String(body.byteLength), Authorization: `Bearer ${token}` },
+        },
+        () => undefined,
+      );
+      req.on('error', () => resolve());
+      req.on('close', () => resolve());
+      req.end(Buffer.from(body));
+      setTimeout(() => req.destroy(), 150);
+    });
+    await aborted;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    const chat = [...chats.values()][0]!;
+    expect(cancelledBy).toBe(chat);
+    expect(chat.cancelled).toBe(1);
+    expect(synth.spoken).toEqual([]);
+    // La phrase suivante n'est pas refusée en 429 : le verrou a été rendu.
+    const next = await call(port, '/api/speaker/turn', { token, body: voiceWav() });
+    expect(next.status).toBe(204);
+    expect(chat.inputs).toHaveLength(2);
+  });
+
+  it('phrase trop longue côté PC : 504, session annulée, verrou rendu', async () => {
+    const { port, token, chats, synth } = await setup({
+      turnTimeoutMs: 200,
+      script: (sender) =>
+        new Promise<void>((resolve) => {
+          sender.once('destroyed', () => resolve());
+        }),
+    });
+    const reply = await call(port, '/api/speaker/turn', { token, body: voiceWav() });
+    expect(reply.status).toBe(504);
+    expect(reply.headers['x-jarvis-continue']).toBe('0');
+    expect([...chats.values()][0]!.cancelled).toBe(1);
+    expect(synth.spoken).toEqual([]);
+    expect((await call(port, '/api/speaker/turn', { token, body: voiceWav() })).status).toBe(504);
   });
 
   it('fenêtre de suivi à 0 : réponse jouée mais X-Jarvis-Continue 0', async () => {
