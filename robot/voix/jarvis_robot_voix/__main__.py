@@ -38,7 +38,7 @@ def main(argv: list[str] | None = None) -> int:
     from .sortie_alsa import SortieAlsa
 
     sortie = SortieAlsa(config.peripherique)
-    boucle = Boucle(client, robot, reveil.declenche, reconnaissance.texte, sortie)
+    boucle = Boucle(client, robot, reveil.declenche, reconnaissance.texte, sortie, reinitialiser=reveil.reinitialiser)
     service = ServiceVoix(boucle, reconnaissance.pousser, ouvrir_flux=lambda: None, fermer_flux=lambda: None)
     peripherique = None if config.peripherique in ("", "default") else config.peripherique
     flux = {"courant": None}

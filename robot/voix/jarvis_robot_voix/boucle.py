@@ -16,6 +16,7 @@ from .wav import TAUX, bip_alerte, bip_erreur, duree_ms, pcm_vers_wav, rms
 journal = logging.getLogger("jarvis_robot_voix")
 
 PREROLL_MS = 300
+DELAI_ECHO_MS = 300
 
 
 class SortieAudio:
@@ -31,12 +32,14 @@ class Boucle:
         reveil: Callable[[bytes], bool],
         reconnaitre: Callable[[bytes], str],
         sortie: SortieAudio,
+        reinitialiser: Callable[[], None] | None = None,
     ) -> None:
         self.client = client
         self.robot = robot
         self.reveil = reveil
         self.reconnaitre = reconnaitre
         self.sortie = sortie
+        self.reinitialiser = reinitialiser
         self.etat = "veille"
         self.suivi = False
         self.suivi_restant_ms = 0.0
@@ -54,10 +57,24 @@ class Boucle:
         self._fin: FinDeParole | None = None
         self._taille = taille_trame_reveil()
         self._plafond_preroll = int(TAUX * PREROLL_MS / 1000.0) * 2
+        self._reste_echo_ms = 0.0
 
     def pas(self, trame: bytes) -> None:
         if not trame:
             return
+        if self._reste_echo_ms > 0 and self.micro_ouvert:
+            duree = duree_ms(trame)
+            if duree <= self._reste_echo_ms + 0.01:
+                self._reste_echo_ms = max(0.0, self._reste_echo_ms - duree)
+                self.trames_ignorees += 1
+                return
+            self.trames_ignorees += 1
+            garder = duree - self._reste_echo_ms
+            self._reste_echo_ms = 0.0
+            octets = int(TAUX * garder / 1000.0) * 2
+            trame = trame[-octets:] if octets >= 2 else b""
+            if not trame:
+                return
         if not self.micro_ouvert:
             self.trames_ignorees += 1
             return
@@ -69,7 +86,6 @@ class Boucle:
             self._ecoute(trame)
 
     def _veille(self, trame: bytes) -> None:
-        self._memoriser(trame)
         self._tampon += trame
         while len(self._tampon) >= self._taille:
             morceau = self._tampon[: self._taille]
@@ -81,6 +97,7 @@ class Boucle:
                     self._tampon = b""
                     self.pas(reste)
                 return
+            self._memoriser(morceau)
 
     def _ouvrir_ecoute(self, debut: bytes, suivi: bool) -> None:
         self.etat = "ecoute"
@@ -191,6 +208,7 @@ class Boucle:
             self.sortie.jouer(wav)
         finally:
             self.micro_ouvert = True
+            self._reste_echo_ms = float(DELAI_ECHO_MS)
         if self._annule.is_set():
             self._annule.clear()
             self._revenir_veille()
@@ -209,6 +227,8 @@ class Boucle:
         self._capture = b""
         self._fin = None
         self._tampon = b""
+        if self.reinitialiser is not None:
+            self.reinitialiser()
 
     def _memoriser(self, trame: bytes) -> None:
         self._preroll.append(trame)

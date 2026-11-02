@@ -43,6 +43,10 @@ class ReveilOpenWakeWord:
         valeur = float(scores.get("hey_jarvis", 0.0))
         return valeur >= self.seuil
 
+    def reinitialiser(self) -> None:
+        if self._modele is not None and hasattr(self._modele, "reset"):
+            self._modele.reset()
+
 
 def taille_trame_reveil() -> int:
     return ECHANTILLONS_PAR_TRAME * 2

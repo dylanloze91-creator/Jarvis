@@ -194,6 +194,40 @@ def test_wav_contrat_et_phrases_d_arret():
     assert "[unk]" in mots and "stop" in mots
 
 
+def test_point6_echo_doublon_et_reinitialisation():
+    vus: list[bytes] = []
+
+    def memoriser(pcm: bytes) -> str:
+        vus.append(pcm)
+        return "bonjour"
+
+    remises = {"n": 0}
+    pc = servir(["fin"])
+    robot = servir([])
+    try:
+        _config, client, client_robot = config_vers(pc.server_address[1], robot.server_address[1])
+        boucle = Boucle(
+            client,
+            client_robot,
+            reveil_fort,
+            memoriser,
+            Sortie(),
+            reinitialiser=lambda: remises.__setitem__("n", remises["n"] + 1),
+        )
+        alimenter(boucle, *scenario_parole())
+        fort = generer(80, amplitude=20000)
+        assert vus and vus[0].count(fort) == 1
+        assert remises["n"] >= 1
+        ignores = boucle.trames_ignorees
+        boucle.pas(fort)
+        assert boucle.etat == "veille"
+        assert boucle.trames_ignorees > ignores
+        assert len([e for e in pc.journal if e["chemin"] == "/api/speaker/turn"]) == 1
+    finally:
+        pc.shutdown()
+        robot.shutdown()
+
+
 def test_point5_python_3_11_a_3_13_seulement():
     assert version_python_acceptee(3, 11) and version_python_acceptee(3, 12) and version_python_acceptee(3, 13)
     assert not version_python_acceptee(3, 10)
@@ -281,7 +315,7 @@ def test_suivi_sans_mot_de_reveil():
         assert boucle.suivi_ms == 1000
         alimenter(
             boucle,
-            silence(80),
+            silence(300),
             generer(320, amplitude=4000, frequence=330),
             silence(720),
         )
