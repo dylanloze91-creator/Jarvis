@@ -44,7 +44,7 @@ class ClientPc:
         self.timeout_lecture = timeout_lecture
 
     def bonjour(self) -> dict:
-        statut, entetes, corps = self._demander(
+        statut, corps, _continuer, _transcription = self._demander(
             "GET", CHEMIN_BONJOUR, None, {}, self.timeout_connexion, self.config.jeton_enceinte, self.config.pc_hote, self.config.pc_port
         )
         if statut != 200:
@@ -60,8 +60,8 @@ class ClientPc:
     def tour(self, wav: bytes, suivi: bool) -> ReponseTour:
         entetes = {"Content-Type": "audio/wav"}
         if suivi:
-            entetes["X-Jarvis-Follow-Up"] = "1"
-        statut, recus, corps = self._demander(
+            entetes["x-jarvis-follow-up"] = "1"
+        statut, corps, continuer, transcription = self._demander(
             "POST",
             CHEMIN_TOUR,
             wav,
@@ -71,20 +71,21 @@ class ClientPc:
             self.config.pc_hote,
             self.config.pc_port,
         )
-        continuer = (recus.get("X-Jarvis-Continue") or "0") == "1"
-        transcription = urllib.parse.unquote(recus.get("X-Jarvis-Transcript") or "")
         return ReponseTour(statut, corps if statut == 200 else b"", continuer, transcription)
 
     def _demander(self, methode, chemin, corps, entetes, timeout, jeton, hote, port):
         tous = {"Authorization": f"Bearer {jeton}", **entetes}
-        connexion = _connexion(hote, port, self.timeout_connexion if hasattr(self, "timeout_connexion") else timeout)
+        connexion = _connexion(hote, port, self.timeout_connexion)
         try:
             connexion.request(methode, chemin, body=corps, headers=tous)
             if connexion.sock is not None:
                 connexion.sock.settimeout(timeout)
             reponse = connexion.getresponse()
+            # getheader ignore la casse : le vrai pont envoie des minuscules.
+            continuer = (reponse.getheader("x-jarvis-continue") or "0") == "1"
+            transcription = urllib.parse.unquote(reponse.getheader("x-jarvis-transcript") or "")
             lu = reponse.read()
-            return reponse.status, {cle: valeur for cle, valeur in reponse.getheaders()}, lu
+            return reponse.status, lu, continuer, transcription
         except (OSError, TimeoutError, HTTPException) as erreur:
             raise ErreurReseau(str(erreur)) from erreur
         finally:

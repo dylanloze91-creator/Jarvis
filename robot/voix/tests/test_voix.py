@@ -66,14 +66,14 @@ class Journal(BaseHTTPRequestHandler):
         mode = self.server.modes.pop(0)
         if mode == "204":
             self.send_response(204)
-            self.send_header("X-Jarvis-Continue", "0")
+            self.send_header("x-jarvis-continue", "0")
             self.end_headers()
             return
         wav = pcm_vers_wav(silence(50))
         self.send_response(200)
         self.send_header("Content-Type", "audio/wav")
-        self.send_header("X-Jarvis-Continue", "1" if mode == "suite" else "0")
-        self.send_header("X-Jarvis-Transcript", "bonjour")
+        self.send_header("x-jarvis-continue", "1" if mode == "suite" else "0")
+        self.send_header("x-jarvis-transcript", "bonjour")
         self.send_header("Content-Length", str(len(wav)))
         self.end_headers()
         self.wfile.write(wav)
@@ -171,6 +171,23 @@ def test_wav_contrat_et_phrases_d_arret():
     assert not est_arret("[unk]")
     mots = json.loads(grammaire_json())
     assert "[unk]" in mots and "stop" in mots
+
+
+def test_point1_entetes_minuscules_comme_le_pont():
+    """Le vrai pont (cursor/enceinte-5064) envoie x-jarvis-continue en minuscules."""
+    pc = servir(["suite"])
+    robot = servir([])
+    try:
+        _config, client, client_robot = config_vers(pc.server_address[1], robot.server_address[1])
+        sortie = Sortie()
+        boucle = Boucle(client, client_robot, reveil_fort, phrase("bonjour"), sortie)
+        alimenter(boucle, *scenario_parole())
+        assert boucle.etat == "suivi"
+        assert boucle.suivi_ms == 1000
+        assert len(sortie.joues) == 1
+    finally:
+        pc.shutdown()
+        robot.shutdown()
 
 
 def test_fin_de_parole_650_ms():
