@@ -42,6 +42,37 @@ describe('wakeWordAddress : à Jarvis ou de Jarvis', () => {
     expect(wakeWordAddress(text, wake)).toBe('mention');
   });
 
+  describe('revue 5.0.64, point 7 : possessif et « au »', () => {
+    it.each([
+      'Mon assistant Jarvis, il est génial',
+      'Mon assistant Jarvis, il ne répond plus',
+      'Ma copine adore Jarvis, elle lui parle tout le temps',
+      'Notre Jarvis, il bugue depuis hier',
+      'Bon, mon assistant Jarvis, il a planté',
+      'Tu sais, mon assistant Jarvis, il m’a fait rire',
+      'Je pense au Jarvis de mon frère, il marche bien',
+      'Il est fier de son Jarvis, c’est son bébé',
+    ])('« %s » parle de lui (la virgule après le mot ne suffit pas)', (text) => {
+      expect(wakeWordAddress(text, wake)).toBe('mention');
+    });
+
+    it.each([
+      'Au fait Jarvis, c’est quoi la météo ?',
+      'Au fait, Jarvis, ouvre Chrome',
+      'Ouvre mon dossier Jarvis',
+      'Montre-moi mon agenda, Jarvis',
+      'Bon, Jarvis, ouvre Chrome',
+      'Et toi Jarvis, tu en penses quoi ?',
+    ])('« %s » lui parle toujours', (text) => {
+      expect(wakeWordAddress(text, wake)).toBe('address');
+    });
+
+    it('« au » seul n’est plus un mot d’appel : il marque une mention', () => {
+      expect(wakeWordAddress('Je parle au Jarvis de Paul, il est lent', wake)).toBe('mention');
+      expect(wakeWordAddress('On a donné le nom au Jarvis, il était content', wake)).toBe('mention');
+    });
+  });
+
   it('sans le mot dans le texte : absent (comportement d’avant)', () => {
     expect(wakeWordAddress('Ouvre Chrome', wake)).toBe('absent');
     expect(wakeWordAddress('', wake)).toBe('absent');

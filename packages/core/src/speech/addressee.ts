@@ -29,8 +29,19 @@ const INTERJECTIONS = new Set([
   // 5.0.64 : « Attends Jarvis », « Voilà Jarvis », « Maintenant Jarvis ouvre Chrome », « Allô Jarvis »,
   // « Excuse-moi Jarvis », « Au fait Jarvis », « Et toi Jarvis » ; avant, tout cela passait pour une mention.
   'attends', 'attend', 'voila', 'maintenant', 'allo', 'excuse', 'excusemoi', 'excusez', 'excusezmoi',
-  'sil', 'te', 'plait', 'vous', 'au', 'fait', 'toi', 'sinon', 'puis', 'ensuite', 'bien', 'ouais', 'super',
+  'sil', 'te', 'plait', 'vous', 'toi', 'sinon', 'puis', 'ensuite', 'bien', 'ouais', 'super',
   'parfait', 'daccord', 'ecoutez', 'tiens', 'hum', 'hmm', 'putain', 'is',
+]);
+
+/**
+ * Petits mots d'appel en plusieurs mots : « Au fait Jarvis, … ». Revue 5.0.64, point 7 : « au » seul
+ * n'est plus une interjection, c'est un marqueur de mention (« je pense au Jarvis de Paul »).
+ */
+const COMPOUND_INTERJECTIONS: readonly (readonly string[])[] = [['au', 'fait']];
+
+/** Possessifs : « Mon assistant Jarvis, il… » parle de lui, même avec une virgule après le mot. */
+const POSSESSIVES = new Set([
+  'mon', 'ma', 'mes', 'ton', 'ta', 'tes', 'son', 'sa', 'ses', 'notre', 'nos', 'votre', 'vos', 'leur', 'leurs',
 ]);
 
 /** Mots de politesse après « Jarvis » en fin de phrase : « Quelle heure est-il Jarvis s'il te plaît ». */
@@ -39,10 +50,41 @@ const TRAILING_POLITENESS = new Set(['sil', 'te', 'vous', 'plait', 'stp', 'svp',
 /** Mots qui, juste avant « Jarvis », disent qu'on parle de lui (« le Jarvis », « tu connais Jarvis »). */
 const MENTION_MARKERS = new Set([
   'de', 'du', 'des', 'le', 'la', 'les', 'un', 'une', 'a', 'au', 'aux', 'avec', 'sur', 'pour', 'par', 'sans', 'chez',
-  'mon', 'ton', 'son', 'notre', 'votre', 'leur', 'ce', 'cet', 'cette', 'que', 'qu', 'connais', 'connait',
+  ...POSSESSIVES, 'ce', 'cet', 'cette', 'que', 'qu', 'connais', 'connait',
   'connaissez', 'appelle', 'appele', 'appelee', 'nomme', 'installe', 'installer', 'utilise', 'utiliser',
   'programme', 'code', 'teste', 'tester', 'montre', 'parle', 'parler', 'vu', 'entendu', 'aime', 'deteste',
 ]);
+
+/** Position du premier mot qui n'est pas un petit mot d'appel (« Bon, », « Au fait », « Et toi »). */
+function afterInterjections(plains: readonly string[]): number {
+  let index = 0;
+  while (index < plains.length) {
+    const compound = COMPOUND_INTERJECTIONS.find((sequence) => sequence.every((word, offset) => plains[index + offset] === word));
+    if (compound) {
+      index += compound.length;
+      continue;
+    }
+    if (!INTERJECTIONS.has(plains[index] ?? '')) break;
+    index += 1;
+  }
+  return index;
+}
+
+/**
+ * La proposition qui porte le mot de réveil commence par un possessif (après d'éventuels petits mots
+ * d'appel) : « Mon assistant Jarvis, il… », « Bon, ma copine adore Jarvis, elle… ». On parle de lui.
+ */
+function clauseStartsWithPossessive(before: readonly Word[]): boolean {
+  let start = 0;
+  for (let index = before.length - 1; index >= 0; index -= 1) {
+    if (before[index]!.commaAfter) {
+      start = index + 1;
+      break;
+    }
+  }
+  const plains = before.slice(start).map((word) => word.plain);
+  return POSSESSIVES.has(plains[afterInterjections(plains)] ?? '');
+}
 
 interface Word {
   plain: string;
@@ -88,10 +130,13 @@ export function wakeWordAddress(transcript: string, config: WakeWordTextMatchCon
   const before = list.slice(0, index);
   const after = list.slice(index + 1);
   const wake = list[index]!;
-  // En tête, ou seulement après des petits mots d'appel (« Bon, Jarvis », « Ok Jarvis »).
-  if (before.every((word) => INTERJECTIONS.has(word.plain))) return 'address';
+  // En tête, ou seulement après des petits mots d'appel (« Bon, Jarvis », « Ok Jarvis », « Au fait Jarvis »).
+  if (afterInterjections(before.map((word) => word.plain)) === before.length) return 'address';
   const previous = before.at(-1)!.plain;
   if (MENTION_MARKERS.has(previous)) return 'mention';
+  // Revue 5.0.64, point 7 : « Mon assistant Jarvis, il… » parle de lui ; la mention l'emporte sur la
+  // virgule qui suit le mot.
+  if (clauseStartsWithPossessive(before)) return 'mention';
   // En apostrophe : « Dis-moi, Jarvis, quelle heure… », « Quelle heure est-il, Jarvis ? ».
   if (wake.commaBefore && (after.length === 0 || wake.commaAfter)) return 'address';
   // 5.0.64 : une virgule ou une ponctuation juste après = on l'appelle (« Attends Jarvis, ouvre Chrome »,

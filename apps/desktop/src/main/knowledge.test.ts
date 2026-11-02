@@ -169,6 +169,46 @@ describe('KnowledgeStore', () => {
     expect(isBlockedFolder('/usr/share')).toBe(true);
   });
 
+  it('revue 5.0.64, point 6 : les dossiers système restent bloqués par WSL, UNC et chemin long', () => {
+    for (const folder of [
+      '/mnt/c/Windows',
+      '/mnt/c/Windows/System32/drivers',
+      '/mnt/d/Program Files/Jarvis',
+      '/mnt/c',
+      '\\\\wsl$\\Ubuntu\\etc',
+      '\\\\wsl$\\Ubuntu\\etc\\nginx',
+      '\\\\wsl$\\Ubuntu\\usr\\share',
+      '\\\\wsl.localhost\\Ubuntu\\root',
+      '\\\\wsl$\\Ubuntu',
+      '\\\\serveur\\partage\\Windows',
+      '\\\\serveur\\c$\\Windows\\System32',
+      '\\\\serveur\\c$',
+      '\\\\serveur',
+      '\\\\?\\C:\\Windows',
+      '\\\\?\\C:\\',
+      '\\\\?\\UNC\\serveur\\partage\\Program Files',
+      'C:\\Users\\dylan\\..\\Windows',
+      '//wsl$/Ubuntu/etc',
+    ]) {
+      expect(isBlockedFolder(folder), folder).toBe(true);
+    }
+  });
+
+  it('revue 5.0.64, point 6 : un dossier d’utilisateur reste indexable par WSL, UNC et chemin long', () => {
+    for (const folder of [
+      '/mnt/c/dev/Jarvis',
+      '/mnt/c/Users/dylan/Documents',
+      '\\\\wsl$\\Ubuntu\\home\\dylan\\dev',
+      '\\\\wsl.localhost\\Ubuntu\\home\\dylan\\bin',
+      '\\\\serveur\\partage\\Projets',
+      '\\\\serveur\\c$\\dev\\Jarvis',
+      '\\\\?\\C:\\dev\\Jarvis',
+      'C:\\dev\\Jarvis\\docs',
+    ]) {
+      expect(isBlockedFolder(folder), folder).toBe(false);
+    }
+  });
+
   it('indexe le texte lisible d’un PDF simple et ignore le binaire', () => {
     const pdf = Buffer.from('BT (Marge nette 12 pour cent) Tj ET', 'latin1');
     expect(extractPdfText(pdf)).toMatch(/Marge nette/);
