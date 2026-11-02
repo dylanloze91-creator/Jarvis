@@ -144,3 +144,41 @@ describe('5.0.64 — texte retenu puis rendu', () => {
     expect(events.filter((event) => event.type === 'tool_call')).toHaveLength(1);
   });
 });
+
+describe('revue 5.0.64, point 3 — texte retenu après « <tool_call » (mode relu)', () => {
+  const textOf = (events: ChatStreamEvent[]) =>
+    events.filter((event) => event.type === 'text').map((event) => (event as { delta: string }).delta).join('');
+
+  it('sans outil proposé, le texte qui parle d’une balise <tool_call> est rendu entier (il était coupé)', async () => {
+    const content = 'Voici comment écrire une balise <tool_call> : on met le JSON entre <tool_call> et </tool_call>. Fin.';
+    const { error, events } = await run({ recoverToolCalls: true }, content, undefined);
+    expect(error).toBeNull();
+    expect(textOf(events)).toBe(content);
+    expect(events.filter((event) => event.type === 'tool_call')).toEqual([]);
+    expect(events.at(-1)).toMatchObject({ type: 'done', finishReason: 'stop' });
+  });
+
+  it('une balise coupée entre deux morceaux n’est ni affichée en partie ni rendue deux fois', async () => {
+    // Les morceaux font 7 caractères : « <tool_call » (10) est toujours coupé en deux.
+    const prefix = 'Je lis le fichier. ';
+    const { error, events } = await run({ recoverToolCalls: true }, `${prefix}${LEAKED}`, TOOLS);
+    expect(error).toBeNull();
+    const text = textOf(events);
+    expect(text).toBe(prefix);
+    expect(text).not.toContain('<');
+    expect(events.filter((event) => event.type === 'tool_call')).toHaveLength(1);
+  });
+
+  it('un « < » en fin de morceau qui n’était pas une balise est bien rendu', async () => {
+    const content = 'Compare a < b puis b <= c, et écris <tool> pour finir.';
+    const { error, events } = await run({ recoverToolCalls: true }, content, TOOLS);
+    expect(error).toBeNull();
+    expect(textOf(events)).toBe(content);
+  });
+
+  it('avec des outils mais un appel illisible après « <tool_call », le texte d’avant reste rendu et l’erreur dit « texte brut »', async () => {
+    const { error, events } = await run({ recoverToolCalls: true }, 'Je commence. <tool_call>{pas du json</tool_call>', TOOLS);
+    expect(String((error as Error)?.message)).toMatch(/texte brut/);
+    expect(textOf(events)).toBe('Je commence. ');
+  });
+});

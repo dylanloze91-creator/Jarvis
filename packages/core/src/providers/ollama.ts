@@ -172,6 +172,29 @@ export class OllamaProvider implements LLMProvider {
     let leakedMode = false;
     let recoverHold = false;
     let holdBuffer = '';
+    /** Mode « appels relus » : nombre de caractères de `fullText` déjà rendus comme texte. */
+    let emitted = 0;
+
+    /**
+     * 5.0.64 (mode « appels relus ») : rend le texte jusqu'à un éventuel `<tool_call` écrit en
+     * texte, puis retient le reste pour la relecture au lieu d'afficher la balise et son JSON.
+     * Revue 5.0.64, point 3 : une balise coupée entre deux morceaux (« <tool_ » puis « call> »)
+     * est retenue aussi — le bout qui pourrait la commencer attend le morceau suivant.
+     */
+    const releaseRecoverable = (): ChatStreamEvent | null => {
+      if (recoverHold) return null;
+      const pending = fullText.slice(emitted);
+      const tag = pending.indexOf(TOOL_CALL_TAG);
+      let visible: string;
+      if (tag >= 0) {
+        recoverHold = true;
+        visible = pending.slice(0, tag);
+      } else {
+        visible = pending.slice(0, pending.length - partialTagLength(pending));
+      }
+      emitted += visible.length;
+      return visible ? { type: 'text', delta: visible } : null;
+    };
 
     const emitSniffed = (): ChatStreamEvent | null => {
       if (leakedTagStart(holdBuffer)) {
@@ -180,6 +203,7 @@ export class OllamaProvider implements LLMProvider {
       }
       const delta = holdBuffer;
       holdBuffer = '';
+      if (recover) return releaseRecoverable();
       return delta ? { type: 'text', delta } : null;
     };
 
@@ -199,14 +223,10 @@ export class OllamaProvider implements LLMProvider {
             if (event) yield event;
           }
         } else if (!leakedMode) {
-          // 5.0.64 (mode « appels relus ») : dès qu'un `<tool_call>` écrit en texte commence, on
-          // garde le reste pour la relecture au lieu d'afficher la balise et son JSON.
-          if (recover && !recoverHold && fullText.includes('<tool_call')) {
-            recoverHold = true;
-            const start = fullText.indexOf('<tool_call') - (fullText.length - content.length);
-            const visible = start > 0 ? content.slice(0, start) : '';
-            if (visible) yield { type: 'text', delta: visible };
-          } else if (!recoverHold) {
+          if (recover) {
+            const event = releaseRecoverable();
+            if (event) yield event;
+          } else {
             yield { type: 'text', delta: content };
           }
         }
@@ -268,6 +288,10 @@ export class OllamaProvider implements LLMProvider {
       }
     }
     if (plainTextOnly) {
+      // Revue 5.0.64, point 3 : sans outil proposé, un `<tool_call` dans le texte n'est qu'un texte
+      // (« Voici comment écrire une balise <tool_call>… ») : ce qui a été retenu est rendu.
+      const held = fullText.slice(emitted);
+      if (held) yield { type: 'text', delta: held };
       const finishReason: FinishReason = doneReason === 'length' ? 'length' : 'stop';
       yield usage ? { type: 'done', finishReason, usage } : { type: 'done', finishReason };
       return;
@@ -279,8 +303,10 @@ export class OllamaProvider implements LLMProvider {
     }
     // 5.0.64 : une réponse qui commence comme un appel d'outil (`{"name": …`) sans en être un
     // (réponse JSON demandée par l'utilisateur) était retenue puis jamais affichée : bulle vide.
-    if ((leakedMode || recoverHold) && fullText.trim()) {
-      yield { type: 'text', delta: recoverHold ? fullText.slice(fullText.indexOf('<tool_call')) : fullText };
+    // En mode relu, le texte retenu après un `<tool_call` sans appel lisible est rendu aussi.
+    const held = leakedMode ? fullText : recover ? fullText.slice(emitted) : '';
+    if (held.trim()) {
+      yield { type: 'text', delta: held };
     }
 
     const finishReason: FinishReason = doneReason === 'length' ? 'length' : 'stop';
@@ -349,6 +375,21 @@ function normalizeToolArguments(raw: unknown, loose = false): Record<string, unk
 
 /** Préfixe des identifiants d'appels relus dans le texte (`recoverToolCalls`), visible dans les journaux et le banc. */
 export const RECOVERED_CALL_PREFIX = 'recovered-';
+
+/** Début d'un appel d'outil écrit en texte, retenu en mode « appels relus ». */
+const TOOL_CALL_TAG = '<tool_call';
+
+/**
+ * Longueur du bout de `text` (en fin) qui pourrait être le début d'un `<tool_call` coupé entre deux
+ * morceaux du flux (« <tool_ »), 0 si la fin ne ressemble à rien de tel.
+ */
+function partialTagLength(text: string): number {
+  const max = Math.min(TOOL_CALL_TAG.length - 1, text.length);
+  for (let length = max; length > 0; length -= 1) {
+    if (text.endsWith(TOOL_CALL_TAG.slice(0, length))) return length;
+  }
+  return 0;
+}
 
 /** Amorce d'une syntaxe d'appel d'outil échappée dans le texte, avant qu'on l'ait laissée fuiter à l'écran. */
 function leakedTagStart(text: string): boolean {
