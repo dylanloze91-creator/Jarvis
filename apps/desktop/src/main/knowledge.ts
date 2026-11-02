@@ -628,7 +628,7 @@ async function acquireIndexLock(lockPath: string): Promise<() => Promise<void>> 
       };
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
-      if (code !== 'EEXIST') throw error;
+      if (code !== 'EEXIST' && code !== 'EPERM') throw error;
       const info = await stat(lockPath).catch(() => null);
       if (!info || Date.now() - info.mtimeMs > LOCK_STALE_MS) {
         await rm(lockPath, { force: true }).catch(() => undefined);
