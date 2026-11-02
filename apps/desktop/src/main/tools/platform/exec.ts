@@ -19,6 +19,8 @@ export interface RunResult {
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_MAX_OUTPUT = 8_000;
+/** Délai laissé à un arrêt propre (SIGTERM) avant de forcer (SIGKILL). */
+export const KILL_GRACE_MS = 1_000;
 
 /**
  * Exécute une commande sans jamais lancer d'exception : le code de retour, la
@@ -50,20 +52,59 @@ export function run(
 
     const timer = setTimeout(() => {
       timedOut = true;
+      // 5.0.64 (revue, point 4) : sous Windows, `kill` n'atteint que le processus lancé
+      // (souvent `cmd.exe`) ; le programme qu'il a démarré continuait alors que l'outil
+      // annonçait « commande interrompue ». Et un `taskkill /T` lancé après SIGTERM ne
+      // retrouvait plus le parent, donc plus l'arborescence : taskkill passe en premier,
+      // tant que le parent existe ; s'il échoue, le chemin d'avant (SIGTERM puis SIGKILL).
+      if (process.platform === 'win32' && child.pid) {
+        killTreeWindows(child.pid, terminateGracefully);
+        return;
+      }
+      terminateGracefully();
+    }, timeoutMs);
+
+    /** Chemin historique (seul chemin hors Windows) : SIGTERM, puis SIGKILL une seconde plus tard. */
+    function terminateGracefully() {
+      if (settled) return;
       child.kill('SIGTERM');
-      // Laisse une seconde pour un arrêt propre avant de forcer.
       setTimeout(() => {
         if (settled) return;
-        // 5.0.64 : sous Windows, `kill` n'atteint que `cmd.exe` ; le programme lancé par
-        // lui continuait alors que l'outil annonçait « commande interrompue ».
-        if (process.platform === 'win32' && child.pid) {
-          spawn('taskkill', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' })
-            .on('error', () => child.kill('SIGKILL'));
+        child.kill('SIGKILL');
+      }, KILL_GRACE_MS);
+    }
+
+    function killTreeWindows(pid: number, onFailure: () => void) {
+      let decided = false;
+      const fail = () => {
+        if (decided) return;
+        decided = true;
+        onFailure();
+      };
+      let killer: ReturnType<typeof spawn>;
+      try {
+        killer = spawn('taskkill', ['/PID', String(pid), '/T', '/F'], {
+          windowsHide: true,
+          stdio: 'ignore',
+        });
+      } catch {
+        fail();
+        return;
+      }
+      killer.on('error', fail);
+      killer.on('close', (code) => {
+        if (code !== 0) {
+          fail();
           return;
         }
-        child.kill('SIGKILL');
-      }, 1000);
-    }, timeoutMs);
+        decided = true;
+        // taskkill a dit « ok » : le `close` de l'enfant suit. Filet si ce n'était pas le
+        // cas, pour ne jamais laisser `run` pendu.
+        setTimeout(() => {
+          if (!settled) child.kill('SIGKILL');
+        }, KILL_GRACE_MS);
+      });
+    }
 
     child.stdout?.on('data', (chunk: Buffer) => {
       stdout += chunk.toString('utf8');

@@ -104,32 +104,88 @@ else { throw "introuvable" }
   };
 }
 
-async function closeWindows(name: string, forceKill: boolean) {
-  const alias = findAlias(name);
-  const processHint = alias?.win?.replace(/\.exe$/i, '') ?? name;
-  // Le nom vient du modèle : uniquement en chaîne PowerShell entre apostrophes,
-  // jamais interpolé dans des guillemets doubles (où `$(...)` s'exécuterait).
-  const script = `
+/**
+ * 5.0.64 (revue, point 5) : un seul délai pour toute la fermeture, quel que soit
+ * le nombre de processus. Avant, chaque processus attendait jusqu'à 3 s l'un après
+ * l'autre : Discord, Teams, Spotify ou VS Code (5 à 10 processus) dépassaient les
+ * 15 s du script, et Jarvis répondait « aucun processus » à tort.
+ */
+export const CLOSE_WINDOWS_WAIT_MS = 5_000;
+/** Marge pour le démarrage de PowerShell et `Get-Process` au-dessus du délai partagé. */
+export const CLOSE_WINDOWS_SCRIPT_MARGIN_MS = 10_000;
+
+/**
+ * Script PowerShell de `close_application`, exporté pour les tests (qui ne
+ * lancent jamais PowerShell). Le nom vient du modèle : uniquement en chaîne
+ * entre apostrophes (`psQuote`), jamais interpolé dans des guillemets doubles
+ * (où `$(...)` s'exécuterait).
+ *
+ * - `$deadline` est calculé une fois pour tous les processus ; la boucle s'arrête
+ *   dès qu'ils ont tous disparu ou quand le délai partagé est écoulé.
+ * - `HasExited` et `Stop-Process` peuvent lever une erreur d'accès (processus lancé
+ *   en administrateur) : elle est attrapée et le processus est rapporté dans
+ *   `DENIED=`, au lieu de faire échouer tout le script.
+ */
+export function buildCloseWindowsScript(
+  name: string,
+  processHint: string,
+  forceKill: boolean,
+): string {
+  return `
 $hint = [WildcardPattern]::Escape(${psQuote(processHint)})
 $title = [WildcardPattern]::Escape(${psQuote(name)})
-$targets = Get-Process | Where-Object { $_.ProcessName -like ('*' + $hint + '*') -or $_.MainWindowTitle -like ('*' + $title + '*') }
-if (-not $targets) { throw "introuvable" }
+$targets = @(Get-Process | Where-Object { $_.ProcessName -like ('*' + $hint + '*') -or $_.MainWindowTitle -like ('*' + $title + '*') })
+if ($targets.Count -eq 0) { throw "introuvable" }
+$denied = @{}
+function Test-Exited($proc) {
+  try { return [bool]$proc.HasExited } catch { return $null }
+}
 foreach ($p in $targets) {
-  if (${forceKill ? '$true' : '$false'}) {
-    Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
-  } else {
-    $closed = $p.CloseMainWindow()
-    if (-not $closed) { Stop-Process -Id $p.Id -ErrorAction SilentlyContinue }
+  try {
+    if (${forceKill ? '$true' : '$false'}) {
+      Stop-Process -Id $p.Id -Force -ErrorAction Stop
+    } else {
+      $closed = $p.CloseMainWindow()
+      if (-not $closed) { Stop-Process -Id $p.Id -ErrorAction Stop }
+    }
+  } catch {
+    if ((Test-Exited $p) -ne $true) { $denied[$p.Id] = $p.ProcessName }
   }
 }
-foreach ($p in $targets) { $null = $p.WaitForExit(3000) }
-$still = @($targets | Where-Object { -not $_.HasExited } | Select-Object -ExpandProperty ProcessName -Unique)
-$gone = @($targets | Where-Object { $_.HasExited } | Select-Object -ExpandProperty ProcessName -Unique)
-'GONE=' + ($gone -join ', ')
-'STILL=' + ($still -join ', ')
+$deadline = [DateTime]::UtcNow.AddMilliseconds(${CLOSE_WINDOWS_WAIT_MS})
+while ($true) {
+  $pending = @($targets | Where-Object { -not $denied.ContainsKey($_.Id) -and (Test-Exited $_) -eq $false })
+  if ($pending.Count -eq 0 -or [DateTime]::UtcNow -ge $deadline) { break }
+  Start-Sleep -Milliseconds 200
+}
+$gone = @(); $still = @()
+foreach ($p in $targets) {
+  if ($denied.ContainsKey($p.Id)) { continue }
+  $exited = Test-Exited $p
+  if ($null -eq $exited) { $denied[$p.Id] = $p.ProcessName }
+  elseif ($exited) { $gone += $p.ProcessName }
+  else { $still += $p.ProcessName }
+}
+'GONE=' + (($gone | Select-Object -Unique) -join ', ')
+'STILL=' + (($still | Select-Object -Unique) -join ', ')
+'DENIED=' + (($denied.Values | Select-Object -Unique) -join ', ')
 `.trim();
+}
 
-  const result = await runPowerShell(script, { timeoutMs: 15_000 });
+export async function closeWindows(name: string, forceKill: boolean) {
+  const alias = findAlias(name);
+  const processHint = alias?.win?.replace(/\.exe$/i, '') ?? name;
+  const script = buildCloseWindowsScript(name, processHint, forceKill);
+
+  const result = await runPowerShell(script, {
+    timeoutMs: CLOSE_WINDOWS_WAIT_MS + CLOSE_WINDOWS_SCRIPT_MARGIN_MS,
+  });
+  if (result.timedOut) {
+    return {
+      ok: false,
+      content: `La fermeture de « ${name} » a dépassé le délai (${Math.round((CLOSE_WINDOWS_WAIT_MS + CLOSE_WINDOWS_SCRIPT_MARGIN_MS) / 1000)} s) : Windows n'a pas répondu à temps. Vérifie si l'application est encore ouverte.`,
+    };
+  }
   if (result.code !== 0) {
     return { ok: false, content: `Aucun processus correspondant à « ${name} » n'a été trouvé.` };
   }
@@ -140,18 +196,27 @@ $gone = @($targets | Where-Object { $_.HasExited } | Select-Object -ExpandProper
  * 5.0.64 : « Fermé » n'est dit que si le processus a disparu. `CloseMainWindow()`
  * ne fait que demander la fermeture : une application avec un document non
  * enregistré reste ouverte sur sa boîte de dialogue, et Jarvis répondait « Fermé ».
+ * `DENIED=` (revue, point 5) : processus dont l'état n'a pas pu être lu ou qui n'ont
+ * pas pu être arrêtés (accès refusé) ; dit tel quel, jamais « fermé ».
  */
 export function describeCloseResult(name: string, stdout: string): { ok: boolean; content: string } {
   const gone = /^GONE=(.*)$/m.exec(stdout)?.[1]?.trim() ?? '';
   const still = /^STILL=(.*)$/m.exec(stdout)?.[1]?.trim() ?? '';
-  if (!gone && !still) return { ok: true, content: `Fermé : ${stdout.trim() || name}` };
+  const denied = /^DENIED=(.*)$/m.exec(stdout)?.[1]?.trim() ?? '';
+  if (!gone && !still && !denied) return { ok: true, content: `Fermé : ${stdout.trim() || name}` };
+  const parts: string[] = [];
   if (still) {
-    return {
-      ok: false,
-      content: `« ${still} » est toujours ouvert : l'application attend sans doute une réponse (document à enregistrer ?). ${gone ? `Fermé : ${gone}.` : ''}`.trim(),
-    };
+    parts.push(
+      `« ${still} » est toujours ouvert : l'application attend sans doute une réponse (document à enregistrer ?).`,
+    );
   }
-  return { ok: true, content: `Fermé : ${gone}` };
+  if (denied) {
+    parts.push(
+      `Accès refusé pour « ${denied} » : ce programme tourne sans doute en administrateur, Jarvis ne peut pas le fermer.`,
+    );
+  }
+  if (gone) parts.push(`Fermé : ${gone}${parts.length ? '.' : ''}`);
+  return { ok: !still && !denied, content: parts.join(' ') };
 }
 
 // --- macOS -------------------------------------------------------------
