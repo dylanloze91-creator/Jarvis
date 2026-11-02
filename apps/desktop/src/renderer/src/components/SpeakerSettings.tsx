@@ -87,6 +87,7 @@ export function SpeakerSettingsSection() {
         label="Enceintes"
         hint={`Coupé : le port ${status.port} reste fermé, aucune enceinte ne peut parler à Jarvis.`}
         checked={status.enabled}
+        disabled={loading}
         onChange={(enabled) => run(() => window.jarvis.speaker.setEnabled(enabled))}
       />
 

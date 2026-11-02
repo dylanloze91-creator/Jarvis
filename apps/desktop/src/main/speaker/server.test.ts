@@ -516,6 +516,41 @@ describe('réglages des enceintes (5.0.64)', () => {
     expect(again.enabled).toBe(false);
   });
 
+  it('démarrage puis arrêt sans attendre : rien ne reste ouvert ; deux clics croisés sur l’interrupteur non plus', async () => {
+    const store = new SpeakerStore(() => join(dir, 'course.json'));
+    const service = new SpeakerService({
+      store,
+      port: 0,
+      chatFor: () => new FakeChat(() => undefined),
+      transcribe: async () => '',
+      synthesizer: new FakeSynth(),
+      voiceSettings: () => ({ wakeWord: 'jarvis', wakeWordVariants: [] }),
+      version: () => '5.0.64',
+      localAddresses: () => [],
+    });
+    await store.load();
+
+    // Avant la correction : `stop` ne voyait pas encore le serveur (posé seulement une fois à l'écoute) → port ouvert à vie.
+    const starting = service.server.start(0);
+    const stopping = service.server.stop();
+    await Promise.all([starting, stopping]);
+    expect(service.server.running).toBe(false);
+    expect(service.server.port).toBeNull();
+
+    // Interrupteur cliqué deux fois très vite : le dernier clic gagne, le port est fermé.
+    const [, off] = await Promise.all([service.setEnabled(true), service.setEnabled(false)]);
+    expect(off).toMatchObject({ enabled: false, running: false });
+    expect(service.server.running).toBe(false);
+    expect(service.server.port).toBeNull();
+
+    // Et dans l'autre sens : coupé puis rallumé, le port est bien ouvert à la fin.
+    const [, back] = await Promise.all([service.setEnabled(false), service.setEnabled(true)]);
+    expect(back).toMatchObject({ enabled: true, running: true });
+    expect((await call(service.server.port!, '/api/speaker/hello', {})).status).toBe(401);
+    await service.stop();
+    expect(service.server.running).toBe(false);
+  });
+
   it('nom .local du PC', () => {
     expect(localHostName('PC-de-Dylan')).toBe('pc-de-dylan.local');
     expect(localHostName('Bureau.local')).toBe('bureau.local');

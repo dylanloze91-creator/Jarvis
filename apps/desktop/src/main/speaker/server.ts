@@ -140,6 +140,7 @@ export class SpeakerServer {
   private server: Server | null = null;
   private boundPort: number | null = null;
   private readonly states = new Map<string, SpeakerState>();
+  private queue: Promise<void> = Promise.resolve();
 
   constructor(private readonly deps: SpeakerServerDeps) {}
 
@@ -155,8 +156,29 @@ export class SpeakerServer {
     return this.server !== null;
   }
 
+  /**
+   * `start` et `stop` s'enchaînent toujours dans l'ordre où ils sont demandés (l'interrupteur
+   * cliqué deux fois vite, ou coupé pendant le démarrage) : jamais un port qui reste ouvert.
+   */
+  private serialize<T>(task: () => Promise<T>): Promise<T> {
+    const run = this.queue.then(task, task);
+    this.queue = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  }
+
   /** Démarre sur toutes les interfaces. Port déjà pris : erreur, rien ne reste ouvert. */
   start(port: number): Promise<void> {
+    return this.serialize(() => this.doStart(port));
+  }
+
+  stop(): Promise<void> {
+    return this.serialize(() => this.doStop());
+  }
+
+  private doStart(port: number): Promise<void> {
     if (this.server) return Promise.resolve();
     const server = createServer((req, res) => {
       void this.handle(req, res).catch((error: unknown) => {
@@ -170,12 +192,17 @@ export class SpeakerServer {
     // Une phrase peut prendre plus d'une minute (Whisper, outils, modèle, synthèse).
     server.requestTimeout = 0;
     server.headersTimeout = 30_000;
+    // Posé tout de suite : un `stop` demandé pendant `listen` trouvera ce serveur à fermer.
+    this.server = server;
     return new Promise<void>((resolve, reject) => {
-      server.once('error', reject);
+      const onError = (error: Error): void => {
+        if (this.server === server) this.server = null;
+        reject(error);
+      };
+      server.once('error', onError);
       server.listen(port, () => {
-        server.off('error', reject);
+        server.off('error', onError);
         server.on('error', (error) => this.deps.log?.(`[enceinte] serveur : ${error.message}`));
-        this.server = server;
         const address = server.address();
         this.boundPort = typeof address === 'object' && address ? address.port : port;
         resolve();
@@ -183,7 +210,7 @@ export class SpeakerServer {
     });
   }
 
-  async stop(): Promise<void> {
+  private async doStop(): Promise<void> {
     const server = this.server;
     this.server = null;
     this.boundPort = null;
