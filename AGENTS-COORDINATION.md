@@ -29,6 +29,7 @@ Statuts possibles : `en cours`, `en pause`, `bloqué`, `terminé`.
 | Claude | `claude/mobile-5063` | 5.0.63 Jarvis sur le téléphone (Tailscale), fusionnée dans main et publiée (5.0.63) | — | 2026-11-01 | terminé |
 | Cursor | `cursor/publication-5063` | Publication 5.0.63 terminée (fusion de `claude/mobile-5063`, `release.sh` via `gh`, release `v5.0.63`) | — | 2026-11-01 | terminé |
 | Claude | `claude/audit-ux-5064` | Audit de l'appli : 35 bogues corrigés + ergonomie (interface, processus principal, cœur), rapport `rapports/2026-11-01-audit-ux-5064.md`, à fusionner après rejeu des tests sur le PC | — | 2026-11-01 | terminé |
+| Cursor | `cursor/audit-corrections` | Corrections de l'audit UX 5064 (points 1, 2, 3, 6, 7 de la revue `docs/revues/2026-11-02-audit-ux-5064.md` ; 4 et 5 laissés à Claude Code) | `apps/desktop/src/renderer/src/components/SettingsPanel.tsx`, `apps/desktop/src/renderer/src/lib/settingsPatch.ts` (+ test), `packages/core/src/agent/currentInfo.ts`, `packages/core/src/providers/ollama.ts`, `apps/desktop/src/main/knowledge.ts` (+ test), `packages/core/src/speech/addressee.ts` (+ test), `packages/core/src/audit-5064.test.ts`, `packages/core/src/providers/ollama-recover.test.ts`, `rapports/2026-11-02-audit-corrections.md`, `CLAUDE.md` (ligne 5.0.64) | 2026-11-02 | en cours |
 
 ## Ressource GPU / Ollama
 
