@@ -1,0 +1,22 @@
+# Copier vers config.toml (ce fichier-là n'est pas versionné).
+# Le jeton d'enceinte s'affiche une seule fois dans Jarvis :
+# Réglages → Enceintes → Ajouter une enceinte, nom « Robot ».
+
+pc_hote = "192.168.1.10"
+pc_port = 53131
+jeton_enceinte = ""
+
+# Service de pilotage déjà installé sur le Pi. « stop » l'appelle en local.
+robot_hote = "127.0.0.1"
+robot_port = 8765
+jeton_robot = ""
+
+# Nom ALSA (voir README : arecord -L). "default" = le périphérique par défaut.
+peripherique = "default"
+
+# 0 = moins sensible, 1 = plus sensible. 0,5 correspond au seuil 0,5
+# du modèle hey_jarvis (même réglage que Jarvis sur le PC).
+sensibilite = 0.5
+
+# Dossier du modèle Vosk français décompressé par installer.sh.
+modele_vosk = "modeles/vosk-model-small-fr-0.22"
