@@ -9,7 +9,8 @@
     1. vérification de Python (3.10 à 3.13) et du pilote NVIDIA (nvidia-smi) ;
     2. création de l'environnement virtuel training\.venv (ignoré par git) ;
     3. installation de torch depuis l'index CUDA de PyTorch (cu128 par défaut), puis de requirements.txt ;
-    4. contrôle que torch voit la carte et que l'architecture de la RTX 2060 (sm_75) est prise en charge ;
+    4. contrôle (controle_carte.py) que torch voit la carte, que l'architecture de la RTX 2060 (sm_75) est
+       prise en charge, et que bitsandbytes tourne vraiment sur la carte (une couche 4 bits créée et traversée) ;
     5. téléchargement de llama.cpp à la version épinglée (b12032) : sources (convert_hf_to_gguf.py)
        et binaires Windows processeur (llama-quantize.exe) dans training\llama.cpp (ignoré par git).
 
@@ -97,31 +98,20 @@ if ($LASTEXITCODE -ne 0) { Echec "installation des bibliothèques impossible" }
 & $venvPython -m pip check
 if ($LASTEXITCODE -ne 0) { Attention "pip check signale des conflits : lis le message ci-dessus avant d'entraîner." } else { Ok "bibliothèques cohérentes (pip check)" }
 
-# 4. CUDA vu par torch -------------------------------------------------------------------------------
-Etape "Contrôle CUDA dans torch"
-$controle = @'
-import torch
-print("torch", torch.__version__, "cuda", torch.version.cuda)
-if not torch.cuda.is_available():
-    print("PAS_DE_CUDA")
-else:
-    nom = torch.cuda.get_device_name(0)
-    cap = torch.cuda.get_device_capability(0)
-    archs = torch.cuda.get_arch_list()
-    print("carte", nom, "capacité", "%d.%d" % cap)
-    print("architectures compilées", " ".join(archs))
-    voulu = "sm_%d%d" % cap
-    print("ARCH_OK" if voulu in archs else "ARCH_ABSENTE " + voulu)
-    print("memoire_Go", round(torch.cuda.get_device_properties(0).total_memory / 2**30, 1))
-'@
-$resultat = & $venvPython -c $controle
+# 4. CUDA vu par torch, et bitsandbytes sur la carte (controle_carte.py) ----------------------------
+Etape "Contrôle de la carte : torch, puis bitsandbytes (Linear4bit nf4 sur la carte)"
+$resultat = & $venvPython (Join-Path $Ici "controle_carte.py")
 $resultat | ForEach-Object { Write-Host "    $_" }
 if ($resultat -match "PAS_DE_CUDA") {
   Attention "torch ne voit pas la carte. Causes fréquentes : pilote NVIDIA trop ancien pour $CudaIndex (mets-le à jour ou relance avec -CudaIndex cu126), ou pas de carte NVIDIA. --dry-run et l'export restent possibles."
 } elseif ($resultat -match "ARCH_ABSENTE") {
   Attention "cette roue torch ne contient pas l'architecture de ta carte : relance avec -CudaIndex cu126."
+} elseif ($resultat -match "BNB_ECHEC") {
+  Attention "bitsandbytes ne fonctionne pas sur la carte : l'entraînement 4 bits (QLoRA) échouerait au chargement du modèle. Lis le message ci-dessus ; vérifie que la version de bitsandbytes (requirements.txt) est bien la roue Windows avec CUDA, sinon passe par la carte louée (cloud\README.md)."
+} elseif ($resultat -match "BNB_OK") {
+  Ok "la carte est utilisable par torch et par bitsandbytes (4 bits)"
 } else {
-  Ok "la carte est utilisable par torch"
+  Attention "contrôle de la carte incomplet : relis les lignes ci-dessus."
 }
 
 # 5. llama.cpp (conversion et quantification) --------------------------------------------------------

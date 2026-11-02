@@ -182,6 +182,50 @@ def choisir_longueur_max(demandee: int | None, dossier_preparation: Path) -> tup
     return demandee, None
 
 
+def perte_divergente(valeur) -> bool:
+    """`True` si la perte n'est plus un nombre fini (nan ou infini) : l'entraînement a divergé."""
+    try:
+        return valeur != valeur or valeur in (float("inf"), float("-inf"))
+    except TypeError:
+        return False
+
+
+def construire_suivi(journal):
+    """Rappel du Trainer : journal des pertes, arrêt dès que la validation remonte, arrêt propre si la perte diverge."""
+    from transformers import EarlyStoppingCallback
+
+    class Suivi(EarlyStoppingCallback):
+        def __init__(self, early_stopping_patience: int = 1):
+            super().__init__(early_stopping_patience=early_stopping_patience)
+            self.divergence: str | None = None
+
+        def on_log(self, _args, state, control, logs=None, **kwargs):
+            if logs and "loss" in logs:
+                if perte_divergente(logs["loss"]):
+                    self.divergence = f"perte {logs['loss']} au pas {state.global_step} (époque {state.epoch or 0:.2f})"
+                    journal.error("ARRÊT : %s. L'entraînement a divergé ; rien n'est gardé. Essayer --lr plus bas (1e-4), ou --no-quant sur une carte assez grande.", self.divergence)
+                    control.should_training_stop = True
+                    control.should_save = False
+                    control.should_evaluate = False
+                else:
+                    journal.info("époque %.2f · pas %d · perte %.4f", state.epoch or 0, state.global_step, logs["loss"])
+            return control
+
+        def on_epoch_end(self, _args, state, control, **kwargs):
+            # Après une divergence, le Trainer passe encore par la fin d'époque : ni évaluation ni point de reprise d'un modèle cassé.
+            if self.divergence:
+                control.should_save = False
+                control.should_evaluate = False
+            return control
+
+        def on_evaluate(self, _args, state, control, metrics=None, **kwargs):
+            if metrics and "eval_loss" in metrics:
+                journal.info("époque %.2f · perte de validation %.4f", state.epoch or 0, metrics["eval_loss"])
+            return super().on_evaluate(_args, state, control, metrics=metrics, **kwargs)
+
+    return Suivi
+
+
 def preparer_lora(modele, args, *, quantifie: bool, checkpointing: bool):
     from peft import LoraConfig, get_peft_model
 
@@ -269,7 +313,7 @@ def main(argv: list[str] | None = None) -> int:
         entrainables = sum(p.numel() for p in modele.parameters() if p.requires_grad)
         journal.info("LoRA rang %d, alpha %d, abandon %.2f sur %s : %s paramètres entraînables.", args.rank, args.alpha, args.dropout, ", ".join(MODULES_LORA), f"{entrainables:,}".replace(",", " "))
 
-        from transformers import EarlyStoppingCallback, PrinterCallback, Trainer, TrainingArguments
+        from transformers import PrinterCallback, Trainer, TrainingArguments
 
         arguments = TrainingArguments(
             output_dir=str(dossier / runs.POINTS),
@@ -288,6 +332,8 @@ def main(argv: list[str] | None = None) -> int:
             optim="paged_adamw_8bit" if quantifie else "adamw_torch",
             logging_strategy="steps",
             logging_steps=1 if args.dry_run else 5,
+            # Sinon le Trainer remplace une perte nan/inf par la moyenne courante dans le journal : on ne la verrait pas.
+            logging_nan_inf_filter=False,
             eval_strategy="epoch",
             save_strategy="epoch",
             save_total_limit=2,
@@ -303,30 +349,22 @@ def main(argv: list[str] | None = None) -> int:
         )
         journal.info("Réglages : lot 1 × accumulation %d, taux %.1e, %.1f époque(s) au plus, cosinus, montée %.0f %%, %s.", args.grad_accum, args.lr, args.epochs, 100 * args.warmup, "fp16" if sur_carte else "fp32")
 
-        class Suivi(EarlyStoppingCallback):
-            """Écrit chaque perte dans le journal, en plus de l'arrêt dès que la validation remonte."""
-
-            def on_log(self, _args, state, control, logs=None, **kwargs):
-                if logs and "loss" in logs:
-                    journal.info("époque %.2f · pas %d · perte %.4f", state.epoch or 0, state.global_step, logs["loss"])
-                return control
-
-            def on_evaluate(self, _args, state, control, metrics=None, **kwargs):
-                if metrics and "eval_loss" in metrics:
-                    journal.info("époque %.2f · perte de validation %.4f", state.epoch or 0, metrics["eval_loss"])
-                return super().on_evaluate(_args, state, control, metrics=metrics, **kwargs)
-
+        suivi = construire_suivi(journal)(early_stopping_patience=1)
         entraineur = Trainer(
             model=modele,
             args=arguments,
             train_dataset=jeu_train,
             eval_dataset=jeu_validation,
             data_collator=donnees.Assembleur(tokenizer.pad_token_id),
-            callbacks=[Suivi(early_stopping_patience=1)],
+            callbacks=[suivi],
         )
         # Le journal tient lieu d'affichage : pas de dictionnaires bruts à l'écran.
         entraineur.remove_callback(PrinterCallback)
         resultat = entraineur.train(resume_from_checkpoint=str(point) if point else None)
+        if suivi.divergence:
+            runs.ecrire_json(dossier / runs.BILAN, {"base": base, "dry_run": args.dry_run, "arret": f"divergence : {suivi.divergence}", "pas": entraineur.state.global_step, "duree_s": round(time.time() - debut)})
+            journal.error("Arrêt propre après divergence : aucun adaptateur écrit (bilan.json le note). Le modèle de production n'est pas touché.")
+            return 6
         meilleur = entraineur.state.best_metric
         journal.info("Fin : %d pas, perte d'entraînement %.4f, meilleure perte de validation %s.", entraineur.state.global_step, resultat.training_loss, f"{meilleur:.4f}" if meilleur is not None else "—")
         pic_go = round(torch.cuda.max_memory_allocated(0) / 2**30, 2) if sur_carte else None

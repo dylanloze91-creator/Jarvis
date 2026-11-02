@@ -57,8 +57,9 @@ powershell -ExecutionPolicy Bypass -File training\setup-windows.ps1
 
 Ce que ça fait : vérifie Python (3.10 à 3.13) et le pilote NVIDIA, crée un environnement Python à part dans
 `training\.venv` (jamais dans le dépôt git), installe torch pour CUDA et les bibliothèques épinglées
-(`requirements.txt`), vérifie que torch voit la carte, puis télécharge `llama.cpp` à la version fixée (`b12032`)
-pour la conversion. Compte plusieurs Go de téléchargement.
+(`requirements.txt`), vérifie que torch voit la carte **et que bitsandbytes tourne dessus** (`controle_carte.py` crée
+une couche 4 bits sur la carte et la traverse : si ça échoue ici, l'entraînement QLoRA échouerait au chargement du
+modèle), puis télécharge `llama.cpp` à la version fixée (`b12032`) pour la conversion. Compte plusieurs Go de téléchargement.
 
 Ce qu'on doit voir : des lignes `==> …` puis `OK …` en vert, et à la fin `Terminé. Prochaines étapes`. Une ligne
 `!!` en jaune signale un problème qui n'empêche pas de continuer (par exemple « torch ne voit pas la carte » : alors
@@ -92,6 +93,9 @@ compris) et seule la **réponse** de l'élève est apprise, pas la consigne ni l
 Ce qu'on doit voir : `Exemples : N en entraînement …`, `Perte calculée sur … jetons de réponse`, `LoRA rang 16 …`, puis
 des lignes `époque 0.12 · pas 5 · perte 1.2345` qui **baissent** au fil du temps, `perte de validation …` à chaque époque,
 et à la fin `Adaptateur écrit dans training\runs\<date>\adaptateur`. Tout est aussi dans `training\runs\<date>\journal.txt`.
+Si une perte devient `nan` (l'entraînement a divergé), le script s'arrête **proprement** : `ARRÊT : perte nan au pas …`,
+aucun adaptateur ni point de reprise cassé n'est écrit, `bilan.json` note `arret`, code de sortie 6 ; relancer avec
+`--lr 1e-4` (et `--fresh`).
 
 **Durée (estimation, pas encore mesurée sur cette carte)** : pour 400 à 500 exemples et 3 époques au plus, compter
 **une nuit** sur une RTX 2060. **Mémoire** : 6 Go, c'est juste ; en cas de `CUDA out of memory`, relancer avec
