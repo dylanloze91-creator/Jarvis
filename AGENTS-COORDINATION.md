@@ -35,7 +35,7 @@ Statuts possibles : `en cours`, `en pause`, `bloqué`, `terminé`.
 | Cursor | `cursor/robot-voix-5066` | Corrections après revue de la voix (5.0.66) ; fusionnée dans main (intégration 5.0.64, non publiée) | — | 2026-11-02 | terminé |
 | Cursor | `cursor/verification` | Routine de vérification (ECC 01) : règle `.cursor/rules/verification.mdc` ; fusionnée dans main (intégration 5.0.64, non publiée) | — | 2026-11-01 | terminé |
 | Cursor | `main` | Intégration 5.0.64 : branches de la nuit (5 fusions `--no-ff`, points 4 et 5 de la revue audit, version 5.0.64, rapport `rapports/2026-11-02-integration-5064.md`) ; **non publiée** : Claude Code doit vérifier les points 4 et 5 sur Windows avant toute release | — | 2026-11-02 | terminé |
-| Cursor | `cursor/trieur-5068` | Spécialiste trieur (5.0.68) | `packages/core/src/trieur/`, `packages/core/scripts/trieur-*.mjs`, `packages/core/package.json`, `packages/core/src/settings.ts`, `packages/core/src/agent/orchestra*.ts`, `apps/desktop/src/main/session.ts`, `apps/desktop/src/renderer/src/components/OrchestraSettings.tsx`, `training/`, `training/TRIEUR.md`, `CLAUDE.md`, `docs/specs/specialiste-trieur.md`, `rapports/2026-11-02-trieur-5068.md` | 2026-11-02 | en cours |
+| Cursor | `cursor/trieur-5068` | Spécialiste trieur (5.0.68) | — | 2026-11-02 | terminé |
 
 ## Ressource GPU / Ollama
 
