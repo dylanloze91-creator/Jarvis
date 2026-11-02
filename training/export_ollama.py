@@ -70,7 +70,9 @@ def reecrire_modelfile(texte: str, gguf: Path) -> str:
 
     `ollama show` rend un FROM qui pointe vers le blob local du modèle source (commentaire
     « To build a new Modelfile based on this… » compris) ; tout le reste — TEMPLATE, PARAMETER,
-    SYSTEM, LICENSE — est conservé à l'identique. La documentation d'Ollama (docs/import.mdx,
+    SYSTEM, LICENSE — est conservé à l'identique. Seuls les commentaires **hors** des blocs
+    `\"\"\"…\"\"\"` sont retirés : le gabarit de qwen2.5-coder contient la ligne `# Tools`, qui fait
+    partie du texte vu par le modèle et doit rester (revue du 2026-11-02, point 1). La documentation d'Ollama (docs/import.mdx,
     docs/modelfile.mdx, lues le 2026-11-02) décrit l'import d'un GGUF par `FROM /chemin/fichier.gguf`
     et ne liste pas d'instruction qui appliquerait un adaptateur LoRA séparé : d'où la fusion
     préalable, seule voie documentée.
@@ -80,7 +82,13 @@ def reecrire_modelfile(texte: str, gguf: Path) -> str:
     lignes = texte.splitlines()
     sortie: list[str] = []
     from_remplace = False
+    dans_bloc = False  # à l'intérieur d'un bloc """…""" (TEMPLATE, SYSTEM, LICENSE) : tout est gardé au caractère près
     for ligne in lignes:
+        if dans_bloc:
+            sortie.append(ligne)
+            if ligne.count('"""') % 2 == 1:
+                dans_bloc = False
+            continue
         depouillee = ligne.strip()
         if depouillee.startswith("#"):
             continue
@@ -90,6 +98,8 @@ def reecrire_modelfile(texte: str, gguf: Path) -> str:
                 from_remplace = True
             continue
         sortie.append(ligne.rstrip())
+        if ligne.count('"""') % 2 == 1:
+            dans_bloc = True
     if not from_remplace:
         sortie.insert(0, ligne_from)
     while sortie and not sortie[0].strip():
