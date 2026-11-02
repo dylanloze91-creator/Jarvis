@@ -73,7 +73,11 @@ export interface PrepSummary {
   validation: number;
   setAside: { total: number; byReason: Record<string, number> };
   levels: { kept: Record<LabLevel, number>; train: Record<LabLevel, number>; validation: Record<LabLevel, number> };
+  /** Thèmes distincts parmi les exemples gardés (exemples sans thème non comptés) ; la découpe les garde entiers. */
+  themes: number;
   tokens: { cap: number; min: number | null; max: number | null; mean: number | null; median: number | null };
+  /** À lire : niveau trop petit pour une validation, etc. */
+  warnings: string[];
   options: Required<PrepOptions>;
 }
 
@@ -141,6 +145,8 @@ export function parseExampleLine(line: string): ParsedExampleLine {
   const calls = writeCallsOf(parsed);
   if (!calls.ok) return { ok: false, reason: calls.reason, id };
   if (!Array.isArray(parsed.tools) || parsed.tools.length === 0) return { ok: false, reason: 'sans catalogue tools', id };
+  const level = parsed.meta.level;
+  if (level !== 1 && level !== 2 && level !== 3) return { ok: false, reason: `niveau invalide (${JSON.stringify(level ?? null)})`, id };
   return { ok: true, example: parsed as unknown as LabTrainingExample, calls: calls.calls };
 }
 
@@ -273,29 +279,55 @@ export function validationCount(count: number, share: number): number {
   return Math.min(count - 1, Math.max(0, Math.round(count * share)));
 }
 
+/** En dessous de ce nombre d'exemples, un niveau part entièrement en entraînement et le résumé le signale. */
+export const MIN_LEVEL_FOR_VALIDATION = 5;
+
 /**
- * Découpe train / validation répartie par niveau. L'ordre des lignes d'entrée ne compte pas :
- * les exemples sont triés par identifiant avant le mélange.
+ * Découpe train / validation répartie par niveau, **par thème entier** (revue du 2026-11-02,
+ * point 7) : les exemples d'un même thème (celui d'`exercices.jsonl`) vont tous du même côté, pour
+ * qu'une variante d'un exercice ne serve pas à vérifier ce qu'une autre a appris. Un exemple sans
+ * thème forme son propre groupe. La part de validation est atteinte groupe par groupe (dépassement
+ * d'au plus un groupe), jamais tout un niveau. L'ordre des lignes d'entrée ne compte pas : tri par
+ * identifiant avant le mélange déterministe.
  */
-export function splitByLevel<T extends { id: string; level: LabLevel }>(
+export function splitByLevel<T extends { id: string; level: LabLevel; theme?: string | null }>(
   items: readonly T[],
   share: number,
   seed: number,
-): { train: T[]; validation: T[] } {
+): { train: T[]; validation: T[]; warnings: string[] } {
   const train: T[] = [];
   const validation: T[] = [];
+  const warnings: string[] = [];
+  const byId = (a: { id: string }, b: { id: string }) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
   for (const level of [1, 2, 3] as const) {
-    const pool = items.filter((item) => item.level === level).sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
-    const random = seededRandom(seed + level);
-    for (let index = pool.length - 1; index > 0; index -= 1) {
-      const swap = Math.floor(random() * (index + 1));
-      [pool[index], pool[swap]] = [pool[swap]!, pool[index]!];
+    const pool = items.filter((item) => item.level === level).sort(byId);
+    if (pool.length === 0) continue;
+    if (pool.length < MIN_LEVEL_FOR_VALIDATION) {
+      warnings.push(`niveau ${level} : ${pool.length} exemple(s) seulement, tous en entraînement, aucun en validation`);
     }
-    const held = validationCount(pool.length, share);
-    validation.push(...pool.slice(0, held));
-    train.push(...pool.slice(held));
+    const groups = new Map<string, T[]>();
+    for (const item of pool) {
+      const key = item.theme ? `theme:${item.theme}` : `seul:${item.id}`;
+      groups.set(key, [...(groups.get(key) ?? []), item]);
+    }
+    const shuffled = [...groups.values()];
+    const random = seededRandom(seed + level);
+    for (let index = shuffled.length - 1; index > 0; index -= 1) {
+      const swap = Math.floor(random() * (index + 1));
+      [shuffled[index], shuffled[swap]] = [shuffled[swap]!, shuffled[index]!];
+    }
+    const target = validationCount(pool.length, share);
+    let held = 0;
+    for (const group of shuffled) {
+      if (held < target && held + group.length < pool.length) {
+        validation.push(...group);
+        held += group.length;
+      } else {
+        train.push(...group);
+      }
+    }
   }
-  return { train, validation };
+  return { train, validation, warnings };
 }
 
 /* ------------------------------------------------------------------ */
@@ -315,6 +347,7 @@ function reasonFamily(reason: string): string {
   if (reason.startsWith('doublon exact')) return 'doublon exact';
   if (reason.startsWith('trop long')) return 'trop long';
   if (reason.startsWith('appel d’outil non conforme')) return 'appel d’outil non conforme';
+  if (reason.startsWith('niveau invalide')) return 'niveau invalide';
   if (reason.startsWith('suspect de contamination')) return 'suspect de contamination de l’examen';
   return reason;
 }
@@ -386,6 +419,7 @@ export function prepareTrainingData(input: {
     source: { examples: input.exampleLines.filter((line) => line.trim()).length, exercises: info.size },
     kept: kept.length,
     setAside: { total: setAside.length, byReason },
+    themes: new Set(kept.map((item) => item.theme).filter((theme): theme is string => theme !== null)).size,
     tokens: tokenStats(kept, options.maxTokens),
     options,
   };
@@ -394,10 +428,10 @@ export function prepareTrainingData(input: {
       ok: false,
       reason: refusalMessage(kept.length, options.minKept),
       setAside,
-      summary: { ...base, train: 0, validation: 0, levels: { kept: levelCounts(kept), train: { 1: 0, 2: 0, 3: 0 }, validation: { 1: 0, 2: 0, 3: 0 } } },
+      summary: { ...base, train: 0, validation: 0, levels: { kept: levelCounts(kept), train: { 1: 0, 2: 0, 3: 0 }, validation: { 1: 0, 2: 0, 3: 0 } }, warnings: [] },
     };
   }
-  const { train, validation } = splitByLevel(kept, options.validationShare, options.seed);
+  const { train, validation, warnings } = splitByLevel(kept, options.validationShare, options.seed);
   return {
     ok: true,
     train,
@@ -408,6 +442,7 @@ export function prepareTrainingData(input: {
       train: train.length,
       validation: validation.length,
       levels: { kept: levelCounts(kept), train: levelCounts(train), validation: levelCounts(validation) },
+      warnings,
     },
   };
 }

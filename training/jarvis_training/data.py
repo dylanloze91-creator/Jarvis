@@ -103,6 +103,9 @@ def exemple_depuis(brut: Any) -> Exemple:
     tools = brut.get("tools")
     if not isinstance(tools, list) or not tools:
         raise ExempleInvalide("sans catalogue tools")
+    niveau = brut["meta"].get("level")
+    if niveau not in (1, 2, 3) or isinstance(niveau, bool):
+        raise ExempleInvalide(f"niveau invalide ({json.dumps(niveau)})")
     return Exemple(identifiant=brut["id"], messages=messages[:3], tools=tools, meta=brut["meta"])
 
 

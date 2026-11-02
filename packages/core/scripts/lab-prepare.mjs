@@ -118,6 +118,8 @@ const levels = (counts) => `niv. 1 : ${counts[1]} · niv. 2 : ${counts[2]} · ni
 console.log('\n================ RÉSUMÉ ================');
 console.log(`Entraînement : ${summary.train} exemple(s) (${levels(summary.levels.train)})`);
 console.log(`Validation   : ${summary.validation} exemple(s) (${levels(summary.levels.validation)})`);
+console.log(`Thèmes       : ${summary.themes} (un thème entier va du même côté de la découpe)`);
 console.log(`Longueur (jetons estimés) : min ${summary.tokens.min}, médiane ${summary.tokens.median}, max ${summary.tokens.max}, plafond ${summary.tokens.cap}`);
+for (const warning of summary.warnings) console.log(`  ⚠ ${warning}`);
 console.log(`Fichiers écrits dans ${out} : ${Object.keys(files).join(', ')}`);
 console.log('Étape suivante : training\\setup-windows.ps1 (une fois), puis training\\train_lora.py (voir training\\README.md).');

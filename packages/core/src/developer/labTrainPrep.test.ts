@@ -266,6 +266,50 @@ describe('préparation des données : découpe', () => {
     const split = splitByLevel(items, 0.9, 1);
     expect(split.validation).toHaveLength(1);
     expect(split.train).toHaveLength(1);
+    // Un seul thème pour tout le niveau : le groupe ne peut pas partir entier en validation, il reste en entraînement.
+    const oneTheme = splitByLevel(Array.from({ length: 20 }, (_, n) => ({ id: `t${n}`, level: 1 as const, theme: 'unique' })), 0.1, 1);
+    expect(oneTheme.validation).toHaveLength(0);
+    expect(oneTheme.train).toHaveLength(20);
+  });
+
+  it('garde un thème entier du même côté de la découpe', () => {
+    const themes = ['aquarium', 'bibliotheque', 'cinema', 'danse', 'ecole', 'ferme', 'garage', 'hopital', 'igloo', 'jardin'];
+    const examples = Array.from({ length: 150 }, (_, index) => synthetic({ n: index + 1, level: ((index % 3) + 1) as LabLevel }));
+    // 15 exemples par thème (5 par niveau), déclarés dans exercices.jsonl.
+    const exercises = examples.map((example, index) => exerciseLine(example.meta.mission, example.meta.level, themes[index % 10]!, `Objectif synthétique ${index}.`));
+    const result = prepareTrainingData({ exampleLines: examples.map(line), exerciseLines: exercises });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error('préparation attendue');
+    expect(result.summary.themes).toBe(10);
+    const sideOf = new Map<string, 'train' | 'validation'>();
+    for (const item of result.train) sideOf.set(`${item.level}:${item.theme}`, 'train');
+    for (const item of result.validation) {
+      expect(sideOf.get(`${item.level}:${item.theme}`), `${item.theme} niveau ${item.level} des deux côtés`).toBeUndefined();
+    }
+    expect(result.validation.length).toBeGreaterThan(0);
+    expect(result.validation.every((item) => item.theme !== null)).toBe(true);
+    // Déterministe aussi par thème.
+    const again = prepareTrainingData({ exampleLines: [...examples].reverse().map(line), exerciseLines: exercises });
+    if (!again.ok) throw new Error('préparation attendue');
+    expect(again.validation.map((item) => item.id).sort()).toEqual(result.validation.map((item) => item.id).sort());
+  });
+
+  it('signale un niveau de moins de 5 exemples (tout en entraînement) et écarte un niveau invalide', () => {
+    const small = prepareTrainingData({ exampleLines: corpus(120, (n) => (n <= 3 ? 3 : n % 2 === 0 ? 1 : 2)) });
+    expect(small.ok).toBe(true);
+    if (!small.ok) throw new Error('préparation attendue');
+    expect(small.summary.levels.kept[3]).toBe(3);
+    expect(small.summary.levels.validation[3]).toBe(0);
+    expect(small.summary.levels.train[3]).toBe(3);
+    expect(small.summary.warnings).toEqual(['niveau 3 : 3 exemple(s) seulement, tous en entraînement, aucun en validation']);
+    const ok = prepareTrainingData({ exampleLines: corpus(150) });
+    expect(ok.summary.warnings).toEqual([]);
+
+    const bad = synthetic({ n: 14 });
+    const invalid = JSON.stringify({ ...bad, meta: { ...bad.meta, level: 4 } });
+    expect(parseExampleLine(invalid)).toEqual({ ok: false, reason: 'niveau invalide (4)', id: bad.id });
+    expect(parseExampleLine(JSON.stringify({ ...bad, meta: { ...bad.meta, level: undefined } }))).toEqual({ ok: false, reason: 'niveau invalide (null)', id: bad.id });
+    expect(prepareTrainingData({ exampleLines: [invalid, ...corpus(120)] }).summary.setAside.byReason).toEqual({ 'niveau invalide': 1 });
   });
 });
 
@@ -279,7 +323,7 @@ describe('préparation des données : fichiers écrits', () => {
     expect(written).toEqual(lines.slice(1).sort());
     expect(files['ecartes.jsonl']).toBe('{"line":1,"id":null,"reason":"ligne illisible"}\n');
     const summary = JSON.parse(files['resume.json']!);
-    expect(summary).toMatchObject({ at: '2026-11-02T00:00:00.000Z', ok: true, kept: 120, train: 108, validation: 12, setAside: { total: 1 } });
+    expect(summary).toMatchObject({ at: '2026-11-02T00:00:00.000Z', ok: true, kept: 120, train: 108, validation: 12, setAside: { total: 1 }, themes: 0, warnings: [] });
     expect(summary.options).toEqual({ maxTokens: 3072, validationShare: 0.1, seed: 5065, minKept: 100 });
   });
 

@@ -39,9 +39,18 @@ def test_ligne_invalide_est_sautee_et_comptee_sans_arreter(tmp_path: Path):
     sans_demande = exemple_synthetique(7)
     sans_demande["messages"][1]["content"] = "   "
     bon = exemple_synthetique(8)
+    niveau_4 = exemple_synthetique(10)
+    niveau_4["meta"]["level"] = 4
+    niveau_absent = exemple_synthetique(11)
+    del niveau_absent["meta"]["level"]
+    niveau_booleen = exemple_synthetique(12)
+    niveau_booleen["meta"]["level"] = True
     ecrire_jsonl(tmp_path / "x.jsonl", [sans_appel, autre_outil, mauvais_arguments, contenu_vide, sans_outils, sans_id, sans_demande, bon])
     with (tmp_path / "x.jsonl").open("a", encoding="utf-8") as f:
         f.write("{pas du json\n\n")
+    with (tmp_path / "x.jsonl").open("a", encoding="utf-8") as f:
+        for brut in (niveau_4, niveau_absent, niveau_booleen):
+            f.write(json.dumps(brut, ensure_ascii=False) + "\n")
 
     lecture = donnees.lire_jsonl(tmp_path / "x.jsonl")
     assert [e.identifiant for e in lecture.exemples] == ["synthetique-test-8"]
@@ -54,6 +63,9 @@ def test_ligne_invalide_est_sautee_et_comptee_sans_arreter(tmp_path: Path):
         (6, None, "ligne illisible"),
         (7, "synthetique-test-7", "ligne illisible"),
         (9, None, "ligne illisible"),
+        (11, "synthetique-test-10", "niveau invalide (4)"),
+        (12, "synthetique-test-11", "niveau invalide (null)"),
+        (13, "synthetique-test-12", "niveau invalide (true)"),
     ]
     with pytest.raises(donnees.ExempleInvalide, match="sans catalogue tools"):
         donnees.exemple_depuis(sans_outils)
