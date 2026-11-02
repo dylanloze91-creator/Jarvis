@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import train_lora
+from jarvis_training import runs
 
 
 class FauxModele:
@@ -54,3 +55,17 @@ def test_dry_run_passe_par_le_checkpointing(dossier_preparation: Path, tmp_path:
 
     bilan = json.loads((sortie / "bilan.json").read_text(encoding="utf-8"))
     assert bilan["pas"] == 2 and bilan["pic_memoire_carte_go"] is None
+
+
+def test_les_guides_disent_ou_le_7b_s_entraine_et_le_prix_releve():
+    """Point 2 de la revue : 7B sur carte louée, essai local sur le 3B, coût estimé avec date et pages des prix."""
+    racine = runs.racine_training()
+    guide = (racine / "README.md").read_text(encoding="utf-8")
+    cloud = (racine / "cloud" / "README.md").read_text(encoding="utf-8")
+    assert "se fait\nsur une carte louée de 24 Go" in guide.replace("**", "")
+    assert f"--base {train_lora.BASE_LOCALE}" in guide and "--max-steps 20" in guide
+    for texte in (guide, cloud):
+        assert "2 novembre 2026" in texte
+        assert "https://www.runpod.io/pricing" in texte and "https://vast.ai/pricing" in texte
+        assert "400 à 500" in texte and "2 à 3 h" in texte
+    assert "RTX A5000 | 24 Go | 0,27 $" in cloud and "| RTX 3090 | 24 Go | 0,11 $ | 0,20 $ |" in cloud

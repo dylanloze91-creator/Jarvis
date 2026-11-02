@@ -1,8 +1,9 @@
 # Entraîner sur une carte louée (RunPod ou Vast.ai)
 
-Si la RTX 2060 (6 Go) ne suffit pas — erreur « CUDA out of memory » même avec `--max-length 1024`, ou nuit
-trop courte — on loue une carte à l'heure, on y lance **le même** `train_lora.py`, on rapatrie un seul
-fichier (le GGUF) et on éteint. Le PC ne fait ensuite que l'étape Ollama (`export_ollama.py --gguf …`).
+C'est ici que **le 7B s'entraîne** : la RTX 2060 (6 Go) ne peut pas le faire (il faut ~9 Go en QLoRA, voir
+`training/README.md`, étape 3 ; le PC sert à l'essai local sur le 3B). On loue une carte de **24 Go** à l'heure,
+on y lance **le même** `train_lora.py`, on rapatrie un seul fichier (le GGUF) et on éteint. Le PC ne fait
+ensuite que l'étape Ollama (`export_ollama.py --gguf …`).
 
 Aucune clé, aucun identifiant n'est dans le dépôt ni dans les scripts : la connexion passe par le site
 du loueur (console web dans le navigateur, ou ssh avec la commande que le site affiche).
@@ -10,30 +11,60 @@ du loueur (console web dans le navigateur, ou ssh avec la commande que le site a
 ## Ce qu'il faut
 
 - Un compte chez [RunPod](https://www.runpod.io/) ou [Vast.ai](https://vast.ai/), avec quelques euros de crédit (prépayé : pas de mauvaise surprise).
-- Le dossier `preparation/` produit par `npm run lab:prepare` (train.jsonl, validation.jsonl ; quelques Mo).
+- Le dossier `preparation/` produit par `npm run lab:prepare` (train.jsonl, validation.jsonl **et resume.json** :
+  `train_lora.py` y lit l'empreinte de l'examen et le plafond de longueur, et refuse de partir sans ; quelques Mo).
 - Le dossier `training/` de ce dépôt (les scripts ; sans `.venv`, `runs`, `export`, `llama.cpp`).
 
 ## Quelle carte, quel prix
 
-Prix relevés le **2 novembre 2026** sur [runpod.io/pricing](https://www.runpod.io/pricing) (offre « Secure Cloud », à l'heure, à revérifier le jour même : ils bougent) :
+Prix relevés le **2 novembre 2026**, sur les pages des loueurs eux-mêmes, à revérifier le jour même (ils bougent) :
+
+**RunPod** — [runpod.io/pricing](https://www.runpod.io/pricing), onglet « Pods », grille affichée par défaut
+(la page a deux colonnes d'offres, « Community Cloud » et « Secure Cloud » ; les chiffres ci-dessous sont ceux
+de la vue par défaut, le site les montre côte à côte au moment de choisir) :
 
 | Carte | Mémoire | Prix / heure | Remarque |
 |---|---|---|---|
 | RTX A5000 | 24 Go | 0,27 $ | le meilleur rapport pour ce travail |
 | RTX 3090 | 24 Go | 0,50 $ | très courante |
 | A40 | 48 Go | 0,59 $ | permet `QUANT=0` (LoRA fp16, plus rapide) |
+| RTX A6000 | 48 Go | 0,59 $ | idem |
 | RTX 4090 | 24 Go | 0,89 $ | plus rapide, plus cher |
 | L40S | 48 Go | 1,09 $ | inutilement grand ici |
 
-Vast.ai : la page [vast.ai/pricing](https://vast.ai/pricing) est une place de marché dont les prix changent à chaque
-minute et ne se lisent qu'en ligne (pas de grille fixe, donc aucun chiffre recopié ici). Choisir une offre « 24 Go »
-avec une fiabilité (« reliability ») élevée, et comparer son prix horaire à la grille RunPod ci-dessus.
+Disque RunPod (même page) : disque du conteneur 0,10 $/Go/mois ; volume 0,10 $/Go/mois machine allumée, 0,20 $/Go/mois
+machine arrêtée ; stockage réseau 0,07 $/Go/mois. Pour 60 Go pendant 3 h : moins de 0,03 $.
+
+**Vast.ai** — [vast.ai/pricing](https://vast.ai/pricing), lue dans un navigateur le 2 novembre 2026 à 9 h UTC (la page
+se remplit par script, c'est une place de marché : chaque carte y est donnée « à partir de » et « médian ») :
+
+| Carte | Mémoire | À partir de | Prix médian / heure |
+|---|---|---|---|
+| RTX 3090 | 24 Go | 0,11 $ | 0,20 $ |
+| RTX A5000 | 24 Go | 0,20 $ | 0,23 $ |
+| RTX A6000 | 48 Go | 0,40 $ | 0,46 $ |
+| RTX 4090 | 24 Go | 0,13 $ | 0,47 $ |
+| A40 | 48 Go | 0,47 $ | 0,57 $ |
+| L40S | 48 Go | 0,33 $ | 0,73 $ |
+
+Réserves sur Vast.ai : la page ne dit pas si ces médianes valent pour les offres « on-demand » ou « interruptible »
+(les secondes, moins chères, peuvent être coupées en pleine nuit : **prendre une offre on-demand**, souvent un peu
+au-dessus du médian) ; le disque est facturé par l'hôte, au tarif affiché sur chaque offre. Choisir une offre 24 Go
+avec une fiabilité (« reliability ») élevée.
 
 **Estimation (pas une mesure : rien n'a encore tourné)** pour 400 à 500 exemples, 3 époques au plus, longueur 3 072 :
-- entraînement QLoRA sur une carte 24 Go : de l'ordre de **1 à 2 h** ;
+- entraînement QLoRA du 7B sur une carte 24 Go : de l'ordre de **1 à 2 h** ;
 - téléchargement du modèle de base (15 Go), fusion, conversion, quantification : **30 à 60 min** de plus ;
-- soit **2 à 3 h** de machine, **moins de 2 $ sur une A5000, moins de 3 $ sur une 3090**, plus le stockage du
-  volume pendant la session (quelques centimes). Si la machine reste allumée une nuit par oubli : 12 h × le prix horaire.
+- soit **2 à 3 h** de machine :
+
+| Carte (24 Go) | RunPod | Vast.ai (médian) |
+|---|---|---|
+| RTX A5000 | 0,54 – 0,81 $ | 0,46 – 0,69 $ |
+| RTX 3090 | 1,00 – 1,50 $ | 0,40 – 0,60 $ |
+| RTX 4090 | 1,78 – 2,67 $ | 0,94 – 1,41 $ |
+
+Plus le disque pendant la session (quelques centimes). **Moins de 1 $ sur une A5000 ou une 3090** si la machine est
+éteinte en sortant ; si elle reste allumée une nuit par oubli : 12 h × le prix horaire.
 
 ## Pas à pas (RunPod ; Vast.ai est équivalent)
 

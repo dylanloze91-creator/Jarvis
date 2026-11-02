@@ -22,7 +22,7 @@ que l'élève a réussis et que les vérifications ont validés.
 |---|---|---|---|
 | 1. Préparer | `npm run lab:prepare --workspace @jarvis/core -- --dir <dossier jarvis-data>` | PC | 1 min |
 | 2. Mettre en place (une fois) | `powershell -ExecutionPolicy Bypass -File training\setup-windows.ps1` | PC | 10–30 min (téléchargements) |
-| 3. Entraîner | `training\.venv\Scripts\python training\train_lora.py --data <dossier jarvis-data>\preparation` | PC (carte) ou carte louée | une nuit (estimation) |
+| 3. Entraîner | `training\.venv\Scripts\python training\train_lora.py --data <dossier jarvis-data>\preparation` | carte louée 24 Go pour le 7B (moins de 1 $) ; PC pour l'essai local sur le 3B | 2–3 h louées / une nuit sur le PC (estimations) |
 | 4. Exporter vers Ollama | `training\.venv\Scripts\python training\export_ollama.py --run training\runs\<date>` | PC | 30–60 min |
 | 5. Examiner | `npm run lab:compare --workspace @jarvis/core -- --base qwen2.5-coder:7b --candidate jarvis-coder --runs 3` | PC | 1–2 h |
 | 6. Décider | lire le verdict ; garder ou `ollama rm jarvis-coder` | toi | — |
@@ -78,28 +78,46 @@ Ce que ça fait : joue tout l'entraînement sur un **modèle minuscule et aléat
 rien d'utile ; ça prouve que l'installation et les données sont bonnes. On doit voir `DRY-RUN terminé : le circuit
 fonctionne.`
 
-## 3. Entraîner sur le PC (RTX 2060, 6 Go)
+## 3. Entraîner
+
+### Où : le 7B sur une carte louée, l'essai local sur un 3B
+
+Le vrai entraînement, celui de `Qwen/Qwen2.5-Coder-7B-Instruct` (le modèle dont `qwen2.5-coder:7b` est issu), **se fait
+sur une carte louée de 24 Go** (`training\cloud\README.md`). Pourquoi pas sur la RTX 2060 : même en 4 bits, le 7B a besoin
+d'environ **9 Go** de mémoire de carte pendant l'apprentissage (poids 4 bits ≈ 4,5 Go, plus les deux grandes tables de
+mots `embed_tokens` et `lm_head` en fp16 ≈ 2,2 Go, plus les activations et l'optimiseur) ; la carte en a 6. Le script
+l'écrit noir sur blanc au démarrage (`ATTENTION : Carte de 6,0 Go pour … : il faut environ 9 Go`) et le journal donne
+le **pic de mémoire réellement pris** à la fin (`Pic de mémoire de carte : … Go`, aussi dans `bilan.json`).
+
+Sur le PC, la RTX 2060 sert à un **essai local** sur le modèle plus petit de la même famille, `Qwen/Qwen2.5-Coder-3B-Instruct`
+(≈ 5 Go en QLoRA) : il valide les données et tout le circuit avec de vrais poids, et donne un premier modèle à examiner.
+D'abord 20 pas pour mesurer la mémoire et la vitesse, puis la nuit entière :
 
 ```powershell
-training\.venv\Scripts\python training\train_lora.py --data <dossier jarvis-data>\preparation
+training\.venv\Scripts\python training\train_lora.py --data <dossier jarvis-data>\preparation --base Qwen/Qwen2.5-Coder-3B-Instruct --max-steps 20
+training\.venv\Scripts\python training\train_lora.py --data <dossier jarvis-data>\preparation --base Qwen/Qwen2.5-Coder-3B-Instruct
 ```
 
-Ce que ça fait : charge le modèle de base `Qwen/Qwen2.5-Coder-7B-Instruct` (celui dont `qwen2.5-coder:7b` est issu ;
-15 Go téléchargés la première fois depuis Hugging Face) en 4 bits, et apprend un petit « adaptateur » (LoRA) sur les
-exemples. Les textes sont mis exactement au format que le modèle voit dans Ollama (gabarit officiel, appels d'outils
-compris) et seule la **réponse** de l'élève est apprise, pas la consigne ni la demande. À chaque époque, la perte sur
-`validation.jsonl` est mesurée ; dès qu'elle remonte, l'entraînement s'arrête et garde le meilleur point.
+Ce que ça fait : charge le modèle de base (6 Go téléchargés la première fois depuis Hugging Face pour le 3B, 15 Go pour
+le 7B) en 4 bits, et apprend un petit « adaptateur » (LoRA) sur les exemples. Les textes sont mis exactement au format
+que le modèle voit dans Ollama (gabarit officiel, appels d'outils compris) et seule la **réponse** de l'élève est
+apprise, pas la consigne ni la demande. À chaque époque, la perte sur `validation.jsonl` est mesurée ; dès qu'elle
+remonte, l'entraînement s'arrête et garde le meilleur point.
 
-Ce qu'on doit voir : `Exemples : N en entraînement …`, `Perte calculée sur … jetons de réponse`, `LoRA rang 16 …`, puis
-des lignes `époque 0.12 · pas 5 · perte 1.2345` qui **baissent** au fil du temps, `perte de validation …` à chaque époque,
-et à la fin `Adaptateur écrit dans training\runs\<date>\adaptateur`. Tout est aussi dans `training\runs\<date>\journal.txt`.
+Ce qu'on doit voir : `Carte : NVIDIA GeForce RTX 2060, 6,0 Go.`, `Exemples : N en entraînement …`, `Perte calculée sur …
+jetons de réponse`, `LoRA rang 16 …`, puis des lignes `époque 0.12 · pas 5 · perte 1.2345` qui **baissent** au fil du
+temps, `perte de validation …` à chaque époque, `Pic de mémoire de carte : … Go` et à la fin `Adaptateur écrit dans
+training\runs\<date>\adaptateur`. Tout est aussi dans `training\runs\<date>\journal.txt`.
 Si une perte devient `nan` (l'entraînement a divergé), le script s'arrête **proprement** : `ARRÊT : perte nan au pas …`,
 aucun adaptateur ni point de reprise cassé n'est écrit, `bilan.json` note `arret`, code de sortie 6 ; relancer avec
 `--lr 1e-4` (et `--fresh`).
 
 **Durée (estimation, pas encore mesurée sur cette carte)** : pour 400 à 500 exemples et 3 époques au plus, compter
-**une nuit** sur une RTX 2060. **Mémoire** : 6 Go, c'est juste ; en cas de `CUDA out of memory`, relancer avec
-`--max-length 1536` (puis `1024`) ; si ça ne passe toujours pas, passer par la carte louée (`training\cloud\README.md`).
+**une nuit** pour le 3B sur une RTX 2060. **Mémoire** : si l'essai à 20 pas donne un pic trop proche de 6 Go ou un
+`CUDA out of memory`, relancer avec `--max-length 2048` (puis `1536`) : les exemples plus longs sont laissés de côté et
+comptés. L'adaptateur d'un essai 3B s'exporte comme les autres (étape 4 : `export_ollama.py` lit le modèle de base dans
+l'adaptateur ; la fusion d'un 3B demande moitié moins de mémoire et de disque) et passe le même examen (étape 5) ;
+c'est alors un `jarvis-coder` de 3 milliards de paramètres, à comparer à `qwen2.5-coder:7b` avec ça en tête.
 
 Réglages (tous visibles avec `--help`) : `--epochs 3`, `--rank 16`, `--alpha 32`, `--lr 2e-4`, `--grad-accum 16`,
 `--max-length` : sans valeur, c'est **le plafond de la préparation** (`options.maxTokens` de `resume.json`, 3 072 par
@@ -110,11 +128,26 @@ signale l'écart avec la préparation.
 **Coupure de courant, PC redémarré ?** Relancer la même commande avec `--out training\runs\<date>` (le dossier qui
 existe déjà) : la reprise se fait au dernier point enregistré (à chaque époque). `--fresh` pour repartir de zéro.
 
-### Ou bien : entraîner sur une carte louée
+### Le 7B sur une carte louée : combien ça coûte
 
-Si la carte ne suffit pas ou si tu veux que ce soit fait en deux heures : `training\cloud\README.md` (RunPod ou
-Vast.ai, de l'ordre de 2 à 3 $ au total d'après leurs prix du 2 novembre 2026 ; aucune clé dans le dépôt).
-On en revient avec un fichier `.gguf` à passer directement à l'étape 4 : `export_ollama.py --gguf <fichier>`.
+Le pas à pas est dans `training\cloud\README.md` (RunPod ou Vast.ai ; aucune clé dans le dépôt). On en revient avec
+un fichier `.gguf` à passer directement à l'étape 4 : `export_ollama.py --gguf <fichier>`.
+
+**Estimation pour un entraînement sur 400 à 500 exercices** (3 époques au plus, longueur 3 072, QLoRA 7B sur une
+carte de 24 Go) : **1 à 2 h** d'apprentissage, plus **30 à 60 min** pour le téléchargement du modèle de base (15 Go),
+la fusion, la conversion et la quantification, soit **2 à 3 h de machine**. Ce sont des ordres de grandeur calculés,
+rien n'a encore tourné. Avec les prix relevés le **2 novembre 2026** (détail, sources et réserves dans
+`training\cloud\README.md`) :
+
+| Carte (24 Go) | RunPod ($/h) | Coût RunPod pour 2–3 h | Vast.ai, prix médian ($/h) | Coût Vast.ai pour 2–3 h |
+|---|---|---|---|---|
+| RTX A5000 | 0,27 | **0,54 – 0,81 $** | 0,23 | **0,46 – 0,69 $** |
+| RTX 3090 | 0,50 | 1,00 – 1,50 $ | 0,20 | 0,40 – 0,60 $ |
+| RTX 4090 | 0,89 | 1,78 – 2,67 $ | 0,47 | 0,94 – 1,41 $ |
+
+À ajouter : le disque de la machine (60 Go) pendant la session, quelques centimes. **Moins de 1 $ si on éteint
+la machine en sortant ; 12 h oubliées = 12 × le prix horaire.** Pages utilisées : [runpod.io/pricing](https://www.runpod.io/pricing)
+et [vast.ai/pricing](https://vast.ai/pricing), lues le 2 novembre 2026 ; ces prix changent, les revérifier le jour même.
 
 ## 4. Installer dans Ollama sous le nom `jarvis-coder`
 
@@ -182,6 +215,7 @@ ils sont hors du dépôt git.
   meilleure validation, reprise, journal). `jarvis_training/data.py` fait la mise au format et le masque de la perte ;
   `jarvis_training/runs.py` gère les dossiers `runs/<date>/`.
 - `export_ollama.py` — fusion, GGUF, Q4_K_M, Modelfile, `ollama create`.
+- `controle_carte.py` — lancé par `setup-windows.ps1` : torch voit-il la carte, bitsandbytes y tourne-t-il (couche 4 bits).
 - `setup-windows.ps1`, `requirements.txt` — installation, versions fixées (torch 2.11.0, transformers 4.57.6, peft 0.21.2,
   bitsandbytes 0.50.2, datasets 4.8.5, accelerate 1.15.0, llama.cpp b12032).
 - `cloud/` — la même chose sur une carte louée.
