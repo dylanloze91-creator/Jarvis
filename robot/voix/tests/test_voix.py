@@ -10,13 +10,13 @@ from pathlib import Path
 
 import pytest
 
-from jarvis_robot_voix.arret import est_arret, grammaire_json
+from jarvis_robot_voix.arret import DetecteurArret, est_arret, grammaire_json
 from jarvis_robot_voix.boucle import Boucle
 from jarvis_robot_voix.config import charger
 from jarvis_robot_voix.contrat import ClientPc, ClientRobot
 from jarvis_robot_voix.fin_parole import FinDeParole
 from jarvis_robot_voix.service import ServiceVoix
-from jarvis_robot_voix.wav import TAUX, bip_erreur, generer, pcm_vers_wav, silence, wav_vers_pcm
+from jarvis_robot_voix.wav import TAUX, bip_alerte, bip_erreur, generer, pcm_vers_wav, silence, wav_vers_pcm
 
 RACINE = Path(__file__).resolve().parents[1]
 SEUIL_REVEIL = 0.2
@@ -64,6 +64,12 @@ class Journal(BaseHTTPRequestHandler):
             self.server.entre.set()
             self.server.bloque.wait(timeout=5)
         if self.path.startswith("/api/stop"):
+            self.server.arrets = getattr(self.server, "arrets", 0) + 1
+            if self.server.arrets <= getattr(self.server, "stops_en_echec", 0):
+                self.send_response(503)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
             self.send_response(200)
             self.send_header("Content-Length", "0")
             self.end_headers()
@@ -78,7 +84,7 @@ class Journal(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", "audio/wav")
         self.send_header("x-jarvis-continue", "1" if mode == "suite" else "0")
-        self.send_header("x-jarvis-transcript", "bonjour")
+        self.send_header("x-jarvis-transcript", getattr(self.server, "transcription", "bonjour"))
         self.send_header("Content-Length", str(len(wav)))
         self.end_headers()
         self.wfile.write(wav)
@@ -374,6 +380,85 @@ def test_point2_stop_pendant_la_requete_et_pendant_la_lecture():
         assert sortie._couper.is_set()
     finally:
         bloque.set()
+        if service is not None:
+            service.arreter_fils()
+        pc.shutdown()
+        robot.shutdown()
+
+
+def test_point4_trois_essais_alerte_jeton_et_transcription_du_pc(tmp_path):
+    from jarvis_robot_voix.__main__ import main
+
+    vide = tmp_path / "config.toml"
+    vide.write_text((RACINE / "config.example.toml").read_text(encoding="utf-8"), encoding="utf-8")
+    assert main(["--config", str(vide)]) == 2
+
+    robot = servir([])
+    robot.stops_en_echec = 2
+    pc = servir(["fin"])
+    pc.transcription = "stop"
+    try:
+        _config, client, client_robot = config_vers(pc.server_address[1], robot.server_address[1])
+        assert client_robot.stop() is None
+        assert robot.arrets == 3
+        robot.journal.clear()
+        robot.arrets = 0
+        robot.stops_en_echec = 0
+        sortie = Sortie()
+        boucle = Boucle(client, client_robot, reveil_fort, phrase("bonjour"), sortie)
+        alimenter(boucle, *scenario_parole())
+        assert [e["chemin"] for e in robot.journal] == ["/api/stop"]
+        assert sortie.joues == []
+    finally:
+        pc.shutdown()
+        robot.shutdown()
+
+    ferme = servir([])
+    try:
+        prise = __import__("socket").socket()
+        prise.bind(("127.0.0.1", 0))
+        port = prise.getsockname()[1]
+        prise.close()
+        _config, client, client_robot = config_vers(ferme.server_address[1], port, timeout=0.2)
+        sortie = Sortie()
+        boucle = Boucle(client, client_robot, reveil_fort, phrase("stop"), sortie)
+        alimenter(boucle, *scenario_parole())
+        assert sortie.joues == [bip_alerte()]
+    finally:
+        ferme.shutdown()
+
+
+def test_point3_stop_immediat_malgre_unk_et_repetition():
+    assert est_arret("[unk] stop")
+    assert est_arret("stop stop")
+    assert est_arret("unk stop stop")
+    assert not est_arret("[unk]")
+    assert not est_arret("toi")
+    vu = {"texte": ""}
+
+    def lire(pcm: bytes) -> str:
+        return "[unk] stop" if _marque_stop(pcm) else ""
+
+    detecteur = DetecteurArret(lire)
+    assert detecteur.pousser(generer(80, amplitude=1000)) is False
+    service = None
+    pc = servir([])
+    robot = servir([])
+    try:
+        _config, client, client_robot = config_vers(pc.server_address[1], robot.server_address[1])
+        boucle = Boucle(client, client_robot, reveil_fort, phrase("bonjour"), Sortie())
+        service = ServiceVoix(boucle, detecteur.pousser, lambda: None, lambda: None, silence_s=30)
+        service.demarrer_fils()
+        avant = time.monotonic()
+        service.recevoir(_trame_stop())
+        for _ in range(50):
+            if robot.journal:
+                break
+            time.sleep(0.02)
+        assert robot.journal
+        assert time.monotonic() - avant < 0.5
+        assert pc.journal == []
+    finally:
         if service is not None:
             service.arreter_fils()
         pc.shutdown()

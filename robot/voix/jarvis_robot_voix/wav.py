@@ -53,6 +53,11 @@ def bip_erreur(taux: int = TAUX) -> bytes:
     return pcm_vers_wav(generer(180, amplitude=6000, frequence=880, taux=taux), taux)
 
 
+def bip_alerte(taux: int = TAUX) -> bytes:
+    """Le stop local n'a pas été pris par le pilotage."""
+    return pcm_vers_wav(generer(180, amplitude=6000, frequence=440, taux=taux), taux)
+
+
 def pcm_vers_wav(pcm: bytes, taux: int = TAUX) -> bytes:
     tampon = io.BytesIO()
     with wave.open(tampon, "wb") as fichier:

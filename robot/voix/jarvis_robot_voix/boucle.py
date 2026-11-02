@@ -11,7 +11,7 @@ from .arret import est_arret
 from .contrat import SUIVI_PAR_DEFAUT_MS, ClientPc, ClientRobot, ErreurReseau
 from .fin_parole import PHRASE_MAX_MS, SEUIL, FinDeParole
 from .reveil import taille_trame_reveil
-from .wav import TAUX, bip_erreur, duree_ms, pcm_vers_wav, rms
+from .wav import TAUX, bip_alerte, bip_erreur, duree_ms, pcm_vers_wav, rms
 
 journal = logging.getLogger("jarvis_robot_voix")
 
@@ -125,8 +125,8 @@ class Boucle:
         try:
             self.robot.stop()
         except ErreurReseau:
-            journal.warning("le service du robot n'a pas pris l'arrêt")
-            self._jouer(bip_erreur())
+            journal.warning("le service du robot n'a pas pris l'arrêt, après 3 essais")
+            self._jouer(bip_alerte())
         if revenir:
             self._revenir_veille()
 
@@ -147,6 +147,9 @@ class Boucle:
         if self._annule.is_set():
             self._annule.clear()
             self._revenir_veille()
+            return
+        if est_arret(reponse.transcription):
+            self._stop_local()
             return
         if reponse.statut == 204 or reponse.statut == 200 and not reponse.wav:
             self._revenir_veille()

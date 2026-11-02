@@ -20,8 +20,8 @@ def main(argv: list[str] | None = None) -> int:
     arguments = analyseur.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     config = charger(arguments.config)
-    if not config.jeton_enceinte:
-        logging.error("jeton_enceinte est vide dans %s", arguments.config)
+    if not config.jeton_enceinte or not config.jeton_robot:
+        logging.error("jeton_enceinte et jeton_robot doivent être remplis dans %s", arguments.config)
         return 2
 
     client = ClientPc(config)

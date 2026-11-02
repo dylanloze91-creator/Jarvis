@@ -9,6 +9,7 @@ X-Jarvis-Continue et X-Jarvis-Transcript. 204 : rien à dire.
 from __future__ import annotations
 
 import json
+import time
 import urllib.parse
 from dataclasses import dataclass
 from http.client import HTTPConnection, HTTPException
@@ -99,7 +100,20 @@ class ClientRobot:
         self.config = config
         self.timeout = timeout
 
-    def stop(self) -> None:
+    def stop(self, essais: int = 3, pause: float = 0.05) -> None:
+        dernier: Exception | None = None
+        for numero in range(essais):
+            try:
+                self._une_fois()
+                return
+            except ErreurReseau as erreur:
+                dernier = erreur
+                if numero + 1 < essais:
+                    time.sleep(pause)
+        if dernier is not None:
+            raise dernier
+
+    def _une_fois(self) -> None:
         connexion = _connexion(self.config.robot_hote, self.config.robot_port, self.timeout)
         entetes = {
             "Authorization": f"Bearer {self.config.jeton_robot}",
