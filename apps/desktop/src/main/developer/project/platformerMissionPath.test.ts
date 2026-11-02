@@ -15,6 +15,7 @@ import {
   REVIEW_MARKER,
   WRITE_MARKER,
 } from '@jarvis/core';
+import { findNpmCliOnPath, npmCliCandidates } from '../environment.js';
 import { createHarness, fakeOutcome } from '../controllerHarness.testkit.js';
 import { FakeOllama, type ChatBody, type Reply } from '../models/fakeOllama.testkit.js';
 import type { RunOutcome, RunSpec } from '../runner.js';
@@ -46,7 +47,39 @@ export const PLAY_LEVEL: LevelData = {
 };
 `;
 
+function resolveNpmCli(): string | null {
+  return (
+    npmCliCandidates(process.execPath, process.platform).find((candidate) => existsSync(candidate)) ??
+    findNpmCliOnPath(process.env.PATH, process.platform)
+  );
+}
+
 function runReal(spec: RunSpec, display: string): RunOutcome {
+  if (display.startsWith('npm ')) {
+    const cli = resolveNpmCli();
+    if (!cli) {
+      return {
+        ...fakeOutcome(display, '', 1),
+        error: 'spawnSync npm ENOENT',
+      };
+    }
+    const args = display.split(/\s+/).slice(1);
+    try {
+      const stdout = execFileSync(process.execPath, [cli, ...args], {
+        cwd: spec.cwd,
+        encoding: 'utf8',
+        env: { ...process.env, CI: '1' },
+      });
+      return fakeOutcome(display, stdout, 0);
+    } catch (error) {
+      const err = error as { stdout?: string; stderr?: string; status?: number };
+      return {
+        ...fakeOutcome(display, err.stdout ?? '', err.status ?? 1),
+        stderr: err.stderr ?? '',
+        error: String(error),
+      };
+    }
+  }
   const parts = display.split(/\s+/);
   const cmd = parts[0]!;
   const args = parts.slice(1);

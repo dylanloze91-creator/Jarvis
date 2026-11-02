@@ -8,6 +8,7 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs';
+import { dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -16,8 +17,14 @@ import {
   GOAL_MARKER,
   PLAN_MARKER,
   REVIEW_MARKER,
+  parseDotnetSdks,
 } from '@jarvis/core';
 import { createHarness, fakeOutcome } from '../controllerHarness.testkit.js';
+import {
+  dotnetDesktopTfm,
+  fakeDotnetListSdks,
+  installedDotnetTarget,
+} from '../dotnetTestkit.js';
 import { FakeOllama, type ChatBody, type Reply } from '../models/fakeOllama.testkit.js';
 import type { RunOutcome, RunSpec } from '../runner.js';
 import { codeBlock, createFixtureRepo, writeRequest } from '../task/taskWorkflow.testkit.js';
@@ -25,6 +32,8 @@ import { codeBlock, createFixtureRepo, writeRequest } from '../task/taskWorkflow
 const base = mkdtempSync(join(tmpdir(), 'jarvis-dotnet-'));
 const jarvis = join(base, 'Jarvis');
 const projectsRoot = join(base, 'Projets');
+const DOTNET_TFM = installedDotnetTarget() ?? 'net8.0';
+const DOTNET_DESKTOP = dotnetDesktopTfm(DOTNET_TFM);
 const CODE = 'scripte:dotnet';
 const fake = new FakeOllama();
 const git = (cwd: string, ...args: string[]) =>
@@ -88,24 +97,37 @@ function script(body: ChatBody): Reply {
   return { content: 'Je ne sais pas.' };
 }
 
-/** dotnet hors ligne : SDK 10 annoncé, restauration, compilation et tests simulés. */
+/** dotnet hors ligne : SDK annoncé selon la machine, restauration, compilation et tests simulés. */
+function stubPublishExe(spec: RunSpec): void {
+  const slnName = readdirSync(spec.cwd).find((f) => f.endsWith('.sln'));
+  if (!slnName) return;
+  const slnBase = slnName.replace(/\.sln$/i, '');
+  const exeRel = `src/${slnBase}.App/bin/Release/${DOTNET_DESKTOP}/win-x64/publish/${slnBase}.App.exe`;
+  const exe = join(spec.cwd, exeRel);
+  mkdirSync(dirname(exe), { recursive: true });
+  writeFileSync(exe, Buffer.alloc(12_000, 0x4d));
+}
+
 function offlineDotnet(sdk: boolean) {
   return (spec: RunSpec, display: string): RunOutcome | null => {
     if (!display.startsWith('dotnet ')) return null;
     if (display === 'dotnet --list-sdks')
       return sdk
-        ? fakeOutcome(display, '10.0.112 [/usr/lib/dotnet/sdk]\n')
+        ? fakeOutcome(display, fakeDotnetListSdks(DOTNET_TFM))
         : { ...fakeOutcome(display, '', 0), code: null, error: 'spawn dotnet ENOENT' };
     if (display.startsWith('dotnet restore')) return fakeOutcome(display, 'Restored.');
     if (display.startsWith('dotnet build')) return fakeOutcome(display, 'Build succeeded.');
-    if (display.startsWith('dotnet publish')) return null;
+    if (display.startsWith('dotnet publish')) {
+      stubPublishExe(spec);
+      return fakeOutcome(display, 'Build succeeded.\n');
+    }
     if (display.startsWith('dotnet test')) {
       const extra = existsSync(
         join(spec.cwd, 'tests', 'BloqueurDeSites.Tests', 'HostsBlockerTests.cs'),
       );
       return fakeOutcome(
         display,
-        `Passed!  - Failed:     0, Passed:     ${extra ? 3 : 2}, Skipped:     0, Total:     ${extra ? 3 : 2}, Duration: 9 ms - BloqueurDeSites.Tests.dll (net10.0)\n`,
+        `Passed!  - Failed:     0, Passed:     ${extra ? 3 : 2}, Skipped:     0, Total:     ${extra ? 3 : 2}, Duration: 9 ms - BloqueurDeSites.Tests.dll (${DOTNET_TFM})\n`,
       );
     }
     return null;
@@ -150,7 +172,7 @@ describe('appli Windows (.NET), 0.5.4', () => {
       'utf8',
     );
     expect(app).toContain('<UseWindowsForms>true</UseWindowsForms>');
-    expect(app).toContain('<TargetFramework>net10.0-windows</TargetFramework>');
+    expect(app).toContain(`<TargetFramework>${DOTNET_DESKTOP}</TargetFramework>`);
     expect(
       git(dir, 'log', '--format=%an')
         .split('\n')
@@ -181,7 +203,7 @@ describe('appli Windows (.NET), 0.5.4', () => {
     expect(tests.length).toBeGreaterThan(0);
     expect(new Set(tests.map((r) => r.level))).toEqual(new Set(['auto']));
     expect(h.ran.some((r) => r.display.startsWith('dotnet publish'))).toBe(true);
-    const exeRel = 'src/BloqueurDeSites.App/bin/Release/net10.0-windows/win-x64/publish/BloqueurDeSites.App.exe';
+    const exeRel = `src/BloqueurDeSites.App/bin/Release/${DOTNET_DESKTOP}/win-x64/publish/BloqueurDeSites.App.exe`;
     expect(existsSync(join(dir, exeRel))).toBe(true);
 
     const projects = (await h.instance.listProjects()).projects!;
@@ -193,7 +215,7 @@ describe('appli Windows (.NET), 0.5.4', () => {
         command:
           'dotnet publish src/BloqueurDeSites.App/BloqueurDeSites.App.csproj -c Release -r win-x64 --no-self-contained',
         artifact:
-          'src/BloqueurDeSites.App/bin/Release/net10.0-windows/win-x64/publish/BloqueurDeSites.App.exe',
+          `src/BloqueurDeSites.App/bin/Release/${DOTNET_DESKTOP}/win-x64/publish/BloqueurDeSites.App.exe`,
       },
     });
     await h.instance.discardTask();
@@ -249,7 +271,10 @@ describe('appli Windows (.NET), 0.5.4', () => {
       origin: 'imported',
       ok: true,
     });
-    expect(imported.dotnet).toEqual({ sdks: ['10.0.112'], hint: null });
+    expect(imported.dotnet).toEqual({
+      sdks: parseDotnetSdks(fakeDotnetListSdks(DOTNET_TFM)),
+      hint: null,
+    });
   }, 60_000);
 
   it('« Nouveau projet » .NET sans SDK : rien n’est écrit, message clair', async () => {
