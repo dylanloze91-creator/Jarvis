@@ -35,6 +35,7 @@ Statuts possibles : `en cours`, `en pause`, `bloqué`, `terminé`.
 | Cursor | `cursor/robot-voix-5066` | Corrections après revue de la voix (5.0.66) ; fusionnée dans main (intégration 5.0.64, non publiée) | — | 2026-11-02 | terminé |
 | Cursor | `cursor/verification` | Routine de vérification (ECC 01) : règle `.cursor/rules/verification.mdc` ; fusionnée dans main (intégration 5.0.64, non publiée) | — | 2026-11-01 | terminé |
 | Cursor | `main` | Intégration 5.0.64 : branches de la nuit (5 fusions `--no-ff`, points 4 et 5 de la revue audit, version 5.0.64, rapport `rapports/2026-11-02-integration-5064.md`) ; **non publiée** : Claude Code doit vérifier les points 4 et 5 sur Windows avant toute release | — | 2026-11-02 | terminé |
+| Claude Code | `claude/nuit-3` | Rapport de la nuit 3 du générateur, vérifications Windows de la 5.0.64 (points 4 et 5), puis publication 5.0.64 | `rapports/2026-11-02-nuit-3.md`, `rapports/2026-11-02-verification-windows-5064.md` | 2026-11-02 | en cours |
 
 ## Ressource GPU / Ollama
 
