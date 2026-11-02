@@ -3,7 +3,7 @@ import { request } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, afterEach, describe, expect, it } from 'vitest';
-import { createMessage, newConversation, withMessages, type Conversation } from '@jarvis/core';
+import { createMessage, newConversation, withMessages, encodeWav, type Conversation } from '@jarvis/core';
 import type { ChatEvent, SendChatInput } from '../../shared/ipc.js';
 import { PhoneServer, allowedPhoneHost, type PhoneChat, type PhoneSender } from './server.js';
 import { PhoneService } from './service.js';
@@ -99,6 +99,7 @@ async function setup(script: (sender: PhoneSender, input: SendChatInput) => Prom
     conversation: async (id) => (id === saved.id ? saved : null),
     icon: async () => Buffer.from([0x89, 0x50, 0x4e, 0x47]),
     version: () => '5.0.63',
+    phoneVoice: async () => 'device',
     onPaired: (device) => paired.push(device.name),
   });
   await server.start(0);
@@ -173,8 +174,32 @@ describe('serveur du téléphone (5.0.63)', () => {
 
     const me = await call(port, '/api/me', { token });
     expect(me.status).toBe(200);
-    expect(JSON.parse(me.body)).toEqual({ device: 'iPhone b', version: '5.0.63' });
+    expect(JSON.parse(me.body)).toEqual({ device: 'iPhone b', version: '5.0.63', voice: 'device' });
     expect(store.devices()).toHaveLength(1);
+  });
+
+  it('rejette /api/speak sans jeton ou sans Piper', async () => {
+    const wav = encodeWav(new Float32Array([0, 0.1]), 22_050);
+    const store = new PhoneStore(() => join(dir, `phone-speak-${Math.random().toString(36).slice(2)}.json`));
+    await store.load();
+    const server = new PhoneServer({
+      store,
+      chat: new FakeChat(() => undefined),
+      conversation: async () => null,
+      icon: async () => Buffer.from([0x89, 0x50, 0x4e, 0x47]),
+      version: () => '5.0.67',
+      phoneVoice: async () => 'piper',
+      synthesizeSpeech: async () => wav,
+    });
+    await server.start(0);
+    servers.push(server);
+    const port = server.port!;
+    expect((await call(port, '/api/speak', { body: { text: 'Bonjour' } })).status).toBe(401);
+    const { token } = await store.addDevice('iPhone');
+    const ok = await call(port, '/api/speak', { token, body: { text: 'Bonjour Jarvis.' } });
+    expect(ok.status).toBe(200);
+    expect(ok.headers['content-type']).toBe('audio/wav');
+    expect(ok.body.length).toBeGreaterThan(40);
   });
 
   it('le fichier ne garde que l’empreinte du jeton', async () => {
@@ -292,6 +317,7 @@ describe('réglages du téléphone (5.0.63)', () => {
       conversation: async () => null,
       icon: async () => null,
       version: () => '5.0.63',
+      phoneVoice: async () => 'device',
       tailscale: async (args) =>
         args[0] === 'status'
           ? JSON.stringify({ BackendState: 'Running', Self: { DNSName: 'pc.tail1a2b.ts.net.', Online: true } })

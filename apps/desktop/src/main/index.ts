@@ -24,6 +24,7 @@ import {
   ollamaDescriptor,
   parseSettings,
   testOllamaConnection,
+  PIPER_TTS_ID,
   type MarketDataProviderDescriptor,
   type ProviderDescriptor,
   type SearchProviderDescriptor,
@@ -35,6 +36,7 @@ import {
   type SendChatInput,
   type ToolInfo,
   type VoiceSpeakInput,
+  type VoicePiperSpeakInput,
   type VoiceTranscribeInput,
 } from '../shared/ipc.js';
 import { FileAuditLogStore } from './audit-store.js';
@@ -61,6 +63,7 @@ import { ChatActivity } from './developer/task/chatActivity.js';
 import { summarizeYoutubeLink } from './youtube/runtime.js';
 import { UpdateManager } from './updater.js';
 import { VoiceBridge } from './voice.js';
+import { PiperService, phoneVoiceMode } from './piper/service.js';
 import { presentWindow } from './startup.js';
 import { allowPermissionCheck, allowPermissionRequest, originForLog } from './mediaPermissions.js';
 import { VoiceCaptureLog } from './voiceCaptureLog.js';
@@ -91,6 +94,7 @@ const personalization = new PersonalizationStore();
 const knowledge = new KnowledgeStore({ getUserDataPath: () => app.getPath('userData') });
 const auditLog = new FileAuditLogStore();
 const voice = new VoiceBridge(() => settings);
+const piper = new PiperService();
 const updateManager = new UpdateManager();
 const voiceCaptureLog = new VoiceCaptureLog(() => join(app.getPath('userData'), 'logs', 'voice-capture.log'));
 const wakeLearning = new WakeLearningStore(() => app.getPath('userData'), (line) => voiceCaptureLog.append(line));
@@ -255,6 +259,10 @@ const phone = new PhoneService({
   conversation: (id) => store.get(id),
   icon: () => readFile(join(__dirname, '../../resources/icon.png')),
   version: () => app.getVersion(),
+  phoneVoice: async () =>
+    phoneVoiceMode(settings.voice.ttsProvider, await piper.isReady()),
+  synthesizeSpeech: async (text: string) =>
+    piper.synthesizeWav({ text, voiceId: settings.voice.ttsVoice || undefined }),
   log: (line) => console.info(line),
   broadcast: (status) => {
     const contents = overlay?.browserWindow.webContents;
@@ -295,7 +303,12 @@ const speakers = new SpeakerService({
     };
   },
   transcribe: (pcm) => transcribeViaRenderer({ webContents: overlay?.browserWindow.webContents ?? null, pcm }),
-  synthesizer: createSpeakerSynthesizer({ getSettings: () => settings, voice, log: (line) => console.info(line) }),
+  synthesizer: createSpeakerSynthesizer({
+    getSettings: () => settings,
+    voice,
+    piper,
+    log: (line) => console.info(line),
+  }),
   voiceSettings: () => settings.voice,
   version: () => app.getVersion(),
   conversations: store,
@@ -617,6 +630,26 @@ function registerIpc(): void {
     voice.transcribe(input),
   );
   ipcMain.handle(IpcChannel.voiceSpeak, (_event, input: VoiceSpeakInput) => voice.speak(input));
+  ipcMain.handle(IpcChannel.voicePiperStatus, async () => ({
+    ready: await piper.isReady(),
+    benchmarkMs: piper.streamingBenchmarkMs,
+  }));
+  ipcMain.handle(IpcChannel.voicePiperSpeak, async (_event, input: VoicePiperSpeakInput) => {
+    if (settings.voice.ttsProvider !== PIPER_TTS_ID) {
+      return { ok: false as const, error: 'Choisissez la voix Piper dans les réglages.' };
+    }
+    try {
+      const wav = input.sentence
+        ? await piper.synthesizeSentenceWav(input.text, input.voice)
+        : await piper.synthesizeWav({ text: input.text, voiceId: input.voice });
+      return { ok: true as const, data: wav, mimeType: 'audio/wav' };
+    } catch (error) {
+      return {
+        ok: false as const,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  });
   ipcMain.handle(IpcChannel.voiceAssetsReport, async () => {
     const root = currentVoiceAssetsRoot();
     return {

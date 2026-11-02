@@ -1,4 +1,4 @@
-import { DEFAULT_FOLLOW_UP_SECONDS, WHISPER_MODEL_REPO, openWakeWordSensitivityToThreshold } from '@jarvis/core';
+import { DEFAULT_FOLLOW_UP_SECONDS, PIPER_PREVIEW_TEXT, WHISPER_MODEL_REPO, openWakeWordSensitivityToThreshold } from '@jarvis/core';
 import type { VoiceDescriptor, VoiceSettings } from '@jarvis/core';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Field, Input, Range, Select, Textarea, Toggle } from '@/components/ui/field';
@@ -56,6 +56,8 @@ export function VoiceSettingsSection({
   const [importError, setImportError] = useState<string | null>(null);
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const [ttsVoices, setTtsVoices] = useState<VoiceDescriptor[]>([]);
+  const [piperPreviewError, setPiperPreviewError] = useState<string | null>(null);
+  const [piperPreviewing, setPiperPreviewing] = useState(false);
 
   const [testing, setTesting] = useState(false);
   const [testScore, setTestScore] = useState(0);
@@ -65,6 +67,7 @@ export function VoiceSettingsSection({
   const flashTimerRef = useRef<number | null>(null);
 
   const usingLocalWhisperStt = voice.sttProvider === 'local-whisper';
+  const usingLocalPiperTts = voice.ttsProvider === 'local-piper';
   const sampleCount = voice.wakeWordProfiles.length;
   const threshold = openWakeWordSensitivityToThreshold(voice.wakeWordSensitivity);
 
@@ -419,6 +422,44 @@ export function VoiceSettingsSection({
                 </option>
               ))}
             </Select>
+            {usingLocalPiperTts ? (
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  variant="subtle"
+                  disabled={piperPreviewing}
+                  onClick={() => {
+                    setPiperPreviewError(null);
+                    setPiperPreviewing(true);
+                    void window.jarvis.voice
+                      .piperSpeak({ text: PIPER_PREVIEW_TEXT, voice: voice.ttsVoice || undefined })
+                      .then(async (result) => {
+                        if (!result.ok) throw new Error(result.error);
+                        const blob = new Blob([result.data.buffer as ArrayBuffer], { type: result.mimeType });
+                        const url = URL.createObjectURL(blob);
+                        const audio = new Audio(url);
+                        await audio.play();
+                        await new Promise<void>((resolve) => {
+                          audio.addEventListener('ended', () => resolve(), { once: true });
+                          audio.addEventListener('error', () => resolve(), { once: true });
+                        });
+                        URL.revokeObjectURL(url);
+                      })
+                      .catch((error: unknown) => {
+                        setPiperPreviewError(error instanceof Error ? error.message : String(error));
+                      })
+                      .finally(() => setPiperPreviewing(false));
+                  }}
+                >
+                  {piperPreviewing ? 'Écoute…' : 'Écouter'}
+                </Button>
+                {piperPreviewError ? (
+                  <p className="text-xs text-rose-300">{piperPreviewError}</p>
+                ) : (
+                  <p className="text-xs text-slate-500">Phrase d’exemple locale, sans Internet.</p>
+                )}
+              </div>
+            ) : null}
           </Field>
         </>
       ) : null}

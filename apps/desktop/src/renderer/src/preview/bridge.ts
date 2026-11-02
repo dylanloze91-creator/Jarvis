@@ -278,6 +278,8 @@ export function installPreviewBridge(): void {
     voice: {
       transcribe: async () => ({ ok: false, error: 'Aperçu hors micro.' }),
       speak: async () => ({ ok: false, error: 'Aperçu hors synthèse.' }),
+      piperSpeak: async () => ({ ok: false, error: 'Aperçu hors Piper.' }),
+      piperStatus: async () => ({ ready: false, benchmarkMs: null }),
       assetsReport: async () => ({
         appVersion: desktopPackage.version,
         platform: 'aperçu',

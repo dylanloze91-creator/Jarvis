@@ -123,3 +123,4 @@ for (const asset of REQUIRED_VOICE_ASSETS) {
 console.log(
   `[voix] voice-assets prêt : onnxruntime-web ${ort.version}, ${WHISPER_MODEL_REPO} q8, openWakeWord, Vosk ${VOSK_MODEL_NAME}.`,
 );
+await import('./setup-piper.mjs');

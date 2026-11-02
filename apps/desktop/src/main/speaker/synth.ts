@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { SPEAKER_SAMPLE_RATE, decodeWav, toSpeakerWav, type Settings } from '@jarvis/core';
 import { POWERSHELL_UTF8_PREAMBLE, run, type RunOptions, type RunResult } from '../tools/platform/exec.js';
 import type { VoiceBridge } from '../voice.js';
+import type { PiperService } from '../piper/service.js';
 
 /**
  * 5.0.64 — la réponse vocale de l'enceinte doit être un **fichier** WAV (16 kHz, mono, 16 bits) :
@@ -90,6 +91,20 @@ export class WindowsSpeechSynthesizer implements SpeakerSynthesizer {
   }
 }
 
+/** Synthèse Piper locale (WAV 22,05 kHz) ramenée à 16 kHz pour l'enceinte. */
+export class PiperSpeechSynthesizer implements SpeakerSynthesizer {
+  constructor(
+    private readonly piper: Pick<PiperService, 'synthesizeWav' | 'isReady'>,
+    private readonly voiceId: () => string,
+  ) {}
+
+  async synthesize(text: string): Promise<Uint8Array> {
+    if (!(await this.piper.isReady())) throw new Error('Piper indisponible (binaire ou voix manquants).');
+    const wav = await this.piper.synthesizeWav({ text, voiceId: this.voiceId() || undefined });
+    return toSpeakerWav(wav);
+  }
+}
+
 /** Synthèse OpenAI (`VoiceBridge.speak`, clé déjà réglée par l'utilisateur) en WAV, ramené à 16 kHz. */
 export class OpenAiSpeechSynthesizer implements SpeakerSynthesizer {
   constructor(
@@ -108,22 +123,37 @@ export class OpenAiSpeechSynthesizer implements SpeakerSynthesizer {
 export interface DefaultSynthesizerDeps {
   getSettings: () => Settings;
   voice: Pick<VoiceBridge, 'speak' | 'hasApiKey'>;
+  piper?: Pick<PiperService, 'synthesizeWav' | 'isReady'>;
   platform?: NodeJS.Platform;
   windows?: SpeakerSynthesizer;
   log?: (line: string) => void;
 }
 
 /**
- * Choix de la voix : OpenAI si l'utilisateur l'a choisie **et** a une clé (repli sur Windows si
- * l'appel échoue), sinon la voix Windows. Hors Windows sans OpenAI : erreur claire.
+ * Choix de la voix : Piper si l'utilisateur l'a choisi et que les fichiers sont là (repli Windows
+ * si échec), sinon OpenAI si clé (repli Windows), sinon la voix Windows. Hors Windows sans OpenAI
+ * ni Piper : erreur claire.
  */
 export function createSpeakerSynthesizer(deps: DefaultSynthesizerDeps): SpeakerSynthesizer {
   const platform = deps.platform ?? process.platform;
   const windows = deps.windows ?? (platform === 'win32' ? new WindowsSpeechSynthesizer() : null);
   const openai = new OpenAiSpeechSynthesizer(deps.voice, () => deps.getSettings().voice.ttsVoice);
+  const piper =
+    deps.piper &&
+    new PiperSpeechSynthesizer(deps.piper, () => deps.getSettings().voice.ttsVoice);
   return {
     async synthesize(text: string): Promise<Uint8Array> {
       const settings = deps.getSettings();
+      if (settings.voice.ttsProvider === 'local-piper' && piper) {
+        try {
+          return await piper.synthesize(text);
+        } catch (error) {
+          deps.log?.(
+            `[enceinte] synthèse Piper en échec, voix Windows : ${error instanceof Error ? error.message : String(error)}`,
+          );
+          if (!windows) throw error;
+        }
+      }
       if (settings.voice.ttsProvider === 'openai-tts' && deps.voice.hasApiKey()) {
         try {
           return await openai.synthesize(text);

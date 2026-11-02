@@ -35,7 +35,7 @@ Statuts possibles : `en cours`, `en pause`, `bloqué`, `terminé`.
 | Cursor | `cursor/robot-voix-5066` | Corrections après revue de la voix (5.0.66) ; fusionnée dans main (intégration 5.0.64, non publiée) | — | 2026-11-02 | terminé |
 | Cursor | `cursor/verification` | Routine de vérification (ECC 01) : règle `.cursor/rules/verification.mdc` ; fusionnée dans main (intégration 5.0.64, non publiée) | — | 2026-11-01 | terminé |
 | Cursor | `main` | Intégration 5.0.64 : branches de la nuit (5 fusions `--no-ff`, points 4 et 5 de la revue audit, version 5.0.64, rapport `rapports/2026-11-02-integration-5064.md`) ; **non publiée** : Claude Code doit vérifier les points 4 et 5 sur Windows avant toute release | — | 2026-11-02 | terminé |
-| Cursor | `cursor/voix-piper-5067` | Voix locale Piper (chantier 1, 5.0.67) | `packages/core/src/speech/piper*.ts`, `packages/core/src/phone/phone.ts`, `apps/desktop/src/main/piper/`, `apps/desktop/src/main/speaker/synth.ts`, `apps/desktop/src/main/phone/`, `apps/desktop/scripts/setup-piper.mjs`, `apps/desktop/electron-builder.yml`, `apps/desktop/src/shared/ipc.ts`, `apps/desktop/src/preload/`, `apps/desktop/src/renderer/src/voice/`, `apps/desktop/src/renderer/src/components/VoiceSettings.tsx`, `apps/desktop/package.json`, `CLAUDE.md`, `rapports/2026-11-02-voix-piper-5067.md` | 2026-11-02 | en cours |
+| Cursor | `cursor/voix-piper-5067` | Voix locale Piper (chantier 1, 5.0.67) | — | 2026-11-02 | terminé |
 
 ## Ressource GPU / Ollama
 

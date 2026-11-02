@@ -178,6 +178,8 @@ export const PHONE_JS = String.raw`(function () {
   var token = load(TOKEN_KEY);
   var conversationId = load(CONVERSATION_KEY);
   var speakReplies = load(SPEAK_KEY) !== 'off';
+  var piperVoice = false;
+  var phoneAudio = null;
   var busy = false;
   var controller = null;
   var current = null;
@@ -334,9 +336,39 @@ export const PHONE_JS = String.raw`(function () {
   }
 
   function speak(text) {
-    if (!speakReplies || !window.speechSynthesis) return;
+    if (!speakReplies) return;
     var spoken = speakable(text);
     if (!spoken) return;
+    if (window.speechSynthesis) window.speechSynthesis.cancel();
+    if (phoneAudio) {
+      phoneAudio.pause();
+      phoneAudio = null;
+    }
+    if (piperVoice) {
+      fetch('/api/speak', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: spoken }),
+        cache: 'no-store',
+      })
+        .then(function (response) {
+          if (!response.ok) throw new Error('Voix Piper indisponible');
+          return response.blob();
+        })
+        .then(function (blob) {
+          var url = URL.createObjectURL(blob);
+          phoneAudio = new Audio(url);
+          phoneAudio.addEventListener('ended', function () {
+            URL.revokeObjectURL(url);
+          });
+          return phoneAudio.play();
+        })
+        .catch(function () {
+          /* rien : le texte reste lisible à l'écran */
+        });
+      return;
+    }
+    if (!window.speechSynthesis) return;
     window.speechSynthesis.cancel();
     var utterance = new SpeechSynthesisUtterance(spoken.slice(0, 1500));
     utterance.lang = 'fr-FR';
@@ -659,6 +691,7 @@ export const PHONE_JS = String.raw`(function () {
           return;
         }
         return response.json().then(function (data) {
+          piperVoice = data.voice === 'piper';
           setStatus('Relié à Jarvis ' + (data.version || ''), false);
           return loadConversation();
         });
@@ -701,6 +734,10 @@ export const PHONE_JS = String.raw`(function () {
     speakReplies = !speakReplies;
     save(SPEAK_KEY, speakReplies ? 'on' : 'off');
     if (!speakReplies && window.speechSynthesis) window.speechSynthesis.cancel();
+    if (!speakReplies && phoneAudio) {
+      phoneAudio.pause();
+      phoneAudio = null;
+    }
     renderSpeakButton();
   });
   if (Recognition) {

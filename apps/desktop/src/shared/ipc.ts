@@ -102,6 +102,8 @@ export const IpcChannel = {
   systemSnapshot: 'system:snapshot',
   voiceTranscribe: 'voice:transcribe',
   voiceSpeak: 'voice:speak',
+  voicePiperSpeak: 'voice:piper-speak',
+  voicePiperStatus: 'voice:piper-status',
   voiceAssetsReport: 'voice:assets-report',
   voiceCopyReport: 'voice:copy-report',
   voiceCaptureLog: 'voice:capture-log',
@@ -468,6 +470,20 @@ export interface VoiceSpeakInput {
 export type VoiceSpeakResult =
   { ok: true; data: Uint8Array; mimeType: string } | { ok: false; error: string };
 
+export interface VoicePiperSpeakInput {
+  text: string;
+  voice?: string;
+  /** Une seule phrase (découpage côté renderer pour lire pendant la suite). */
+  sentence?: boolean;
+}
+
+export type VoicePiperSpeakResult = VoiceSpeakResult;
+
+export interface VoicePiperStatus {
+  ready: boolean;
+  benchmarkMs: number | null;
+}
+
 /** Vue du processus principal sur les fichiers voix, pour « Tester la voix ». */
 export interface VoiceAssetsReport {
   appVersion: string;
@@ -597,6 +613,8 @@ export interface JarvisApi {
   voice: {
     transcribe(input: VoiceTranscribeInput): Promise<VoiceTranscribeResult>;
     speak(input: VoiceSpeakInput): Promise<VoiceSpeakResult>;
+    piperSpeak(input: VoicePiperSpeakInput): Promise<VoicePiperSpeakResult>;
+    piperStatus(): Promise<VoicePiperStatus>;
     assetsReport(): Promise<VoiceAssetsReport>;
     /** Copie le détail du diagnostic dans le presse-papiers (texte seul). */
     copyReport(text: string): Promise<void>;

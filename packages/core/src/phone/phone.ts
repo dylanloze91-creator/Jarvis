@@ -16,6 +16,12 @@ export const PHONE_PAIRING_MAX_ATTEMPTS = 5;
 export const PHONE_MAX_DEVICES = 10;
 /** Longueur maximale d'un message envoyé depuis le téléphone. */
 export const PHONE_MAX_TEXT = 4_000;
+/** Texte maximal pour la synthèse vocale du téléphone (identique à l'enceinte). */
+export const PHONE_MAX_SPEAK_CHARS = 1_500;
+
+export const phoneSpeakRequestSchema = z.object({
+  text: z.string().trim().min(1).max(PHONE_MAX_SPEAK_CHARS),
+});
 
 /** Commande à taper une fois dans PowerShell pour publier Jarvis sur le réseau Tailscale. */
 export function tailscaleServeCommand(port = PHONE_PORT): string {

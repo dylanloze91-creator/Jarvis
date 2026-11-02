@@ -6,6 +6,8 @@ import {
   phoneChatRequestSchema,
   phoneConfirmRequestSchema,
   phonePairRequestSchema,
+  phoneSpeakRequestSchema,
+  speechTextForSpeaker,
   type Conversation,
 } from '@jarvis/core';
 import type { ChatEvent, SendChatInput } from '../../shared/ipc.js';
@@ -39,6 +41,10 @@ export interface PhoneServerDeps {
   conversation: (id: string) => Promise<Conversation | null>;
   icon: () => Promise<Buffer | null>;
   version: () => string;
+  /** `piper` si le PC peut servir un WAV Piper, sinon le téléphone garde sa voix. */
+  phoneVoice: () => Promise<'piper' | 'device'>;
+  /** Synthèse locale pour `/api/speak` (texte déjà nettoyé). */
+  synthesizeSpeech?: (text: string) => Promise<Uint8Array>;
   onPaired?: (device: PhoneDevice) => void;
   log?: (line: string) => void;
   now?: () => number;
@@ -219,7 +225,8 @@ export class PhoneServer {
     if (!device) throw new HttpError(401, 'Ce téléphone n’est pas relié à Jarvis.');
 
     if (path === '/api/me' && method === 'GET') {
-      return sendJson(res, 200, { device: device.name, version: this.deps.version() });
+      const voice = await this.deps.phoneVoice();
+      return sendJson(res, 200, { device: device.name, version: this.deps.version(), voice });
     }
     if (path === '/api/conversation' && method === 'GET') {
       const id = url.searchParams.get('id') ?? '';
@@ -247,6 +254,22 @@ export class PhoneServer {
       await readJson(req);
       this.deps.chat.cancel();
       return sendJson(res, 200, { ok: true });
+    }
+    if (path === '/api/speak' && method === 'POST') {
+      if ((await this.deps.phoneVoice()) !== 'piper') throw new HttpError(503, 'La voix Piper n’est pas disponible sur ce PC.');
+      if (!this.deps.synthesizeSpeech) throw new HttpError(503, 'Synthèse vocale indisponible.');
+      const parsed = phoneSpeakRequestSchema.safeParse(await readJson(req));
+      if (!parsed.success) throw new HttpError(400, 'Texte vide ou trop long (1 500 caractères maximum).');
+      const spoken = speechTextForSpeaker(parsed.data.text);
+      if (!spoken) throw new HttpError(400, 'Rien à dire après nettoyage du texte.');
+      const wav = await this.deps.synthesizeSpeech(spoken);
+      res.writeHead(200, {
+        'Content-Type': 'audio/wav',
+        'Content-Length': wav.byteLength,
+        'Cache-Control': 'no-store',
+      });
+      res.end(Buffer.from(wav));
+      return;
     }
     throw new HttpError(404, 'Introuvable.');
   }

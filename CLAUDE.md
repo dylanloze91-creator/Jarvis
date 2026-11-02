@@ -610,6 +610,20 @@ Le robot (Pi 5 + ESP32) peut servir d'enceinte Jarvis, comme une enceinte de pi�
 - **Confirmations** : le pont du PC refuse une action qui demande un accord quand elle vient d'une enceinte. « Avance de 50 cm » dit au robot ne le fait pas bouger. Cette règle n'est pas changée.
 - Tests : `robot/voix/tests/test_voix.py` (pytest, WAV synthétiques, faux PC, faux robot). Pas de voix réelle dans le dépôt.
 
+## 5.0.67 — voix locale Piper
+
+Cahier des charges : `docs/specs/voix-jarvis.md` (chantier 1). **Défaut inchangé** : `ttsProvider` reste `browser-local` (`chat-unchanged.test.ts`). L'utilisateur choisit **Piper (voix locale gratuite, sans Internet)** dans Réglages → Voix.
+
+- **Moteur** : binaire **Piper** précompilé (`rhasspy/piper` release `2023.11.14-2`, MIT) lancé en **processus séparé** ; texte sur **stdin**, jamais dans la ligne de commande. **espeak-ng** (GPL) reste **dans le binaire Piper**, jamais lié à l'application Electron.
+- **Voix ONNX** (Hugging Face `rhasspy/piper-voices`, cartes MODEL_CARD vérifiées) : **Siwis** (CC BY 4.0), **UPMC Jessica / Pierre** (dataset CC BY-SA 4.0). Pas de voix **Tom** (jeu de données AGPL — incompatible avec l'installateur).
+- **Fichiers** : `apps/desktop/scripts/setup-piper.mjs` (appelé par `setup:voice`) remplit `voice-assets/piper/` (binaire + modèles, empreintes SHA-256). `electron-builder.yml` copie `voice-assets/piper/` dans `resources/piper/`. Taille ajoutée à l'installateur : ~170 Mo (binaire ~25 Mo + deux modèles ~140 Mo).
+- **Registre TTS** : id `local-piper` ; fenêtre = WAV 22,05 kHz joué dans le renderer (`managesOwnPlayback` pour enchaîner les phrases) ; enceinte = `PiperSpeechSynthesizer` dans `main/speaker/synth.ts` (repli voix Windows) ; iPhone = `POST /api/speak` + `/api/me` → `voice: "piper"` quand Piper est prêt.
+- **Licences notées** : Piper MIT, espeak-ng GPL (programme séparé), onnxruntime embarqué dans le binaire Piper (licence Microsoft, pas de second runtime dans la fenêtre), voix ci-dessus. Rapport : `rapports/2026-11-02-voix-piper-5067.md`.
+
+## Studio de voix (chantier 2, hors scope 5.0.67)
+
+Dossier `voice-studio/` prévu par le cahier des charges (Python, invention de timbre, entraînement Piper sur carte louée). **Non implémenté** sur cette branche.
+
 ## Updater / GitHub
 
 Dernière publication : **5.0.63** (`https://github.com/dylanloze91-creator/Jarvis/releases/tag/v5.0.63`) — exe, `.blockmap` et `latest.yml` publiés : l’updater intégré la propose.
@@ -753,6 +767,7 @@ Corrections de la revue complète (détail : `docs/audit-0410.md` du store du pr
 - **Robot enceinte (5.0.66)** : la voix est `robot/voix/`, jamais le service de pilotage ; rien n'est envoyé au PC avant le mot de réveil ; le « stop » local reste actif pendant la requête et la lecture ; le micro de la discussion est coupé pendant la lecture et 300 ms après ; une action à confirmer dite depuis l'enceinte reste refusée par le pont du PC.
 - **Appels relus (5.0.54)** : `recoverToolCalls` reste une option du modèle de code et du laboratoire, jamais du chat sans décision ; un appel relu ne vise qu'un outil proposé à ce tour ; un texte illisible reste une erreur, jamais un appel deviné.
 - **Entraînement de l'élève (5.0.65)** : aucun texte écrit par Claude ou Cursor n'entre dans les données d'entraînement (les tests n'utilisent que des exemples synthétiques marqués `synthetique-test`, jamais copiés dans le cahier) ; l'examen ne fuit jamais dans l'entraînement (`lab:prepare` écarte et liste tout exemple proche d'une mission d'`evalCatalog()`, et refuse de préparer sous 100 exemples gardés) ; le modèle entraîné (`jarvis-coder`) ne remplace jamais rien tout seul : il s'ajoute dans Ollama et le choix revient à l'utilisateur après `lab:compare`.
+- **Voix Piper (5.0.67)** : défaut TTS inchangé (`browser-local`) ; Piper = processus séparé, texte jamais en argument de ligne de commande ; espeak-ng jamais lié dans l'appli ; repli voix Windows sur l'enceinte si Piper manque ; `chat-unchanged.test.ts` vert sans régénération.
 
 Travaux **hors scope** de cet arbre (ne pas les reprendre ici) : publication GitHub.
 

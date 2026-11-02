@@ -105,6 +105,7 @@ describe('téléphone + vraie session (5.0.63)', () => {
       conversation: (id) => store.get(id),
       icon: async () => null,
       version: () => '5.0.63',
+      phoneVoice: async () => 'device',
     });
     await server.start(0);
     try {
