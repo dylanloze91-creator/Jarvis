@@ -37,7 +37,9 @@ static void feed_task(void *arg) {
         }
         if (muted) continue;
         if (muted_changed) {
-            // Retour du son : on oublie ce qui restait dans l'AFE (fin de la réponse de Jarvis).
+            // Retour du son après une **réponse** de Jarvis : on oublie ce qui restait dans l'AFE
+            // (sa propre voix). Le bip de réveil, lui, ne coupe pas le micro : rien n'est jeté après
+            // le mot « Jarvis ».
             afe->reset_buffer(afe_data);
             muted_changed = false;
         }

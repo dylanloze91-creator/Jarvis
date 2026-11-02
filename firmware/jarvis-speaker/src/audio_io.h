@@ -19,7 +19,7 @@ void speaker_play(const int16_t *pcm, size_t samples);
 /** Attend que la file du haut-parleur soit vide, puis envoie un court silence (évite le « clac »). */
 void speaker_flush(void);
 
-/** Bip de réveil (deux notes montantes), généré. */
+/** Bip de réveil (deux notes montantes, ≈ 120 ms), généré ; ne bloque pas et ne coupe pas le micro. */
 void tone_wake(void);
 
 /** Son d'erreur (deux notes descendantes), généré. */

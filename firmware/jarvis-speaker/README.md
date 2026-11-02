@@ -163,7 +163,8 @@ Le programme écrit deux choses sur la carte : le programme lui-même et le **mo
 2. Tu dois voir, dans l'ordre : `audio prêt`, `mot de réveil : wn9_jarvis_tts`, `Wi-Fi connecté, adresse
    192.168.1.xx`, `PC trouvé : Jarvis 5.0.64`, puis **`prêt : dis « Jarvis »`**.
 3. Dis « **Jarvis** » à voix normale, à un ou deux mètres. La carte fait un petit **bip** et la LED passe
-   au **vert** : elle écoute.
+   au **vert** : elle écoute. Tu n'as pas besoin d'attendre le bip : « Jarvis, quelle heure est-il ? »
+   dit d'une traite marche aussi. (Le bip se coupe avec `WAKE_BEEP 0` dans `config.h`.)
 4. Pose ta question (« quelle heure est-il ? »). Quand tu t'arrêtes de parler, la LED **bleue clignote**
    (la phrase est partie au PC), puis Jarvis répond dans le haut-parleur.
 5. Après la réponse, tu as quelques secondes (8 par défaut, réglable dans Réglages → Voix) pour enchaîner
@@ -250,8 +251,9 @@ WAV 16 kHz mono d'une phrase (`--wav phrase.wav`) : il enregistre la réponse de
   phrase est mesurée à l'énergie, comme sur le PC (650 ms de silence après la parole, 1,5 s si rien n'est
   dit, 15 s au plus). Un quart de seconde d'audio d'avant le réveil est gardé pour ne pas couper le début
   d'une phrase collée à « Jarvis ».
-- **Écho** : pendant que la carte parle, le micro n'alimente plus la détection ; à la reprise, ce qui
-  restait est jeté. Après la réponse, si le PC envoie `X-Jarvis-Continue: 1`, la carte écoute
+- **Écho** : pendant que la carte **répond**, le micro n'alimente plus la détection ; à la reprise, ce
+  qui restait (sa propre voix) est jeté. Le bip de réveil, lui, est très court (≈ 120 ms) et ne coupe
+  pas le micro : rien de ce qui suit « Jarvis » n'est perdu. Après la réponse, si le PC envoie `X-Jarvis-Continue: 1`, la carte écoute
   `followUpMs` sans mot de réveil et envoie la phrase avec `X-Jarvis-Follow-Up: 1`.
 - **Mémoire** : la carte garde la phrase (jusqu'à 15 s) en PSRAM et envoie un WAV 16 kHz mono 16 bits
   (≤ 480 Ko ; le pont accepte 1,5 Mo). La réponse est jouée au fil de l'eau, sans être stockée.

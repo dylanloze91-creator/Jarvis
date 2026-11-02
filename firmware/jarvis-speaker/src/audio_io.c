@@ -137,9 +137,12 @@ static void play_note(float hz, int ms, float amplitude) {
 }
 
 void tone_wake(void) {
-    play_note(660.0f, 90, 0.35f);
-    play_note(990.0f, 120, 0.35f);
-    speaker_flush();
+    // ≈ 120 ms en tout, sans vidage bloquant : le micro n'est pas coupé pendant ce bip.
+    play_note(660.0f, 50, 0.3f);
+    play_note(990.0f, 70, 0.3f);
+    memset(play_block, 0, sizeof(play_block));
+    size_t written = 0;
+    i2s_channel_write(tx_chan, play_block, 64 * sizeof(int16_t), &written, pdMS_TO_TICKS(100));
 }
 
 void tone_error(void) {

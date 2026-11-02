@@ -134,9 +134,11 @@ static void brain_task(void *arg) {
             continue;
         }
         led_set(LED_LISTENING);
-        wake_mute(true);
+#if WAKE_BEEP
+        // Bip très court, micro **toujours ouvert** : « Jarvis quelle heure est-il » dit d'une traite
+        // n'est pas coupé. Le bip s'entend un peu dans la phrase envoyée ; Whisper n'en fait rien.
         tone_wake();
-        wake_mute(false);
+#endif
 
         // ---- écoute, envoi, réponse, puis suivi tant que le PC le propose ------------------------
         bool follow_up = false;

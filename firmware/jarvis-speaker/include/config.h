@@ -47,6 +47,9 @@
 #define SPEECH_RMS            393
 // Audio gardé juste avant la détection (ms) : le début de la phrase collée à « Jarvis ».
 #define PRE_ROLL_MS           256
+// Petit bip au réveil (1 = oui). Il est très court et le micro reste ouvert pendant qu'il joue : le
+// début de la phrase n'est jamais perdu. 0 = la LED verte seule signale l'écoute.
+#define WAKE_BEEP             1
 // Si le PC ne répond pas dans ce délai (ms), on abandonne. Le PC, lui, s'arrête à 100 s
 // (SPEAKER_TURN_TIMEOUT_MS) et répond une erreur : garder ici une valeur plus grande que la sienne.
 #define HTTP_TIMEOUT_MS       120000
