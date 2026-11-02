@@ -469,7 +469,7 @@ describe('réglages des enceintes (5.0.64)', () => {
   it('coupé par défaut ; activé = port ouvert ; ajout = bloc secrets.h avec le jeton ; coupé = port fermé', async () => {
     const store = new SpeakerStore(() => join(dir, 'service.json'));
     const synth = new FakeSynth();
-    const broadcasts: number[] = [];
+    const broadcasts: string[] = [];
     const service = new SpeakerService({
       store,
       port: 0,
@@ -480,7 +480,7 @@ describe('réglages des enceintes (5.0.64)', () => {
       version: () => '5.0.64',
       localAddresses: () => ['192.168.1.20', '10.0.0.4'],
       hostName: () => 'pc-dylan.local',
-      broadcast: (status) => broadcasts.push(status.speakers.length),
+      broadcast: (status) => broadcasts.push(status.running ? `on:${status.speakers.length}` : 'off'),
     });
     await service.init();
     let status = await service.status();
@@ -497,12 +497,14 @@ describe('réglages des enceintes (5.0.64)', () => {
 
     status = await service.setEnabled(true);
     expect(status).toMatchObject({ enabled: true, running: true, error: null });
+    // Interrupteur allumé : la fenêtre est prévenue tout de suite (elle charge Whisper à l'avance).
+    expect(broadcasts).toEqual(['on:1']);
     const port = service.server.port!;
     const reply = await call(port, '/api/speaker/turn', { token, body: voiceWav() });
     expect(reply.status).toBe(204); // faux chat muet : rien à dire
     status = await service.status();
     expect(status.speakers[0]!.lastTurnAt).toBeGreaterThan(0);
-    expect(broadcasts).toEqual([1]);
+    expect(broadcasts).toEqual(['on:1', 'on:1']); // puis à chaque phrase reçue
 
     status = await service.remove(added.speaker.id);
     expect(status.speakers).toEqual([]);
@@ -510,6 +512,7 @@ describe('réglages des enceintes (5.0.64)', () => {
 
     status = await service.setEnabled(false);
     expect(status).toMatchObject({ enabled: false, running: false });
+    expect(broadcasts.at(-1)).toBe('off');
     await expect(call(port, '/api/speaker/hello', { token })).rejects.toThrow();
     const again = new SpeakerStore(() => join(dir, 'service.json'));
     await again.load();

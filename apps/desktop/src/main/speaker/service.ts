@@ -63,7 +63,16 @@ export class SpeakerService {
 
   async init(): Promise<void> {
     await this.deps.store.load();
-    if (this.deps.store.enabled) await this.startServer();
+    if (this.deps.store.enabled) {
+      await this.startServer();
+      // La fenêtre charge Whisper à l'avance quand elle apprend que le pont écoute.
+      await this.announce();
+    }
+  }
+
+  private async announce(): Promise<void> {
+    if (!this.deps.broadcast) return;
+    this.deps.broadcast(await this.status());
   }
 
   private async startServer(): Promise<void> {
@@ -87,6 +96,7 @@ export class SpeakerService {
       this.error = null;
       await this.server.stop();
     }
+    await this.announce();
     return this.status();
   }
 

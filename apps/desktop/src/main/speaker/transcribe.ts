@@ -7,7 +7,7 @@ import { IpcChannel, type SpeakerTranscribeResult } from '../../shared/ipc.js';
  * processus principal. Aller-retour IPC étroit : `speaker:transcribe-request { requestId, pcm }`
  * vers la fenêtre, `speaker:transcribe-result { requestId, text | error }` en retour. La fenêtre
  * peut être masquée (`backgroundThrottling: false`). Sans réponse dans le délai : erreur, le pont
- * répond 503 à l'enceinte.
+ * répond 503 à l'enceinte. Une réponse venant d'une autre page que la fenêtre interrogée est ignorée.
  */
 export function transcribeViaRenderer(input: {
   webContents: WebContents | null;
@@ -27,7 +27,9 @@ export function transcribeViaRenderer(input: {
       done();
     };
     const timer = setTimeout(() => finish(() => reject(new Error('Whisper ne répond pas'))), timeoutMs);
-    const onResult = (_event: Electron.IpcMainEvent, payload: SpeakerTranscribeResult): void => {
+    const onResult = (event: Electron.IpcMainEvent, payload: SpeakerTranscribeResult): void => {
+      // Seule la fenêtre à qui on a demandé peut répondre (comme `fromMainWindow` dans index.ts).
+      if (event.sender !== webContents) return;
       if (!payload || payload.requestId !== requestId) return;
       if (typeof payload.text === 'string') finish(() => resolve(payload.text ?? ''));
       else finish(() => reject(new Error(payload.error || 'transcription impossible')));
