@@ -66,9 +66,15 @@ chmod 600 "$CONF"
 
 cp "$SRC/jarvis-robot-voix.service" /etc/systemd/system/jarvis-robot-voix.service
 systemctl daemon-reload
+if ! PYTHONPATH="$DEST" "$DEST/.venv/bin/python" -c "from jarvis_robot_voix.config import charger, jetons_remplis; import sys; sys.exit(0 if jetons_remplis(charger('$CONF')) else 1)"; then
+  echo
+  echo "Les jetons sont vides dans $CONF."
+  echo "Remplis jeton_enceinte et jeton_robot, puis : sudo systemctl start jarvis-robot-voix"
+  echo "Le service n'a pas été démarré."
+  exit 0
+fi
 systemctl enable jarvis-robot-voix.service >/dev/null
 systemctl restart jarvis-robot-voix.service
 echo
-echo "Voix installée. Remplir les jetons dans $CONF puis :"
-echo "  sudo systemctl restart jarvis-robot-voix"
+echo "Voix installée et démarrée."
 echo "Journal : journalctl -u jarvis-robot-voix -f"

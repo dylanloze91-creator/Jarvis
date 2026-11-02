@@ -12,7 +12,7 @@ import pytest
 
 from jarvis_robot_voix.arret import DetecteurArret, est_arret, grammaire_json
 from jarvis_robot_voix.boucle import Boucle
-from jarvis_robot_voix.config import charger, version_python_acceptee
+from jarvis_robot_voix.config import charger, jetons_remplis, version_python_acceptee
 from jarvis_robot_voix.contrat import ClientPc, ClientRobot
 from jarvis_robot_voix.fin_parole import FinDeParole
 from jarvis_robot_voix.service import ServiceVoix
@@ -206,6 +206,13 @@ def test_wav_contrat_et_phrases_d_arret():
     assert not est_arret("[unk]")
     mots = json.loads(grammaire_json())
     assert "[unk]" in mots and "stop" in mots
+
+
+def test_point9_pas_de_demarrage_sans_jetons():
+    assert jetons_remplis(charger(RACINE / "config.example.toml")) is False
+    script = (RACINE / "installer.sh").read_text(encoding="utf-8")
+    assert script.index("jetons_remplis") < script.index("systemctl restart")
+    assert "n'a pas été démarré" in script
 
 
 def test_point8_relit_le_bonjour_et_journalise_lechec(caplog):
