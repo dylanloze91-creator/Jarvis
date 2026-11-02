@@ -19,7 +19,25 @@ IGNORE_INDEX = -100
 
 
 class ExempleInvalide(ValueError):
-    """Une ligne qui n'a pas la forme attendue (la préparation Node l'aurait écartée)."""
+    """Une ligne qui n'a pas la forme attendue.
+
+    **Règle commune avec `labTrainPrep.ts`** (revue du 2026-11-02, point 3) : la préparation Node
+    écarte exactement ce qui est refusé ici, avec la même raison. À l'entraînement, une telle ligne
+    est sautée et comptée (`Lecture.ignorees`), jamais réparée, et n'arrête pas l'entraînement.
+    """
+
+
+@dataclass(frozen=True)
+class LigneIgnoree:
+    numero: int
+    identifiant: str | None
+    raison: str
+
+
+@dataclass
+class Lecture:
+    exemples: list["Exemple"]
+    ignorees: list[LigneIgnoree]
 
 
 @dataclass(frozen=True)
@@ -32,45 +50,60 @@ class Exemple:
     meta: dict[str, Any]
 
 
-def lire_jsonl(chemin: Path) -> Iterator[Exemple]:
-    """Lit un fichier JSONL d'exemples. Une ligne vide est ignorée ; une ligne fausse arrête tout."""
+def lire_jsonl(chemin: Path) -> Lecture:
+    """Lit un fichier JSONL d'exemples : les lignes valides, et les lignes sautées avec leur raison.
+
+    Une ligne vide est ignorée sans être comptée. Une ligne fausse est comptée dans `ignorees`
+    (numéro, identifiant si lisible, raison) et l'entraînement continue sans elle.
+    """
+    exemples: list[Exemple] = []
+    ignorees: list[LigneIgnoree] = []
     with chemin.open("r", encoding="utf-8") as fichier:
         for numero, ligne in enumerate(fichier, start=1):
             if not ligne.strip():
                 continue
             try:
                 brut = json.loads(ligne)
-            except json.JSONDecodeError as erreur:
-                raise ExempleInvalide(f"{chemin.name}, ligne {numero} : JSON illisible ({erreur.msg})") from None
-            yield exemple_depuis(brut, f"{chemin.name}, ligne {numero}")
+            except json.JSONDecodeError:
+                ignorees.append(LigneIgnoree(numero, None, "ligne illisible"))
+                continue
+            try:
+                exemples.append(exemple_depuis(brut))
+            except ExempleInvalide as erreur:
+                identifiant = brut.get("id") if isinstance(brut, dict) and isinstance(brut.get("id"), str) else None
+                ignorees.append(LigneIgnoree(numero, identifiant, str(erreur)))
+    return Lecture(exemples=exemples, ignorees=ignorees)
 
 
-def exemple_depuis(brut: Any, origine: str = "exemple") -> Exemple:
-    if not isinstance(brut, dict):
-        raise ExempleInvalide(f"{origine} : un objet est attendu")
-    messages = brut.get("messages")
-    if not isinstance(messages, list) or len(messages) < 3:
-        raise ExempleInvalide(f"{origine} : trois messages au moins sont attendus (system, user, assistant)")
+def exemple_depuis(brut: Any) -> Exemple:
+    """Même règle, mêmes raisons que `parseExampleLine` / `writeCallsOf` de `labTrainPrep.ts`."""
+    if not isinstance(brut, dict) or not isinstance(brut.get("id"), str) or not isinstance(brut.get("messages"), list) or not isinstance(brut.get("meta"), dict):
+        raise ExempleInvalide("ligne illisible")
+    messages = brut["messages"]
     roles = [message.get("role") if isinstance(message, dict) else None for message in messages[:3]]
     if roles != ["system", "user", "assistant"]:
-        raise ExempleInvalide(f"{origine} : rôles attendus system, user, assistant ; reçus {roles}")
-    assistant = messages[2]
-    appels = assistant.get("tool_calls")
+        raise ExempleInvalide("ligne illisible")
+    demande = messages[1].get("content")
+    if not isinstance(demande, str) or not demande.strip():
+        raise ExempleInvalide("ligne illisible")
+    appels = messages[2].get("tool_calls")
     if not isinstance(appels, list) or not appels:
-        raise ExempleInvalide(f"{origine} : la réponse de l'assistant doit contenir au moins un appel d'outil")
+        raise ExempleInvalide("sans appel write_file")
     for appel in appels:
         fonction = appel.get("function") if isinstance(appel, dict) else None
-        if not isinstance(fonction, dict) or fonction.get("name") != "write_file":
-            raise ExempleInvalide(f"{origine} : seul l'appel write_file est attendu")
+        if not isinstance(fonction, dict):
+            raise ExempleInvalide("appel d’outil non conforme : appel sans fonction")
+        if fonction.get("name") != "write_file":
+            raise ExempleInvalide(f"appel d’outil non conforme : {fonction.get('name')} au lieu de write_file")
         arguments = fonction.get("arguments")
         if not isinstance(arguments, dict) or not isinstance(arguments.get("path"), str) or not isinstance(arguments.get("content"), str):
-            raise ExempleInvalide(f"{origine} : write_file attend path et content en chaînes")
+            raise ExempleInvalide("appel d’outil non conforme : write_file attend path et content en chaînes")
+        if not arguments["content"].strip():
+            raise ExempleInvalide("appel d’outil non conforme : write_file au contenu vide")
     tools = brut.get("tools")
     if not isinstance(tools, list) or not tools:
-        raise ExempleInvalide(f"{origine} : le catalogue tools est absent")
-    meta = brut.get("meta") if isinstance(brut.get("meta"), dict) else {}
-    identifiant = brut.get("id") if isinstance(brut.get("id"), str) else f"{origine}"
-    return Exemple(identifiant=identifiant, messages=messages[:3], tools=tools, meta=meta)
+        raise ExempleInvalide("sans catalogue tools")
+    return Exemple(identifiant=brut["id"], messages=messages[:3], tools=tools, meta=brut["meta"])
 
 
 @dataclass(frozen=True)

@@ -67,12 +67,28 @@ describe('préparation des données : lecture et écarts', () => {
     expect(result.summary.kept).toBe(120);
   });
 
-  it('un write_file au contenu vide ou une conversation sans demande sont illisibles ou sans appel', () => {
+  it('un write_file au contenu vide ou une conversation sans demande sont écartés', () => {
     const empty = synthetic({ n: 2, content: '   \n' });
-    expect(parseExampleLine(line(empty))).toEqual({ ok: false, reason: 'sans appel write_file', id: empty.id });
+    expect(parseExampleLine(line(empty))).toEqual({ ok: false, reason: 'appel d’outil non conforme : write_file au contenu vide', id: empty.id });
     const noUser = { ...synthetic({ n: 3 }), messages: [{ role: 'system', content: 'x' }] };
     expect(parseExampleLine(JSON.stringify(noUser))).toEqual({ ok: false, reason: 'ligne illisible', id: noUser.id });
     expect(parseExampleLine('{"id":"x"}')).toEqual({ ok: false, reason: 'ligne illisible', id: 'x' });
+  });
+
+  it('applique la même règle que l’entraînement Python : un appel non conforme ou un catalogue absent écarte l’exemple entier', () => {
+    const good = synthetic({ n: 13 });
+    const call = good.messages[2].tool_calls[0]!;
+    const withOther: LabTrainingExample = {
+      ...good,
+      messages: [good.messages[0], good.messages[1], { role: 'assistant', content: '', tool_calls: [call, { type: 'function', function: { name: 'run_command', arguments: { path: 'x', content: 'npm test' } } }] }],
+    };
+    expect(parseExampleLine(line(withOther))).toEqual({ ok: false, reason: 'appel d’outil non conforme : run_command au lieu de write_file', id: good.id });
+    const badArgs = { ...good, messages: [good.messages[0], good.messages[1], { role: 'assistant', content: '', tool_calls: [{ type: 'function', function: { name: 'write_file', arguments: { path: 'x' } } }] }] };
+    expect(parseExampleLine(JSON.stringify(badArgs))).toEqual({ ok: false, reason: 'appel d’outil non conforme : write_file attend path et content en chaînes', id: good.id });
+    const noTools = { ...good, tools: [] };
+    expect(parseExampleLine(JSON.stringify(noTools))).toEqual({ ok: false, reason: 'sans catalogue tools', id: good.id });
+    const result = prepareTrainingData({ exampleLines: [line(withOther), JSON.stringify(noTools), ...corpus(120)] });
+    expect(result.summary.setAside.byReason).toEqual({ 'appel d’outil non conforme': 1, 'sans catalogue tools': 1 });
   });
 
   it('la clé de doublon ignore les métadonnées et voit un contenu différent', () => {

@@ -13,28 +13,49 @@ from .conftest import ecrire_jsonl, exemple_synthetique
 
 
 def test_lecture_des_fichiers_train_et_validation(dossier_preparation: Path):
-    train = list(donnees.lire_jsonl(dossier_preparation / "train.jsonl"))
-    validation = list(donnees.lire_jsonl(dossier_preparation / "validation.jsonl"))
-    assert len(train) == 8 and len(validation) == 2
-    assert {e.identifiant for e in train}.isdisjoint({e.identifiant for e in validation})
-    assert train[0].messages[2]["tool_calls"][0]["function"]["name"] == "write_file"
-    assert train[0].tools[0]["function"]["name"] == "write_file"
+    train = donnees.lire_jsonl(dossier_preparation / "train.jsonl")
+    validation = donnees.lire_jsonl(dossier_preparation / "validation.jsonl")
+    assert len(train.exemples) == 8 and len(validation.exemples) == 2
+    assert train.ignorees == [] and validation.ignorees == []
+    assert {e.identifiant for e in train.exemples}.isdisjoint({e.identifiant for e in validation.exemples})
+    assert train.exemples[0].messages[2]["tool_calls"][0]["function"]["name"] == "write_file"
+    assert train.exemples[0].tools[0]["function"]["name"] == "write_file"
 
 
-def test_ligne_invalide_arrete_la_lecture(tmp_path: Path):
+def test_ligne_invalide_est_sautee_et_comptee_sans_arreter(tmp_path: Path):
+    """Même règle et mêmes raisons que `parseExampleLine` (labTrainPrep.ts) ; ici on saute, on compte, on continue."""
     sans_appel = exemple_synthetique(1)
     sans_appel["messages"][2] = {"role": "assistant", "content": "Les tests cachés sont au vert."}
-    ecrire_jsonl(tmp_path / "x.jsonl", [sans_appel])
-    with pytest.raises(donnees.ExempleInvalide, match="appel d'outil"):
-        list(donnees.lire_jsonl(tmp_path / "x.jsonl"))
-
-    (tmp_path / "y.jsonl").write_text("{pas du json\n", encoding="utf-8")
-    with pytest.raises(donnees.ExempleInvalide, match="ligne 1"):
-        list(donnees.lire_jsonl(tmp_path / "y.jsonl"))
-
-    sans_outils = exemple_synthetique(2)
+    autre_outil = exemple_synthetique(2)
+    autre_outil["messages"][2]["tool_calls"].append({"type": "function", "function": {"name": "run_command", "arguments": {"path": "x", "content": "npm test"}}})
+    mauvais_arguments = exemple_synthetique(3)
+    mauvais_arguments["messages"][2]["tool_calls"][0]["function"]["arguments"] = {"path": "x"}
+    contenu_vide = exemple_synthetique(4)
+    contenu_vide["messages"][2]["tool_calls"][0]["function"]["arguments"]["content"] = "  \n"
+    sans_outils = exemple_synthetique(5)
     del sans_outils["tools"]
-    with pytest.raises(donnees.ExempleInvalide, match="tools"):
+    sans_id = exemple_synthetique(6)
+    del sans_id["id"]
+    sans_demande = exemple_synthetique(7)
+    sans_demande["messages"][1]["content"] = "   "
+    bon = exemple_synthetique(8)
+    ecrire_jsonl(tmp_path / "x.jsonl", [sans_appel, autre_outil, mauvais_arguments, contenu_vide, sans_outils, sans_id, sans_demande, bon])
+    with (tmp_path / "x.jsonl").open("a", encoding="utf-8") as f:
+        f.write("{pas du json\n\n")
+
+    lecture = donnees.lire_jsonl(tmp_path / "x.jsonl")
+    assert [e.identifiant for e in lecture.exemples] == ["synthetique-test-8"]
+    assert [(i.numero, i.identifiant, i.raison) for i in lecture.ignorees] == [
+        (1, "synthetique-test-1", "sans appel write_file"),
+        (2, "synthetique-test-2", "appel d’outil non conforme : run_command au lieu de write_file"),
+        (3, "synthetique-test-3", "appel d’outil non conforme : write_file attend path et content en chaînes"),
+        (4, "synthetique-test-4", "appel d’outil non conforme : write_file au contenu vide"),
+        (5, "synthetique-test-5", "sans catalogue tools"),
+        (6, None, "ligne illisible"),
+        (7, "synthetique-test-7", "ligne illisible"),
+        (9, None, "ligne illisible"),
+    ]
+    with pytest.raises(donnees.ExempleInvalide, match="sans catalogue tools"):
         donnees.exemple_depuis(sans_outils)
 
 

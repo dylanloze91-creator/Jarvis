@@ -69,6 +69,17 @@ def test_fresh_ignore_le_point_present(dossier_preparation: Path, tmp_path: Path
     assert journal.count("DRY-RUN terminé") == 2
 
 
+def test_ligne_non_conforme_sautee_et_journalisee(dossier_preparation: Path, tmp_path: Path, tokenizer):
+    with (dossier_preparation / "train.jsonl").open("a", encoding="utf-8") as f:
+        f.write('{"id": "synthetique-faux", "messages": [], "meta": {}}\n')
+    sortie = tmp_path / "run"
+    assert lancer(dossier_preparation, sortie, "--epochs", "1") == 0
+    journal = (sortie / runs.JOURNAL).read_text(encoding="utf-8")
+    assert "train.jsonl : 1 ligne(s) sautée(s)" in journal
+    assert "ligne 9 · synthetique-faux · ligne illisible" in journal
+    assert "8 en entraînement" in journal
+
+
 def test_fichiers_absents(tmp_path: Path):
     with pytest.raises(SystemExit, match="Fichier absent"):
         train_lora.main(["--data", str(tmp_path), "--dry-run", "--out", str(tmp_path / "run")])

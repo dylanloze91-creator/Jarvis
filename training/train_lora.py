@@ -69,17 +69,26 @@ def construire_parseur() -> argparse.ArgumentParser:
     parseur.add_argument("--fresh", action="store_true", help="ne pas reprendre un point de reprise présent dans --out")
     parseur.add_argument("--no-quant", action="store_true", help="pas de 4 bits (carte louée avec assez de mémoire) ; fp16 entier")
     parseur.add_argument("--dry-run", action="store_true", help="modèle minuscule aléatoire sur processeur : vérifie le circuit, ne produit rien d'utile")
-    parseur.add_argument("--max-steps", type=int, default=-1, help="arrêt après N pas (tests)")
+    parseur.add_argument("--max-steps", type=int, default=-1, help="arrêt après N pas : --max-steps 20 mesure la mémoire et la vitesse réelles avant une nuit complète (pic de mémoire dans le journal et bilan.json)")
     return parseur
 
 
-def lire_jeux(dossier: Path) -> tuple[list[donnees.Exemple], list[donnees.Exemple]]:
+def lire_jeux(dossier: Path, journal=None) -> tuple[list[donnees.Exemple], list[donnees.Exemple]]:
+    """Lit train.jsonl et validation.jsonl ; une ligne non conforme est sautée et écrite au journal, jamais réparée."""
     train = dossier / "train.jsonl"
     validation = dossier / "validation.jsonl"
     for chemin in (train, validation):
         if not chemin.exists():
             raise SystemExit(f"Fichier absent : {chemin}. Lance d'abord « npm run lab:prepare --workspace @jarvis/core -- --dir <données> ».")
-    return list(donnees.lire_jsonl(train)), list(donnees.lire_jsonl(validation))
+    jeux = []
+    for chemin in (train, validation):
+        lecture = donnees.lire_jsonl(chemin)
+        if lecture.ignorees and journal:
+            journal.warning("%s : %d ligne(s) sautée(s) (la préparation aurait dû les écarter) :", chemin.name, len(lecture.ignorees))
+            for ignoree in lecture.ignorees[:20]:
+                journal.warning("  ligne %d%s · %s", ignoree.numero, f" · {ignoree.identifiant}" if ignoree.identifiant else "", ignoree.raison)
+        jeux.append(lecture.exemples)
+    return jeux[0], jeux[1]
 
 
 def charger_modele(base: str, *, quantifie: bool, sur_carte: bool, journal):
@@ -207,7 +216,7 @@ def main(argv: list[str] | None = None) -> int:
             journal.error("Le gabarit de chat de %s ne gère pas les outils : impossible de reproduire le format des appels write_file.", base)
             return 3
 
-        exemples_train, exemples_validation = lire_jeux(args.data.resolve())
+        exemples_train, exemples_validation = lire_jeux(args.data.resolve(), journal)
         jeu_train = donnees.encoder_jeu(tokenizer, exemples_train, args.max_length)
         jeu_validation = donnees.encoder_jeu(tokenizer, exemples_validation, args.max_length)
         if len(jeu_train) == 0 or len(jeu_validation) == 0:

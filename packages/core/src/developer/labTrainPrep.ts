@@ -8,7 +8,8 @@
  * et un résumé chiffré. Les lignes gardées sont réécrites **telles quelles** : rien n'est ajouté,
  * reformulé ni corrigé dans une donnée d'entraînement (règle 1 du cahier des charges).
  *
- * Écarts, dans l'ordre : ligne illisible, exemple sans appel `write_file`, doublon exact,
+ * Écarts, dans l'ordre : ligne illisible, exemple sans appel `write_file` ou avec un appel non
+ * conforme, sans catalogue `tools` (même règle que l'entraînement Python), doublon exact,
  * exemple trop long (jetons estimés), suspect de contamination de l'examen (règle 2 :
  * `labContamination`, noms exportés et objectifs proches des missions d'`evalCatalog()`,
  * solution identique à une solution de référence).
@@ -89,19 +90,32 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-/** Appels `write_file` d'un exemple (chemin et contenu en chaînes), ou `null` si la forme est fausse. */
-export function writeCallsOf(example: unknown): WriteCall[] | null {
-  if (!isRecord(example) || !Array.isArray(example.messages)) return null;
-  const assistant = example.messages.find((message) => isRecord(message) && message.role === 'assistant');
-  if (!isRecord(assistant) || !Array.isArray(assistant.tool_calls)) return null;
+/**
+ * Appels de la réponse de l'assistant, tous `write_file` bien formés, ou la raison du refus.
+ *
+ * **Règle commune avec `training/jarvis_training/data.py`** (revue du 2026-11-02, point 3) : la
+ * préparation Node écarte exactement ce que l'entraînement Python refuserait, avec la même raison.
+ * Un seul appel qui n'est pas `write_file`, ou dont `path` / `content` ne sont pas des chaînes, ou
+ * dont le contenu est vide, écarte tout l'exemple : rien n'est « réparé » dans une donnée.
+ */
+export function writeCallsOf(example: unknown): { ok: true; calls: WriteCall[] } | { ok: false; reason: string } {
+  if (!isRecord(example) || !Array.isArray(example.messages)) return { ok: false, reason: 'ligne illisible' };
+  const assistant = example.messages[2];
+  if (!isRecord(assistant) || !Array.isArray(assistant.tool_calls) || assistant.tool_calls.length === 0) {
+    return { ok: false, reason: 'sans appel write_file' };
+  }
   const calls: WriteCall[] = [];
   for (const call of assistant.tool_calls) {
-    if (!isRecord(call) || !isRecord(call.function) || call.function.name !== 'write_file') continue;
+    if (!isRecord(call) || !isRecord(call.function)) return { ok: false, reason: 'appel d’outil non conforme : appel sans fonction' };
+    if (call.function.name !== 'write_file') return { ok: false, reason: `appel d’outil non conforme : ${String(call.function.name)} au lieu de write_file` };
     const args = call.function.arguments;
-    if (!isRecord(args) || typeof args.path !== 'string' || typeof args.content !== 'string') continue;
+    if (!isRecord(args) || typeof args.path !== 'string' || typeof args.content !== 'string') {
+      return { ok: false, reason: 'appel d’outil non conforme : write_file attend path et content en chaînes' };
+    }
+    if (!args.content.trim()) return { ok: false, reason: 'appel d’outil non conforme : write_file au contenu vide' };
     calls.push({ path: args.path, content: args.content });
   }
-  return calls;
+  return { ok: true, calls };
 }
 
 export type ParsedExampleLine =
@@ -124,8 +138,9 @@ export function parseExampleLine(line: string): ParsedExampleLine {
   const user = parsed.messages[1] as Record<string, unknown>;
   if (typeof user.content !== 'string' || !user.content.trim()) return { ok: false, reason: 'ligne illisible', id };
   const calls = writeCallsOf(parsed);
-  if (!calls || calls.length === 0 || calls.some((call) => !call.content.trim())) return { ok: false, reason: 'sans appel write_file', id };
-  return { ok: true, example: parsed as unknown as LabTrainingExample, calls };
+  if (!calls.ok) return { ok: false, reason: calls.reason, id };
+  if (!Array.isArray(parsed.tools) || parsed.tools.length === 0) return { ok: false, reason: 'sans catalogue tools', id };
+  return { ok: true, example: parsed as unknown as LabTrainingExample, calls: calls.calls };
 }
 
 /** Niveau, thème et objectif de chaque exercice accepté, par identifiant de mission. */
@@ -286,6 +301,7 @@ function resolveOptions(options: PrepOptions | undefined): Required<PrepOptions>
 function reasonFamily(reason: string): string {
   if (reason.startsWith('doublon exact')) return 'doublon exact';
   if (reason.startsWith('trop long')) return 'trop long';
+  if (reason.startsWith('appel d’outil non conforme')) return 'appel d’outil non conforme';
   if (reason.startsWith('suspect de contamination')) return 'suspect de contamination de l’examen';
   return reason;
 }
