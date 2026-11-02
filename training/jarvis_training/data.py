@@ -181,6 +181,91 @@ class JeuEncode:
         return {"input_ids": encodage.input_ids, "labels": encodage.labels}
 
 
+# --- Mode classification (trieur 5.0.68) : perte sur le seul nom d'équipe -------------------------
+
+
+@dataclass(frozen=True)
+class ExempleClassification:
+    identifiant: str
+    messages: list[dict[str, Any]]
+    meta: dict[str, Any]
+
+
+def exemple_classification_depuis(brut: Any) -> ExempleClassification:
+    if not isinstance(brut, dict) or not isinstance(brut.get("id"), str) or not isinstance(brut.get("messages"), list):
+        raise ExempleInvalide("ligne illisible")
+    messages = brut["messages"]
+    if len(messages) != 3:
+        raise ExempleInvalide("ligne illisible")
+    roles = [message.get("role") if isinstance(message, dict) else None for message in messages]
+    if roles != ["system", "user", "assistant"]:
+        raise ExempleInvalide("ligne illisible")
+    assistant = messages[2]
+    if not isinstance(assistant, dict) or not isinstance(assistant.get("content"), str) or not assistant["content"].strip():
+        raise ExempleInvalide("réponse d'équipe vide")
+    meta = brut.get("meta")
+    if not isinstance(meta, dict):
+        raise ExempleInvalide("ligne illisible")
+    return ExempleClassification(identifiant=brut["id"], messages=messages[:3], meta=meta)
+
+
+def lire_jsonl_classification(chemin: Path) -> Lecture:
+    exemples: list[ExempleClassification] = []
+    ignorees: list[LigneIgnoree] = []
+    with chemin.open("r", encoding="utf-8") as fichier:
+        for numero, ligne in enumerate(fichier, start=1):
+            if not ligne.strip():
+                continue
+            try:
+                brut = json.loads(ligne)
+            except json.JSONDecodeError:
+                ignorees.append(LigneIgnoree(numero, None, "ligne illisible"))
+                continue
+            try:
+                exemples.append(exemple_classification_depuis(brut))
+            except ExempleInvalide as erreur:
+                identifiant = brut.get("id") if isinstance(brut, dict) and isinstance(brut.get("id"), str) else None
+                ignorees.append(LigneIgnoree(numero, identifiant, str(erreur)))
+    return Lecture(exemples=exemples, ignorees=ignorees)
+
+
+def rendre_classification(tokenizer: Any, exemple: ExempleClassification) -> Rendu:
+    texte = tokenizer.apply_chat_template(exemple.messages, tokenize=False)
+    prefixe = tokenizer.apply_chat_template(exemple.messages[:2], tokenize=False, add_generation_prompt=True)
+    if not texte.startswith(prefixe):
+        raise ExempleInvalide(f"{exemple.identifiant} : le gabarit ne rend pas le préfixe en tête du texte complet")
+    if len(texte) == len(prefixe):
+        raise ExempleInvalide(f"{exemple.identifiant} : la réponse de l'assistant est vide après le gabarit")
+    return Rendu(texte=texte, prefixe=prefixe)
+
+
+def encoder_classification(tokenizer: Any, exemple: ExempleClassification, longueur_max: int) -> Encodage | None:
+    rendu = rendre_classification(tokenizer, exemple)
+    complet = tokenizer(rendu.texte, add_special_tokens=False)["input_ids"]
+    prefixe = tokenizer(rendu.prefixe, add_special_tokens=False)["input_ids"]
+    if len(complet) > longueur_max:
+        return None
+    masque = 0
+    while masque < len(prefixe) and masque < len(complet) and prefixe[masque] == complet[masque]:
+        masque += 1
+    labels = [IGNORE_INDEX] * masque + list(complet[masque:])
+    if masque == len(complet):
+        raise ExempleInvalide(f"{exemple.identifiant} : aucun jeton de réponse à apprendre")
+    return Encodage(input_ids=list(complet), labels=labels)
+
+
+def encoder_jeu_classification(tokenizer: Any, exemples: Iterable[ExempleClassification], longueur_max: int) -> JeuEncode:
+    gardes: list[Encodage] = []
+    trop_longs = 0
+    for exemple in exemples:
+        encodage = encoder_classification(tokenizer, exemple, longueur_max)
+        if encodage is None:
+            trop_longs += 1
+            continue
+        gardes.append(encodage)
+    return JeuEncode(exemples=gardes, trop_longs=trop_longs)
+
+
 def encoder_jeu(tokenizer: Any, exemples: Iterable[Exemple], longueur_max: int) -> JeuEncode:
     gardes: list[Encodage] = []
     trop_longs = 0
