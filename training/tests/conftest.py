@@ -75,10 +75,12 @@ def tokenizer():
         pytest.skip(f"modèle minuscule {MODELE_MINUSCULE} indisponible ({erreur})")
 
 
-def ecrire_resume(dossier: Path, empreinte: dict | None = None) -> None:
-    """`resume.json` minimal avec l'empreinte du catalogue d'évaluation (celle du dépôt par défaut)."""
+def ecrire_resume(dossier: Path, empreinte: dict | None = None, *, plafond: int | None = 3072) -> None:
+    """`resume.json` minimal : empreinte du catalogue d'évaluation (celle du dépôt par défaut) et plafond de longueur."""
     attendu = empreinte if empreinte is not None else json.loads((RACINE / "examen-empreinte.json").read_text(encoding="utf-8"))
-    contenu = {"ok": True, "examCatalog": {"missions": attendu["missions"], "sha256": attendu["sha256"]}}
+    contenu: dict = {"ok": True, "examCatalog": {"missions": attendu["missions"], "sha256": attendu["sha256"]}}
+    if plafond is not None:
+        contenu["options"] = {"maxTokens": plafond, "validationShare": 0.1, "seed": 5065, "minKept": 100}
     (dossier / "resume.json").write_text(json.dumps(contenu, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 

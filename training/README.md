@@ -97,8 +97,11 @@ et à la fin `Adaptateur écrit dans training\runs\<date>\adaptateur`. Tout est 
 **une nuit** sur une RTX 2060. **Mémoire** : 6 Go, c'est juste ; en cas de `CUDA out of memory`, relancer avec
 `--max-length 1536` (puis `1024`) ; si ça ne passe toujours pas, passer par la carte louée (`training\cloud\README.md`).
 
-Réglages (tous visibles avec `--help`) : `--epochs 3`, `--rank 16`, `--alpha 32`, `--lr 2e-4`, `--max-length 2048`
-(les exemples plus longs sont laissés de côté et comptés dans le journal), `--grad-accum 16`.
+Réglages (tous visibles avec `--help`) : `--epochs 3`, `--rank 16`, `--alpha 32`, `--lr 2e-4`, `--grad-accum 16`,
+`--max-length` : sans valeur, c'est **le plafond de la préparation** (`options.maxTokens` de `resume.json`, 3 072 par
+défaut) : l'entraînement garde alors exactement les exemples que `lab:prepare` a gardés, rien de plus n'est laissé de
+côté. Une valeur plus basse (pour la mémoire) écarte les exemples plus longs, les compte dans le journal, et le journal
+signale l'écart avec la préparation.
 
 **Coupure de courant, PC redémarré ?** Relancer la même commande avec `--out training\runs\<date>` (le dossier qui
 existe déjà) : la reprise se fait au dernier point enregistré (à chaque époque). `--fresh` pour repartir de zéro.

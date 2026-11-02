@@ -62,7 +62,7 @@ def construire_parseur() -> argparse.ArgumentParser:
     parseur.add_argument("--dropout", type=float, default=0.05, help="abandon LoRA : un peu de régularisation sur quelques centaines d'exemples")
     parseur.add_argument("--lr", type=float, default=2e-4, help="taux d'apprentissage : valeur courante pour QLoRA sur un 7B")
     parseur.add_argument("--epochs", type=float, default=3.0, help="époques au plus ; l'arrêt se fait dès que la perte de validation remonte")
-    parseur.add_argument("--max-length", type=int, default=2048, help="longueur maximale en jetons ; un exemple plus long est laissé de côté (compté dans le journal). 2048 tient sur 6 Go ; 3072 demande plus de mémoire")
+    parseur.add_argument("--max-length", type=int, default=None, help=f"longueur maximale en jetons. Défaut : le plafond de la préparation (options.maxTokens de resume.json, {runs.PLAFOND_LONGUEUR} si absent), pour que rien ne soit laissé de côté en plus ; une valeur plus basse (mémoire) écarte les exemples plus longs, comptés dans le journal")
     parseur.add_argument("--grad-accum", type=int, default=16, help="accumulation : lot effectif de 16 avec un lot réel de 1")
     parseur.add_argument("--warmup", type=float, default=0.03, help="part de l'entraînement en montée progressive du taux")
     parseur.add_argument("--seed", type=int, default=5065, help="graine (mélange des lots, initialisation LoRA)")
@@ -164,6 +164,24 @@ def conseil_memoire(base: str, vram_octets: int) -> str | None:
     )
 
 
+def choisir_longueur_max(demandee: int | None, dossier_preparation: Path) -> tuple[int, str | None]:
+    """Plafond de longueur effectif et, s'il y a lieu, un avertissement.
+
+    Sans `--max-length`, c'est le plafond de la préparation (`resume.json`) : les deux outils laissent
+    alors exactement les mêmes exemples de côté (revue du 2026-11-02, point 8). Une valeur explicite
+    différente est acceptée mais signalée.
+    """
+    plafond = runs.plafond_preparation(dossier_preparation)
+    if demandee is None:
+        return plafond or runs.PLAFOND_LONGUEUR, None
+    if plafond is not None and demandee != plafond:
+        return demandee, (
+            f"--max-length {demandee} diffère du plafond de la préparation ({plafond} jetons) : "
+            + (f"les exemples entre {demandee} et {plafond} jetons seront laissés de côté et comptés." if demandee < plafond else "sans effet, la préparation a déjà écarté ce qui dépasse.")
+        )
+    return demandee, None
+
+
 def preparer_lora(modele, args, *, quantifie: bool, checkpointing: bool):
     from peft import LoraConfig, get_peft_model
 
@@ -210,7 +228,17 @@ def main(argv: list[str] | None = None) -> int:
             avertissement = conseil_memoire(base, vram)
             if avertissement:
                 journal.warning("ATTENTION : %s", avertissement)
-        runs.ecrire_json(dossier / runs.PARAMETRES, {**{k: (str(v) if isinstance(v, Path) else v) for k, v in vars(args).items()}, "base": base})
+
+        preparation = args.data.resolve()
+        verifier_fichiers(preparation)
+        refus_examen = runs.verifier_empreinte_examen(preparation)
+        if refus_examen:
+            journal.error("Refus : %s", refus_examen)
+            return 5
+        longueur_max, avis_longueur = choisir_longueur_max(args.max_length, preparation)
+        if avis_longueur:
+            journal.warning("ATTENTION : %s", avis_longueur)
+        runs.ecrire_json(dossier / runs.PARAMETRES, {**{k: (str(v) if isinstance(v, Path) else v) for k, v in vars(args).items()}, "base": base, "max_length": longueur_max})
 
         from transformers import AutoTokenizer
 
@@ -221,22 +249,18 @@ def main(argv: list[str] | None = None) -> int:
             journal.error("Le gabarit de chat de %s ne gère pas les outils : impossible de reproduire le format des appels write_file.", base)
             return 3
 
-        verifier_fichiers(args.data.resolve())
-        refus_examen = runs.verifier_empreinte_examen(args.data.resolve())
-        if refus_examen:
-            journal.error("Refus : %s", refus_examen)
-            return 5
-        exemples_train, exemples_validation = lire_jeux(args.data.resolve(), journal)
-        jeu_train = donnees.encoder_jeu(tokenizer, exemples_train, args.max_length)
-        jeu_validation = donnees.encoder_jeu(tokenizer, exemples_validation, args.max_length)
+        exemples_train, exemples_validation = lire_jeux(preparation, journal)
+        jeu_train = donnees.encoder_jeu(tokenizer, exemples_train, longueur_max)
+        jeu_validation = donnees.encoder_jeu(tokenizer, exemples_validation, longueur_max)
         if len(jeu_train) == 0 or len(jeu_validation) == 0:
             journal.error("Jeu vide après encodage (train %d, validation %d). Vérifie --data et --max-length.", len(jeu_train), len(jeu_validation))
             return 4
         appris = sum(e.jetons_appris for e in jeu_train.exemples)
         total = sum(len(e.input_ids) for e in jeu_train.exemples)
         journal.info(
-            "Exemples : %d en entraînement (%d trop longs laissés de côté), %d en validation (%d trop longs). Longueur max %d jetons.",
-            len(jeu_train), jeu_train.trop_longs, len(jeu_validation), jeu_validation.trop_longs, args.max_length,
+            "Exemples : %d en entraînement (%d trop longs laissés de côté), %d en validation (%d trop longs). Longueur max %d jetons (%s).",
+            len(jeu_train), jeu_train.trop_longs, len(jeu_validation), jeu_validation.trop_longs, longueur_max,
+            "plafond de la préparation" if args.max_length is None else "--max-length",
         )
         journal.info("Perte calculée sur %d jetons de réponse sur %d au total (%.0f %%) : consigne et demande masquées.", appris, total, 100 * appris / max(1, total))
 

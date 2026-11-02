@@ -57,7 +57,8 @@ avec une fiabilité (« reliability ») élevée, et comparer son prix horaire �
    `Adaptateur écrit dans …`, puis `==> Fusion, conversion GGUF, quantification` et enfin
    `Terminé. Fichier à rapatrier sur le PC : … jarvis-coder-Q4_K_M.gguf`.
 
-   Réglages possibles avant la commande : `EPOCHS=3 MAX_LENGTH=3072 RANK=16 QUANT=1` (voir l'en-tête du script).
+   Réglages possibles avant la commande : `EPOCHS=3 RANK=16 QUANT=1` (voir l'en-tête du script). La longueur
+   maximale n'a pas à être donnée : `train_lora.py` prend celle de la préparation (`resume.json`).
 5. **Rapatrier** deux fichiers sur le PC (téléchargement depuis l'explorateur Jupyter, ou `scp`) :
    - `/workspace/training/export/jarvis-coder/jarvis-coder-Q4_K_M.gguf` (≈ 4,7 Go)
    - `/workspace/training/runs/cloud-<date>/journal.txt` (le compte rendu de l'entraînement)

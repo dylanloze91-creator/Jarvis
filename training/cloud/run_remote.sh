@@ -8,7 +8,8 @@
 #   bash cloud/run_remote.sh /workspace/preparation
 #
 # Variables facultatives :
-#   EPOCHS=3  MAX_LENGTH=3072  RANK=16  ALPHA=32  LR=2e-4  (mêmes réglages que train_lora.py)
+#   EPOCHS=3  RANK=16  ALPHA=32  LR=2e-4  (mêmes réglages que train_lora.py)
+#   MAX_LENGTH   non fixé par défaut : train_lora.py prend le plafond de la préparation (resume.json)
 #   QUANT=1      1 = QLoRA 4 bits (défaut, suffit sur 24 Go) ; 0 = LoRA fp16 entier (plus rapide, ≥ 24 Go)
 #   LLAMA_TAG=b12032   version de llama.cpp (la même que setup-windows.ps1)
 #
@@ -61,8 +62,9 @@ fi
 
 echo "==> Entraînement → $RUN_DIR"
 ARGS=(--data "$PREPARATION" --out "$RUN_DIR"
-      --epochs "${EPOCHS:-3}" --max-length "${MAX_LENGTH:-3072}"
+      --epochs "${EPOCHS:-3}"
       --rank "${RANK:-16}" --alpha "${ALPHA:-32}" --lr "${LR:-2e-4}")
+if [[ -n "${MAX_LENGTH:-}" ]]; then ARGS+=(--max-length "$MAX_LENGTH"); fi
 if [[ "$QUANT" == "0" ]]; then ARGS+=(--no-quant); fi
 python train_lora.py "${ARGS[@]}"
 

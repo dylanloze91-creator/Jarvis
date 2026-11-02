@@ -99,6 +99,47 @@ def test_preparation_faite_avec_un_autre_catalogue_d_examen_est_refusee(dossier_
     assert runs.verifier_empreinte_examen(dossier_preparation) is None
 
 
+def test_plafond_de_longueur_identique_a_la_preparation(dossier_preparation: Path, tmp_path: Path, tokenizer):
+    """Point 8 de la revue : sans --max-length, l'entraînement prend le plafond écrit par lab:prepare."""
+    from .conftest import ecrire_resume
+
+    ecrire_resume(dossier_preparation, plafond=1536)
+    assert runs.plafond_preparation(dossier_preparation) == 1536
+    assert train_lora.choisir_longueur_max(None, dossier_preparation) == (1536, None)
+    assert train_lora.choisir_longueur_max(1536, dossier_preparation) == (1536, None)
+    longueur, avis = train_lora.choisir_longueur_max(1024, dossier_preparation)
+    assert longueur == 1024 and "diffère du plafond de la préparation (1536 jetons)" in avis and "entre 1024 et 1536" in avis
+
+    sortie = tmp_path / "run"
+    assert lancer(dossier_preparation, sortie, "--epochs", "1") == 0
+    parametres = json.loads((sortie / runs.PARAMETRES).read_text(encoding="utf-8"))
+    assert parametres["max_length"] == 1536
+    journal = (sortie / runs.JOURNAL).read_text(encoding="utf-8")
+    assert "Longueur max 1536 jetons (plafond de la préparation)" in journal and "diffère du plafond" not in journal
+
+    assert lancer(dossier_preparation, tmp_path / "run2", "--epochs", "1", "--max-length", "1024") == 0
+    journal2 = (tmp_path / "run2" / runs.JOURNAL).read_text(encoding="utf-8")
+    assert "ATTENTION : --max-length 1024 diffère du plafond de la préparation (1536 jetons)" in journal2
+    assert "Longueur max 1024 jetons (--max-length)" in journal2
+
+    # resume.json sans options (ancienne préparation) : le défaut commun aux deux outils.
+    ecrire_resume(dossier_preparation, plafond=None)
+    assert train_lora.choisir_longueur_max(None, dossier_preparation) == (runs.PLAFOND_LONGUEUR, None)
+
+
+def test_plafond_par_defaut_est_celui_de_lab_prepare():
+    """La constante Python et `PREP_DEFAULTS.maxTokens` (labTrainPrep.ts) ne doivent pas diverger."""
+    source_ts = (runs.racine_training().parent / "packages" / "core" / "src" / "developer" / "labTrainPrep.ts").read_text(encoding="utf-8")
+    bloc = source_ts.split("PREP_DEFAULTS", 1)[1]
+    import re
+
+    match = re.search(r"maxTokens:\s*([\d_]+)", bloc)
+    assert match is not None
+    assert int(match.group(1).replace("_", "")) == runs.PLAFOND_LONGUEUR == 3072
+    aide = (runs.racine_training().parent / "packages" / "core" / "scripts" / "lab-prepare.mjs").read_text(encoding="utf-8")
+    assert f"(défaut : {runs.PLAFOND_LONGUEUR})" in aide
+
+
 def test_fichiers_absents(tmp_path: Path):
     with pytest.raises(SystemExit, match="Fichier absent"):
         train_lora.main(["--data", str(tmp_path), "--dry-run", "--out", str(tmp_path / "run")])

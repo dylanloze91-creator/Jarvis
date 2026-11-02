@@ -106,6 +106,21 @@ def verifier_empreinte_examen(dossier_preparation: Path, reference: Path | None 
     return None
 
 
+# Même plafond de longueur (jetons) que `PREP_DEFAULTS.maxTokens` de labTrainPrep.ts : la préparation
+# écarte ce qui dépasse, l'entraînement n'a donc rien à laisser de côté en plus (test_train_dry_run.py le vérifie).
+PLAFOND_LONGUEUR = 3072
+
+
+def plafond_preparation(dossier_preparation: Path) -> int | None:
+    """Plafond `options.maxTokens` écrit par `lab:prepare` dans `resume.json`, ou `None` s'il n'y est pas."""
+    resume = dossier_preparation / "resume.json"
+    if not resume.is_file():
+        return None
+    options = lire_json(resume).get("options")
+    plafond = options.get("maxTokens") if isinstance(options, dict) else None
+    return plafond if isinstance(plafond, int) and not isinstance(plafond, bool) and plafond > 0 else None
+
+
 def duree_lisible(secondes: float) -> str:
     secondes = int(secondes)
     heures, reste = divmod(secondes, 3600)
