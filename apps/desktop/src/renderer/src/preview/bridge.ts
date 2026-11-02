@@ -14,6 +14,7 @@ import type {
   JarvisApi,
   MachineSnapshot,
   PhoneStatus,
+  SpeakerStatus,
   ToolInfo,
   WakeLearningStatus,
   WindowChrome,
@@ -46,6 +47,15 @@ export function installPreviewBridge(): void {
     serveCommand: 'tailscale serve --bg 53130',
     devices: [],
     pairing: null,
+  };
+  let speakers: SpeakerStatus = {
+    enabled: false,
+    running: false,
+    port: 53131,
+    error: null,
+    addresses: ['192.168.1.20'],
+    hostName: 'pc-de-dylan.local',
+    speakers: [],
   };
 
   const status = () => ({
@@ -338,6 +348,23 @@ export function installPreviewBridge(): void {
       cancelPairing: async () => (phone = { ...phone, pairing: null }),
       revoke: async (id: string) => (phone = { ...phone, devices: phone.devices.filter((device) => device.id !== id) }),
       onEvent: () => () => undefined,
+    },
+    speaker: {
+      status: async () => speakers,
+      setEnabled: async (enabled: boolean) => (speakers = { ...speakers, enabled, running: enabled }),
+      add: async (name: string) => {
+        const speaker = { id: `spk-${speakers.speakers.length + 1}`, name, createdAt: Date.now(), lastTurnAt: null };
+        speakers = { ...speakers, speakers: [...speakers.speakers, speaker] };
+        return {
+          status: speakers,
+          speaker: { id: speaker.id, name },
+          secrets: `#define JARVIS_HOST "192.168.1.20"\n#define JARVIS_PORT 53131\n#define JARVIS_TOKEN "aperçu-seulement"\n`,
+        };
+      },
+      remove: async (id: string) => (speakers = { ...speakers, speakers: speakers.speakers.filter((item) => item.id !== id) }),
+      onEvent: () => () => undefined,
+      onTranscribe: () => () => undefined,
+      reportTranscript: () => undefined,
     },
     update: {
       getState: async () => ({

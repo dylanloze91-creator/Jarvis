@@ -59,19 +59,24 @@ export function Toggle({
   hint,
   checked,
   onChange,
+  disabled = false,
 }: {
   label: string;
   hint?: string;
   checked: boolean;
   onChange: (value: boolean) => void;
+  /** Figé pendant qu'une action est en cours : pas de double clic qui se croise. */
+  disabled?: boolean;
 }) {
   return (
     <button
       type="button"
       role="switch"
       aria-checked={checked}
+      aria-busy={disabled || undefined}
+      disabled={disabled}
       onClick={() => onChange(!checked)}
-      className="no-drag flex items-center justify-between gap-4 rounded-lg border border-white/8 bg-white/[0.03] px-3 py-2.5 text-left transition-colors hover:bg-white/[0.06]"
+      className="no-drag flex items-center justify-between gap-4 rounded-lg border border-white/8 bg-white/[0.03] px-3 py-2.5 text-left transition-colors hover:bg-white/[0.06] disabled:cursor-wait disabled:opacity-60 disabled:hover:bg-white/[0.03]"
     >
       <span className="flex flex-col gap-0.5">
         <span className="text-sm text-slate-200">{label}</span>

@@ -1,0 +1,9 @@
+## Composants Espressif tirés du registre à la première compilation (dossier managed_components, non commité).
+dependencies:
+  idf: ">=5.3"
+  # Mot de réveil « Jarvis » (WakeNet), nettoyage du micro (AFE).
+  espressif/esp-sr: "^2.6.1"
+  # LED RVB adressable de la DevKitC-1.
+  espressif/led_strip: "^3.0.0"
+  # Résolution du nom <pc>.local quand JARVIS_HOST n'est pas une adresse IP.
+  espressif/mdns: "^1.4.0"

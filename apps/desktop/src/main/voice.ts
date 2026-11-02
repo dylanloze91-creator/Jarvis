@@ -74,7 +74,7 @@ export class VoiceBridge {
           onAudio: (clip) => resolve({ ok: true, data: clip.data, mimeType: clip.mimeType }),
           onError: (error) => resolve({ ok: false, error }),
         },
-        { voice: input.voice },
+        { voice: input.voice, ...(input.format ? { format: input.format } : {}) },
       );
     });
   }

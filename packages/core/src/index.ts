@@ -491,6 +491,7 @@ export {
 } from './speech/conversationSession.js';
 export * from './google/index.js';
 export * from './phone/phone.js';
+export * from './speaker/speaker.js';
 export { encodeQr, qrSvgPath, QR_MAX_VERSION, type QrMatrix } from './qr/qrCode.js';
 export * from './rover/index.js';
 export * from './developer/index.js';

@@ -47,6 +47,10 @@ import { KnowledgeStore } from './knowledge.js';
 import { ChatSession } from './session.js';
 import { PhoneService } from './phone/service.js';
 import { PhoneStore } from './phone/store.js';
+import { SpeakerService } from './speaker/service.js';
+import { SpeakerStore } from './speaker/store.js';
+import { createSpeakerSynthesizer } from './speaker/synth.js';
+import { transcribeViaRenderer } from './speaker/transcribe.js';
 import { FileConversationStore, readSettings, settingsFileExists, writeSettings } from './store.js';
 import { readMachineSnapshot } from './machineStats.js';
 import { createToolManager } from './tools/index.js';
@@ -258,6 +262,50 @@ const phone = new PhoneService({
   },
 });
 
+// 5.0.64 — enceintes : une session de chat **par enceinte** (une phrase au salon n'annule ni la
+// fenêtre, ni le téléphone, ni la cuisine), mêmes outils, même historique. Une carte de
+// confirmation y est refusée d'office (`server.ts`) : l'enceinte n'a pas d'écran.
+const speakers = new SpeakerService({
+  store: SpeakerStore.inUserData(() => app.getPath('userData')),
+  chatFor: () => {
+    const speakerSession = new ChatSession({
+      registry,
+      get tools() {
+        return tools;
+      },
+      store,
+      auditLog,
+      voice,
+      getSettings: () => settings,
+      personalization,
+      knowledge,
+      localLearning,
+    });
+    return {
+      send: async (sender, input) => {
+        chatActivity.begin();
+        try {
+          await speakerSession.send(sender as unknown as Electron.WebContents, input);
+        } finally {
+          chatActivity.end();
+        }
+      },
+      respondConfirmation: (requestId, approved) => speakerSession.respondConfirmation(requestId, approved),
+      cancel: () => speakerSession.cancel(),
+    };
+  },
+  transcribe: (pcm) => transcribeViaRenderer({ webContents: overlay?.browserWindow.webContents ?? null, pcm }),
+  synthesizer: createSpeakerSynthesizer({ getSettings: () => settings, voice, log: (line) => console.info(line) }),
+  voiceSettings: () => settings.voice,
+  version: () => app.getVersion(),
+  conversations: store,
+  log: (line) => console.info(line),
+  broadcast: (status) => {
+    const contents = overlay?.browserWindow.webContents;
+    if (contents && !contents.isDestroyed()) contents.send(IpcChannel.speakerEvent, status);
+  },
+});
+
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
@@ -288,6 +336,8 @@ async function bootstrap(): Promise<void> {
   startGoogleIfAllowed();
   // Coupé par défaut : sans « Accès depuis le téléphone », aucun port n'est ouvert.
   void phone.init().catch((error: unknown) => console.error(error));
+  // Coupé par défaut aussi : sans « Enceintes », le port 53131 reste fermé.
+  void speakers.init().catch((error: unknown) => console.error(error));
   registerVoiceAssetsProtocol();
   voiceCaptureLog.append(
     `[démarrage] Jarvis ${app.getVersion()} · Electron ${process.versions.electron} · Chromium ${process.versions.chrome} · ${process.platform} ${process.arch} · écoute ${settings.voice.enabled ? 'activée' : 'coupée'}`,
@@ -621,6 +671,12 @@ function registerIpc(): void {
   ipcMain.handle(IpcChannel.phoneSetEnabled, (_event, enabled: unknown) => phone.setEnabled(enabled === true));
   ipcMain.handle(IpcChannel.phoneStartPairing, () => phone.startPairing());
   ipcMain.handle(IpcChannel.phoneCancelPairing, () => phone.cancelPairing());
+  ipcMain.handle(IpcChannel.speakerStatus, () => speakers.status());
+  ipcMain.handle(IpcChannel.speakerSetEnabled, (_event, enabled: unknown) => speakers.setEnabled(enabled === true));
+  ipcMain.handle(IpcChannel.speakerAdd, (_event, name: unknown) => speakers.add(typeof name === 'string' ? name : ''));
+  ipcMain.handle(IpcChannel.speakerRemove, (_event, id: unknown) =>
+    typeof id === 'string' && id.length <= 100 ? speakers.remove(id) : speakers.status(),
+  );
   ipcMain.handle(IpcChannel.phoneRevoke, (_event, id: unknown) =>
     typeof id === 'string' && id.length <= 100 ? phone.revoke(id) : phone.status(false),
   );
@@ -694,5 +750,6 @@ app.on('window-all-closed', () => {
 app.on('will-quit', () => {
   globalShortcut.unregisterAll();
   void phone.stop();
+  void speakers.stop();
   updateManager.stop();
 });

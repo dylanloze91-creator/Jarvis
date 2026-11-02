@@ -63,6 +63,24 @@ describe('decodeWav', () => {
     corrupted[36] = 'x'.charCodeAt(0);
     expect(() => decodeWav(corrupted)).toThrow(/"data"/);
   });
+
+  it('un en-tête « taille inconnue » (0xFFFFFFFF, WAV écrit en flux) ne lit que les octets présents', () => {
+    const original = new Float32Array([0, 0.5, -0.5, 1]);
+    const streamed = new Uint8Array(encodeWav(original, 16000));
+    const view = new DataView(streamed.buffer, streamed.byteOffset, streamed.byteLength);
+    view.setUint32(4, 0xffffffff, true);
+    view.setUint32(40, 0xffffffff, true);
+    const decoded = decodeWav(streamed);
+    expect(decoded.sampleRate).toBe(16000);
+    expect(decoded.samples).toHaveLength(original.length);
+    expect(decoded.samples[3]).toBeCloseTo(1, 3);
+  });
+
+  it('un bloc « data » qui annonce plus que le fichier est tronqué, pas alloué en entier', () => {
+    const streamed = new Uint8Array(encodeWav(new Float32Array([0.25, 0.25, 0.25]), 16000));
+    new DataView(streamed.buffer, streamed.byteOffset, streamed.byteLength).setUint32(40, 1_000_000, true);
+    expect(decodeWav(streamed).samples).toHaveLength(3);
+  });
 });
 
 function readAscii(view: DataView, offset: number, length: number): string {

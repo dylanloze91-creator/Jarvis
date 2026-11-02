@@ -144,7 +144,58 @@ export const IpcChannel = {
   phoneCancelPairing: 'phone:cancel-pairing',
   phoneRevoke: 'phone:revoke',
   phoneEvent: 'phone:event',
+  speakerStatus: 'speaker:status',
+  speakerSetEnabled: 'speaker:set-enabled',
+  speakerAdd: 'speaker:add',
+  speakerRemove: 'speaker:remove',
+  speakerEvent: 'speaker:event',
+  speakerTranscribeRequest: 'speaker:transcribe-request',
+  speakerTranscribeResult: 'speaker:transcribe-result',
 } as const;
+
+/** 5.0.64 — Enceinte Jarvis : état montré dans Réglages → Enceintes. */
+export interface SpeakerStatus {
+  /** Interrupteur « Enceintes Jarvis » (coupé par défaut). */
+  enabled: boolean;
+  /** Le pont écoute sur le port (adresses privées seulement). */
+  running: boolean;
+  port: number;
+  /** Raison d'un démarrage raté (port pris…), sinon `null`. */
+  error: string | null;
+  /** Adresses IPv4 locales du PC, la plus utile d'abord. */
+  addresses: string[];
+  /** Nom `<pc>.local` du PC. */
+  hostName: string;
+  speakers: Array<{
+    id: string;
+    name: string;
+    createdAt: number;
+    /** Dernière phrase reçue (en mémoire seulement ; `null` depuis le démarrage). */
+    lastTurnAt: number | null;
+  }>;
+}
+
+/** Réponse de « Ajouter une enceinte » : le jeton et le bloc `secrets.h` ne sont montrés qu'ici. */
+export interface SpeakerAdded {
+  status: SpeakerStatus;
+  speaker: { id: string; name: string };
+  /** Bloc à coller dans `include/secrets.h` du programme de la carte. */
+  secrets: string;
+}
+
+/** Main → renderer : une phrase de l'enceinte à transcrire par le Whisper local. */
+export interface SpeakerTranscribeRequest {
+  requestId: string;
+  /** PCM mono 16 kHz, amplitude [-1, 1]. */
+  pcm: Float32Array;
+}
+
+/** Renderer → main : la transcription, ou l'erreur. */
+export interface SpeakerTranscribeResult {
+  requestId: string;
+  text?: string;
+  error?: string;
+}
 
 /** 5.0.63 — Jarvis sur le téléphone : état montré dans Réglages → Téléphone. */
 export interface PhoneStatus {
@@ -410,6 +461,8 @@ export type VoiceTranscribeResult = { ok: true; text: string } | { ok: false; er
 export interface VoiceSpeakInput {
   text: string;
   voice?: string;
+  /** 5.0.64 — `wav` pour l'enceinte ; absent = format habituel du moteur (mp3). */
+  format?: 'mp3' | 'wav';
 }
 
 export type VoiceSpeakResult =
@@ -598,6 +651,19 @@ export interface JarvisApi {
     revoke(deviceId: string): Promise<PhoneStatus>;
     /** Appareil relié depuis le téléphone pendant que les réglages sont ouverts. */
     onEvent(listener: (status: PhoneStatus) => void): () => void;
+  };
+  /** 5.0.64 — enceintes Jarvis (ESP32-S3 sur le Wi-Fi local). */
+  speaker: {
+    status(): Promise<SpeakerStatus>;
+    setEnabled(enabled: boolean): Promise<SpeakerStatus>;
+    /** Crée une enceinte et rend, une seule fois, le bloc `secrets.h` avec son jeton. */
+    add(name: string): Promise<SpeakerAdded>;
+    remove(speakerId: string): Promise<SpeakerStatus>;
+    /** Phrase reçue d'une enceinte pendant que les réglages sont ouverts. */
+    onEvent(listener: (status: SpeakerStatus) => void): () => void;
+    /** Le processus principal demande une transcription Whisper (la fenêtre a Whisper, pas lui). */
+    onTranscribe(listener: (request: SpeakerTranscribeRequest) => void): () => void;
+    reportTranscript(payload: SpeakerTranscribeResult): void;
   };
   update: {
     getState(): Promise<UpdateState>;

@@ -88,7 +88,9 @@ export function decodeWav(bytes: Uint8Array): DecodedWav {
       bitsPerSample = view.getUint16(chunkStart + 14, true);
     } else if (chunkId === 'data') {
       dataOffset = chunkStart;
-      dataSize = chunkSize;
+      // Un en-tête écrit en flux (OpenAI, par exemple) peut annoncer 0xFFFFFFFF ou une taille fausse :
+      // on ne lit jamais au-delà des octets réellement présents (sinon allocation géante).
+      dataSize = Math.min(chunkSize, view.byteLength - chunkStart);
     }
     // Les blocs sont alignés sur 2 octets : un bloc de taille impaire est suivi d'un octet de bourrage.
     offset = chunkStart + chunkSize + (chunkSize % 2);
