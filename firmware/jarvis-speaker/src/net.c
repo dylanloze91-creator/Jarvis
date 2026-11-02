@@ -18,6 +18,7 @@
 #include "mdns.h"
 #include "nvs_flash.h"
 #include "secrets.h"
+#include "wav_stream.h"
 
 #define WIFI_CONNECTED_BIT BIT0
 
@@ -222,101 +223,15 @@ static void wav_header(uint8_t *h, uint32_t pcm_bytes) {
     memcpy(h + 40, &pcm_bytes, 4);
 }
 
-/** Lecteur WAV au fil de l'eau : trouve `fmt ` et `data`, puis envoie le PCM au haut-parleur. */
-typedef struct {
-    uint8_t head[256];
-    size_t head_len;
-    bool in_data;
-    uint16_t channels;
-    uint32_t rate;
-    uint16_t bits;
-    uint8_t carry[4];
-    size_t carry_len;
-    size_t played;
-} wav_player_t;
-
-static bool wav_parse_head(wav_player_t *p, size_t *data_offset) {
-    if (p->head_len < 12 || memcmp(p->head, "RIFF", 4) != 0 || memcmp(p->head + 8, "WAVE", 4) != 0) return false;
-    size_t pos = 12;
-    while (pos + 8 <= p->head_len) {
-        uint32_t size;
-        memcpy(&size, p->head + pos + 4, 4);
-        if (memcmp(p->head + pos, "fmt ", 4) == 0 && pos + 8 + 16 <= p->head_len) {
-            memcpy(&p->channels, p->head + pos + 10, 2);
-            memcpy(&p->rate, p->head + pos + 12, 4);
-            memcpy(&p->bits, p->head + pos + 22, 2);
-        } else if (memcmp(p->head + pos, "data", 4) == 0) {
-            *data_offset = pos + 8;
-            return p->rate != 0;
-        }
-        pos += 8 + size + (size & 1);
-    }
-    return false;
+/** Le lecteur WAV (wav_stream.c, testé sur PC) pousse le son vers le haut-parleur. */
+static void sink_set_rate(uint32_t sample_rate, void *user) {
+    (void)user;
+    speaker_set_rate(sample_rate);
 }
 
-static void wav_play_pcm(wav_player_t *p, const uint8_t *bytes, size_t len) {
-    // Les octets arrivent par paquets quelconques : on recolle les échantillons coupés en deux.
-    static int16_t pcm[1024];
-    size_t frame = (size_t)p->channels * (p->bits / 8);
-    if (frame == 0) return;
-    uint8_t joined[8];
-    size_t pos = 0;
-    if (p->carry_len) {
-        size_t need = frame - p->carry_len;
-        if (len < need) {
-            memcpy(p->carry + p->carry_len, bytes, len);
-            p->carry_len += len;
-            return;
-        }
-        memcpy(joined, p->carry, p->carry_len);
-        memcpy(joined + p->carry_len, bytes, need);
-        p->carry_len = 0;
-        pos = need;
-        int16_t sample = p->bits == 16 ? (int16_t)(joined[0] | (joined[1] << 8)) : (int16_t)((joined[0] - 128) << 8);
-        speaker_play(&sample, 1);
-        p->played++;
-    }
-    size_t count = 0;
-    while (pos + frame <= len) {
-        // Premier canal seulement si la réponse était stéréo (elle ne l'est pas : 16 kHz mono).
-        int16_t sample = p->bits == 16 ? (int16_t)(bytes[pos] | (bytes[pos + 1] << 8)) : (int16_t)((bytes[pos] - 128) << 8);
-        pcm[count++] = sample;
-        pos += frame;
-        if (count == 1024) {
-            speaker_play(pcm, count);
-            p->played += count;
-            count = 0;
-        }
-    }
-    if (count) {
-        speaker_play(pcm, count);
-        p->played += count;
-    }
-    if (pos < len) {
-        p->carry_len = len - pos;
-        memcpy(p->carry, bytes + pos, p->carry_len);
-    }
-}
-
-static void wav_feed(wav_player_t *p, const uint8_t *bytes, size_t len) {
-    if (!p->in_data) {
-        size_t room = sizeof(p->head) - p->head_len;
-        size_t take = len < room ? len : room;
-        memcpy(p->head + p->head_len, bytes, take);
-        p->head_len += take;
-        size_t data_offset = 0;
-        if (!wav_parse_head(p, &data_offset)) {
-            if (p->head_len == sizeof(p->head)) ESP_LOGW(SERIAL_TAG, "réponse : WAV illisible");
-            return;
-        }
-        p->in_data = true;
-        speaker_set_rate(p->rate);
-        // Ce qui dépasse l'entête dans le tampon est déjà du PCM.
-        if (p->head_len > data_offset) wav_play_pcm(p, p->head + data_offset, p->head_len - data_offset);
-        if (take < len) wav_play_pcm(p, bytes + take, len - take);
-        return;
-    }
-    wav_play_pcm(p, bytes, len);
+static void sink_play(const int16_t *pcm, size_t samples, void *user) {
+    (void)user;
+    speaker_play(pcm, samples);
 }
 
 turn_result_t net_turn(const int16_t *pcm, size_t samples, bool follow_up) {
@@ -360,15 +275,22 @@ turn_result_t net_turn(const int16_t *pcm, size_t samples, bool follow_up) {
     ESP_LOGI(SERIAL_TAG, "réponse %d%s (%lld octets)", result.status, ctx.is_wav ? " audio" : "", (long long)content_length);
 
     if (result.status == 200 || (result.status == 503 && ctx.is_wav)) {
-        wav_player_t player = {0};
+        static wav_stream_t player;
+        const wav_sink_t sink = {.set_rate = sink_set_rate, .play = sink_play, .user = NULL};
+        wav_stream_init(&player, &sink);
         static uint8_t buffer[4096];
         for (;;) {
             int n = esp_http_client_read(client, (char *)buffer, sizeof(buffer));
             if (n <= 0) break;
-            wav_feed(&player, buffer, (size_t)n);
+            wav_stream_feed(&player, buffer, (size_t)n);
+            // Refusé ou bloc `data` fini : inutile de télécharger la suite.
+            if (player.state == WAV_STREAM_BAD || player.state == WAV_STREAM_DONE) break;
         }
         speaker_flush();
-        if (player.played == 0) {
+        if (player.state == WAV_STREAM_BAD) {
+            ESP_LOGW(SERIAL_TAG, "réponse refusée : %s", player.error);
+            result.outcome = TURN_FAILED;
+        } else if (player.played == 0) {
             ESP_LOGW(SERIAL_TAG, "réponse sans son lisible");
             result.outcome = TURN_FAILED;
         } else {

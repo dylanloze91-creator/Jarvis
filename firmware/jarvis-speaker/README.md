@@ -256,9 +256,14 @@ WAV 16 kHz mono d'une phrase (`--wav phrase.wav`) : il enregistre la réponse de
   pas le micro : rien de ce qui suit « Jarvis » n'est perdu. Après la réponse, si le PC envoie `X-Jarvis-Continue: 1`, la carte écoute
   `followUpMs` sans mot de réveil et envoie la phrase avec `X-Jarvis-Follow-Up: 1`.
 - **Mémoire** : la carte garde la phrase (jusqu'à 15 s) en PSRAM et envoie un WAV 16 kHz mono 16 bits
-  (≤ 480 Ko ; le pont accepte 1,5 Mo). La réponse est jouée au fil de l'eau, sans être stockée.
+  (≤ 480 Ko ; le pont accepte 1,5 Mo). La réponse est jouée au fil de l'eau, sans être stockée : le
+  lecteur (`src/wav_stream.c`) n'accepte que du PCM 16 bits mono entre 8 et 48 kHz, un entête de
+  256 octets au plus, et s'arrête à la fin du bloc `data` (ou de la réponse si la taille est inconnue).
 - **Fichiers** : `src/main.c` (l'enchaînement veille → écoute → envoi → réponse → suivi),
   `src/wake.c` (ESP-SR), `src/audio_io.c` (micro et ampli I2S, bips), `src/net.c` (Wi-Fi, mDNS,
-  HTTP, lecture du WAV), `src/led.c`, `include/config.h` (broches, volume, sensibilité),
-  `include/secrets.example.h` (modèle de `secrets.h`), `partitions.csv` (zone « model »),
+  HTTP), `src/wav_stream.c` (lecture du WAV reçu), `src/led.c`, `include/config.h` (broches, volume,
+  sensibilité), `include/secrets.example.h` (modèle de `secrets.h`), `partitions.csv` (zone « model »),
   `flash_models.py` (écrit le modèle au téléversement).
+- **Tests sur PC** : `host-tests/run.sh` compile le lecteur WAV avec `gcc` (sans carte, sans PlatformIO)
+  et le met à l'épreuve : paquets coupés n'importe où, WAV en flux, stéréo refusée, tailles de blocs
+  absurdes. `pio run` ne touche pas à ce dossier.
