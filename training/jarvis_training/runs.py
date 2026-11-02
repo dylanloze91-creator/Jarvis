@@ -80,6 +80,32 @@ def dernier_point(dossier: Path) -> Path | None:
     return max(points)[1]
 
 
+EMPREINTE_EXAMEN = "examen-empreinte.json"
+
+
+def verifier_empreinte_examen(dossier_preparation: Path, reference: Path | None = None) -> str | None:
+    """`None` si `preparation/resume.json` a été écrit avec le catalogue d'évaluation attendu, sinon la raison du refus.
+
+    `lab:prepare` écrit dans `resume.json` l'empreinte (`examCatalog`) du catalogue contre lequel la
+    contamination de l'examen a été contrôlée ; `training/examen-empreinte.json` donne celle du
+    dépôt (tenue à jour par `labTrainPrep.test.ts`). Si elles diffèrent, l'examen a changé depuis la
+    préparation : des exemples proches des nouvelles missions pourraient être dans `train.jsonl`.
+    """
+    attendu = lire_json(reference or racine_training() / EMPREINTE_EXAMEN)
+    resume = dossier_preparation / "resume.json"
+    if not resume.is_file():
+        return f"{resume} absent : la préparation doit venir de « npm run lab:prepare » (le fichier porte l'empreinte du catalogue d'évaluation)."
+    empreinte = lire_json(resume).get("examCatalog")
+    if not isinstance(empreinte, dict) or not isinstance(empreinte.get("sha256"), str):
+        return f"{resume} sans empreinte du catalogue d'évaluation (examCatalog) : relance « npm run lab:prepare » avec la version actuelle du dépôt."
+    if empreinte["sha256"] != attendu["sha256"] or empreinte.get("missions") != attendu["missions"]:
+        return (
+            f"La préparation a été faite avec un autre catalogue d'évaluation ({empreinte.get('missions')} missions, {empreinte['sha256'][:12]}…) "
+            f"que celui du dépôt ({attendu['missions']} missions, {attendu['sha256'][:12]}…) : l'examen a changé depuis. Relance « npm run lab:prepare »."
+        )
+    return None
+
+
 def duree_lisible(secondes: float) -> str:
     secondes = int(secondes)
     heures, reste = divmod(secondes, 3600)

@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { evalCatalog } from './labCatalog.js';
 import { LAB_TOOLS, type LabTrainingExample } from './labRunner.js';
@@ -6,6 +8,7 @@ import {
   estimateTokens,
   exactKey,
   examContamination,
+  examFingerprint,
   parseExampleLine,
   prepareTrainingData,
   preparationFiles,
@@ -175,6 +178,46 @@ describe('préparation des données : contamination de l’examen', () => {
     // Même corps sous un autre nom : ni le nom ni le texte ne correspondent, le contrôle laisse passer (limite connue).
     const renamed = solution.content.replace(/export\s+function\s+\w+/, 'export function autreNomSynthetique');
     expect(examContamination(synthetic({ n: 10 }), [{ path: 'src/x.mjs', content: renamed }], undefined)).toBeNull();
+  });
+
+  it('écarte les 29 missions de l’examen passées en exemples : énoncé repris, noms repris, solution reformatée', () => {
+    // Trois déguisements par mission d'évaluation (construits en mémoire, jamais écrits dans un cahier) :
+    // (a) l'objectif de la mission mot pour mot, avec une solution quelconque ;
+    // (b) un objectif sans rapport, mais la solution de référence reformatée (indentation, lignes vides) : mêmes noms exportés ;
+    // (c) un objectif sans rapport et la solution de référence telle quelle.
+    const reformat = (content: string) => content.replace(/\n/g, '\n\n').replace(/ {2}/g, '\t');
+    const disguised = exam.flatMap((entry, index) => {
+      const solution = entry.solution[0]!;
+      const unrelated = `Exemple synthétique de test sans rapport numéro ${index} : additionner deux nombres.`;
+      return [
+        synthetic({ n: 1000 + index, level: entry.mission.level, goal: entry.mission.goal, mission: `g${entry.mission.level}-deguisement-a-${index}` }),
+        synthetic({ n: 2000 + index, level: entry.mission.level, goal: unrelated, path: solution.path, content: reformat(solution.content), mission: `g${entry.mission.level}-deguisement-b-${index}` }),
+        synthetic({ n: 3000 + index, level: entry.mission.level, goal: unrelated, path: solution.path, content: solution.content, mission: `g${entry.mission.level}-deguisement-c-${index}` }),
+      ];
+    });
+    expect(exam).toHaveLength(29);
+    expect(disguised).toHaveLength(87);
+    const result = prepareTrainingData({ exampleLines: [...disguised.map(line), ...corpus(120)] });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error('préparation attendue');
+    const keptIds = new Set([...result.train, ...result.validation].map((item) => item.id));
+    for (const example of disguised) expect(keptIds.has(example.id), example.meta.mission).toBe(false);
+    expect(result.setAside).toHaveLength(87);
+    for (const item of result.setAside) expect(item.reason).toMatch(/^suspect de contamination de l’examen : /);
+    expect(result.summary.setAside.byReason).toEqual({ 'suspect de contamination de l’examen': 87 });
+    expect(result.summary.kept).toBe(120);
+  });
+
+  it('l’empreinte du catalogue d’évaluation est écrite dans resume.json et training/examen-empreinte.json la reprend', () => {
+    const fingerprint = examFingerprint();
+    expect(fingerprint.missions).toBe(29);
+    expect(fingerprint.sha256).toMatch(/^[0-9a-f]{64}$/);
+    expect(examFingerprint()).toEqual(fingerprint);
+    const files = preparationFiles(prepareTrainingData({ exampleLines: corpus(120) }));
+    expect(JSON.parse(files['resume.json']!).examCatalog).toEqual(fingerprint);
+    // Le fichier lu par train_lora.py : s'il diffère, l'examen a changé → le mettre à jour ici et relancer lab:prepare.
+    const reference = JSON.parse(readFileSync(join(import.meta.dirname, '../../../../training/examen-empreinte.json'), 'utf8'));
+    expect({ missions: reference.missions, sha256: reference.sha256 }).toEqual(fingerprint);
   });
 
   it('l’objectif vient de l’exercice s’il est connu, sinon du premier paragraphe de la demande', () => {

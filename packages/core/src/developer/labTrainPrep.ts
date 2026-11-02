@@ -14,6 +14,7 @@
  * `labContamination`, noms exportés et objectifs proches des missions d'`evalCatalog()`,
  * solution identique à une solution de référence).
  */
+import { createHash } from 'node:crypto';
 import { labContamination, type LabCategory, type LabFile, type LabLevel, type LabMission } from './lab.js';
 import { evalCatalog } from './labCatalog.js';
 import { noveltyCheck } from './labGenerator.js';
@@ -206,6 +207,18 @@ function examReference() {
     };
   }
   return evalReference;
+}
+
+/**
+ * Empreinte du catalogue d'évaluation contre lequel la préparation a été faite (revue du
+ * 2026-11-02, point 6) : écrite dans `resume.json`, comparée par `train_lora.py` à
+ * `training/examen-empreinte.json` (tenu à jour par `labTrainPrep.test.ts`). Une préparation faite
+ * avec un autre catalogue (examen modifié depuis) est refusée à l'entraînement.
+ */
+export function examFingerprint(): { missions: number; sha256: string } {
+  const entries = [...evalCatalog()].sort((a, b) => (a.mission.id < b.mission.id ? -1 : a.mission.id > b.mission.id ? 1 : 0));
+  const canonical = JSON.stringify(entries.map((entry) => ({ mission: entry.mission, solution: entry.solution })));
+  return { missions: entries.length, sha256: createHash('sha256').update(canonical).digest('hex') };
 }
 
 /**
@@ -405,7 +418,7 @@ export function preparationFiles(result: PrepResult, now = new Date()): Record<s
   const setAside = result.setAside.map((item) => JSON.stringify({ line: item.line, id: item.id, reason: item.reason }));
   const files: Record<string, string> = {
     'ecartes.jsonl': jsonl(setAside),
-    'resume.json': `${JSON.stringify({ at: now.toISOString(), ok: result.ok, ...(result.ok ? {} : { reason: result.reason }), ...result.summary }, null, 2)}\n`,
+    'resume.json': `${JSON.stringify({ at: now.toISOString(), ok: result.ok, ...(result.ok ? {} : { reason: result.reason }), examCatalog: examFingerprint(), ...result.summary }, null, 2)}\n`,
   };
   if (result.ok) {
     files['train.jsonl'] = jsonl(result.train.map((item) => item.line));

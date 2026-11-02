@@ -73,13 +73,18 @@ def construire_parseur() -> argparse.ArgumentParser:
     return parseur
 
 
-def lire_jeux(dossier: Path, journal=None) -> tuple[list[donnees.Exemple], list[donnees.Exemple]]:
-    """Lit train.jsonl et validation.jsonl ; une ligne non conforme est sautée et écrite au journal, jamais réparée."""
+def verifier_fichiers(dossier: Path) -> tuple[Path, Path]:
     train = dossier / "train.jsonl"
     validation = dossier / "validation.jsonl"
     for chemin in (train, validation):
         if not chemin.exists():
             raise SystemExit(f"Fichier absent : {chemin}. Lance d'abord « npm run lab:prepare --workspace @jarvis/core -- --dir <données> ».")
+    return train, validation
+
+
+def lire_jeux(dossier: Path, journal=None) -> tuple[list[donnees.Exemple], list[donnees.Exemple]]:
+    """Lit train.jsonl et validation.jsonl ; une ligne non conforme est sautée et écrite au journal, jamais réparée."""
+    train, validation = verifier_fichiers(dossier)
     jeux = []
     for chemin in (train, validation):
         lecture = donnees.lire_jsonl(chemin)
@@ -216,6 +221,11 @@ def main(argv: list[str] | None = None) -> int:
             journal.error("Le gabarit de chat de %s ne gère pas les outils : impossible de reproduire le format des appels write_file.", base)
             return 3
 
+        verifier_fichiers(args.data.resolve())
+        refus_examen = runs.verifier_empreinte_examen(args.data.resolve())
+        if refus_examen:
+            journal.error("Refus : %s", refus_examen)
+            return 5
         exemples_train, exemples_validation = lire_jeux(args.data.resolve(), journal)
         jeu_train = donnees.encoder_jeu(tokenizer, exemples_train, args.max_length)
         jeu_validation = donnees.encoder_jeu(tokenizer, exemples_validation, args.max_length)

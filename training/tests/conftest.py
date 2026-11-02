@@ -75,11 +75,19 @@ def tokenizer():
         pytest.skip(f"modèle minuscule {MODELE_MINUSCULE} indisponible ({erreur})")
 
 
+def ecrire_resume(dossier: Path, empreinte: dict | None = None) -> None:
+    """`resume.json` minimal avec l'empreinte du catalogue d'évaluation (celle du dépôt par défaut)."""
+    attendu = empreinte if empreinte is not None else json.loads((RACINE / "examen-empreinte.json").read_text(encoding="utf-8"))
+    contenu = {"ok": True, "examCatalog": {"missions": attendu["missions"], "sha256": attendu["sha256"]}}
+    (dossier / "resume.json").write_text(json.dumps(contenu, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
 @pytest.fixture
 def dossier_preparation(tmp_path: Path) -> Path:
-    """Un `preparation/` synthétique : 8 exemples d'entraînement, 2 de validation."""
+    """Un `preparation/` synthétique : 8 exemples d'entraînement, 2 de validation, resume.json à jour."""
     dossier = tmp_path / "preparation"
     dossier.mkdir()
     ecrire_jsonl(dossier / "train.jsonl", [exemple_synthetique(i) for i in range(8)])
     ecrire_jsonl(dossier / "validation.jsonl", [exemple_synthetique(i) for i in range(8, 10)])
+    ecrire_resume(dossier)
     return dossier

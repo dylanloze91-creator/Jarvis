@@ -80,6 +80,25 @@ def test_ligne_non_conforme_sautee_et_journalisee(dossier_preparation: Path, tmp
     assert "8 en entraînement" in journal
 
 
+def test_preparation_faite_avec_un_autre_catalogue_d_examen_est_refusee(dossier_preparation: Path, tmp_path: Path):
+    from .conftest import ecrire_resume
+
+    ecrire_resume(dossier_preparation, {"missions": 30, "sha256": "0" * 64})
+    sortie = tmp_path / "run"
+    assert lancer(dossier_preparation, sortie, "--epochs", "1") == 5
+    journal = (sortie / runs.JOURNAL).read_text(encoding="utf-8")
+    assert "autre catalogue d'évaluation" in journal and "lab:prepare" in journal
+    assert not (sortie / runs.ADAPTATEUR).exists()
+
+    (dossier_preparation / "resume.json").unlink()
+    assert lancer(dossier_preparation, tmp_path / "run2", "--epochs", "1") == 5
+    assert "resume.json absent" in (tmp_path / "run2" / runs.JOURNAL).read_text(encoding="utf-8")
+
+    assert runs.verifier_empreinte_examen(dossier_preparation) is not None
+    ecrire_resume(dossier_preparation)
+    assert runs.verifier_empreinte_examen(dossier_preparation) is None
+
+
 def test_fichiers_absents(tmp_path: Path):
     with pytest.raises(SystemExit, match="Fichier absent"):
         train_lora.main(["--data", str(tmp_path), "--dry-run", "--out", str(tmp_path / "run")])
