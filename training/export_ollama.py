@@ -7,7 +7,8 @@ Depuis le dossier `training/`, dans l'environnement créé par `setup-windows.ps
 
 Quatre étapes, chacune reprise si son résultat existe déjà dans `--out` :
   1. fusion    : l'adaptateur LoRA est fondu dans le modèle de base (fp16, sur processeur : il faut
-                 ~16 Go de mémoire vive libre pour un 7B) → `<out>/fusion/`
+                 ~16 Go de mémoire vive libre et ~35 Go de disque dans --out pour un 7B ; le script
+                 l'annonce et avertit si ça manque) → `<out>/fusion/`
   2. conversion: `convert_hf_to_gguf.py` de llama.cpp (version épinglée par setup-windows.ps1) → `<out>/<nom>-f16.gguf`
   3. quantification : `llama-quantize … Q4_K_M` → `<out>/<nom>-Q4_K_M.gguf` (même taille que qwen2.5-coder:7b)
   4. Modelfile : repris de `ollama show --modelfile qwen2.5-coder:7b` (TEMPLATE, PARAMETER, SYSTEM,
@@ -38,6 +39,10 @@ NOM_PAR_DEFAUT = "jarvis-coder"
 MODELE_SOURCE_PAR_DEFAUT = "qwen2.5-coder:7b"
 QUANTIFICATION_PAR_DEFAUT = "Q4_K_M"
 LLAMA_TAG = "b12032"
+# Besoins de la fusion d'un 7B sur processeur (revue du 2026-11-02, point 10) : le modèle fp16 entier en mémoire vive
+# (~15 Go) ; sur disque, fusion/ (~15 Go) + GGUF f16 (~15 Go) + GGUF Q4_K_M (~4,7 Go), dans --out. Le modèle de base
+# téléchargé par Hugging Face (~15 Go) est dans son cache, en plus.
+BESOINS_FUSION_7B = {"ram_go": 16, "disque_go": 35}
 
 
 def construire_parseur() -> argparse.ArgumentParser:
@@ -105,6 +110,55 @@ def reecrire_modelfile(texte: str, gguf: Path) -> str:
     while sortie and not sortie[0].strip():
         sortie.pop(0)
     return "\n".join(sortie).rstrip("\n") + "\n"
+
+
+def avertissements_place(disque_libre_go: float | None, ram_libre_go: float | None, besoins: dict[str, int] = BESOINS_FUSION_7B) -> list[str]:
+    """Ce qui manque (disque dans --out, mémoire vive) pour fusionner un 7B ; liste vide si tout va bien ou si c'est inconnu."""
+    avis = []
+    if disque_libre_go is not None and disque_libre_go < besoins["disque_go"]:
+        avis.append(f"disque : {disque_libre_go:.0f} Go libres dans le dossier de sortie, il en faut environ {besoins['disque_go']} (fusion ~15 Go + GGUF f16 ~15 Go + GGUF quantifié ~5 Go ; --clean les libère à la fin, pas avant)")
+    if ram_libre_go is not None and ram_libre_go < besoins["ram_go"]:
+        avis.append(f"mémoire vive : {ram_libre_go:.0f} Go libres, il en faut environ {besoins['ram_go']} pour charger le 7B en fp16 sur processeur (fermer les autres programmes, Ollama compris)")
+    return avis
+
+
+def memoire_vive_libre_go() -> float | None:
+    """Mémoire vive disponible, en Go, ou `None` si le système ne le dit pas simplement."""
+    try:
+        if sys.platform == "win32":
+            import ctypes
+
+            class EtatMemoire(ctypes.Structure):
+                _fields_ = [
+                    ("dwLength", ctypes.c_ulong),
+                    ("dwMemoryLoad", ctypes.c_ulong),
+                    ("ullTotalPhys", ctypes.c_ulonglong),
+                    ("ullAvailPhys", ctypes.c_ulonglong),
+                    ("ullTotalPageFile", ctypes.c_ulonglong),
+                    ("ullAvailPageFile", ctypes.c_ulonglong),
+                    ("ullTotalVirtual", ctypes.c_ulonglong),
+                    ("ullAvailVirtual", ctypes.c_ulonglong),
+                    ("ullAvailExtendedVirtual", ctypes.c_ulonglong),
+                ]
+
+            etat = EtatMemoire()
+            etat.dwLength = ctypes.sizeof(EtatMemoire)
+            if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(etat)):  # type: ignore[attr-defined]
+                return etat.ullAvailPhys / 2**30
+            return None
+        with open("/proc/meminfo", encoding="utf-8") as f:
+            for ligne in f:
+                if ligne.startswith("MemAvailable:"):
+                    return int(ligne.split()[1]) * 1024 / 2**30
+    except (OSError, ValueError, AttributeError):
+        return None
+    return None
+
+
+def verifier_place(sortie: Path, journal) -> None:
+    disque = shutil.disk_usage(sortie).free / 2**30
+    for avis in avertissements_place(disque, memoire_vive_libre_go()):
+        journal.warning("ATTENTION : %s.", avis)
 
 
 def trouver_convertisseur(llama: Path) -> Path:
@@ -230,6 +284,8 @@ def main(argv: list[str] | None = None) -> int:
                 raise SystemExit("Ce run est un --dry-run (modèle minuscule aléatoire) : rien à exporter.")
             base = args.base or base_depuis_adaptateur(adaptateur)
             journal.info("Base : %s · adaptateur : %s", base, adaptateur)
+            if not (sortie / "fusion" / "config.json").exists():
+                verifier_place(sortie, journal)
             fusion = fusionner(base, adaptateur, sortie / "fusion", journal)
             gguf_f16 = convertir(fusion, sortie / f"{args.name}-f16.gguf", llama, journal)
             gguf_final = quantifier(gguf_f16, sortie / f"{args.name}-{args.quant}.gguf", args.quant, llama, journal)

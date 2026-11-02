@@ -113,3 +113,46 @@ def test_un_run_dry_run_est_refuse_a_l_export(tmp_path: Path):
 def test_adaptateur_absent(tmp_path: Path):
     with pytest.raises(SystemExit, match="Adaptateur introuvable"):
         export_ollama.main(["--run", str(tmp_path / "rien"), "--out", str(tmp_path / "export")])
+
+
+def test_avertissements_de_place_pour_la_fusion_du_7b():
+    """Point 10 de la revue : ~16 Go de mémoire vive libre et ~35 Go de disque pour fusionner un 7B."""
+    assert export_ollama.BESOINS_FUSION_7B == {"ram_go": 16, "disque_go": 35}
+    assert export_ollama.avertissements_place(120.0, 24.0) == []
+    assert export_ollama.avertissements_place(None, None) == []
+    avis = export_ollama.avertissements_place(20.0, 9.5)
+    assert len(avis) == 2
+    assert avis[0].startswith("disque : 20 Go libres") and "environ 35" in avis[0]
+    assert avis[1].startswith("mémoire vive : 10 Go libres") and "environ 16" in avis[1]
+    assert export_ollama.avertissements_place(34.9, 16.0)[0].startswith("disque")
+    assert export_ollama.avertissements_place(35.0, 15.9)[0].startswith("mémoire vive")
+    assert "16 Go de mémoire vive libre" in export_ollama.__doc__ and "35 Go de disque" in export_ollama.__doc__
+
+
+def test_verifier_place_ecrit_les_avertissements_au_journal(tmp_path: Path, monkeypatch):
+    import shutil as module_shutil
+
+    class Journal:
+        def __init__(self):
+            self.avertissements = []
+
+        def warning(self, message, *args):
+            self.avertissements.append(message % args)
+
+    monkeypatch.setattr(module_shutil, "disk_usage", lambda _chemin: module_shutil._ntuple_diskusage(100 * 2**30, 90 * 2**30, 10 * 2**30))
+    monkeypatch.setattr(export_ollama, "memoire_vive_libre_go", lambda: 8.0)
+    journal = Journal()
+    export_ollama.verifier_place(tmp_path, journal)
+    assert len(journal.avertissements) == 2
+    assert journal.avertissements[0].startswith("ATTENTION : disque : 10 Go libres")
+    assert journal.avertissements[1].startswith("ATTENTION : mémoire vive : 8 Go libres")
+
+
+def test_memoire_vive_libre_est_un_nombre_ou_inconnue():
+    libre = export_ollama.memoire_vive_libre_go()
+    assert libre is None or libre > 0
+
+
+def test_le_guide_annonce_les_besoins_de_la_fusion():
+    guide = (Path(__file__).resolve().parents[1] / "README.md").read_text(encoding="utf-8")
+    assert "16 Go de mémoire vive libre" in guide and "35 Go de disque libres" in guide

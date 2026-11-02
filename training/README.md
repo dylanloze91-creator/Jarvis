@@ -122,9 +122,16 @@ On en revient avec un fichier `.gguf` à passer directement à l'étape 4 : `exp
 training\.venv\Scripts\python training\export_ollama.py --run training\runs\<date>
 ```
 
-Ce que ça fait, en quatre temps : **fusion** de l'adaptateur dans le modèle de base (sur le processeur : compter
-16 Go de mémoire vive libre et 15 Go de disque), **conversion** au format GGUF avec l'outil de llama.cpp, **compression**
-Q4_K_M (la même que `qwen2.5-coder:7b`, ≈ 4,7 Go), puis un `Modelfile` et `ollama create jarvis-coder`.
+Ce que ça fait, en quatre temps : **fusion** de l'adaptateur dans le modèle de base (sur le processeur), **conversion**
+au format GGUF avec l'outil de llama.cpp, **compression** Q4_K_M (la même que `qwen2.5-coder:7b`, ≈ 4,7 Go), puis un
+`Modelfile` et `ollama create jarvis-coder`.
+
+**Ce qu'il faut sur le PC pour un 7B** : environ **16 Go de mémoire vive libre** (le modèle fp16 entier est chargé
+en mémoire ; fermer les autres programmes, Ollama compris) et environ **35 Go de disque libres** dans `training\export\`
+(fusion ≈ 15 Go + GGUF f16 ≈ 15 Go + GGUF Q4_K_M ≈ 4,7 Go), en plus des 15 Go du modèle de base dans le cache de
+Hugging Face. Le script mesure les deux avant la fusion et écrit `ATTENTION : disque …` ou `ATTENTION : mémoire vive …`
+s'il en manque ; mieux vaut alors libérer de la place que de laisser échouer au milieu. La carte graphique n'est pas
+utilisée pour cette étape.
 
 Le `Modelfile` **reprend celui de `qwen2.5-coder:7b`** tel qu'Ollama le donne (`ollama show --modelfile qwen2.5-coder:7b`) :
 gabarit de chat, paramètres d'arrêt, consigne, licence ; seule la ligne `FROM` pointe vers le nouveau fichier.
