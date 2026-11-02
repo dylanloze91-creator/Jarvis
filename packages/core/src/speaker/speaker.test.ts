@@ -162,6 +162,16 @@ describe('enceinte (5.0.64) — WAV', () => {
     expect(up.length).toBe(10);
     expect(up[1]).toBeCloseTo(0.25, 5);
   });
+
+  it('un WAV de voix en flux (tailles 0xFFFFFFFF, comme OpenAI) passe par toSpeakerWav sans allocation géante', () => {
+    const streamed = new Uint8Array(encodeWav(tone(0.5, 24_000), 24_000));
+    const view = new DataView(streamed.buffer, streamed.byteOffset, streamed.byteLength);
+    view.setUint32(4, 0xffffffff, true);
+    view.setUint32(40, 0xffffffff, true);
+    const converted = decodeWav(toSpeakerWav(streamed));
+    expect(converted.sampleRate).toBe(SPEAKER_SAMPLE_RATE);
+    expect(converted.samples.length).toBe(SPEAKER_SAMPLE_RATE / 2);
+  });
 });
 
 describe('enceinte (5.0.64) — texte et secrets', () => {
