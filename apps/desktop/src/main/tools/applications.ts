@@ -204,6 +204,16 @@ export function describeCloseResult(name: string, stdout: string): { ok: boolean
   const still = /^STILL=(.*)$/m.exec(stdout)?.[1]?.trim() ?? '';
   const denied = /^DENIED=(.*)$/m.exec(stdout)?.[1]?.trim() ?? '';
   if (!gone && !still && !denied) return { ok: true, content: `Fermé : ${stdout.trim() || name}` };
+  const stillNames = new Set(
+    still
+      .split(',')
+      .map((part) => part.trim())
+      .filter(Boolean),
+  );
+  const closedNames = gone
+    .split(',')
+    .map((part) => part.trim())
+    .filter((part) => part && !stillNames.has(part));
   const parts: string[] = [];
   if (still) {
     parts.push(
@@ -215,7 +225,8 @@ export function describeCloseResult(name: string, stdout: string): { ok: boolean
       `Accès refusé pour « ${denied} » : ce programme tourne sans doute en administrateur, Jarvis ne peut pas le fermer.`,
     );
   }
-  if (gone) parts.push(`Fermé : ${gone}${parts.length ? '.' : ''}`);
+  if (closedNames.length)
+    parts.push(`Fermé : ${closedNames.join(', ')}${parts.length ? '.' : ''}`);
   return { ok: !still && !denied, content: parts.join(' ') };
 }
 
