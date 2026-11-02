@@ -1,5 +1,5 @@
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { SPEAKER_MAX_SPEAKERS, cleanSpeakerName } from '@jarvis/core';
 
@@ -57,10 +57,22 @@ export class SpeakerStore {
 
   async load(): Promise<void> {
     if (this.loaded) return;
+    const target = this.filePath();
+    let raw: string | null = null;
     try {
-      this.state = readFileState(await readFile(this.filePath(), 'utf8'));
+      raw = await readFile(target, 'utf8');
     } catch {
-      this.state = { enabled: false, speakers: [] };
+      raw = null; // pas encore de fichier : état vide, rien à garder
+    }
+    this.state = { enabled: false, speakers: [] };
+    if (raw !== null) {
+      try {
+        this.state = readFileState(raw);
+      } catch {
+        // Fichier abîmé : on en garde une copie avant qu'une prochaine écriture ne l'écrase,
+        // plutôt que de perdre en silence les enceintes qu'il contenait.
+        await copyFile(target, `${target}.illisible`).catch(() => undefined);
+      }
     }
     this.loaded = true;
   }
@@ -79,16 +91,19 @@ export class SpeakerStore {
     await this.save();
   }
 
-  /** Nouvelle enceinte : le jeton n'est rendu qu'une fois, pour le bloc `secrets.h`. */
-  async addSpeaker(name: string | undefined, now = Date.now()): Promise<{ speaker: Speaker; token: string }> {
+  /**
+   * Nouvelle enceinte : le jeton n'est rendu qu'une fois, pour le bloc `secrets.h`. Au-delà de la
+   * limite, la plus ancienne est retirée et rendue dans `evicted` : l'appelant oublie sa session.
+   */
+  async addSpeaker(name: string | undefined, now = Date.now()): Promise<{ speaker: Speaker; token: string; evicted: Speaker[] }> {
     await this.load();
     const token = randomBytes(32).toString('base64url');
     const speaker: StoredSpeaker = { id: randomUUID(), name: cleanSpeakerName(name), createdAt: now, tokenHash: hashToken(token) };
-    // Au-delà de la limite, la plus ancienne est retirée.
-    const kept = this.state.speakers.slice(-(SPEAKER_MAX_SPEAKERS - 1));
-    this.state = { ...this.state, speakers: [...kept, speaker] };
+    const cut = Math.max(0, this.state.speakers.length - (SPEAKER_MAX_SPEAKERS - 1));
+    const evicted = this.state.speakers.slice(0, cut).map(({ id, name: kept, createdAt }) => ({ id, name: kept, createdAt }));
+    this.state = { ...this.state, speakers: [...this.state.speakers.slice(cut), speaker] };
     await this.save();
-    return { speaker: { id: speaker.id, name: speaker.name, createdAt: speaker.createdAt }, token };
+    return { speaker: { id: speaker.id, name: speaker.name, createdAt: speaker.createdAt }, token, evicted };
   }
 
   async removeSpeaker(id: string): Promise<boolean> {

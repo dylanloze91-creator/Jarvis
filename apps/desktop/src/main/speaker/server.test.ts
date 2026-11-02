@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { request } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -449,6 +449,58 @@ describe('pont des enceintes (5.0.64)', () => {
     server.forget(speaker.id);
     expect(fake.cancelled).toBe(1);
     expect((await call(port, '/api/speaker/hello', { token })).status).toBe(401);
+  });
+
+  it('au-delà de 20 enceintes, la plus ancienne disparaît avec sa discussion et son jeton', async () => {
+    const store = new SpeakerStore(() => join(dir, 'vingt.json'));
+    const turns: string[] = [];
+    const service = new SpeakerService({
+      store,
+      port: 0,
+      chatFor: () => new FakeChat(() => undefined),
+      transcribe: async () => 'Jarvis bonjour à toi',
+      synthesizer: new FakeSynth(),
+      voiceSettings: () => ({ wakeWord: 'jarvis', wakeWordVariants: [] }),
+      version: () => '5.0.64',
+      localAddresses: () => ['192.168.1.20'],
+      log: (line) => turns.push(line),
+    });
+    await service.init();
+    await service.setEnabled(true);
+    const port = service.server.port!;
+    const first = await service.add('Première');
+    const token = /JARVIS_TOKEN {5}"([^"]+)"/.exec(first.secrets)![1]!;
+    expect((await call(port, '/api/speaker/turn', { token, body: voiceWav() })).status).toBe(204);
+    expect((await service.status()).speakers[0]!.lastTurnAt).toBeGreaterThan(0);
+    for (let i = 2; i <= 20; i++) await service.add(`Pièce ${i}`);
+    expect((await service.status()).speakers).toHaveLength(20);
+    expect((await call(port, '/api/speaker/hello', { token })).status).toBe(200);
+
+    const last = await service.add('Vingt-et-unième');
+    expect(last.status.speakers).toHaveLength(20);
+    expect(last.status.speakers.map((speaker) => speaker.name)).not.toContain('Première');
+    expect((await call(port, '/api/speaker/hello', { token })).status).toBe(401);
+    expect(turns).toContain('[enceinte] retirée (limite atteinte) : Première');
+    expect((await service.status()).speakers.some((speaker) => speaker.lastTurnAt !== null)).toBe(false);
+    await service.stop();
+  });
+
+  it('speakers.json illisible : copie gardée en .illisible, puis fichier réécrit proprement', async () => {
+    const path = join(dir, 'abime.json');
+    writeFileSync(path, '{ "enabled": true, "speakers": [ { "id": "x", ');
+    const store = new SpeakerStore(() => path);
+    await store.load();
+    expect(store.enabled).toBe(false);
+    expect(store.speakers()).toEqual([]);
+    expect(readFileSync(`${path}.illisible`, 'utf8')).toBe('{ "enabled": true, "speakers": [ { "id": "x", ');
+    await store.addSpeaker('Cuisine');
+    expect(JSON.parse(readFileSync(path, 'utf8')).speakers).toHaveLength(1);
+    expect(readFileSync(`${path}.illisible`, 'utf8')).toContain('"id": "x"');
+
+    // Fichier absent : pas de copie fantôme.
+    const fresh = new SpeakerStore(() => join(dir, 'absent.json'));
+    await fresh.load();
+    expect(existsSync(join(dir, 'absent.json.illisible'))).toBe(false);
   });
 
   it('le fichier ne garde que l’empreinte du jeton', async () => {

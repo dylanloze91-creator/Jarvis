@@ -115,7 +115,13 @@ export class SpeakerService {
 
   /** Nouvelle enceinte : le jeton n'existe en clair que dans le bloc rendu ici. */
   async add(name: string): Promise<SpeakerAdded> {
-    const { speaker, token } = await this.deps.store.addSpeaker(name);
+    const { speaker, token, evicted } = await this.deps.store.addSpeaker(name);
+    // Au-delà de la limite, la plus ancienne est partie : sa discussion et son verrou aussi.
+    for (const old of evicted) {
+      this.server.forget(old.id);
+      this.lastTurn.delete(old.id);
+      this.deps.log?.(`[enceinte] retirée (limite atteinte) : ${old.name}`);
+    }
     const status = await this.status();
     const secrets = speakerSecretsBlock({
       host: status.addresses[0] ?? status.hostName,
