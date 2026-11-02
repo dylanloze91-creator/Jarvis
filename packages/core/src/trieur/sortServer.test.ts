@@ -1,0 +1,58 @@
+import { describe, expect, it } from 'vitest';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { allowedSortHost, SORT_APP_JS, TrieurSortServer } from './sortServer.js';
+import { trieurFileNames } from './files.js';
+
+describe('trieur sort server', () => {
+  it('refuse un hôte autre que 127.0.0.1', () => {
+    expect(allowedSortHost('127.0.0.1:1234')).toBe(true);
+    expect(allowedSortHost('evil.example:1234')).toBe(false);
+  });
+
+  it('écrit examen.jsonl et reprend la progression', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'trieur-sort-'));
+    const files = trieurFileNames(dir);
+    await writeFile(
+      files.toSort,
+      `${JSON.stringify({ id: 'a', phrase: 'Ouvre le bloc-notes', context: 'Demande : Ouvre le bloc-notes\nÉquipe :' })}\n`,
+      'utf8',
+    );
+    const server = new TrieurSortServer({
+      toSortPath: files.toSort,
+      examPath: files.exam,
+      progressPath: files.sortProgress,
+    });
+    const { port } = await server.start();
+    const base = `http://127.0.0.1:${port}`;
+    const current = await fetch(`${base}/api/current`, { headers: { host: `127.0.0.1:${port}` } });
+    expect(current.ok).toBe(true);
+    const choose = await fetch(`${base}/api/choose`, {
+      method: 'POST',
+      headers: { host: `127.0.0.1:${port}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ team: 'pc' }),
+    });
+    expect(choose.ok).toBe(true);
+    const examRaw = await readFile(files.exam, 'utf8');
+    expect(examRaw).toContain('"team":"pc"');
+    await server.stop();
+    const server2 = new TrieurSortServer({
+      toSortPath: files.toSort,
+      examPath: files.exam,
+      progressPath: files.sortProgress,
+    });
+    const { port: port2 } = await server2.start();
+    const done = await fetch(`http://127.0.0.1:${port2}/api/current`, { headers: { host: `127.0.0.1:${port2}` } });
+    const body = (await done.json()) as { done?: boolean };
+    expect(body.done).toBe(true);
+    await server2.stop();
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('raccourcis 1 à 9 documentés dans le script (ne pas injecter du HTML)', () => {
+    expect(SORT_APP_JS).toContain('textContent');
+    expect(SORT_APP_JS).not.toMatch(/innerHTML\s*=/);
+    expect(SORT_APP_JS).toMatch(/n>=1&&n<=9/);
+  });
+});
