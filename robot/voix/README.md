@@ -69,7 +69,7 @@ sudo systemctl restart jarvis-robot-voix
 2. Dire « Jarvis » près du robot, puis « quelle heure est-il ».
 3. Le robot joue la réponse. Pendant qu’il parle, il n’écoute pas.
 4. Juste après, on peut enchaîner sans redire « Jarvis », pendant la fenêtre indiquée par le PC.
-5. « Jarvis, stop » (ou « arrête », « arrête-toi », « stop robot ») coupe les roues tout de suite, sur le Pi, sans attendre le PC.
+5. « Stop », « arrête », « arrête-toi » ou « stop robot » coupent les roues tout de suite, même pendant que le robot parle ou que le PC réfléchit.
 
 Le bouton d’arrêt d’urgence du robot reste la vraie sécurité.
 
