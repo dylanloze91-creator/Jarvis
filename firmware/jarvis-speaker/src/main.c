@@ -187,7 +187,7 @@ void app_main(void) {
     phrase = heap_caps_malloc(MAX_PHRASE_SAMPLES * sizeof(int16_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     pre_roll = heap_caps_malloc(PRE_ROLL_SAMPLES * sizeof(int16_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (!phrase || !pre_roll) {
-        ESP_LOGE(SERIAL_TAG, "PSRAM absente ou trop petite : vérifie la carte (N16R8) et sdkconfig.defaults");
+        ESP_LOGE(SERIAL_TAG, "PSRAM absente ou trop petite : vérifie la carte (N8R8 ou N16R8) et sdkconfig.defaults");
         led_set(LED_ERROR);
         return;
     }
