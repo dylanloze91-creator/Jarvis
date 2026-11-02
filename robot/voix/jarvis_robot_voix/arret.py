@@ -12,7 +12,8 @@ import re
 import unicodedata
 from pathlib import Path
 
-PHRASES = frozenset({"stop", "arrete", "arrete toi", "stop robot"})
+MOTS_AUTORISES = frozenset({"stop", "arrete", "toi", "robot"})
+MOTS_QUI_COUPENT = frozenset({"stop", "arrete"})
 MOTS_GRAMMAIRE = ["stop", "arrête", "arrête-toi", "arrête toi", "stop robot", "[unk]"]
 
 
@@ -30,10 +31,25 @@ def normaliser(texte: str) -> str:
 
 
 def est_arret(texte: str) -> bool:
-    propre = normaliser(texte)
-    if not propre or propre == "unk" or "unk" in propre.split():
+    """Ignore `[unk]`, accepte « stop stop ». Dès que les mots suffisent."""
+    mots = [mot for mot in normaliser(texte).split() if mot and mot != "unk"]
+    if not mots or any(mot not in MOTS_AUTORISES for mot in mots):
         return False
-    return propre in PHRASES
+    return any(mot in MOTS_QUI_COUPENT for mot in mots)
+
+
+class DetecteurArret:
+    """Au fil des trames : pas d'attente de la fin de parole."""
+
+    def __init__(self, lire) -> None:
+        self.lire = lire
+
+    def pousser(self, pcm: bytes) -> bool:
+        try:
+            texte = self.lire(pcm)
+        except Exception:
+            return False
+        return bool(texte) and est_arret(texte)
 
 
 class ReconnaissanceVosk:
@@ -42,14 +58,30 @@ class ReconnaissanceVosk:
     def __init__(self, dossier: str) -> None:
         self.dossier = dossier
         self._modele = None
+        self._reco = None
         self._erreur: str | None = None
 
     def disponible(self) -> bool:
         return Path(self.dossier).is_dir()
 
     def pousser(self, pcm: bytes) -> bool:
-        """Une trame. Point 3 remplace ceci par une lecture continue."""
-        return est_arret(self.texte(pcm))
+        """Une petite trame. Déclenche dès que le texte partiel est un arrêt."""
+        if not pcm or not self.disponible():
+            return False
+        if self._modele is None:
+            from vosk import Model
+
+            self._modele = Model(self.dossier)
+        if self._reco is None:
+            from vosk import KaldiRecognizer
+
+            self._reco = KaldiRecognizer(self._modele, 16000, grammaire_json())
+        termine = self._reco.AcceptWaveform(pcm)
+        brut = self._reco.Result() if termine else self._reco.PartialResult()
+        if not est_arret(_texte_vosk(brut)):
+            return False
+        self._reco = None
+        return True
 
     def texte(self, pcm: bytes) -> str:
         if not self.disponible():
@@ -66,7 +98,12 @@ class ReconnaissanceVosk:
         if pcm:
             reconnaissance.AcceptWaveform(pcm)
         brut = reconnaissance.FinalResult()
-        try:
-            return str(json.loads(brut).get("text", ""))
-        except json.JSONDecodeError:
-            return ""
+        return _texte_vosk(brut)
+
+
+def _texte_vosk(brut: str) -> str:
+    try:
+        donnees = json.loads(brut)
+    except json.JSONDecodeError:
+        return ""
+    return str(donnees.get("text") or donnees.get("partial") or "")
