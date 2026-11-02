@@ -29,10 +29,10 @@ sh(repo, 'init', '-q', '-b', 'main');
 sh(repo, 'add', '-A');
 sh(repo, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'départ');
 
-const ran: Array<{ display: string; level: CommandSafetyLevel }> = [];
+const ran: Array<{ display: string; level: CommandSafetyLevel; cwd?: string }> = [];
 const run: Runner = (spec) => {
   const display = spec.display ?? displayCommand(spec.program, spec.args);
-  ran.push({ display, level: classifyCommand(display, spec.context ?? {}).level });
+  ran.push({ display, level: classifyCommand(display, spec.context ?? {}).level, cwd: spec.cwd });
   return runProcess(spec);
 };
 const deps = { run, repoRoot: repo, root, freeBytes: async () => 50e9 };
@@ -87,6 +87,7 @@ describe('copie isolée : worktree git jarvis-dev/*', () => {
     expect(discardCommands(sandbox.path, sandbox.branch)).toHaveLength(5);
     await sandbox.discard();
     expect(existsSync(sandbox.path)).toBe(false);
+    expect(ran.find((r) => r.display.startsWith('git worktree remove'))?.cwd).toBe(repo);
     expect(sh(repo, 'branch', '--list', 'jarvis-dev/*').trim()).toBe('');
     expect(sh(repo, 'status', '--porcelain').trim()).toBe('');
     expect(readFileSync(join(repo, 'src', 'a.ts'), 'utf8')).toBe('export const a = 1;\n');
