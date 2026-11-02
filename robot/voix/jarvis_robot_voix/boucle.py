@@ -159,6 +159,8 @@ class Boucle:
             self._revenir_veille()
 
     def _envoyer(self, pcm: bytes, suivi: bool) -> None:
+        if suivi and self._commence_par_jarvis(pcm):
+            suivi = False
         self._lire_bonjour()
         if self._annule.is_set():
             self._annule.clear()
@@ -208,6 +210,19 @@ class Boucle:
             self._fin = FinDeParole()
             return
         self._revenir_veille()
+
+    def _commence_par_jarvis(self, pcm: bytes) -> bool:
+        """La phrase de suivi redit « Jarvis » : ce n'est pas un suivi sans mot."""
+        if self.reinitialiser is not None:
+            self.reinitialiser()
+        limite = min(len(pcm), TAUX * 2)
+        debut = pcm[:limite]
+        position = 0
+        while position + self._taille <= len(debut):
+            if self.reveil(debut[position : position + self._taille]):
+                return True
+            position += self._taille
+        return False
 
     def _lire_bonjour(self) -> None:
         maintenant = time.monotonic()

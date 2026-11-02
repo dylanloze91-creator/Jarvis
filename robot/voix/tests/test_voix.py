@@ -208,6 +208,30 @@ def test_wav_contrat_et_phrases_d_arret():
     assert "[unk]" in mots and "stop" in mots
 
 
+def test_point10_suivi_qui_recommence_par_jarvis():
+    pc = servir(["suite", "fin"], suivi_ms=2000)
+    robot = servir([])
+    try:
+        _config, client, client_robot = config_vers(pc.server_address[1], robot.server_address[1])
+        boucle = Boucle(client, client_robot, reveil_fort, phrase("quelle heure"), Sortie())
+        alimenter(boucle, *scenario_parole())
+        assert boucle.etat == "suivi"
+        boucle._reste_echo_ms = 0
+        alimenter(
+            boucle,
+            generer(80, amplitude=20000),
+            generer(320, amplitude=4000, frequence=330),
+            silence(720),
+        )
+        posts = [e for e in pc.journal if e["chemin"] == "/api/speaker/turn"]
+        assert len(posts) == 2
+        assert posts[0]["suivi"] is None
+        assert posts[1]["suivi"] is None
+    finally:
+        pc.shutdown()
+        robot.shutdown()
+
+
 def test_point9_pas_de_demarrage_sans_jetons():
     assert jetons_remplis(charger(RACINE / "config.example.toml")) is False
     script = (RACINE / "installer.sh").read_text(encoding="utf-8")
