@@ -1,7 +1,8 @@
 import type { AuditEntry } from '@jarvis/core';
 import { Check, ShieldOff, Wrench, XCircle } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { Button } from '@/components/ui/button';
+import { ConfirmButton } from '@/components/ui/confirmButton';
+import { toolLabel } from '@/lib/toolLabels';
 import { cn, formatRelativeDate } from '@/lib/utils';
 
 const decisionLabels: Record<AuditEntry['decision'], string> = {
@@ -44,13 +45,11 @@ export function AuditPanel() {
         <p className="text-[11px] font-medium tracking-wide text-slate-500 uppercase">
           {entries.length} entrée{entries.length > 1 ? 's' : ''}
         </p>
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={() => void window.jarvis.audit.clear().then(refresh)}
-        >
-          Vider le journal
-        </Button>
+        <ConfirmButton
+          label="Vider le journal"
+          confirmLabel="Vider tout le journal"
+          onConfirm={() => void window.jarvis.audit.clear().then(refresh)}
+        />
       </div>
 
       {entries.map((entry) => (
@@ -73,7 +72,9 @@ function AuditRow({ entry }: { entry: AuditEntry }) {
     >
       <div className="flex items-center gap-2">
         <StatusIcon entry={entry} />
-        <span className="font-mono text-sm text-slate-200">{entry.toolName}</span>
+        <span className="text-sm text-slate-200" title={entry.toolName}>
+          {toolLabel(entry.toolName)}
+        </span>
         <DecisionBadge decision={entry.decision} />
         <span className="ml-auto shrink-0 text-[11px] text-slate-500">
           {formatRelativeDate(entry.timestamp)}
@@ -99,7 +100,7 @@ function AuditRow({ entry }: { entry: AuditEntry }) {
             </span>
           </div>
           <div className="text-slate-500">
-            Durée : {entry.durationMs} ms
+            Outil : <code className="text-slate-400">{entry.toolName}</code> · Durée : {entry.durationMs} ms
             {entry.category ? ` · catégorie ${entry.category}` : ''}
           </div>
         </div>

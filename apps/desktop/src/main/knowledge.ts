@@ -91,7 +91,19 @@ export const MEMORY_SECTIONS: MemorySection[] = [
   'conversations',
 ];
 
-const BLOCKED_FOLDER_NAMES = new Set([
+/**
+ * Dossiers système refusés à l'indexation.
+ *
+ * - Noms Windows (`Windows`, `Program Files`, `System32`, `ProgramData`…) : refusés **où qu'ils
+ *   soient** dans le chemin (contrôle par segment, revue 5.0.64 point 6), ce qui couvre les vues
+ *   WSL (`/mnt/c/Windows`) et UNC (`\\serveur\c$\Windows`, `\\?\C:\Windows`).
+ * - Noms POSIX (`etc`, `usr`, `bin`, `dev`, `root`…) : refusés **à la racine d'un système de
+ *   fichiers** seulement — `/etc`, et la racine d'une distribution WSL (`\\wsl$\Ubuntu\etc`,
+ *   `\\wsl.localhost\Ubuntu\usr`). Pas ailleurs : `dev`, `bin`, `lib` sont des noms courants de
+ *   dossiers d'utilisateur (`C:\dev\Jarvis`, le chemin proposé par Jarvis lui-même ; audit 5.0.64,
+ *   point 16).
+ */
+const BLOCKED_WINDOWS_NAMES = new Set([
   'windows',
   'program files',
   'program files (x86)',
@@ -99,14 +111,22 @@ const BLOCKED_FOLDER_NAMES = new Set([
   'system32',
   'syswow64',
   '$recycle.bin',
+  'system volume information',
+]);
+/** Hôtes UNC qui donnent la racine d'une distribution WSL. */
+const WSL_HOSTS = new Set(['wsl$', 'wsl.localhost']);
+const BLOCKED_POSIX_ROOTS = new Set([
   'etc',
   'usr',
   'bin',
   'sbin',
+  'lib',
+  'lib64',
   'sys',
   'proc',
   'dev',
   'root',
+  'boot',
 ]);
 
 export class KnowledgeStore {
@@ -418,6 +438,9 @@ export class KnowledgeStore {
     await this.mutate((index) => {
       index.chunks = [];
     });
+    // 5.0.64 : les textes de `remember_jarvis` sont aussi copiés dans `memory/*.json` ;
+    // « effacer la mémoire » les retirait de l'index mais les laissait sur le disque.
+    await rm(this.memoryRoot(), { recursive: true, force: true }).catch(() => undefined);
   }
 
   async stats(): Promise<KnowledgeStats> {
@@ -641,11 +664,33 @@ function isAbsolutePath(value: string): boolean {
   return isAbsolute(value) || /^[a-zA-Z]:[\\/]/.test(value);
 }
 
-function isBlockedFolder(folder: string): boolean {
-  const parts = folder.replace(/\\/g, '/').split('/').filter(Boolean);
+export function isBlockedFolder(folder: string): boolean {
+  const normalized = folder
+    .replace(/\\/g, '/')
+    // Préfixes de chemin long Windows : `\\?\C:\…`, `\\?\UNC\serveur\partage\…`.
+    .replace(/^\/\/\?\/UNC\//i, '//')
+    .replace(/^\/\/\?\//, '');
+  const unc = normalized.startsWith('//');
+  const parts = normalized.split('/').filter(Boolean);
   if (parts.length === 0) return true;
-  if (parts.length === 1 && /^[a-zA-Z]:$/.test(parts[0] ?? '')) return true;
-  return parts.some((part) => BLOCKED_FOLDER_NAMES.has(part.toLowerCase()));
+  if (parts.some((part) => BLOCKED_WINDOWS_NAMES.has(part.toLowerCase()))) return true;
+  if (unc) {
+    const [host = '', share = '', ...rest] = parts;
+    if (!host || !share) return true;
+    if (WSL_HOSTS.has(host.toLowerCase())) return isBlockedPosixPath(rest);
+    // Partage administratif `\\serveur\c$` : tout un disque, comme `C:\`.
+    return /^[a-zA-Z]\$$/.test(share) && rest.length === 0;
+  }
+  if (/^[a-zA-Z]:$/.test(parts[0] ?? '')) return parts.length === 1;
+  // WSL : `/mnt/c` est la racine d'un disque Windows.
+  if ((parts[0] ?? '').toLowerCase() === 'mnt' && /^[a-zA-Z]$/.test(parts[1] ?? '')) return parts.length === 2;
+  return isBlockedPosixPath(parts);
+}
+
+/** Chemin relatif à la racine d'un système de fichiers POSIX (`/` ou une distribution WSL). */
+function isBlockedPosixPath(parts: readonly string[]): boolean {
+  if (parts.length === 0) return true;
+  return BLOCKED_POSIX_ROOTS.has((parts[0] ?? '').toLowerCase());
 }
 
 function validChunk(value: unknown): value is KnowledgeChunk {

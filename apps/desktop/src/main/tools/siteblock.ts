@@ -182,7 +182,7 @@ export function createSiteBlockTools(deps: SiteBlockToolsDeps) {
       end: z.string().regex(SITEBLOCK_TIME_PATTERN),
     }),
     summarize: ({ name, start, end }) =>
-      `Programmer le blocage ${name ?? 'sans nom'} de ${start} à ${end}.`,
+      `Programmer le blocage « ${name ?? 'Jarvis'} » de ${start} à ${end}.`,
     describeCommand: ({ name, start, end }) =>
       `SiteBlock period ${name ?? 'Jarvis'} ${start}–${end}`,
     execute: async ({ name, start, end }) => {

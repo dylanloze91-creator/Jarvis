@@ -49,6 +49,8 @@ function normalize(prompt: string): string {
     .replace(/\s+/g, ' ')
     .trim()
     .replace(/^(?:ok(?:ay)?|dis|hey|bon|alors|euh)[,\s]+/iu, '')
+    // 5.0.64 : « Bonjour, quelle est la météo à Lyon ? » passait pour une simple salutation.
+    .replace(/^(?:salut|bonjour|bonsoir|coucou|hello|bonne journée)[,!.\s]+(?=\S)/iu, '')
     .replace(/^jarvis[,:!.\s]*/iu, '')
     .trim();
 }
@@ -184,7 +186,7 @@ export function detectCurrentInfoIntent(prompt: string, now: Date = new Date()):
 
   const complex = COMPLEX.test(text) || wordCount(text) > 22;
   const city = kind === 'weather' ? extractCity(text) : undefined;
-  const query = kind === 'weather' && !city ? 'météo aujourd’hui France' : webQuery(text, kind, now);
+  const query = webQuery(text, kind, now);
   const newsQuery = kind === 'weather' ? (city ? `météo ${city}` : 'météo') : newsKeywords(text, kind);
 
   return {
@@ -299,14 +301,72 @@ function researchQueries(query: string, newsQuery: string, now: Date): string[] 
 }
 
 const CITY_STOP = rx(String.raw`^(?:aujourd'hui|demain|ce|cette|en|la|le|les|maintenant|dehors|chez|ici|noël|paques|pâques)$`);
+/**
+ * Mots en minuscules qui suivent souvent « à » ou « sur » dans une question météo sans être une
+ * ville : déterminants, possessifs, pronoms, temps, lieux communs, verbes à l'infinitif (« pour
+ * sortir »), tournures (« à quelle heure », « à peu près », « sur place »). Revue 5.0.64, point 2 :
+ * « pour sortir demain » donnait la ville « Sortir », « dans une heure » → « Une », « besoin de
+ * savoir la météo » → « Savoir », « météo pour mon jardin » → « Mon », envoyés à la géolocalisation.
+ */
+const LOWERCASE_CITY_EXCLUDED = new Set([
+  // déterminants, possessifs, pronoms
+  'le', 'la', 'les', 'l', 'un', 'une', 'des', 'du', 'de', 'd', 'mon', 'ma', 'mes', 'ton', 'ta', 'tes', 'son', 'sa',
+  'ses', 'notre', 'nos', 'votre', 'vos', 'leur', 'leurs', 'ce', 'cet', 'cette', 'ces', 'quel', 'quelle', 'quels',
+  'quelles', 'moi', 'toi', 'lui', 'elle', 'nous', 'vous', 'eux', 'elles', 'tout', 'tous', 'toute', 'toutes',
+  'chaque', 'aucun', 'aucune', 'plusieurs', 'certains', 'quelques', 'combien', 'quoi', 'qui', 'que', 'où', 'ou',
+  // temps
+  'aujourd', "aujourd'hui", 'hui', 'demain', 'hier', 'maintenant', 'midi', 'minuit', 'matin', 'soir',
+  'nuit', 'heure', 'heures', 'h', 'peu', 'près', 'present', 'présent', 'instant', 'moment', 'jour',
+  'journée', 'semaine', 'week-end', 'weekend', 'mois', 'an', 'année', 'lundi', 'mardi', 'mercredi', 'jeudi',
+  'vendredi', 'samedi', 'dimanche', 'janvier', 'fevrier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet',
+  'aout', 'août', 'septembre', 'octobre', 'novembre', 'decembre', 'décembre', 'noel', 'noël', 'paques', 'pâques',
+  // lieux communs, tournures
+  'dehors', 'ici', 'chez', 'place', 'côté', 'cote', 'côte', 'maison', 'extérieur', 'exterieur',
+  'intérieur', 'interieur', 'terrasse', 'balcon', 'jardin', 'plage', 'mer', 'montagne', 'campagne', 'route',
+  'travail', 'bureau', 'école', 'ecole', 'coup', 'cause', 'propos', 'fond', 'bord', 'bout', 'point', 'fois',
+  'internet', 'web', 'google', 'ligne', 'net', 'toile', 'tel', 'telle', 'tels', 'telles', 'jarvis',
+  // verbes et adverbes fréquents dans une question
+  'sortir', 'aller', 'partir', 'faire', 'savoir', 'voir', 'dire', 'rester', 'venir', 'prendre', 'mettre',
+  'avoir', 'être', 'etre', 'pouvoir', 'vouloir', 'courir', 'marcher', 'rouler', 'nager', 'skier', 'pêcher',
+  'pecher', 'jardiner', 'manger', 'dormir', 'regarder', 'chercher', 'trouver', 'donner', 'connaître', 'connaitre',
+  'oui', 'non', 'pas', 'plus', 'moins', 'très', 'tres', 'bien', 'mal', 'encore', 'déjà', 'deja', 'aussi',
+  'ainsi', 'alors', 'donc', 'puis', 'ensuite', 'enfin', 'surtout', 'seulement', 'juste', 'vraiment',
+]);
 const CITY_NAME = String.raw`(?:(?:Saint|Sainte|St|Ste|Le|La|Les|L')[- ]?)?\p{Lu}[\p{L}'-]*\p{L}(?:[- ](?:sur|en|de|du|des|la|le|les|lès|aux)[- ]\p{Lu}[\p{L}'-]*\p{L}|[- ]\p{Lu}[\p{L}'-]*\p{L})*`;
-const CITY_AFTER_PREPOSITION = new RegExp(String.raw`(?:^|[\s,])(?:à|a|sur|pour|de|dans|vers)\s+(${CITY_NAME})`, 'u');
+const CITY_AFTER_PREPOSITION = new RegExp(String.raw`(?:^|[\s,])(?:à|a|sur|pour|de|dans|vers)\s+(${CITY_NAME})`, 'gu');
 const CITY_AFTER_WEATHER = new RegExp(String.raw`[Mm][ée]t[ée]o\s+(${CITY_NAME})`, 'u');
+/** Mots que la dictée colle après la ville (« à Paris Jarvis », « à Lyon demain ») : jamais une ville. */
+const CITY_TAIL = /\s+(?:Jarvis|Demain|Aujourd'hui|Maintenant|Ce|Cette|Stp|Svp|Merci)\b.*$/u;
+/**
+ * Ville dictée en minuscules : seulement après « à » ou « sur » (« météo à lyon », « sur marseille »).
+ * Pas après « a » sans accent : c'est le plus souvent le verbe (« il a fait », « il y a du vent »).
+ */
+const LOWERCASE_CITY_AFTER_LOCATIVE = /(^|[\s,])(à|sur)\s+(\p{Ll}[\p{L}'-]*)/gu;
 
-/** « météo à Lyon », « quel temps fait-il sur Marseille demain » → « Lyon », « Marseille ». */
+/**
+ * « météo à Lyon », « quel temps fait-il sur Marseille demain » → « Lyon », « Marseille ».
+ * 5.0.64 : la dictée écrit souvent la ville en minuscules (« à lyon ») ; chaque préposition est
+ * essayée (« pour Noël à Paris » → Paris), et un mot collé après la ville est retiré.
+ * Revue 5.0.64, point 2 : un mot en minuscules n'est pris pour une ville qu'après « à » ou
+ * « sur » (jamais après « pour », « de », « dans », « vers »), et jamais s'il est dans la liste
+ * des mots exclus (`LOWERCASE_CITY_EXCLUDED`). Une ville écrite avec sa majuscule est acceptée
+ * après toutes les prépositions, comme avant.
+ */
 export function extractCity(text: string): string | undefined {
-  const match = text.match(CITY_AFTER_PREPOSITION) ?? text.match(CITY_AFTER_WEATHER);
-  const city = match?.[1]?.trim();
-  if (!city || CITY_STOP.test(city)) return undefined;
-  return city;
+  const capitalized = text.replace(
+    LOWERCASE_CITY_AFTER_LOCATIVE,
+    (match: string, lead: string, prep: string, word: string) => {
+      const plain = word.replace(/^(?:l|d)'/u, '').toLowerCase();
+      if (!plain || LOWERCASE_CITY_EXCLUDED.has(plain) || LOWERCASE_CITY_EXCLUDED.has(word.toLowerCase())) return match;
+      return `${lead}${prep} ${word.charAt(0).toLocaleUpperCase('fr-FR')}${word.slice(1)}`;
+    },
+  );
+  const candidates = [...capitalized.matchAll(CITY_AFTER_PREPOSITION)].map((match) => match[1] ?? '');
+  const afterWeather = capitalized.match(CITY_AFTER_WEATHER)?.[1];
+  if (afterWeather) candidates.push(afterWeather);
+  for (const raw of candidates) {
+    const city = raw.replace(CITY_TAIL, '').trim();
+    if (city && !CITY_STOP.test(city)) return city;
+  }
+  return undefined;
 }

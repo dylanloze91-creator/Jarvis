@@ -267,6 +267,13 @@ export function recoverToolCallsFromText(
     const calls = callsFromJsonText(trimmed, allowed);
     if (calls.length > 0) return calls;
   }
+  // 5.0.64 : « D'accord, j'écris le fichier : {"name": "write_file", …} » — un JSON nu précédé
+  // d'une phrase ; seuls les outils proposés sont acceptés, un texte quelconque reste du texte.
+  const outsideFences = trimmed.replace(new RegExp(FENCE.source, 'g'), ' ').trim();
+  if (!trimmed.startsWith('{') && !trimmed.startsWith('[') && /[{[]/.test(outsideFences)) {
+    const calls = callsFromJsonText(outsideFences.slice(outsideFences.search(/[{[]/)), allowed);
+    if (calls.length > 0) return calls;
+  }
 
   for (const match of text.matchAll(FENCE)) {
     const language = match[1]!.toLowerCase();

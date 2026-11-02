@@ -43,10 +43,27 @@ export function defineTool<S extends z.ZodType>(definition: ToolDefinition<S>): 
     forceConfirm: definition.forceConfirm ?? false,
     isDestructive: (input) => isDestructive(withDefaults(input)),
     jsonSchema: toJsonSchema(definition.schema),
-    summarize: (input) =>
-      definition.summarize?.(withDefaults(input) as z.infer<S>) ??
-      describeFallback(definition.name, input),
-    describeCommand: (input) => definition.describeCommand?.(withDefaults(input) as z.infer<S>),
+    summarize: (input) => {
+      try {
+        return (
+          definition.summarize?.(withDefaults(input) as z.infer<S>) ?? describeFallback(definition.name, input)
+        );
+      } catch {
+        // 5.0.64 : un résumé qui lève sur des arguments inattendus ne doit pas faire échouer l'appel.
+        return describeFallback(definition.name, input);
+      }
+    },
+    describeCommand: (input) => {
+      try {
+        return definition.describeCommand?.(withDefaults(input) as z.infer<S>);
+      } catch {
+        return undefined;
+      }
+    },
+    validate: (input) => {
+      const parsed = definition.schema.safeParse(input ?? {});
+      return parsed.success ? null : `Arguments invalides pour « ${definition.name} » : ${formatIssues(parsed.error)}`;
+    },
     ...(definition.internal ? { internal: true } : {}),
     run: async (input, context) => {
       const parsed = definition.schema.safeParse(input ?? {});
@@ -192,6 +209,23 @@ export class ToolManager {
       });
     }
 
+    // 5.0.64 : des arguments invalides sont refusés **avant** la carte de confirmation ; sinon
+    // l'utilisateur validait un appel qui échouait juste après.
+    const invalid = tool.validate?.(call.arguments);
+    if (invalid) {
+      return this.finish(events, {
+        callId: call.id,
+        name: call.name,
+        status: 'error',
+        content: invalid,
+        arguments: redactArguments(call.arguments),
+        decision: 'blocked',
+        durationMs: Date.now() - startedAt,
+        category: tool.category,
+        outcome: 'definitive',
+      });
+    }
+
     let decision: ToolDecision = 'auto';
 
     if (tool.risk === 'confirm') {
@@ -206,6 +240,21 @@ export class ToolManager {
           forced: tool.forceConfirm,
         });
         decision = approved ? 'approved' : 'refused';
+        if (!approved && context.signal?.aborted) {
+          // 5.0.64 : le tour a été interrompu pendant que la carte attendait : l'utilisateur
+          // n'a pas « refusé », rien n'a été fait, et le journal le dit tel quel.
+          return this.finish(events, {
+            callId: call.id,
+            name: call.name,
+            status: 'denied',
+            content: "Tour interrompu avant la réponse à la confirmation : rien n'a été fait.",
+            arguments: redactArguments(call.arguments),
+            decision: 'blocked',
+            durationMs: Date.now() - startedAt,
+            category: tool.category,
+            outcome: 'cancelled',
+          });
+        }
         if (!approved) {
           return this.finish(events, {
             callId: call.id,

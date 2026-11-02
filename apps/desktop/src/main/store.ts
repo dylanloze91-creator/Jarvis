@@ -1,4 +1,4 @@
-import { access, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { access, copyFile, mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { app } from 'electron';
 import {
@@ -27,10 +27,22 @@ export async function settingsFileExists(): Promise<boolean> {
 }
 
 export async function readSettings(): Promise<Settings> {
+  let raw: string;
   try {
-    const raw = await readFile(userDataPath(SETTINGS_FILE), 'utf8');
-    return parseSettings(JSON.parse(raw));
+    raw = await readFile(userDataPath(SETTINGS_FILE), 'utf8');
   } catch {
+    return parseSettings({});
+  }
+  try {
+    return parseSettings(JSON.parse(raw));
+  } catch (error) {
+    // 5.0.64 (P12) : un fichier illisible (coupure pendant l'écriture) donnait des réglages
+    // vides, aussitôt réécrits par le premier enregistrement : clés et comptes perdus sans
+    // un mot. On garde une copie avant de repartir des défauts.
+    console.error('[jarvis] settings.json illisible, copie gardée en settings.json.corrompu :', error);
+    await copyFile(userDataPath(SETTINGS_FILE), userDataPath(`${SETTINGS_FILE}.corrompu`)).catch(
+      () => undefined,
+    );
     return parseSettings({});
   }
 }
@@ -54,7 +66,11 @@ export function writeSettings(settings: Settings): Promise<void> {
   const body = JSON.stringify(settings, null, 2);
   return enqueueSettingsWrite(async () => {
     await mkdir(userDataPath(), { recursive: true });
-    await writeFile(userDataPath(SETTINGS_FILE), body, 'utf8');
+    // Écriture atomique (P12) : le fichier complet est écrit à côté puis renommé ; une
+    // coupure ne laisse jamais un `settings.json` à moitié écrit.
+    const tmp = userDataPath(`${SETTINGS_FILE}.tmp`);
+    await writeFile(tmp, body, 'utf8');
+    await rename(tmp, userDataPath(SETTINGS_FILE));
   });
 }
 

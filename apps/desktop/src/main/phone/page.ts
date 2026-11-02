@@ -485,7 +485,7 @@ export const PHONE_JS = String.raw`(function () {
         break;
       case 'tool_start':
         current = null;
-        tools[event.callId] = bubble('note', 'Outil ' + event.toolName + '…');
+        tools[event.callId] = bubble('note', (event.summary || 'Outil ' + event.toolName) + '…');
         break;
       case 'tool_progress':
         if (tools[event.callId]) tools[event.callId].textContent = 'Outil : ' + event.message;

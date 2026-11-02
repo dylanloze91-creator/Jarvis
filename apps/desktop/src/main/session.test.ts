@@ -105,6 +105,11 @@ describe('ChatSession', () => {
     await turn;
 
     expect(executed).toHaveBeenCalledTimes(1);
+    // 5.0.64 : la bulle « outil » reçoit la phrase française de l'outil, pas seulement son nom.
+    expect(events.find((event) => event.type === 'tool_start')).toMatchObject({
+      toolName: 'create_folder',
+      summary: 'Créer le dossier « Projet ».',
+    });
     expect(events.find((event) => event.type === 'tool_result')).toMatchObject({ status: 'ok' });
     expect(events.at(-1)?.type).toBe('done');
   });

@@ -370,6 +370,13 @@ export class Agent {
         yield { type: 'tool_result', outcome, message: toolMessage };
       }
 
+      // 5.0.64 : tour interrompu pendant les outils (bouton Arrêter, nouvelle demande) :
+      // on s'arrête là, sans réponse inventée ni relance du modèle.
+      if (context.signal?.aborted) {
+        yield { type: 'done' };
+        return;
+      }
+
       // Tout refusé : on ne relance pas le modèle. qwen2.5:3b répondait
       // « le dossier a été créé » juste après un clic sur « Refuser ».
       if (outcomes.every((outcome) => outcome.decision === 'refused')) {

@@ -102,3 +102,13 @@ describe('read_file', () => {
     expect(result.content).toMatch(/fichier tronqué/);
   });
 });
+
+describe('5.0.64 — close_application dit « Fermé » seulement si le processus est parti', () => {
+  it('une application restée ouverte (boîte de dialogue) n’est pas annoncée fermée', async () => {
+    const { describeCloseResult } = await import('./applications.js');
+    expect(describeCloseResult('Word', 'GONE=\nSTILL=WINWORD\n')).toMatchObject({ ok: false });
+    expect(describeCloseResult('Word', 'GONE=\nSTILL=WINWORD\n').content).toMatch(/toujours ouvert/);
+    expect(describeCloseResult('notepad', 'GONE=notepad\nSTILL=\n')).toEqual({ ok: true, content: 'Fermé : notepad' });
+    expect(describeCloseResult('notepad', 'notepad')).toEqual({ ok: true, content: 'Fermé : notepad' });
+  });
+});

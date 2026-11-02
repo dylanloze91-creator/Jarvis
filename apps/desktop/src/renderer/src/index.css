@@ -122,6 +122,8 @@ html[data-native-win-caption='yes'] .jarvis-shell {
 
 .status-pill {
   display: flex;
+  flex-shrink: 0;
+  white-space: nowrap;
   align-items: center;
   gap: 5px;
   border: 1px solid rgba(255, 255, 255, 0.08);

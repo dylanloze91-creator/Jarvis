@@ -38,6 +38,7 @@ import {
   teamHasTool,
   teamPrompt,
   TEAM_SPECS,
+  redactSecrets,
   type AgentEvent,
   type LLMProvider,
   type OrchestraConfig,
@@ -49,6 +50,7 @@ import {
   type ConversationStore,
   type ProviderRegistry,
   type Settings,
+  type ToolCall,
   type ToolManager,
 } from '@jarvis/core';
 import type { ChatEvent, RuntimeStatus, SendChatInput } from '../shared/ipc.js';
@@ -299,7 +301,12 @@ export class ChatSession {
             if (event.message.content.trim()) visibleReply = true;
             break;
           case 'tool_start':
-            emit({ type: 'tool_start', callId: event.call.id, toolName: event.call.name });
+            emit({
+              type: 'tool_start',
+              callId: event.call.id,
+              toolName: event.call.name,
+              ...summaryOf(this.deps.tools, event.call),
+            });
             break;
           case 'tool_progress':
             emit({ type: 'tool_progress', callId: event.callId, message: event.message });
@@ -314,7 +321,9 @@ export class ChatSession {
               status: event.outcome.status,
               content: event.outcome.content,
             });
-            void this.deps.auditLog.append(buildAuditEntry(event.outcome));
+            void this.deps.auditLog
+              .append(buildAuditEntry(event.outcome))
+              .catch((error: unknown) => console.error('[jarvis] journal d’audit non écrit :', error));
             break;
           case 'error':
             visibleReply = true;
@@ -356,7 +365,8 @@ export class ChatSession {
       )
       .catch(() => undefined);
     void this.deps.localLearning.recordTurn(updated.id, updated.messages).catch(() => undefined);
-    if (!visibleReply) {
+    // 5.0.64 : un tour interrompu par l'utilisateur (bouton Arrêter) n'est pas un échec.
+    if (!visibleReply && !controller.signal.aborted) {
       emit({
         type: 'error',
         message: 'Je n’ai pas pu répondre. Réessaie dans un instant.',
@@ -531,5 +541,23 @@ export class ChatSession {
   private async loadConversation(id: string | null): Promise<Conversation> {
     if (!id) return newConversation();
     return (await this.deps.store.get(id)) ?? newConversation();
+  }
+}
+
+/**
+ * 5.0.64 — la bulle « outil » montre la phrase française de l'outil (celle de la
+ * carte de confirmation) plutôt que son nom technique. Le résumé de secours
+ * (JSON des arguments) et un `summarize` qui lève sont ignorés : la bulle garde
+ * alors un libellé tiré du nom.
+ */
+function summaryOf(tools: ToolManager, call: ToolCall): { summary?: string } {
+  const tool = tools.get(call.name);
+  if (!tool) return {};
+  try {
+    const text = redactSecrets(tool.summarize(call.arguments)).split('\n')[0]?.trim() ?? '';
+    if (!text || text.startsWith('Exécuter « ')) return {};
+    return { summary: text.length > 160 ? `${text.slice(0, 157)}…` : text };
+  } catch {
+    return {};
   }
 }

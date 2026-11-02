@@ -34,6 +34,7 @@ import type { SettingsTabId } from '@/components/SettingsTabs';
 import { formatBytes, formatModelTemperature, formatPercent } from '@/dashboard/format';
 import { useMachineSnapshot } from '@/dashboard/useMachine';
 import { isDemoRuntime } from '@/lib/runtimeStatus';
+import { needsCompletion, requestComposerDraft } from '@/lib/composerDraft';
 import { cn } from '@/lib/utils';
 import type { UseVoiceResult } from '@/voice/useVoice';
 import type { RuntimeStatus, ToolInfo } from '../../../shared/ipc';
@@ -223,14 +224,17 @@ export function Dashboard({
 
   const ask = (prompt: string): void => {
     navigate('chat');
-    chat.send(prompt, 'text');
+    // « Analyse cette vidéo YouTube : » attend un lien : on le pose dans le champ, rien ne part.
+    if (needsCompletion(prompt)) requestComposerDraft(prompt);
+    else chat.send(prompt, 'text');
   };
 
-  const openGoogleSettings = (): void => {
-    openSettingsOnTab('google');
-    setSettingsTab({ tab: 'google', at: Date.now() });
+  const openSettingsTab = (tab: SettingsTabId): void => {
+    openSettingsOnTab(tab);
+    setSettingsTab({ tab, at: Date.now() });
     navigate('settings');
   };
+  const openGoogleSettings = (): void => openSettingsTab('google');
 
   const runGoogle = (prompt: string | null): void => {
     if (!googleReady) openGoogleSettings();
@@ -265,7 +269,7 @@ export function Dashboard({
           <SideButton label="Historique" icon={History} active={view === 'history'} onClick={() => navigate(view === 'history' ? 'chat' : 'history')} />
           <SideButton label="Google" icon={CalendarClock} onClick={openGoogleSettings} />
           <SideButton label="Automatisation" icon={Workflow} soon />
-          <SideButton label="Micro" icon={Mic} active={false} onClick={() => navigate('settings')} />
+          <SideButton label="Micro et voix" icon={Mic} active={false} onClick={() => openSettingsTab('voice')} />
           <SideButton label="Journal" icon={ScrollText} active={view === 'audit'} onClick={() => navigate(view === 'audit' ? 'chat' : 'audit')} />
           <SideButton label="Réglages" icon={SettingsIcon} active={view === 'settings'} onClick={() => navigate(view === 'settings' ? 'chat' : 'settings')} />
           <SideButton
@@ -358,6 +362,7 @@ export function Dashboard({
               booting={booting}
               bootError={bootError}
               onOpenDeveloper={onOpenDeveloper}
+              onOpenVoiceSettings={() => openSettingsTab('voice')}
             />
           </>
         ) : view === 'developer' ? (
@@ -450,6 +455,11 @@ export function Dashboard({
           {settings?.voice.enabled && (voice.mic.phase === 'error' || voice.mic.phase === 'recovering') ? (
             <button type="button" className="quick-btn" onClick={voice.retryMicrophone}>
               Réessayer le micro
+            </button>
+          ) : null}
+          {settings && !settings.voice.enabled ? (
+            <button type="button" className="quick-btn" onClick={() => openSettingsTab('voice')}>
+              Activer l’écoute
             </button>
           ) : null}
           {voice.state === 'listening' ? (
@@ -589,7 +599,7 @@ function presenceOf(
       hint: 'Mode démonstration — aucun modèle connecté.',
     };
   }
-  return { label: 'En ligne', tone: 'online', hint: 'Prêt à vous assister' };
+  return { label: 'En ligne', tone: 'online', hint: 'Prêt à t’aider' };
 }
 
 function micTitle(

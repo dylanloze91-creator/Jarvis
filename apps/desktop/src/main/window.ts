@@ -80,7 +80,11 @@ export interface OverlayWindow {
  * application prend le focus ; on ne la masque que via Ctrl+Espace, Échap,
  * le bouton fermer, ou le réglage optionnel « masquer au clic ailleurs ».
  */
-export function createOverlayWindow(hideOnBlur: boolean): OverlayWindow {
+export function createOverlayWindow(
+  hideOnBlur: boolean,
+  /** Vrai dès `before-quit` : la fenêtre se ferme pour de bon au lieu de se masquer. */
+  isQuitting: () => boolean = () => false,
+): OverlayWindow {
   const browserWindow = new BrowserWindow({
     width: WIDTH,
     height: DEFAULT_HEIGHT,
@@ -123,7 +127,11 @@ export function createOverlayWindow(hideOnBlur: boolean): OverlayWindow {
     browserWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   }
 
+  // Fermer = masquer (l'assistant vit dans la zone de notification)… sauf quand
+  // l'application quitte : `app.quit()` ferme chaque fenêtre, et un `preventDefault`
+  // ici annulait la sortie (5.0.64 : « Quitter » du menu ne quittait pas).
   browserWindow.on('close', (event) => {
+    if (isQuitting()) return;
     event.preventDefault();
     browserWindow.hide();
   });

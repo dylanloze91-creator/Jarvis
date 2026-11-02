@@ -1,6 +1,7 @@
 import { Lock, ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { PendingConfirmation } from '@/hooks/useChat';
+import { toolLabel } from '@/lib/toolLabels';
 
 interface ConfirmationCardProps {
   confirmation: PendingConfirmation;
@@ -37,19 +38,25 @@ export function ConfirmationCard({ confirmation, onRespond }: ConfirmationCardPr
               {confirmation.command}
             </pre>
           ) : null}
-          <p className="mt-1 font-mono text-[11px] text-amber-200/60">{confirmation.toolName}</p>
+          <p className="mt-1 text-[11px] text-amber-200/60">
+            {toolLabel(confirmation.toolName)} ·{' '}
+            <span className="font-mono">{confirmation.toolName}</span>
+          </p>
         </div>
       </div>
-      <div className="mt-3 flex justify-end gap-2">
-        <Button size="sm" variant="ghost" onClick={() => onRespond(confirmation.requestId, false)}>
-          Refuser
-        </Button>
+      <div className="mt-3 flex items-center justify-end gap-2">
+        <span className="mr-auto text-[11px] text-amber-200/60">
+          Entrée = refuser · Tab puis Entrée = autoriser
+        </span>
         <Button
           size="sm"
-          variant="default"
+          variant="ghost"
           autoFocus
-          onClick={() => onRespond(confirmation.requestId, true)}
+          onClick={() => onRespond(confirmation.requestId, false)}
         >
+          Refuser
+        </Button>
+        <Button size="sm" variant="default" onClick={() => onRespond(confirmation.requestId, true)}>
           Autoriser
         </Button>
       </div>

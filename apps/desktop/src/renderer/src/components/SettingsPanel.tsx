@@ -27,6 +27,7 @@ import { UpdateSettingsSection } from '@/components/UpdateSettings';
 import { VoiceSettingsSection } from '@/components/VoiceSettings';
 import { SettingsTabBar, TabPanel, type SettingsTabId } from '@/components/SettingsTabs';
 import { DeveloperSettingsSection } from '@/components/developer/DeveloperSettings';
+import { absorbSavedSettings, settingsPatch, type SettingsDraft } from '@/lib/settingsPatch';
 import type { RuntimeStatus } from '../../../shared/ipc';
 
 /** Onglet rouvert à la prochaine visite des réglages (session en cours). */
@@ -36,6 +37,16 @@ let lastSettingsTab: SettingsTabId = 'voice';
 export function openSettingsOnTab(tab: SettingsTabId): void {
   lastSettingsTab = tab;
 }
+
+/**
+ * 5.0.64 — brouillon non enregistré gardé pour la session : Échap ou un clic
+ * ailleurs ferment le panneau, mais les modifications attendent le retour
+ * (« Modifications non enregistrées ») au lieu de disparaître sans prévenir.
+ * Gardé avec l'instantané dont il est parti (`base`) : « Enregistrer » compare à cet
+ * instantané, pas aux réglages courants, pour ne pas défaire un réglage fait ailleurs
+ * entre-temps.
+ */
+let keptDraft: SettingsDraft | null = null;
 
 interface SettingsPanelProps {
   settings: Settings;
@@ -48,13 +59,19 @@ interface SettingsPanelProps {
 }
 
 export function SettingsPanel({ settings, status, onSaved, requestedTab, onAnalyzeMachine }: SettingsPanelProps) {
-  const [draft, setDraft] = useState<Settings>(settings);
+  const [draft, setDraft] = useState<Settings>(() => keptDraft?.draft ?? settings);
+  /** Instantané des réglages à la création du brouillon : la base de comparaison de « Enregistrer ». */
+  const baseRef = useRef<Settings>(keptDraft?.base ?? settings);
   const [providers, setProviders] = useState<ProviderDescriptor[]>([]);
   const [searchProviders, setSearchProviders] = useState<SearchProviderDescriptor[]>([]);
   const [marketDataProviders, setMarketDataProviders] = useState<MarketDataProviderDescriptor[]>(
     [],
   );
   const [saved, setSaved] = useState(false);
+  /** 5.0.64 : brouillon modifié depuis le dernier enregistrement. */
+  const [unsaved, setUnsaved] = useState(() => keptDraft !== null);
+  /** 5.0.64 : échec de l'enregistrement, ou raccourci refusé par Windows. */
+  const [saveNotice, setSaveNotice] = useState<string | null>(null);
   const [tab, setTab] = useState<SettingsTabId>(() => lastSettingsTab);
   useEffect(() => {
     lastSettingsTab = tab;
@@ -62,7 +79,15 @@ export function SettingsPanel({ settings, status, onSaved, requestedTab, onAnaly
   useEffect(() => {
     if (requestedTab) setTab(requestedTab.tab);
   }, [requestedTab]);
-  const dirty = useRef(false);
+  const dirty = useRef(keptDraft !== null);
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
+  useEffect(
+    () => () => {
+      keptDraft = dirty.current ? { base: baseRef.current, draft: draftRef.current } : null;
+    },
+    [],
+  );
 
   useEffect(() => {
     void window.jarvis.settings.providers().then(setProviders);
@@ -70,14 +95,19 @@ export function SettingsPanel({ settings, status, onSaved, requestedTab, onAnaly
     void window.jarvis.settings.marketDataProviders().then(setMarketDataProviders);
   }, []);
 
-  // Un choix de micro est enregistré tout de suite : les autres modifications
-  // non enregistrées du brouillon ne sont pas perdues pour autant.
+  // Un choix de micro ou le mode Développeur sont enregistrés tout de suite, et le
+  // processus principal écrit certains blocs de son côté : le brouillon prend ces
+  // nouvelles valeurs pour les clés que l'utilisateur n'a pas touchées, garde les siennes,
+  // et la base de comparaison devient les réglages enregistrés.
   useEffect(() => {
-    setDraft((current) =>
-      dirty.current
-        ? { ...current, developer: settings.developer, voice: { ...current.voice, microphoneId: settings.voice.microphoneId } }
-        : settings,
-    );
+    if (!dirty.current) {
+      baseRef.current = settings;
+      setDraft(settings);
+      return;
+    }
+    const next = absorbSavedSettings({ base: baseRef.current, draft: draftRef.current }, settings);
+    baseRef.current = next.base;
+    setDraft(next.draft);
   }, [settings]);
 
   // Comme le micro : enregistré tout de suite, les actions du mode Développeur en dépendent.
@@ -95,11 +125,13 @@ export function SettingsPanel({ settings, status, onSaved, requestedTab, onAnaly
   );
   const patch = (values: Partial<Settings>): void => {
     dirty.current = true;
+    setUnsaved(true);
     setDraft((current) => ({ ...current, ...values }));
     setSaved(false);
   };
   const patchVoice = (values: Partial<VoiceSettings>): void => {
     dirty.current = true;
+    setUnsaved(true);
     setDraft((current) => ({ ...current, voice: { ...current.voice, ...values } }));
     setSaved(false);
   };
@@ -112,18 +144,43 @@ export function SettingsPanel({ settings, status, onSaved, requestedTab, onAnaly
   };
 
   const save = (): void => {
-    void window.jarvis.settings.set(draft).then((payload) => {
-      dirty.current = false;
-      onSaved(payload);
-      setSaved(true);
-    });
+    const wanted = { ...draft, fallbackModel: draft.fallbackModel.trim() || 'qwen2.5:3b' };
+    setSaveNotice(null);
+    void window.jarvis.settings
+      .set(settingsPatch(baseRef.current, wanted))
+      .then((payload) => {
+        dirty.current = false;
+        keptDraft = null;
+        setUnsaved(false);
+        onSaved(payload);
+        setSaved(true);
+        // Le processus principal retombe sur Control+Space quand Windows refuse le raccourci.
+        if (payload.settings.hotkey !== wanted.hotkey) {
+          setSaveNotice(
+            `Le raccourci « ${wanted.hotkey} » n’a pas pu être enregistré (déjà pris ou mal écrit) : « ${payload.settings.hotkey} » est conservé.`,
+          );
+        }
+      })
+      .catch((error: unknown) => {
+        setSaved(false);
+        setSaveNotice(
+          `Les réglages n’ont pas été enregistrés : ${error instanceof Error ? error.message : String(error)}`,
+        );
+      });
   };
 
   return (
     <div className="flex flex-col gap-4 px-4 py-4">
       {status.usingFallback ? (
         <p className="rounded-lg border border-amber-400/25 bg-amber-400/10 px-3 py-2 text-xs leading-snug text-amber-100">
-          Aucune clé API valide : Jarvis répond avec le provider de démonstration hors ligne.
+          Aucune clé API valide pour « {status.providerLabel} » : Jarvis répond avec le fournisseur de
+          démonstration, hors ligne. Colle une clé dans l’onglet Modèle IA, ou choisis « Ollama (local,
+          gratuit) ».
+        </p>
+      ) : status.providerId === 'mock' ? (
+        <p className="rounded-lg border border-amber-400/25 bg-amber-400/10 px-3 py-2 text-xs leading-snug text-amber-100">
+          Mode démonstration : aucun modèle n’est branché. Dans l’onglet Modèle IA, choisis « Ollama
+          (local, gratuit) », teste, puis enregistre.
         </p>
       ) : null}
 
@@ -220,7 +277,8 @@ export function SettingsPanel({ settings, status, onSaved, requestedTab, onAnaly
           >
             <Input
               value={draft.fallbackModel}
-              onChange={(event) => patch({ fallbackModel: event.target.value || 'qwen2.5:3b' })}
+              placeholder="qwen2.5:3b"
+              onChange={(event) => patch({ fallbackModel: event.target.value })}
             />
           </Field>
 
@@ -478,8 +536,16 @@ export function SettingsPanel({ settings, status, onSaved, requestedTab, onAnaly
       </TabPanel>
 
       <div className="sticky bottom-0 z-10 -mx-4 -mb-4 flex items-center justify-end gap-3 border-t border-white/8 bg-[#070b14]/90 px-4 py-3 backdrop-blur">
-        {saved ? <span className="text-xs text-accent">Réglages enregistrés</span> : null}
-        <Button variant="default" onClick={save}>
+        {saveNotice ? (
+          <span role="alert" className="mr-auto text-xs leading-snug text-amber-200">
+            {saveNotice}
+          </span>
+        ) : null}
+        {saved && !saveNotice ? <span className="text-xs text-accent">Réglages enregistrés</span> : null}
+        {unsaved && !saved ? (
+          <span className="text-xs text-amber-200/80">Modifications non enregistrées</span>
+        ) : null}
+        <Button variant={unsaved ? 'default' : 'subtle'} onClick={save}>
           Enregistrer
         </Button>
       </div>

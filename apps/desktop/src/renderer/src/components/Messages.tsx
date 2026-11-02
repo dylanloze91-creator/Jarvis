@@ -4,6 +4,7 @@ import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { ChatItem } from '@/hooks/useChat';
 import { sourcePillLabel, sourcePills, type SourcePill } from '@/dashboard/sources';
+import { toolLabel } from '@/lib/toolLabels';
 import { cn } from '@/lib/utils';
 
 export function Messages({
@@ -134,6 +135,7 @@ function ToolItem({ item }: { item: Extract<ChatItem, { kind: 'tool' }> }) {
         onClick={() => setOpen((value) => !value)}
         disabled={item.content.length === 0 && !item.progress}
         className={cn('tool-chip', denied && 'denied', failed && 'failed')}
+        title={toolTooltip(item)}
       >
         {denied ? (
           <ShieldOff className="size-3.5" />
@@ -152,8 +154,15 @@ function ToolItem({ item }: { item: Extract<ChatItem, { kind: 'tool' }> }) {
 
 function toolTitle(item: Extract<ChatItem, { kind: 'tool' }>): string {
   if (item.status === 'running' && item.progress) return item.progress;
-  if (item.name === 'youtube_transcript') return 'Écoute YouTube';
-  return item.name;
+  if (item.summary) return item.summary;
+  return toolLabel(item.name);
+}
+
+/** Infobulle : libellé, nom technique, et ce que montre le clic. */
+function toolTooltip(item: Extract<ChatItem, { kind: 'tool' }>): string {
+  const head = `${toolLabel(item.name)} (${item.name})`;
+  if (item.content.length > 0) return `${head} — cliquer pour voir le détail`;
+  return head;
 }
 
 function statusLabel(status: Extract<ChatItem, { kind: 'tool' }>['status']): string {

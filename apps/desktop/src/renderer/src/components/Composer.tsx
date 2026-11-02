@@ -1,6 +1,7 @@
 import { ArrowUp, Square, Sparkles } from 'lucide-react';
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { Button } from '@/components/ui/button';
+import { setComposerDraftTarget } from '@/lib/composerDraft';
 
 interface ComposerProps {
   busy: boolean;
@@ -26,6 +27,18 @@ export function Composer({ busy, onSend, onCancel }: ComposerProps) {
     focus();
     window.addEventListener('focus', focus);
     return () => window.removeEventListener('focus', focus);
+  }, []);
+
+  // 5.0.64 : une carte « à compléter » pose son texte ici, curseur à la fin.
+  useEffect(() => {
+    setComposerDraftTarget((text) => {
+      setValue(text);
+      const node = textarea.current;
+      if (!node) return;
+      node.focus();
+      window.requestAnimationFrame(() => node.setSelectionRange(text.length, text.length));
+    });
+    return () => setComposerDraftTarget(null);
   }, []);
 
   const submit = (): void => {

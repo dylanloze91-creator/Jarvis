@@ -21,6 +21,7 @@ export function UnifiedJarvisChat({
   booting,
   bootError,
   onOpenDeveloper,
+  onOpenVoiceSettings,
 }: {
   settings: Settings | null;
   voice: UseVoiceResult;
@@ -38,6 +39,8 @@ export function UnifiedJarvisChat({
   bootError: string | null;
   /** Ouvre l’onglet Développeur (missions appli, plateforme, .exe). */
   onOpenDeveloper?: (initialMessage?: string) => void;
+  /** 5.0.64 : « Activer » de la barre vocale ouvre Réglages → Voix. */
+  onOpenVoiceSettings?: () => void;
 }) {
   const [learningLine, setLearningLine] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -46,7 +49,8 @@ export function UnifiedJarvisChat({
   const submit = useCallback(
     (text: string, source?: 'voice' | 'text') => {
       const trimmed = text.trim();
-      if (trimmed.length < 2 || busy) return;
+      // Une transcription d'une lettre est du bruit ; un texte tapé, même court, est voulu.
+      if (trimmed.length === 0 || (source === 'voice' && trimmed.length < 2) || busy) return;
       if (onOpenDeveloper && isDeveloperVoiceIntent(trimmed)) {
         onOpenDeveloper(trimmed);
         return;
@@ -95,10 +99,12 @@ export function UnifiedJarvisChat({
             <div className="dash-loading">Démarrage de Jarvis…</div>
           ) : chat.items.length === 0 ? (
             <div className="dash-empty">
-              Aucune conversation.
-              <br />
-              Dis « Jarvis », puis pose une question. Pour coder une appli, un jeu de plateforme ou un
-              .exe Windows, ouvre l’onglet <strong>Développeur</strong>.
+              <p>
+                Aucune conversation.
+                <br />
+                Dis « Jarvis », puis pose une question. Pour coder une appli, un jeu de plateforme ou
+                un .exe Windows, ouvre l’onglet <strong>Développeur</strong>.
+              </p>
             </div>
           ) : (
             <Messages items={chat.items} scrollParentRef={scrollRef} />
@@ -110,7 +116,11 @@ export function UnifiedJarvisChat({
       ) : null}
       {learningLine ? <p className="dash-learning-hint no-drag">{learningLine}</p> : null}
       <Composer busy={busy} onSend={submit} onCancel={chat.cancel} />
-      <VoiceBar voice={voice} voiceEnabled={settings?.voice.enabled ?? false} />
+      <VoiceBar
+        voice={voice}
+        voiceEnabled={settings?.voice.enabled ?? false}
+        onEnable={onOpenVoiceSettings}
+      />
     </section>
   );
 }

@@ -122,14 +122,36 @@ foreach ($p in $targets) {
     if (-not $closed) { Stop-Process -Id $p.Id -ErrorAction SilentlyContinue }
   }
 }
-($targets | Select-Object -ExpandProperty ProcessName -Unique) -join ', '
+foreach ($p in $targets) { $null = $p.WaitForExit(3000) }
+$still = @($targets | Where-Object { -not $_.HasExited } | Select-Object -ExpandProperty ProcessName -Unique)
+$gone = @($targets | Where-Object { $_.HasExited } | Select-Object -ExpandProperty ProcessName -Unique)
+'GONE=' + ($gone -join ', ')
+'STILL=' + ($still -join ', ')
 `.trim();
 
-  const result = await runPowerShell(script, { timeoutMs: 10_000 });
+  const result = await runPowerShell(script, { timeoutMs: 15_000 });
   if (result.code !== 0) {
     return { ok: false, content: `Aucun processus correspondant à « ${name} » n'a été trouvé.` };
   }
-  return { ok: true, content: `Fermé : ${result.stdout.trim() || name}` };
+  return describeCloseResult(name, result.stdout);
+}
+
+/**
+ * 5.0.64 : « Fermé » n'est dit que si le processus a disparu. `CloseMainWindow()`
+ * ne fait que demander la fermeture : une application avec un document non
+ * enregistré reste ouverte sur sa boîte de dialogue, et Jarvis répondait « Fermé ».
+ */
+export function describeCloseResult(name: string, stdout: string): { ok: boolean; content: string } {
+  const gone = /^GONE=(.*)$/m.exec(stdout)?.[1]?.trim() ?? '';
+  const still = /^STILL=(.*)$/m.exec(stdout)?.[1]?.trim() ?? '';
+  if (!gone && !still) return { ok: true, content: `Fermé : ${stdout.trim() || name}` };
+  if (still) {
+    return {
+      ok: false,
+      content: `« ${still} » est toujours ouvert : l'application attend sans doute une réponse (document à enregistrer ?). ${gone ? `Fermé : ${gone}.` : ''}`.trim(),
+    };
+  }
+  return { ok: true, content: `Fermé : ${gone}` };
 }
 
 // --- macOS -------------------------------------------------------------

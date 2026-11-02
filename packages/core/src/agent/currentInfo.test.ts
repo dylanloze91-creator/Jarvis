@@ -176,4 +176,47 @@ describe('extractCity', () => {
     expect(extractCity('Quel temps fait-il aujourd’hui ?')).toBeUndefined();
     expect(extractCity('météo à demain')).toBeUndefined();
   });
+
+  describe('revue 5.0.64, point 2 : un mot en minuscules n’est pas une ville', () => {
+    it.each([
+      'Quel temps fera-t-il pour sortir demain ?',
+      'Quelle météo dans une heure ?',
+      'J’ai besoin de savoir la météo',
+      'Quelle est la météo pour mon jardin ?',
+      'Il va pleuvoir à quelle heure ?',
+      'Quel temps fait-il à midi ?',
+      'Météo à la maison ce soir',
+      'Quel temps fait-il sur place ?',
+      'Il fait quel temps sur mon balcon ?',
+      'Météo à l’extérieur demain matin',
+      'Quel temps fera-t-il à partir de demain ?',
+      'Il va faire beau à peu près toute la semaine ?',
+      'Quel temps il a fait hier ?',
+      'Est-ce qu’il y a du vent dehors ?',
+      'Quelle est la météo pour aller courir ?',
+      'Quel temps fera-t-il vers midi ?',
+    ])('« %s » → aucune ville', (text) => {
+      expect(extractCity(text)).toBeUndefined();
+    });
+
+    it('une ville dictée en minuscules reste reconnue après « à » ou « sur » seulement', () => {
+      expect(extractCity('quel temps fait-il demain à lyon')).toBe('Lyon');
+      expect(extractCity('météo sur marseille ce week-end')).toBe('Marseille');
+      expect(extractCity('météo à saint-étienne')).toBe('Saint-étienne');
+      // « pour », « de », « dans », « vers » + minuscule : pas une ville (le mot est un verbe, un nom…).
+      expect(extractCity('météo pour lyon')).toBeUndefined();
+      expect(extractCity('météo de lyon')).toBeUndefined();
+      // Avec la majuscule, toutes les prépositions marchent comme avant.
+      expect(extractCity('Météo pour Lyon demain')).toBe('Lyon');
+      expect(extractCity('Quelle est la météo pour Noël à Paris ?')).toBe('Paris');
+      expect(extractCity('Il fait quel temps à mon avis à Paris ?')).toBe('Paris');
+    });
+
+    it('la question météo sans ville ne part plus à la géolocalisation avec un faux nom', () => {
+      const plan = detectCurrentInfoIntent('Quel temps fera-t-il pour sortir demain ?', new Date('2026-10-01T21:30:00Z'));
+      expect(plan?.kind).toBe('weather');
+      expect(plan?.city).toBeUndefined();
+      expect(plan?.newsQuery).toBe('météo');
+    });
+  });
 });

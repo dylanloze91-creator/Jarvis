@@ -287,7 +287,8 @@ export default function App() {
       <div className="ambient ambient-b" />
       <header className="drag-region relative z-10 flex h-[52px] shrink-0 items-center gap-3 border-b border-white/[0.07] px-4">
         <BrandMark listening={voice.state === 'listening'} level={voice.level} />
-        <div className="flex min-w-0 items-center gap-2">
+        {/* Le nom et la pastille ne rétrécissent jamais : c'est le libellé du modèle qui se tronque. */}
+        <div className="flex shrink-0 items-center gap-2">
           <span className="text-[12px] font-bold tracking-[0.24em] text-white">JARVIS</span>
           {status ? (
             <span className={cn('status-pill', fallback && 'offline')}>
@@ -394,6 +395,10 @@ export default function App() {
                 }}
                 chat={chat}
                 onOpenDeveloper={openDeveloper}
+                onOpenVoiceSettings={() => {
+                  openSettingsOnTab('voice');
+                  setView('settings');
+                }}
               />
             </div>
           )

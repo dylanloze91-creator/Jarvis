@@ -7,6 +7,8 @@ import { voiceBarStatusLines } from '@/components/voiceBarStatus';
 interface VoiceBarProps {
   voice: UseVoiceResult;
   voiceEnabled: boolean;
+  /** Ouvre Réglages → Voix (écoute coupée). Absent : simple mention. */
+  onEnable?: () => void;
 }
 
 /**
@@ -15,13 +17,18 @@ interface VoiceBarProps {
  * la réponse parlée. Aucun champ de texte ici : le seul champ est celui du
  * composer.
  */
-export function VoiceBar({ voice, voiceEnabled }: VoiceBarProps) {
+export function VoiceBar({ voice, voiceEnabled, onEnable }: VoiceBarProps) {
   if (!voiceEnabled) {
     return (
       <div className="voice-strip">
         <span>
           <Mic className="size-3" /> Commande vocale désactivée
         </span>
+        {onEnable ? (
+          <Button size="sm" variant="ghost" className="ml-auto h-6 px-2 text-[11px]" onClick={onEnable}>
+            Activer
+          </Button>
+        ) : null}
       </div>
     );
   }
