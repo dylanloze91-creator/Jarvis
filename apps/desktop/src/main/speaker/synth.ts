@@ -3,7 +3,7 @@ import { readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { SPEAKER_SAMPLE_RATE, decodeWav, toSpeakerWav, type Settings } from '@jarvis/core';
-import { psQuote, runPowerShell, type RunOptions, type RunResult } from '../tools/platform/exec.js';
+import { POWERSHELL_UTF8_PREAMBLE, run, type RunOptions, type RunResult } from '../tools/platform/exec.js';
 import type { VoiceBridge } from '../voice.js';
 
 /**
@@ -18,47 +18,63 @@ export interface SpeakerSynthesizer {
 }
 
 /**
- * Script **fixe** : seuls les deux chemins temporaires créés par Jarvis y entrent, par `psQuote`.
- * Le texte à dire est lu dans le fichier d'entrée (UTF-8), jamais concaténé dans le script
- * (règle `psQuote` de CLAUDE.md). Voix française si elle existe, sinon la voix par défaut.
+ * Script **constant** : aucune valeur n'y entre, ni texte, ni chemin. Les deux chemins
+ * temporaires créés par Jarvis lui sont passés en **arguments** (`-File … -InputPath … -OutputPath …`),
+ * hors du script, et le texte à dire est lu dans le fichier d'entrée (UTF-8), jamais concaténé
+ * (règle `psQuote` de CLAUDE.md, ici sans même avoir besoin de `psQuote`). `$ErrorActionPreference
+ * = 'Stop'` : la moindre erreur arrête le script avec un code non nul au lieu de laisser un WAV vide
+ * passer pour un succès. Voix française si elle existe, sinon la voix par défaut.
  */
-export function windowsSpeechScript(inputPath: string, outputPath: string): string {
+export function windowsSpeechScript(): string {
   return [
+    'param([Parameter(Mandatory = $true)][string]$InputPath, [Parameter(Mandatory = $true)][string]$OutputPath)',
+    "$ErrorActionPreference = 'Stop'",
+    POWERSHELL_UTF8_PREAMBLE,
     'Add-Type -AssemblyName System.Speech',
-    `$text = [System.IO.File]::ReadAllText(${psQuote(inputPath)}, [System.Text.Encoding]::UTF8)`,
+    '$text = [System.IO.File]::ReadAllText($InputPath, [System.Text.Encoding]::UTF8)',
     '$synth = New-Object System.Speech.Synthesis.SpeechSynthesizer',
     "$voice = $synth.GetInstalledVoices() | Where-Object { $_.Enabled -and $_.VoiceInfo.Culture.TwoLetterISOLanguageName -eq 'fr' } | Select-Object -First 1",
     'if ($voice) { $synth.SelectVoice($voice.VoiceInfo.Name) }',
     '$format = New-Object System.Speech.AudioFormat.SpeechAudioFormatInfo(16000, [System.Speech.AudioFormat.AudioBitsPerSample]::Sixteen, [System.Speech.AudioFormat.AudioChannelCount]::Mono)',
-    `$synth.SetOutputToWaveFile(${psQuote(outputPath)}, $format)`,
+    '$synth.SetOutputToWaveFile($OutputPath, $format)',
     '$synth.Speak($text)',
     '$synth.Dispose()',
     "Write-Output 'OK'",
-  ].join('\n');
+  ].join('\r\n');
+}
+
+/** Lance un fichier `.ps1` avec ses arguments, sans shell : PowerShell les reçoit tels quels. */
+export function runPowerShellFile(scriptPath: string, args: string[], options: RunOptions = {}): Promise<RunResult> {
+  return run('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', scriptPath, ...args], options);
 }
 
 const WINDOWS_SPEECH_TIMEOUT_MS = 60_000;
 
 export interface WindowsSynthesizerDeps {
-  /** `runPowerShell` de `tools/platform/exec.ts` ; remplaçable dans les tests. */
-  runPowerShell?: (script: string, options?: RunOptions) => Promise<RunResult>;
+  /** `runPowerShellFile` ci-dessus ; remplaçable dans les tests. */
+  runPowerShellFile?: (scriptPath: string, args: string[], options?: RunOptions) => Promise<RunResult>;
   tmpDir?: () => string;
 }
 
-/** Voix Windows : fichier texte → PowerShell → fichier WAV, les deux supprimés après lecture. */
+/** Voix Windows : fichier texte → PowerShell → fichier WAV ; les trois fichiers supprimés après lecture. */
 export class WindowsSpeechSynthesizer implements SpeakerSynthesizer {
   constructor(private readonly deps: WindowsSynthesizerDeps = {}) {}
 
   async synthesize(text: string): Promise<Uint8Array> {
     const stamp = randomBytes(8).toString('hex');
     const dir = this.deps.tmpDir?.() ?? tmpdir();
+    const scriptPath = join(dir, `jarvis-enceinte-${stamp}.ps1`);
     const inputPath = join(dir, `jarvis-enceinte-${stamp}.txt`);
     const outputPath = join(dir, `jarvis-enceinte-${stamp}.wav`);
     try {
+      // BOM UTF-8 : Windows PowerShell 5.1 lit sinon le .ps1 dans la page de code locale.
+      await writeFile(scriptPath, `\uFEFF${windowsSpeechScript()}`, { encoding: 'utf8', mode: 0o600 });
       await writeFile(inputPath, text, { encoding: 'utf8', mode: 0o600 });
-      const result = await (this.deps.runPowerShell ?? runPowerShell)(windowsSpeechScript(inputPath, outputPath), {
-        timeoutMs: WINDOWS_SPEECH_TIMEOUT_MS,
-      });
+      const result = await (this.deps.runPowerShellFile ?? runPowerShellFile)(
+        scriptPath,
+        ['-InputPath', inputPath, '-OutputPath', outputPath],
+        { timeoutMs: WINDOWS_SPEECH_TIMEOUT_MS },
+      );
       if (result.timedOut) throw new Error('La voix Windows a mis trop de temps.');
       if (result.code !== 0 || !result.stdout.includes('OK')) {
         throw new Error(`La voix Windows a échoué : ${(result.stderr || result.stdout).trim().slice(0, 300) || `code ${result.code}`}`);
@@ -67,6 +83,7 @@ export class WindowsSpeechSynthesizer implements SpeakerSynthesizer {
       const decoded = decodeWav(bytes);
       return decoded.sampleRate === SPEAKER_SAMPLE_RATE ? bytes : toSpeakerWav(bytes);
     } finally {
+      await rm(scriptPath, { force: true }).catch(() => undefined);
       await rm(inputPath, { force: true }).catch(() => undefined);
       await rm(outputPath, { force: true }).catch(() => undefined);
     }

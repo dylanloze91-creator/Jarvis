@@ -615,31 +615,39 @@ describe('réglages des enceintes (5.0.64)', () => {
 });
 
 describe('synthèse de l’enceinte (5.0.64)', () => {
-  it('script PowerShell fixe : le texte vient d’un fichier, jamais du script', () => {
-    const script = windowsSpeechScript("C:\\Temp\\jarvis-enceinte-1.txt", "C:\\Temp\\l'autre.wav");
-    expect(script).toContain("ReadAllText('C:\\Temp\\jarvis-enceinte-1.txt', [System.Text.Encoding]::UTF8)");
-    expect(script).toContain("SetOutputToWaveFile('C:\\Temp\\l''autre.wav', $format)");
+  it('script PowerShell constant : chemins en arguments, texte lu d’un fichier, arrêt à la première erreur', () => {
+    const script = windowsSpeechScript();
+    expect(windowsSpeechScript()).toBe(script); // rien n'y varie
+    expect(script.split('\r\n')[0]).toMatch(/^param\(.*\$InputPath.*\$OutputPath.*\)$/);
+    expect(script).toContain("$ErrorActionPreference = 'Stop'");
+    expect(script).toContain('ReadAllText($InputPath, [System.Text.Encoding]::UTF8)');
+    expect(script).toContain('SetOutputToWaveFile($OutputPath, $format)');
     expect(script).toContain('SpeechAudioFormatInfo(16000, [System.Speech.AudioFormat.AudioBitsPerSample]::Sixteen, [System.Speech.AudioFormat.AudioChannelCount]::Mono)');
     expect(script).toContain("TwoLetterISOLanguageName -eq 'fr'");
     expect(script).not.toContain('$(');
+    expect([...script].every((char) => char.charCodeAt(0) < 128)).toBe(true); // ASCII seulement : lisible quelle que soit la page de code
   });
 
-  it('voix Windows simulée : fichier texte écrit en UTF-8, WAV relu, fichiers temporaires supprimés', async () => {
-    const seen: { text?: string; script?: string } = {};
+  it('voix Windows simulée : .ps1 constant + chemins en arguments, texte en UTF-8, WAV relu, fichiers temporaires supprimés', async () => {
+    const seen: { text?: string; script?: string; args?: string[] } = {};
     const synth = new WindowsSpeechSynthesizer({
       tmpDir: () => dir,
-      runPowerShell: async (script) => {
-        seen.script = script;
-        const input = /ReadAllText\('([^']+)'/.exec(script)![1]!;
-        const output = /SetOutputToWaveFile\('([^']+)'/.exec(script)![1]!;
+      runPowerShellFile: async (scriptPath, args) => {
+        seen.script = readFileSync(scriptPath, 'utf8');
+        seen.args = args;
+        const input = args[args.indexOf('-InputPath') + 1]!;
+        const output = args[args.indexOf('-OutputPath') + 1]!;
         seen.text = readFileSync(input, 'utf8');
-        const { writeFileSync } = await import('node:fs');
         writeFileSync(output, encodeWav(new Float32Array(2_400), 24_000));
         return { code: 0, signal: null, stdout: 'OK\n', stderr: '', timedOut: false, truncated: false };
       },
     });
-    const wav = await synth.synthesize('Bonjour, il est dix heures.');
-    expect(seen.text).toBe('Bonjour, il est dix heures.');
+    const wav = await synth.synthesize('Bonjour, il est dix heures. L’apostrophe ‘typographique’ ne gêne pas.');
+    expect(seen.text).toBe('Bonjour, il est dix heures. L’apostrophe ‘typographique’ ne gêne pas.');
+    expect(seen.script).toBe(`\uFEFF${windowsSpeechScript()}`);
+    expect(seen.args).toHaveLength(4);
+    expect(seen.args![1]).toMatch(/jarvis-enceinte-[0-9a-f]{16}\.txt$/);
+    expect(seen.args![3]).toMatch(/jarvis-enceinte-[0-9a-f]{16}\.wav$/);
     const decoded = decodeWav(wav);
     expect(decoded.sampleRate).toBe(SPEAKER_SAMPLE_RATE);
     expect(decoded.samples.length).toBe(1_600);
@@ -650,7 +658,7 @@ describe('synthèse de l’enceinte (5.0.64)', () => {
   it('voix Windows en échec : erreur claire, fichiers supprimés', async () => {
     const synth = new WindowsSpeechSynthesizer({
       tmpDir: () => dir,
-      runPowerShell: async () => ({ code: 1, signal: null, stdout: '', stderr: 'Add-Type : introuvable', timedOut: false, truncated: false }),
+      runPowerShellFile: async () => ({ code: 1, signal: null, stdout: '', stderr: 'Add-Type : introuvable', timedOut: false, truncated: false }),
     });
     await expect(synth.synthesize('x')).rejects.toThrow('Add-Type : introuvable');
     const { readdirSync } = await import('node:fs');
