@@ -97,16 +97,7 @@ const SORT_HTML = `<!DOCTYPE html>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <title>Tri du trieur Jarvis</title>
-<style>
-body{font-family:system-ui,sans-serif;max-width:720px;margin:1.5rem auto;padding:0 1rem;background:#0f172a;color:#e2e8f0}
-h1{font-size:1.25rem}
-#context,#phrase{white-space:pre-wrap;background:#1e293b;padding:1rem;border-radius:8px;margin:0.75rem 0}
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:0.5rem;margin:1rem 0}
-button{font-size:1rem;padding:0.75rem;border-radius:8px;border:1px solid #334155;background:#1e293b;color:#f8fafc;cursor:pointer}
-button:focus{outline:2px solid #38bdf8}
-.secondary{opacity:0.85}
-#status{font-size:0.9rem;color:#94a3b8;margin-top:1rem}
-</style>
+<link rel="stylesheet" href="/app.css"/>
 </head>
 <body>
 <h1>Classer vos phrases pour le trieur</h1>
@@ -121,6 +112,15 @@ button:focus{outline:2px solid #38bdf8}
 <script src="/app.js"></script>
 </body>
 </html>`;
+
+export const SORT_APP_CSS = String.raw`body{font-family:system-ui,sans-serif;max-width:720px;margin:1.5rem auto;padding:0 1rem;background:#0f172a;color:#e2e8f0}
+h1{font-size:1.25rem}
+#context,#phrase{white-space:pre-wrap;background:#1e293b;padding:1rem;border-radius:8px;margin:0.75rem 0}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:0.5rem;margin:1rem 0}
+button{font-size:1rem;padding:0.75rem;border-radius:8px;border:1px solid #334155;background:#1e293b;color:#f8fafc;cursor:pointer}
+button:focus{outline:2px solid #38bdf8}
+.secondary{opacity:0.85}
+#status{font-size:0.9rem;color:#94a3b8;margin-top:1rem}`;
 
 /** JavaScript servi séparément ; le texte utilisateur passe uniquement par textContent. */
 export const SORT_APP_JS = String.raw`const teams=[
@@ -216,6 +216,11 @@ export class TrieurSortServer {
     if (req.method === 'GET' && path === '/app.js') {
       res.writeHead(200, { 'Content-Type': 'application/javascript; charset=utf-8', 'Content-Security-Policy': PAGE_POLICY });
       res.end(SORT_APP_JS);
+      return;
+    }
+    if (req.method === 'GET' && path === '/app.css') {
+      res.writeHead(200, { 'Content-Type': 'text/css; charset=utf-8', 'Content-Security-Policy': PAGE_POLICY });
+      res.end(SORT_APP_CSS);
       return;
     }
     if (req.method === 'GET' && path === '/api/current') {

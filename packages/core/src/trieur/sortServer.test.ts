@@ -11,6 +11,28 @@ describe('trieur sort server', () => {
     expect(allowedSortHost('evil.example:1234')).toBe(false);
   });
 
+  it('sert la feuille de style à /app.css sans style inline', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'trieur-css-'));
+    const files = trieurFileNames(dir);
+    await writeFile(files.toSort, '', 'utf8');
+    const server = new TrieurSortServer({
+      toSortPath: files.toSort,
+      examPath: files.exam,
+      progressPath: files.sortProgress,
+    });
+    const { port } = await server.start();
+    const host = `127.0.0.1:${port}`;
+    const page = await fetch(`http://${host}/`, { headers: { host } });
+    const html = await page.text();
+    expect(html).not.toContain('<style');
+    expect(html).toContain('/app.css');
+    const css = await fetch(`http://${host}/app.css`, { headers: { host } });
+    expect(css.ok).toBe(true);
+    expect(await css.text()).toContain('.grid');
+    await server.stop();
+    await rm(dir, { recursive: true, force: true });
+  });
+
   it('écrit examen.jsonl et reprend la progression', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'trieur-sort-'));
     const files = trieurFileNames(dir);
