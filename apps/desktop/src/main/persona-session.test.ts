@@ -5,10 +5,11 @@ import { afterAll, describe, expect, it, vi } from 'vitest';
 import type { ChatEvent } from '../shared/ipc.js';
 
 /**
- * Caractère de Jarvis dans une vraie session : la fiche de personnage suit la
- * consigne de base, chat classique comme chef d'orchestre, avec le prénom de la
- * personnalisation. Réglage absent : `chat-unchanged.test.ts` garde le chat à
- * l'identique.
+ * Caractère de Jarvis dans une vraie session : la fiche de personnage vit dans
+ * les consignes des équipes du chef d'orchestre (entière pour Conversation et
+ * Code, courte pour les équipes à outils), avec le prénom de la personnalisation.
+ * Le cerveau routeur et le chat sans orchestre ne la reçoivent jamais
+ * (`chat-unchanged.test.ts` garde ce chat à l'identique).
  */
 const userData = mkdtempSync(join(tmpdir(), 'jarvis-persona-'));
 
@@ -31,7 +32,13 @@ const { KnowledgeStore } = await import('./knowledge.js');
 
 afterAll(() => rmSync(userData, { recursive: true, force: true }));
 
-async function turn(text: string, extra: Record<string, unknown>, source: 'text' | 'voice' = 'text') {
+const ORCHESTRA = { enabled: true, brain: 'qwen2.5:7b' };
+
+async function turn(
+  text: string,
+  extra: Record<string, unknown>,
+  options: { source?: 'text' | 'voice'; brainReply?: string } = {},
+) {
   const settings = core.parseSettings({ provider: 'ollama', model: 'qwen2.5:3b', ...extra });
   const getSettings = () => settings;
   const systems: string[] = [];
@@ -43,7 +50,7 @@ async function turn(text: string, extra: Record<string, unknown>, source: 'text'
     async *streamChat(request) {
       systems.push(request.system ?? '');
       const router = (request.system ?? '').includes('chef d’orchestre');
-      yield { type: 'text' as const, delta: router ? 'conversation' : 'Très bien.' };
+      yield { type: 'text' as const, delta: router ? (options.brainReply ?? 'conversation') : 'Très bien.' };
       yield { type: 'done' as const, finishReason: 'stop' as const };
     },
   }));
@@ -73,46 +80,60 @@ async function turn(text: string, extra: Record<string, unknown>, source: 'text'
     knowledge: { indexConversation: async () => 0 } as never,
     localLearning: { recordTurn: async () => undefined } as never,
   });
-  await session.send(sender, { conversationId: null, text, source });
-  return { systems, events };
+  await session.send(sender, { conversationId: null, text, source: options.source ?? 'text' });
+  const brain = systems.find((system) => system.includes('chef d’orchestre')) ?? '';
+  const team = systems.find((system) => !system.includes('chef d’orchestre')) ?? '';
+  return { systems, events, brain, team };
 }
 
 describe('caractère de Jarvis dans le chat', () => {
-  it('activé : la fiche suit la consigne de base, avec le prénom, avant la mémoire de personnalisation', async () => {
-    const { systems } = await turn('Tu penses quoi de mon plan ?', { persona: { enabled: true, style: 'majordome' } });
-    expect(systems).toHaveLength(1);
-    const system = systems[0] ?? '';
-    const base = system.indexOf(core.DEFAULT_SYSTEM_PROMPT.slice(0, 40));
-    const sheet = system.indexOf('CARACTÈRE DE JARVIS.');
-    const memory = system.indexOf('MÉMOIRE DE PERSONNALISATION');
-    expect(base).toBe(0);
-    expect(sheet).toBeGreaterThan(base);
-    expect(memory).toBeGreaterThan(sheet);
-    expect(system).toContain('Tu vouvoies');
-    expect(system).toContain('s’appelle Dylan');
-  });
-
-  it('à l’oral : la fiche demande une réponse parlée', async () => {
-    const { systems } = await turn('Raconte-moi ta journée', { persona: { enabled: true } }, 'voice');
-    expect(systems[0]).toContain('lue à voix haute');
-  });
-
-  it('chef d’orchestre : l’équipe reçoit la fiche, le cerveau non', async () => {
-    const { systems } = await turn('Raconte-moi ta journée', {
-      persona: { enabled: true, humour: false },
-      orchestra: { enabled: true, brain: 'qwen2.5:7b' },
+  it('équipe Conversation : la fiche entière suit la consigne de l’équipe, avec le prénom ; le cerveau ne l’a pas', async () => {
+    const { brain, team } = await turn('Tu penses quoi de mon plan ?', {
+      orchestra: ORCHESTRA,
+      persona: { enabled: true, style: 'majordome' },
     });
-    const brain = systems.find((system) => system.includes('chef d’orchestre')) ?? '';
-    const team = systems.find((system) => !system.includes('chef d’orchestre')) ?? '';
+    expect(brain).toContain('chef d’orchestre');
     expect(brain).not.toContain('CARACTÈRE DE JARVIS');
-    expect(team).toContain('CARACTÈRE DE JARVIS');
+    const teamLine = team.indexOf('ÉQUIPE CONVERSATION');
+    const sheet = team.indexOf('CARACTÈRE DE JARVIS.');
+    expect(teamLine).toBeGreaterThan(0);
+    expect(sheet).toBeGreaterThan(teamLine);
+    expect(team).toContain('Tu vouvoies');
+    expect(team).toContain('s’appelle Dylan');
+    expect(team).toContain('un programme qui tourne sur ce PC');
+  });
+
+  it('équipe à outils (PC) : version courte, et à l’oral la réponse reste brève', async () => {
+    const { team } = await turn(
+      'Ouvre le Bloc-notes',
+      { orchestra: ORCHESTRA, persona: { enabled: true } },
+      { source: 'voice', brainReply: 'pc' },
+    );
+    expect(team).toContain('ÉQUIPE PC');
+    expect(team).toContain('CARACTÈRE DE JARVIS (en bref).');
+    expect(team).not.toContain('CARACTÈRE DE JARVIS.');
+    expect(team).toContain('lue à voix haute');
+  });
+
+  it('humour coupé : la fiche le dit', async () => {
+    const { team } = await turn('Raconte-moi ta journée', {
+      orchestra: ORCHESTRA,
+      persona: { enabled: true, humour: false },
+    });
     expect(team).toContain('Pas de plaisanterie');
   });
 
-  it('coupé ou absent : aucune fiche', async () => {
-    const off = await turn('Bonjour', { persona: { enabled: false } });
-    expect(off.systems[0]).not.toContain('CARACTÈRE');
-    const absent = await turn('Bonjour', {});
-    expect(absent.systems[0]).not.toContain('CARACTÈRE');
+  it('sans chef d’orchestre : le chat garde son prompt, même avec le caractère activé', async () => {
+    const { systems } = await turn('Bonjour', { persona: { enabled: true } });
+    expect(systems).toHaveLength(1);
+    expect(systems[0]).not.toContain('CARACTÈRE');
+  });
+
+  it('coupé ou absent : aucune fiche dans l’équipe', async () => {
+    const off = await turn('Bonjour', { orchestra: ORCHESTRA, persona: { enabled: false } });
+    expect(off.team).not.toContain('CARACTÈRE');
+    const absent = await turn('Bonjour', { orchestra: ORCHESTRA });
+    expect(absent.team).toContain('ÉQUIPE CONVERSATION');
+    expect(absent.team).not.toContain('CARACTÈRE');
   });
 });

@@ -3,12 +3,14 @@
  * jamais mentir sur ce qu'il est.
  *
  * Pur (pas de réseau, pas de modèle). Le réglage `settings.persona` est
- * facultatif et **sans défaut Zod** : absent ou coupé, le prompt du chat est
- * exactement celui d'avant (tests figés verts). Activé, la fiche de
- * personnage est ajoutée au prompt système de chaque tour, chat classique
- * comme chef d'orchestre, et quelques phrases de l'interface (accueil)
- * prennent la même voix.
+ * facultatif et **sans défaut Zod**, coupé par défaut. Comme l'avis franc de
+ * 5.0.62 (`FRANK_ADVICE_PROMPT`), la fiche vit **dans les consignes des
+ * équipes du chef d'orchestre** : le chat sans orchestre garde son prompt
+ * figé (`chat-unchanged.test.ts`), quoi qu'il arrive. Activé, les équipes
+ * Conversation et Code reçoivent la fiche entière, les équipes à outils une
+ * version courte, et l'accueil de l'interface prend la même voix.
  */
+import type { OrchestraTeam } from './orchestraTeams.js';
 
 export const PERSONA_STYLES = ['complice', 'majordome', 'direct'] as const;
 export type PersonaStyle = (typeof PERSONA_STYLES)[number];
@@ -97,38 +99,68 @@ const HUMOUR_LINE =
   'Humour : sec, rare, en une demi-phrase, jamais sur une erreur de l’utilisateur, jamais sur un sujet grave, jamais quand il est pressé ou contrarié. Si tu hésites, pas de blague.';
 const NO_HUMOUR_LINE = 'Pas de plaisanterie : tu restes sérieux, mais vivant.';
 
-/**
- * Fiche de personnage ajoutée au prompt système. Courte et impérative : un
- * petit modèle local la suit mieux qu'un long portrait.
- */
-export function personaPrompt(persona: PersonaConfig, context: PersonaContext): string {
+const VOICE_LINE =
+  'Cette demande a été dite à l’oral et ta réponse sera lue à voix haute : réponds comme on parle, en deux ou trois phrases au plus, sans liste ni mise en forme.';
+
+function situationLine(context: PersonaContext, compact: boolean): string {
   const period = dayPeriod(context.now, context.timeZone);
   const name = context.userName?.trim();
-  const situation = [
-    `Contexte : nous sommes le ${period === 'après-midi' ? 'après-midi' : period} (heure du PC).`,
+  return [
+    compact ? '' : `Contexte : nous sommes le ${period === 'après-midi' ? 'après-midi' : period} (heure du PC).`,
     name
       ? `L’utilisateur s’appelle ${name} : utilise son prénom parfois, pas à chaque phrase.`
-      : 'Tu ne connais pas encore le prénom de l’utilisateur ; tu peux le lui demander une fois, si l’occasion est naturelle.',
-    context.source === 'voice'
-      ? 'Cette demande a été dite à l’oral et ta réponse sera lue à voix haute : réponds comme on parle, en deux ou trois phrases, sans liste ni mise en forme.'
-      : '',
+      : compact
+        ? ''
+        : 'Tu ne connais pas encore le prénom de l’utilisateur ; tu peux le lui demander une fois, si l’occasion est naturelle.',
+    context.source === 'voice' ? VOICE_LINE : '',
   ]
     .filter(Boolean)
     .join(' ');
+}
+
+/**
+ * Fiche de personnage ajoutée aux consignes d'une équipe. Courte et impérative :
+ * un petit modèle local la suit mieux qu'un long portrait. `compact` (équipes à
+ * outils) : le ton, l'honnêteté et la brièveté seulement, pour ne pas gêner
+ * l'appel d'outil.
+ */
+export function personaPrompt(
+  persona: PersonaConfig,
+  context: PersonaContext,
+  options: { compact?: boolean } = {},
+): string {
+  if (options.compact) {
+    return [
+      'CARACTÈRE DE JARVIS (en bref).',
+      STYLE_LINES[persona.style],
+      'Une phrase de réaction au plus, puis le résultat de l’outil, tel quel.',
+      HONESTY[0],
+      situationLine(context, true),
+    ]
+      .filter(Boolean)
+      .join(' ');
+  }
   return [
     'CARACTÈRE DE JARVIS.',
     ...CORE_TRAITS,
     STYLE_LINES[persona.style],
     persona.humour ? HUMOUR_LINE : NO_HUMOUR_LINE,
     ...HONESTY,
-    situation,
+    situationLine(context, false),
   ].join(' ');
 }
 
-/** `base` + la fiche, séparées par une ligne vide ; sans caractère actif, `base` tel quel. */
-export function withPersonaPrompt(base: string, persona: PersonaConfig | null, context: PersonaContext): string {
-  if (!persona) return base;
-  return `${base.trim()}\n\n${personaPrompt(persona, context)}`;
+/** Équipes qui reçoivent la fiche entière ; les autres, la version courte. */
+export const FULL_PERSONA_TEAMS: readonly OrchestraTeam[] = ['conversation', 'code'];
+
+/** Fiche à ajouter aux consignes de l'équipe `team` ; `null` sans caractère actif. */
+export function teamPersonaPrompt(
+  team: OrchestraTeam,
+  persona: PersonaConfig | null,
+  context: PersonaContext,
+): string | null {
+  if (!persona) return null;
+  return personaPrompt(persona, context, { compact: !FULL_PERSONA_TEAMS.includes(team) });
 }
 
 /**

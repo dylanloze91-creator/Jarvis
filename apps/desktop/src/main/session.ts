@@ -18,8 +18,8 @@ import {
   enforceConstraints,
   debugLog,
   withVoiceOriginNotice,
-  withPersonaPrompt,
   activePersona,
+  teamPersonaPrompt,
   userFirstName,
   chatProviderConfig,
   activeOrchestra,
@@ -126,15 +126,9 @@ export class ChatSession {
     learningReview?: (reply: string) => string | null;
     learningFinalize?: (reply: string) => string;
   }> {
-    const profile = await this.deps.personalization.get();
-    // Caractère de Jarvis : la fiche suit la consigne de base, avant la mémoire de
-    // personnalisation. Réglage absent ou coupé : la consigne d'avant, à l'identique.
-    const basePrompt = withPersonaPrompt(orchestra?.base ?? settings.systemPrompt, activePersona(settings), {
-      now: new Date(),
-      userName: userFirstName(profile.user),
-      source,
-    });
-    const personal = withVoiceOriginNotice(basePrompt, source) + buildPersonalizationPrompt(profile);
+    const personal =
+      withVoiceOriginNotice(orchestra?.base ?? settings.systemPrompt, source) +
+      buildPersonalizationPrompt(await this.deps.personalization.get());
     const base = orchestra
       ? [personal, orchestra.siteBlock ? withSiteBlockPrompt('') : '', orchestra.knowledge ? withKnowledgePrompt('') : '']
           .map((part) => part.trim())
@@ -266,8 +260,15 @@ export class ChatSession {
         siteBlock: team === 'concentration',
         knowledge: team === 'memoire',
       });
+      // Caractère de Jarvis : dans les consignes de l'équipe, comme l'avis franc (5.0.62).
+      // Le cerveau routeur et le chat sans orchestre ne le reçoivent jamais.
+      const character = teamPersonaPrompt(team, activePersona(settings), {
+        now: new Date(),
+        userName: userFirstName((await this.deps.personalization.get()).user),
+        source,
+      });
       const agent = new Agent(route.provider, this.deps.tools, {
-        systemPrompt: `${turn.systemPrompt}\n\n${teamPrompt(team)}`,
+        systemPrompt: `${turn.systemPrompt}\n\n${teamPrompt(team, character)}`,
         temperature: settings.temperature,
         allowedTools: (name) => teamHasTool(team, name),
         ...(turn.learningReview ? { learningReview: turn.learningReview } : {}),

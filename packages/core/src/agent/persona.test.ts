@@ -7,8 +7,8 @@ import {
   dayPeriod,
   personaGreeting,
   personaPrompt,
+  teamPersonaPrompt,
   userFirstName,
-  withPersonaPrompt,
 } from './persona.js';
 
 const NOON = new Date('2026-11-03T12:00:00+01:00');
@@ -20,7 +20,7 @@ describe('caractère de Jarvis — réglage', () => {
     expect('persona' in parseSettings({})).toBe(false);
     expect(activePersona(parseSettings({}))).toBeNull();
     expect(activePersona(parseSettings({ persona: { enabled: false } }))).toBeNull();
-    expect(withPersonaPrompt('BASE', null, { now: NOON })).toBe('BASE');
+    expect(teamPersonaPrompt('conversation', null, { now: NOON })).toBeNull();
   });
 
   it('activé : style et humour avec leurs défauts, style inconnu remis à « complice »', () => {
@@ -77,9 +77,17 @@ describe('caractère de Jarvis — fiche de personnage', () => {
     expect(direct).not.toContain('lue à voix haute');
   });
 
-  it('withPersonaPrompt place la fiche après la consigne de base', () => {
-    const text = withPersonaPrompt('BASE', DEFAULT_PERSONA, { now: NOON, timeZone: TZ });
-    expect(text.startsWith('BASE\n\nCARACTÈRE DE JARVIS.')).toBe(true);
+  it('équipes Conversation et Code : fiche entière ; équipes à outils : version courte, honnête, brève', () => {
+    const full = teamPersonaPrompt('conversation', DEFAULT_PERSONA, { now: NOON, userName: 'Dylan', timeZone: TZ }) ?? '';
+    const short = teamPersonaPrompt('pc', DEFAULT_PERSONA, { now: NOON, userName: 'Dylan', timeZone: TZ, source: 'voice' }) ?? '';
+    expect(full.startsWith('CARACTÈRE DE JARVIS.')).toBe(true);
+    expect(short.startsWith('CARACTÈRE DE JARVIS (en bref).')).toBe(true);
+    expect(short.length).toBeLessThan(full.length / 2);
+    expect(short).toContain('un programme qui tourne sur ce PC');
+    expect(short).toContain('résultat de l’outil, tel quel');
+    expect(short).toContain('lue à voix haute');
+    expect(short).not.toContain('Humour');
+    expect(teamPersonaPrompt('code', DEFAULT_PERSONA, { now: NOON })?.startsWith('CARACTÈRE DE JARVIS.')).toBe(true);
   });
 });
 

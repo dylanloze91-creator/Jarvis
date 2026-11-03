@@ -297,12 +297,13 @@ export function SettingsPanel({ settings, status, onSaved, requestedTab, onAnaly
           <PersonaSettingsSection
             value={draft.persona}
             userName={userName}
+            orchestraEnabled={draft.provider === 'ollama' && draft.orchestra?.enabled === true}
             onChange={(persona) => patch({ persona })}
           />
 
           <Field
             label="Consignes de base (prompt système)"
-            hint="Instructions envoyées au modèle à chaque conversation, avant le caractère ci-dessus. Distinct de la mémoire persistante (onglet Recherche et mémoire), qui survit aux conversations et au changement de modèle Ollama."
+            hint="Instructions envoyées au modèle à chaque conversation. Distinct de la mémoire persistante (onglet Recherche et mémoire), qui survit aux conversations et au changement de modèle Ollama."
           >
             <Textarea
               rows={4}
