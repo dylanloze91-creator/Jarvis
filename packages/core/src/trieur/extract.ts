@@ -11,6 +11,8 @@ export interface ToSortLine {
   context: string;
   /** Équipe enregistrée à l'époque ; jamais utilisée comme réponse d'examen. */
   suggestion: OrchestraTeam | null;
+  /** Origine de la phrase (ex. export claude.ai). */
+  source?: 'claude.ai';
   /** Marqueur de test synthétique (jamais copié dans un cahier). */
   synthetiqueTest?: boolean;
 }
@@ -105,7 +107,15 @@ export function parseToSortLine(raw: unknown): ToSortLine | null {
     suggestion = row.suggestion as OrchestraTeam;
   }
   const synthetiqueTest = row.meta && typeof row.meta === 'object' && (row.meta as Record<string, unknown>)['synthetique-test'] === true;
-  return { id, phrase, context: String(row.context), suggestion, ...(synthetiqueTest ? { synthetiqueTest: true } : {}) };
+  const source = row.source === 'claude.ai' ? 'claude.ai' : undefined;
+  return {
+    id,
+    phrase,
+    context: String(row.context),
+    suggestion,
+    ...(source ? { source } : {}),
+    ...(synthetiqueTest ? { synthetiqueTest: true } : {}),
+  };
 }
 
 export function parseExamLine(raw: unknown): ExamLine | null {
