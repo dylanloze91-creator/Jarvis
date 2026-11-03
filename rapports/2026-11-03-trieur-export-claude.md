@@ -30,7 +30,11 @@ Branche : `cursor/trieur-export-claude` (base `origin/main` + fusion `cursor/tri
 
 ## Commits (après push)
 
-Voir `git log origin/main..cursor/trieur-export-claude --oneline`.
+- `42c3342` — Trieur : option `--export-claude` (conversations.json claude.ai)
+- `7d5b5d0` — Docs : export claude.ai dans TRIEUR.md, rapport et coordination terminée
+- (Prérequis sur la branche : fusion `d0a55af` de `cursor/trieur-5068` pour le trieur 5.0.68)
+
+Voir aussi `git log origin/main..cursor/trieur-export-claude --oneline`.
 
 ## RAPPORT DE VÉRIFICATION
 
