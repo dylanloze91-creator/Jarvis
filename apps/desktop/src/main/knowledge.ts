@@ -557,7 +557,7 @@ export class KnowledgeStore {
   private async mutate(change: (index: KnowledgeIndex) => void): Promise<void> {
     const release = await acquireIndexLock(this.lockPath());
     try {
-      const index = await this.readDisk();
+      const index = await this.readDisk(true);
       change(index);
       await this.writeDisk(index);
       const info = await stat(this.indexPath()).catch(() => null);
@@ -568,9 +568,20 @@ export class KnowledgeStore {
     }
   }
 
-  private async readDisk(): Promise<KnowledgeIndex> {
+  /**
+   * `strict` (écriture sous verrou) : une lecture qui échoue pour une autre raison que « fichier
+   * absent » est réessayée puis remonte, au lieu de rendre un index vide qui serait réécrit par-dessus
+   * l'ancien (toute la mémoire perdue après un refus passager de Windows ou de l'antivirus).
+   */
+  private async readDisk(strict = false): Promise<KnowledgeIndex> {
+    let raw: string;
     try {
-      const raw = await readFile(this.indexPath(), 'utf8');
+      raw = await readIndexText(this.indexPath());
+    } catch (error) {
+      if (strict && (error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      return { version: 1, chunks: [] };
+    }
+    try {
       const parsed = JSON.parse(raw) as Partial<KnowledgeIndex>;
       return {
         version: 1,
@@ -616,6 +627,26 @@ function replaceLearning(index: KnowledgeIndex, records: readonly LearningRecord
 
 const LOCK_STALE_MS = 8_000;
 
+const TRANSIENT_READ_ERRORS = new Set(['EBUSY', 'EPERM', 'EACCES']);
+
+async function readIndexText(path: string): Promise<string> {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return await readFile(path, 'utf8');
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code ?? '';
+      if (attempt >= 4 || !TRANSIENT_READ_ERRORS.has(code)) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 50 * attempt));
+    }
+  }
+}
+/** Attente maximale du verrou de l'index (exportée pour les tests). */
+export let LOCK_WAIT_MS = 10_000;
+/** Réservé aux tests : raccourcit l'attente du verrou. */
+export function setLockWaitMsForTests(ms: number): void {
+  LOCK_WAIT_MS = ms;
+}
+
 async function acquireIndexLock(lockPath: string): Promise<() => Promise<void>> {
   const started = Date.now();
   for (;;) {
@@ -628,13 +659,22 @@ async function acquireIndexLock(lockPath: string): Promise<() => Promise<void>> 
       };
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
-      if (code !== 'EEXIST') throw error;
+      if (code !== 'EEXIST' && code !== 'EPERM') throw error;
+      // Délai vérifié avant tout nouvel essai : un EPERM qui dure (droits du dossier, antivirus)
+      // ne doit pas faire tourner cette boucle sans fin.
+      if (Date.now() - started > LOCK_WAIT_MS) {
+        if (code === 'EPERM') throw error;
+        throw new Error('Le magasin de connaissances est occupé.');
+      }
       const info = await stat(lockPath).catch(() => null);
-      if (!info || Date.now() - info.mtimeMs > LOCK_STALE_MS) {
+      if (info && Date.now() - info.mtimeMs > LOCK_STALE_MS) {
+        // Verrou abandonné (processus arrêté) : seul cas où on le retire.
         await rm(lockPath, { force: true }).catch(() => undefined);
         continue;
       }
-      if (Date.now() - started > 10_000) throw new Error('Le magasin de connaissances est occupé.');
+      // Verrou introuvable ou illisible (sous Windows, EPERM = verrou en cours de suppression) :
+      // ne jamais le supprimer. Un autre magasin a pu en poser un neuf entre-temps ; le retirer
+      // ferait écrire deux magasins en même temps, et une fiche serait perdue sans erreur.
       await new Promise((resolve) => setTimeout(resolve, 25));
     }
   }
