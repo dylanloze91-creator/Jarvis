@@ -18,6 +18,9 @@ import {
   enforceConstraints,
   debugLog,
   withVoiceOriginNotice,
+  withPersonaPrompt,
+  activePersona,
+  userFirstName,
   chatProviderConfig,
   activeOrchestra,
   activeRouter,
@@ -123,9 +126,15 @@ export class ChatSession {
     learningReview?: (reply: string) => string | null;
     learningFinalize?: (reply: string) => string;
   }> {
-    const personal =
-      withVoiceOriginNotice(orchestra?.base ?? settings.systemPrompt, source) +
-      buildPersonalizationPrompt(await this.deps.personalization.get());
+    const profile = await this.deps.personalization.get();
+    // Caractère de Jarvis : la fiche suit la consigne de base, avant la mémoire de
+    // personnalisation. Réglage absent ou coupé : la consigne d'avant, à l'identique.
+    const basePrompt = withPersonaPrompt(orchestra?.base ?? settings.systemPrompt, activePersona(settings), {
+      now: new Date(),
+      userName: userFirstName(profile.user),
+      source,
+    });
+    const personal = withVoiceOriginNotice(basePrompt, source) + buildPersonalizationPrompt(profile);
     const base = orchestra
       ? [personal, orchestra.siteBlock ? withSiteBlockPrompt('') : '', orchestra.knowledge ? withKnowledgePrompt('') : '']
           .map((part) => part.trim())

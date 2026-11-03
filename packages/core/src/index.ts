@@ -103,6 +103,7 @@ export {
   type MessageOrigin,
 } from './agent/voiceOriginNotice.js';
 export * from './agent/orchestra.js';
+export * from './agent/persona.js';
 
 export * from './search/types.js';
 export { WikipediaSearchProvider, wikipediaDescriptor } from './search/providers/wikipedia.js';
