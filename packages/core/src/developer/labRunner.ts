@@ -31,6 +31,20 @@ import {
   type LabRowStatus,
 } from './lab.js';
 
+/**
+ * Supprime un dossier de travail du laboratoire. Sous Windows, un `node --test` qui vient de finir
+ * garde parfois son dossier quelques instants (EBUSY) : la suppression est réessayée (5 fois, 200 ms).
+ * Un nettoyage de fin qui échoue encore n'arrête jamais une nuit de génération (un dossier temporaire
+ * qui reste n'est pas une erreur) ; `fatal` le garde bloquant avant de réécrire un dossier.
+ */
+export async function removeLabDir(path: string, options: { fatal?: boolean } = {}): Promise<void> {
+  try {
+    await rm(path, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+  } catch (error) {
+    if (options.fatal) throw error;
+  }
+}
+
 export interface LabModel {
   name: string;
   digest: string;
@@ -458,7 +472,7 @@ export async function executeHiddenTests(
     const broken = exitCode === null || /ERR_MODULE_NOT_FOUND|Cannot find module/.test(output);
     return { exitCode, output, broken };
   } finally {
-    await rm(verify, { recursive: true, force: true });
+    await removeLabDir(verify);
   }
 }
 
@@ -638,7 +652,7 @@ export async function runLabMission(input: {
     };
   }
 
-  await rm(input.workRoot, { recursive: true, force: true });
+  await removeLabDir(input.workRoot, { fatal: true });
   await mkdir(input.workRoot, { recursive: true });
   for (const file of mission.starterFiles) {
     const dest = join(input.workRoot, file.path);
