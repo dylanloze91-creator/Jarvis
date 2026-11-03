@@ -297,6 +297,8 @@ export const settingsSchema = z.object({
           z.object({ model: z.string().max(200), place: z.enum(MODEL_PLACES) }),
         )
         .optional(),
+      /** 5.0.68 — trieur : modèle dédié au choix d'équipe. Absent : le cerveau trie. */
+      router: z.object({ model: z.string().max(200), place: z.enum(MODEL_PLACES) }).optional(),
     })
     .optional(),
   machine: z

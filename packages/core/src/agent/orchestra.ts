@@ -326,6 +326,19 @@ export interface OrchestraSettingsLike {
   enabled: boolean;
   brain: string;
   teams?: OrchestraConfig['teams'];
+  router?: { model: string; place: ModelPlace };
+}
+
+/** Modèle trieur actif (orchestre allumé, modèle renseigné). */
+export function activeRouter(settings: {
+  provider: string;
+  orchestra?: OrchestraSettingsLike | undefined;
+}): { model: string; place: ModelPlace } | null {
+  const orchestra = settings.orchestra;
+  if (!orchestra?.enabled || settings.provider !== 'ollama') return null;
+  const model = orchestra.router?.model?.trim();
+  if (!model) return null;
+  return { model, place: orchestra.router!.place };
 }
 
 /** Orchestre actif : réglage allumé, cerveau renseigné, fournisseur Ollama. */
