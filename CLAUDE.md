@@ -1,8 +1,8 @@
-# Jarvis 5.0.64 — contexte pour un autre développeur
+# Jarvis 5.0.65 — contexte pour un autre développeur
 
 Ce fichier est à la **racine du code**. Les chemins ci-dessous partent de ce dossier. Ce n’est pas un résumé marketing : c’est l’état réel de cet arbre. La voix a été refaite dans cet arbre (publiée en 0.4.11, section « Voix ») : la transcription restait « Chargement… 100 % » sur l’installateur Windows. La refonte du tableau de bord est dans cet arbre : fenêtre étroite = overlay, fenêtre large = tableau de bord.
 
-**Version confirmée :** `apps/desktop/package.json` → `"version": "5.0.64"` (décision D1 : jamais de suffixe `-beta`). La 5.0.64 (audit, enceinte, outils d'entraînement, robot enceinte, routine de vérification ; intégration du 2 novembre 2026, rapport `rapports/2026-11-02-integration-5064.md`) est publiée (release `v5.0.64`, voir « Updater / GitHub »). Le `package.json` racine est aligné sur la même version depuis 0.5.0 (il était resté à `0.3.0`), mais il n’est lu par rien : la version qui compte pour l’exe, l’updater et GitHub est celle de `@jarvis/desktop`. `@jarvis/core` reste à `0.1.0`. La voix corrigée en 0.4.11 (installateur Windows) est inchangée. Le modèle par défaut reste `qwen2.5:3b`. `qwen3.5:4b` est le modèle recommandé documenté ; le repli est réglable (`fallbackModel`, défaut `qwen2.5:3b`).
+**Version confirmée :** `apps/desktop/package.json` → `"version": "5.0.65"` (décision D1 : jamais de suffixe `-beta`). La 5.0.65 (voix Piper, trieur, export claude.ai, intégration du 3 novembre 2026) est en cours de publication ; la dernière release GitHub reste **5.0.64** jusqu'à `release.sh` (voir « Updater / GitHub »). La 5.0.64 (audit, enceinte, outils d'entraînement, robot enceinte, routine de vérification ; intégration du 2 novembre 2026, rapport `rapports/2026-11-02-integration-5064.md`) est publiée (`v5.0.64`). Le `package.json` racine est aligné sur la même version depuis 0.5.0 (il était resté à `0.3.0`), mais il n’est lu par rien : la version qui compte pour l’exe, l’updater et GitHub est celle de `@jarvis/desktop`. `@jarvis/core` reste à `0.1.0`. Le modèle par défaut reste `qwen2.5:3b`. `qwen3.5:4b` est le modèle recommandé documenté ; le repli est réglable (`fallbackModel`, défaut `qwen2.5:3b`).
 
 Lis ce fichier avant de modifier le code.
 
@@ -63,7 +63,7 @@ Scripts utiles (racine) :
 
 Le script `setup:voice` remplit `apps/desktop/voice-assets/` (runtime ONNX, Whisper, openWakeWord, modèle Vosk français ; non commité, voir `.gitignore`). Premier `dev` / `build` : besoin de réseau.
 
-L’installateur publié est `Jarvis-Setup-5.0.64.exe` (release GitHub `v5.0.64`).
+L’installateur cible est `Jarvis-Setup-5.0.65.exe` (release GitHub `v5.0.65` après publication). Dernière release publiée : `Jarvis-Setup-5.0.64.exe` (`v5.0.64`).
 
 Données utilisateur (Electron `userData`, typiquement `%APPDATA%\Jarvis`) :
 
@@ -97,7 +97,7 @@ Données utilisateur (Electron `userData`, typiquement `%APPDATA%\Jarvis`) :
     src/media/                 intent Spotify
     src/update/                lecture latest.yml GitHub
     src/history/  src/audit/
-  apps/desktop/                Electron (version 5.0.64)
+  apps/desktop/                Electron (version 5.0.65)
     electron-builder.yml       NSIS, extraResources, publish GitHub
     electron.vite.config.ts    aliases onnxruntime-web (wasm, pas JSEP)
     scripts/setup-whisper.mjs
