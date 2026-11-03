@@ -44,6 +44,9 @@ extraResources:
     to: vosk
   - from: voice-assets/piper
     to: piper
+    filter:
+      - '**/*'
+      - '!cache/**'
   - from: scripts/jarvis-qlora-train.py
     to: learning/jarvis-qlora-train.py
 afterPack: scripts/after-pack.cjs
