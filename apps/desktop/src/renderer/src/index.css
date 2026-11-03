@@ -641,6 +641,17 @@ html[data-native-win-caption='yes'] .jarvis-shell {
   font-size: 10px;
 }
 
+.sources-compact {
+  margin-top: 10px;
+  font-size: 13px;
+  color: #94a3b8;
+}
+
+.sources-compact a {
+  color: #67e8f9;
+  text-decoration: underline;
+}
+
 html[data-jarvis-chrome='compact'] #root {
   max-width: 720px;
   margin: 24px auto;

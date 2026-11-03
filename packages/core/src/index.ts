@@ -135,7 +135,11 @@ export {
   OPEN_METEO_LABEL,
   describeWeatherCode,
   fetchOpenMeteoWeather,
+  fetchOpenMeteoWeatherAt,
   localTimeToIso,
+  searchOpenMeteoPlaces,
+  type GeocodingPlace,
+  type WeatherDayFocus,
 } from './search/providers/openMeteo.js';
 export {
   KEYLESS_NEWS_ORDER,
@@ -183,6 +187,20 @@ export {
   formatSourcesFooter,
   stripSourcesFooter,
 } from './agent/citations.js';
+export {
+  isSafeHttpUrl,
+  mediaLabelFromFooterSegment,
+  splitSourcesFooterForDisplay,
+  type SourceDisplayLink,
+} from './agent/sourcesDisplay.js';
+export {
+  LOCATION_ASK_REPLY,
+  isLocalPlaceQuestion,
+  needsNamedPlace,
+  planCurrentInfoTurn,
+  weatherFocusFromQuestion,
+  type CurrentInfoTurnPlan,
+} from './agent/homePlace.js';
 
 export * from './media/types.js';
 export { extractSpotifyPlayQuery, isMusicIntent, searchQueryVariants } from './media/playIntent.js';

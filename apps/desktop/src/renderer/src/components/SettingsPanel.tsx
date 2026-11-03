@@ -23,6 +23,7 @@ import { RoverSettingsSection } from '@/components/RoverSettings';
 import { PhoneSettingsSection } from '@/components/PhoneSettings';
 import { SpeakerSettingsSection } from '@/components/SpeakerSettings';
 import { PersonalizationSettingsSection } from '@/components/PersonalizationSettings';
+import { HomeLocationSettingsSection } from '@/components/HomeLocationSettings';
 import { KnowledgeSettingsSection } from '@/components/KnowledgeSettings';
 import { UpdateSettingsSection } from '@/components/UpdateSettings';
 import { VoiceSettingsSection } from '@/components/VoiceSettings';
@@ -365,6 +366,11 @@ export function SettingsPanel({ settings, status, onSaved, requestedTab, onAnaly
               />
             </Field>
           ) : null}
+
+          <HomeLocationSettingsSection
+            value={draft.homeLocation}
+            onChange={(homeLocation) => patch(homeLocation ? { homeLocation } : { homeLocation: undefined })}
+          />
 
           <PersonalizationSettingsSection />
 
