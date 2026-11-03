@@ -89,7 +89,10 @@ export function createReadTools(deps: ReadToolDeps): RegisteredTool[] {
               'recoverable',
               `git grep a échoué : ${outcome.error ?? outcome.stderr.trim()}`,
             );
-          const rows = outcome.stdout.split('\n').filter((line) => line.trim());
+          const rows = outcome.stdout
+            .split('\n')
+            .map((line) => line.replace(/\r$/, ''))
+            .filter((line) => line.trim());
           if (mode === 'count') {
             const counts: Record<string, number> = {};
             for (const row of rows) {
@@ -101,7 +104,7 @@ export function createReadTools(deps: ReadToolDeps): RegisteredTool[] {
           }
           const matches = rows
             .map((row) => {
-              const match = /^(.*?):(\d+):(.*)$/.exec(row);
+              const match = /^(.*?):(\d+):(.*)\r?$/.exec(row);
               return match
                 ? { file: match[1]!, line: Number(match[2]), text: match[3]!.slice(0, 300) }
                 : null;

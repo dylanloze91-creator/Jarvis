@@ -66,6 +66,7 @@ export class Sandbox {
     readonly branch: string,
     readonly baseCommit: string,
     private readonly run: Runner,
+    private readonly repoRoot: string,
   ) {
     if (!SANDBOX_BRANCH_PATTERN.test(branch))
       throw new SandboxError(`Branche refusée : ${branch} (seulement jarvis-dev/*).`);
@@ -161,7 +162,7 @@ export class Sandbox {
   }
 
   async discard(signal?: AbortSignal): Promise<void> {
-    await discardWorktree(this.run, this.path, this.branch, signal);
+    await discardWorktree(this.run, this.path, this.branch, this.repoRoot, signal);
   }
 }
 
@@ -183,30 +184,31 @@ export async function discardWorktree(
   run: Runner,
   path: string,
   branch: string,
+  repoRoot: string,
   signal?: AbortSignal,
 ): Promise<void> {
   if (!SANDBOX_BRANCH_PATTERN.test(branch))
     throw new SandboxError(`Branche refusée : ${branch} (seulement jarvis-dev/*).`);
-  const git = (args: string[], display: string, ctxBranch: string | null) =>
+  const git = (args: string[], display: string, ctxBranch: string | null, cwd: string) =>
     run({
       program: 'git',
       args: [...GIT_SAFE, ...args],
-      cwd: path,
+      cwd,
       display,
       env: { ...process.env, ...JARVIS_GIT_IDENTITY },
       timeoutMs: 300_000,
       context: { insideSandbox: true, branch: ctxBranch },
       signal,
     });
-  const steps: Array<[string[], string, string | null]> = [
-    [['reset', '--hard'], 'git reset --hard', branch],
-    [['clean', '-fd'], 'git clean -fd', branch],
-    [['checkout', '--detach'], 'git checkout --detach', branch],
-    [['branch', '-D', branch], `git branch -D ${branch}`, null],
-    [['worktree', 'remove', path], `git worktree remove "${path}"`, null],
+  const steps: Array<[string[], string, string | null, string]> = [
+    [['reset', '--hard'], 'git reset --hard', branch, path],
+    [['clean', '-fd'], 'git clean -fd', branch, path],
+    [['checkout', '--detach'], 'git checkout --detach', branch, path],
+    [['branch', '-D', branch], `git branch -D ${branch}`, null, path],
+    [['worktree', 'remove', path], `git worktree remove "${path}"`, null, repoRoot],
   ];
-  for (const [args, display, ctxBranch] of steps) {
-    const outcome = await git(args, display, ctxBranch);
+  for (const [args, display, ctxBranch, cwd] of steps) {
+    const outcome = await git(args, display, ctxBranch, cwd);
     if (outcome.code !== 0) throw failed(outcome, display);
   }
 }
@@ -255,7 +257,7 @@ export async function createSandbox(
     `git worktree add -b ${branch} "${path}" ${base.slice(0, 12)}`,
   );
   if (add.code !== 0) throw failed(add, 'git worktree add');
-  return new Sandbox(path, branch, base, deps.run);
+  return new Sandbox(path, branch, base, deps.run, deps.repoRoot);
 }
 
 export interface SandboxSummary {
