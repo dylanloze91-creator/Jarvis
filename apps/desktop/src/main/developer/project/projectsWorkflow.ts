@@ -227,7 +227,10 @@ export class ProjectsWorkflow {
           ? entry.template && isDotnetWindowsDesktopTemplate(entry.template)
             ? {
                 command: dotnetPublishWinExeCommand(entry.name),
-                artifact: dotnetWinExeArtifactRelative(entry.name),
+                artifact: dotnetWinExeArtifactRelative(
+                  entry.name,
+                  this.dotnet?.tfm ? `${this.dotnet.tfm}-windows` : undefined,
+                ),
               }
             : { command: `dotnet build ${check.target} -c Release`, artifact: null }
           : null

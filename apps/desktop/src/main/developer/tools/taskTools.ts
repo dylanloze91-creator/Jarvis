@@ -210,7 +210,9 @@ function sandboxTools(deps: TaskToolDeps): RegisteredTool[] {
           (item) => samePath(item.path, path) && item.branch === branch && !item.missing,
         );
         if (!known) return fail('definitive', 'Copie isolée inconnue : rien n’a été supprimé.');
-        await discardWorktree(deps.run, known.path, branch, context.signal);
+        const repoRoot = deps.repoRoot();
+        if (!repoRoot) return fail('recoverable', 'Copie de travail non vérifiée.');
+        await discardWorktree(deps.run, known.path, branch, repoRoot, context.signal);
         const current = deps.sandbox();
         if (current && samePath(current.path, path)) deps.setSandbox(null);
         return toolSuccess(`Copie isolée ${branch} jetée.`);

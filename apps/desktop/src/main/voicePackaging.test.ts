@@ -51,7 +51,7 @@ describe('empaquetage de la voix', () => {
   });
 
   it('extraResources copie voice-assets/{ort,whisper,openwakeword,vosk} à côté de app.asar', () => {
-    const yml = readFileSync(join(desktopRoot, 'electron-builder.yml'), 'utf8');
+    const yml = readFileSync(join(desktopRoot, 'electron-builder.yml'), 'utf8').replace(/\r\n/g, '\n');
     for (const host of ['ort', 'whisper', 'openwakeword', 'vosk']) {
       expect(yml).toContain(`  - from: voice-assets/${host}\n    to: ${host}\n`);
     }

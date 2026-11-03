@@ -93,6 +93,11 @@ describe('banc réel (0.5.1)', () => {
       true,
     );
     expect(doc.accept('Compares two versions.')).toBe(false);
+    const crlf =
+      'export function compareVersions(a: string, b: string) {\r\n  return a.localeCompare(b);\r\n}\r\n';
+    expect(doc.prompt({ 'packages/core/src/developer/repoCheck.ts': crlf })).toContain(
+      'compareVersions',
+    );
     const research = realBenchTask('research-pages') as CompleteTask;
     expect(research.accept('Google, sans clé (Page 2).')).toBe(true);
     expect(research.accept('Google.')).toBe(false);

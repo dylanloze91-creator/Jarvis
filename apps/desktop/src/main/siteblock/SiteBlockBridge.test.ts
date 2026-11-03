@@ -49,6 +49,9 @@ describe('SiteBlockBridge', () => {
   }
 
   it('ne lit jamais process.env pour le jeton ou l’URL', async () => {
+    const isolatedAppData = mkdtempSync(join(tmpdir(), 'jarvis-siteblock-appdata-'));
+    dirs.push(isolatedAppData);
+    vi.stubEnv('APPDATA', isolatedAppData);
     process.env.SITEBLOCK_TOKEN = 'from-env';
     process.env.SITEBLOCK_BASE_URL = 'http://evil.example';
     const fetchMock = vi.fn();

@@ -21,6 +21,11 @@ import {
   REVIEW_MARKER,
 } from '@jarvis/core';
 import { createHarness, fakeOutcome } from '../controllerHarness.testkit.js';
+import {
+  dotnetDesktopTfm,
+  fakeDotnetListSdks,
+  installedDotnetTarget,
+} from '../dotnetTestkit.js';
 import { FakeOllama, type ChatBody, type Reply } from '../models/fakeOllama.testkit.js';
 import type { RunOutcome, RunSpec } from '../runner.js';
 import { createFixtureRepo, replyForPlannedFileWrite } from '../task/taskWorkflow.testkit.js';
@@ -28,6 +33,8 @@ import { createFixtureRepo, replyForPlannedFileWrite } from '../task/taskWorkflo
 const base = mkdtempSync(join(tmpdir(), 'jarvis-win-path-'));
 const jarvis = join(base, 'Jarvis');
 const projectsRoot = join(base, 'Projets');
+const DOTNET_TFM = installedDotnetTarget() ?? 'net8.0';
+const DOTNET_DESKTOP = dotnetDesktopTfm(DOTNET_TFM);
 const CODE = 'scripte:win-path';
 
 const SALUTATION_CS = (ns: string) =>
@@ -47,7 +54,7 @@ function stubPublishExe(spec: RunSpec): void {
   const slnName = readdirSync(spec.cwd).find((f) => f.endsWith('.sln'));
   if (!slnName) return;
   const slnBase = slnName.replace(/\.sln$/i, '');
-  const exeRel = `src/${slnBase}.App/bin/Release/net10.0-windows/win-x64/publish/${slnBase}.App.exe`;
+  const exeRel = `src/${slnBase}.App/bin/Release/${DOTNET_DESKTOP}/win-x64/publish/${slnBase}.App.exe`;
   const exe = join(spec.cwd, exeRel);
   mkdirSync(dirname(exe), { recursive: true });
   writeFileSync(exe, Buffer.alloc(12_000, 0x4d));
@@ -58,7 +65,7 @@ function offlineDotnet(sdk: boolean) {
     if (!display.startsWith('dotnet ')) return null;
     if (display === 'dotnet --list-sdks')
       return sdk
-        ? fakeOutcome(display, '10.0.112 [/usr/lib/dotnet/sdk]\n')
+        ? fakeOutcome(display, fakeDotnetListSdks(DOTNET_TFM))
         : { ...fakeOutcome(display, '', 0), code: null, error: 'spawn dotnet ENOENT' };
     if (display.startsWith('dotnet restore')) return fakeOutcome(display, 'Restored.');
     if (display.startsWith('dotnet build') || display.startsWith('dotnet test'))
@@ -121,12 +128,13 @@ afterAll(async () => {
 });
 
 function assertExeAndTests(_projectTitle: string, projectId: string) {
+  if (!installedDotnetTarget()) return;
   const dir = join(projectsRoot, projectId);
   const slnName = readdirSync(dir).find((f) => f.endsWith('.sln'));
   expect(slnName, `solution dans ${dir}`).toBeTruthy();
   execFileSync('dotnet', ['restore', slnName!], { cwd: dir, encoding: 'utf8' });
   const slnBase = slnName!.replace(/\.sln$/i, '');
-  const exeRel = `src/${slnBase}.App/bin/Release/net10.0-windows/win-x64/publish/${slnBase}.App.exe`;
+  const exeRel = `src/${slnBase}.App/bin/Release/${DOTNET_DESKTOP}/win-x64/publish/${slnBase}.App.exe`;
   const exe = join(dir, exeRel);
   expect(existsSync(exe), exeRel).toBe(true);
   expect(readFileSync(exe).length).toBeGreaterThan(10_000);

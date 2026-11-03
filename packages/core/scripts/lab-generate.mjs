@@ -212,7 +212,10 @@ try {
     }
   }
 } finally {
-  await rm(workParent, { recursive: true, force: true });
+  // Sous Windows, un dossier encore tenu (EBUSY) ne doit pas cacher le résumé de la nuit.
+  await rm(workParent, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }).catch((error) =>
+    console.log(`(dossier temporaire laissé : ${error.code ?? error.message})`),
+  );
 }
 
 const minutes = ((Date.now() - started) / 60000).toFixed(0);
