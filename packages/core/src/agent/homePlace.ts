@@ -91,9 +91,10 @@ export function weatherFocusFromQuestion(text: string, now: Date): 'now' | 'toda
   const normalized = text.toLowerCase();
   if (/\bdemain\b/u.test(normalized)) return 'tomorrow';
   if (/\bce week-?end\b/u.test(normalized)) {
+    // Samedi ou dimanche : c'est déjà le week-end, donc aujourd'hui (pas le suivant).
     const day = now.getDay();
-    const daysUntilSat = (6 - day + 7) % 7 || 7;
-    return daysUntilSat;
+    if (day === 6 || day === 0) return 'today';
+    return 6 - day;
   }
   const weekday = normalized.match(/\b(lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche)\b/u);
   if (weekday) {

@@ -48,3 +48,15 @@ describe('weatherFocusFromQuestion', () => {
     expect(weatherFocusFromQuestion('Météo jeudi ?', NOW)).toBe(4);
   });
 });
+
+describe('weatherFocusFromQuestion — ce week-end', () => {
+  it('un dimanche, « ce week-end » est aujourd’hui, pas le samedi suivant', () => {
+    expect(weatherFocusFromQuestion('Quel temps ce week-end ?', new Date('2026-10-04T12:00:00'))).toBe('today');
+  });
+  it('un samedi, « ce week-end » est aujourd’hui', () => {
+    expect(weatherFocusFromQuestion('Quel temps ce week-end ?', new Date('2026-10-03T12:00:00'))).toBe('today');
+  });
+  it('un mercredi, « ce week-end » est le samedi qui vient (dans 3 jours)', () => {
+    expect(weatherFocusFromQuestion('Quel temps ce week-end ?', new Date('2026-09-30T12:00:00'))).toBe(3);
+  });
+});
