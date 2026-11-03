@@ -1,4 +1,3 @@
-import { access } from 'node:fs/promises';
 import {
   PIPER_BENCHMARK_SAMPLE_CHARS,
   PIPER_SAMPLE_RATE,
@@ -12,14 +11,18 @@ import {
 import { piperAssetsRoot, piperBinaryPath, piperEspeakDataDir, piperModelPath } from './paths.js';
 import type { PiperRunner } from './runner.js';
 import { ProcessPiperRunner } from './runner.js';
+import { access } from 'node:fs/promises';
 
 export interface PiperSynthInput {
   text: string;
   voiceId?: string;
 }
 
+const BENCHMARK_SAMPLE_TEXT = `${'Bonjour Jarvis. '.repeat(24)}`.slice(0, PIPER_BENCHMARK_SAMPLE_CHARS);
+
 export class PiperService {
   private benchmarkMs: number | null = null;
+  private benchmarkStarted = false;
   private readonly runner: PiperRunner;
 
   constructor(runner: PiperRunner = new ProcessPiperRunner()) {
@@ -47,6 +50,7 @@ export class PiperService {
     const text = input.text.trim();
     if (!text) throw new Error('Texte vide.');
     const voice = describePiperVoice(input.voiceId);
+    await this.ensureBenchmark(voice);
     if (shouldStreamPiperSpeech(text, this.benchmarkMs)) {
       const sentences = splitFrenchSentences(text);
       const clips: Uint8Array[] = [];
@@ -55,15 +59,15 @@ export class PiperService {
       }
       return concatWavClips(clips);
     }
-    const wav = await this.synthesizeSentence(text, voice);
-    await this.maybeBenchmark(text, wav);
-    return wav;
+    return this.synthesizeSentence(text, voice);
   }
 
   async synthesizeSentenceWav(text: string, voiceId?: string): Promise<Uint8Array> {
     const trimmed = text.trim();
     if (!trimmed) throw new Error('Texte vide.');
-    return this.synthesizeSentence(trimmed, describePiperVoice(voiceId));
+    const voice = describePiperVoice(voiceId);
+    await this.ensureBenchmark(voice);
+    return this.synthesizeSentence(trimmed, voice);
   }
 
   private async synthesizeSentence(text: string, voice: PiperVoiceDefinition): Promise<Uint8Array> {
@@ -81,13 +85,16 @@ export class PiperService {
     });
   }
 
-  private async maybeBenchmark(text: string, _wav: Uint8Array): Promise<void> {
-    if (this.benchmarkMs !== null) return;
-    if (text.length < PIPER_BENCHMARK_SAMPLE_CHARS) return;
-    const sample = text.slice(0, PIPER_BENCHMARK_SAMPLE_CHARS);
+  private async ensureBenchmark(voice: PiperVoiceDefinition): Promise<void> {
+    if (this.benchmarkStarted || this.benchmarkMs !== null) return;
+    this.benchmarkStarted = true;
     const start = performance.now();
-    await this.synthesizeSentence(sample, describePiperVoice(undefined));
-    this.benchmarkMs = Math.round(performance.now() - start);
+    try {
+      await this.synthesizeSentence(BENCHMARK_SAMPLE_TEXT, voice);
+      this.benchmarkMs = Math.round(performance.now() - start);
+    } catch {
+      this.benchmarkMs = null;
+    }
   }
 }
 

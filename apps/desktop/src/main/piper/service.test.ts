@@ -29,4 +29,12 @@ describe('PiperService', () => {
     const service = new PiperService(new FakePiperRunner(encodeWav(new Float32Array([0]), 22_050)));
     await expect(service.synthesizeWav({ text: '   ' })).rejects.toThrow(/vide/);
   });
+
+  it('mesure le benchmark au premier appel avec un échantillon fixe', async () => {
+    const clip = encodeWav(new Float32Array([0, 0.1, -0.1]), 22_050);
+    const service = new PiperService(new FakePiperRunner(clip));
+    expect(service.streamingBenchmarkMs).toBeNull();
+    await service.synthesizeWav({ text: 'Court.' });
+    expect(service.streamingBenchmarkMs).not.toBeNull();
+  });
 });
