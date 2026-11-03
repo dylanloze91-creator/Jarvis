@@ -3,7 +3,7 @@
  * Télécharge le binaire Piper précompilé (espeak-ng embarqué, jamais lié à
  * l'application) et les modèles ONNX français vérifiés par SHA-256.
  *
- * `JARVIS_PIPER_TARGET=win-x64` (défini par `package:win`) force le binaire Windows
+ * `--target win-x64` (passé par `package:win`) ou `JARVIS_PIPER_TARGET=win-x64` force le binaire Windows
  * même sur Linux, pour que l'installateur contienne piper.exe et ses DLL.
  */
 import {
@@ -93,10 +93,16 @@ async function prepareWindowsBinary() {
   }
 }
 
+/** `--target win-x64` : forme portable (une variable d'environnement préfixée ne marche pas sous cmd.exe). */
+function targetFromArgs(args) {
+  const index = args.indexOf('--target');
+  return index >= 0 ? args[index + 1] : undefined;
+}
+
 async function prepareBinary() {
   const target = resolvePiperBinaryTarget({
     platform: process.platform,
-    targetOverride: process.env.JARVIS_PIPER_TARGET,
+    targetOverride: targetFromArgs(process.argv.slice(2)) ?? process.env.JARVIS_PIPER_TARGET,
   });
   console.log(`[piper] cible binaire : ${target}`);
   if (target === 'win-x64') {
