@@ -33,12 +33,12 @@ export class PiperService {
     return this.benchmarkMs;
   }
 
-  async isReady(): Promise<boolean> {
+  async isReady(voiceId?: string): Promise<boolean> {
     try {
       const root = piperAssetsRoot();
       const binary = piperBinaryPath(root);
       await access(binary);
-      const voice = describePiperVoice(undefined);
+      const voice = describePiperVoice(voiceId);
       await access(piperModelPath(root, voice.modelFile));
       return true;
     } catch {

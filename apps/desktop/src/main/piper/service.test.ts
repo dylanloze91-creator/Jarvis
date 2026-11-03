@@ -13,6 +13,8 @@ vi.mock('node:fs/promises', async (importOriginal) => {
   return { ...actual, access: vi.fn(async () => undefined) };
 });
 
+import { access } from 'node:fs/promises';
+import { describePiperVoice } from '@jarvis/core';
 import { FakePiperRunner } from './runner.js';
 import { PiperService } from './service.js';
 
@@ -36,5 +38,19 @@ describe('PiperService', () => {
     expect(service.streamingBenchmarkMs).toBeNull();
     await service.synthesizeWav({ text: 'Court.' });
     expect(service.streamingBenchmarkMs).not.toBeNull();
+  });
+
+  it('isReady vérifie le modèle ONNX de la voix demandée', async () => {
+    const siwis = describePiperVoice('fr_FR-siwis-medium');
+    const jessica = describePiperVoice('fr_FR-upmc-jessica');
+    vi.mocked(access).mockImplementation(async (target) => {
+      const path = String(target);
+      if (path.endsWith(jessica.modelFile)) return;
+      if (path.endsWith(siwis.modelFile)) throw new Error('modèle Siwis absent');
+      return;
+    });
+    const service = new PiperService(new FakePiperRunner(encodeWav(new Float32Array([0]), 22_050)));
+    await expect(service.isReady('fr_FR-upmc-jessica')).resolves.toBe(true);
+    await expect(service.isReady('fr_FR-siwis-medium')).resolves.toBe(false);
   });
 });

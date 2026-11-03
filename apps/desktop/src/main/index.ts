@@ -260,7 +260,7 @@ const phone = new PhoneService({
   icon: () => readFile(join(__dirname, '../../resources/icon.png')),
   version: () => app.getVersion(),
   phoneVoice: async () =>
-    phoneVoiceMode(settings.voice.ttsProvider, await piper.isReady()),
+    phoneVoiceMode(settings.voice.ttsProvider, await piper.isReady(settings.voice.ttsVoice || undefined)),
   synthesizeSpeech: async (text: string) =>
     piper.synthesizeWav({ text, voiceId: settings.voice.ttsVoice || undefined }),
   log: (line) => console.info(line),
@@ -631,7 +631,7 @@ function registerIpc(): void {
   );
   ipcMain.handle(IpcChannel.voiceSpeak, (_event, input: VoiceSpeakInput) => voice.speak(input));
   ipcMain.handle(IpcChannel.voicePiperStatus, async () => ({
-    ready: await piper.isReady(),
+    ready: await piper.isReady(settings.voice.ttsVoice || undefined),
     benchmarkMs: piper.streamingBenchmarkMs,
   }));
   ipcMain.handle(IpcChannel.voicePiperSpeak, async (_event, input: VoicePiperSpeakInput) => {
