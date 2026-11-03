@@ -11,6 +11,7 @@ import {
   trieurTeamLabels,
 } from './extract.js';
 import { ORCHESTRA_TEAMS, type OrchestraTeam } from '../agent/orchestraTeams.js';
+import { dropLastExamLine } from './sortExam.js';
 import { SORT_POST_MAX_BODY, sortPostBodySizeOk, sortPostContentTypeOk } from './sortPost.js';
 
 export interface SortProgress {
@@ -110,6 +111,7 @@ const SORT_HTML = `<!DOCTYPE html>
 <button type="button" class="secondary" data-team="unknown">Je ne sais pas</button>
 <button type="button" class="secondary" data-team="not_a_request">Pas une demande</button>
 </div>
+<p><button type="button" id="undo" class="secondary">Annuler la dernière</button></p>
 <script src="/app.js"></script>
 </body>
 </html>`;
@@ -153,6 +155,12 @@ async function choose(team){
   if(!r.ok){statusEl.textContent='Enregistrement impossible.';return;}
   await load();
 }
+async function undoLast(){
+  const r=await fetch('/api/undo',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+  if(!r.ok){statusEl.textContent='Annulation impossible.';return;}
+  await load();
+}
+document.getElementById('undo')?.addEventListener('click',()=>{void undoLast();});
 document.body.addEventListener('click',e=>{
   const t=e.target;
   if(!(t instanceof HTMLButtonElement)||!t.dataset.team)return;
@@ -283,6 +291,38 @@ export class TrieurSortServer {
       json(res, 200, { ok: true, nextIndex: this.index });
       return;
     }
+    if (req.method === 'POST' && path === '/api/undo') {
+      const contentType = typeof req.headers['content-type'] === 'string' ? req.headers['content-type'] : undefined;
+      if (!sortPostContentTypeOk(contentType)) {
+        json(res, 415, { error: 'Content-Type application/json requis' });
+        return;
+      }
+      const rawBody = await readRawBody(req);
+      if (rawBody === null) {
+        json(res, 413, { error: 'corps trop grand' });
+        return;
+      }
+      if (this.index <= 0) {
+        json(res, 400, { error: 'rien à annuler' });
+        return;
+      }
+      let examRaw = '';
+      try {
+        examRaw = await readFile(this.options.examPath, 'utf8');
+      } catch {
+        examRaw = '';
+      }
+      const dropped = dropLastExamLine(examRaw);
+      if (!dropped.removed) {
+        json(res, 400, { error: 'rien à annuler' });
+        return;
+      }
+      await writeFile(this.options.examPath, dropped.content, 'utf8');
+      this.index -= 1;
+      await saveProgress(this.options.progressPath, this.index);
+      json(res, 200, { ok: true, nextIndex: this.index });
+      return;
+    }
     text(res, 404, 'Introuvable');
   }
 }
@@ -293,12 +333,16 @@ function parseTeamChoice(raw: string): ExamLine['team'] | null {
   return null;
 }
 
-async function readJsonBody(req: IncomingMessage): Promise<Record<string, unknown>> {
+async function readRawBody(req: IncomingMessage): Promise<Uint8Array | null> {
   const chunks: Uint8Array[] = [];
-  for await (const chunk of req) chunks.push(chunk);
-  const text = new TextDecoder().decode(chunks.length === 1 ? chunks[0]! : concatBytes(chunks)).trim();
-  if (!text) return {};
-  return JSON.parse(text) as Record<string, unknown>;
+  let size = 0;
+  for await (const chunk of req) {
+    size += chunk.length;
+    if (!sortPostBodySizeOk(size)) return null;
+    chunks.push(chunk);
+  }
+  if (size === 0) return new Uint8Array(0);
+  return chunks.length === 1 ? chunks[0]! : concatBytes(chunks);
 }
 
 function concatBytes(chunks: Uint8Array[]): Uint8Array {

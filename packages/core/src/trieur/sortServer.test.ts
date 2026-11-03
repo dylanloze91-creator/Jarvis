@@ -58,6 +58,37 @@ describe('trieur sort server', () => {
     await rm(dir, { recursive: true, force: true });
   });
 
+  it('annule la dernière classification et recule la progression', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'trieur-undo-'));
+    const files = trieurFileNames(dir);
+    await writeFile(
+      files.toSort,
+      `${JSON.stringify({ id: 'a', phrase: 'Une', context: 'Demande : Une\nÉquipe :' })}\n${JSON.stringify({ id: 'b', phrase: 'Deux', context: 'Demande : Deux\nÉquipe :' })}\n`,
+      'utf8',
+    );
+    const server = new TrieurSortServer({
+      toSortPath: files.toSort,
+      examPath: files.exam,
+      progressPath: files.sortProgress,
+    });
+    const { port } = await server.start();
+    const host = `127.0.0.1:${port}`;
+    const headers = { host, 'Content-Type': 'application/json' };
+    await fetch(`http://${host}/api/choose`, { method: 'POST', headers, body: JSON.stringify({ team: 'pc' }) });
+    await fetch(`http://${host}/api/choose`, { method: 'POST', headers, body: JSON.stringify({ team: 'web' }) });
+    const undo = await fetch(`http://${host}/api/undo`, { method: 'POST', headers, body: '{}' });
+    expect(undo.ok).toBe(true);
+    const examRaw = await readFile(files.exam, 'utf8');
+    expect(examRaw).not.toContain('"team":"web"');
+    expect(examRaw).toContain('"team":"pc"');
+    const current = await fetch(`http://${host}/api/current`, { headers: { host } });
+    const body = (await current.json()) as { phrase?: string; done?: boolean };
+    expect(body.done).toBe(false);
+    expect(body.phrase).toBe('Deux');
+    await server.stop();
+    await rm(dir, { recursive: true, force: true });
+  });
+
   it('écrit examen.jsonl et reprend la progression', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'trieur-sort-'));
     const files = trieurFileNames(dir);
