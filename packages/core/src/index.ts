@@ -323,7 +323,10 @@ export {
   PIPER_WINDOWS_X64_ARCHIVE_SHA256,
   PIPER_MODEL_ASSETS,
   requiredPiperAssetChecks,
+  resolvePiperBinaryTarget,
+  PIPER_WINDOWS_BUNDLE_CHECKS,
   type PiperModelAsset,
+  type PiperBinaryTarget,
 } from './speech/piperAssets.js';
 export { normalizePiperStdinText } from './speech/piperInput.js';
 export { playPiperPartsWithPrefetch } from './speech/piperStream.js';
