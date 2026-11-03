@@ -24,7 +24,12 @@
     "lab:generate": "tsc -p tsconfig.json && node scripts/lab-generate.mjs",
     "lab:clean": "tsc -p tsconfig.json && node scripts/lab-clean.mjs",
     "lab:prepare": "tsc -p tsconfig.json && node scripts/lab-prepare.mjs",
-    "lab:compare": "tsc -p tsconfig.json && node scripts/lab-compare.mjs"
+    "lab:compare": "tsc -p tsconfig.json && node scripts/lab-compare.mjs",
+    "trieur:extraire": "tsc -p tsconfig.json && node scripts/trieur-extraire.mjs",
+    "trieur:trier": "tsc -p tsconfig.json && node scripts/trieur-trier.mjs",
+    "trieur:banc": "tsc -p tsconfig.json && node scripts/trieur-banc.mjs",
+    "trieur:generer": "tsc -p tsconfig.json && node scripts/trieur-generer.mjs",
+    "trieur:preparer": "tsc -p tsconfig.json && node scripts/trieur-preparer.mjs"
   },
   "dependencies": {
     "zod": "^4.6.5"

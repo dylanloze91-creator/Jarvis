@@ -12,6 +12,7 @@ import {
   type SpeakerTranscribeResult,
   type UpdateState,
   type VoiceSpeakInput,
+  type VoicePiperSpeakInput,
   type VoiceTranscribeInput,
   type WakeLearningSampleInput,
   type WindowChrome,
@@ -99,6 +100,8 @@ const api: JarvisApi = {
     transcribe: (input: VoiceTranscribeInput) =>
       ipcRenderer.invoke(IpcChannel.voiceTranscribe, input),
     speak: (input: VoiceSpeakInput) => ipcRenderer.invoke(IpcChannel.voiceSpeak, input),
+    piperSpeak: (input: VoicePiperSpeakInput) => ipcRenderer.invoke(IpcChannel.voicePiperSpeak, input),
+    piperStatus: () => ipcRenderer.invoke(IpcChannel.voicePiperStatus),
     assetsReport: () => ipcRenderer.invoke(IpcChannel.voiceAssetsReport),
     copyReport: (text: string) => ipcRenderer.invoke(IpcChannel.voiceCopyReport, text),
     log: (line: string) => ipcRenderer.send(IpcChannel.voiceCaptureLog, line),
