@@ -65,6 +65,138 @@ function round(value: number | undefined): string {
   return value === undefined || !Number.isFinite(value) ? '?' : String(Math.round(value));
 }
 
+export interface GeocodingPlace {
+  name: string;
+  latitude: number;
+  longitude: number;
+  country?: string;
+  admin1?: string;
+}
+
+export async function searchOpenMeteoPlaces(
+  query: string,
+  options: { count?: number; fetchImpl?: typeof fetch; signal?: AbortSignal } = {},
+): Promise<GeocodingPlace[]> {
+  const name = query.trim();
+  if (!name) return [];
+  const geoUrl = new URL('https://geocoding-api.open-meteo.com/v1/search');
+  geoUrl.searchParams.set('name', name);
+  geoUrl.searchParams.set('count', String(Math.min(Math.max(options.count ?? 5, 1), 10)));
+  geoUrl.searchParams.set('language', 'fr');
+  geoUrl.searchParams.set('format', 'json');
+  const geo = await fetchSearchText(geoUrl.toString(), 'Open-Meteo', {
+    signal: options.signal,
+    fetchImpl: options.fetchImpl,
+    headers: { accept: 'application/json' },
+  });
+  if (geo.status !== 200) {
+    throw new SearchProviderError(`Open-Meteo : géocodage HTTP ${geo.status}.`, geo.status);
+  }
+  const results = (JSON.parse(geo.text) as GeocodingResponse).results ?? [];
+  return results.map((place) => ({
+    name: place.name,
+    latitude: place.latitude,
+    longitude: place.longitude,
+    country: place.country,
+    admin1: place.admin1,
+  }));
+}
+
+export type WeatherDayFocus = 'now' | 'today' | 'tomorrow' | number;
+
+async function loadForecast(
+  latitude: number,
+  longitude: number,
+  options: { fetchImpl?: typeof fetch; signal?: AbortSignal },
+): Promise<{ data: ForecastResponse; placeLabel: string }> {
+  const forecastUrl = new URL('https://api.open-meteo.com/v1/forecast');
+  forecastUrl.searchParams.set('latitude', String(latitude));
+  forecastUrl.searchParams.set('longitude', String(longitude));
+  forecastUrl.searchParams.set(
+    'current',
+    'temperature_2m,apparent_temperature,weather_code,wind_speed_10m,precipitation',
+  );
+  forecastUrl.searchParams.set(
+    'daily',
+    'weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max',
+  );
+  forecastUrl.searchParams.set('timezone', 'auto');
+  forecastUrl.searchParams.set('forecast_days', '14');
+  const forecast = await fetchSearchText(forecastUrl.toString(), 'Open-Meteo', {
+    signal: options.signal,
+    fetchImpl: options.fetchImpl,
+    headers: { accept: 'application/json' },
+  });
+  if (forecast.status !== 200) {
+    throw new SearchProviderError(`Open-Meteo : prévisions HTTP ${forecast.status}.`, forecast.status);
+  }
+  return { data: JSON.parse(forecast.text) as ForecastResponse, placeLabel: '' };
+}
+
+function buildWeatherSnippet(
+  data: ForecastResponse,
+  where: string,
+  focus: WeatherDayFocus | undefined,
+): string[] {
+  const current = data.current ?? {};
+  const daily = data.daily ?? {};
+  const parts: string[] = [];
+
+  const addDay = (index: number, label: string) => {
+    if (!daily.time?.[index]) return;
+    parts.push(
+      `${label} : ${round(daily.temperature_2m_min?.[index])} à ${round(daily.temperature_2m_max?.[index])} °C, ${describeWeatherCode(daily.weather_code?.[index])}, risque de pluie ${round(daily.precipitation_probability_max?.[index])} %.`,
+    );
+  };
+
+  if (focus === 'tomorrow') {
+    addDay(1, 'Demain');
+    return parts;
+  }
+  if (focus === 'today') {
+    addDay(0, "Aujourd'hui");
+    return parts;
+  }
+  if (typeof focus === 'number' && focus >= 0) {
+    const dayLabel = daily.time?.[focus] ?? `J+${focus}`;
+    addDay(focus, dayLabel);
+    return parts;
+  }
+  if (focus === 'now' || focus === undefined) {
+    parts.push(
+      `Maintenant : ${round(current.temperature_2m)} °C (ressenti ${round(current.apparent_temperature)} °C), ${describeWeatherCode(current.weather_code)}, vent ${round(current.wind_speed_10m)} km/h.`,
+    );
+    addDay(0, "Aujourd'hui");
+    if (daily.time?.[1]) addDay(1, 'Demain');
+  }
+  if (parts.length === 0 && where) {
+    parts.push(`Prévisions pour ${where}.`);
+  }
+  return parts;
+}
+
+export async function fetchOpenMeteoWeatherAt(
+  coords: { latitude: number; longitude: number; label: string },
+  options: {
+    fetchImpl?: typeof fetch;
+    signal?: AbortSignal;
+    focus?: WeatherDayFocus;
+  } = {},
+): Promise<SearchResultItem> {
+  const { data } = await loadForecast(coords.latitude, coords.longitude, options);
+  const where = coords.label.trim() || `${coords.latitude}, ${coords.longitude}`;
+  const parts = buildWeatherSnippet(data, where, options.focus);
+  const current = data.current ?? {};
+  return {
+    title: `Météo ${where}`,
+    url: `https://open-meteo.com/en/docs?latitude=${coords.latitude}&longitude=${coords.longitude}`,
+    snippet: parts.join(' '),
+    source: 'open-meteo.com',
+    publisher: 'Open-Meteo',
+    publishedAt: localTimeToIso(current.time, data.utc_offset_seconds),
+  };
+}
+
 /**
  * Météo actuelle et du jour pour une ville, via Open-Meteo (gratuit, sans clé
  * ni compte, modèles Météo-France / ECMWF / DWD). Rend un résultat de
@@ -72,7 +204,7 @@ function round(value: number | undefined): string {
  */
 export async function fetchOpenMeteoWeather(
   city: string,
-  options: { fetchImpl?: typeof fetch; signal?: AbortSignal } = {},
+  options: { fetchImpl?: typeof fetch; signal?: AbortSignal; focus?: WeatherDayFocus } = {},
 ): Promise<SearchResultItem> {
   const name = city.trim();
   if (!name) throw new SearchProviderError('Ville manquante pour la météo.');
@@ -89,55 +221,11 @@ export async function fetchOpenMeteoWeather(
   if (geo.status !== 200) throw new SearchProviderError(`Open-Meteo : géocodage HTTP ${geo.status}.`, geo.status);
   const place = (JSON.parse(geo.text) as GeocodingResponse).results?.[0];
   if (!place) throw new SearchProviderError(`Open-Meteo ne connaît pas la ville « ${name} ».`);
-
-  const forecastUrl = new URL('https://api.open-meteo.com/v1/forecast');
-  forecastUrl.searchParams.set('latitude', String(place.latitude));
-  forecastUrl.searchParams.set('longitude', String(place.longitude));
-  forecastUrl.searchParams.set(
-    'current',
-    'temperature_2m,apparent_temperature,weather_code,wind_speed_10m,precipitation',
-  );
-  forecastUrl.searchParams.set(
-    'daily',
-    'weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max',
-  );
-  forecastUrl.searchParams.set('timezone', 'auto');
-  forecastUrl.searchParams.set('forecast_days', '2');
-  const forecast = await fetchSearchText(forecastUrl.toString(), 'Open-Meteo', {
-    signal: options.signal,
-    fetchImpl: options.fetchImpl,
-    headers: { accept: 'application/json' },
-  });
-  if (forecast.status !== 200) {
-    throw new SearchProviderError(`Open-Meteo : prévisions HTTP ${forecast.status}.`, forecast.status);
-  }
-  const data = JSON.parse(forecast.text) as ForecastResponse;
-  const current = data.current ?? {};
-  const daily = data.daily ?? {};
   const where = [place.name, place.admin1, place.country].filter(Boolean).join(', ');
-
-  const parts = [
-    `Maintenant : ${round(current.temperature_2m)} °C (ressenti ${round(current.apparent_temperature)} °C), ${describeWeatherCode(current.weather_code)}, vent ${round(current.wind_speed_10m)} km/h.`,
-  ];
-  if (daily.time?.[0]) {
-    parts.push(
-      `Aujourd'hui : ${round(daily.temperature_2m_min?.[0])} à ${round(daily.temperature_2m_max?.[0])} °C, ${describeWeatherCode(daily.weather_code?.[0])}, risque de pluie ${round(daily.precipitation_probability_max?.[0])} %.`,
-    );
-  }
-  if (daily.time?.[1]) {
-    parts.push(
-      `Demain : ${round(daily.temperature_2m_min?.[1])} à ${round(daily.temperature_2m_max?.[1])} °C, ${describeWeatherCode(daily.weather_code?.[1])}, risque de pluie ${round(daily.precipitation_probability_max?.[1])} %.`,
-    );
-  }
-
-  return {
-    title: `Météo ${where}`,
-    url: `https://open-meteo.com/en/docs?latitude=${place.latitude}&longitude=${place.longitude}`,
-    snippet: parts.join(' '),
-    source: 'open-meteo.com',
-    publisher: 'Open-Meteo',
-    publishedAt: localTimeToIso(current.time, data.utc_offset_seconds),
-  };
+  return fetchOpenMeteoWeatherAt(
+    { latitude: place.latitude, longitude: place.longitude, label: where },
+    options,
+  );
 }
 
 /** `2026-10-01T23:30` + décalage UTC du lieu → ISO 8601 absolu. */

@@ -44,6 +44,7 @@ Statuts possibles : `en cours`, `en pause`, `bloqué`, `terminé`.
 | Cursor | `cursor/trieur-export-claude` | Export claude.ai pour le trieur | — | 2026-11-03 | terminé |
 | Cursor | `main` | Publication 5.0.65 (fusions `claude/integration-5065` + `cursor/trieur-export-claude`, `release.sh`, release `v5.0.65`, rapport `rapports/2026-11-03-publication-5065.md`) | — | 2026-11-03 | terminé |
 | Cursor | `cursor/piper-windows-5066` | Piper Windows : binaire et lecture | — | 2026-11-03 | terminé |
+| Cursor | `cursor/meteo-sources-5066` | Sources courtes et lieu Chez moi | — | 2026-11-03 | terminé |
 
 ## Ressource GPU / Ollama
 

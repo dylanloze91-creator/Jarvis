@@ -60,6 +60,7 @@ const api: JarvisApi = {
       ipcRenderer.invoke(IpcChannel.settingsSiteBlockStatus, credentials),
     roverStatus: (credentials?: { baseUrl?: string; token?: string }) =>
       ipcRenderer.invoke(IpcChannel.settingsRoverStatus, credentials),
+    geocodeSearch: (query: string) => ipcRenderer.invoke(IpcChannel.settingsGeocodeSearch, query),
     googleStatus: (draft?: GoogleConfigDraft) => ipcRenderer.invoke(IpcChannel.settingsGoogleStatus, draft),
     googleConnect: (draft?: GoogleConfigDraft) => ipcRenderer.invoke(IpcChannel.settingsGoogleConnect, draft),
     googleCancel: () => ipcRenderer.invoke(IpcChannel.settingsGoogleCancel),

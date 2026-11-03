@@ -163,6 +163,14 @@ export function createCurrentInfoSearchTool(deps: WebSearchDeps) {
       freshness: z.enum(['day', 'week', 'month']).default('week'),
       preferNews: z.boolean().default(true),
       city: z.string().min(1).max(80).optional(),
+      homeCoordinates: z
+        .object({
+          latitude: z.number().min(-90).max(90),
+          longitude: z.number().min(-180).max(180),
+          label: z.string().min(1).max(120),
+        })
+        .optional(),
+      weatherFocus: z.union([z.literal('now'), z.literal('today'), z.literal('tomorrow'), z.number().int().min(0).max(13)]).optional(),
     }),
     summarize: ({ question }) => `Chercher sur Internet : « ${question} ».`,
     execute: async (input, context) => {

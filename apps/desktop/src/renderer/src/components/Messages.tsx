@@ -2,8 +2,9 @@ import { AlertTriangle, Check, Compass, MicOff, ShieldOff, Wrench } from 'lucide
 import { useEffect, useRef, useState, type RefObject } from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { splitSourcesFooterForDisplay } from '@jarvis/core';
 import type { ChatItem } from '@/hooks/useChat';
-import { sourcePillLabel, sourcePills, type SourcePill } from '@/dashboard/sources';
+import { SourcesLine } from '@/components/SourcesLine';
 import { toolLabel } from '@/lib/toolLabels';
 import { cn } from '@/lib/utils';
 
@@ -34,19 +35,15 @@ export function Messages({
 
   return (
     <div className="messages-list">
-      {items.map((item, index) => (
-        <Item
-          key={item.id}
-          item={item}
-          sources={item.kind === 'assistant' ? sourcePills(items, index) : []}
-        />
+      {items.map((item) => (
+        <Item key={item.id} item={item} />
       ))}
       <div ref={bottom} />
     </div>
   );
 }
 
-function Item({ item, sources }: { item: ChatItem; sources: SourcePill[] }) {
+function Item({ item }: { item: ChatItem }) {
   if (item.kind === 'user') {
     return (
       <div className="message-row user-row">
@@ -60,17 +57,9 @@ function Item({ item, sources }: { item: ChatItem; sources: SourcePill[] }) {
       <div className="assistant-row">
         <div className="assistant-avatar">J</div>
         <div className="markdown assistant-copy">
-          <Markdown remarkPlugins={[remarkGfm]}>{item.text}</Markdown>
+          <AssistantMarkdown text={item.text} />
           {item.streaming ? <span className="stream-caret" /> : null}
-          {sources.length > 0 ? (
-            <div className="source-pills">
-              {sources.map((pill) => (
-                <span key={pill.host} className="source-pill">
-                  {sourcePillLabel(pill)}
-                </span>
-              ))}
-            </div>
-          ) : null}
+          {!item.streaming ? <SourcesLine text={item.text} /> : null}
         </div>
       </div>
     );
@@ -115,6 +104,13 @@ function Item({ item, sources }: { item: ChatItem; sources: SourcePill[] }) {
   }
 
   return <ToolItem item={item} />;
+}
+
+function AssistantMarkdown({ text }: { text: string }) {
+  const { body } = splitSourcesFooterForDisplay(text);
+  return (
+    <Markdown remarkPlugins={[remarkGfm]}>{body}</Markdown>
+  );
 }
 
 const ROUTE_HOW: Record<Extract<ChatItem, { kind: 'route' }>['how'], string> = {

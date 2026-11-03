@@ -11,7 +11,9 @@ import { extractSpotifyPlayQuery, isMusicIntent } from '../media/playIntent.js';
 import { extractYoutubeUrl } from '../youtube/url.js';
 import { localTimeZone } from '../search/dates.js';
 import type { CurrentSearchResult } from '../search/currentSearch.js';
-import { detectCurrentInfoIntent, type CurrentInfoPlan } from './currentInfo.js';
+import type { CurrentInfoPlan } from './currentInfo.js';
+import { LOCATION_ASK_REPLY, planCurrentInfoTurn, weatherFocusFromQuestion } from './homePlace.js';
+import type { HomeLocation } from '../settings.js';
 import {
   CURRENT_INFO_TURN_PROMPT,
   currentDatePrompt,
@@ -74,6 +76,11 @@ export interface AgentOptions {
    * Le texte n’est remplacé que si l’appelant renvoie une réponse.
    */
   learningFinalize?: (reply: string) => string;
+  /**
+   * Lieu « Chez moi » (Réglages → Recherche). Absent : questions locales ou météo
+   * sans ville → « Pour quel endroit ? ».
+   */
+  homeLocation?: HomeLocation | null;
   /**
    * 5.0.60 (chef d'orchestre) : outils proposés au modèle pour ce tour, à la place du tri
    * habituel (Spotify et Google selon la demande). Absent : catalogue et prompt d'avant.
@@ -171,9 +178,12 @@ export class Agent {
     const now = this.options.now?.() ?? new Date();
     const timeZone = this.options.timeZone ?? localTimeZone();
     const googleTurn = looksLikeGoogleIntent(lastUser) || recentlyUsedGoogleTools(conversation);
-    // Gmail, Agenda, Drive (ou leur suivi) gardent les outils google_* : jamais déroutés vers le web.
-    const currentPlan =
-      youtubeTurn || musicTurn || googleTurn || roverTurn ? null : this.currentInfoPlan(conversation, now);
+    const currentInfoTurn =
+      youtubeTurn || musicTurn || googleTurn || roverTurn
+        ? null
+        : this.resolveCurrentInfoTurn(conversation, lastUser, now);
+    const locationAsk = currentInfoTurn === 'ask';
+    const currentPlan = currentInfoTurn && currentInfoTurn !== 'ask' ? currentInfoTurn : null;
     const webTurn = !youtubeTurn && !roverTurn && currentPlan === null && looksLikeWebResearchIntent(lastUser);
     const allowed = this.options.allowedTools;
     let toolSchemas = (
@@ -244,6 +254,15 @@ export class Agent {
             : outcome.content;
         yield { type: 'assistant_delta', delta: text };
         const reply = createMessage('assistant', text);
+        conversation.push(reply);
+        yield { type: 'assistant_message', message: reply };
+        yield { type: 'done' };
+        return;
+      }
+
+      if (round === 0 && locationAsk) {
+        yield { type: 'assistant_delta', delta: LOCATION_ASK_REPLY };
+        const reply = createMessage('assistant', LOCATION_ASK_REPLY);
         conversation.push(reply);
         yield { type: 'assistant_message', message: reply };
         yield { type: 'done' };
@@ -422,17 +441,29 @@ export class Agent {
     };
   }
 
-  /**
-   * Question d'actualité dans le dernier message (et pas encore d'outil dans
-   * ce tour) : plan de recherche, seulement si l'outil interne est enregistré.
-   */
-  private currentInfoPlan(conversation: ChatMessage[], now: Date): CurrentInfoPlan | null {
+  private resolveCurrentInfoTurn(
+    conversation: ChatMessage[],
+    lastUser: string,
+    now: Date,
+  ): CurrentInfoPlan | 'ask' | null {
     const tool = this.tools.get(CURRENT_INFO_TOOL_NAME);
     if (!tool || tool.risk === 'denied') return null;
     const lastUserIndex = conversation.map((message) => message.role).lastIndexOf('user');
     if (lastUserIndex < 0) return null;
     if (conversation.slice(lastUserIndex).some((message) => message.role === 'tool')) return null;
-    return detectCurrentInfoIntent(conversation[lastUserIndex]?.content ?? '', now);
+    const turn = planCurrentInfoTurn(
+      conversation[lastUserIndex]?.content ?? lastUser,
+      now,
+      this.options.homeLocation ?? null,
+    );
+    if (turn.action === 'none') return null;
+    if (turn.action === 'ask') return 'ask';
+    const plan = turn.plan;
+    if (plan.kind === 'weather') {
+      const focus = weatherFocusFromQuestion(lastUser, now);
+      return { ...plan, weatherFocus: focus };
+    }
+    return plan;
   }
 
   /**
@@ -457,6 +488,8 @@ export class Agent {
           freshness: plan.freshness,
           preferNews: plan.preferNews,
           ...(plan.city ? { city: plan.city } : {}),
+          ...(plan.homeCoordinates ? { homeCoordinates: plan.homeCoordinates } : {}),
+          ...(plan.weatherFocus !== undefined ? { weatherFocus: plan.weatherFocus } : {}),
         },
       },
       conversation,

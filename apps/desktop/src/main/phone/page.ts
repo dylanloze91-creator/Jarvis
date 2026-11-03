@@ -122,6 +122,8 @@ header { display: flex; align-items: center; justify-content: space-between; pad
 .msg.note { align-self: flex-start; font-size: 12px; color: var(--muted); background: var(--accent-soft); padding: 4px 10px; border-radius: 999px; }
 .msg.error { align-self: stretch; max-width: 100%; color: var(--danger); background: rgba(251, 113, 133, 0.08); border: 1px solid rgba(251, 113, 133, 0.25); font-size: 14px; }
 .msg.hint { align-self: center; text-align: center; color: var(--muted); font-size: 14px; margin-top: 30%; }
+.sources-compact { margin: 8px 0 0; font-size: 13px; color: var(--muted); }
+.sources-compact a { color: var(--accent); text-decoration: underline; }
 .card { align-self: stretch; background: var(--panel); border: 1px solid rgba(56, 217, 245, 0.4); border-radius: 16px; padding: 14px; }
 .card p { margin: 0 0 8px; }
 .card-title { font-weight: 600; color: var(--accent); }
@@ -210,7 +212,8 @@ export const PHONE_JS = String.raw`(function () {
   function bubble(kind, text) {
     var element = document.createElement('div');
     element.className = 'msg ' + kind;
-    element.textContent = text;
+    if (kind === 'assistant') fillAssistant(element, text);
+    else element.textContent = text;
     list.appendChild(element);
     scrollDown();
     return element;
@@ -333,6 +336,60 @@ export const PHONE_JS = String.raw`(function () {
       .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
       .replace(/https?:\/\/\S+/g, '')
       .trim();
+  }
+
+  function mediaLabel(segment) {
+    var trimmed = (segment || '').trim();
+    var paren = trimmed.indexOf(' (');
+    if (paren >= 0) return trimmed.slice(0, paren).trim();
+    var comma = trimmed.indexOf(',');
+    return (comma >= 0 ? trimmed.slice(0, comma) : trimmed).trim() || 'source';
+  }
+
+  function splitSourcesFooter(text) {
+    var marker = '\n\nSources (recherche web du';
+    var start = text.lastIndexOf(marker);
+    if (start < 0) return { body: text, links: [] };
+    var body = text.slice(0, start).replace(/\s+$/, '');
+    var footer = text.slice(start);
+    var links = [];
+    var lineRe = /^-\s*\[\d+\]\s+.+\s+—\s+(.+?)\s+—\s+(https?:\/\/[^\s<>)\]]+)\s*$/iu;
+    footer.split('\n').forEach(function (line) {
+      var match = line.match(lineRe);
+      if (!match) return;
+      var url = match[2].replace(/[.,;:]+$/, '');
+      if (!/^https?:\/\//i.test(url)) return;
+      links.push({ label: mediaLabel(match[1]), url: url });
+    });
+    return { body: body, links: links };
+  }
+
+  function fillAssistant(element, text) {
+    while (element.firstChild) element.removeChild(element.firstChild);
+    var split = splitSourcesFooter(text || '');
+    var body = document.createElement('div');
+    body.textContent = split.body;
+    element.appendChild(body);
+    if (!split.links.length) return;
+    var line = document.createElement('p');
+    line.className = 'sources-compact';
+    var prefix = document.createElement('span');
+    prefix.textContent = 'Sources : ';
+    line.appendChild(prefix);
+    split.links.forEach(function (link, index) {
+      if (index) line.appendChild(document.createTextNode(', '));
+      if (/^https?:\/\//i.test(link.url)) {
+        var anchor = document.createElement('a');
+        anchor.href = link.url;
+        anchor.textContent = link.label;
+        anchor.rel = 'noopener noreferrer';
+        anchor.target = '_blank';
+        line.appendChild(anchor);
+      } else {
+        line.appendChild(document.createTextNode(link.label));
+      }
+    });
+    element.appendChild(line);
   }
 
   function speak(text) {
@@ -508,7 +565,8 @@ export const PHONE_JS = String.raw`(function () {
         break;
       case 'delta':
         if (!current) current = bubble('assistant', '');
-        current.textContent += event.text;
+        current._raw = (current._raw || '') + event.text;
+        fillAssistant(current, current._raw);
         scrollDown();
         break;
       case 'route':
