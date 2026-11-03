@@ -326,6 +326,7 @@ export {
   type PiperModelAsset,
 } from './speech/piperAssets.js';
 export { normalizePiperStdinText } from './speech/piperInput.js';
+export { playPiperPartsWithPrefetch } from './speech/piperStream.js';
 export { PIPER_VOICE_CREDITS, PIPER_ENGINE_CREDITS, type PiperVoiceCreditLine } from './speech/piperCredits.js';
 export { concatFloat32, encodeWav, decodeWav, type DecodedWav } from './speech/wav.js';
 export {

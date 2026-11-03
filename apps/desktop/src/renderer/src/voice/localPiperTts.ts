@@ -2,6 +2,7 @@ import {
   PIPER_TTS_ID,
   listPiperVoiceDescriptors,
   localPiperTtsDescriptor,
+  playPiperPartsWithPrefetch,
   shouldStreamPiperSpeech,
   splitFrenchSentences,
   type TextToSpeechController,
@@ -66,16 +67,12 @@ export class LocalPiperTtsProvider implements TextToSpeechProvider {
     }
     const stream = shouldStreamPiperSpeech(text, status.benchmarkMs);
     const parts = stream ? splitFrenchSentences(text) : [text];
-    for (const part of parts) {
-      if (cancelled()) return;
-      const result = await window.jarvis.voice.piperSpeak({ text: part, voice, sentence: true });
-      if (cancelled()) return;
-      if (!result.ok) {
-        handlers.onError(result.error);
-        return;
-      }
-      await this.play(result.data, result.mimeType, () => cancelled());
-    }
+    await playPiperPartsWithPrefetch(
+      parts,
+      (part) => window.jarvis.voice.piperSpeak({ text: part, voice, sentence: true }),
+      (data, mimeType) => this.play(data, mimeType, cancelled),
+      cancelled,
+    );
     if (!cancelled()) handlers.onEnd?.();
   }
 
