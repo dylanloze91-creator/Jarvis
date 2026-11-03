@@ -20,6 +20,7 @@ import {
   withVoiceOriginNotice,
   chatProviderConfig,
   activeOrchestra,
+  activeRouter,
   addresseeCheckEnabled,
   addresseeUserPrompt,
   ADDRESSEE_SYSTEM_PROMPT,
@@ -43,6 +44,7 @@ import {
   type LLMProvider,
   type OrchestraConfig,
   type OrchestraTeam,
+  type ModelPlace,
   type AuditLogStore,
   type ChatMessage,
   type ConfirmationRequest,
@@ -72,7 +74,7 @@ interface TurnRoute {
   team: OrchestraTeam | 'calcul' | 'horloge';
   label: string;
   model: string;
-  how: 'calcul' | 'express' | 'cerveau';
+  how: 'calcul' | 'express' | 'cerveau' | 'trieur';
   /** Réponse déjà prête (calcul) : aucun modèle n'est appelé. */
   reply?: string;
   provider?: LLMProvider;
@@ -445,8 +447,20 @@ export class ChatSession {
     const teams = availableTeams(this.deps.tools.schemas().map((tool) => tool.name));
     const available = new Set(teams);
     let team: OrchestraTeam | null = expressTeam({ text, history: messages, available });
-    const how: TurnRoute['how'] = team ? 'express' : 'cerveau';
-    if (!team) team = await this.askBrain(settings, orchestra, teams, text, messages.slice(0, -1), signal);
+    let how: TurnRoute['how'] = team ? 'express' : 'cerveau';
+    if (!team) {
+      const router = activeRouter(settings);
+      if (router) {
+        team = await this.askRouter(settings, router, teams, text, messages.slice(0, -1), signal);
+        if (team) how = 'trieur';
+        else {
+          team = await this.askBrain(settings, orchestra, teams, text, messages.slice(0, -1), signal);
+          if (team) how = 'cerveau';
+        }
+      } else {
+        team = await this.askBrain(settings, orchestra, teams, text, messages.slice(0, -1), signal);
+      }
+    }
     if (!team) {
       if (settings.debugLogging) debugLog(true, 'orchestre', 'le cerveau n’a pas choisi d’équipe : chemin habituel');
       return null;
@@ -460,6 +474,42 @@ export class ChatSession {
       debugLog(true, 'orchestre', `${how} → ${team} · ${assignment.model} (${assignment.place})`);
     }
     return { team, label: TEAM_SPECS[team].label, model: assignment.model, how, provider };
+  }
+
+  private async askRouter(
+    settings: Settings,
+    router: { model: string; place: ModelPlace },
+    teams: OrchestraTeam[],
+    text: string,
+    history: ChatMessage[],
+    signal: AbortSignal,
+  ): Promise<OrchestraTeam | null> {
+    const { provider } = this.deps.registry.createOrFallback(
+      orchestraProviderConfig(settings, router.model, router.place, true),
+    );
+    const deadline = new AbortController();
+    const timer = setTimeout(() => deadline.abort(), BRAIN_DEADLINE_MS);
+    const onAbort = (): void => deadline.abort();
+    signal.addEventListener('abort', onAbort, { once: true });
+    let reply = '';
+    try {
+      for await (const event of provider.streamChat({
+        system: routerSystemPrompt(teams),
+        messages: [createMessage('user', routerUserPrompt(text, history))],
+        temperature: 0,
+        maxTokens: 12,
+        signal: deadline.signal,
+      })) {
+        if (event.type === 'text') reply += event.delta;
+        if (event.type === 'error') break;
+      }
+    } catch {
+      return null;
+    } finally {
+      clearTimeout(timer);
+      signal.removeEventListener('abort', onAbort);
+    }
+    return parseRouterReply(reply, teams);
   }
 
   private async askBrain(

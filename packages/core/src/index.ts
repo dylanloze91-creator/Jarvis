@@ -299,6 +299,35 @@ export { SpeechToTextRegistry, TextToSpeechRegistry } from './speech/registry.js
 export { createDefaultSttRegistry, createDefaultTtsRegistry } from './speech/default-registries.js';
 export { OpenAISttProvider, openAISttDescriptor } from './speech/openai-stt.js';
 export { OpenAITtsProvider, openAITtsDescriptor, OPENAI_TTS_VOICES } from './speech/openai-tts.js';
+export {
+  PIPER_TTS_ID,
+  PIPER_SAMPLE_RATE,
+  PIPER_PREVIEW_TEXT,
+  PIPER_VOICES,
+  DEFAULT_PIPER_VOICE_ID,
+  describePiperVoice,
+  splitFrenchSentences,
+  shouldStreamPiperSpeech,
+  concatWavClips,
+  PIPER_STREAM_CHAR_THRESHOLD,
+  PIPER_STREAM_LATENCY_MS,
+  PIPER_BENCHMARK_SAMPLE_CHARS,
+  type PiperVoiceDefinition,
+} from './speech/piper.js';
+export { localPiperTtsDescriptor, listPiperVoiceDescriptors } from './speech/piperTts.js';
+export {
+  PIPER_RELEASE,
+  PIPER_LINUX_X64_URL,
+  PIPER_WINDOWS_X64_URL,
+  PIPER_LINUX_X64_ARCHIVE_SHA256,
+  PIPER_WINDOWS_X64_ARCHIVE_SHA256,
+  PIPER_MODEL_ASSETS,
+  requiredPiperAssetChecks,
+  type PiperModelAsset,
+} from './speech/piperAssets.js';
+export { normalizePiperStdinText } from './speech/piperInput.js';
+export { playPiperPartsWithPrefetch } from './speech/piperStream.js';
+export { PIPER_VOICE_CREDITS, PIPER_ENGINE_CREDITS, type PiperVoiceCreditLine } from './speech/piperCredits.js';
 export { concatFloat32, encodeWav, decodeWav, type DecodedWav } from './speech/wav.js';
 export {
   isWhisperHallucination,

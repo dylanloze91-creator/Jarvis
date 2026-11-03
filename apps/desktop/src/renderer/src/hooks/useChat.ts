@@ -18,7 +18,7 @@ export type ChatItem =
     }
   | { kind: 'error'; id: string; text: string }
   /** 5.0.60 : équipe et modèle choisis par le chef d'orchestre pour ce tour. */
-  | { kind: 'route'; id: string; label: string; model: string; how: 'calcul' | 'express' | 'cerveau' }
+  | { kind: 'route'; id: string; label: string; model: string; how: 'calcul' | 'express' | 'cerveau' | 'trieur' }
   /** 5.0.62 : phrase entendue pendant la discussion vocale, jugée pas pour Jarvis (rien n'est enregistré). */
   | { kind: 'ignored'; id: string; text: string };
 

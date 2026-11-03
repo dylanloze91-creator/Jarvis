@@ -76,7 +76,7 @@ export function OrchestraSettingsSection({ baseUrl, chatModel, value, onChange, 
         <>
           <Field
             label="Cerveau (choisit l’équipe, garde la carte graphique)"
-            hint="Un 7B est conseillé : assez fin pour bien trier, assez léger pour rester chargé."
+            hint="Un 7B est conseillé : assez fin pour bien trier, assez léger pour rester chargé. Si un trieur est choisi ci-dessous, c’est lui qui trie ; le cerveau garde la conversation."
           >
             <Select value={current.brain} onChange={(event) => onChange({ ...current, brain: event.target.value })}>
               {options.map((model) => (
@@ -86,6 +86,50 @@ export function OrchestraSettingsSection({ baseUrl, chatModel, value, onChange, 
                 </option>
               ))}
             </Select>
+          </Field>
+
+          <Field
+            label="Trieur (optionnel)"
+            hint="Petit modèle entraîné par vous (`jarvis-trieur`) : plus rapide pour choisir l’équipe. Laissez vide pour que le cerveau trie."
+          >
+            <Select
+              value={current.router?.model ?? ''}
+              onChange={(event) => {
+                const model = event.target.value;
+                if (!model) {
+                  const { router: _removed, ...rest } = current;
+                  onChange(rest as Orchestra);
+                  return;
+                }
+                onChange({
+                  ...current,
+                  router: { model, place: current.router?.place ?? 'carte' },
+                });
+              }}
+            >
+              <option value="">Le cerveau trie</option>
+              {options.map((model) => (
+                <option key={`router-${model}`} value={model}>
+                  {model}
+                  {missing(model) ? ' (non installé)' : ''}
+                </option>
+              ))}
+            </Select>
+            {current.router ? (
+              <Select
+                className="mt-2"
+                value={current.router.place}
+                onChange={(event) =>
+                  onChange({
+                    ...current,
+                    router: { ...current.router!, place: event.target.value as ModelPlace },
+                  })
+                }
+              >
+                <option value="carte">Carte graphique</option>
+                <option value="processeur">Processeur</option>
+              </Select>
+            ) : null}
           </Field>
 
           <div className="flex flex-col gap-2">

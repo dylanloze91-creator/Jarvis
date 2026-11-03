@@ -11,7 +11,7 @@
  * Le format de sortie demandé est à balises (`@@ OBJECTIF`, `@@ DEPART chemin`…), pas du JSON :
  * du code dans une chaîne JSON est la première cause d'échec des modèles locaux.
  */
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { OllamaProvider } from '../providers/ollama.js';
@@ -26,7 +26,12 @@ import {
   type LabMission,
 } from './lab.js';
 import { evalCatalog } from './labCatalog.js';
-import { executeHiddenTests, trainingExampleFromFiles, type LabTrainingExample } from './labRunner.js';
+import {
+  executeHiddenTests,
+  removeLabDir,
+  trainingExampleFromFiles,
+  type LabTrainingExample,
+} from './labRunner.js';
 
 /* ------------------------------------------------------------------ */
 /* Demande au professeur                                               */
@@ -564,7 +569,7 @@ function countTests(output: string): { total: number | null; failed: number | nu
 }
 
 async function writeTree(root: string, files: readonly LabFile[]): Promise<void> {
-  await rm(root, { recursive: true, force: true });
+  await removeLabDir(root, { fatal: true });
   await mkdir(root, { recursive: true });
   for (const item of files) {
     const dest = join(root, item.path);
@@ -696,7 +701,7 @@ export async function testStrength(
       else survivors.push(`${mutant.path}, ligne ${mutant.line} : ${mutant.label}`);
     }
   } finally {
-    await rm(root, { recursive: true, force: true });
+    await removeLabDir(root);
   }
   return { total: mutants.length, killed, survivors };
 }
@@ -736,7 +741,7 @@ export async function runtimeCheck(mission: LabMission, solutions: readonly LabF
     }
     return { ok: true, reason: '' };
   } finally {
-    await rm(root, { recursive: true, force: true });
+    await removeLabDir(root);
   }
 }
 
@@ -916,7 +921,7 @@ export async function generateExercise(input: {
     const retried = await check(second);
     return retried.ok ? { ...retried, repaired: true } : { ...retried, ...first$ };
   } finally {
-    if (!input.workParent) await rm(workParent, { recursive: true, force: true });
+    if (!input.workParent) await removeLabDir(workParent);
   }
 }
 

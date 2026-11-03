@@ -12,6 +12,7 @@ import {
   type WakeWordEngineConfig,
 } from '@jarvis/core';
 import { LocalBrowserTtsProvider, localTtsDescriptor } from './localTts';
+import { LocalPiperTtsProvider, localPiperTtsDescriptor } from './localPiperTts';
 import { LocalWhisperSttProvider, localWhisperSttDescriptor } from './localWhisperStt';
 import { OpenWakeWordEngine } from './openWakeWordEngine';
 import { VoskWakeWordEngine } from './voskWakeWordEngine';
@@ -34,6 +35,7 @@ export function createSttRegistry(): SpeechToTextRegistry {
 export function createTtsRegistry(): TextToSpeechRegistry {
   return new TextToSpeechRegistry()
     .register(localTtsDescriptor, () => new LocalBrowserTtsProvider())
+    .register(localPiperTtsDescriptor, () => new LocalPiperTtsProvider())
     .register(openAITtsDescriptor, () => new IpcTtsProvider());
 }
 
