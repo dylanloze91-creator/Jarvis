@@ -4,9 +4,11 @@
  * l'application) et les modèles ONNX français vérifiés par SHA-256.
  */
 import {
+  copyFileSync,
   createWriteStream,
   existsSync,
   mkdirSync,
+  readdirSync,
   readFileSync,
   renameSync,
   rmSync,
@@ -103,6 +105,18 @@ async function prepareModels() {
   }
 }
 
+function installLicenses() {
+  const sourceDir = join(desktopRoot, 'piper-licenses');
+  const destDir = join(piperRoot, 'licenses');
+  mkdirSync(destDir, { recursive: true });
+  for (const name of readdirSync(sourceDir)) {
+    if (name.startsWith('.')) continue;
+    copyFileSync(join(sourceDir, name), join(destDir, name));
+  }
+  console.log(`[piper] licences recopiées dans ${destDir}`);
+}
+
 await prepareBinary();
 await prepareModels();
+installLicenses();
 console.log('[piper] voice-assets/piper prêt.');

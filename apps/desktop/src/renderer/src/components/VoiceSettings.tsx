@@ -1,4 +1,4 @@
-import { DEFAULT_FOLLOW_UP_SECONDS, PIPER_PREVIEW_TEXT, WHISPER_MODEL_REPO, openWakeWordSensitivityToThreshold } from '@jarvis/core';
+import { DEFAULT_FOLLOW_UP_SECONDS, PIPER_ENGINE_CREDITS, PIPER_PREVIEW_TEXT, PIPER_VOICE_CREDITS, WHISPER_MODEL_REPO, openWakeWordSensitivityToThreshold } from '@jarvis/core';
 import type { VoiceDescriptor, VoiceSettings } from '@jarvis/core';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Field, Input, Range, Select, Textarea, Toggle } from '@/components/ui/field';
@@ -461,6 +461,28 @@ export function VoiceSettingsSection({
               </div>
             ) : null}
           </Field>
+
+          {usingLocalPiperTts ? (
+            <div className="space-y-2 rounded-lg border border-slate-700/60 bg-slate-900/40 p-3 text-xs text-slate-400">
+              <p className="font-medium text-slate-300">Crédits des voix (Piper)</p>
+              <p>
+                Moteur {PIPER_ENGINE_CREDITS.piper.name} {PIPER_ENGINE_CREDITS.piper.version} ({PIPER_ENGINE_CREDITS.piper.license}) ;{' '}
+                {PIPER_ENGINE_CREDITS.espeakNg.name} ({PIPER_ENGINE_CREDITS.espeakNg.license}) — {PIPER_ENGINE_CREDITS.espeakNg.sourceUrl} ; texte
+                GPL : `voice-assets/piper/licenses/GPL-3.0.txt` dans l’installateur.
+              </p>
+              <ul className="list-disc space-y-1 pl-4">
+                {PIPER_VOICE_CREDITS.map((line) => (
+                  <li key={line.voice}>
+                    {line.voice} — {line.dataset}, {line.authors}, licence {line.license} (
+                    <a className="text-cyan-400 underline" href={line.url} target="_blank" rel="noreferrer">
+                      fiche
+                    </a>
+                    )
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
         </>
       ) : null}
 
