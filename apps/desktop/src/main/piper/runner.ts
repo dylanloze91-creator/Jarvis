@@ -20,6 +20,41 @@ export interface PiperRunner {
 
 const DEFAULT_TIMEOUT_MS = 120_000;
 
+function writeStdinSafely(
+  child: ReturnType<typeof spawn>,
+  payload: string,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const stdin = child.stdin;
+    if (!stdin) {
+      reject(new Error('Entrée standard Piper indisponible.'));
+      return;
+    }
+    let settled = false;
+    const finish = (error?: Error): void => {
+      if (settled) return;
+      settled = true;
+      stdin.off('error', onError);
+      if (error) reject(error);
+      else resolve();
+    };
+    const onError = (error: Error): void => {
+      finish(error);
+    };
+    stdin.on('error', onError);
+    stdin.write(payload, 'utf8', (writeError) => {
+      if (writeError) {
+        finish(writeError);
+        return;
+      }
+      stdin.end((endError) => {
+        if (endError) finish(endError);
+        else finish();
+      });
+    });
+  });
+}
+
 /** Lance le binaire Piper précompilé : texte sur l'entrée standard, jamais en argument. */
 export class ProcessPiperRunner implements PiperRunner {
   async synthesize(request: PiperRunRequest): Promise<Uint8Array> {
@@ -34,6 +69,8 @@ export class ProcessPiperRunner implements PiperRunner {
   }
 
   private runProcess(request: PiperRunRequest, outputPath: string): Promise<void> {
+    const line = request.text.replace(/\s+/gu, ' ').trim();
+    if (!line) return Promise.reject(new Error('Texte vide après normalisation.'));
     const args = [
       '--model',
       request.modelPath,
@@ -52,6 +89,7 @@ export class ProcessPiperRunner implements PiperRunner {
         windowsHide: true,
       });
       let stderr = '';
+      let stdinSettled = false;
       child.stderr.setEncoding('utf8');
       child.stderr.on('data', (chunk: string) => {
         stderr += chunk;
@@ -60,17 +98,32 @@ export class ProcessPiperRunner implements PiperRunner {
         child.kill('SIGKILL');
         reject(new Error('La synthèse Piper a dépassé le délai.'));
       }, request.timeoutMs ?? DEFAULT_TIMEOUT_MS);
-      child.on('error', (error) => {
+      const fail = (error: Error): void => {
         clearTimeout(timer);
         reject(error);
+      };
+      child.on('error', (error) => {
+        fail(error);
       });
+      void writeStdinSafely(child, `${line}\n`).then(
+        () => {
+          stdinSettled = true;
+        },
+        (error: unknown) => {
+          stdinSettled = true;
+          child.kill('SIGKILL');
+          fail(error instanceof Error ? error : new Error(String(error)));
+        },
+      );
       child.on('close', (code) => {
         clearTimeout(timer);
+        if (!stdinSettled) {
+          fail(new Error(`Piper s'est arrêté avant la fin de l'écriture stdin (code ${code}).`));
+          return;
+        }
         if (code === 0) resolve();
         else reject(new Error(`Piper a échoué (code ${code}) : ${stderr.trim().slice(0, 300) || 'erreur inconnue'}`));
       });
-      child.stdin.write(request.text, 'utf8');
-      child.stdin.end();
     });
   }
 }
