@@ -43,6 +43,7 @@ Statuts possibles : `en cours`, `en pause`, `bloqué`, `terminé`.
 | Cursor | `main` | Publication 5.0.64 | — | 2026-11-03 | terminé |
 | Cursor | `cursor/trieur-export-claude` | Export claude.ai pour le trieur | — | 2026-11-03 | terminé |
 | Cursor | `main` | Publication 5.0.65 (fusions `claude/integration-5065` + `cursor/trieur-export-claude`, `release.sh`, release `v5.0.65`, rapport `rapports/2026-11-03-publication-5065.md`) | — | 2026-11-03 | terminé |
+| Claude Code | `claude/nuit-5` | Nuit 5 du générateur (120 exercices visés, 300 essais) ; extraction du trieur depuis l'export claude.ai (400 phrases gardées, 133 écartées) | — | 2026-11-03 | en cours |
 
 ## Ressource GPU / Ollama
 
@@ -50,6 +51,6 @@ Une seule carte (RTX 2060 6 Go) : un seul agent à la fois lance le banc (`npm r
 
 | État | Par qui | Pour quoi | Depuis |
 | --- | --- | --- | --- |
-| libre | — | — | — |
+| occupée | Claude Code | Nuit 5 du générateur (`lab:generate`, qwen3-coder:30b, 120 exercices, 300 essais) | 2026-11-03 18:25 |
 
 Pour réserver : passer l'état à `occupée`, remplir les colonnes, commiter et pousser **avant** de lancer. Pour libérer : remettre `libre` et `—`, commiter et pousser.
