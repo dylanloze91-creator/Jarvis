@@ -33,6 +33,31 @@ describe('trieur sort server', () => {
     await rm(dir, { recursive: true, force: true });
   });
 
+  it('refuse POST /api/choose sans application/json', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'trieur-post-'));
+    const files = trieurFileNames(dir);
+    await writeFile(
+      files.toSort,
+      `${JSON.stringify({ id: 'a', phrase: 'Test', context: 'Demande : Test\nÉquipe :' })}\n`,
+      'utf8',
+    );
+    const server = new TrieurSortServer({
+      toSortPath: files.toSort,
+      examPath: files.exam,
+      progressPath: files.sortProgress,
+    });
+    const { port } = await server.start();
+    const host = `127.0.0.1:${port}`;
+    const choose = await fetch(`http://${host}/api/choose`, {
+      method: 'POST',
+      headers: { host, 'Content-Type': 'text/plain' },
+      body: 'team=pc',
+    });
+    expect(choose.status).toBe(415);
+    await server.stop();
+    await rm(dir, { recursive: true, force: true });
+  });
+
   it('écrit examen.jsonl et reprend la progression', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'trieur-sort-'));
     const files = trieurFileNames(dir);

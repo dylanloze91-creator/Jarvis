@@ -11,6 +11,7 @@ import {
   trieurTeamLabels,
 } from './extract.js';
 import { ORCHESTRA_TEAMS, type OrchestraTeam } from '../agent/orchestraTeams.js';
+import { SORT_POST_MAX_BODY, sortPostBodySizeOk, sortPostContentTypeOk } from './sortPost.js';
 
 export interface SortProgress {
   nextIndex: number;
@@ -244,7 +245,23 @@ export class TrieurSortServer {
       return;
     }
     if (req.method === 'POST' && path === '/api/choose') {
-      const body = await readJsonBody(req);
+      const contentType = typeof req.headers['content-type'] === 'string' ? req.headers['content-type'] : undefined;
+      if (!sortPostContentTypeOk(contentType)) {
+        json(res, 415, { error: 'Content-Type application/json requis' });
+        return;
+      }
+      const rawBody = await readRawBody(req);
+      if (rawBody === null) {
+        json(res, 413, { error: 'corps trop grand' });
+        return;
+      }
+      let body: Record<string, unknown>;
+      try {
+        body = JSON.parse(new TextDecoder().decode(rawBody)) as Record<string, unknown>;
+      } catch {
+        json(res, 400, { error: 'JSON invalide' });
+        return;
+      }
       const team = String(body.team ?? '');
       if (this.index >= this.toSort.length) {
         json(res, 400, { error: 'terminé' });
