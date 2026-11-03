@@ -15,12 +15,30 @@ Les données restent **sur votre PC**, par défaut dans `C:\dev\jarvis-data\trie
 
 ## 1. Extraire vos phrases
 
+### Depuis Jarvis
+
 ```text
 npm run trieur:extraire --workspace @jarvis/core -- --conversations %APPDATA%\Jarvis\conversations --dir C:\dev\jarvis-data\trieur
 ```
 
 **Ce que vous devez voir :** un message du type « 842 phrase(s) écrites dans …\a-trier.jsonl ».  
 Si le dossier conversations est vide, le chiffre sera 0 : il faudra d’abord utiliser Jarvis pour créer des discussions.
+
+### Depuis claude.ai (export officiel)
+
+1. Sur [claude.ai](https://claude.ai), ouvrez **Paramètres → Confidentialité → Exporter les données**. Anthropic envoie un lien de téléchargement (valable 24 h).
+2. Téléchargez le fichier **.zip** (ou décompressez-le dans un dossier).
+3. Lancez l’extraction en indiquant le **zip** ou le **dossier** qui contient `conversations.json` :
+
+```text
+npm run trieur:extraire --workspace @jarvis/core -- --export-claude C:\Users\Vous\Downloads\claude-export.zip --dir C:\dev\jarvis-data\trieur
+```
+
+Vous pouvez combiner Jarvis et claude.ai dans la même commande (les deux options `--conversations` et `--export-claude`).
+
+**Ce que l’outil garde :** seulement **vos** messages (pas ceux de Claude), tels qu’exportés ; le contexte est votre **message utilisateur précédent** dans la même conversation. Les messages vides, les doublons, ceux de plus de 400 caractères et les blocs de code collés sont ignorés. Chaque ligne porte `"source":"claude.ai"` dans `a-trier.jsonl`.
+
+**Ne commitez jamais** votre zip ni votre dossier d’export dans le dépôt Git : restez dans `C:\dev\jarvis-data\trieur\`.
 
 ---
 
