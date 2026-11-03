@@ -1,3 +1,4 @@
+import type * as FsPromises from 'node:fs/promises';
 import { describe, expect, it, vi } from 'vitest';
 import { encodeWav } from '@jarvis/core';
 
@@ -9,7 +10,7 @@ vi.mock('electron', () => ({
 }));
 
 vi.mock('node:fs/promises', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('node:fs/promises')>();
+  const actual = await importOriginal<typeof FsPromises>();
   return { ...actual, access: vi.fn(async () => undefined) };
 });
 

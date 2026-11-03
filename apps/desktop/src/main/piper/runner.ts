@@ -34,7 +34,6 @@ function writeStdinSafely(
     const finish = (error?: Error): void => {
       if (settled) return;
       settled = true;
-      stdin.off('error', onError);
       if (error) reject(error);
       else resolve();
     };
@@ -42,16 +41,20 @@ function writeStdinSafely(
       finish(error);
     };
     stdin.on('error', onError);
-    stdin.write(payload, 'utf8', (writeError) => {
-      if (writeError) {
-        finish(writeError);
-        return;
-      }
-      stdin.end((endError) => {
-        if (endError) finish(endError);
-        else finish();
+    try {
+      stdin.write(payload, 'utf8', (writeError) => {
+        if (writeError) {
+          finish(writeError);
+          return;
+        }
+        stdin.end((endError: Error | null | undefined) => {
+          if (endError) finish(endError);
+          else finish();
+        });
       });
-    });
+    } catch (error) {
+      finish(error instanceof Error ? error : new Error(String(error)));
+    }
   });
 }
 
