@@ -481,7 +481,7 @@ export class ChatSession {
     signal: AbortSignal,
   ): Promise<OrchestraTeam | null> {
     const { provider } = this.deps.registry.createOrFallback(
-      orchestraProviderConfig(settings, router.model, router.place, false),
+      orchestraProviderConfig(settings, router.model, router.place, true),
     );
     const deadline = new AbortController();
     const timer = setTimeout(() => deadline.abort(), BRAIN_DEADLINE_MS);

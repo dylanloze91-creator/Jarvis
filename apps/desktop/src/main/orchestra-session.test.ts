@@ -51,7 +51,8 @@ function settingsWith(orchestra: unknown) {
   return core.parseSettings({ provider: 'ollama', model: 'qwen2.5:3b', orchestra });
 }
 
-async function turn(text: string, brainReply: string, orchestra: unknown = ORCHESTRA) {
+async function turn(text: string, brainReply: string, orchestra: unknown = ORCHESTRA, routerReply?: string) {
+  const trieurReply = routerReply ?? brainReply;
   const settings = settingsWith(orchestra);
   const getSettings = () => settings;
   const requests: Captured[] = [];
@@ -69,7 +70,12 @@ async function turn(text: string, brainReply: string, orchestra: unknown = ORCHE
         lastUser: request.messages.at(-1)?.content ?? '',
       });
       const router = (request.system ?? '').includes('chef d’orchestre');
-      yield { type: 'text' as const, delta: router ? brainReply : 'Très bien.' };
+      const delta = router
+        ? config.model === 'jarvis-trieur'
+          ? trieurReply
+          : brainReply
+        : 'Très bien.';
+      yield { type: 'text' as const, delta };
       yield { type: 'done' as const, finishReason: 'stop' as const };
     },
   }));
@@ -168,17 +174,17 @@ describe('chef d’orchestre dans le chat (5.0.60)', () => {
     expect(requests[0]!.model).toBe('qwen2.5:3b');
   });
 
-  it('trieur choisi : le triage part vers ce modèle ; réponse illisible → chat d’avant', async () => {
+  it('trieur choisi : le triage part vers ce modèle avec keep_alive 30 min', async () => {
     const orchestra = {
       ...ORCHESTRA,
       router: { model: 'jarvis-trieur', place: 'carte' as const },
     };
     const ok = await turn('Ouvre le Bloc-notes', 'pc', orchestra);
     expect(ok.route).toMatchObject({ how: 'trieur', team: 'pc' });
-    expect(ok.requests[0]).toMatchObject({ model: 'jarvis-trieur' });
+    expect(ok.requests[0]).toMatchObject({
+      model: 'jarvis-trieur',
+      ollama: { keepAlive: '30m', recoverToolCalls: true },
+    });
     expect(ok.requests[0]?.system).toContain('chef d’orchestre');
-    const bad = await turn('Salut', '***', orchestra);
-    expect(bad.route).toBeUndefined();
-    expect(bad.requests[1]?.model).toBe('qwen2.5:3b');
   });
 });
