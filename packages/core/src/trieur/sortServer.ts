@@ -12,7 +12,7 @@ import {
 } from './extract.js';
 import { ORCHESTRA_TEAMS, type OrchestraTeam } from '../agent/orchestraTeams.js';
 import { dropLastExamLine } from './sortExam.js';
-import { SORT_POST_MAX_BODY, sortPostBodySizeOk, sortPostContentTypeOk } from './sortPost.js';
+import { sortPostBodySizeOk, sortPostContentTypeOk } from './sortPost.js';
 
 export interface SortProgress {
   nextIndex: number;
