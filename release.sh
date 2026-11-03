@@ -89,6 +89,19 @@ if [[ ! -f "$EXE" || ! -f "$MAP" || ! -f "$YML" ]]; then
   npm run package:win
 fi
 
+PIPER_VOICE_ASSETS="$ROOT/apps/desktop/voice-assets/piper"
+PIPER_UNPACKED="$ROOT/apps/desktop/release/win-unpacked/resources/piper"
+if ! node "$ROOT/apps/desktop/scripts/verify-piper-windows-bundle.mjs" "$PIPER_VOICE_ASSETS"; then
+  echo "ERREUR : le bundle Piper Windows est incomplet dans voice-assets (piper.exe, DLL, espeak-ng-data)." >&2
+  exit 1
+fi
+if [[ -d "$PIPER_UNPACKED" ]]; then
+  if ! node "$ROOT/apps/desktop/scripts/verify-piper-windows-bundle.mjs" "$PIPER_UNPACKED"; then
+    echo "ERREUR : l'installateur empaqueté ne contient pas le binaire Piper Windows complet." >&2
+    exit 1
+  fi
+fi
+
 for f in "$EXE" "$MAP" "$YML"; do
   if [[ ! -f "$f" ]]; then
     echo "ERREUR : fichier manquant après la construction : $f" >&2

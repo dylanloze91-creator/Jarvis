@@ -53,7 +53,21 @@ exports.default = async function afterPack(context) {
   }
 
   await assertVoiceExtraResources(context);
+  await assertPiperWindowsExtraResources(context);
 };
+
+async function assertPiperWindowsExtraResources(context) {
+  if (context.electronPlatformName !== 'win') return;
+  const { PIPER_WINDOWS_BUNDLE_CHECKS } = await import('@jarvis/core');
+  const { verifyPiperWindowsBundle } = require('./piperWindowsBundle.cjs');
+  const piperRoot = path.join(context.appOutDir, 'resources', 'piper');
+  const problems = verifyPiperWindowsBundle(piperRoot, PIPER_WINDOWS_BUNDLE_CHECKS);
+  if (problems.length > 0) {
+    throw new Error(
+      `Piper Windows absent de extraResources (relancer npm run setup:voice avec JARVIS_PIPER_TARGET=win-x64) :\n${problems.join('\n')}`,
+    );
+  }
+}
 
 /**
  * Même liste que le diagnostic « Tester la voix » et setup:voice

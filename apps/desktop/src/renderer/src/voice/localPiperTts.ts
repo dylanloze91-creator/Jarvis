@@ -11,6 +11,8 @@ import {
   type VoiceDescriptor,
 } from '@jarvis/core';
 
+import { playPiperWavBytes } from './piperWavPlayback';
+
 export { localPiperTtsDescriptor };
 
 /**
@@ -77,23 +79,12 @@ export class LocalPiperTtsProvider implements TextToSpeechProvider {
   }
 
   private play(data: Uint8Array, mimeType: string, cancelled: () => boolean): Promise<void> {
-    return new Promise((resolve) => {
-      if (cancelled()) {
-        resolve();
-        return;
-      }
-      const blob = new Blob([data.buffer as ArrayBuffer], { type: mimeType });
-      const url = URL.createObjectURL(blob);
-      const audio = new Audio(url);
-      this.activeAudio = audio;
-      const finish = (): void => {
-        URL.revokeObjectURL(url);
-        if (this.activeAudio === audio) this.activeAudio = null;
-        resolve();
-      };
-      audio.addEventListener('ended', finish);
-      audio.addEventListener('error', finish);
-      void audio.play().catch(finish);
+    return playPiperWavBytes(data, mimeType, undefined, cancelled, {
+      onAudio: (audio) => {
+        this.activeAudio = audio;
+      },
+    }).finally(() => {
+      if (this.activeAudio) this.activeAudio = null;
     });
   }
 }

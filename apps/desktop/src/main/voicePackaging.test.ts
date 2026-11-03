@@ -87,6 +87,7 @@ describe('empaquetage de la voix', () => {
     expect(csp).toMatch(/script-src [^;]*jarvis-oww:/);
     expect(csp).toMatch(/script-src [^;]*blob:/);
     expect(csp).toMatch(/connect-src [^;]*jarvis-oww:/);
+    expect(csp).toMatch(/media-src [^;]*blob:/);
     expect(csp).not.toMatch(/jsdelivr|unpkg/);
   });
 
