@@ -12,6 +12,8 @@ export default tseslint.config(
       '**/node_modules/**',
       // Runtime ONNX, Whisper, openWakeWord et Vosk copiés par setup:voice : code tiers, non commité.
       'apps/desktop/voice-assets/**',
+      'voice-studio/.venv/**',
+      'training/.venv/**',
     ],
   },
   js.configs.recommended,
