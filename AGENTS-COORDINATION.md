@@ -39,6 +39,7 @@ Statuts possibles : `en cours`, `en pause`, `bloqué`, `terminé`.
 | Cursor | `cursor/correctifs-windows-5064` | Correctifs Windows 5.0.64 | — | 2026-11-02 | terminé |
 | Claude Code | `claude/nuit-3` | Rapport de la nuit 3 du générateur, vérifications Windows de la 5.0.64 (points 4 et 5), puis publication 5.0.64 | `rapports/2026-11-02-nuit-3.md`, `rapports/2026-11-02-nuit-4.md`, `rapports/2026-11-02-verification-windows-5064.md`, `rapports/2026-11-02-fusion-correctifs-windows-5064.md` | 2026-11-02 | bloqué : fusion de claude/revue-correctifs-windows faite en local sur main (non poussée), publication 5.0.64 non faite — typecheck rouge (knowledge.eperm.test.ts), 1 test non portable restant (platformerMissionPath.test.ts), gh non connecté (voir `rapports/2026-11-02-fusion-correctifs-windows-5064.md`) ; nuit 4 du générateur faite (73 exercices acceptés sur 242 essais, arrêt EBUSY, cahier à 370) |
 | Cursor | `main` | Publication 5.0.64 | — | 2026-11-03 | terminé |
+| Cursor | `cursor/trieur-export-claude` | Export claude.ai pour le trieur | — | 2026-11-03 | en cours |
 
 ## Ressource GPU / Ollama
 
