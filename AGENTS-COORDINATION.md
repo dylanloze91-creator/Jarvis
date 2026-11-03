@@ -43,7 +43,7 @@ Statuts possibles : `en cours`, `en pause`, `bloqué`, `terminé`.
 | Cursor | `main` | Publication 5.0.64 | — | 2026-11-03 | terminé |
 | Cursor | `cursor/trieur-export-claude` | Export claude.ai pour le trieur | — | 2026-11-03 | terminé |
 | Cursor | `main` | Publication 5.0.65 (fusions `claude/integration-5065` + `cursor/trieur-export-claude`, `release.sh`, release `v5.0.65`, rapport `rapports/2026-11-03-publication-5065.md`) | — | 2026-11-03 | terminé |
-| Claude | `claude/caractere` | Caractère de Jarvis (fiche de personnage dans le prompt, réglage opt-in, accueil selon l'heure) | `packages/core/src/agent/persona.ts`, `packages/core/src/settings.ts`, `apps/desktop/src/main/session.ts`, `apps/desktop/src/renderer/src/components/PersonaSettings.tsx`, `SettingsPanel.tsx`, `UnifiedJarvisChat.tsx`, `Dashboard.tsx` | 2026-11-03 | en cours |
+| Claude | `claude/caractere-jarvis` | Caractère de Jarvis : fiche de personnage dans les consignes des équipes du chef d'orchestre (réglage `persona`, coupé par défaut), accueil selon l'heure et le prénom ; rapport `rapports/2026-11-03-caractere-jarvis.md` ; à fusionner après rejeu des tests sur le PC | — | 2026-11-03 | terminé |
 
 ## Ressource GPU / Ollama
 

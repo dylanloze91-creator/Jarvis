@@ -21,7 +21,8 @@ Demande : « faire en sorte que Jarvis ait une personnalité bien à lui, limite
 
 - `npm run typecheck` : vert.
 - `npm run lint` : vert, 0 erreur.
-- `npm test` : résultat complet ajouté ci-dessous dès la fin du passage (cœur puis bureau).
+- `npm test` : cœur 2 178 tests passés sur 2 179 ; bureau 635 passés, 6 ignorés, 1 échec. Les deux échecs sont propres à ce conteneur Linux, sans rapport avec la branche : `core/src/trieur/candidates.test.ts` (vérification en ligne de fiches Hugging Face, réseau coupé : `ENOTFOUND huggingface.co`) et `main/developer/runner.test.ts` « délai dépassé : le processus et ses enfants sont arrêtés » (déjà constaté lors de l'audit 5.0.64 ; `process.kill(-pid)` n'atteint pas le petit-fils ici). À rejouer sur le PC Windows avant fusion.
+- `chat-unchanged.test.ts`, `machineProfile.test.ts`, `orchestra-session.test.ts` : verts ; aucun fichier `__golden__` modifié (`git diff origin/main -- '**/__golden__/**'` vide).
 - Captures de l'aperçu Vite : section « Caractère de Jarvis » des réglages, lien « Donner un caractère à Jarvis » dans l'état vide, accueil « Bonjour. Je t'écoute. » une fois activé ; aucune erreur de console.
 
 ## À faire par l'utilisateur
