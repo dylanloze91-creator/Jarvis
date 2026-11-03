@@ -18,11 +18,11 @@ export interface PiperSynthInput {
   voiceId?: string;
 }
 
-const BENCHMARK_SAMPLE_TEXT = `${'Bonjour Jarvis. '.repeat(24)}`.slice(0, PIPER_BENCHMARK_SAMPLE_CHARS);
+/** En dessous, une phrase est trop courte pour estimer la vitesse (le chargement du modèle domine). */
+const BENCHMARK_MIN_CHARS = 40;
 
 export class PiperService {
   private benchmarkMs: number | null = null;
-  private benchmarkStarted = false;
   private readonly runner: PiperRunner;
 
   constructor(runner: PiperRunner = new ProcessPiperRunner()) {
@@ -50,7 +50,6 @@ export class PiperService {
     const text = input.text.trim();
     if (!text) throw new Error('Texte vide.');
     const voice = describePiperVoice(input.voiceId);
-    await this.ensureBenchmark(voice);
     if (shouldStreamPiperSpeech(text, this.benchmarkMs)) {
       const sentences = splitFrenchSentences(text);
       const clips: Uint8Array[] = [];
@@ -65,9 +64,7 @@ export class PiperService {
   async synthesizeSentenceWav(text: string, voiceId?: string): Promise<Uint8Array> {
     const trimmed = text.trim();
     if (!trimmed) throw new Error('Texte vide.');
-    const voice = describePiperVoice(voiceId);
-    await this.ensureBenchmark(voice);
-    return this.synthesizeSentence(trimmed, voice);
+    return this.synthesizeSentence(trimmed, describePiperVoice(voiceId));
   }
 
   private async synthesizeSentence(text: string, voice: PiperVoiceDefinition): Promise<Uint8Array> {
@@ -76,25 +73,26 @@ export class PiperService {
     const modelPath = piperModelPath(root, voice.modelFile);
     await access(binaryPath);
     await access(modelPath);
-    return this.runner.synthesize({
+    const start = performance.now();
+    const wav = await this.runner.synthesize({
       binaryPath,
       modelPath,
       espeakDataDir: piperEspeakDataDir(binaryPath),
       voice,
       text,
     });
+    this.recordBenchmark(text, performance.now() - start);
+    return wav;
   }
 
-  private async ensureBenchmark(voice: PiperVoiceDefinition): Promise<void> {
-    if (this.benchmarkStarted || this.benchmarkMs !== null) return;
-    this.benchmarkStarted = true;
-    const start = performance.now();
-    try {
-      await this.synthesizeSentence(BENCHMARK_SAMPLE_TEXT, voice);
-      this.benchmarkMs = Math.round(performance.now() - start);
-    } catch {
-      this.benchmarkMs = null;
-    }
+  /**
+   * Vitesse mesurée sur la première vraie phrase assez longue, ramenée à
+   * PIPER_BENCHMARK_SAMPLE_CHARS caractères : aucune synthèse en plus, donc la
+   * toute première réponse n'attend pas une mesure.
+   */
+  private recordBenchmark(text: string, elapsedMs: number): void {
+    if (this.benchmarkMs !== null || text.length < BENCHMARK_MIN_CHARS) return;
+    this.benchmarkMs = Math.round((elapsedMs * PIPER_BENCHMARK_SAMPLE_CHARS) / text.length);
   }
 }
 

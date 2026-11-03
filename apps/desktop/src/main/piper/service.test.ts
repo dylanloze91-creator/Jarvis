@@ -33,11 +33,21 @@ describe('PiperService', () => {
     await expect(service.synthesizeWav({ text: '   ' })).rejects.toThrow(/vide/);
   });
 
-  it('mesure le benchmark au premier appel avec un échantillon fixe', async () => {
+  it('mesure la vitesse sur la première vraie phrase, sans synthèse en plus', async () => {
     const clip = encodeWav(new Float32Array([0, 0.1, -0.1]), 22_050);
-    const service = new PiperService(new FakePiperRunner(clip));
+    let calls = 0;
+    const service = new PiperService(
+      new FakePiperRunner(() => {
+        calls += 1;
+        return clip;
+      }),
+    );
     expect(service.streamingBenchmarkMs).toBeNull();
     await service.synthesizeWav({ text: 'Court.' });
+    expect(calls).toBe(1);
+    expect(service.streamingBenchmarkMs).toBeNull();
+    await service.synthesizeSentenceWav('Voici une phrase assez longue pour mesurer la vitesse.');
+    expect(calls).toBe(2);
     expect(service.streamingBenchmarkMs).not.toBeNull();
   });
 

@@ -35,13 +35,14 @@ export const PIPER_ENGINE_CREDITS = {
     name: 'espeak-ng (dans le binaire Piper)',
     version: '1.52.0.1 (bibliothèque embarquée release 2023.11.14-2)',
     license: 'GPL-3.0',
-    sourceUrl: 'https://github.com/espeak-ng/espeak-ng',
+    /** Fork rhasspy/espeak-ng, état de `master` à la release Piper 2023.11.14-2 (14/11/2023). */
+    sourceUrl: 'https://github.com/rhasspy/espeak-ng/tree/0f65aa301e0d6bae5e172cc74197d32a6182200f',
     commitNote:
-      'Sources correspondant à la release Piper 2023.11.14-2 : binaire précompilé rhasspy/piper (espeak-ng-data et libespeak-ng.so.1.52.0.1 inclus).',
+      'Sources correspondant à la release Piper 2023.11.14-2 : fork rhasspy/espeak-ng au commit 0f65aa3, compilé par piper-phonemize fccd4f3 (espeak-ng-data et libespeak-ng.so.1.52.0.1 inclus).',
   },
   piperPhonemize: {
     name: 'piper-phonemize (dans le binaire Piper)',
     license: 'MIT',
-    sourceUrl: 'https://github.com/rhasspy/piper-phonemize',
+    sourceUrl: 'https://github.com/rhasspy/piper-phonemize/tree/fccd4f335aa68ac0b72600822f34d84363daa2bf',
   },
 } as const;
