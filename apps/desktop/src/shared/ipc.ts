@@ -17,6 +17,7 @@ import type {
   RiskLevel,
   SearchProviderDescriptor,
   Settings,
+  GeocodingPlace,
   ToolCategory,
   UpdateFailureKind,
   WakeSampleSource,
@@ -79,6 +80,7 @@ export const IpcChannel = {
   settingsSpotifyDisconnect: 'settings:spotify-disconnect',
   settingsSiteBlockStatus: 'settings:siteblock-status',
   settingsRoverStatus: 'settings:rover-status',
+  settingsGeocodeSearch: 'settings:geocode-search',
   settingsGoogleStatus: 'settings:google-status',
   settingsGoogleConnect: 'settings:google-connect',
   settingsGoogleCancel: 'settings:google-cancel',
@@ -566,6 +568,8 @@ export interface JarvisApi {
     siteBlockStatus(credentials?: SiteBlockCredentials): Promise<SiteBlockStatus>;
     /** Teste le robot (adresse puis jeton). Les champs optionnels testent un brouillon non encore enregistré. */
     roverStatus(credentials?: RoverCredentials): Promise<RoverConnectionStatus>;
+    /** Propositions Open-Meteo pour le lieu « Chez moi » (sans clé). */
+    geocodeSearch(query: string): Promise<GeocodingPlace[]>;
     /** État de la connexion Google. Le brouillon teste des valeurs pas encore enregistrées. */
     googleStatus(draft?: GoogleConfigDraft): Promise<GoogleStatus>;
     /** Consentement Google dans le navigateur système (PKCE, retour sur 127.0.0.1:53125). */

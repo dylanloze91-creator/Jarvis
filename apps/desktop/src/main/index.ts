@@ -23,6 +23,7 @@ import {
   createWebSearchRegistry,
   ollamaDescriptor,
   parseSettings,
+  searchOpenMeteoPlaces,
   testOllamaConnection,
   PIPER_TTS_ID,
   type MarketDataProviderDescriptor,
@@ -580,6 +581,11 @@ function registerIpc(): void {
     (_event, credentials?: { baseUrl?: string; token?: string }) =>
       rover.connectionStatus(sanitizeRoverCredentials(credentials)),
   );
+  ipcMain.handle(IpcChannel.settingsGeocodeSearch, async (_event, query: string) => {
+    const q = typeof query === 'string' ? query.trim() : '';
+    if (q.length < 2 || q.length > 120) return [];
+    return searchOpenMeteoPlaces(q, { count: 6 });
+  });
   ipcMain.handle(IpcChannel.settingsGoogleStatus, (_event, draft?: GoogleConfigDraft) => {
     ensureGoogleLoaded();
     return google.account.status(sanitizeGoogleDraft(draft));

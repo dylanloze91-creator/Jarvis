@@ -255,6 +255,17 @@ export const settingsSchema = z.object({
   /** Jeton Bearer affiché par l'installation du robot. Comme les autres clés : `settings.json` seulement. */
   roverToken: z.string().optional(),
   /**
+   * Lieu « Chez moi » pour météo et recherches locales sans ville nommée.
+   * Pas de défaut Zod : les réglages figés et un ancien `settings.json` ne gagnent pas de clé.
+   */
+  homeLocation: z
+    .object({
+      label: z.string().min(1).max(120),
+      latitude: z.number().min(-90).max(90),
+      longitude: z.number().min(-180).max(180),
+    })
+    .optional(),
+  /**
    * Garder la fenêtre visible quand une autre application prend le focus.
    * Masquage uniquement via Ctrl+Espace, Échap, ou le bouton fermer.
    * Remplace l'ancien `hideOnBlur` (défaut true) : la clé historique est
@@ -313,6 +324,7 @@ export const settingsSchema = z.object({
 });
 
 export type Settings = z.infer<typeof settingsSchema>;
+export type HomeLocation = NonNullable<Settings['homeLocation']>;
 
 export const defaultSettings: Settings = settingsSchema.parse({});
 

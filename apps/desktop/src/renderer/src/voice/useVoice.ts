@@ -20,6 +20,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { computeRms, listMicrophones, microphone } from './audioCapture';
 import type { MicrophoneStatus } from './microphone';
 import { createSttRegistry, createTtsRegistry, createWakeWordEngine } from './registries';
+import { wavBlobFromBytes } from './piperWavPlayback';
 import { startWakeWhenWindowVisible } from './voiceStartup';
 import { wakeLearningSession } from './wakeLearning/session';
 import { describeWhisperProgress, getWhisperPipeline, subscribeWhisperProgress } from './whisper/pipelineLoader';
@@ -606,7 +607,7 @@ export function useVoice({
   }, [audioMs, backToSleepOrIdle, setVoiceState, stopPlayback]);
 
   const playClip = useCallback((data: Uint8Array, mimeType: string, onEnd: () => void) => {
-    const blob = new Blob([data.buffer as ArrayBuffer], { type: mimeType });
+    const blob = wavBlobFromBytes(data, mimeType);
     const url = URL.createObjectURL(blob);
     const audio = new Audio(url);
     audioElementRef.current = audio;

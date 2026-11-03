@@ -2,6 +2,9 @@
 /**
  * Télécharge le binaire Piper précompilé (espeak-ng embarqué, jamais lié à
  * l'application) et les modèles ONNX français vérifiés par SHA-256.
+ *
+ * `--target win-x64` (passé par `package:win`) ou `JARVIS_PIPER_TARGET=win-x64` force le binaire Windows
+ * même sur Linux, pour que l'installateur contienne piper.exe et ses DLL.
  */
 import {
   copyFileSync,
@@ -25,6 +28,7 @@ import {
   PIPER_MODEL_ASSETS,
   PIPER_WINDOWS_X64_ARCHIVE_SHA256,
   PIPER_WINDOWS_X64_URL,
+  resolvePiperBinaryTarget,
 } from '@jarvis/core';
 import { sha256 } from './zipToTarGz.mjs';
 
@@ -65,33 +69,53 @@ function extractWindows(archivePath, destinationDir) {
   execFileSync('unzip', ['-o', archivePath, '-d', destinationDir], { stdio: 'inherit' });
 }
 
+async function prepareLinuxBinary() {
+  const archive = join(piperRoot, 'cache', 'piper_linux_x86_64.tar.gz');
+  mkdirSync(dirname(archive), { recursive: true });
+  await download(PIPER_LINUX_X64_URL, archive, PIPER_LINUX_X64_ARCHIVE_SHA256, 5_000_000);
+  const dest = join(piperRoot, 'bin', 'linux-x64');
+  const binary = join(dest, 'piper', 'piper');
+  if (!existsSync(binary)) {
+    rmSync(dest, { recursive: true, force: true });
+    extractLinux(archive, dest);
+  }
+}
+
+async function prepareWindowsBinary() {
+  const archive = join(piperRoot, 'cache', 'piper_windows_amd64.zip');
+  mkdirSync(dirname(archive), { recursive: true });
+  await download(PIPER_WINDOWS_X64_URL, archive, PIPER_WINDOWS_X64_ARCHIVE_SHA256, 5_000_000);
+  const dest = join(piperRoot, 'bin', 'win-x64');
+  const binary = join(dest, 'piper', 'piper.exe');
+  if (!existsSync(binary)) {
+    rmSync(dest, { recursive: true, force: true });
+    extractWindows(archive, dest);
+  }
+}
+
+/** `--target win-x64` : forme portable (une variable d'environnement préfixée ne marche pas sous cmd.exe). */
+function targetFromArgs(args) {
+  const index = args.indexOf('--target');
+  return index >= 0 ? args[index + 1] : undefined;
+}
+
 async function prepareBinary() {
-  const platform = process.platform;
-  if (platform === 'linux') {
-    const archive = join(piperRoot, 'cache', 'piper_linux_x86_64.tar.gz');
-    mkdirSync(dirname(archive), { recursive: true });
-    await download(PIPER_LINUX_X64_URL, archive, PIPER_LINUX_X64_ARCHIVE_SHA256, 5_000_000);
-    const dest = join(piperRoot, 'bin', 'linux-x64');
-    const binary = join(dest, 'piper', 'piper');
-    if (!existsSync(binary)) {
-      rmSync(dest, { recursive: true, force: true });
-      extractLinux(archive, dest);
-    }
+  const target = resolvePiperBinaryTarget({
+    platform: process.platform,
+    targetOverride: targetFromArgs(process.argv.slice(2)) ?? process.env.JARVIS_PIPER_TARGET,
+  });
+  console.log(`[piper] cible binaire : ${target}`);
+  if (target === 'win-x64') {
+    await prepareWindowsBinary();
     return;
   }
-  if (platform === 'win32') {
-    const archive = join(piperRoot, 'cache', 'piper_windows_amd64.zip');
-    mkdirSync(dirname(archive), { recursive: true });
-    await download(PIPER_WINDOWS_X64_URL, archive, PIPER_WINDOWS_X64_ARCHIVE_SHA256, 5_000_000);
-    const dest = join(piperRoot, 'bin', 'win-x64');
-    const binary = join(dest, 'piper', 'piper.exe');
-    if (!existsSync(binary)) {
-      rmSync(dest, { recursive: true, force: true });
-      extractWindows(archive, dest);
+  if (target === 'linux-x64') {
+    if (process.platform !== 'linux' && process.platform !== 'win32') {
+      console.log('[piper] plateforme non supportée pour le binaire Piper : téléchargement ignoré (tests simulés).');
+      return;
     }
-    return;
+    await prepareLinuxBinary();
   }
-  console.log('[piper] plateforme non supportée pour le binaire Piper : téléchargement ignoré (tests simulés).');
 }
 
 async function prepareModels() {

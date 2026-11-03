@@ -260,6 +260,7 @@ export class ChatSession {
       const agent = new Agent(route.provider, this.deps.tools, {
         systemPrompt: `${turn.systemPrompt}\n\n${teamPrompt(team)}`,
         temperature: settings.temperature,
+        homeLocation: settings.homeLocation ?? null,
         allowedTools: (name) => teamHasTool(team, name),
         ...(turn.learningReview ? { learningReview: turn.learningReview } : {}),
         ...(turn.learningFinalize ? { learningFinalize: turn.learningFinalize } : {}),
@@ -279,6 +280,7 @@ export class ChatSession {
         // ni dans `messages`, donc jamais affichée ni persistée.
         systemPrompt: turn.systemPrompt,
         temperature: settings.temperature,
+        homeLocation: settings.homeLocation ?? null,
         ...(turn.learningReview ? { learningReview: turn.learningReview } : {}),
         ...(turn.learningFinalize ? { learningFinalize: turn.learningFinalize } : {}),
       });
