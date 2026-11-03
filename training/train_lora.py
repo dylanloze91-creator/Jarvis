@@ -70,6 +70,12 @@ def construire_parseur() -> argparse.ArgumentParser:
     parseur.add_argument("--no-quant", action="store_true", help="pas de 4 bits (carte louée avec assez de mémoire) ; fp16 entier")
     parseur.add_argument("--dry-run", action="store_true", help="modèle minuscule aléatoire sur processeur : vérifie le circuit, ne produit rien d'utile")
     parseur.add_argument("--max-steps", type=int, default=-1, help="arrêt après N pas : --max-steps 20 mesure la mémoire et la vitesse réelles avant une nuit complète (pic de mémoire dans le journal et bilan.json)")
+    parseur.add_argument(
+        "--task",
+        choices=("code", "trieur"),
+        default="code",
+        help="code = élève write_file (défaut) ; trieur = classification d'équipe (5.0.68, preparation/ du trieur)",
+    )
     return parseur
 
 
@@ -275,10 +281,11 @@ def main(argv: list[str] | None = None) -> int:
 
         preparation = args.data.resolve()
         verifier_fichiers(preparation)
-        refus_examen = runs.verifier_empreinte_examen(preparation)
-        if refus_examen:
-            journal.error("Refus : %s", refus_examen)
-            return 5
+        if args.task == "code":
+            refus_examen = runs.verifier_empreinte_examen(preparation)
+            if refus_examen:
+                journal.error("Refus : %s", refus_examen)
+                return 5
         longueur_max, avis_longueur = choisir_longueur_max(args.max_length, preparation)
         if avis_longueur:
             journal.warning("ATTENTION : %s", avis_longueur)
@@ -289,13 +296,29 @@ def main(argv: list[str] | None = None) -> int:
         tokenizer = AutoTokenizer.from_pretrained(base)
         if tokenizer.pad_token_id is None:
             tokenizer.pad_token = tokenizer.eos_token
-        if not tokenizer.chat_template or "tools" not in tokenizer.chat_template:
+        if args.task == "code" and (not tokenizer.chat_template or "tools" not in tokenizer.chat_template):
             journal.error("Le gabarit de chat de %s ne gère pas les outils : impossible de reproduire le format des appels write_file.", base)
             return 3
+        if args.task == "trieur" and not tokenizer.chat_template:
+            journal.error("Le gabarit de chat de %s est absent : impossible d'entraîner le trieur.", base)
+            return 3
 
-        exemples_train, exemples_validation = lire_jeux(preparation, journal)
-        jeu_train = donnees.encoder_jeu(tokenizer, exemples_train, longueur_max)
-        jeu_validation = donnees.encoder_jeu(tokenizer, exemples_validation, longueur_max)
+        if args.task == "trieur":
+            train_path, validation_path = verifier_fichiers(preparation)
+            lecture_train = donnees.lire_jsonl_classification(train_path)
+            lecture_validation = donnees.lire_jsonl_classification(validation_path)
+            if lecture_train.ignorees and journal:
+                journal.warning("train.jsonl : %d ligne(s) sautée(s)", len(lecture_train.ignorees))
+            if lecture_validation.ignorees and journal:
+                journal.warning("validation.jsonl : %d ligne(s) sautée(s)", len(lecture_validation.ignorees))
+            exemples_train = lecture_train.exemples
+            exemples_validation = lecture_validation.exemples
+            jeu_train = donnees.encoder_jeu_classification(tokenizer, exemples_train, longueur_max)
+            jeu_validation = donnees.encoder_jeu_classification(tokenizer, exemples_validation, longueur_max)
+        else:
+            exemples_train, exemples_validation = lire_jeux(preparation, journal)
+            jeu_train = donnees.encoder_jeu(tokenizer, exemples_train, longueur_max)
+            jeu_validation = donnees.encoder_jeu(tokenizer, exemples_validation, longueur_max)
         if len(jeu_train) == 0 or len(jeu_validation) == 0:
             journal.error("Jeu vide après encodage (train %d, validation %d). Vérifie --data et --max-length.", len(jeu_train), len(jeu_validation))
             return 4

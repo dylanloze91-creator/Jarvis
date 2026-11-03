@@ -121,6 +121,7 @@ const ROUTE_HOW: Record<Extract<ChatItem, { kind: 'route' }>['how'], string> = {
   calcul: 'calcul exact',
   express: 'express',
   cerveau: 'choisi par le cerveau',
+  trieur: 'choisi par le trieur',
 };
 
 function ToolItem({ item }: { item: Extract<ChatItem, { kind: 'tool' }> }) {
