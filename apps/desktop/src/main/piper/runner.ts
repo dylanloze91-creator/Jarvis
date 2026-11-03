@@ -3,7 +3,7 @@ import { readFile, rm, writeFile } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { PiperVoiceDefinition } from '@jarvis/core';
+import { normalizePiperStdinText, type PiperVoiceDefinition } from '@jarvis/core';
 
 export interface PiperRunRequest {
   binaryPath: string;
@@ -69,7 +69,7 @@ export class ProcessPiperRunner implements PiperRunner {
   }
 
   private runProcess(request: PiperRunRequest, outputPath: string): Promise<void> {
-    const line = request.text.replace(/\s+/gu, ' ').trim();
+    const line = normalizePiperStdinText(request.text);
     if (!line) return Promise.reject(new Error('Texte vide après normalisation.'));
     const args = [
       '--model',
