@@ -29,3 +29,11 @@ training/runs/
 training/export/
 __pycache__/
 .pytest_cache/
+
+# Studio de voix inventée (5.0.67) : audio, corpus, exports — jamais en dépôt.
+voice-studio/.venv/
+voice-studio/candidates/
+voice-studio/corpus/
+voice-studio/export/
+voice-studio/checkpoints/
+voice-studio/**/__pycache__/
