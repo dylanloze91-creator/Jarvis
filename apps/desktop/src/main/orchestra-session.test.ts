@@ -187,4 +187,17 @@ describe('chef d’orchestre dans le chat (5.0.60)', () => {
     });
     expect(ok.requests[0]?.system).toContain('chef d’orchestre');
   });
+
+  it('trieur illisible : le cerveau choisit l’équipe (pas le chat d’avant)', async () => {
+    const orchestra = {
+      ...ORCHESTRA,
+      router: { model: 'jarvis-trieur', place: 'carte' as const },
+    };
+    const bad = await turn('Salut', 'pc', orchestra, '***');
+    expect(bad.route).toMatchObject({ how: 'cerveau', team: 'pc' });
+    expect(bad.requests[0]?.model).toBe('jarvis-trieur');
+    expect(bad.requests[1]).toMatchObject({ model: 'qwen2.5:7b', ollama: { keepAlive: '30m', recoverToolCalls: true } });
+    expect(bad.requests[2]?.model).toBe('qwen2.5:7b');
+    expect(bad.requests.some((r) => r.model === 'qwen2.5:3b')).toBe(false);
+  });
 });

@@ -453,6 +453,10 @@ export class ChatSession {
       if (router) {
         team = await this.askRouter(settings, router, teams, text, messages.slice(0, -1), signal);
         if (team) how = 'trieur';
+        else {
+          team = await this.askBrain(settings, orchestra, teams, text, messages.slice(0, -1), signal);
+          if (team) how = 'cerveau';
+        }
       } else {
         team = await this.askBrain(settings, orchestra, teams, text, messages.slice(0, -1), signal);
       }
