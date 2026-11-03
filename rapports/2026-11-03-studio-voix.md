@@ -22,7 +22,7 @@ Date : **2026-11-03**. Branche : `cursor/studio-voix` (depuis `origin/main`). Ca
 | `375ee2f` | voice-studio: entrainer_piper.py et guide carte louée (étape 4) |
 | `7b7ddfd` | voice-studio: installation voix Jarvis dans Piper (étape 5) |
 | `dce9075` | voice-studio: LICENCES.md (étape 6) |
-| *(final)* | CLAUDE.md, eslint ignore `.venv`, rapport, coordination terminé |
+| `a8370fb` | CLAUDE.md, eslint ignore `.venv`, rapport, coordination terminé |
 
 ## Fichiers livrés (`voice-studio/`)
 
