@@ -1,4 +1,5 @@
-import { activeOrchestra, type Settings } from '../agent/orchestra.js';
+import { activeOrchestra } from '../agent/orchestra.js';
+import type { Settings } from '../settings.js';
 
 /** Missions de code depuis la discussion (5.0.68). Absent ou faux : chat inchangé. */
 export function chatMissionsEnabled(settings: Settings): boolean {

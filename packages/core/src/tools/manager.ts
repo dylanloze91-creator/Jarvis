@@ -137,6 +137,14 @@ export class ToolManager {
     return this;
   }
 
+  /** Copie les outils enregistrés et ajoute des outils réservés à un tour (ex. proposer_mission). */
+  compose(...extras: RegisteredTool[]): ToolManager {
+    const next = new ToolManager();
+    for (const tool of this.list()) next.register(tool);
+    for (const tool of extras) next.register(tool);
+    return next;
+  }
+
   get(name: string): RegisteredTool | undefined {
     return this.tools.get(name);
   }
