@@ -47,6 +47,7 @@ Statuts possibles : `en cours`, `en pause`, `bloqué`, `terminé`.
 | Cursor | `cursor/meteo-sources-5066` | Sources courtes et lieu Chez moi | — | 2026-11-03 | terminé |
 | Cursor | `cursor/validation-equipe` | Validation en direct des équipes | — | 2026-11-04 | terminé |
 | Claude | `claude/caractere-jarvis` | Caractère de Jarvis : fiche de personnage dans les consignes des équipes du chef d'orchestre (réglage `persona`, coupé par défaut), accueil selon l'heure et le prénom ; rapport `rapports/2026-11-03-caractere-jarvis.md` ; à fusionner après rejeu des tests sur le PC | — | 2026-11-03 | terminé |
+| Claude Code | `claude/entrainement-1` | Entraînement de l'élève, étapes 1 à 4 du README (préparation, mise en place, dry-run, essai 20 pas sur la carte) ; pas d'entraînement complet, pas d'export | `training/setup-windows.ps1` | 2026-11-04 | en cours |
 
 ## Ressource GPU / Ollama
 
@@ -54,6 +55,6 @@ Une seule carte (RTX 2060 6 Go) : un seul agent à la fois lance le banc (`npm r
 
 | État | Par qui | Pour quoi | Depuis |
 | --- | --- | --- | --- |
-| libre | — | — | — |
+| occupée | Claude Code | Essai court QLoRA (`train_lora.py --max-steps 20`, Qwen2.5-Coder-3B) | 2026-11-04 19:55 |
 
 Pour réserver : passer l'état à `occupée`, remplir les colonnes, commiter et pousser **avant** de lancer. Pour libérer : remettre `libre` et `—`, commiter et pousser.
