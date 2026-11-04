@@ -7,10 +7,11 @@ import {
   phoneConfirmRequestSchema,
   phonePairRequestSchema,
   phoneSpeakRequestSchema,
+  phoneTeamValidationSchema,
   speechTextForSpeaker,
   type Conversation,
 } from '@jarvis/core';
-import type { ChatEvent, SendChatInput } from '../../shared/ipc.js';
+import type { ChatEvent, SendChatInput, TeamValidationInput } from '../../shared/ipc.js';
 import { PHONE_CSS, PHONE_HTML, PHONE_JS, PHONE_MANIFEST } from './page.js';
 import type { PhoneDevice, PhoneStore } from './store.js';
 
@@ -38,6 +39,7 @@ export interface PhoneChat {
 export interface PhoneServerDeps {
   store: Pick<PhoneStore, 'verify' | 'addDevice'>;
   chat: PhoneChat;
+  validateTeam: (input: TeamValidationInput) => Promise<{ ok: true } | { ok: false; error: string }>;
   conversation: (id: string) => Promise<Conversation | null>;
   icon: () => Promise<Buffer | null>;
   version: () => string;
@@ -253,6 +255,13 @@ export class PhoneServer {
     if (path === '/api/cancel' && method === 'POST') {
       await readJson(req);
       this.deps.chat.cancel();
+      return sendJson(res, 200, { ok: true });
+    }
+    if (path === '/api/validate-team' && method === 'POST') {
+      const parsed = phoneTeamValidationSchema.safeParse(await readJson(req));
+      if (!parsed.success) throw new HttpError(400, 'Validation illisible.');
+      const result = await this.deps.validateTeam(parsed.data);
+      if (!result.ok) throw new HttpError(400, result.error);
       return sendJson(res, 200, { ok: true });
     }
     if (path === '/api/speak' && method === 'POST') {

@@ -102,6 +102,7 @@ describe('téléphone + vraie session (5.0.63)', () => {
         respondConfirmation: (id, approved) => session.respondConfirmation(id, approved),
         cancel: () => session.cancel(),
       },
+      validateTeam: async () => ({ ok: true }),
       conversation: (id) => store.get(id),
       icon: async () => null,
       version: () => '5.0.63',

@@ -39,6 +39,7 @@ import {
   teamHasTool,
   teamPrompt,
   TEAM_SPECS,
+  ORCHESTRA_TEAMS,
   redactSecrets,
   type AgentEvent,
   type LLMProvider,
@@ -57,6 +58,7 @@ import {
 } from '@jarvis/core';
 import type { ChatEvent, RuntimeStatus, SendChatInput } from '../shared/ipc.js';
 import { IpcChannel } from '../shared/ipc.js';
+import { canOfferTeamValidation, validationPathForHow } from './orchestra/teamValidation.js';
 import type { PersonalizationStore } from './personalization.js';
 import type { KnowledgeStore } from './knowledge.js';
 import type { VoiceBridge } from './voice.js';
@@ -238,13 +240,28 @@ export class ChatSession {
       ? await this.routeTurn(settings, orchestra, input.text, messages, controller.signal)
       : null;
     if (route) {
-      emit({
+      const routeEvent: ChatEvent = {
         type: 'route',
         team: route.team,
         label: route.label,
         model: route.model,
         how: route.how,
-      });
+      };
+      if (
+        canOfferTeamValidation(settings) &&
+        route.how !== 'calcul' &&
+        ORCHESTRA_TEAMS.includes(route.team as OrchestraTeam)
+      ) {
+        const teams = availableTeams(this.deps.tools.schemas().map((tool) => tool.name));
+        routeEvent.validation = {
+          phrase: input.text,
+          context: routerUserPrompt(input.text, messages.slice(0, -1)),
+          proposedTeam: route.team,
+          path: validationPathForHow(route.how),
+          teams: teams.map((id) => ({ id, label: TEAM_SPECS[id].label })),
+        };
+      }
+      emit(routeEvent);
     }
 
     let run: AsyncGenerator<AgentEvent>;

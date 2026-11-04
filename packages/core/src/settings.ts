@@ -310,6 +310,10 @@ export const settingsSchema = z.object({
         .optional(),
       /** 5.0.68 — trieur : modèle dédié au choix d'équipe. Absent : le cerveau trie. */
       router: z.object({ model: z.string().max(200), place: z.enum(MODEL_PLACES) }).optional(),
+      /** Dossier des données du trieur (`valide.jsonl`, etc.). Absent : pas de validation en direct. */
+      trieurDataDir: z.string().max(500).optional(),
+      /** Proposer ✓ / Changer sous la pastille d'équipe (nécessite `trieurDataDir`). */
+      teamValidation: z.boolean().optional(),
     })
     .optional(),
   machine: z

@@ -95,6 +95,14 @@ export const phoneConfirmRequestSchema = z.object({
   approved: z.boolean(),
 });
 
+export const phoneTeamValidationSchema = z.object({
+  phrase: z.string().min(1).max(PHONE_MAX_TEXT),
+  context: z.string().max(16_000),
+  proposedTeam: z.string().min(1).max(40),
+  chosenTeam: z.string().min(1).max(40),
+  path: z.enum(['express', 'cerveau', 'trieur']),
+});
+
 /** Nom d'appareil affiché dans les réglages : lettres, chiffres, espaces et ponctuation simple. */
 export function cleanDeviceName(name: string | undefined): string {
   const cleaned = (name ?? '')

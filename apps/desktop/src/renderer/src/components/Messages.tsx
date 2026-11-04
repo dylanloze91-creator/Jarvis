@@ -75,17 +75,7 @@ function Item({ item }: { item: ChatItem }) {
   }
 
   if (item.kind === 'route') {
-    return (
-      <div className="tool-row">
-        <span className="tool-chip" title="Chef d’orchestre : équipe et modèle de cette réponse">
-          <Compass className="size-3.5 text-cyan-300" />
-          <span className="max-w-[440px] truncate">
-            {item.label} · {item.model}
-          </span>
-          <span className="tool-status">{ROUTE_HOW[item.how]}</span>
-        </span>
-      </div>
-    );
+    return <RouteItem item={item} />;
   }
 
   if (item.kind === 'ignored') {
@@ -119,6 +109,84 @@ const ROUTE_HOW: Record<Extract<ChatItem, { kind: 'route' }>['how'], string> = {
   cerveau: 'choisi par le cerveau',
   trieur: 'choisi par le trieur',
 };
+
+function RouteItem({ item }: { item: Extract<ChatItem, { kind: 'route' }> }) {
+  const validation = item.validation;
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [saved, setSaved] = useState<'confirme' | 'corrige' | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const submit = (chosenTeam: string): void => {
+    if (!validation || saved || busy) return;
+    setBusy(true);
+    void window.jarvis.orchestra
+      .validateTeam({
+        phrase: validation.phrase,
+        context: validation.context,
+        proposedTeam: validation.proposedTeam,
+        chosenTeam,
+        path: validation.path,
+      })
+      .then((result) => {
+        if (result.ok) {
+          setSaved(chosenTeam === validation.proposedTeam ? 'confirme' : 'corrige');
+          setPickerOpen(false);
+        }
+      })
+      .finally(() => setBusy(false));
+  };
+
+  return (
+    <div className="tool-row route-validation-row">
+      <span className="tool-chip" title="Chef d’orchestre : équipe et modèle de cette réponse">
+        <Compass className="size-3.5 text-cyan-300" />
+        <span className="max-w-[440px] truncate">
+          {item.label} · {item.model}
+        </span>
+        <span className="tool-status">{ROUTE_HOW[item.how]}</span>
+      </span>
+      {validation && !saved ? (
+        pickerOpen ? (
+          <span className="route-team-picker" role="group" aria-label="Choisir l’équipe">
+            {validation.teams.map((team) => (
+              <button
+                key={team.id}
+                type="button"
+                className="route-team-option"
+                disabled={busy}
+                onClick={() => submit(team.id)}
+              >
+                {team.label}
+              </button>
+            ))}
+            <button type="button" className="route-val-btn ghost" disabled={busy} onClick={() => setPickerOpen(false)}>
+              Annuler
+            </button>
+          </span>
+        ) : (
+          <span className="route-validation-actions">
+            <button
+              type="button"
+              className="route-val-btn"
+              disabled={busy}
+              title="Confirmer cette équipe"
+              aria-label="Confirmer l’équipe"
+              onClick={() => submit(validation.proposedTeam)}
+            >
+              ✓
+            </button>
+            <button type="button" className="route-val-btn" disabled={busy} onClick={() => setPickerOpen(true)}>
+              Changer
+            </button>
+          </span>
+        )
+      ) : null}
+      {saved ? (
+        <span className="route-validation-done">{saved === 'confirme' ? 'Équipe validée' : 'Équipe corrigée'}</span>
+      ) : null}
+    </div>
+  );
+}
 
 function ToolItem({ item }: { item: Extract<ChatItem, { kind: 'tool' }> }) {
   const [open, setOpen] = useState(false);

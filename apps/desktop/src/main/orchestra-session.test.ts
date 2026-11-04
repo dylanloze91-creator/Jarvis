@@ -200,4 +200,31 @@ describe('chef d’orchestre dans le chat (5.0.60)', () => {
     expect(bad.requests[2]?.model).toBe('qwen2.5:7b');
     expect(bad.requests.some((r) => r.model === 'qwen2.5:3b')).toBe(false);
   });
+
+  it('validation en direct : métadonnées sous la pastille express si dossier configuré', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'jarvis-valide-route-'));
+    const orchestra = {
+      ...ORCHESTRA,
+      trieurDataDir: dir,
+      teamValidation: true,
+    };
+    const { route } = await turn('Mets Daft Punk sur Spotify', 'pc', orchestra);
+    expect(route?.validation).toMatchObject({
+      proposedTeam: 'musique',
+      path: 'express',
+      phrase: 'Mets Daft Punk sur Spotify',
+    });
+    expect(route?.validation?.teams.some((team) => team.id === 'musique')).toBe(true);
+  });
+
+  it('validation en direct : absente sur calcul exact', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'jarvis-valide-calc-'));
+    const orchestra = {
+      ...ORCHESTRA,
+      trieurDataDir: dir,
+      teamValidation: true,
+    };
+    const { route } = await turn('Combien font 12 fois 37 ?', 'pc', orchestra);
+    expect(route?.validation).toBeUndefined();
+  });
 });
