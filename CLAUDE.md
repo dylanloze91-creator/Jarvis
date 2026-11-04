@@ -2,7 +2,7 @@
 
 Ce fichier est à la **racine du code**. Les chemins ci-dessous partent de ce dossier. Ce n’est pas un résumé marketing : c’est l’état réel de cet arbre. La voix a été refaite dans cet arbre (publiée en 0.4.11, section « Voix ») : la transcription restait « Chargement… 100 % » sur l’installateur Windows. La refonte du tableau de bord est dans cet arbre : fenêtre étroite = overlay, fenêtre large = tableau de bord.
 
-**Version confirmée :** `apps/desktop/package.json` → `"version": "5.0.68"` (décision D1 : jamais de suffixe `-beta`). La 5.0.68 (chat unifié phase 1, garde double-lancement ; intégration du 4 novembre 2026, rapport `rapports/2026-11-04-publication-5068.md`) est en cours de publication sur `main`. La 5.0.67 (caractère de Jarvis, validation d’équipe en direct, correctif contexte export claude.ai ; rapport `rapports/2026-11-04-publication-5067.md`) reste la dernière release GitHub jusqu’à `v5.0.68`. La 5.0.66 (correctif Piper Windows, sources courtes, lieu domicile, correctifs Claude ; rapport `rapports/2026-11-03-publication-5066.md`) reste la release antérieure. Le `package.json` racine est aligné sur la même version depuis 0.5.0 (il était resté à `0.3.0`), mais il n’est lu par rien : la version qui compte pour l’exe, l’updater et GitHub est celle de `@jarvis/desktop`. `@jarvis/core` reste à `0.1.0`. Le modèle par défaut reste `qwen2.5:3b`. `qwen3.5:4b` est le modèle recommandé documenté ; le repli est réglable (`fallbackModel`, défaut `qwen2.5:3b`).
+**Version confirmée :** `apps/desktop/package.json` → `"version": "5.0.68"` (décision D1 : jamais de suffixe `-beta`). La 5.0.68 (chat unifié phase 1, garde double-lancement ; intégration du 4 novembre 2026, rapport `rapports/2026-11-04-publication-5068.md`) est publiée (release `v5.0.68`, voir « Updater / GitHub »). La 5.0.67 (caractère de Jarvis, validation d’équipe en direct, correctif contexte export claude.ai ; rapport `rapports/2026-11-04-publication-5067.md`) reste la release précédente. La 5.0.66 (correctif Piper Windows, sources courtes, lieu domicile, correctifs Claude ; rapport `rapports/2026-11-03-publication-5066.md`) reste la release antérieure. Le `package.json` racine est aligné sur la même version depuis 0.5.0 (il était resté à `0.3.0`), mais il n’est lu par rien : la version qui compte pour l’exe, l’updater et GitHub est celle de `@jarvis/desktop`. `@jarvis/core` reste à `0.1.0`. Le modèle par défaut reste `qwen2.5:3b`. `qwen3.5:4b` est le modèle recommandé documenté ; le repli est réglable (`fallbackModel`, défaut `qwen2.5:3b`).
 
 Lis ce fichier avant de modifier le code.
 
@@ -661,7 +661,7 @@ Demande de l'utilisateur : « que Jarvis ait une personnalité bien à lui, limi
 
 ## Updater / GitHub
 
-Dernière publication : **5.0.67** (`https://github.com/dylanloze91-creator/Jarvis/releases/tag/v5.0.67`) — exe, `.blockmap` et `latest.yml` publiés : l’updater intégré la propose.
+Dernière publication : **5.0.68** (`https://github.com/dylanloze91-creator/Jarvis/releases/tag/v5.0.68`) — exe, `.blockmap` et `latest.yml` publiés : l’updater intégré la propose.
 
 - `apps/desktop/electron-builder.yml` : `publish.provider: github`, owner `dylanloze91-creator`, repo `Jarvis`, `releaseType: release`, artifact `Jarvis-Setup-${version}.exe`
 - `apps/desktop/src/main/updater.ts` : contrôle 15 s après le démarrage puis toutes les 4 h ; téléchargement auto ; **installation seulement si l’utilisateur clique**
