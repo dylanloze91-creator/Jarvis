@@ -170,6 +170,12 @@ export function installPreviewBridge(): void {
         pendingConfirmation = null;
         resolve?.(approved);
       },
+      launchMissionProposal: async () => undefined,
+      declineMissionProposal: async () => undefined,
+      setMissionProposalProject: async () => undefined,
+      patchMissionProposal: async () => undefined,
+      openMissionFolder: async () => undefined,
+      reloadConversationMissions: async () => undefined,
       onEvent: (listener) => {
         listeners.add(listener);
         return () => listeners.delete(listener);
