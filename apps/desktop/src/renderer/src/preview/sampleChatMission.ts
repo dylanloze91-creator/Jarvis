@@ -46,6 +46,8 @@ export const SAMPLE_CHAT_MISSION_PROPOSAL: Conversation = conv('preview-mission-
         proposalId: 'preview-proposal',
         missionType: 'modifier',
         objectif: 'Ajoute un menu pause (Reprendre / Quitter) au jeu de plateforme existant.',
+        launchObjectif:
+          'Ajoute un menu pause (Reprendre / Quitter) au jeu de plateforme existant.',
         projetHint: 'mon-jeu',
         projectId: 'jarvis',
         kind: 'modify',

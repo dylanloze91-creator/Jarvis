@@ -91,7 +91,7 @@ describe('missions depuis la discussion (5.0.68)', () => {
       localLearning: { recordTurn: async () => undefined } as never,
       getChatMissionHub: () => hub,
     });
-    await session.send(sender, { conversationId: null, text: 'Crée-moi un petit script Python' });
+    await session.send(sender, { conversationId: null, text: 'Analyse la structure de mon module auth' });
     const team = requests[1];
     expect(team?.tools).toContain('proposer_mission');
     expect(team?.system).toContain('proposer_mission');
@@ -166,7 +166,7 @@ describe('missions depuis la discussion (5.0.68)', () => {
     });
     await session.send(sender, {
       conversationId: null,
-      text: 'Crée-moi un script Python bonjour',
+      text: 'Peut-être demain un utilitaire pour trier mes fichiers csv sur le bureau',
     });
     const proposal = events.find((event) => event.type === 'mission_proposal');
     expect(proposal?.type).toBe('mission_proposal');
