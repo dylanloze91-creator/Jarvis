@@ -34,6 +34,13 @@ const api: JarvisApi = {
     cancel: () => ipcRenderer.invoke(IpcChannel.chatCancel),
     respondConfirmation: (requestId: string, approved: boolean) =>
       ipcRenderer.invoke(IpcChannel.confirmRespond, requestId, approved),
+    launchMissionProposal: (input) => ipcRenderer.invoke(IpcChannel.chatMissionLaunch, input),
+    declineMissionProposal: (input) => ipcRenderer.invoke(IpcChannel.chatMissionDecline, input),
+    setMissionProposalProject: (input) => ipcRenderer.invoke(IpcChannel.chatMissionSetProject, input),
+    patchMissionProposal: (input) => ipcRenderer.invoke(IpcChannel.chatMissionPatchProposal, input),
+    openMissionFolder: (input) => ipcRenderer.invoke(IpcChannel.chatMissionOpenFolder, input),
+    reloadConversationMissions: (conversationId: string) =>
+      ipcRenderer.invoke(IpcChannel.chatMissionReload, conversationId),
     onEvent: (listener) => {
       const handler = (_event: Electron.IpcRendererEvent, payload: ChatEvent): void =>
         listener(payload);

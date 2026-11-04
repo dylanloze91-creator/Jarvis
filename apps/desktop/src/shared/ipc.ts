@@ -1,6 +1,7 @@
 import type {
   AuditEntry,
   ChatMessage,
+  ChatMissionEnvelope,
   Conversation,
   ConversationSummary,
   GoogleAccessMode,
@@ -68,6 +69,12 @@ export const IpcChannel = {
   chatCancel: 'chat:cancel',
   chatEvent: 'chat:event',
   confirmRespond: 'chat:confirm-respond',
+  chatMissionLaunch: 'chat:mission-launch',
+  chatMissionDecline: 'chat:mission-decline',
+  chatMissionSetProject: 'chat:mission-set-project',
+  chatMissionPatchProposal: 'chat:mission-patch-proposal',
+  chatMissionOpenFolder: 'chat:mission-open-folder',
+  chatMissionReload: 'chat:mission-reload',
   orchestraValidateTeam: 'orchestra:validate-team',
   settingsGet: 'settings:get',
   settingsSet: 'settings:set',
@@ -422,6 +429,15 @@ export type ChatEvent =
    * pas de tour, pas d'historique, et la discussion vocale se ferme. Seul événement envoyé.
    */
   | { type: 'not_addressed'; text: string }
+  /** 5.0.68 — mission proposée dans la discussion (carte, pas une confirmation d'outil). */
+  | { type: 'mission_proposal'; message: ChatMessage; voiceHint: string }
+  /** Mise à jour du bloc mission (suivi, rapport) dans un message existant. */
+  | {
+      type: 'mission_update';
+      conversationId: string;
+      messageId: string;
+      envelope: ChatMissionEnvelope;
+    }
   | { type: 'done'; conversationId: string; messages: ChatMessage[] };
 
 export type WindowChrome = 'compact' | 'dashboard';
@@ -570,6 +586,25 @@ export interface JarvisApi {
     cancel(): Promise<void>;
     onEvent(listener: (event: ChatEvent) => void): () => void;
     respondConfirmation(requestId: string, approved: boolean): Promise<void>;
+    launchMissionProposal(input: {
+      messageId: string;
+      proposalId: string;
+      projectId: string;
+      request: string;
+    }): Promise<void>;
+    declineMissionProposal(input: { messageId: string; proposalId: string }): Promise<void>;
+    setMissionProposalProject(input: {
+      messageId: string;
+      proposalId: string;
+      projectId: string;
+    }): Promise<void>;
+    patchMissionProposal(input: {
+      messageId: string;
+      proposalId: string;
+      objectif: string;
+    }): Promise<void>;
+    openMissionFolder(input: { messageId: string; missionId: string }): Promise<void>;
+    reloadConversationMissions(conversationId: string): Promise<void>;
   };
   orchestra: {
     validateTeam(input: TeamValidationInput): Promise<{ ok: true } | { ok: false; error: string }>;

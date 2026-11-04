@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { ChatMessage, Conversation } from '@jarvis/core';
+import type { ChatMessage, ChatMissionEnvelope, Conversation } from '@jarvis/core';
 import type { ChatEvent } from '../../../shared/ipc';
 
 export type ChatItem =
@@ -33,7 +33,8 @@ export type ChatItem =
       };
     }
   /** 5.0.62 : phrase entendue pendant la discussion vocale, jugée pas pour Jarvis (rien n'est enregistré). */
-  | { kind: 'ignored'; id: string; text: string };
+  | { kind: 'ignored'; id: string; text: string }
+  | { kind: 'chat_mission'; id: string; envelope: ChatMissionEnvelope };
 
 export interface PendingConfirmation {
   requestId: string;
@@ -130,6 +131,24 @@ export function useChat(options: UseChatOptions = {}) {
           );
           break;
         }
+        case 'mission_proposal': {
+          setItems((current) => [
+            ...closeStreaming(current),
+            { kind: 'chat_mission', id: event.message.id, envelope: event.message.chatMission! },
+          ]);
+          onAssistantFinal.current?.(event.voiceHint);
+          break;
+        }
+        case 'mission_update': {
+          setItems((current) =>
+            current.map((item) =>
+              item.kind === 'chat_mission' && item.id === event.messageId
+                ? { ...item, envelope: event.envelope }
+                : item,
+            ),
+          );
+          break;
+        }
         case 'confirm': {
           setConfirmation({
             requestId: event.requestId,
@@ -212,6 +231,7 @@ export function useChat(options: UseChatOptions = {}) {
     setItems(toItems(conversation.messages));
     setConversationId(conversation.id);
     setConfirmation(null);
+    void window.jarvis.chat.reloadConversationMissions(conversation.id);
   }, []);
 
   return { items, busy, confirmation, conversationId, send, cancel, respond, reset, load };
@@ -243,6 +263,8 @@ export function toItems(messages: ChatMessage[]): ChatItem[] {
       items.push({ kind: 'user', id: message.id, text: message.content });
     } else if (message.role === 'assistant' && message.content.trim().length > 0) {
       items.push({ kind: 'assistant', id: message.id, text: message.content, streaming: false });
+    } else if (message.chatMission) {
+      items.push({ kind: 'chat_mission', id: message.id, envelope: message.chatMission });
     } else if (message.role === 'tool') {
       items.push({
         kind: 'tool',

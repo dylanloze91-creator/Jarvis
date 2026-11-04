@@ -1,4 +1,5 @@
 import type { ToolCategory } from './tools/types.js';
+import type { ChatMissionEnvelope } from './developer/chatMissions/envelope.js';
 
 export type MessageRole = 'system' | 'user' | 'assistant' | 'tool';
 
@@ -58,6 +59,10 @@ export interface ChatMessage {
   toolName?: string;
   /** Présent sur les messages `tool` : un refus ne doit pas se relire « terminé » dans l'historique. */
   toolStatus?: ToolCallOutcome['status'];
+  /** 5.0.68 — carte mission, suivi ou rapport dans la discussion unifiée. */
+  chatMission?: ChatMissionEnvelope;
+  /** Mission Jarvis Développeur rattachée à ce message (historique). */
+  missionId?: string;
   createdAt: number;
 }
 
