@@ -44,14 +44,46 @@ Vous pouvez combiner Jarvis et claude.ai dans la même commande (les deux option
 
 ## 2. Classer vos phrases (examen)
 
+### Sur le PC (navigateur)
+
 ```text
 npm run trieur:trier --workspace @jarvis/core -- --dir C:\dev\jarvis-data\trieur
+```
+
+Port local libre (affiché à l’écran). Pour un port fixe (conseillé **43160**, sous 49152 pour éviter les plages réservées Windows) :
+
+```text
+npm run trieur:trier --workspace @jarvis/core -- --dir C:\dev\jarvis-data\trieur --port 43160
 ```
 
 **Ce que vous devez voir :** une adresse `http://127.0.0.1:…/` à ouvrir dans le navigateur.  
 Une phrase à la fois, neuf boutons (équipes), « Je ne sais pas », « Pas une demande », touches **1 à 9**.  
 Comptez **150 à 300 phrases** bien réparties. La page indique les équipes qui manquent de exemples.  
 **Ctrl+C** dans la fenêtre PowerShell arrête le serveur ; la progression est enregistrée, vous pouvez reprendre plus tard.
+
+### Sur l’iPhone (Tailscale, gros boutons)
+
+1. Sur le PC, lancez le tri avec le port **43160** et le mode Tailscale :
+
+```text
+npm run trieur:trier --workspace @jarvis/core -- --dir C:\dev\jarvis-data\trieur --port 43160 --tailscale
+```
+
+2. **Une seule fois**, publiez ce port sur votre tailnet (le téléphone Jarvis reste sur `53130`) :
+
+```text
+tailscale serve --bg --https=8443 43160
+```
+
+3. Le PC affiche une adresse `https://<pc>.ts.net:8443/#t=…` et un **QR code** dans le terminal. Scannez-le avec l’iPhone (appareil photo ou Safari).
+
+4. Sur l’iPhone : grille **3×3** de gros boutons, « Je ne sais pas », « Pas une demande », « Annuler la dernière », compteur — **sans clavier**.
+
+**Pour arrêter la publication Tailscale** (le serveur local s’arrête avec Ctrl+C dans PowerShell) :
+
+```text
+tailscale serve reset
+```
 
 ---
 
