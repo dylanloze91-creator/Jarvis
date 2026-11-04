@@ -5,6 +5,8 @@ declare module 'node:crypto' {
     digest(encoding: 'hex'): string;
   }
   export function createHash(algorithm: string): Hash;
+  export function randomBytes(size: number): Uint8Array & { toString(encoding: 'base64url'): string };
+  export function timingSafeEqual(a: Uint8Array, b: Uint8Array): boolean;
 }
 
 declare module 'node:http' {

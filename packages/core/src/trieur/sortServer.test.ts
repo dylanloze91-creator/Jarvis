@@ -2,13 +2,71 @@ import { describe, expect, it } from 'vitest';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { allowedSortHost, SORT_APP_JS, TrieurSortServer } from './sortServer.js';
+import { allowedSortHost, createSortAccessToken, SORT_APP_JS, SORT_PHONE_HTML, SORT_PHONE_JS, TrieurSortServer } from './sortServer.js';
 import { trieurFileNames } from './files.js';
 
 describe('trieur sort server', () => {
   it('refuse un hôte autre que 127.0.0.1', () => {
     expect(allowedSortHost('127.0.0.1:1234')).toBe(true);
     expect(allowedSortHost('evil.example:1234')).toBe(false);
+    expect(allowedSortHost('pc.tail.ts.net:8443', false)).toBe(false);
+  });
+
+  it('accepte ts.net seulement en mode tailscale', () => {
+    expect(allowedSortHost('pc.tail1a2b.ts.net:8443', true)).toBe(true);
+    expect(allowedSortHost('pc.tail1a2b.ts.net:8443', false)).toBe(false);
+  });
+
+  it('exige un jeton Bearer sur l’API en mode tailscale', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'trieur-token-'));
+    const files = trieurFileNames(dir);
+    await writeFile(
+      files.toSort,
+      `${JSON.stringify({ id: 'a', phrase: 'Test', context: 'Demande : Test\nÉquipe :' })}\n`,
+      'utf8',
+    );
+    const token = createSortAccessToken();
+    const server = new TrieurSortServer({
+      toSortPath: files.toSort,
+      examPath: files.exam,
+      progressPath: files.sortProgress,
+      tailscale: true,
+      accessToken: token,
+    });
+    const { port } = await server.start();
+    const host = `127.0.0.1:${port}`;
+    const denied = await fetch(`http://${host}/api/current`, { headers: { host } });
+    expect(denied.status).toBe(401);
+    const ok = await fetch(`http://${host}/api/current`, {
+      headers: { host, Authorization: `Bearer ${token}` },
+    });
+    expect(ok.ok).toBe(true);
+    await server.stop();
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('sert la page téléphone sans style inline en mode tailscale', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'trieur-phone-'));
+    const files = trieurFileNames(dir);
+    await writeFile(files.toSort, '', 'utf8');
+    const server = new TrieurSortServer({
+      toSortPath: files.toSort,
+      examPath: files.exam,
+      progressPath: files.sortProgress,
+      tailscale: true,
+      accessToken: createSortAccessToken(),
+    });
+    const { port } = await server.start();
+    const host = `127.0.0.1:${port}`;
+    const page = await fetch(`http://${host}/`, { headers: { host } });
+    const html = await page.text();
+    expect(html).not.toContain('<style');
+    expect(html).toContain('grid-teams');
+    expect(SORT_PHONE_JS).toContain("getElementById('teams')");
+    expect(SORT_PHONE_JS).not.toMatch(/keydown/);
+    expect(SORT_PHONE_HTML).toContain('Annuler la dernière');
+    await server.stop();
+    await rm(dir, { recursive: true, force: true });
   });
 
   it('sert la feuille de style à /app.css sans style inline', async () => {

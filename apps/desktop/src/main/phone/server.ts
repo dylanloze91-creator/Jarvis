@@ -3,6 +3,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import {
   PHONE_PAIRING_MAX_ATTEMPTS,
   PHONE_PAIRING_TTL_MS,
+  allowedPhoneHost,
   phoneChatRequestSchema,
   phoneConfirmRequestSchema,
   phonePairRequestSchema,
@@ -74,11 +75,7 @@ const PAGE_POLICY = [
  * Hôtes acceptés : la boucle locale et les noms `*.ts.net` de Tailscale. Un autre nom (site piégé
  * qui fait pointer son domaine sur 127.0.0.1) est refusé.
  */
-export function allowedPhoneHost(host: string | undefined): boolean {
-  if (!host) return false;
-  const name = host.trim().toLowerCase().replace(/:\d+$/, '');
-  return name === '127.0.0.1' || name === 'localhost' || name === '[::1]' || /^[a-z0-9-]+(\.[a-z0-9-]+)*\.ts\.net$/.test(name);
-}
+export { allowedPhoneHost };
 
 class HttpError extends Error {
   constructor(

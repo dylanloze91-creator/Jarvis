@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   PHONE_PORT,
+  allowedPhoneHost,
   cleanDeviceName,
   parseTailscaleStatus,
   phoneAppUrl,
@@ -8,6 +9,8 @@ import {
   phonePairRequestSchema,
   tailscaleServeCommand,
   tailscaleServesPort,
+  tailscaleTrieurServeCommand,
+  trieurSortPhoneUrl,
 } from './phone.js';
 
 describe('téléphone (5.0.63)', () => {
@@ -40,10 +43,19 @@ describe('téléphone (5.0.63)', () => {
   it('adresse, commande et noms', () => {
     expect(PHONE_PORT).toBe(53130);
     expect(tailscaleServeCommand()).toBe('tailscale serve --bg 53130');
+    expect(tailscaleTrieurServeCommand()).toBe('tailscale serve --bg --https=8443 43160');
+    expect(trieurSortPhoneUrl('pc.tail.ts.net', 'abc123')).toBe('https://pc.tail.ts.net:8443/#t=abc123');
     expect(phoneAppUrl('pc.tail.ts.net.')).toBe('https://pc.tail.ts.net/');
     expect(phoneAppUrl('pc.tail.ts.net', '012345')).toBe('https://pc.tail.ts.net/#code=012345');
     expect(cleanDeviceName('iPhone de Dylan <script>')).toBe('iPhone de Dylan script');
     expect(cleanDeviceName('   ')).toBe('Téléphone');
+  });
+
+  it('accepte la boucle locale et les hôtes ts.net', () => {
+    expect(allowedPhoneHost('127.0.0.1:53130')).toBe(true);
+    expect(allowedPhoneHost('pc.tail1a2b.ts.net:443')).toBe(true);
+    expect(allowedPhoneHost('ts.net.example.com')).toBe(false);
+    expect(allowedPhoneHost(undefined)).toBe(false);
   });
 
   it('valide les requêtes du téléphone', () => {

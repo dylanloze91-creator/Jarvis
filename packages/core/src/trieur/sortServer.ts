@@ -1,5 +1,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
+import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { readFile, writeFile } from 'node:fs/promises';
+import { allowedPhoneHost } from '../phone/phone.js';
 import {
   EXAM_TARGET,
   examBalanceMessage,
@@ -23,6 +25,12 @@ export interface SortServerOptions {
   examPath: string;
   progressPath: string;
   host?: string;
+  /** Port local (0 = port libre). */
+  port?: number;
+  /** Accepte aussi les hôtes `*.ts.net` et exige un jeton Bearer sur `/api/*`. */
+  tailscale?: boolean;
+  /** Jeton d'accès (32 octets, base64url) ; obligatoire si `tailscale`. */
+  accessToken?: string;
   log?: (line: string) => void;
 }
 
@@ -36,10 +44,25 @@ const PAGE_POLICY = [
   "frame-ancestors 'none'",
 ].join('; ');
 
-export function allowedSortHost(host: string | undefined): boolean {
+export function allowedSortHost(host: string | undefined, tailscale = false): boolean {
+  if (tailscale) return allowedPhoneHost(host);
   if (!host) return false;
   const name = host.trim().toLowerCase().replace(/:\d+$/, '');
   return name === '127.0.0.1' || name === 'localhost' || name === '[::1]';
+}
+
+/** Jeton aléatoire pour le tri sur téléphone via Tailscale. */
+export function createSortAccessToken(): string {
+  return randomBytes(32).toString('base64url');
+}
+
+export function sortBearerOk(expected: string | undefined, authorization: string | undefined): boolean {
+  if (!expected) return true;
+  const match = typeof authorization === 'string' ? /^Bearer\s+([A-Za-z0-9_-]{20,200})$/.exec(authorization.trim()) : null;
+  if (!match) return false;
+  const left = Buffer.from(expected);
+  const right = Buffer.from(match[1]!);
+  return left.length === right.length && timingSafeEqual(left, right);
 }
 
 async function readLines(path: string): Promise<unknown[]> {
@@ -125,6 +148,104 @@ button:focus{outline:2px solid #38bdf8}
 .secondary{opacity:0.85}
 #status{font-size:0.9rem;color:#94a3b8;margin-top:1rem}`;
 
+export const SORT_PHONE_HTML = `<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<title>Tri du trieur</title>
+<link rel="stylesheet" href="/app.css"/>
+</head>
+<body>
+<h1>Classer vos phrases</h1>
+<p id="status"></p>
+<div id="context"></div>
+<div id="phrase"></div>
+<div class="grid-teams" id="teams"></div>
+<div class="grid-actions">
+<button type="button" class="secondary" data-team="unknown">Je ne sais pas</button>
+<button type="button" class="secondary" data-team="not_a_request">Pas une demande</button>
+</div>
+<p><button type="button" id="undo" class="secondary wide">Annuler la dernière</button></p>
+<script src="/app.js"></script>
+</body>
+</html>`;
+
+export const SORT_PHONE_CSS = String.raw`body{font-family:system-ui,sans-serif;max-width:720px;margin:0 auto;padding:calc(env(safe-area-inset-top) + 12px) 12px calc(env(safe-area-inset-bottom) + 12px);background:#0f172a;color:#e2e8f0;-webkit-tap-highlight-color:transparent}
+h1{font-size:1.15rem;margin:0 0 0.5rem}
+#context,#phrase{white-space:pre-wrap;background:#1e293b;padding:1rem;border-radius:12px;margin:0.75rem 0;font-size:1.05rem}
+.grid-teams{display:grid;grid-template-columns:repeat(3,1fr);gap:0.65rem;margin:1rem 0}
+.grid-actions{display:grid;grid-template-columns:1fr 1fr;gap:0.65rem;margin:0.75rem 0}
+button{font-size:1rem;padding:1rem 0.5rem;border-radius:12px;border:1px solid #334155;background:#1e293b;color:#f8fafc;cursor:pointer;touch-action:manipulation;min-height:3.25rem}
+button:focus{outline:2px solid #38bdf8}
+button:disabled{opacity:0.45}
+.secondary{opacity:0.92}
+.wide{width:100%;margin-top:0.25rem}
+#status{font-size:0.95rem;color:#94a3b8;margin:0.25rem 0 0.75rem}`;
+
+/** Page téléphone : gros boutons, jeton dans l’en-tête, pas de clavier requis. */
+export const SORT_PHONE_JS = String.raw`const teams=[
+['conversation','Conversation'],['pc','PC'],['fichiers','Fichiers'],
+['web','Internet'],['musique','Musique'],['concentration','Concentration'],
+['memoire','Mémoire'],['google','Google'],['code','Code']];
+const TOKEN_KEY='jarvis.trieur.token';
+const hashMatch=/[#&]t=([A-Za-z0-9_-]+)/.exec(window.location.hash||'');
+if(hashMatch){try{localStorage.setItem(TOKEN_KEY,hashMatch[1]);}catch(e){}}
+if(window.location.hash&&window.history&&window.history.replaceState){
+  window.history.replaceState(null,'',window.location.pathname);
+}
+let token=null;
+try{token=localStorage.getItem(TOKEN_KEY);}catch(e){}
+const grid=document.getElementById('teams');
+const statusEl=document.getElementById('status');
+const ctxEl=document.getElementById('context');
+const phraseEl=document.getElementById('phrase');
+for(const [id,label] of teams){
+  const b=document.createElement('button');
+  b.type='button';
+  b.dataset.team=id;
+  b.textContent=label;
+  grid.appendChild(b);
+}
+function authHeaders(extra){
+  const h={...(extra||{})};
+  if(token)h.Authorization='Bearer '+token;
+  return h;
+}
+async function load(){
+  if(!token){statusEl.textContent='Ouvre le lien avec le QR code affiché sur le PC.';return;}
+  const r=await fetch('/api/current',{headers:authHeaders()});
+  if(r.status===401){statusEl.textContent='Accès refusé : rouvre le lien du PC.';return;}
+  if(!r.ok){statusEl.textContent='Erreur de chargement.';return;}
+  const d=await r.json();
+  const count=d.done?'':(d.index!==undefined&&d.total!==undefined?('Phrase '+(d.index+1)+' / '+d.total+' · '):'');
+  statusEl.textContent=count+(d.message||'');
+  ctxEl.textContent=d.context||'(pas de contexte)';
+  phraseEl.textContent=d.phrase||'';
+  const disabled=!!d.done;
+  document.querySelectorAll('button[data-team],#undo').forEach(x=>{x.disabled=disabled;});
+}
+async function choose(team){
+  const r=await fetch('/api/choose',{method:'POST',headers:authHeaders({'Content-Type':'application/json'}),body:JSON.stringify({team})});
+  if(r.status===401){statusEl.textContent='Accès refusé.';return;}
+  if(!r.ok){statusEl.textContent='Enregistrement impossible.';return;}
+  await load();
+}
+async function undoLast(){
+  const r=await fetch('/api/undo',{method:'POST',headers:authHeaders({'Content-Type':'application/json'}),body:'{}'});
+  if(r.status===401){statusEl.textContent='Accès refusé.';return;}
+  if(!r.ok){statusEl.textContent='Annulation impossible.';return;}
+  await load();
+}
+document.getElementById('undo')?.addEventListener('click',()=>{void undoLast();});
+document.body.addEventListener('click',e=>{
+  const t=e.target;
+  if(!(t instanceof HTMLButtonElement)||!t.dataset.team)return;
+  void choose(t.dataset.team);
+});
+void load();`;
+
 /** JavaScript servi séparément ; le texte utilisateur passe uniquement par textContent. */
 export const SORT_APP_JS = String.raw`const teams=[
 ['conversation','1 Conversation'],['pc','2 PC'],['fichiers','3 Fichiers'],['web','4 Internet'],
@@ -183,9 +304,13 @@ export class TrieurSortServer {
   constructor(private readonly options: SortServerOptions) {}
 
   async start(): Promise<{ port: number; url: string }> {
+    if (this.options.tailscale && !this.options.accessToken) {
+      throw new Error('Mode Tailscale : jeton d’accès manquant.');
+    }
     this.toSort = await loadToSort(this.options.toSortPath);
     this.index = await loadProgress(this.options.progressPath, this.toSort.length);
     const host = this.options.host ?? '127.0.0.1';
+    const listenPort = this.options.port ?? 0;
     await new Promise<void>((resolve, reject) => {
       this.server = createServer((req, res) => {
         void this.handle(req, res).catch((error) => {
@@ -194,7 +319,7 @@ export class TrieurSortServer {
         });
       });
       this.server.on('error', reject);
-      this.server.listen(0, host, () => resolve());
+      this.server.listen(listenPort, host, () => resolve());
     });
     const addr = this.server!.address();
     const port = typeof addr === 'object' && addr ? addr.port : 0;
@@ -212,24 +337,32 @@ export class TrieurSortServer {
   }
 
   private async handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
-    if (!allowedSortHost(typeof req.headers.host === 'string' ? req.headers.host : undefined)) {
+    const hostHeader = typeof req.headers.host === 'string' ? req.headers.host : undefined;
+    if (!allowedSortHost(hostHeader, this.options.tailscale)) {
       text(res, 403, 'Hôte refusé');
       return;
     }
     const path = (req.url ?? '/').split('?')[0] ?? '/';
+    const authHeader = typeof req.headers.authorization === 'string' ? req.headers.authorization : undefined;
+    const apiPath = path.startsWith('/api/');
+    if (this.options.tailscale && apiPath && !sortBearerOk(this.options.accessToken, authHeader)) {
+      json(res, 401, { error: 'jeton requis' });
+      return;
+    }
+    const phoneUi = this.options.tailscale === true;
     if (req.method === 'GET' && path === '/') {
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Content-Security-Policy': PAGE_POLICY });
-      res.end(SORT_HTML);
+      res.end(phoneUi ? SORT_PHONE_HTML : SORT_HTML);
       return;
     }
     if (req.method === 'GET' && path === '/app.js') {
       res.writeHead(200, { 'Content-Type': 'application/javascript; charset=utf-8', 'Content-Security-Policy': PAGE_POLICY });
-      res.end(SORT_APP_JS);
+      res.end(phoneUi ? SORT_PHONE_JS : SORT_APP_JS);
       return;
     }
     if (req.method === 'GET' && path === '/app.css') {
       res.writeHead(200, { 'Content-Type': 'text/css; charset=utf-8', 'Content-Security-Policy': PAGE_POLICY });
-      res.end(SORT_APP_CSS);
+      res.end(phoneUi ? SORT_PHONE_CSS : SORT_APP_CSS);
       return;
     }
     if (req.method === 'GET' && path === '/api/current') {

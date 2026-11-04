@@ -28,6 +28,38 @@ export function tailscaleServeCommand(port = PHONE_PORT): string {
   return `tailscale serve --bg ${port}`;
 }
 
+/** Port local conseillé pour la page de tri (sous 49152, hors plages réservées Windows). */
+export const TRIEUR_SORT_PORT = 43160;
+/** Port HTTPS Tailscale pour le tri sur téléphone (à côté du téléphone Jarvis sur 53130). */
+export const TRIEUR_SORT_TAILSCALE_HTTPS = 8443;
+
+/** Publie la page de tri locale en HTTPS sur le tailnet (à taper une fois). */
+export function tailscaleTrieurServeCommand(localPort = TRIEUR_SORT_PORT, httpsPort = TRIEUR_SORT_TAILSCALE_HTTPS): string {
+  return `tailscale serve --bg --https=${httpsPort} ${localPort}`;
+}
+
+/** Arrête la publication Tailscale du trieur (ne coupe pas le serveur local). */
+export function tailscaleTrieurServeResetCommand(): string {
+  return 'tailscale serve reset';
+}
+
+/**
+ * Hôtes acceptés pour le serveur du téléphone et le trieur en mode Tailscale : boucle locale et
+ * `*.ts.net`. Un autre nom (site piégé qui fait pointer son domaine sur 127.0.0.1) est refusé.
+ */
+export function allowedPhoneHost(host: string | undefined): boolean {
+  if (!host) return false;
+  const name = host.trim().toLowerCase().replace(/:\d+$/, '');
+  return name === '127.0.0.1' || name === 'localhost' || name === '[::1]' || /^[a-z0-9-]+(\.[a-z0-9-]+)*\.ts\.net$/.test(name);
+}
+
+/** Adresse HTTPS de la page de tri sur le téléphone ; le jeton est après `#` (jamais envoyé au serveur). */
+export function trieurSortPhoneUrl(dnsName: string, token: string, httpsPort = TRIEUR_SORT_TAILSCALE_HTTPS): string {
+  const host = dnsName.replace(/\.$/, '');
+  const base = httpsPort === 443 ? `https://${host}/` : `https://${host}:${httpsPort}/`;
+  return `${base}#t=${token}`;
+}
+
 export interface TailscaleSelf {
   /** Nom complet sur le réseau Tailscale, sans point final (ex. `pc-de-dylan.tail1a2b.ts.net`). */
   dnsName: string | null;
