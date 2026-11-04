@@ -18,6 +18,9 @@ import {
   enforceConstraints,
   debugLog,
   withVoiceOriginNotice,
+  activePersona,
+  teamPersonaPrompt,
+  userFirstName,
   chatProviderConfig,
   activeOrchestra,
   activeRouter,
@@ -274,8 +277,15 @@ export class ChatSession {
         siteBlock: team === 'concentration',
         knowledge: team === 'memoire',
       });
+      // Caractère de Jarvis : dans les consignes de l'équipe, comme l'avis franc (5.0.62).
+      // Le cerveau routeur et le chat sans orchestre ne le reçoivent jamais.
+      const character = teamPersonaPrompt(team, activePersona(settings), {
+        now: new Date(),
+        userName: userFirstName((await this.deps.personalization.get()).user),
+        source,
+      });
       const agent = new Agent(route.provider, this.deps.tools, {
-        systemPrompt: `${turn.systemPrompt}\n\n${teamPrompt(team)}`,
+        systemPrompt: `${turn.systemPrompt}\n\n${teamPrompt(team, character)}`,
         temperature: settings.temperature,
         homeLocation: settings.homeLocation ?? null,
         allowedTools: (name) => teamHasTool(team, name),

@@ -311,8 +311,10 @@ export function orchestraBasePrompt(settingsSystemPrompt: string): string {
   return custom && custom !== DEFAULT_SYSTEM_PROMPT.trim() ? custom : ORCHESTRA_BASE_PROMPT;
 }
 
-export function teamPrompt(team: OrchestraTeam): string {
-  return `ÉQUIPE ${TEAM_SPECS[team].label.toUpperCase()} : ${TEAM_SPECS[team].prompt}`;
+export function teamPrompt(team: OrchestraTeam, character?: string | null): string {
+  const base = `ÉQUIPE ${TEAM_SPECS[team].label.toUpperCase()} : ${TEAM_SPECS[team].prompt}`;
+  // Caractère de Jarvis : ajouté ici seulement (jamais au chat sans orchestre ni au cerveau).
+  return character ? `${base}\n\n${character}` : base;
 }
 
 /** Équipes utilisables : sans outil, ou avec au moins un outil enregistré. */

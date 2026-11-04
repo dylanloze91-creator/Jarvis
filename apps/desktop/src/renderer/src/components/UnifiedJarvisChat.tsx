@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { MessageSquare } from 'lucide-react';
-import { isDeveloperVoiceIntent, type Settings } from '@jarvis/core';
+import { activePersona, isDeveloperVoiceIntent, personaGreeting, userFirstName, type Settings } from '@jarvis/core';
 import { cn } from '@/lib/utils';
 import { Composer } from '@/components/Composer';
 import { ConfirmationCard } from '@/components/ConfirmationCard';
@@ -22,6 +22,7 @@ export function UnifiedJarvisChat({
   bootError,
   onOpenDeveloper,
   onOpenVoiceSettings,
+  onOpenPersonaSettings,
 }: {
   settings: Settings | null;
   voice: UseVoiceResult;
@@ -41,8 +42,25 @@ export function UnifiedJarvisChat({
   onOpenDeveloper?: (initialMessage?: string) => void;
   /** 5.0.64 : « Activer » de la barre vocale ouvre Réglages → Voix. */
   onOpenVoiceSettings?: () => void;
+  /** « Donner un caractère à Jarvis » (état vide, tant que rien n'a été choisi) → Réglages → Modèle IA. */
+  onOpenPersonaSettings?: () => void;
 }) {
   const [learningLine, setLearningLine] = useState<string | null>(null);
+  const [userName, setUserName] = useState<string | null>(null);
+  const persona = activePersona(settings);
+  useEffect(() => {
+    if (!persona) return;
+    let cancelled = false;
+    void window.jarvis.settings
+      .personalizationGet()
+      .then((profile) => {
+        if (!cancelled) setUserName(userFirstName(profile.user));
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [persona !== null]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const busy = chat.busy;
 
@@ -100,10 +118,18 @@ export function UnifiedJarvisChat({
           ) : chat.items.length === 0 ? (
             <div className="dash-empty">
               <p>
-                Aucune conversation.
+                {persona ? personaGreeting(persona, { now: new Date(), userName }) : 'Aucune conversation.'}
                 <br />
                 Dis « Jarvis », puis pose une question. Pour coder une appli, un jeu de plateforme ou
                 un .exe Windows, ouvre l’onglet <strong>Développeur</strong>.
+                {settings && settings.persona === undefined && onOpenPersonaSettings ? (
+                  <>
+                    <br />
+                    <button type="button" className="no-drag mt-2 text-cyan-200/80 underline-offset-2 hover:underline" onClick={onOpenPersonaSettings}>
+                      Donner un caractère à Jarvis
+                    </button>
+                  </>
+                ) : null}
               </p>
             </div>
           ) : (

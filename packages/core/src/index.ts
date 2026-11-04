@@ -112,6 +112,7 @@ export {
   type ValidationLine,
   type ValidationPath,
 } from './trieur/validation.js';
+export * from './agent/persona.js';
 
 export * from './search/types.js';
 export { WikipediaSearchProvider, wikipediaDescriptor } from './search/providers/wikipedia.js';
