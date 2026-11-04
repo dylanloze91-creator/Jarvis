@@ -47,6 +47,7 @@ extraResources:
     filter:
       - '**/*'
       - '!cache/**'
+      - '!bin/linux-x64/**'
   - from: scripts/jarvis-qlora-train.py
     to: learning/jarvis-qlora-train.py
 afterPack: scripts/after-pack.cjs

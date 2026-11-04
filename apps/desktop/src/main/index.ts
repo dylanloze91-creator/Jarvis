@@ -23,17 +23,20 @@ import {
   createWebSearchRegistry,
   ollamaDescriptor,
   parseSettings,
+  searchOpenMeteoPlaces,
   testOllamaConnection,
   PIPER_TTS_ID,
   type MarketDataProviderDescriptor,
   type ProviderDescriptor,
   type SearchProviderDescriptor,
+  type OrchestraTeam,
   type Settings,
 } from '@jarvis/core';
 import {
   IpcChannel,
   type GoogleConfigDraft,
   type SendChatInput,
+  type TeamValidationInput,
   type ToolInfo,
   type VoiceSpeakInput,
   type VoicePiperSpeakInput,
@@ -47,6 +50,7 @@ import { createGoogleRuntime } from './google/runtime.js';
 import { PersonalizationStore } from './personalization.js';
 import { KnowledgeStore } from './knowledge.js';
 import { ChatSession } from './session.js';
+import { appendTeamValidation, type TeamValidationPayload } from './orchestra/teamValidation.js';
 import { PhoneService } from './phone/service.js';
 import { PhoneStore } from './phone/store.js';
 import { SpeakerService } from './speaker/service.js';
@@ -86,6 +90,17 @@ registerVoiceAssetsScheme();
 app.commandLine.appendSwitch('enable-features', 'SharedArrayBuffer');
 
 const isDev = !app.isPackaged;
+
+function teamValidationPayload(input: TeamValidationInput): TeamValidationPayload {
+  return {
+    phrase: input.phrase,
+    context: input.context,
+    proposedTeam: input.proposedTeam as OrchestraTeam,
+    chosenTeam: input.chosenTeam as OrchestraTeam,
+    path: input.path,
+  };
+}
+
 const registry = createDefaultRegistry();
 const searchRegistry = createWebSearchRegistry();
 const marketDataRegistry = createDefaultMarketDataRegistry();
@@ -256,6 +271,7 @@ const phone = new PhoneService({
     respondConfirmation: (requestId, approved) => phoneSession.respondConfirmation(requestId, approved),
     cancel: () => phoneSession.cancel(),
   },
+  validateTeam: (input) => appendTeamValidation(settings, teamValidationPayload(input)),
   conversation: (id) => store.get(id),
   icon: () => readFile(join(__dirname, '../../resources/icon.png')),
   version: () => app.getVersion(),
@@ -523,6 +539,9 @@ function registerIpc(): void {
   ipcMain.handle(IpcChannel.confirmRespond, (_event, requestId: string, approved: boolean) =>
     session.respondConfirmation(requestId, approved),
   );
+  ipcMain.handle(IpcChannel.orchestraValidateTeam, (_event, input: TeamValidationInput) =>
+    appendTeamValidation(settings, teamValidationPayload(input)),
+  );
 
   ipcMain.handle(IpcChannel.settingsGet, () => ({ settings, status: session.status() }));
   ipcMain.handle(IpcChannel.settingsSet, async (_event, patch: Partial<Settings>) => {
@@ -580,6 +599,11 @@ function registerIpc(): void {
     (_event, credentials?: { baseUrl?: string; token?: string }) =>
       rover.connectionStatus(sanitizeRoverCredentials(credentials)),
   );
+  ipcMain.handle(IpcChannel.settingsGeocodeSearch, async (_event, query: string) => {
+    const q = typeof query === 'string' ? query.trim() : '';
+    if (q.length < 2 || q.length > 120) return [];
+    return searchOpenMeteoPlaces(q, { count: 6 });
+  });
   ipcMain.handle(IpcChannel.settingsGoogleStatus, (_event, draft?: GoogleConfigDraft) => {
     ensureGoogleLoaded();
     return google.account.status(sanitizeGoogleDraft(draft));

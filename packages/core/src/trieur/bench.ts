@@ -36,7 +36,11 @@ export interface BenchModelReport {
 export interface BenchReport {
   at: string;
   examLines: number;
+  /** Phrases validées en direct comptées dans le banc (côté examen). */
+  liveExamLines?: number;
   models: BenchModelReport[];
+  /** Scores séparés quand `valide.jsonl` est lu. */
+  liveModels?: BenchModelReport[];
 }
 
 const ROUTER_MAX_TOKENS = 12;
@@ -115,21 +119,33 @@ export async function benchModel(model: RouterModel, exam: readonly ExamLine[], 
 }
 
 export function benchSummaryText(report: BenchReport): string {
-  const lines = [`Examen du trieur · ${report.examLines} phrase(s) · ${report.at}`];
+  const lines = [`Examen du trieur · ${report.examLines} phrase(s) triées à froid`];
+  if (report.liveExamLines != null) {
+    lines[0] += ` · ${report.liveExamLines} validée(s) en direct`;
+  }
+  lines[0] += ` · ${report.at}`;
   for (const model of report.models) {
-    if (model.skipped) {
-      lines.push(`- ${model.model} : absent (${model.skipped})`);
-      continue;
+    lines.push(formatModelLine('trié à froid', model));
+  }
+  if (report.liveModels?.length) {
+    for (const model of report.liveModels) {
+      lines.push(formatModelLine('validé en direct', model));
     }
-    const pct = model.total ? Math.round((100 * model.correct) / model.total) : 0;
-    lines.push(
-      `- ${model.model} : ${model.correct}/${model.total} (${pct} %) · illisibles ${model.unreadable}` +
-        (model.loadMs != null ? ` · chargement ${Math.round(model.loadMs)} ms` : '') +
-        (model.meanPhraseMs != null ? ` · ${Math.round(model.meanPhraseMs)} ms/phrase` : '') +
-        (model.gpuFraction != null ? ` · carte ~${Math.round(model.gpuFraction * 100)} %` : ''),
-    );
   }
   return lines.join('\n');
+}
+
+function formatModelLine(kind: string, model: BenchModelReport): string {
+  if (model.skipped) {
+    return `- ${kind} · ${model.model} : absent (${model.skipped})`;
+  }
+  const pct = model.total ? Math.round((100 * model.correct) / model.total) : 0;
+  return (
+    `- ${kind} · ${model.model} : ${model.correct}/${model.total} (${pct} %) · illisibles ${model.unreadable}` +
+    (model.loadMs != null ? ` · chargement ${Math.round(model.loadMs)} ms` : '') +
+    (model.meanPhraseMs != null ? ` · ${Math.round(model.meanPhraseMs)} ms/phrase` : '') +
+    (model.gpuFraction != null ? ` · carte ~${Math.round(model.gpuFraction * 100)} %` : '')
+  );
 }
 
 export { ROUTER_MAX_TOKENS, ROUTER_TEMPERATURE };

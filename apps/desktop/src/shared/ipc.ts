@@ -17,6 +17,7 @@ import type {
   RiskLevel,
   SearchProviderDescriptor,
   Settings,
+  GeocodingPlace,
   ToolCategory,
   UpdateFailureKind,
   WakeSampleSource,
@@ -67,6 +68,7 @@ export const IpcChannel = {
   chatCancel: 'chat:cancel',
   chatEvent: 'chat:event',
   confirmRespond: 'chat:confirm-respond',
+  orchestraValidateTeam: 'orchestra:validate-team',
   settingsGet: 'settings:get',
   settingsSet: 'settings:set',
   settingsProviders: 'settings:providers',
@@ -79,6 +81,7 @@ export const IpcChannel = {
   settingsSpotifyDisconnect: 'settings:spotify-disconnect',
   settingsSiteBlockStatus: 'settings:siteblock-status',
   settingsRoverStatus: 'settings:rover-status',
+  settingsGeocodeSearch: 'settings:geocode-search',
   settingsGoogleStatus: 'settings:google-status',
   settingsGoogleConnect: 'settings:google-connect',
   settingsGoogleCancel: 'settings:google-cancel',
@@ -383,7 +386,21 @@ export type ChatEvent =
    * 5.0.60 — chef d'orchestre : l'équipe qui traite la demande et son modèle, avant la réponse.
    * `how` : calcul exact sans modèle, règle express, ou choix du cerveau. Jamais envoyé sans orchestre.
    */
-  | { type: 'route'; team: string; label: string; model: string; how: 'calcul' | 'express' | 'cerveau' | 'trieur' }
+  | {
+      type: 'route';
+      team: string;
+      label: string;
+      model: string;
+      how: 'calcul' | 'express' | 'cerveau' | 'trieur';
+      /** Validation en direct : pastilles ✓ / Changer (seulement si réglages actifs). */
+      validation?: {
+        phrase: string;
+        context: string;
+        proposedTeam: string;
+        path: 'express' | 'cerveau' | 'trieur';
+        teams: { id: string; label: string }[];
+      };
+    }
   | {
       type: 'tool_start';
       callId: string;
@@ -539,12 +556,23 @@ export interface UpdateState {
   canInstall: boolean;
 }
 
+export interface TeamValidationInput {
+  phrase: string;
+  context: string;
+  proposedTeam: string;
+  chosenTeam: string;
+  path: 'express' | 'cerveau' | 'trieur';
+}
+
 export interface JarvisApi {
   chat: {
     send(input: SendChatInput): Promise<void>;
     cancel(): Promise<void>;
     onEvent(listener: (event: ChatEvent) => void): () => void;
     respondConfirmation(requestId: string, approved: boolean): Promise<void>;
+  };
+  orchestra: {
+    validateTeam(input: TeamValidationInput): Promise<{ ok: true } | { ok: false; error: string }>;
   };
   settings: {
     get(): Promise<{ settings: Settings; status: RuntimeStatus }>;
@@ -566,6 +594,8 @@ export interface JarvisApi {
     siteBlockStatus(credentials?: SiteBlockCredentials): Promise<SiteBlockStatus>;
     /** Teste le robot (adresse puis jeton). Les champs optionnels testent un brouillon non encore enregistré. */
     roverStatus(credentials?: RoverCredentials): Promise<RoverConnectionStatus>;
+    /** Propositions Open-Meteo pour le lieu « Chez moi » (sans clé). */
+    geocodeSearch(query: string): Promise<GeocodingPlace[]>;
     /** État de la connexion Google. Le brouillon teste des valeurs pas encore enregistrées. */
     googleStatus(draft?: GoogleConfigDraft): Promise<GoogleStatus>;
     /** Consentement Google dans le navigateur système (PKCE, retour sur 127.0.0.1:53125). */

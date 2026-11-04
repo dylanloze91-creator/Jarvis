@@ -132,6 +132,33 @@ export function OrchestraSettingsSection({ baseUrl, chatModel, value, onChange, 
             ) : null}
           </Field>
 
+          <Field
+            label="Dossier des données du trieur"
+            hint="Ex. C:\dev\jarvis-data\trieur — y sera écrit valide.jsonl quand vous validez une équipe sous la pastille."
+          >
+            <input
+              className="w-full rounded-md border border-white/10 bg-black/20 px-2 py-1.5 text-sm text-slate-100"
+              value={current.trieurDataDir ?? ''}
+              placeholder="Laisser vide pour ne pas enregistrer"
+              onChange={(event) => {
+                const trieurDataDir = event.target.value;
+                if (!trieurDataDir.trim()) {
+                  const { trieurDataDir: _dir, teamValidation: _tv, ...rest } = current;
+                  onChange(rest as Orchestra);
+                  return;
+                }
+                onChange({ ...current, trieurDataDir });
+              }}
+            />
+          </Field>
+          <Toggle
+            label="Proposer la validation des équipes"
+            hint="Sous chaque pastille d’équipe (fenêtre et téléphone) : ✓ pour confirmer, Changer pour corriger. Rien n’est demandé si vous ne touchez pas."
+            checked={Boolean(current.teamValidation && current.trieurDataDir?.trim())}
+            disabled={!current.trieurDataDir?.trim()}
+            onChange={(teamValidation) => onChange({ ...current, teamValidation })}
+          />
+
           <div className="flex flex-col gap-2">
             <div className="flex items-center justify-between gap-2">
               <span className="text-[11px] font-medium tracking-wide text-slate-400 uppercase">Équipes</span>

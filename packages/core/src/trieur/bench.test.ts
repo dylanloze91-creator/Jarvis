@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { benchModel, type RouterModel } from './bench.js';
+import { benchModel, benchSummaryText, type RouterModel } from './bench.js';
 import type { ExamLine } from './extract.js';
 
 describe('trieur bench', () => {
@@ -19,5 +19,43 @@ describe('trieur bench', () => {
     expect(report.correct).toBe(1);
     expect(report.unreadable).toBe(1);
     expect(report.confusion.pc?.pc).toBe(1);
+  });
+
+  it('affiche les scores trié à froid et validé en direct séparément', () => {
+    const text = benchSummaryText({
+      at: '2026-11-04T00:00:00.000Z',
+      examLines: 2,
+      liveExamLines: 1,
+      models: [
+        {
+          model: 'fake',
+          skipped: null,
+          total: 2,
+          correct: 1,
+          byTeam: {},
+          confusion: {},
+          unreadable: 0,
+          loadMs: null,
+          meanPhraseMs: null,
+          gpuFraction: null,
+        },
+      ],
+      liveModels: [
+        {
+          model: 'fake',
+          skipped: null,
+          total: 1,
+          correct: 1,
+          byTeam: {},
+          confusion: {},
+          unreadable: 0,
+          loadMs: null,
+          meanPhraseMs: null,
+          gpuFraction: null,
+        },
+      ],
+    });
+    expect(text).toContain('trié à froid');
+    expect(text).toContain('validé en direct');
   });
 });

@@ -122,6 +122,8 @@ header { display: flex; align-items: center; justify-content: space-between; pad
 .msg.note { align-self: flex-start; font-size: 12px; color: var(--muted); background: var(--accent-soft); padding: 4px 10px; border-radius: 999px; }
 .msg.error { align-self: stretch; max-width: 100%; color: var(--danger); background: rgba(251, 113, 133, 0.08); border: 1px solid rgba(251, 113, 133, 0.25); font-size: 14px; }
 .msg.hint { align-self: center; text-align: center; color: var(--muted); font-size: 14px; margin-top: 30%; }
+.sources-compact { margin: 8px 0 0; font-size: 13px; color: var(--muted); }
+.sources-compact a { color: var(--accent); text-decoration: underline; }
 .card { align-self: stretch; background: var(--panel); border: 1px solid rgba(56, 217, 245, 0.4); border-radius: 16px; padding: 14px; }
 .card p { margin: 0 0 8px; }
 .card-title { font-weight: 600; color: var(--accent); }
@@ -136,6 +138,11 @@ header { display: flex; align-items: center; justify-content: space-between; pad
 .send { width: 44px; height: 44px; padding: 0; border-radius: 50%; font-size: 18px; }
 .send.stop { background: var(--danger); }
 .mic { width: 44px; height: 44px; border-radius: 50%; }
+.route-val { font-size: 12px; padding: 4px 10px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.route-team { font-size: 12px; padding: 4px 10px; border-radius: 999px; background: var(--panel); border: 1px solid var(--line); color: var(--text); font-weight: 600; }
+.route-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; max-width: 100%; }
+.route-actions { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+.route-done { font-size: 12px; color: #6ee7b7; }
 .mic.listening { background: var(--danger); animation: pulse 1.2s infinite; }
 @keyframes pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(251, 113, 133, 0.6); } 50% { box-shadow: 0 0 0 10px rgba(251, 113, 133, 0); } }
 `;
@@ -210,7 +217,8 @@ export const PHONE_JS = String.raw`(function () {
   function bubble(kind, text) {
     var element = document.createElement('div');
     element.className = 'msg ' + kind;
-    element.textContent = text;
+    if (kind === 'assistant') fillAssistant(element, text);
+    else element.textContent = text;
     list.appendChild(element);
     scrollDown();
     return element;
@@ -333,6 +341,60 @@ export const PHONE_JS = String.raw`(function () {
       .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
       .replace(/https?:\/\/\S+/g, '')
       .trim();
+  }
+
+  function mediaLabel(segment) {
+    var trimmed = (segment || '').trim();
+    var paren = trimmed.indexOf(' (');
+    if (paren >= 0) return trimmed.slice(0, paren).trim();
+    var comma = trimmed.indexOf(',');
+    return (comma >= 0 ? trimmed.slice(0, comma) : trimmed).trim() || 'source';
+  }
+
+  function splitSourcesFooter(text) {
+    var marker = '\n\nSources (recherche web du';
+    var start = text.lastIndexOf(marker);
+    if (start < 0) return { body: text, links: [] };
+    var body = text.slice(0, start).replace(/\s+$/, '');
+    var footer = text.slice(start);
+    var links = [];
+    var lineRe = /^-\s*\[\d+\]\s+.+\s+—\s+(.+?)\s+—\s+(https?:\/\/[^\s<>)\]]+)\s*$/iu;
+    footer.split('\n').forEach(function (line) {
+      var match = line.match(lineRe);
+      if (!match) return;
+      var url = match[2].replace(/[.,;:]+$/, '');
+      if (!/^https?:\/\//i.test(url)) return;
+      links.push({ label: mediaLabel(match[1]), url: url });
+    });
+    return { body: body, links: links };
+  }
+
+  function fillAssistant(element, text) {
+    while (element.firstChild) element.removeChild(element.firstChild);
+    var split = splitSourcesFooter(text || '');
+    var body = document.createElement('div');
+    body.textContent = split.body;
+    element.appendChild(body);
+    if (!split.links.length) return;
+    var line = document.createElement('p');
+    line.className = 'sources-compact';
+    var prefix = document.createElement('span');
+    prefix.textContent = 'Sources : ';
+    line.appendChild(prefix);
+    split.links.forEach(function (link, index) {
+      if (index) line.appendChild(document.createTextNode(', '));
+      if (/^https?:\/\//i.test(link.url)) {
+        var anchor = document.createElement('a');
+        anchor.href = link.url;
+        anchor.textContent = link.label;
+        anchor.rel = 'noopener noreferrer';
+        anchor.target = '_blank';
+        line.appendChild(anchor);
+      } else {
+        line.appendChild(document.createTextNode(link.label));
+      }
+    });
+    element.appendChild(line);
   }
 
   function speak(text) {
@@ -500,6 +562,82 @@ export const PHONE_JS = String.raw`(function () {
     if (window.navigator.vibrate) window.navigator.vibrate(60);
   }
 
+  function submitRouteValidation(validation, chosenTeam, onDone) {
+    api('/api/validate-team', {
+      phrase: validation.phrase,
+      context: validation.context,
+      proposedTeam: validation.proposedTeam,
+      chosenTeam: chosenTeam,
+      path: validation.path,
+    })
+      .then(function (response) {
+        if (response.status === 401) forgetDevice('Ce téléphone n’est plus relié. Demande un nouveau code sur le PC.');
+        if (!response.ok) return;
+        onDone(chosenTeam === validation.proposedTeam ? 'confirme' : 'corrige');
+      })
+      .catch(function () {
+        /* rien demandé à l’oral */
+      });
+  }
+
+  function routeRow(event) {
+    var wrap = document.createElement('div');
+    wrap.className = 'route-row';
+    var note = document.createElement('div');
+    note.className = 'msg note';
+    note.textContent = event.label + ' · ' + event.model;
+    wrap.appendChild(note);
+    if (!event.validation) {
+      list.appendChild(wrap);
+      scrollDown();
+      return;
+    }
+    var actions = document.createElement('div');
+    actions.className = 'route-actions';
+    var okBtn = document.createElement('button');
+    okBtn.type = 'button';
+    okBtn.className = 'route-val';
+    okBtn.textContent = '✓';
+    okBtn.setAttribute('aria-label', 'Confirmer l’équipe');
+    var changeBtn = document.createElement('button');
+    changeBtn.type = 'button';
+    changeBtn.className = 'route-val';
+    changeBtn.textContent = 'Changer';
+    var done = document.createElement('span');
+    done.className = 'route-done';
+    done.hidden = true;
+    actions.appendChild(okBtn);
+    actions.appendChild(changeBtn);
+    wrap.appendChild(actions);
+    wrap.appendChild(done);
+    list.appendChild(wrap);
+    scrollDown();
+    okBtn.onclick = function () {
+      submitRouteValidation(event.validation, event.validation.proposedTeam, function (kind) {
+        actions.hidden = true;
+        done.hidden = false;
+        done.textContent = kind === 'confirme' ? 'Équipe validée' : 'Équipe corrigée';
+      });
+    };
+    changeBtn.onclick = function () {
+      actions.textContent = '';
+      event.validation.teams.forEach(function (team) {
+        var pick = document.createElement('button');
+        pick.type = 'button';
+        pick.className = 'route-team';
+        pick.textContent = team.label;
+        pick.onclick = function () {
+          submitRouteValidation(event.validation, team.id, function (kind) {
+            actions.hidden = true;
+            done.hidden = false;
+            done.textContent = kind === 'confirme' ? 'Équipe validée' : 'Équipe corrigée';
+          });
+        };
+        actions.appendChild(pick);
+      });
+    };
+  }
+
   function handle(event) {
     switch (event.type) {
       case 'started':
@@ -508,12 +646,13 @@ export const PHONE_JS = String.raw`(function () {
         break;
       case 'delta':
         if (!current) current = bubble('assistant', '');
-        current.textContent += event.text;
+        current._raw = (current._raw || '') + event.text;
+        fillAssistant(current, current._raw);
         scrollDown();
         break;
       case 'route':
         current = null;
-        bubble('note', event.label + ' · ' + event.model);
+        routeRow(event);
         break;
       case 'tool_start':
         current = null;

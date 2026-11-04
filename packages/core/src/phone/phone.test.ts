@@ -6,6 +6,7 @@ import {
   phoneAppUrl,
   phoneChatRequestSchema,
   phonePairRequestSchema,
+  phoneTeamValidationSchema,
   tailscaleServeCommand,
   tailscaleServesPort,
 } from './phone.js';
@@ -57,5 +58,14 @@ describe('téléphone (5.0.63)', () => {
       conversationId: null,
       source: 'voice',
     });
+    expect(
+      phoneTeamValidationSchema.parse({
+        phrase: 'Ouvre Chrome',
+        context: 'Demande : Ouvre Chrome\nÉquipe :',
+        proposedTeam: 'pc',
+        chosenTeam: 'web',
+        path: 'cerveau',
+      }).chosenTeam,
+    ).toBe('web');
   });
 });

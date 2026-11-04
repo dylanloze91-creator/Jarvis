@@ -23,7 +23,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { formatSeconds, type Conversation, type Settings } from '@jarvis/core';
+import { activePersona, formatSeconds, personaGreeting, userFirstName, type Conversation, type Settings } from '@jarvis/core';
 import { AuditPanel } from '@/components/AuditPanel';
 import { HistoryPanel } from '@/components/HistoryPanel';
 import { UnifiedJarvisChat } from '@/components/UnifiedJarvisChat';
@@ -177,6 +177,7 @@ export function Dashboard({
 }: DashboardProps) {
   const machine = useMachineSnapshot();
   const [profileInitial, setProfileInitial] = useState<string | null>(null);
+  const [userName, setUserName] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -184,9 +185,8 @@ export function Dashboard({
       .personalizationGet()
       .then((profile) => {
         if (cancelled) return;
-        const name = [profile.user.prenom, profile.user.prénom, profile.user.nom, profile.user.name]
-          .find((value) => typeof value === 'string' && value.trim().length > 0)
-          ?.trim();
+        const name = userFirstName(profile.user);
+        setUserName(name);
         setProfileInitial(name ? name.slice(0, 1).toLocaleUpperCase('fr-FR') : null);
       })
       .catch(() => {
@@ -242,6 +242,11 @@ export function Dashboard({
   };
 
   const presence = presenceOf(status, booting, bootError);
+  // Caractère de Jarvis : l'accueil prend sa voix (heure du PC, prénom connu).
+  const persona = activePersona(settings);
+  if (persona && presence.tone === 'online') {
+    presence.hint = personaGreeting(persona, { now: new Date(), userName });
+  }
   const temperature = settings ? formatModelTemperature(settings.temperature) : booting ? 'chargement' : 'indisponible';
   const temperatureRatio =
     typeof settings?.temperature === 'number' ? Math.max(0, Math.min(1, settings.temperature / 2)) : 0;
@@ -363,6 +368,7 @@ export function Dashboard({
               bootError={bootError}
               onOpenDeveloper={onOpenDeveloper}
               onOpenVoiceSettings={() => openSettingsTab('voice')}
+              onOpenPersonaSettings={() => openSettingsTab('model')}
             />
           </>
         ) : view === 'developer' ? (

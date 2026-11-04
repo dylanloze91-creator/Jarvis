@@ -103,6 +103,12 @@ export {
   type MessageOrigin,
 } from './agent/voiceOriginNotice.js';
 export * from './agent/orchestra.js';
+export {
+  teamValidationEnabled,
+  validationPathForHow,
+  type ValidationPath,
+} from './trieur/validationSettings.js';
+export * from './agent/persona.js';
 
 export * from './search/types.js';
 export { WikipediaSearchProvider, wikipediaDescriptor } from './search/providers/wikipedia.js';
@@ -135,7 +141,11 @@ export {
   OPEN_METEO_LABEL,
   describeWeatherCode,
   fetchOpenMeteoWeather,
+  fetchOpenMeteoWeatherAt,
   localTimeToIso,
+  searchOpenMeteoPlaces,
+  type GeocodingPlace,
+  type WeatherDayFocus,
 } from './search/providers/openMeteo.js';
 export {
   KEYLESS_NEWS_ORDER,
@@ -183,6 +193,20 @@ export {
   formatSourcesFooter,
   stripSourcesFooter,
 } from './agent/citations.js';
+export {
+  isSafeHttpUrl,
+  mediaLabelFromFooterSegment,
+  splitSourcesFooterForDisplay,
+  type SourceDisplayLink,
+} from './agent/sourcesDisplay.js';
+export {
+  LOCATION_ASK_REPLY,
+  isLocalPlaceQuestion,
+  needsNamedPlace,
+  planCurrentInfoTurn,
+  weatherFocusFromQuestion,
+  type CurrentInfoTurnPlan,
+} from './agent/homePlace.js';
 
 export * from './media/types.js';
 export { extractSpotifyPlayQuery, isMusicIntent, searchQueryVariants } from './media/playIntent.js';
@@ -323,7 +347,10 @@ export {
   PIPER_WINDOWS_X64_ARCHIVE_SHA256,
   PIPER_MODEL_ASSETS,
   requiredPiperAssetChecks,
+  resolvePiperBinaryTarget,
+  PIPER_WINDOWS_BUNDLE_CHECKS,
   type PiperModelAsset,
+  type PiperBinaryTarget,
 } from './speech/piperAssets.js';
 export { normalizePiperStdinText } from './speech/piperInput.js';
 export { playPiperPartsWithPrefetch } from './speech/piperStream.js';

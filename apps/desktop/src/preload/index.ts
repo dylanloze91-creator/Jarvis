@@ -10,6 +10,7 @@ import {
   type SpeakerStatus,
   type SpeakerTranscribeRequest,
   type SpeakerTranscribeResult,
+  type TeamValidationInput,
   type UpdateState,
   type VoiceSpeakInput,
   type VoicePiperSpeakInput,
@@ -40,6 +41,10 @@ const api: JarvisApi = {
       return () => ipcRenderer.removeListener(IpcChannel.chatEvent, handler);
     },
   },
+  orchestra: {
+    validateTeam: (input: TeamValidationInput) =>
+      ipcRenderer.invoke(IpcChannel.orchestraValidateTeam, input),
+  },
   settings: {
     get: () => ipcRenderer.invoke(IpcChannel.settingsGet),
     set: (patch: Partial<Settings>) => ipcRenderer.invoke(IpcChannel.settingsSet, patch),
@@ -60,6 +65,7 @@ const api: JarvisApi = {
       ipcRenderer.invoke(IpcChannel.settingsSiteBlockStatus, credentials),
     roverStatus: (credentials?: { baseUrl?: string; token?: string }) =>
       ipcRenderer.invoke(IpcChannel.settingsRoverStatus, credentials),
+    geocodeSearch: (query: string) => ipcRenderer.invoke(IpcChannel.settingsGeocodeSearch, query),
     googleStatus: (draft?: GoogleConfigDraft) => ipcRenderer.invoke(IpcChannel.settingsGoogleStatus, draft),
     googleConnect: (draft?: GoogleConfigDraft) => ipcRenderer.invoke(IpcChannel.settingsGoogleConnect, draft),
     googleCancel: () => ipcRenderer.invoke(IpcChannel.settingsGoogleCancel),

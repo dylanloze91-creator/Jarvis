@@ -8,6 +8,7 @@ import { VoiceDiagnostic } from '@/components/VoiceDiagnostic';
 import { WakeLearningSection } from '@/components/WakeLearningSettings';
 import { Disclosure } from '@/components/ui/disclosure';
 import { createSttRegistry, createTtsRegistry } from '@/voice/registries';
+import { playPiperWavBytes } from '@/voice/piperWavPlayback';
 import {
   importWakeWordProfilesFromAudioFile,
   recordWakeWordProfile,
@@ -435,15 +436,7 @@ export function VoiceSettingsSection({
                       .piperSpeak({ text: PIPER_PREVIEW_TEXT, voice: voice.ttsVoice || undefined })
                       .then(async (result) => {
                         if (!result.ok) throw new Error(result.error);
-                        const blob = new Blob([result.data.buffer as ArrayBuffer], { type: result.mimeType });
-                        const url = URL.createObjectURL(blob);
-                        const audio = new Audio(url);
-                        await audio.play();
-                        await new Promise<void>((resolve) => {
-                          audio.addEventListener('ended', () => resolve(), { once: true });
-                          audio.addEventListener('error', () => resolve(), { once: true });
-                        });
-                        URL.revokeObjectURL(url);
+                        await playPiperWavBytes(result.data, result.mimeType);
                       })
                       .catch((error: unknown) => {
                         setPiperPreviewError(error instanceof Error ? error.message : String(error));

@@ -43,6 +43,10 @@ Statuts possibles : `en cours`, `en pause`, `bloqué`, `terminé`.
 | Cursor | `main` | Publication 5.0.64 | — | 2026-11-03 | terminé |
 | Cursor | `cursor/trieur-export-claude` | Export claude.ai pour le trieur | — | 2026-11-03 | terminé |
 | Cursor | `main` | Publication 5.0.65 (fusions `claude/integration-5065` + `cursor/trieur-export-claude`, `release.sh`, release `v5.0.65`, rapport `rapports/2026-11-03-publication-5065.md`) | — | 2026-11-03 | terminé |
+| Cursor | `cursor/piper-windows-5066` | Piper Windows : binaire et lecture | — | 2026-11-03 | terminé |
+| Cursor | `cursor/meteo-sources-5066` | Sources courtes et lieu Chez moi | — | 2026-11-03 | terminé |
+| Cursor | `cursor/validation-equipe` | Validation en direct des équipes | — | 2026-11-04 | terminé |
+| Claude | `claude/caractere-jarvis` | Caractère de Jarvis : fiche de personnage dans les consignes des équipes du chef d'orchestre (réglage `persona`, coupé par défaut), accueil selon l'heure et le prénom ; rapport `rapports/2026-11-03-caractere-jarvis.md` ; à fusionner après rejeu des tests sur le PC | — | 2026-11-03 | terminé |
 
 ## Ressource GPU / Ollama
 

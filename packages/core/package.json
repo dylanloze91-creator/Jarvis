@@ -10,6 +10,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./trieur/validation": {
+      "types": "./dist/trieur/validation.d.ts",
+      "default": "./dist/trieur/validation.js"
     }
   },
   "files": [

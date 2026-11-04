@@ -9,7 +9,7 @@ import {
   type SearchAttempt,
 } from './chain.js';
 import { significantTokens } from './relevance.js';
-import { fetchOpenMeteoWeather, OPEN_METEO_LABEL } from './providers/openMeteo.js';
+import { fetchOpenMeteoWeather, fetchOpenMeteoWeatherAt, OPEN_METEO_LABEL, type WeatherDayFocus } from './providers/openMeteo.js';
 import type { SearchProviderRegistry } from './registry.js';
 import type { SearchFreshness, SearchProviderConfig, SearchResultItem } from './types.js';
 
@@ -20,6 +20,8 @@ export interface CurrentSearchRequest {
   freshness: SearchFreshness;
   preferNews: boolean;
   city?: string;
+  homeCoordinates?: { latitude: number; longitude: number; label: string };
+  weatherFocus?: WeatherDayFocus;
 }
 
 export interface CurrentSource {
@@ -101,7 +103,7 @@ export async function searchCurrentInfo(
       minRelevance: 0.25,
       trusted: ['google-news', 'bing-news'],
     }),
-    request.city ? weatherSource(request.city, deps) : Promise.resolve(null),
+    request.city || request.homeCoordinates ? weatherSource(request, deps) : Promise.resolve(null),
   ]);
 
   const newsItems = freshNews(news.results, now).map((item) => ({ item, kind: 'news' as const, id: news.providerId, label: news.label }));
@@ -154,14 +156,25 @@ export async function searchCurrentInfo(
 }
 
 async function weatherSource(
-  city: string,
+  request: CurrentSearchRequest,
   deps: CurrentSearchDeps,
 ): Promise<{ item: SearchResultItem | null; attempt: SearchAttempt }> {
   const started = Date.now();
   try {
+    const focus = request.weatherFocus;
     const item = deps.weather
-      ? await deps.weather(city, deps.signal)
-      : await fetchOpenMeteoWeather(city, { signal: deps.signal, fetchImpl: deps.fetchImpl });
+      ? await deps.weather(request.city ?? request.homeCoordinates?.label ?? '', deps.signal)
+      : request.homeCoordinates
+        ? await fetchOpenMeteoWeatherAt(request.homeCoordinates, {
+            signal: deps.signal,
+            fetchImpl: deps.fetchImpl,
+            focus,
+          })
+        : await fetchOpenMeteoWeather(request.city ?? '', {
+            signal: deps.signal,
+            fetchImpl: deps.fetchImpl,
+            focus,
+          });
     return {
       item,
       attempt: { providerId: 'open-meteo', label: OPEN_METEO_LABEL, ok: true, count: 1, ms: Date.now() - started },

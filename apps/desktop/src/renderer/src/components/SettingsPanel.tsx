@@ -10,12 +10,14 @@ import {
   type SearchProviderDescriptor,
   type Settings,
   type VoiceSettings,
+  userFirstName,
 } from '@jarvis/core';
 import { Lock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Field, Input, Select, Textarea, Toggle } from '@/components/ui/field';
 import { OllamaSettingsSection } from '@/components/OllamaSettings';
 import { OrchestraSettingsSection } from '@/components/OrchestraSettings';
+import { PersonaSettingsSection } from '@/components/PersonaSettings';
 import { SpotifySettingsSection } from '@/components/SpotifySettings';
 import { GoogleSettingsSection } from '@/components/GoogleSettings';
 import { SiteBlockSettingsSection } from '@/components/SiteBlockSettings';
@@ -23,6 +25,7 @@ import { RoverSettingsSection } from '@/components/RoverSettings';
 import { PhoneSettingsSection } from '@/components/PhoneSettings';
 import { SpeakerSettingsSection } from '@/components/SpeakerSettings';
 import { PersonalizationSettingsSection } from '@/components/PersonalizationSettings';
+import { HomeLocationSettingsSection } from '@/components/HomeLocationSettings';
 import { KnowledgeSettingsSection } from '@/components/KnowledgeSettings';
 import { UpdateSettingsSection } from '@/components/UpdateSettings';
 import { VoiceSettingsSection } from '@/components/VoiceSettings';
@@ -89,6 +92,15 @@ export function SettingsPanel({ settings, status, onSaved, requestedTab, onAnaly
     },
     [],
   );
+
+  // Prénom connu (personnalisation), pour l'aperçu de l'accueil du caractère.
+  const [userName, setUserName] = useState<string | null>(null);
+  useEffect(() => {
+    void window.jarvis.settings
+      .personalizationGet()
+      .then((profile) => setUserName(userFirstName(profile.user)))
+      .catch(() => setUserName(null));
+  }, []);
 
   useEffect(() => {
     void window.jarvis.settings.providers().then(setProviders);
@@ -283,9 +295,16 @@ export function SettingsPanel({ settings, status, onSaved, requestedTab, onAnaly
             />
           </Field>
 
+          <PersonaSettingsSection
+            value={draft.persona}
+            userName={userName}
+            orchestraEnabled={draft.provider === 'ollama' && draft.orchestra?.enabled === true}
+            onChange={(persona) => patch({ persona })}
+          />
+
           <Field
-            label="Personnalité"
-            hint="Instructions envoyées au modèle à chaque conversation. Distinct de la mémoire persistante ci-dessous, qui survit aux conversations et au changement de modèle Ollama."
+            label="Consignes de base (prompt système)"
+            hint="Instructions envoyées au modèle à chaque conversation. Distinct de la mémoire persistante (onglet Recherche et mémoire), qui survit aux conversations et au changement de modèle Ollama."
           >
             <Textarea
               rows={4}
@@ -365,6 +384,11 @@ export function SettingsPanel({ settings, status, onSaved, requestedTab, onAnaly
               />
             </Field>
           ) : null}
+
+          <HomeLocationSettingsSection
+            value={draft.homeLocation}
+            onChange={(homeLocation) => patch(homeLocation ? { homeLocation } : { homeLocation: undefined })}
+          />
 
           <PersonalizationSettingsSection />
 

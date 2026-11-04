@@ -175,6 +175,9 @@ export function installPreviewBridge(): void {
         return () => listeners.delete(listener);
       },
     },
+    orchestra: {
+      validateTeam: async () => ({ ok: true }),
+    },
     settings: {
       get: async () => ({ settings, status: status() }),
       set: async (patch) => {
@@ -228,6 +231,7 @@ export function installPreviewBridge(): void {
       spotifyDisconnect: async () => undefined,
       siteBlockStatus: async () => ({ configured: false, reachable: false }),
       roverStatus: async () => ({ configured: false, reachable: false, authorized: false }),
+      geocodeSearch: async () => [],
       googleStatus: async () => googleStatus(),
       googleConnect: async () => {
         googleConnected = Boolean(settings.googleClientId);

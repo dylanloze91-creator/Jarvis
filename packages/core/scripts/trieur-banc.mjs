@@ -73,10 +73,26 @@ if (!exam.length) {
   process.exit(1);
 }
 
+const validationMod = await import(new URL('../dist/trieur/validation.js', here).href);
+let liveExam = [];
+try {
+  const validatedRaw = await readFile(files.validated, 'utf8');
+  const validatedLines = validatedRaw
+    .split(/\r?\n/)
+    .filter((line) => line.trim())
+    .map((line) => validationMod.parseValidationLine(JSON.parse(line)))
+    .filter(Boolean);
+  liveExam = bench.filterExamForBench(validationMod.splitValidationLines(validatedLines, examLines).exam);
+} catch {
+  /* valide.jsonl absent */
+}
+
 const report = {
   at: new Date().toISOString(),
   examLines: exam.length,
+  liveExamLines: liveExam.length || undefined,
   models: [],
+  liveModels: liveExam.length ? [] : undefined,
 };
 
 for (const modelName of options.models) {
@@ -100,7 +116,11 @@ for (const modelName of options.models) {
   const router = ollama.ollamaRouterModel(modelName, options.url);
   const result = await bench.benchModel(router, exam);
   report.models.push(result);
-  console.log(bench.benchSummaryText({ at: report.at, examLines: report.examLines, models: [result] }));
+  console.log(bench.benchSummaryText({ at: report.at, examLines: report.examLines, liveExamLines: report.liveExamLines, models: [result] }));
+  if (liveExam.length) {
+    const liveResult = await bench.benchModel(router, liveExam);
+    report.liveModels?.push(liveResult);
+  }
 }
 
 const stamp = report.at.slice(0, 10);

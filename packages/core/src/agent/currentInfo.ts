@@ -6,6 +6,7 @@ import { extractPersonalizationIntent } from '../personalization/intent.js';
 import { extractSiteBlockIntent } from '../siteblock/intent.js';
 import { extractYoutubeUrl } from '../youtube/url.js';
 import type { SearchFreshness } from '../search/types.js';
+import type { WeatherDayFocus } from '../search/providers/openMeteo.js';
 
 export type CurrentInfoKind =
   | 'explicit'
@@ -32,6 +33,10 @@ export interface CurrentInfoPlan {
   researchQueries: string[];
   /** Ville pour la météo, si elle est nommée. */
   city?: string;
+  /** Coordonnées du lieu « Chez moi » (réglages), prioritaires sur le géocodage par nom. */
+  homeCoordinates?: { latitude: number; longitude: number; label: string };
+  /** Jour visé pour la météo (demain, jeudi, …). */
+  weatherFocus?: WeatherDayFocus;
 }
 
 export const NEWS_HEADLINES_QUERY = '*';

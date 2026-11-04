@@ -53,6 +53,33 @@ export interface PiperAssetCheck {
   minBytes: number;
 }
 
+export type PiperBinaryTarget = 'linux-x64' | 'win-x64';
+
+/**
+ * Binaire Piper à préparer dans `voice-assets/piper/bin/`.
+ * `JARVIS_PIPER_TARGET=win-x64` force le binaire Windows (ex. `package:win` sur Linux).
+ */
+export function resolvePiperBinaryTarget(options: {
+  platform: string;
+  targetOverride?: string;
+}): PiperBinaryTarget {
+  const platform = options.platform;
+  const raw = (options.targetOverride ?? '').trim().toLowerCase();
+  if (raw === 'win-x64' || raw === 'win32' || raw === 'windows' || raw === 'win') return 'win-x64';
+  if (raw === 'linux-x64' || raw === 'linux') return 'linux-x64';
+  if (platform === 'win32') return 'win-x64';
+  if (platform === 'linux') return 'linux-x64';
+  return 'linux-x64';
+}
+
+/** Fichiers Windows Piper requis dans l'installateur (`resources/piper/`). */
+export const PIPER_WINDOWS_BUNDLE_CHECKS: readonly PiperAssetCheck[] = [
+  { relativePath: 'bin/win-x64/piper/piper.exe', minBytes: 100_000 },
+  { relativePath: 'bin/win-x64/piper/espeak-ng.dll', minBytes: 10_000 },
+  { relativePath: 'bin/win-x64/piper/onnxruntime.dll', minBytes: 1_000_000 },
+  { relativePath: 'bin/win-x64/piper/espeak-ng-data/fr_dict', minBytes: 1_000 },
+];
+
 /** Fichiers attendus pour le diagnostic (binaire + deux modèles). */
 export function requiredPiperAssetChecks(platform: string, arch: string): PiperAssetCheck[] {
   const bin =
