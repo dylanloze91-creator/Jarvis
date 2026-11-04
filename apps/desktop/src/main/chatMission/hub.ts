@@ -129,7 +129,17 @@ export class ChatMissionHub {
   ): Promise<{ ok: true; missionId: string } | { ok: false; notice: string }> {
     const proposal = this.proposals.get(proposalId);
     if (!proposal) return { ok: false, notice: 'Proposition introuvable.' };
+    // Un double clic, ou une carte déjà refusée, ne lance jamais une seconde mission.
+    if (proposal.status === 'launched') return { ok: false, notice: 'Cette mission est déjà lancée.' };
+    if (proposal.status === 'declined') return { ok: false, notice: 'Cette proposition a été refusée.' };
     if (proposal.blockedMessage) return { ok: false, notice: proposal.blockedMessage };
+    // Une autre mission a pu démarrer entre la proposition et le clic.
+    if (this.missionBusy()) {
+      return {
+        ok: false,
+        notice: 'Une mission est déjà en cours. Termine-la ou annule-la avant d’en lancer une autre.',
+      };
+    }
     if (proposal.codeModelMissing) {
       return {
         ok: false,
@@ -138,11 +148,21 @@ export class ChatMissionHub {
     }
     const dev = this.deps.developer();
     if (!dev) return { ok: false, notice: 'Le mode Développeur est coupé.' };
+    // Réservé juste avant de démarrer : un second clic pendant le démarrage voit « déjà lancée ».
+    this.patchProposal(proposalId, { status: 'launched' });
     const request = (requestOverride ?? proposal.objectif).trim();
-    const state = await dev.startMission(proposal.kind, request, false, projectId);
-    if (state.notice && !state.mission) return { ok: false, notice: state.notice };
+    let state: Awaited<ReturnType<DeveloperController['startMission']>>;
+    try {
+      state = await dev.startMission(proposal.kind, request, false, projectId);
+    } catch (error) {
+      this.patchProposal(proposalId, { status: 'pending' });
+      throw error;
+    }
     const missionId = state.mission?.id;
-    if (!missionId) return { ok: false, notice: state.notice ?? 'La mission n’a pas pu démarrer.' };
+    if (!missionId || (state.notice && !state.mission)) {
+      this.patchProposal(proposalId, { status: 'pending' });
+      return { ok: false, notice: state.notice ?? 'La mission n’a pas pu démarrer.' };
+    }
     this.patchProposal(proposalId, { status: 'launched', missionId, projectId });
     this.linkedMissionId = missionId;
     return { ok: true, missionId };
