@@ -512,6 +512,26 @@ export const PHONE_JS = String.raw`(function () {
     return 'échec';
   }
 
+  function missionProposalCard(event) {
+    var card = document.createElement('div');
+    card.className = 'card';
+    var title = document.createElement('p');
+    title.className = 'card-title';
+    title.textContent = 'Mission proposée';
+    card.appendChild(title);
+    var env = event.message && event.message.chatMission;
+    var data = env && env.kind === 'proposal' ? env.data : null;
+    var body = document.createElement('p');
+    body.textContent = data ? data.objectif : 'Valide la mission sur le PC.';
+    card.appendChild(body);
+    var hint = document.createElement('p');
+    hint.className = 'muted';
+    hint.textContent = 'Lance ou modifie la mission sur le PC (projet et bouton Lancer).';
+    card.appendChild(hint);
+    messagesEl.appendChild(card);
+    scrollDown();
+  }
+
   function confirmationCard(event) {
     var card = document.createElement('div');
     card.className = 'card';
@@ -663,6 +683,10 @@ export const PHONE_JS = String.raw`(function () {
         break;
       case 'tool_result':
         if (tools[event.callId]) tools[event.callId].textContent = 'Outil ' + event.toolName + ' : ' + statusLabel(event.status);
+        break;
+      case 'mission_proposal':
+        current = null;
+        missionProposalCard(event);
         break;
       case 'confirm':
         current = null;

@@ -156,6 +156,10 @@ export function toSpeakerWav(bytes: Uint8Array): Uint8Array {
  * Texte à dire à l'enceinte : sans le bloc des sources, sans blocs de code, sans balisage Markdown
  * visible, 1 500 caractères au plus (coupé à une fin de phrase si possible).
  */
+/** 5.0.68 — une proposition de mission se valide sur PC ou téléphone, jamais depuis l'enceinte. */
+export const SPEAKER_MISSION_PROPOSAL =
+  'Je peux lancer une mission pour ça, valide-la sur le PC ou le téléphone.';
+
 export function speechTextForSpeaker(text: string, limit = SPEAKER_MAX_SPEECH_CHARS): string {
   let out = stripSourcesFooter(text);
   out = out.replace(/```[\s\S]*?```/g, ' ');

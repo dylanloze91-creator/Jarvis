@@ -1,6 +1,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import {
   SPEAKER_CONFIRMATION_REFUSAL,
+  SPEAKER_MISSION_PROPOSAL,
   SPEAKER_HEADER_CONTINUE,
   SPEAKER_HEADER_FOLLOW_UP,
   SPEAKER_HEADER_TRANSCRIPT,
@@ -98,6 +99,7 @@ interface ChatOutcome {
   notAddressed: boolean;
   error: string | null;
   conversationId: string | null;
+  missionProposal: boolean;
 }
 
 function sendJson(res: ServerResponse, status: number, body: unknown, headers: Record<string, string> = {}): void {
@@ -320,7 +322,9 @@ export class SpeakerServer {
 
       const spoken = outcome.refused
         ? SPEAKER_CONFIRMATION_REFUSAL
-        : speechTextForSpeaker(outcome.reply) || (outcome.error ? SPEAKER_NO_REPLY : '');
+        : outcome.missionProposal
+          ? SPEAKER_MISSION_PROPOSAL
+          : speechTextForSpeaker(outcome.reply) || (outcome.error ? SPEAKER_NO_REPLY : '');
       if (!spoken) return this.noReply(res, transcript);
       const wav = await this.deps.synthesizer.synthesize(spoken);
       if (link.gone) return;
@@ -404,7 +408,14 @@ export class SpeakerServer {
    * (aucun écran sur une enceinte) et Jarvis le dira ; `not_addressed` (5.0.62) = rien à dire.
    */
   private runChat(state: SpeakerState, text: string, followUp: boolean, link: TurnLink): Promise<ChatOutcome> {
-    const outcome: ChatOutcome = { reply: '', refused: false, notAddressed: false, error: null, conversationId: state.conversationId };
+    const outcome: ChatOutcome = {
+      reply: '',
+      refused: false,
+      notAddressed: false,
+      error: null,
+      conversationId: state.conversationId,
+      missionProposal: false,
+    };
     let fromMessages = '';
     const chat = state.chat ?? (state.chat = this.deps.chatFor(state.speaker));
     const sender: SpeakerSender = {
@@ -417,6 +428,9 @@ export class SpeakerServer {
             break;
           case 'delta':
             outcome.reply += event.text;
+            break;
+          case 'mission_proposal':
+            outcome.missionProposal = true;
             break;
           case 'confirm':
             outcome.refused = true;
