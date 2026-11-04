@@ -17,23 +17,38 @@ Branche : `cursor/chat-unifie-5068`. Cahier : `docs/specs/chat-unifie.md`.
 
 ## Scènes d'aperçu (captures)
 
-À générer sur le PC avec Vite preview (non exécuté dans l'agent cloud) :
+Aperçu Vite (`apps/desktop/vite.ui.config.ts`, port **43173**) :
 
-| Scène | URL suggérée | Fichier PNG cible |
+| Scène | URL | Capture |
 | --- | --- | --- |
-| Carte mission proposée | `?scene=chat-mission-proposal` (à brancher dans `preview/bridge.ts` si besoin) | `rapports/chat-unifie-proposal.png` |
-| Suivi mission | discussion avec mission en cours | `rapports/chat-unifie-track.png` |
-| Rapport | mission terminée | `rapports/chat-unifie-report.png` |
+| Carte mission proposée | `http://127.0.0.1:43173/?scene=chat-mission-proposal` | ![Carte mission proposée](chat-unifie-proposal.png) |
+| Suivi mission | `http://127.0.0.1:43173/?scene=chat-mission-track` | ![Suivi de mission](chat-unifie-track.png) |
+| Rapport | `http://127.0.0.1:43173/?scene=chat-mission-report` | ![Rapport de mission](chat-unifie-report.png) |
+
+Regénérer les PNG (Chrome headless) :
+
+```bash
+cd apps/desktop && npx vite --config vite.ui.config.ts
+# autre terminal, avec puppeteer-core installé localement :
+node scripts/capture-chat-unifie.mjs
+```
+
+Fichiers dans ce dossier :
+
+- `rapports/chat-unifie-proposal.png`
+- `rapports/chat-unifie-track.png`
+- `rapports/chat-unifie-report.png`
 
 ## RAPPORT DE VÉRIFICATION
 
-**Testé en vrai : PAS FAIT** (environnement Linux cloud : pas de fenêtre Electron ni Ollama complet).
+**Testé en vrai : PAS FAIT** (environnement Linux cloud : pas de fenêtre Electron ni Ollama complet sur le PC utilisateur).
 
 **Automatisé (agent cloud)** :
 
 - `npm run typecheck` : OK
 - `npm test` : OK (653 tests passés, 6 ignorés ; +2 `chat-missions-proposer.test.ts`)
 - `npm run lint` : OK
+- Captures d'aperçu : générées via `scripts/capture-chat-unifie.mjs` et scènes `?scene=chat-mission-*`
 
 ## Commits
 

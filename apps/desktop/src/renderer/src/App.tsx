@@ -24,6 +24,11 @@ import { useUpdate } from '@/hooks/useUpdate';
 import { isDemoRuntime } from '@/lib/runtimeStatus';
 import { cn } from '@/lib/utils';
 import { SAMPLE_CONVERSATION } from '@/preview/sampleConversation';
+import {
+  SAMPLE_CHAT_MISSION_PROPOSAL,
+  SAMPLE_CHAT_MISSION_REPORT,
+  SAMPLE_CHAT_MISSION_TRACK,
+} from '@/preview/sampleChatMission';
 import { useVoice } from '@/voice/useVoice';
 import { deliverVoiceTranscript } from '@/voice/voiceTranscriptRouter';
 import { SetupGuideView } from '@/components/SetupGuideView';
@@ -122,6 +127,15 @@ export default function App() {
     if (scene === 'chat') {
       seeded.current = true;
       chat.load(SAMPLE_CONVERSATION);
+    } else if (scene === 'chat-mission-proposal') {
+      seeded.current = true;
+      chat.load(SAMPLE_CHAT_MISSION_PROPOSAL);
+    } else if (scene === 'chat-mission-track') {
+      seeded.current = true;
+      chat.load(SAMPLE_CHAT_MISSION_TRACK);
+    } else if (scene === 'chat-mission-report') {
+      seeded.current = true;
+      chat.load(SAMPLE_CHAT_MISSION_REPORT);
     } else if (scene === 'settings') {
       seeded.current = true;
       setView('settings');

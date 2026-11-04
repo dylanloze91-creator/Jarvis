@@ -83,6 +83,20 @@ export function installPreviewBridge(): void {
       developer: { enabled: true, repoPath: 'C:\\dev\\Jarvis', codeModel, chatModel: '', worktreeRoot: '' },
     };
   }
+  if (search.get('scene')?.startsWith('chat-mission')) {
+    settings = {
+      ...settings,
+      orchestra: { enabled: true, brain: 'qwen2.5:7b' },
+      developer: {
+        enabled: true,
+        repoPath: 'C:\\dev\\Jarvis',
+        codeModel: 'qwen2.5-coder:7b',
+        chatModel: '',
+        worktreeRoot: '',
+        chatMissions: true,
+      },
+    };
+  }
   const googleStatus = (): GoogleStatus => ({
     configured: Boolean(settings.googleClientId),
     connected: googleConnected,
