@@ -47,7 +47,7 @@ Statuts possibles : `en cours`, `en pause`, `bloqué`, `terminé`.
 | Cursor | `cursor/meteo-sources-5066` | Sources courtes et lieu Chez moi | — | 2026-11-03 | terminé |
 | Cursor | `cursor/validation-equipe` | Validation en direct des équipes | — | 2026-11-04 | terminé |
 | Claude | `claude/caractere-jarvis` | Caractère de Jarvis : fiche de personnage dans les consignes des équipes du chef d'orchestre (réglage `persona`, coupé par défaut), accueil selon l'heure et le prénom ; rapport `rapports/2026-11-03-caractere-jarvis.md` ; à fusionner après rejeu des tests sur le PC | — | 2026-11-03 | terminé |
-| Claude Code | `claude/entrainement-1` | Entraînement de l'élève, étapes 1 à 4 du README (préparation, mise en place, dry-run, essai 20 pas sur la carte) ; pas d'entraînement complet, pas d'export ; rapport `rapports/2026-11-04-entrainement-essai-1.md` | — | 2026-11-04 | terminé |
+| Claude Code | `claude/entrainement-1` | Entraînement de l'élève, étapes 1 à 4 du README (préparation, mise en place, dry-run, essai 20 pas sur la carte) ; puis entraînement complet du 3B sur la carte (demandé le 2026-11-04 au soir) ; pas d'export ; rapport `rapports/2026-11-04-entrainement-essai-1.md` | — | 2026-11-04 | en cours |
 
 ## Ressource GPU / Ollama
 
@@ -55,6 +55,6 @@ Une seule carte (RTX 2060 6 Go) : un seul agent à la fois lance le banc (`npm r
 
 | État | Par qui | Pour quoi | Depuis |
 | --- | --- | --- | --- |
-| libre | — | — | — |
+| occupée | Claude Code (`claude/entrainement-1`) | entraînement complet QLoRA du 3B (`train_lora.py`, 3 époques au plus, ~1 h) | 2026-11-04 22:51 |
 
 Pour réserver : passer l'état à `occupée`, remplir les colonnes, commiter et pousser **avant** de lancer. Pour libérer : remettre `libre` et `—`, commiter et pousser.
