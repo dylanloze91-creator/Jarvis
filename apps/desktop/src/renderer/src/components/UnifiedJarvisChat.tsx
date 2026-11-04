@@ -7,6 +7,8 @@ import { ConfirmationCard } from '@/components/ConfirmationCard';
 import { Messages } from '@/components/Messages';
 import { VoiceBar } from '@/components/VoiceBar';
 import type { ChatItem, PendingConfirmation } from '@/hooks/useChat';
+import { DeveloperConfirmationCard } from '@/components/developer/DeveloperConfirmationCard';
+import type { DevConfirmation } from '../../../shared/developerIpc.js';
 import type { RuntimeStatus } from '../../../shared/ipc.js';
 import type { UseVoiceResult } from '@/voice/useVoice';
 import { setVoiceTranscriptTarget } from '@/voice/voiceTranscriptRouter';
@@ -46,6 +48,7 @@ export function UnifiedJarvisChat({
   onOpenPersonaSettings?: () => void;
 }) {
   const [learningLine, setLearningLine] = useState<string | null>(null);
+  const [devConfirmation, setDevConfirmation] = useState<DevConfirmation | null>(null);
   const [userName, setUserName] = useState<string | null>(null);
   const persona = activePersona(settings);
   useEffect(() => {
@@ -86,6 +89,12 @@ export function UnifiedJarvisChat({
   useEffect(() => {
     void window.jarvis.localLearning.status().then((s) => setLearningLine(s.line));
     return window.jarvis.localLearning.onEvent((s) => setLearningLine(s.line));
+  }, []);
+
+  useEffect(() => {
+    return window.jarvis.developer.onEvent((state) => {
+      setDevConfirmation(state.confirmation);
+    });
   }, []);
 
   useEffect(() => {
@@ -139,6 +148,14 @@ export function UnifiedJarvisChat({
       </div>
       {chat.confirmation ? (
         <ConfirmationCard confirmation={chat.confirmation} onRespond={chat.respond} />
+      ) : null}
+      {devConfirmation ? (
+        <DeveloperConfirmationCard
+          confirmation={devConfirmation}
+          onRespond={(requestId, approved) => {
+            void window.jarvis.developer.respondConfirmation(requestId, approved);
+          }}
+        />
       ) : null}
       {learningLine ? <p className="dash-learning-hint no-drag">{learningLine}</p> : null}
       <Composer busy={busy} onSend={submit} onCancel={chat.cancel} />

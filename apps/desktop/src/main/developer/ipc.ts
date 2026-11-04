@@ -11,6 +11,8 @@ import { emptyCodeModelState } from './models/workflow.js';
 export interface DeveloperIpcDeps extends Omit<ControllerDeps, 'emit'> {
   /** Fenêtre principale, seule destinataire des événements. */
   target(): WebContents | null;
+  /** 5.0.68 — suivi mission dans la discussion unifiée. */
+  onDeveloperState?: (state: DeveloperState) => void;
 }
 
 function text(value: unknown): string {
@@ -36,6 +38,7 @@ export function registerDeveloperIpc(
     controller ??= new DeveloperController({
       ...deps,
       emit: (state) => {
+        deps.onDeveloperState?.(state);
         const target = deps.target();
         if (target && !target.isDestroyed()) target.send(DeveloperChannel.event, state);
       },
