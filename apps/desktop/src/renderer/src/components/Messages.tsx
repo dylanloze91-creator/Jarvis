@@ -4,6 +4,7 @@ import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { splitSourcesFooterForDisplay } from '@jarvis/core';
 import type { ChatItem } from '@/hooks/useChat';
+import { ChatMissionBlock } from '@/components/chat/ChatMissionBlock';
 import { SourcesLine } from '@/components/SourcesLine';
 import { toolLabel } from '@/lib/toolLabels';
 import { cn } from '@/lib/utils';
@@ -76,6 +77,17 @@ function Item({ item }: { item: ChatItem }) {
 
   if (item.kind === 'route') {
     return <RouteItem item={item} />;
+  }
+
+  if (item.kind === 'chat_mission') {
+    return (
+      <div className="assistant-row">
+        <div className="assistant-avatar">J</div>
+        <div className="assistant-copy max-w-[640px]">
+          <ChatMissionBlock messageId={item.id} envelope={item.envelope} busy={false} />
+        </div>
+      </div>
+    );
   }
 
   if (item.kind === 'ignored') {

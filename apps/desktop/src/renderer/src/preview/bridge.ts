@@ -83,6 +83,20 @@ export function installPreviewBridge(): void {
       developer: { enabled: true, repoPath: 'C:\\dev\\Jarvis', codeModel, chatModel: '', worktreeRoot: '' },
     };
   }
+  if (search.get('scene')?.startsWith('chat-mission')) {
+    settings = {
+      ...settings,
+      orchestra: { enabled: true, brain: 'qwen2.5:7b' },
+      developer: {
+        enabled: true,
+        repoPath: 'C:\\dev\\Jarvis',
+        codeModel: 'qwen2.5-coder:7b',
+        chatModel: '',
+        worktreeRoot: '',
+        chatMissions: true,
+      },
+    };
+  }
   const googleStatus = (): GoogleStatus => ({
     configured: Boolean(settings.googleClientId),
     connected: googleConnected,
@@ -170,6 +184,12 @@ export function installPreviewBridge(): void {
         pendingConfirmation = null;
         resolve?.(approved);
       },
+      launchMissionProposal: async () => undefined,
+      declineMissionProposal: async () => undefined,
+      setMissionProposalProject: async () => undefined,
+      patchMissionProposal: async () => undefined,
+      openMissionFolder: async () => undefined,
+      reloadConversationMissions: async () => undefined,
       onEvent: (listener) => {
         listeners.add(listener);
         return () => listeners.delete(listener);

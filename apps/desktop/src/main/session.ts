@@ -43,7 +43,11 @@ import {
   teamPrompt,
   TEAM_SPECS,
   ORCHESTRA_TEAMS,
+  chatMissionsEnabled,
+  CODE_MISSION_TOOL_PROMPT,
+  PROPOSER_MISSION_TOOL_NAME,
   redactSecrets,
+  type ChatMissionProposalPayload,
   type AgentEvent,
   type LLMProvider,
   type OrchestraConfig,
@@ -66,6 +70,8 @@ import type { PersonalizationStore } from './personalization.js';
 import type { KnowledgeStore } from './knowledge.js';
 import type { VoiceBridge } from './voice.js';
 import type { LocalLearningController } from './learning/controller.js';
+import type { ChatMissionHub } from './chatMission/hub.js';
+import { createProposerMissionTool } from './chatMission/proposerMissionTool.js';
 
 /** Délai du cerveau pour choisir une équipe, chargement compris. */
 const BRAIN_DEADLINE_MS = 90_000;
@@ -102,6 +108,8 @@ interface SessionDeps {
   personalization: PersonalizationStore;
   knowledge: KnowledgeStore;
   localLearning: LocalLearningController;
+  /** 5.0.68 — missions depuis la discussion (après le contrôleur Développeur). */
+  getChatMissionHub?: () => ChatMissionHub | null;
 }
 
 /**
@@ -267,6 +275,10 @@ export class ChatSession {
       emit(routeEvent);
     }
 
+    const chatMissionHub = this.deps.getChatMissionHub?.() ?? null;
+    const chatMissionsOn =
+      Boolean(chatMissionHub?.enabled()) && chatMissionsEnabled(settings) && route?.team === 'code';
+
     let run: AsyncGenerator<AgentEvent>;
     if (route?.reply !== undefined) {
       run = fixedReply(route.reply);
@@ -284,11 +296,17 @@ export class ChatSession {
         userName: userFirstName((await this.deps.personalization.get()).user),
         source,
       });
-      const agent = new Agent(route.provider, this.deps.tools, {
-        systemPrompt: `${turn.systemPrompt}\n\n${teamPrompt(team, character)}`,
+      const missionPrompt = chatMissionsOn ? `\n\n${CODE_MISSION_TOOL_PROMPT}` : '';
+      const turnTools =
+        chatMissionsOn && chatMissionHub
+          ? this.deps.tools.compose(createProposerMissionTool(chatMissionHub))
+          : this.deps.tools;
+      const agent = new Agent(route.provider, turnTools, {
+        systemPrompt: `${turn.systemPrompt}\n\n${teamPrompt(team, character)}${missionPrompt}`,
         temperature: settings.temperature,
         homeLocation: settings.homeLocation ?? null,
-        allowedTools: (name) => teamHasTool(team, name),
+        allowedTools: (name) =>
+          teamHasTool(team, name) || (chatMissionsOn && name === PROPOSER_MISSION_TOOL_NAME),
         ...(turn.learningReview ? { learningReview: turn.learningReview } : {}),
         ...(turn.learningFinalize ? { learningFinalize: turn.learningFinalize } : {}),
       });
@@ -327,11 +345,20 @@ export class ChatSession {
             if (event.delta.trim()) visibleReply = true;
             emit({ type: 'delta', text: event.delta });
             break;
-          case 'assistant_message':
-            messages.push(event.message);
-            if (event.message.content.trim()) visibleReply = true;
+          case 'assistant_message': {
+            const proposerOnly =
+              chatMissionsOn &&
+              event.message.toolCalls?.length &&
+              event.message.toolCalls.every((call) => call.name === PROPOSER_MISSION_TOOL_NAME) &&
+              !event.message.content.trim();
+            if (!proposerOnly) {
+              messages.push(event.message);
+              if (event.message.content.trim()) visibleReply = true;
+            }
             break;
+          }
           case 'tool_start':
+            if (chatMissionsOn && event.call.name === PROPOSER_MISSION_TOOL_NAME) break;
             emit({
               type: 'tool_start',
               callId: event.call.id,
@@ -343,15 +370,34 @@ export class ChatSession {
             emit({ type: 'tool_progress', callId: event.callId, message: event.message });
             break;
           case 'tool_result':
-            visibleReply = true;
-            messages.push(event.message);
-            emit({
-              type: 'tool_result',
-              callId: event.outcome.callId,
-              toolName: event.outcome.name,
-              status: event.outcome.status,
-              content: event.outcome.content,
-            });
+            if (chatMissionsOn && event.outcome.name === PROPOSER_MISSION_TOOL_NAME) {
+              const payload = event.outcome.data as ChatMissionProposalPayload | undefined;
+              if (payload) {
+                const proposalMessage = createMessage('assistant', '', {
+                  chatMission: { kind: 'proposal', data: payload },
+                  missionId: payload.proposalId,
+                });
+                messages.push(proposalMessage);
+                chatMissionHub?.setConversationContext(conversation.id);
+                chatMissionHub?.bindMissionMessage(proposalMessage.id);
+                emit({
+                  type: 'mission_proposal',
+                  message: proposalMessage,
+                  voiceHint: 'Je te propose une mission pour ça, elle est à l’écran.',
+                });
+                visibleReply = true;
+              }
+            } else {
+              visibleReply = true;
+              messages.push(event.message);
+              emit({
+                type: 'tool_result',
+                callId: event.outcome.callId,
+                toolName: event.outcome.name,
+                status: event.outcome.status,
+                content: event.outcome.content,
+              });
+            }
             void this.deps.auditLog
               .append(buildAuditEntry(event.outcome))
               .catch((error: unknown) => console.error('[jarvis] journal d’audit non écrit :', error));

@@ -37,6 +37,7 @@ import {
   type GoogleConfigDraft,
   type SendChatInput,
   type TeamValidationInput,
+  type ChatEvent,
   type ToolInfo,
   type VoiceSpeakInput,
   type VoicePiperSpeakInput,
@@ -64,6 +65,9 @@ import { registerMachineIpc } from './machine/ipc.js';
 import { registerDeveloperIpc } from './developer/ipc.js';
 import { projectIdFromPlayArgs } from './developer/project/projectPlayArg.js';
 import { ChatActivity } from './developer/task/chatActivity.js';
+import { ChatMissionHub } from './chatMission/hub.js';
+import { ChatMissionSync } from './chatMission/sync.js';
+import { registerChatMissionIpc } from './chatMission/ipc.js';
 import { summarizeYoutubeLink } from './youtube/runtime.js';
 import { UpdateManager } from './updater.js';
 import { VoiceBridge } from './voice.js';
@@ -173,6 +177,13 @@ const google = createGoogleRuntime({
 let overlay: OverlayWindow | null = null;
 let googleStarted = false;
 let developerIpc: ReturnType<typeof registerDeveloperIpc> | null = null;
+let chatMissionHub: ChatMissionHub | null = null;
+let chatMissionSync: ChatMissionSync | null = null;
+
+function pushChatEvent(event: ChatEvent): void {
+  const contents = overlay?.browserWindow.webContents;
+  if (contents && !contents.isDestroyed()) contents.send(IpcChannel.chatEvent, event);
+}
 
 let pendingPlayProjectId = projectIdFromPlayArgs(process.argv);
 
@@ -240,6 +251,7 @@ const session = new ChatSession({
   personalization,
   knowledge,
   localLearning,
+  getChatMissionHub: () => chatMissionHub,
 });
 
 // 5.0.63 — téléphone : une session de chat à part (un tour sur le téléphone n'annule pas celui de
@@ -256,6 +268,7 @@ const phoneSession = new ChatSession({
   personalization,
   knowledge,
   localLearning,
+  getChatMissionHub: () => chatMissionHub,
 });
 const phone = new PhoneService({
   store: PhoneStore.inUserData(() => app.getPath('userData')),
@@ -304,6 +317,7 @@ const speakers = new SpeakerService({
       personalization,
       knowledge,
       localLearning,
+      getChatMissionHub: () => chatMissionHub,
     });
     return {
       send: async (sender, input) => {
@@ -752,6 +766,9 @@ function registerIpc(): void {
     oneDriveRoots: () => [process.env.OneDrive, process.env.OneDriveConsumer, process.env.OneDriveCommercial].filter((root): root is string => Boolean(root)),
     auditLog,
     target: () => overlay?.browserWindow.webContents ?? null,
+    onDeveloperState: (state) => {
+      void chatMissionSync?.onDeveloperState(state);
+    },
     registry,
     searchRegistry,
     userDataPath: () => app.getPath('userData'),
@@ -770,6 +787,26 @@ function registerIpc(): void {
     settleLearning: async (id, outcome) => {
       await knowledge.settleMethod(id, outcome);
     },
+  });
+  chatMissionHub = new ChatMissionHub({
+    getSettings: () => settings,
+    developer: () => developerIpc?.current() ?? null,
+    realBenches: () => developerIpc?.current()?.state().model.realBenches ?? [],
+  });
+  chatMissionSync = new ChatMissionSync({
+    hub: chatMissionHub,
+    store,
+    pushEvent: pushChatEvent,
+  });
+  registerChatMissionIpc(ipcMain, {
+    hub: () => chatMissionHub,
+    sync: () => chatMissionSync,
+    store,
+    pushEvent: pushChatEvent,
+    openMission: async (missionId, projectId) => {
+      await developerIpc?.ensure()?.openMission(missionId, projectId);
+    },
+    missionWorktree: () => developerIpc?.current()?.state().codeTask?.worktreePath ?? null,
   });
   openPlayProject(pendingPlayProjectId);
 }

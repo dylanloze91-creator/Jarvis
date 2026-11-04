@@ -619,6 +619,21 @@ Le robot (Pi 5 + ESP32) peut servir d'enceinte Jarvis, comme une enceinte de pi�
 - **Confirmations** : le pont du PC refuse une action qui demande un accord quand elle vient d'une enceinte. « Avance de 50 cm » dit au robot ne le fait pas bouger. Cette règle n'est pas changée.
 - Tests : `robot/voix/tests/test_voix.py` (pytest, WAV synthétiques, faux PC, faux robot). Pas de voix réelle dans le dépôt.
 
+## 5.0.68 — une seule discussion qui fait tout
+
+Cahier : `docs/specs/chat-unifie.md`. Décision **D7** (entrée des missions depuis le chat) : **oui**.
+
+- **Réglage** `developer.chatMissions` (facultatif, sans défaut Zod) : actif seulement si Développeur **et** chef d'orchestre sont activés. Interrupteur : Réglages → Développeur → « Lancer les missions depuis la discussion ».
+- **Détection** : l'équipe **Code** reçoit l'outil `proposer_mission` (`safe`, jamais exécuté sans clic sur la carte). Questions pédagogiques = réponse écrite normale.
+- **Carte** dans la discussion (`ChatMessage.chatMission`, événement `mission_proposal`) : type, objectif, projet à choisir, modèle Codeur, `assessMission` / `MissionGateCard` si trop gros, boutons Lancer / Modifier / Non.
+- **Suivi** : bloc mission synchronisé avec `DeveloperState.mission` ; confirmations développeur dans la discussion ; questions REASONER répondues via `answerMission`.
+- **Rapport** : Appliquer, Ouvrir le dossier (`shell.openPath` côté main), Garder, Jeter.
+- **Priorité chat** : `chatActivity` inchangé ; une mission en cours bloque une nouvelle proposition.
+- **Téléphone / enceinte** : carte ou phrase « valide sur le PC ou le téléphone » ; jamais lancer depuis l'enceinte (`SPEAKER_MISSION_PROPOSAL`).
+- **Historique** : `missionId` sur le message ; rouvrir → `openMission` depuis le dossier missions du projet.
+- **Voix** : une phrase à l'écran quand une proposition est créée (`voiceHint`), rien d'autre lu à voix haute pour la mission.
+- Tests : `chat-missions-proposer.test.ts`, `chat-unchanged.test.ts` et `orchestra-session.test.ts` verts sans régénération des `__golden__`.
+
 ## 5.0.67 — voix locale Piper
 
 Cahier des charges : `docs/specs/voix-jarvis.md` (chantier 1). **Défaut inchangé** : `ttsProvider` reste `browser-local` (`chat-unchanged.test.ts`). L'utilisateur choisit **Piper (voix locale gratuite, sans Internet)** dans Réglages → Voix.
@@ -790,6 +805,7 @@ Corrections de la revue complète (détail : `docs/audit-0410.md` du store du pr
 - **Entraînement de l'élève (5.0.65)** : aucun texte écrit par Claude ou Cursor n'entre dans les données d'entraînement (les tests n'utilisent que des exemples synthétiques marqués `synthetique-test`, jamais copiés dans le cahier) ; l'examen ne fuit jamais dans l'entraînement (`lab:prepare` écarte et liste tout exemple proche d'une mission d'`evalCatalog()`, et refuse de préparer sous 100 exemples gardés) ; le modèle entraîné (`jarvis-coder`) ne remplace jamais rien tout seul : il s'ajoute dans Ollama et le choix revient à l'utilisateur après `lab:compare`.
 - **Voix Piper (5.0.67)** : défaut TTS inchangé (`browser-local`) ; Piper = processus séparé, texte jamais en argument de ligne de commande ; espeak-ng jamais lié dans l'appli ; repli voix Windows sur l'enceinte si Piper manque ; `chat-unchanged.test.ts` vert sans régénération.
 - **Trieur (5.0.68)** : coupé par défaut (`orchestra.router` absent) ; aucune phrase utilisateur dans le dépôt ; l'examen ne complète jamais avec des phrases inventées ; l'examen ne fuit pas dans `trieur:generer` (proximité ≥ 0,40 écartée) ; `jarvis-trieur` ne remplace rien tout seul ; chat sans orchestre et orchestre sans trieur = comportement d'avant (`chat-unchanged`, `ollama-unchanged` verts sans régénération).
+- **Missions depuis la discussion (5.0.68)** : `developer.chatMissions` absent ou faux = chat inchangé ; seul `proposer_mission` s'ajoute à l'équipe Code (jamais les `dev_*`) ; rien ne démarre sans « Lancer » ; une mission en cours bloque une nouvelle proposition ; l'enceinte ne lance jamais une mission ; `chat-unchanged.test.ts` vert sans régénération.
 
 Travaux **hors scope** de cet arbre (ne pas les reprendre ici) : publication GitHub.
 
