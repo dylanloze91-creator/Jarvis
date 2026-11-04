@@ -69,6 +69,12 @@ def construire_parseur() -> argparse.ArgumentParser:
     parseur.add_argument("--fresh", action="store_true", help="ne pas reprendre un point de reprise présent dans --out")
     parseur.add_argument("--no-quant", action="store_true", help="pas de 4 bits (carte louée avec assez de mémoire) ; fp16 entier")
     parseur.add_argument("--dry-run", action="store_true", help="modèle minuscule aléatoire sur processeur : vérifie le circuit, ne produit rien d'utile")
+    parseur.add_argument(
+        "--optim",
+        choices=("auto", "paged_adamw_8bit", "adamw_bnb_8bit", "adamw_torch"),
+        default="auto",
+        help="optimiseur. auto = adamw_torch sans 4 bits ; avec 4 bits, paged_adamw_8bit (états paginés en mémoire unifiée CUDA, pour une carte louée) sauf sous Windows où la mémoire unifiée échoue (« CUDA error: unknown error » au premier pas, relevé le 2026-11-04 sur une RTX 2060) : adamw_bnb_8bit, mêmes états 8 bits, sur la carte",
+    )
     parseur.add_argument("--max-steps", type=int, default=-1, help="arrêt après N pas : --max-steps 20 mesure la mémoire et la vitesse réelles avant une nuit complète (pic de mémoire dans le journal et bilan.json)")
     parseur.add_argument(
         "--task",
@@ -338,6 +344,17 @@ def main(argv: list[str] | None = None) -> int:
 
         from transformers import PrinterCallback, Trainer, TrainingArguments
 
+        if args.optim != "auto":
+            optimiseur = args.optim
+        elif not quantifie:
+            optimiseur = "adamw_torch"
+        elif sys.platform == "win32":
+            # Les optimiseurs « paged » de bitsandbytes gardent leurs états en mémoire unifiée CUDA (cudaMallocManaged) ;
+            # sous Windows (pilote WDDM) le premier pas échoue avec « CUDA error: unknown error » (RTX 2060, 2026-11-04).
+            optimiseur = "adamw_bnb_8bit"
+        else:
+            optimiseur = "paged_adamw_8bit"
+
         arguments = TrainingArguments(
             output_dir=str(dossier / runs.POINTS),
             per_device_train_batch_size=1,
@@ -352,7 +369,7 @@ def main(argv: list[str] | None = None) -> int:
             fp16=sur_carte,
             bf16=False,
             gradient_checkpointing=False,
-            optim="paged_adamw_8bit" if quantifie else "adamw_torch",
+            optim=optimiseur,
             logging_strategy="steps",
             logging_steps=1 if args.dry_run else 5,
             # Sinon le Trainer remplace une perte nan/inf par la moyenne courante dans le journal : on ne la verrait pas.
@@ -370,7 +387,7 @@ def main(argv: list[str] | None = None) -> int:
             use_cpu=not sur_carte,
             disable_tqdm=True,
         )
-        journal.info("Réglages : lot 1 × accumulation %d, taux %.1e, %.1f époque(s) au plus, cosinus, montée %.0f %%, %s.", args.grad_accum, args.lr, args.epochs, 100 * args.warmup, "fp16" if sur_carte else "fp32")
+        journal.info("Réglages : lot 1 × accumulation %d, taux %.1e, %.1f époque(s) au plus, cosinus, montée %.0f %%, %s, optimiseur %s.", args.grad_accum, args.lr, args.epochs, 100 * args.warmup, "fp16" if sur_carte else "fp32", optimiseur)
 
         suivi = construire_suivi(journal)(early_stopping_patience=1)
         entraineur = Trainer(
