@@ -156,6 +156,11 @@ export const developerSettingsSchema = z.object({
    * Indépendant de la récupération des expériences.
    */
   skillLibrary: z.boolean().optional(),
+  /**
+   * Lancer les missions de code depuis la discussion (5.0.68). Absent ou faux : inchangé.
+   * Actif seulement si le mode Développeur et le chef d'orchestre sont activés.
+   */
+  chatMissions: z.boolean().optional(),
   /** Recherche web périodique. Absente ou fausse : coupée. */
   periodicWebResearch: z.boolean().optional(),
   /** Sujets surveillés, trois au plus sont vraiment interrogés. */

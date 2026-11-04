@@ -116,6 +116,14 @@ export function DeveloperSettingsSection({
             checked={developer.enabled}
             onChange={(enabled) => onSave({ ...developer, enabled })}
           />
+          {developer.enabled ? (
+            <Toggle
+              label="Lancer les missions depuis la discussion"
+              hint="Nécessite aussi le chef d’orchestre (Réglages → Modèle IA). Coupé : le chat reste comme avant."
+              checked={developer.chatMissions === true}
+              onChange={(chatMissions) => onSave({ ...developer, chatMissions })}
+            />
+          ) : null}
           {developer.enabled && onOpenAdvanced ? (
             <Button type="button" size="sm" variant="subtle" onClick={onOpenAdvanced}>
               Copie de travail, modèle, environnement…
