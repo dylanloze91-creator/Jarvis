@@ -22,7 +22,9 @@ Date : 2026-11-04. Branche : `cursor/tri-telephone` (depuis `origin/main`). **Au
 
 ## Commits (branche)
 
-Voir `git log origin/main..cursor/tri-telephone --oneline`.
+- `1f19aef` — Coordination : tri du trieur sur l'iPhone (en cours)
+- `c588de7` — Trieur : mode Tailscale, jeton, page iPhone et allowedPhoneHost dans le cœur
+- `a8ad8f1` — Trieur : --port, --tailscale, guide iPhone et rapport de vérification
 
 ---
 
