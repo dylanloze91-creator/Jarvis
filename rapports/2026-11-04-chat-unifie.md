@@ -52,4 +52,4 @@ Fichiers dans ce dossier :
 
 ## Commits
 
-Voir historique Git `5.0.68 — point N : …` sur `cursor/chat-unifie-5068`.
+Voir historique Git `5.0.68 — point N : …` et `5cabbfe` (captures) sur `cursor/chat-unifie-5068`.
