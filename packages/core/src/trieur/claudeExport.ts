@@ -1,3 +1,5 @@
+import { routerUserPrompt } from '../agent/orchestra.js';
+import { createMessage } from '../types.js';
 import type { ToSortLine } from './extract.js';
 import { phraseKey } from './extract.js';
 
@@ -107,7 +109,14 @@ export function extractFromClaudeExport(
       if (message.sender !== 'human') continue;
       const phrase = claudeHumanMessageText(message);
       if (!shouldKeepClaudeUserPhrase(phrase)) continue;
-      const context = previousUser;
+      // Même forme que l'extraction des conversations Jarvis (extract.ts) : le contexte est la
+      // demande complète vue par le trieur (routerUserPrompt), phrase comprise. Le banc et
+      // l'entraînement l'envoient tel quel au modèle ; un simple « message d'avant » ferait
+      // classer ce message-là au lieu de la phrase.
+      const context = routerUserPrompt(
+        phrase.trim(),
+        previousUser ? [createMessage('user', previousUser)] : [],
+      );
       const key = phraseKey(phrase.trim(), context.trim());
       if (byKey.has(key)) continue;
       byKey.set(key, {
