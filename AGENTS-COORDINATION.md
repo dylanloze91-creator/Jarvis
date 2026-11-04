@@ -48,6 +48,7 @@ Statuts possibles : `en cours`, `en pause`, `bloqué`, `terminé`.
 | Cursor | `cursor/validation-equipe` | Validation en direct des équipes | — | 2026-11-04 | terminé |
 | Claude | `claude/caractere-jarvis` | Caractère de Jarvis : fiche de personnage dans les consignes des équipes du chef d'orchestre (réglage `persona`, coupé par défaut), accueil selon l'heure et le prénom ; rapport `rapports/2026-11-03-caractere-jarvis.md` ; à fusionner après rejeu des tests sur le PC | — | 2026-11-03 | terminé |
 | Cursor | `cursor/chat-unifie-5068` | Chat unifié, phase 1 (5.0.68) | — | 2026-11-04 | terminé |
+| Cursor | `cursor/mission-directe-5069` | Mission directe | — | 2026-11-04 | terminé |
 
 ## Ressource GPU / Ollama
 
