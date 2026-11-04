@@ -13,6 +13,8 @@
   "marketDataProvider": "yahoo-finance",
   "marketDataApiKey": "",
   "spotifyClientId": "",
+  "spotifyDeviceName": "",
+  "spotifySpeakerMaxVolume": 70,
   "googleClientId": "",
   "googleClientSecret": "",
   "googleCseId": "",

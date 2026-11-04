@@ -86,6 +86,7 @@ export const IpcChannel = {
   settingsSpotifyStatus: 'settings:spotify-status',
   settingsSpotifyConnect: 'settings:spotify-connect',
   settingsSpotifyDisconnect: 'settings:spotify-disconnect',
+  settingsSpotifyListDevices: 'settings:spotify-list-devices',
   settingsSiteBlockStatus: 'settings:siteblock-status',
   settingsRoverStatus: 'settings:rover-status',
   settingsGeocodeSearch: 'settings:geocode-search',
@@ -293,6 +294,13 @@ export interface SpotifyStatus {
 }
 
 export type SpotifyConnectResult = { ok: true } | { ok: false; error: string };
+
+export interface SpotifyConnectDeviceSummary {
+  id: string;
+  name: string;
+  type: string;
+  is_active: boolean;
+}
 
 export interface SiteBlockStatus {
   /** Un jeton est disponible (réglages ou fichier api.json de SiteBlock). */
@@ -625,6 +633,8 @@ export interface JarvisApi {
     spotifyConnect(clientId?: string): Promise<SpotifyConnectResult>;
     /** Supprime le jeton Spotify local. */
     spotifyDisconnect(clientId?: string): Promise<void>;
+    /** Liste les enceintes Spotify Connect visibles pour le compte connecté. */
+    spotifyListDevices(clientId?: string): Promise<SpotifyConnectDeviceSummary[]>;
     /** Sonde l’API locale SiteBlock. Les champs optionnels testent un brouillon non encore enregistré. */
     siteBlockStatus(credentials?: SiteBlockCredentials): Promise<SiteBlockStatus>;
     /** Teste le robot (adresse puis jeton). Les champs optionnels testent un brouillon non encore enregistré. */

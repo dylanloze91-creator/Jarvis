@@ -416,6 +416,8 @@ export function SettingsPanel({ settings, status, onSaved, requestedTab, onAnaly
           <SpotifySettingsSection
             clientId={draft.spotifyClientId}
             onChange={(spotifyClientId) => patch({ spotifyClientId })}
+            deviceName={draft.spotifyDeviceName}
+            onDeviceNameChange={(spotifyDeviceName) => patch({ spotifyDeviceName })}
           />
       </TabPanel>
       <TabPanel id="google" active={tab}>

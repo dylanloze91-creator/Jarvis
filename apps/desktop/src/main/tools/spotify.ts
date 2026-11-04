@@ -23,7 +23,7 @@ function describeSpotifyFailure(error: unknown): string {
   }
   // Messages déjà rédigés : pas de lecteur audible, 204 silencieux, volume 0, mauvais appareil.
   if (
-    /aucun lecteur|lecture n'a pas démarré|lecture n'est pas confirmée|volume est à 0|pas sur l'application de bureau|Spotify est fermé|appareil Spotify est indisponible|Premium|jeton Spotify|HTTP 429|Appareils Connect|is_playing=/i.test(
+    /Je ne trouve pas|aucun lecteur|lecture n'a pas démarré|lecture n'est pas confirmée|volume est à 0|pas sur l'application de bureau|pas sur «|Spotify est fermé|appareil Spotify est indisponible|Premium|jeton Spotify|HTTP 429|Appareils Connect|is_playing=/i.test(
       message,
     )
   ) {
@@ -51,7 +51,7 @@ export function createSpotifyTools(deps: SpotifyToolsDeps) {
   const spotifyPlayTool = defineTool({
     name: 'spotify_play',
     description:
-      "Recherche un morceau sur Spotify (requête libre, fautes d’orthographe acceptées) et le lance sur l'application de bureau Windows — pas le téléphone ni le lecteur web. Vérifie que ça joue vraiment (is_playing, appareil, volume). Nécessite Spotify Premium. Ne jamais inventer un échec ni annoncer une lecture s'il n'y a pas de son.",
+      "Recherche un morceau sur Spotify (requête libre, fautes d’orthographe acceptées) et le lance sur l'appareil Spotify choisi dans les réglages (enceinte Connect ou application de bureau Windows si aucune enceinte n'est choisie) — pas le téléphone ni le lecteur web. Vérifie que ça joue vraiment (is_playing, appareil, volume). Nécessite Spotify Premium. Ne jamais inventer un échec ni annoncer une lecture s'il n'y a pas de son.",
     risk: 'safe',
     schema: z.object({
       query: z.string().min(1).max(200).describe('Morceau, artiste ou combinaison à rechercher.'),
@@ -164,6 +164,14 @@ export function createSpotifyTools(deps: SpotifyToolsDeps) {
     execute: async ({ percent }) => {
       try {
         await getSpotify().setVolume(percent);
+        const state = await getSpotify().getPlaybackState();
+        const applied = state?.volumePercent ?? percent;
+        if (applied < percent) {
+          return {
+            ok: true,
+            content: `Volume Spotify réglé à ${applied} % (plafond de sécurité pour l'enceinte).`,
+          };
+        }
         return { ok: true, content: `Volume Spotify réglé à ${percent} %.` };
       } catch (error) {
         return { ok: false, content: `Spotify : ${describeError(error)}` };

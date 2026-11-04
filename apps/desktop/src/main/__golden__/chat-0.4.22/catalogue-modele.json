@@ -247,7 +247,7 @@
   },
   {
     "name": "spotify_play",
-    "description": "Recherche un morceau sur Spotify (requête libre, fautes d’orthographe acceptées) et le lance sur l'application de bureau Windows — pas le téléphone ni le lecteur web. Vérifie que ça joue vraiment (is_playing, appareil, volume). Nécessite Spotify Premium. Ne jamais inventer un échec ni annoncer une lecture s'il n'y a pas de son.",
+    "description": "Recherche un morceau sur Spotify (requête libre, fautes d’orthographe acceptées) et le lance sur l'appareil Spotify choisi dans les réglages (enceinte Connect ou application de bureau Windows si aucune enceinte n'est choisie) — pas le téléphone ni le lecteur web. Vérifie que ça joue vraiment (is_playing, appareil, volume). Nécessite Spotify Premium. Ne jamais inventer un échec ni annoncer une lecture s'il n'y a pas de son.",
     "parameters": {
       "type": "object",
       "properties": {

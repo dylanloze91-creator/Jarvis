@@ -167,14 +167,25 @@ describe('createSpotifyTools', () => {
     expect(result.content).toContain('Ordinateur de bureau');
   });
 
-  it('spotify_current_track répond sans erreur quand rien ne joue', async () => {
-    const currentTrackTool = createSpotifyTools({ spotify: fakeBridge(() => stubProvider()) }).find(
-      (tool) => tool.name === 'spotify_current_track',
+  it('spotify_set_volume annonce le plafond enceinte quand le volume demandé est réduit', async () => {
+    const provider = stubProvider({
+      setVolume: vi.fn(async () => undefined),
+      getPlaybackState: vi.fn(async () => ({
+        isPlaying: true,
+        volumePercent: 70,
+        track: fakeTrack(),
+        deviceName: 'Devialet',
+      })),
+    });
+    const volumeTool = createSpotifyTools({ spotify: fakeBridge(() => provider) }).find(
+      (tool) => tool.name === 'spotify_set_volume',
     )!;
 
-    const result = await currentTrackTool.run({}, fakeContext());
+    const result = await volumeTool.run({ percent: 100 }, fakeContext());
 
+    expect(provider.setVolume).toHaveBeenCalledWith(100);
     expect(result.ok).toBe(true);
-    expect(result.content).toContain('Aucun morceau Spotify');
+    expect(result.content).toContain('70');
+    expect(result.content).toMatch(/plafond/);
   });
 });

@@ -603,6 +603,9 @@ function registerIpc(): void {
   ipcMain.handle(IpcChannel.settingsSpotifyDisconnect, (_event, clientId?: string) =>
     spotify.disconnect(clientId),
   );
+  ipcMain.handle(IpcChannel.settingsSpotifyListDevices, (_event, clientId?: string) =>
+    spotify.listDevices(clientId),
+  );
   ipcMain.handle(
     IpcChannel.settingsSiteBlockStatus,
     (_event, credentials?: { baseUrl?: string; token?: string }) =>

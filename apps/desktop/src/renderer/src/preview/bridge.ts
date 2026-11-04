@@ -249,6 +249,7 @@ export function installPreviewBridge(): void {
       spotifyStatus: async () => ({ configured: false, connected: false }),
       spotifyConnect: async () => ({ ok: false, error: 'Aperçu hors Electron.' }),
       spotifyDisconnect: async () => undefined,
+      spotifyListDevices: async () => [],
       siteBlockStatus: async () => ({ configured: false, reachable: false }),
       roverStatus: async () => ({ configured: false, reachable: false, authorized: false }),
       geocodeSearch: async () => [],

@@ -68,6 +68,8 @@ const api: JarvisApi = {
       ipcRenderer.invoke(IpcChannel.settingsSpotifyConnect, clientId),
     spotifyDisconnect: (clientId?: string) =>
       ipcRenderer.invoke(IpcChannel.settingsSpotifyDisconnect, clientId),
+    spotifyListDevices: (clientId?: string) =>
+      ipcRenderer.invoke(IpcChannel.settingsSpotifyListDevices, clientId),
     siteBlockStatus: (credentials?: { baseUrl?: string; token?: string }) =>
       ipcRenderer.invoke(IpcChannel.settingsSiteBlockStatus, credentials),
     roverStatus: (credentials?: { baseUrl?: string; token?: string }) =>

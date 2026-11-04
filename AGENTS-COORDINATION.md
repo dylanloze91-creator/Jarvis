@@ -48,7 +48,7 @@ Statuts possibles : `en cours`, `en pause`, `bloqué`, `terminé`.
 | Cursor | `cursor/validation-equipe` | Validation en direct des équipes | — | 2026-11-04 | terminé |
 | Claude | `claude/caractere-jarvis` | Caractère de Jarvis : fiche de personnage dans les consignes des équipes du chef d'orchestre (réglage `persona`, coupé par défaut), accueil selon l'heure et le prénom ; rapport `rapports/2026-11-03-caractere-jarvis.md` ; à fusionner après rejeu des tests sur le PC | — | 2026-11-03 | terminé |
 | Cursor | `cursor/chat-unifie-5068` | Chat unifié, phase 1 (5.0.68) | — | 2026-11-04 | terminé |
-| Cursor | `cursor/spotify-enceinte-cible` | Spotify sur enceinte Connect choisie (Devialet) | `packages/core/src/settings.ts`, `apps/desktop/src/main/media/spotifyDevices.ts`, `SpotifyProvider.ts`, `SpotifyBridge.ts`, `SpotifySettings.tsx`, IPC, tests | 2026-11-04 | en cours |
+| Cursor | `cursor/spotify-enceinte-cible` | Spotify sur enceinte Connect choisie (Devialet) | — | 2026-11-04 | terminé |
 
 ## Ressource GPU / Ollama
 
