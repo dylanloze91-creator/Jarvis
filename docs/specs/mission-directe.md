@@ -42,6 +42,15 @@ Jarvis Développeur ne fabrique que des projets Node (JavaScript / TypeScript) e
 
 `CODE_MISSION_TOOL_PROMPT` gagne une phrase : « N'écris jamais une mission en texte (Objectif, Projet, Type) : appelle proposer_mission, ou réponds normalement. » Le prompt de l'équipe Code hors missions ne change pas.
 
+### 5. Plus de saut vers la page Développeur depuis la discussion
+
+Constat (même soir) : l'utilisateur tape une correction (« Non, c'est faux. … envoyer un fichier G-code … ») et la fenêtre **bascule sur la page Développeur** au lieu d'envoyer le message. Cause : `UnifiedJarvisChat.tsx` (`submit`) appelle encore l'ancien aiguillage `isDeveloperVoiceIntent` (`packages/core/src/developer/voiceAssistantRoute.ts`), antérieur à 5.0.68. « G-code » y passe pour le verbe « code » (le trait d'union fait une frontière de mot) et « fichier » pour un sujet de développement.
+
+- Quand `chatMissionsEnabled(settings)` est vrai, **plus aucun aiguillage côté fenêtre** : tout part dans la discussion, c'est le chef d'orchestre et le point 1 qui décident.
+- Même réglage coupé : **jamais** d'aiguillage pour une correction ou une préférence (`classifyUtterance` ≠ `one-off` : « Non, … », « C'est faux … », « Corrige … » adressés à Jarvis, « Retiens que … »), sinon la correction n'est jamais enregistrée par l'apprentissage (`noteToRecord` dans `turnContext`).
+- `isDeveloperVoiceIntent` : « code » précédé d'un trait d'union ou d'une lettre (G-code, gcode, QR code, code postal) n'est pas le verbe « coder ». Les mots accentués en tête (`écris`, `crée`, `améliore`) ne sont jamais reconnus par `\b` sans le drapeau `u` : corriger (frontières explicites `(?<![\p{L}\p{N}])` / `(?![\p{L}\p{N}])` avec `u`), tests à l'appui.
+- Tests : `voiceAssistantRoute.test.ts` (G-code, correction, accents) et un test de rendu de `UnifiedJarvisChat` (réglage actif : `chat.send` appelé, `onOpenDeveloper` jamais ; correction réglage coupé : `chat.send`).
+
 ## Ce qui ne change pas
 
 - `developer.chatMissions` absent ou faux, Développeur coupé, chef d'orchestre coupé : **rien ne change** (`chat-unchanged.test.ts`, `ollama-unchanged.test.ts`, `orchestra-session.test.ts`, `chat-missions-proposer.test.ts` verts **sans régénération**).
