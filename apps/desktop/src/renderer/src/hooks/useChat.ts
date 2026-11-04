@@ -18,7 +18,20 @@ export type ChatItem =
     }
   | { kind: 'error'; id: string; text: string }
   /** 5.0.60 : équipe et modèle choisis par le chef d'orchestre pour ce tour. */
-  | { kind: 'route'; id: string; label: string; model: string; how: 'calcul' | 'express' | 'cerveau' | 'trieur' }
+  | {
+      kind: 'route';
+      id: string;
+      label: string;
+      model: string;
+      how: 'calcul' | 'express' | 'cerveau' | 'trieur';
+      validation?: {
+        phrase: string;
+        context: string;
+        proposedTeam: string;
+        path: 'express' | 'cerveau' | 'trieur';
+        teams: { id: string; label: string }[];
+      };
+    }
   /** 5.0.62 : phrase entendue pendant la discussion vocale, jugée pas pour Jarvis (rien n'est enregistré). */
   | { kind: 'ignored'; id: string; text: string };
 
@@ -72,7 +85,14 @@ export function useChat(options: UseChatOptions = {}) {
         case 'route': {
           setItems((current) => [
             ...closeStreaming(current),
-            { kind: 'route', id: nextId(), label: event.label, model: event.model, how: event.how },
+            {
+              kind: 'route',
+              id: nextId(),
+              label: event.label,
+              model: event.model,
+              how: event.how,
+              ...(event.validation ? { validation: event.validation } : {}),
+            },
           ]);
           break;
         }

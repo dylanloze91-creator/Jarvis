@@ -103,6 +103,16 @@ export {
   type MessageOrigin,
 } from './agent/voiceOriginNotice.js';
 export * from './agent/orchestra.js';
+export {
+  teamValidationEnabled,
+  validationPathForHow,
+  validationRecord,
+  serializeValidationLine,
+  VALIDATION_FILE,
+  type ValidationLine,
+  type ValidationPath,
+} from './trieur/validation.js';
+export * from './agent/persona.js';
 
 export * from './search/types.js';
 export { WikipediaSearchProvider, wikipediaDescriptor } from './search/providers/wikipedia.js';

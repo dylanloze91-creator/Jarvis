@@ -3,6 +3,7 @@ import { DEFAULT_SYSTEM_PROMPT } from './agent/agent.js';
 import { FIX_ATTEMPTS_MAX, FIX_ATTEMPTS_MIN } from './developer/taskPlan.js';
 import { SPECIALIST_ROLES } from './developer/engine/roles.js';
 import { MODEL_PLACES, ORCHESTRA_TEAMS } from './agent/orchestraTeams.js';
+import { PERSONA_STYLES } from './agent/persona.js';
 import { DEFAULT_SITEBLOCK_BASE_URL } from './siteblock/url.js';
 import { defaultCategoryPolicies } from './tools/permissions.js';
 
@@ -310,6 +311,23 @@ export const settingsSchema = z.object({
         .optional(),
       /** 5.0.68 — trieur : modèle dédié au choix d'équipe. Absent : le cerveau trie. */
       router: z.object({ model: z.string().max(200), place: z.enum(MODEL_PLACES) }).optional(),
+      /** Dossier des données du trieur (`valide.jsonl`, etc.). Absent : pas de validation en direct. */
+      trieurDataDir: z.string().max(500).optional(),
+      /** Proposer ✓ / Changer sous la pastille d'équipe (nécessite `trieurDataDir`). */
+      teamValidation: z.boolean().optional(),
+    })
+    .optional(),
+  /**
+   * Caractère de Jarvis (fiche de personnage ajoutée au prompt, accueil de l'interface).
+   * Absent ou `enabled: false` : le prompt d'avant, à l'identique. Pas de défaut Zod et
+   * jamais posé par le profil du premier lancement (prompts figés) : c'est un choix de
+   * l'utilisateur, Réglages → Modèle IA → « Caractère de Jarvis ».
+   */
+  persona: z
+    .object({
+      enabled: z.boolean(),
+      style: z.enum(PERSONA_STYLES).default('complice'),
+      humour: z.boolean().default(true),
     })
     .optional(),
   machine: z

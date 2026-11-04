@@ -396,6 +396,58 @@ html[data-native-win-caption='yes'] .jarvis-shell {
   padding-left: 35px;
 }
 
+.route-validation-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.route-validation-actions,
+.route-team-picker {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.route-val-btn {
+  border: 1px solid rgba(56, 217, 245, 0.35);
+  background: rgba(56, 217, 245, 0.08);
+  color: #9ae8f7;
+  font-size: 11px;
+  line-height: 1;
+  padding: 4px 8px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.route-val-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.route-val-btn.ghost {
+  background: transparent;
+  color: #8b9aab;
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.route-team-option {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  color: #dce7f2;
+  font-size: 11px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.route-validation-done {
+  font-size: 10px;
+  color: #6ee7b7;
+}
+
 .tool-chip {
   display: flex;
   align-items: center;

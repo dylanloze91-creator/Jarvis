@@ -185,6 +185,21 @@ describe('chef d’orchestre — équipes, modèles et réglages', () => {
     ).toEqual({ model: 'jarvis-trieur', place: 'carte' });
   });
 
+  it('validation en direct : champs facultatifs dans orchestra', () => {
+    expect(parseSettings({}).orchestra).toBeUndefined();
+    const on = parseSettings({
+      provider: 'ollama',
+      orchestra: {
+        enabled: true,
+        brain: 'qwen2.5:7b',
+        trieurDataDir: 'C:\\dev\\jarvis-data\\trieur',
+        teamValidation: true,
+      },
+    });
+    expect(on.orchestra?.trieurDataDir).toContain('jarvis-data');
+    expect(on.orchestra?.teamValidation).toBe(true);
+  });
+
   it('une équipe inconnue dans settings.json n’efface pas le reste des réglages', () => {
     const settings = parseSettings({ provider: 'ollama', model: 'qwen2.5:3b', orchestra: { enabled: true, brain: 'x', teams: { pirate: {} } } });
     expect(settings.model).toBe('qwen2.5:3b');

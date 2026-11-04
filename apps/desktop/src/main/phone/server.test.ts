@@ -96,6 +96,7 @@ async function setup(script: (sender: PhoneSender, input: SendChatInput) => Prom
   const server = new PhoneServer({
     store,
     chat,
+    validateTeam: async () => ({ ok: true }),
     conversation: async (id) => (id === saved.id ? saved : null),
     icon: async () => Buffer.from([0x89, 0x50, 0x4e, 0x47]),
     version: () => '5.0.63',
@@ -178,6 +179,40 @@ describe('serveur du téléphone (5.0.63)', () => {
     expect(store.devices()).toHaveLength(1);
   });
 
+  it('accepte POST /api/validate-team avec jeton', async () => {
+    let captured: unknown = null;
+    const store = new PhoneStore(() => join(dir, `phone-val-${Math.random().toString(36).slice(2)}.json`));
+    await store.load();
+    const server = new PhoneServer({
+      store,
+      chat: new FakeChat(() => undefined),
+      validateTeam: async (input) => {
+        captured = input;
+        return { ok: true };
+      },
+      conversation: async () => null,
+      icon: async () => Buffer.from([0x89, 0x50, 0x4e, 0x47]),
+      version: () => '5.0.63',
+      phoneVoice: async () => 'device',
+    });
+    await server.start(0);
+    servers.push(server);
+    const port = server.port!;
+    const { token } = await store.addDevice('iPhone');
+    const reply = await call(port, '/api/validate-team', {
+      token,
+      body: {
+        phrase: 'Ouvre Chrome',
+        context: 'Demande : Ouvre Chrome\nÉquipe :',
+        proposedTeam: 'pc',
+        chosenTeam: 'pc',
+        path: 'express',
+      },
+    });
+    expect(reply.status).toBe(200);
+    expect(captured).toMatchObject({ chosenTeam: 'pc', path: 'express' });
+  });
+
   it('rejette /api/speak sans jeton ou sans Piper', async () => {
     const wav = encodeWav(new Float32Array([0, 0.1]), 22_050);
     const store = new PhoneStore(() => join(dir, `phone-speak-${Math.random().toString(36).slice(2)}.json`));
@@ -185,6 +220,7 @@ describe('serveur du téléphone (5.0.63)', () => {
     const server = new PhoneServer({
       store,
       chat: new FakeChat(() => undefined),
+      validateTeam: async () => ({ ok: true }),
       conversation: async () => null,
       icon: async () => Buffer.from([0x89, 0x50, 0x4e, 0x47]),
       version: () => '5.0.67',
@@ -314,6 +350,7 @@ describe('réglages du téléphone (5.0.63)', () => {
       store,
       port: 0,
       chat: new FakeChat(() => undefined),
+      validateTeam: async () => ({ ok: true }),
       conversation: async () => null,
       icon: async () => null,
       version: () => '5.0.63',

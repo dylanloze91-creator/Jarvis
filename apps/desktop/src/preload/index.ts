@@ -10,6 +10,7 @@ import {
   type SpeakerStatus,
   type SpeakerTranscribeRequest,
   type SpeakerTranscribeResult,
+  type TeamValidationInput,
   type UpdateState,
   type VoiceSpeakInput,
   type VoicePiperSpeakInput,
@@ -39,6 +40,10 @@ const api: JarvisApi = {
       ipcRenderer.on(IpcChannel.chatEvent, handler);
       return () => ipcRenderer.removeListener(IpcChannel.chatEvent, handler);
     },
+  },
+  orchestra: {
+    validateTeam: (input: TeamValidationInput) =>
+      ipcRenderer.invoke(IpcChannel.orchestraValidateTeam, input),
   },
   settings: {
     get: () => ipcRenderer.invoke(IpcChannel.settingsGet),

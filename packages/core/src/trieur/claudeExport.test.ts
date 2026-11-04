@@ -21,7 +21,7 @@ function synthConversation(messages: ClaudeExportConversation['chat_messages']):
 }
 
 describe('trieur claude export', () => {
-  it('garde seulement les messages utilisateur, verbatim, avec le message utilisateur précédent comme contexte', () => {
+  it('garde seulement les messages utilisateur, verbatim, avec la demande complète du trieur (message utilisateur précédent compris) comme contexte', () => {
     const conversations = [
       synthConversation([
         {
@@ -50,8 +50,13 @@ describe('trieur claude export', () => {
     expect(lines).toHaveLength(2);
     const first = lines.find((line) => line.phrase === 'Première question');
     const follow = lines.find((line) => line.phrase === 'Et demain ?');
-    expect(first?.context).toBe('');
-    expect(follow?.context).toBe('Première question');
+    // Le contexte est la demande complète vue par le trieur (comme pour les conversations Jarvis).
+    expect(first?.context).toBe('Demande : Première question\nÉquipe :');
+    expect(follow?.context).toBe(
+      'Conversation récente :\nUtilisateur : Première question\n\nDemande : Et demain ?\nÉquipe :',
+    );
+    // Jamais la réponse de Claude dans le contexte.
+    expect(follow?.context).not.toContain('Réponse longue de Claude');
     expect(lines.every((line) => line.source === CLAUDE_EXPORT_SOURCE)).toBe(true);
     expect(lines.every((line) => line.synthetiqueTest)).toBe(true);
   });

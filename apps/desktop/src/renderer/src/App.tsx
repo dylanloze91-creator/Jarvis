@@ -399,6 +399,10 @@ export default function App() {
                   openSettingsOnTab('voice');
                   setView('settings');
                 }}
+                onOpenPersonaSettings={() => {
+                  openSettingsOnTab('model');
+                  setView('settings');
+                }}
               />
             </div>
           )

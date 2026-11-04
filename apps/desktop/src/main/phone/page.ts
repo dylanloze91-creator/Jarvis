@@ -138,6 +138,11 @@ header { display: flex; align-items: center; justify-content: space-between; pad
 .send { width: 44px; height: 44px; padding: 0; border-radius: 50%; font-size: 18px; }
 .send.stop { background: var(--danger); }
 .mic { width: 44px; height: 44px; border-radius: 50%; }
+.route-val { font-size: 12px; padding: 4px 10px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.route-team { font-size: 12px; padding: 4px 10px; border-radius: 999px; background: var(--panel); border: 1px solid var(--line); color: var(--text); font-weight: 600; }
+.route-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; max-width: 100%; }
+.route-actions { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+.route-done { font-size: 12px; color: #6ee7b7; }
 .mic.listening { background: var(--danger); animation: pulse 1.2s infinite; }
 @keyframes pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(251, 113, 133, 0.6); } 50% { box-shadow: 0 0 0 10px rgba(251, 113, 133, 0); } }
 `;
@@ -557,6 +562,82 @@ export const PHONE_JS = String.raw`(function () {
     if (window.navigator.vibrate) window.navigator.vibrate(60);
   }
 
+  function submitRouteValidation(validation, chosenTeam, onDone) {
+    api('/api/validate-team', {
+      phrase: validation.phrase,
+      context: validation.context,
+      proposedTeam: validation.proposedTeam,
+      chosenTeam: chosenTeam,
+      path: validation.path,
+    })
+      .then(function (response) {
+        if (response.status === 401) forgetDevice('Ce téléphone n’est plus relié. Demande un nouveau code sur le PC.');
+        if (!response.ok) return;
+        onDone(chosenTeam === validation.proposedTeam ? 'confirme' : 'corrige');
+      })
+      .catch(function () {
+        /* rien demandé à l’oral */
+      });
+  }
+
+  function routeRow(event) {
+    var wrap = document.createElement('div');
+    wrap.className = 'route-row';
+    var note = document.createElement('div');
+    note.className = 'msg note';
+    note.textContent = event.label + ' · ' + event.model;
+    wrap.appendChild(note);
+    if (!event.validation) {
+      list.appendChild(wrap);
+      scrollDown();
+      return;
+    }
+    var actions = document.createElement('div');
+    actions.className = 'route-actions';
+    var okBtn = document.createElement('button');
+    okBtn.type = 'button';
+    okBtn.className = 'route-val';
+    okBtn.textContent = '✓';
+    okBtn.setAttribute('aria-label', 'Confirmer l’équipe');
+    var changeBtn = document.createElement('button');
+    changeBtn.type = 'button';
+    changeBtn.className = 'route-val';
+    changeBtn.textContent = 'Changer';
+    var done = document.createElement('span');
+    done.className = 'route-done';
+    done.hidden = true;
+    actions.appendChild(okBtn);
+    actions.appendChild(changeBtn);
+    wrap.appendChild(actions);
+    wrap.appendChild(done);
+    list.appendChild(wrap);
+    scrollDown();
+    okBtn.onclick = function () {
+      submitRouteValidation(event.validation, event.validation.proposedTeam, function (kind) {
+        actions.hidden = true;
+        done.hidden = false;
+        done.textContent = kind === 'confirme' ? 'Équipe validée' : 'Équipe corrigée';
+      });
+    };
+    changeBtn.onclick = function () {
+      actions.textContent = '';
+      event.validation.teams.forEach(function (team) {
+        var pick = document.createElement('button');
+        pick.type = 'button';
+        pick.className = 'route-team';
+        pick.textContent = team.label;
+        pick.onclick = function () {
+          submitRouteValidation(event.validation, team.id, function (kind) {
+            actions.hidden = true;
+            done.hidden = false;
+            done.textContent = kind === 'confirme' ? 'Équipe validée' : 'Équipe corrigée';
+          });
+        };
+        actions.appendChild(pick);
+      });
+    };
+  }
+
   function handle(event) {
     switch (event.type) {
       case 'started':
@@ -571,7 +652,7 @@ export const PHONE_JS = String.raw`(function () {
         break;
       case 'route':
         current = null;
-        bubble('note', event.label + ' · ' + event.model);
+        routeRow(event);
         break;
       case 'tool_start':
         current = null;
