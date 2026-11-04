@@ -106,12 +106,8 @@ export * from './agent/orchestra.js';
 export {
   teamValidationEnabled,
   validationPathForHow,
-  validationRecord,
-  serializeValidationLine,
-  VALIDATION_FILE,
-  type ValidationLine,
   type ValidationPath,
-} from './trieur/validation.js';
+} from './trieur/validationSettings.js';
 export * from './agent/persona.js';
 
 export * from './search/types.js';

@@ -5,8 +5,13 @@ import type { ExamLine } from './extract.js';
 import { normalizePhrase, phraseKey } from './extract.js';
 import { buildTrainingLine, type GeneratedTrieurExample } from './generator.js';
 import { TRIEUR_PREP_DEFAULTS } from './trainPrep.js';
+import type { ValidationPath } from './validationSettings.js';
+export {
+  teamValidationEnabled,
+  validationPathForHow,
+  type ValidationPath,
+} from './validationSettings.js';
 
-export type ValidationPath = 'express' | 'cerveau' | 'trieur';
 export type ValidationStatut = 'confirme' | 'corrige';
 
 /** Ligne écrite dans `valide.jsonl` (données utilisateur, jamais commitée). */
@@ -33,17 +38,6 @@ const ALL_TOOLS = [
   'google_gmail_list',
   'write_file',
 ];
-
-export function teamValidationEnabled(
-  orchestra: { trieurDataDir?: string; teamValidation?: boolean } | undefined,
-): boolean {
-  const dir = orchestra?.trieurDataDir?.trim();
-  return Boolean(dir && orchestra?.teamValidation);
-}
-
-export function validationPathForHow(how: 'express' | 'cerveau' | 'trieur'): ValidationPath {
-  return how;
-}
 
 export function parseValidationLine(raw: unknown): ValidationLine | null {
   if (typeof raw !== 'object' || raw === null) return null;

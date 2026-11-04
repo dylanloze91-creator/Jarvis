@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { teamValidationEnabled } from './validation.js';
+import { teamValidationEnabled } from './validationSettings.js';
 
 describe('OrchestraSettings — validation des équipes', () => {
   it('n’active la validation que si dossier et interrupteur sont présents', () => {

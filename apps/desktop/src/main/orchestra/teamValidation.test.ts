@@ -2,7 +2,8 @@ import { mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { parseSettings, VALIDATION_FILE } from '@jarvis/core';
+import { parseSettings } from '@jarvis/core';
+import { VALIDATION_FILE } from '@jarvis/core/trieur/validation';
 import { appendTeamValidation, canOfferTeamValidation } from './teamValidation.js';
 
 describe('validation en direct des équipes', () => {

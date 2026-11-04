@@ -9,6 +9,7 @@ import {
   type ClaudeExportConversation,
 } from './claudeExport.js';
 import { extractFromConversations, phraseKey } from './extract.js';
+import { routerUserPrompt } from '../agent/orchestra.js';
 import { createMessage } from '../types.js';
 
 const SYNTHETIQUE = { synthetiqueTest: true } as const;
@@ -117,6 +118,7 @@ describe('trieur claude export', () => {
     expect(spotify?.suggestion).toBe('musique');
     const autre = merged.find((line) => line.phrase === 'Autre phrase');
     expect(autre?.source).toBe(CLAUDE_EXPORT_SOURCE);
-    expect(phraseKey('Autre phrase', '')).toBe(autre?.id);
+    const autreContext = routerUserPrompt('Autre phrase', []);
+    expect(phraseKey('Autre phrase', autreContext.trim())).toBe(autre?.id);
   });
 });

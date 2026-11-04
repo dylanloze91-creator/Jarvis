@@ -4,12 +4,14 @@ import {
   ORCHESTRA_TEAMS,
   type OrchestraTeam,
   type Settings,
-  serializeValidationLine,
   teamValidationEnabled,
   validationPathForHow,
+} from '@jarvis/core';
+import {
+  serializeValidationLine,
   validationRecord,
   VALIDATION_FILE,
-} from '@jarvis/core';
+} from '@jarvis/core/trieur/validation';
 
 export interface TeamValidationPayload {
   phrase: string;
