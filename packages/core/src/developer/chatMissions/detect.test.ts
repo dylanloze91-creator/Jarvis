@@ -47,6 +47,24 @@ describe('directMissionRequest (5.0.69)', () => {
     expect(looksLikeCodeExplanationOnly("C'est quoi une boucle for ?")).toBe(true);
   });
 
+  it('questions en tête de phrase : pas de mission, sauf « est-ce que tu peux » (synthetique-test)', () => {
+    expect(directMissionRequest('Comment je peux créer un script Python ?')).toBeNull();
+    expect(directMissionRequest("Est-ce qu'on peut faire un jeu en Python ?")).toBeNull();
+    expect(directMissionRequest('Pourquoi créer un script de sauvegarde ?')).toBeNull();
+    expect(directMissionRequest('Quel script dois-je écrire pour mes sauvegardes ?')).toBeNull();
+    expect(directMissionRequest("Jarvis, comment je fais un script qui envoie un ping ?")).toBeNull();
+    expect(looksLikeCodeExplanationOnly('Comment je peux créer un script Python ?')).toBe(true);
+    expect(looksLikeCodeExplanationOnly("Est-ce qu'on peut faire un jeu en Python ?")).toBe(true);
+    expect(looksLikeCodeExplanationOnly('Quelles fonctions ajouter à mon appli ?')).toBe(true);
+    expect(looksLikeCodeExplanationOnly('Est-ce que tu peux me faire un script de sauvegarde ?')).toBe(false);
+    expect(
+      directMissionRequest('Est-ce que tu peux me faire un script de sauvegarde ?'),
+    ).toMatchObject({ type: 'nouveau-projet' });
+    expect(
+      directMissionRequest('Est-ce que tu pourrais créer un jeu de pong ?'),
+    ).toMatchObject({ type: 'nouveau-projet' });
+  });
+
   it('formes parlées (synthetique-test)', () => {
     expect(
       directMissionRequest('Jarvis, tu peux me faire un script qui envoie un ping'),

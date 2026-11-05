@@ -9,10 +9,28 @@ import { proposerMissionSchema } from './proposerMission.js';
 const CODE_QUESTION =
   /^(?:c['’]est quoi|qu['’]est[- ]ce que|explique|définis|define|what is|how does)\b/iu;
 
+/**
+ * 5.0.69 : une phrase qui commence par « comment », « pourquoi », « quel / quelle / quels /
+ * quelles », « qu'est-ce » ou « est-ce que » est une question (réponse écrite), sauf
+ * « est-ce que tu peux / pourrais … », qui est une demande polie.
+ */
+const QUESTION_START =
+  /^(?:(?:comment|pourquoi|quel(?:le)?s?)\b|qu['’]est[- ]ce\b|est[- ]ce\s+qu(?:e\b|['’]))/iu;
+const POLITE_QUESTION_START = /^est[- ]ce\s+que\s+tu\s+(?:peux|pourrais)\b/iu;
+const LEADING_WAKE_ANY =
+  /^(?:(?:bonjour|salut|dis|ok|eh|allô|allo|hey|coucou)[,\s]+)?(?:jarvis|friday|jeeves|djeeves)[,\s]+/iu;
+
+function startsLikeQuestion(text: string): boolean {
+  const t = text.replace(LEADING_WAKE_ANY, '').trimStart();
+  if (POLITE_QUESTION_START.test(t)) return false;
+  return QUESTION_START.test(t);
+}
+
 export function looksLikeCodeExplanationOnly(text: string): boolean {
   const t = text.trim();
   if (t.length < 4) return false;
   if (CODE_QUESTION.test(t)) return true;
+  if (startsLikeQuestion(t)) return true;
   if (/^\s*comment on\b/iu.test(t)) return true;
   if (/^\s*montre[- ]moi un exemple\b/iu.test(t) && !/\b(crée|créer|fais|ajoute|corrige)\b/iu.test(t)) {
     return true;
@@ -48,6 +66,7 @@ const CREATE_OR_EDIT_VERBS = [
   'ecris moi',
   'code-moi',
   'code moi',
+  'coder',
   'développe',
   'développer',
   'developpe',
@@ -85,6 +104,10 @@ const CREATE_OR_EDIT_VERBS = [
 ] as const;
 
 const EDIT_VERBS = ['ajoute', 'ajouter', 'modifie', 'modifier', 'change', 'changer'] as const;
+
+/** Formes parlées sans verbe de création : « j'aimerais un programme… », « il me faudrait un script… ». */
+const WISH_FORM =
+  /(?:^|[^\p{L}])(?:j['’]aimerais|je voudrais|je veux|il me faudrait|j['’]ai besoin d(?:e|['’]))(?=$|[^\p{L}])/iu;
 
 const CODE_OBJECTS = [
   'script',
@@ -219,7 +242,7 @@ export function directMissionRequest(
   if (/^merci\b/iu.test(raw) && raw.length < 24) return null;
   if (looksLikeCodeExplanationOnly(raw)) return null;
 
-  const hasVerb = mentions(raw, CREATE_OR_EDIT_VERBS);
+  const hasVerb = mentions(raw, CREATE_OR_EDIT_VERBS) || WISH_FORM.test(raw);
   const hasObject = mentions(raw, CODE_OBJECTS);
   if (!hasVerb || !hasObject) return null;
 

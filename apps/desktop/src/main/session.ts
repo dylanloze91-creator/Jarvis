@@ -469,7 +469,11 @@ export class ChatSession {
       if (this.controller === controller) this.controller = null;
     }
 
-    if (appendMissionProposal) {
+    // 5.0.69 : un tour arrêté (bouton Arrêter) ou remplacé par un envoi plus récent ne pose
+    // aucune carte de mission, ni par le chemin direct ni par le filet.
+    const turnInterrupted = controller.signal.aborted || superseded();
+
+    if (appendMissionProposal && !turnInterrupted) {
       appendMissionProposal();
       visibleReply = true;
     }
@@ -477,6 +481,7 @@ export class ChatSession {
     if (
       chatMissionsOn &&
       chatMissionHub &&
+      !turnInterrupted &&
       !missionProposed &&
       !appendMissionProposal &&
       !directMissionBlocked

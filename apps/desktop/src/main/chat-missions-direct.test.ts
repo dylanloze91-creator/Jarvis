@@ -247,4 +247,83 @@ describe('missions directes depuis la discussion (5.0.69)', () => {
     expect(fallback?.objectifReprise).toBe(true);
     expect(fallback?.objectif).toContain('fichiers csv');
   });
+
+  it('arrêt pendant le tour → aucune carte (chemin direct)', async () => {
+    const getSettings = () =>
+      core.parseSettings({
+        provider: 'ollama',
+        model: 'qwen2.5-coder:7b',
+        orchestra: ORCHESTRA,
+        developer: { enabled: true, repoPath: 'C:\\dev\\Jarvis', chatMissions: true, codeModel: 'x' },
+      });
+    const hub = new ChatMissionHub({ getSettings, developer: () => null });
+    const { session, events } = sessionWithHub(hub, (config) => ({
+      id: 'ollama',
+      label: 'Ollama',
+      model: config.model,
+      requiresApiKey: false,
+      async *streamChat(request) {
+        if ((request.system ?? '').includes('chef d’orchestre')) {
+          yield { type: 'text' as const, delta: 'code' };
+          yield { type: 'done' as const, finishReason: 'stop' as const };
+          return;
+        }
+        throw new Error('modèle code interdit');
+      },
+    }));
+    // L'utilisateur clique « Arrêter » pendant que la phrase d'introduction s'affiche.
+    const stoppingSender = {
+      isDestroyed: () => false,
+      send: (_channel: string, event: ChatEvent) => {
+        events.push(event);
+        if (event.type === 'delta') session.cancel();
+      },
+    } as unknown as Electron.WebContents;
+    await session.send(stoppingSender, {
+      conversationId: null,
+      text: 'Crée-moi un script pour sauvegarder mes fichiers',
+    });
+    expect(events.some((event) => event.type === 'route' && event.how === 'mission-directe')).toBe(true);
+    expect(events.some((event) => event.type === 'mission_proposal')).toBe(false);
+    expect(events.some((event) => event.type === 'error')).toBe(false);
+    expect(events.some((event) => event.type === 'done')).toBe(true);
+  });
+
+  it('arrêt pendant le tour → aucune carte (filet « mission écrite en texte »)', async () => {
+    const getSettings = () =>
+      core.parseSettings({
+        provider: 'ollama',
+        model: 'qwen2.5-coder:7b',
+        orchestra: ORCHESTRA,
+        developer: { enabled: true, repoPath: 'C:\\dev\\Jarvis', chatMissions: true, codeModel: 'x' },
+      });
+    const hub = new ChatMissionHub({ getSettings, developer: () => null });
+    let cancel: () => void = () => undefined;
+    const { session, sender, events } = sessionWithHub(hub, (config) => ({
+      id: 'ollama',
+      label: 'Ollama',
+      model: config.model,
+      requiresApiKey: false,
+      async *streamChat(request) {
+        if ((request.system ?? '').includes('chef d’orchestre')) {
+          yield { type: 'text' as const, delta: 'code' };
+          yield { type: 'done' as const, finishReason: 'stop' as const };
+          return;
+        }
+        yield {
+          type: 'text' as const,
+          delta: 'Objectif : trier des fichiers\nProjet : nouveau\nType : Nouveau-projet\nEst-ce que cela te convient ?',
+        };
+        cancel();
+        yield { type: 'done' as const, finishReason: 'stop' as const };
+      },
+    }));
+    cancel = () => session.cancel();
+    await session.send(sender, {
+      conversationId: null,
+      text: 'Peut-être un utilitaire demain pour trier mes fichiers csv sur le bureau',
+    });
+    expect(events.some((event) => event.type === 'mission_proposal')).toBe(false);
+    expect(events.some((event) => event.type === 'done')).toBe(true);
+  });
 });
