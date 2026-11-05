@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { MessageSquare } from 'lucide-react';
-import { activePersona, isDeveloperVoiceIntent, personaGreeting, userFirstName, type Settings } from '@jarvis/core';
+import { activePersona, personaGreeting, userFirstName, type Settings } from '@jarvis/core';
+import { unifiedChatSubmitTarget } from '@/components/unifiedChatSubmit';
 import { cn } from '@/lib/utils';
 import { Composer } from '@/components/Composer';
 import { ConfirmationCard } from '@/components/ConfirmationCard';
@@ -72,13 +73,13 @@ export function UnifiedJarvisChat({
       const trimmed = text.trim();
       // Une transcription d'une lettre est du bruit ; un texte tapé, même court, est voulu.
       if (trimmed.length === 0 || (source === 'voice' && trimmed.length < 2) || busy) return;
-      if (onOpenDeveloper && isDeveloperVoiceIntent(trimmed)) {
+      if (onOpenDeveloper && unifiedChatSubmitTarget(trimmed, settings) === 'developer') {
         onOpenDeveloper(trimmed);
         return;
       }
       chat.send(trimmed, source);
     },
-    [busy, chat, onOpenDeveloper],
+    [busy, chat, onOpenDeveloper, settings],
   );
 
   useEffect(() => {

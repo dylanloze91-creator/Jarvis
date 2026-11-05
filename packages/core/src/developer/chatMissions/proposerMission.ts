@@ -39,7 +39,8 @@ export function missionKindFromProposerType(type: ProposerMissionType): MissionK
 /** Consigne courte pour l'équipe Code quand les missions depuis la discussion sont actives. */
 export const CODE_MISSION_TOOL_PROMPT =
   'Si la demande veut des fichiers de code créés ou modifiés sur le PC (crée, ajoute, corrige un bug, fais un programme), appelle proposer_mission avec le type adapté et un objectif clair. ' +
-  'Pour une simple explication ou un petit extrait de code dans la discussion, réponds normalement sans proposer_mission.';
+  'Pour une simple explication ou un petit extrait de code dans la discussion, réponds normalement sans proposer_mission. ' +
+  'N’écris jamais une mission en texte (Objectif, Projet, Type) : appelle proposer_mission, ou réponds normalement.';
 
 export function proposerMissionToolSchema() {
   return {

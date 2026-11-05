@@ -1,9 +1,12 @@
 import {
   assessMission,
   chatMissionsEnabled,
+  isJarvisSupportedLanguage,
   missionKindFromProposerType,
   modelCapability,
+  objectifForMissionLaunch,
   randomId,
+  unsupportedLanguageNotice,
   type ChatMissionEnvelope,
   type ChatMissionProposalPayload,
   type ProposerMissionInput,
@@ -22,10 +25,18 @@ export interface ChatMissionHubDeps {
   ollamaModels?: () => Array<{ name: string; parameterSize?: string }>;
 }
 
+export interface ProposerMissionInputWithLang extends ProposerMissionInput {
+  langage?: string;
+}
+
 export interface RecordedProposal {
   payload: ChatMissionProposalPayload;
   envelope: ChatMissionEnvelope;
   voiceHint: string;
+}
+
+export interface RecordProposalOptions {
+  objectifReprise?: boolean;
 }
 
 /**
@@ -55,7 +66,17 @@ export class ChatMissionHub {
     return mission.status === 'running' || mission.status === 'task' || mission.status === 'waiting-answers';
   }
 
-  recordProposal(input: ProposerMissionInput): RecordedProposal {
+  knownProjectNames(): string[] {
+    const dev = this.deps.developer();
+    if (!dev) return [];
+    const projects = dev.state().projects ?? [];
+    return projects.map((project) => project.name).filter(Boolean);
+  }
+
+  recordProposal(
+    input: ProposerMissionInput & { langage?: string },
+    options: RecordProposalOptions = {},
+  ): RecordedProposal {
     const settings = this.deps.getSettings();
     const dev = settings.developer;
     const kind = missionKindFromProposerType(input.type);
@@ -80,10 +101,17 @@ export class ChatMissionHub {
     const blockedMessage = this.missionBusy()
       ? 'Une mission est déjà en cours. Termine-la ou annule-la avant d’en lancer une autre.'
       : undefined;
+    const requestedLanguage = input.langage?.trim() || undefined;
+    const languageNotice =
+      requestedLanguage && !isJarvisSupportedLanguage(requestedLanguage)
+        ? unsupportedLanguageNotice(requestedLanguage)
+        : undefined;
+    const launchObjectif = objectifForMissionLaunch(input.objectif, requestedLanguage ?? null);
     const payload: ChatMissionProposalPayload = {
       proposalId,
       missionType: input.type,
       objectif: input.objectif.trim(),
+      launchObjectif,
       ...(input.projet ? { projetHint: input.projet.trim() } : {}),
       projectId: null,
       kind,
@@ -92,6 +120,9 @@ export class ChatMissionHub {
       gate,
       status: 'pending',
       ...(blockedMessage ? { blockedMessage } : {}),
+      ...(requestedLanguage ? { requestedLanguage } : {}),
+      ...(languageNotice ? { languageNotice } : {}),
+      ...(options.objectifReprise ? { objectifReprise: true } : {}),
     };
     this.proposals.set(proposalId, payload);
     const envelope: ChatMissionEnvelope = { kind: 'proposal', data: payload };
@@ -150,7 +181,7 @@ export class ChatMissionHub {
     if (!dev) return { ok: false, notice: 'Le mode Développeur est coupé.' };
     // Réservé juste avant de démarrer : un second clic pendant le démarrage voit « déjà lancée ».
     this.patchProposal(proposalId, { status: 'launched' });
-    const request = (requestOverride ?? proposal.objectif).trim();
+    const request = (requestOverride ?? proposal.launchObjectif ?? proposal.objectif).trim();
     let state: Awaited<ReturnType<DeveloperController['startMission']>>;
     try {
       state = await dev.startMission(proposal.kind, request, false, projectId);

@@ -23,6 +23,14 @@ export interface ChatMissionProposalPayload {
   missionId?: string;
   /** Une mission tourne déjà : la proposition reste visible mais non lançable. */
   blockedMessage?: string;
+  /** Langage nommé par l'utilisateur (Python, Rust…). */
+  requestedLanguage?: string;
+  /** Avertissement affiché sur la carte si le langage n'est pas pris en charge. */
+  languageNotice?: string;
+  /** Objectif transmis à la mission (mention Node si langage non pris en charge). */
+  launchObjectif: string;
+  /** Filet : l'objectif vient de la demande, pas du modèle. */
+  objectifReprise?: boolean;
 }
 
 export interface ChatMissionTrackPayload {

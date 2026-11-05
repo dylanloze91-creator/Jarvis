@@ -63,7 +63,13 @@ export function ChatMissionProposalCard({
       data-chat-mission="proposal"
     >
       <p className="text-[13px] font-medium text-cyan-100">Mission proposée — {kindLabel}</p>
+      {data.objectifReprise ? (
+        <p className="text-[11px] text-slate-400">Objectif repris de ta demande.</p>
+      ) : null}
       <p className="text-[13px] text-slate-100">{data.objectif}</p>
+      {data.languageNotice ? (
+        <p className="text-[12px] text-amber-200">{data.languageNotice}</p>
+      ) : null}
       <p className="text-[11px] text-slate-400">
         Modèle Codeur :{' '}
         {data.codeModelMissing ? (
@@ -113,7 +119,7 @@ export function ChatMissionProposalCard({
         <Button
           size="sm"
           disabled={busy || !selected || Boolean(data.blockedMessage) || data.codeModelMissing || !data.gate.ok}
-          onClick={() => onLaunch(selected, data.objectif)}
+          onClick={() => onLaunch(selected, data.launchObjectif ?? data.objectif)}
         >
           Lancer
         </Button>

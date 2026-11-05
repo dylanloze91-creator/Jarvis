@@ -120,6 +120,7 @@ const ROUTE_HOW: Record<Extract<ChatItem, { kind: 'route' }>['how'], string> = {
   express: 'express',
   cerveau: 'choisi par le cerveau',
   trieur: 'choisi par le trieur',
+  'mission-directe': 'mission directe',
 };
 
 function RouteItem({ item }: { item: Extract<ChatItem, { kind: 'route' }> }) {
