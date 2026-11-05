@@ -1,8 +1,8 @@
-# Jarvis 5.0.68 — contexte pour un autre développeur
+# Jarvis 5.0.69 — contexte pour un autre développeur
 
 Ce fichier est à la **racine du code**. Les chemins ci-dessous partent de ce dossier. Ce n’est pas un résumé marketing : c’est l’état réel de cet arbre. La voix a été refaite dans cet arbre (publiée en 0.4.11, section « Voix ») : la transcription restait « Chargement… 100 % » sur l’installateur Windows. La refonte du tableau de bord est dans cet arbre : fenêtre étroite = overlay, fenêtre large = tableau de bord.
 
-**Version confirmée :** `apps/desktop/package.json` → `"version": "5.0.68"` (décision D1 : jamais de suffixe `-beta`). La 5.0.68 (chat unifié phase 1, garde double-lancement ; intégration du 4 novembre 2026, rapport `rapports/2026-11-04-publication-5068.md`) est publiée (release `v5.0.68`, voir « Updater / GitHub »). La 5.0.67 (caractère de Jarvis, validation d’équipe en direct, correctif contexte export claude.ai ; rapport `rapports/2026-11-04-publication-5067.md`) reste la release précédente. La 5.0.66 (correctif Piper Windows, sources courtes, lieu domicile, correctifs Claude ; rapport `rapports/2026-11-03-publication-5066.md`) reste la release antérieure. Le `package.json` racine est aligné sur la même version depuis 0.5.0 (il était resté à `0.3.0`), mais il n’est lu par rien : la version qui compte pour l’exe, l’updater et GitHub est celle de `@jarvis/desktop`. `@jarvis/core` reste à `0.1.0`. Le modèle par défaut reste `qwen2.5:3b`. `qwen3.5:4b` est le modèle recommandé documenté ; le repli est réglable (`fallbackModel`, défaut `qwen2.5:3b`).
+**Version confirmée :** `apps/desktop/package.json` → `"version": "5.0.69"` (décision D1 : jamais de suffixe `-beta`). La 5.0.69 (mission directe depuis la discussion, Spotify sur enceinte Connect choisie ; intégration du 5 novembre 2026, rapport `rapports/2026-11-05-publication-5069.md`) est publiée (release `v5.0.69`, voir « Updater / GitHub »). La 5.0.68 (chat unifié phase 1, garde double-lancement ; rapport `rapports/2026-11-04-publication-5068.md`) reste la release précédente. La 5.0.67 (caractère de Jarvis, validation d’équipe en direct, correctif contexte export claude.ai ; rapport `rapports/2026-11-04-publication-5067.md`) reste la release antérieure. La 5.0.66 (correctif Piper Windows, sources courtes, lieu domicile, correctifs Claude ; rapport `rapports/2026-11-03-publication-5066.md`) reste la release antérieure. Le `package.json` racine est aligné sur la même version depuis 0.5.0 (il était resté à `0.3.0`), mais il n’est lu par rien : la version qui compte pour l’exe, l’updater et GitHub est celle de `@jarvis/desktop`. `@jarvis/core` reste à `0.1.0`. Le modèle par défaut reste `qwen2.5:3b`. `qwen3.5:4b` est le modèle recommandé documenté ; le repli est réglable (`fallbackModel`, défaut `qwen2.5:3b`).
 
 Lis ce fichier avant de modifier le code.
 
@@ -63,7 +63,7 @@ Scripts utiles (racine) :
 
 Le script `setup:voice` remplit `apps/desktop/voice-assets/` (runtime ONNX, Whisper, openWakeWord, modèle Vosk français ; non commité, voir `.gitignore`). Premier `dev` / `build` : besoin de réseau.
 
-L’installateur publié est `Jarvis-Setup-5.0.68.exe` (release GitHub `v5.0.68`).
+L’installateur publié est `Jarvis-Setup-5.0.69.exe` (release GitHub `v5.0.69`).
 
 Données utilisateur (Electron `userData`, typiquement `%APPDATA%\Jarvis`) :
 
@@ -97,7 +97,7 @@ Données utilisateur (Electron `userData`, typiquement `%APPDATA%\Jarvis`) :
     src/media/                 intent Spotify
     src/update/                lecture latest.yml GitHub
     src/history/  src/audit/
-  apps/desktop/                Electron (version 5.0.68)
+  apps/desktop/                Electron (version 5.0.69)
     electron-builder.yml       NSIS, extraResources, publish GitHub
     electron.vite.config.ts    aliases onnxruntime-web (wasm, pas JSEP)
     scripts/setup-whisper.mjs
@@ -206,7 +206,7 @@ Ne pas réintroduire `ort.min.mjs` (JSEP/WebGPU), un import CDN de transformers.
 
 ## Spotify, SiteBlock, mémoire, recherche web
 
-**Spotify** — 8 outils `spotify_*` dans `apps/desktop/src/main/tools/spotify.ts` (play, pause, resume, next, previous, volume, shuffle, current_track). Pont : `apps/desktop/src/main/media/SpotifyBridge.ts` / `SpotifyProvider.ts`. Client ID dans les réglages (`spotifyClientId`), **pas de Client Secret**, PKCE, redirect **exact** `http://127.0.0.1:53124/callback`. Premium requis pour piloter la lecture. Cible : appli de bureau Windows, pas le téléphone.
+**Spotify** — 8 outils `spotify_*` dans `apps/desktop/src/main/tools/spotify.ts` (play, pause, resume, next, previous, volume, shuffle, current_track). Pont : `apps/desktop/src/main/media/SpotifyBridge.ts` / `SpotifyProvider.ts`. Client ID dans les réglages (`spotifyClientId`), **pas de Client Secret**, PKCE, redirect **exact** `http://127.0.0.1:53124/callback`. Premium requis pour piloter la lecture. Cible par défaut : appli de bureau Windows, pas le téléphone ; depuis 5.0.69, une enceinte Spotify Connect peut être choisie dans Réglages → Spotify (voir section « Spotify enceinte »).
 
 **SiteBlock** — 8 outils `siteblock_*` (`apps/desktop/src/main/tools/siteblock.ts`). URL défaut `http://127.0.0.1:18741` ; **loopback uniquement** (`packages/core/src/siteblock/url.ts`). Jeton dans les réglages, ou lecture de `%APPDATA%\SiteBlock\api.json` s’il est vide. Toute mutation = `forceConfirm`.
 
@@ -645,6 +645,10 @@ Cahier : `docs/specs/mission-directe.md`.
 - **Discussion unifiée** : avec `developer.chatMissions`, plus de bascule automatique vers l'onglet Développeur ; corrections et préférences restent dans le chat (`classifyUtterance`, `noteToRecord`).
 - Tests : `detect.test.ts`, `chat-missions-direct.test.ts`, `voiceAssistantRoute.test.ts`, `UnifiedJarvisChat.test.tsx` ; suites 5.0.68 inchangées sans régénération des `__golden__`.
 
+## 5.0.69 — Spotify sur l'enceinte Connect choisie
+
+Branche `cursor/spotify-enceinte-cible`. Réglages facultatifs `spotifyDeviceName` et `spotifySpeakerMaxVolume` (sans défaut Zod : `parseSettings({})` ne gagne aucune clé ; absent = chaîne vide et plafond 70 en code dans `SpotifyBridge`). Réglages → Spotify : liste des appareils Connect, choix d'une enceinte (ex. Devialet) ou retour au PC. `SpotifyProvider` transfère la lecture sur l'appareil nommé (correspondance insensible à la casse et aux accents) ; les enceintes de type Speaker sont plafonnées à `spotifySpeakerMaxVolume` (défaut 70). La **description** de l'outil `spotify_play` dans le catalogue modèle reste celle de 0.4.22 (application de bureau) ; le **résultat** de l'outil annonce « Lecture sur « … » » quand une enceinte est choisie. `chat-unchanged.test.ts` et `ollama-unchanged.test.ts` verts sans régénération des `__golden__`.
+
 ## 5.0.67 — voix locale Piper
 
 Cahier des charges : `docs/specs/voix-jarvis.md` (chantier 1). **Défaut inchangé** : `ttsProvider` reste `browser-local` (`chat-unchanged.test.ts`). L'utilisateur choisit **Piper (voix locale gratuite, sans Internet)** dans Réglages → Voix.
@@ -672,7 +676,7 @@ Demande de l'utilisateur : « que Jarvis ait une personnalité bien à lui, limi
 
 ## Updater / GitHub
 
-Dernière publication : **5.0.68** (`https://github.com/dylanloze91-creator/Jarvis/releases/tag/v5.0.68`) — exe, `.blockmap` et `latest.yml` publiés : l’updater intégré la propose.
+Dernière publication : **5.0.69** (`https://github.com/dylanloze91-creator/Jarvis/releases/tag/v5.0.69`) — exe, `.blockmap` et `latest.yml` publiés : l’updater intégré la propose.
 
 - `apps/desktop/electron-builder.yml` : `publish.provider: github`, owner `dylanloze91-creator`, repo `Jarvis`, `releaseType: release`, artifact `Jarvis-Setup-${version}.exe`
 - `apps/desktop/src/main/updater.ts` : contrôle 15 s après le démarrage puis toutes les 4 h ; téléchargement auto ; **installation seulement si l’utilisateur clique**

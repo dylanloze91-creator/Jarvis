@@ -16,7 +16,7 @@ export function looksLikeCodeExplanationOnly(text: string): boolean {
   if (/^\s*pourquoi\b/iu.test(t)) return true;
   if (/^\s*(?:quel|quelle|quels|quelles)\b/iu.test(t)) return true;
   if (/^\s*qu['’]est[- ]ce\b/iu.test(t)) return true;
-  if (/^\s*est-ce que\b/iu.test(t)) {
+  if (/^\s*est-ce qu/iu.test(t)) {
     if (/^\s*est-ce que tu (?:peux|pourrais)\b/iu.test(t)) return false;
     return true;
   }
@@ -227,9 +227,15 @@ export function directMissionRequest(
   if (/^merci\b/iu.test(raw) && raw.length < 24) return null;
   if (looksLikeCodeExplanationOnly(raw)) return null;
 
-  const hasVerb = mentions(raw, CREATE_OR_EDIT_VERBS);
-  const hasObject = mentions(raw, CODE_OBJECTS);
-  if (!hasVerb || !hasObject) return null;
+  const politeStripped = POLITE_PREFIX.test(raw) ? raw.replace(POLITE_PREFIX, '').trim() : '';
+  const hasVerb =
+    mentions(raw, CREATE_OR_EDIT_VERBS) ||
+    (politeStripped ? mentions(politeStripped, CREATE_OR_EDIT_VERBS) : false);
+  const hasObject =
+    mentions(raw, CODE_OBJECTS) ||
+    (politeStripped ? mentions(politeStripped, CODE_OBJECTS) : false);
+  const politeMission = Boolean(politeStripped && mentions(politeStripped, CODE_OBJECTS));
+  if ((!hasVerb || !hasObject) && !politeMission) return null;
 
   const objectif = cleanMissionObjective(raw, wake);
   const parsed = proposerMissionSchema.safeParse({
