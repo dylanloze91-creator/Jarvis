@@ -38,7 +38,8 @@ describe('lint : base verte', () => {
     expect(await eslint.isPathIgnored(resolve(root, 'apps/desktop/src/main/knowledge.ts'))).toBe(
       false,
     );
-  });
+    // Premier appel à ESLint du fichier : la configuration se charge ici (plus de 5 s sous charge, Windows).
+  }, 60_000);
 
   it('les fichiers en erreur en 0.4.21 passent, sans directive eslint-disable inutile', async () => {
     const results = await eslint.lintFiles(FILES_RED_IN_0421.map((file) => resolve(root, file)));

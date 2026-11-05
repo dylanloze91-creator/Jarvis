@@ -16,7 +16,14 @@ import {
 const base = mkdtempSync(join(tmpdir(), 'jarvis-sandbox-'));
 const repo = join(base, 'Jarvis');
 const root = defaultWorktreeRoot(repo);
-afterAll(() => rmSync(base, { recursive: true, force: true }));
+afterAll(() => {
+  // Windows : git garde parfois le worktree verrouillé quelques instants (EBUSY sur rmdir).
+  try {
+    rmSync(base, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 });
+  } catch {
+    // dossier temporaire laissé à Windows
+  }
+});
 
 function sh(cwd: string, ...args: string[]): string {
   return execFileSync('git', args, { cwd, encoding: 'utf8' });
