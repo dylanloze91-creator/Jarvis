@@ -15,9 +15,14 @@ describe('ProcessPiperRunner', () => {
   it('rattrape EPIPE si le binaire s’arrête avant de lire stdin', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'jarvis-piper-runner-'));
     dirs.push(dir);
-    const binaryPath = join(dir, 'piper-fail.sh');
-    writeFileSync(binaryPath, '#!/bin/sh\nexit 1\n', 'utf8');
-    chmodSync(binaryPath, 0o755);
+    // Windows ne lance pas un script .sh (spawn EFTYPE) : node lui-même, qui refuse
+    // l'option --model et s'arrête avant de lire stdin, joue le binaire qui échoue.
+    let binaryPath = process.execPath;
+    if (process.platform !== 'win32') {
+      binaryPath = join(dir, 'piper-fail.sh');
+      writeFileSync(binaryPath, '#!/bin/sh\nexit 1\n', 'utf8');
+      chmodSync(binaryPath, 0o755);
+    }
     const runner = new ProcessPiperRunner();
     const request: PiperRunRequest = {
       binaryPath,
