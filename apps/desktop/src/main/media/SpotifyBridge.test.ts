@@ -15,7 +15,12 @@ vi.mock('electron', () => ({
 const { SpotifyBridge } = await import('./SpotifyBridge.js');
 
 function settingsWith(spotifyClientId: string): () => Settings {
-  return () => ({ spotifyClientId }) as Settings;
+  return () =>
+    ({
+      spotifyClientId,
+      spotifyDeviceName: '',
+      spotifySpeakerMaxVolume: 70,
+    }) as Settings;
 }
 
 describe('SpotifyBridge', () => {

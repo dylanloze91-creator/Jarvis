@@ -15,6 +15,7 @@ import { launchSpotifyDesktop } from './launchSpotifyDesktop.js';
 import {
   formatPlaybackDiagnostic,
   pickLocalDesktopDevice,
+  pickNamedConnectDevice,
   type ConnectDevice,
 } from './spotifyDevices.js';
 
@@ -113,12 +114,29 @@ export interface SpotifyProviderOptions {
   playbackVerifyMs?: number;
   hostname?: string;
   sleep?: (ms: number) => Promise<void>;
+  /** Nom d'enceinte Connect (vide = bureau Windows). */
+  targetDeviceName?: string;
+  /** Plafond de volume pour les appareils de type Speaker. */
+  speakerMaxVolume?: number;
+  /** Tentatives de liste Connect quand l'enceinte cible dort. */
+  targetDeviceRetryAttempts?: number;
+  targetDeviceRetryMs?: number;
 }
 
 const DEFAULT_DEVICE_WAIT_MS = 12_000;
 const DEFAULT_POLL_MS = 700;
 const DEFAULT_PLAYBACK_VERIFY_MS = 8_000;
+const DEFAULT_SPEAKER_MAX_VOLUME = 70;
+const DEFAULT_TARGET_RETRY_ATTEMPTS = 5;
+const DEFAULT_TARGET_RETRY_MS = 1_500;
 const AUDIBLE_VOLUME = 50;
+
+export type SpotifyConnectDeviceSummary = {
+  id: string;
+  name: string;
+  type: string;
+  is_active: boolean;
+};
 
 export class SpotifyProvider implements MediaProvider {
   readonly id = 'spotify';
@@ -133,6 +151,10 @@ export class SpotifyProvider implements MediaProvider {
   private readonly playbackVerifyMs: number;
   private readonly hostname: string;
   private readonly sleep: (ms: number) => Promise<void>;
+  private readonly targetDeviceName: string;
+  private readonly speakerMaxVolume: number;
+  private readonly targetDeviceRetryAttempts: number;
+  private readonly targetDeviceRetryMs: number;
 
   constructor(
     private readonly clientId: string,
@@ -151,6 +173,24 @@ export class SpotifyProvider implements MediaProvider {
     this.playbackVerifyMs = options.playbackVerifyMs ?? DEFAULT_PLAYBACK_VERIFY_MS;
     this.hostname = options.hostname ?? osHostname();
     this.sleep = options.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
+    this.targetDeviceName = (options.targetDeviceName ?? '').trim();
+    this.speakerMaxVolume = options.speakerMaxVolume ?? DEFAULT_SPEAKER_MAX_VOLUME;
+    this.targetDeviceRetryAttempts =
+      options.targetDeviceRetryAttempts ?? DEFAULT_TARGET_RETRY_ATTEMPTS;
+    this.targetDeviceRetryMs = options.targetDeviceRetryMs ?? DEFAULT_TARGET_RETRY_MS;
+  }
+
+  /** Liste des appareils Connect (réglages : menu « Enceinte de lecture »). */
+  async listConnectDevices(): Promise<SpotifyConnectDeviceSummary[]> {
+    const devices = await this.listAllDevices();
+    return devices
+      .filter((device) => device.id && !device.is_restricted)
+      .map((device) => ({
+        id: device.id!,
+        name: device.name,
+        type: device.type,
+        is_active: device.is_active,
+      }));
   }
 
   async searchTrack(query: string): Promise<MediaTrack | null> {
@@ -213,7 +253,7 @@ export class SpotifyProvider implements MediaProvider {
     // Le desktop Windows ignore souvent un PUT /play 204 sur un morceau
     // isolé. On active le Computer (sans relancer l'ancien titre), on envoie
     // device_id + URI, on retente, puis album / artiste / file d'attente.
-    const { device, devices } = await this.ensureDesktopDevice();
+    const { device, devices } = await this.ensurePlaybackDevice();
     const diagnostic = (state: SpotifyPlayback | null): string =>
       formatPlaybackDiagnostic(devices, state, device);
 
@@ -330,6 +370,42 @@ export class SpotifyProvider implements MediaProvider {
   private async listAllDevices(): Promise<SpotifyDevice[]> {
     const response = await this.request<SpotifyDevicesResponse>('/me/player/devices');
     return response.devices ?? [];
+  }
+
+  /**
+   * Bureau Windows ou enceinte nommée dans les réglages (`spotifyDeviceName`).
+   */
+  private async ensurePlaybackDevice(): Promise<{
+    device: SpotifyDevice;
+    devices: SpotifyDevice[];
+  }> {
+    if (this.targetDeviceName) {
+      return this.ensureNamedDevice(this.targetDeviceName);
+    }
+    return this.ensureDesktopDevice();
+  }
+
+  private async ensureNamedDevice(wantedName: string): Promise<{
+    device: SpotifyDevice;
+    devices: SpotifyDevice[];
+  }> {
+    let devices: SpotifyDevice[] = [];
+    for (let attempt = 0; attempt < this.targetDeviceRetryAttempts; attempt += 1) {
+      devices = await this.listAllDevices();
+      const selected = pickNamedConnectDevice(devices, wantedName);
+      if (selected?.id) {
+        const device = devices.find((entry) => entry.id === selected.id);
+        if (device?.id) return { device, devices };
+      }
+      if (attempt < this.targetDeviceRetryAttempts - 1) {
+        await this.sleep(this.targetDeviceRetryMs);
+      }
+    }
+    throw new Error(this.namedDeviceNotFoundMessage(wantedName));
+  }
+
+  private namedDeviceNotFoundMessage(name: string): string {
+    return `Je ne trouve pas « ${name} ». Allume-la ou lance une musique dessus une fois depuis ton téléphone.`;
   }
 
   /**
@@ -504,6 +580,10 @@ export class SpotifyProvider implements MediaProvider {
     }
     const deviceName = state.device?.name ?? state.device?.type ?? 'un autre appareil';
     if (state.device?.id && state.device.id !== expected.id) {
+      if (this.targetDeviceName) {
+        const expectedLabel = this.targetDeviceName || expected.name || 'ce PC';
+        return `La lecture est sur « ${deviceName} », pas sur « ${expectedLabel} ». ${diagnostic}`;
+      }
       return `La lecture est sur « ${deviceName} », pas sur l'application de bureau Windows. ${diagnostic}`;
     }
     if ((state.device?.volume_percent ?? 0) <= 0) {
@@ -525,9 +605,19 @@ export class SpotifyProvider implements MediaProvider {
   }
 
   async setVolume(percent: number): Promise<void> {
-    await this.request(`/me/player/volume?volume_percent=${encodeURIComponent(percent)}`, {
+    const effective = await this.clampVolumeForActiveDevice(percent);
+    await this.request(`/me/player/volume?volume_percent=${encodeURIComponent(effective)}`, {
       method: 'PUT',
     });
+  }
+
+  private async clampVolumeForActiveDevice(percent: number): Promise<number> {
+    const state = await this.fetchPlaybackSnapshot();
+    const type = state?.device?.type ?? '';
+    if (/speaker/i.test(type)) {
+      return Math.min(percent, this.speakerMaxVolume);
+    }
+    return percent;
   }
 
   async setShuffle(enabled: boolean): Promise<void> {

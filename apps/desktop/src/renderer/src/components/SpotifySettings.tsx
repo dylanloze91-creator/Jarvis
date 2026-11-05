@@ -1,28 +1,34 @@
-import { useEffect, useState } from 'react';
-import { CheckCircle2, CircleSlash, ExternalLink, Loader2, LogOut } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
+import { CheckCircle2, CircleSlash, ExternalLink, Loader2, LogOut, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Field, Input } from '@/components/ui/field';
-import type { SpotifyStatus } from '../../../shared/ipc';
+import type { SpotifyConnectDeviceSummary, SpotifyStatus } from '../../../shared/ipc';
 
 interface SpotifySettingsSectionProps {
   clientId: string;
   onChange: (clientId: string) => void;
+  deviceName: string;
+  onDeviceNameChange: (deviceName: string) => void;
 }
 
+const PC_PLAYBACK_VALUE = '';
+
 /**
- * Réglages Spotify : identifiant client, statut de connexion (connecté / non
- * connecté), et les deux gestes explicites demandés lors de l'intégration de
- * cette fonctionnalité — un bouton pour lancer la connexion, un pour se
- * déconnecter en supprimant le jeton local. Le statut et les actions
- * utilisent toujours la valeur actuelle du champ (`clientId`), pas besoin
- * d'enregistrer les réglages avant de tester — même principe que la section
- * Ollama.
+ * Réglages Spotify : identifiant client, enceinte de lecture, statut de connexion.
  */
-export function SpotifySettingsSection({ clientId, onChange }: SpotifySettingsSectionProps) {
+export function SpotifySettingsSection({
+  clientId,
+  onChange,
+  deviceName,
+  onDeviceNameChange,
+}: SpotifySettingsSectionProps) {
   const [status, setStatus] = useState<SpotifyStatus | null>(null);
   const [loadingStatus, setLoadingStatus] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [connectError, setConnectError] = useState<string | null>(null);
+  const [devices, setDevices] = useState<SpotifyConnectDeviceSummary[]>([]);
+  const [loadingDevices, setLoadingDevices] = useState(false);
+  const [devicesError, setDevicesError] = useState<string | null>(null);
 
   const refreshStatus = (): void => {
     setLoadingStatus(true);
@@ -32,9 +38,33 @@ export function SpotifySettingsSection({ clientId, onChange }: SpotifySettingsSe
       .finally(() => setLoadingStatus(false));
   };
 
+  const refreshDevices = useCallback((): void => {
+    if (!clientId.trim()) {
+      setDevices([]);
+      return;
+    }
+    setLoadingDevices(true);
+    setDevicesError(null);
+    void window.jarvis.settings
+      .spotifyListDevices(clientId)
+      .then((list) => {
+        setDevices(list);
+      })
+      .catch((error: unknown) => {
+        setDevices([]);
+        setDevicesError(error instanceof Error ? error.message : String(error));
+      })
+      .finally(() => setLoadingDevices(false));
+  }, [clientId]);
+
   useEffect(() => {
     refreshStatus();
   }, [clientId]);
+
+  useEffect(() => {
+    if (status?.connected) refreshDevices();
+    else setDevices([]);
+  }, [status?.connected, refreshDevices]);
 
   const connect = (): void => {
     setConnecting(true);
@@ -52,6 +82,8 @@ export function SpotifySettingsSection({ clientId, onChange }: SpotifySettingsSe
     void window.jarvis.settings.spotifyDisconnect(clientId).then(refreshStatus);
   };
 
+  const selectValue = deviceName.trim() ? deviceName : PC_PLAYBACK_VALUE;
+
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-white/8 bg-white/[0.02] p-3">
       <div className="flex items-center justify-between gap-2">
@@ -67,6 +99,57 @@ export function SpotifySettingsSection({ clientId, onChange }: SpotifySettingsSe
           placeholder="Identifiant client Spotify…"
           onChange={(event) => onChange(event.target.value)}
         />
+      </Field>
+
+      <Field
+        label="Enceinte de lecture"
+        hint="Choisis une enceinte Spotify Connect (ex. Devialet) ou laisse « Ce PC » pour l'application Spotify de bureau. Enregistre avec le bouton Enregistrer en bas du panneau."
+      >
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <select
+            className="w-full min-w-0 flex-1 rounded-lg border border-white/10 bg-slate-950/60 px-3 py-2 text-sm text-slate-100 outline-none focus:border-sky-400/40"
+            value={selectValue}
+            disabled={!clientId.trim() || !status?.connected}
+            onChange={(event) => {
+              const value = event.target.value;
+              onDeviceNameChange(value === PC_PLAYBACK_VALUE ? '' : value);
+            }}
+          >
+            <option value={PC_PLAYBACK_VALUE}>Ce PC (application Spotify)</option>
+            {devices.map((device) => (
+              <option key={device.id} value={device.name}>
+                {device.name}
+                {device.is_active ? ' — en cours' : ''}
+              </option>
+            ))}
+          </select>
+          <Button
+            size="sm"
+            variant="subtle"
+            type="button"
+            disabled={!clientId.trim() || !status?.connected || loadingDevices}
+            onClick={refreshDevices}
+          >
+            {loadingDevices ? (
+              <Loader2 className="size-3.5 animate-spin" />
+            ) : (
+              <RefreshCw className="size-3.5" />
+            )}
+            Actualiser la liste
+          </Button>
+        </div>
+        {devicesError ? (
+          <p className="text-xs text-amber-200/90">{devicesError}</p>
+        ) : null}
+        {deviceName.trim() &&
+        status?.connected &&
+        devices.length > 0 &&
+        !devices.some((device) => device.name === deviceName.trim()) ? (
+          <p className="text-xs text-slate-500">
+            Enregistré : « {deviceName.trim()} » — actualise la liste si l'enceinte n'apparaît pas
+            (elle peut être endormie).
+          </p>
+        ) : null}
       </Field>
 
       <StatusBadge status={status} loading={loadingStatus} clientId={clientId} />

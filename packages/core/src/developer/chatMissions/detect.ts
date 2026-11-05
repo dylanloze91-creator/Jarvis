@@ -12,6 +12,14 @@ const CODE_QUESTION =
 export function looksLikeCodeExplanationOnly(text: string): boolean {
   const t = text.trim();
   if (t.length < 4) return false;
+  if (/^\s*comment\b/iu.test(t)) return true;
+  if (/^\s*pourquoi\b/iu.test(t)) return true;
+  if (/^\s*(?:quel|quelle|quels|quelles)\b/iu.test(t)) return true;
+  if (/^\s*qu['’]est[- ]ce\b/iu.test(t)) return true;
+  if (/^\s*est-ce que\b/iu.test(t)) {
+    if (/^\s*est-ce que tu (?:peux|pourrais)\b/iu.test(t)) return false;
+    return true;
+  }
   if (CODE_QUESTION.test(t)) return true;
   if (/^\s*comment on\b/iu.test(t)) return true;
   if (/^\s*montre[- ]moi un exemple\b/iu.test(t) && !/\b(crée|créer|fais|ajoute|corrige)\b/iu.test(t)) {

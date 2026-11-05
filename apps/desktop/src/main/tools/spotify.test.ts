@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { MediaProvider, MediaTrack, ToolContext } from '@jarvis/core';
+import { parseSettings } from '@jarvis/core';
 import { createSpotifyTools } from './spotify.js';
 import type { SpotifyBridge } from '../media/SpotifyBridge.js';
 
@@ -35,9 +36,13 @@ function stubProvider(overrides: Partial<MediaProvider> = {}): MediaProvider {
   };
 }
 
+function spotifyDeps(getProvider: () => MediaProvider, settings = parseSettings({})) {
+  return { spotify: fakeBridge(getProvider), getSettings: () => settings };
+}
+
 describe('createSpotifyTools', () => {
   it('déclare les huit outils, tous en risque « safe » (y compris spotify_play)', () => {
-    const tools = createSpotifyTools({ spotify: fakeBridge(() => stubProvider()) });
+    const tools = createSpotifyTools(spotifyDeps(() => stubProvider()));
 
     expect(tools.map((tool) => tool.name)).toEqual([
       'spotify_play',
@@ -60,7 +65,7 @@ describe('createSpotifyTools', () => {
     const provider = stubProvider({
       searchTrack: vi.fn(async () => track),
     });
-    const [playTool] = createSpotifyTools({ spotify: fakeBridge(() => provider) });
+    const [playTool] = createSpotifyTools(spotifyDeps(() => provider));
 
     const result = await playTool!.run({ query: 'get lucky' }, fakeContext());
 
@@ -77,7 +82,7 @@ describe('createSpotifyTools', () => {
 
   it('spotify_play répond clairement, sans lancer de lecture, quand aucun morceau ne correspond', async () => {
     const provider = stubProvider({ searchTrack: vi.fn(async () => null) });
-    const [playTool] = createSpotifyTools({ spotify: fakeBridge(() => provider) });
+    const [playTool] = createSpotifyTools(spotifyDeps(() => provider));
 
     const result = await playTool!.run({ query: 'introuvable' }, fakeContext());
 
@@ -95,7 +100,7 @@ describe('createSpotifyTools', () => {
         );
       }),
     });
-    const [playTool] = createSpotifyTools({ spotify: fakeBridge(() => provider) });
+    const [playTool] = createSpotifyTools(spotifyDeps(() => provider));
 
     const result = await playTool!.run({ query: 'get lucky' }, fakeContext());
 
@@ -112,7 +117,7 @@ describe('createSpotifyTools', () => {
         throw new Error('Spotify API 500: erreur serveur');
       }),
     });
-    const [playTool] = createSpotifyTools({ spotify: fakeBridge(() => provider) });
+    const [playTool] = createSpotifyTools(spotifyDeps(() => provider));
 
     const result = await playTool!.run({ query: 'x' }, fakeContext());
 
@@ -127,7 +132,7 @@ describe('createSpotifyTools', () => {
         "Spotify n'est pas configuré. Renseigne l'identifiant client Spotify dans les réglages de Jarvis.",
       );
     });
-    const tools = createSpotifyTools({ spotify: bridge });
+    const tools = createSpotifyTools({ spotify: bridge, getSettings: () => parseSettings({}) });
     const pauseTool = tools.find((tool) => tool.name === 'spotify_pause')!;
 
     const result = await pauseTool.run({}, fakeContext());
@@ -138,7 +143,7 @@ describe('createSpotifyTools', () => {
 
   it('spotify_set_volume transmet le pourcentage demandé', async () => {
     const provider = stubProvider();
-    const [, , , , , volumeTool] = createSpotifyTools({ spotify: fakeBridge(() => provider) });
+    const [, , , , , volumeTool] = createSpotifyTools(spotifyDeps(() => provider));
 
     const result = await volumeTool!.run({ percent: 42 }, fakeContext());
 
@@ -155,7 +160,7 @@ describe('createSpotifyTools', () => {
         deviceName: 'Ordinateur de bureau',
       })),
     });
-    const currentTrackTool = createSpotifyTools({ spotify: fakeBridge(() => provider) }).find(
+    const currentTrackTool = createSpotifyTools(spotifyDeps(() => provider)).find(
       (tool) => tool.name === 'spotify_current_track',
     )!;
 
@@ -167,14 +172,25 @@ describe('createSpotifyTools', () => {
     expect(result.content).toContain('Ordinateur de bureau');
   });
 
-  it('spotify_current_track répond sans erreur quand rien ne joue', async () => {
-    const currentTrackTool = createSpotifyTools({ spotify: fakeBridge(() => stubProvider()) }).find(
-      (tool) => tool.name === 'spotify_current_track',
+  it('spotify_set_volume annonce le plafond enceinte quand le volume demandé est réduit', async () => {
+    const provider = stubProvider({
+      setVolume: vi.fn(async () => undefined),
+      getPlaybackState: vi.fn(async () => ({
+        isPlaying: true,
+        volumePercent: 70,
+        track: fakeTrack(),
+        deviceName: 'Devialet',
+      })),
+    });
+    const volumeTool = createSpotifyTools(spotifyDeps(() => provider)).find(
+      (tool) => tool.name === 'spotify_set_volume',
     )!;
 
-    const result = await currentTrackTool.run({}, fakeContext());
+    const result = await volumeTool.run({ percent: 100 }, fakeContext());
 
+    expect(provider.setVolume).toHaveBeenCalledWith(100);
     expect(result.ok).toBe(true);
-    expect(result.content).toContain('Aucun morceau Spotify');
+    expect(result.content).toContain('70');
+    expect(result.content).toMatch(/plafond/);
   });
 });

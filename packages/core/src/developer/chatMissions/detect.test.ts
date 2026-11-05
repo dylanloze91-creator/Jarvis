@@ -41,6 +41,11 @@ describe('directMissionRequest (5.0.69)', () => {
   it('refus : questions, exemples, conseils, merci (synthetique-test)', () => {
     expect(directMissionRequest("c'est quoi une boucle for")).toBeNull();
     expect(directMissionRequest('comment on fait un script Python ?')).toBeNull();
+    expect(directMissionRequest('Comment je peux créer un script Python ?')).toBeNull();
+    expect(directMissionRequest("Est-ce qu'on peut faire un jeu en Python ?")).toBeNull();
+    expect(
+      directMissionRequest('Est-ce que tu peux me faire un script de sauvegarde ?'),
+    ).toMatchObject({ type: 'nouveau-projet' });
     expect(directMissionRequest('montre-moi un exemple de fonction')).toBeNull();
     expect(directMissionRequest('tu me conseilles quel langage pour un robot ?')).toBeNull();
     expect(directMissionRequest('merci')).toBeNull();

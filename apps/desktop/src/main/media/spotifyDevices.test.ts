@@ -6,6 +6,7 @@ import {
   isWebPlayerDevice,
   looksLikeLocalDesktopName,
   pickLocalDesktopDevice,
+  pickNamedConnectDevice,
 } from './spotifyDevices.js';
 import { windowsSpotifyExeCandidates } from './launchSpotifyDesktop.js';
 
@@ -40,6 +41,34 @@ const ordinateur = {
   name: 'Ordinateur',
   type: 'Computer',
 };
+
+const devialet = {
+  id: 'dev-1',
+  is_active: false,
+  is_restricted: false,
+  name: 'Devialet Phantom',
+  type: 'Speaker',
+};
+
+describe('pickNamedConnectDevice', () => {
+  it('renvoie null si le réglage est vide (mode bureau)', () => {
+    expect(pickNamedConnectDevice([devialet], '')).toBeNull();
+    expect(pickNamedConnectDevice([devialet], '   ')).toBeNull();
+  });
+
+  it('trouve une correspondance exacte insensible à la casse et aux accents', () => {
+    expect(pickNamedConnectDevice([devialet], 'devialet phantom')?.id).toBe('dev-1');
+    expect(pickNamedConnectDevice([devialet], 'DÉVIALET PHANTOM')?.id).toBe('dev-1');
+  });
+
+  it('accepte une correspondance partielle (le nom contient la cible)', () => {
+    expect(pickNamedConnectDevice([devialet], 'Devialet')?.id).toBe('dev-1');
+  });
+
+  it('renvoie null si l’enceinte est absente', () => {
+    expect(pickNamedConnectDevice([phone, desktop], 'Devialet')).toBeNull();
+  });
+});
 
 describe('spotifyDevices', () => {
   it('ne traite pas le lecteur web comme l’appli de bureau', () => {

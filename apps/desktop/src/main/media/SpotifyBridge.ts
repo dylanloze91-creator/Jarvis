@@ -1,5 +1,7 @@
 import type { Settings } from '@jarvis/core';
-import { SpotifyProvider } from './SpotifyProvider.js';
+import { SpotifyProvider, type SpotifyConnectDeviceSummary } from './SpotifyProvider.js';
+
+export type { SpotifyConnectDeviceSummary };
 
 export interface SpotifyStatus {
   /** Un identifiant client est renseigné dans les réglages. */
@@ -19,7 +21,7 @@ export type SpotifyConnectResult = { ok: true } | { ok: false; error: string };
  * d'authentification restent cohérents entre les deux.
  */
 export class SpotifyBridge {
-  private cached: { clientId: string; provider: SpotifyProvider } | null = null;
+  private cached: { key: string; provider: SpotifyProvider } | null = null;
   private linked = false;
 
   /** Vrai après une connexion réussie. Le profil modeste s’en sert pour ne rien proposer avant. */
@@ -75,13 +77,34 @@ export class SpotifyBridge {
     if (!clientIdOverride) this.linked = false;
   }
 
+  /** Appareils Spotify Connect visibles (onglet Spotify des réglages). */
+  async listDevices(clientIdOverride?: string): Promise<SpotifyConnectDeviceSummary[]> {
+    const clientId = this.resolveClientId(clientIdOverride);
+    if (!clientId) return [];
+    try {
+      return await this.providerFor(clientId).listConnectDevices();
+    } catch {
+      return [];
+    }
+  }
+
   private resolveClientId(clientIdOverride?: string): string {
     return (clientIdOverride ?? this.getSettings().spotifyClientId).trim();
   }
 
   private providerFor(clientId: string): SpotifyProvider {
-    if (!this.cached || this.cached.clientId !== clientId) {
-      this.cached = { clientId, provider: new SpotifyProvider(clientId) };
+    const settings = this.getSettings();
+    const targetDeviceName = (settings.spotifyDeviceName ?? '').trim();
+    const speakerMaxVolume = settings.spotifySpeakerMaxVolume ?? 70;
+    const key = `${clientId}\0${targetDeviceName}\0${speakerMaxVolume}`;
+    if (!this.cached || this.cached.key !== key) {
+      this.cached = {
+        key,
+        provider: new SpotifyProvider(clientId, {
+          targetDeviceName,
+          speakerMaxVolume,
+        }),
+      };
     }
     return this.cached.provider;
   }

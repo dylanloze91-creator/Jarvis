@@ -50,6 +50,7 @@ Statuts possibles : `en cours`, `en pause`, `bloqué`, `terminé`.
 | Cursor | `cursor/chat-unifie-5068` | Chat unifié, phase 1 (5.0.68) | — | 2026-11-04 | terminé |
 | Claude Code | `claude/entrainement-1` | Entraînement de l'élève, étapes 1 à 4 du README (préparation, mise en place, dry-run, essai 20 pas sur la carte) ; puis entraînement complet du 3B sur la carte (demandé le 2026-11-04 au soir) ; export `jarvis-coder-3b` et examen `lab:compare` ; rapports `rapports/2026-11-04-entrainement-essai-1.md`, `rapports/2026-11-05-entrainement-complet-3b.md`, `rapports/2026-11-05-examen-jarvis-coder-3b-contre-qwen2-5-coder-3b.md` | — | 2026-11-04 | terminé |
 | Cursor | `cursor/mission-directe-5069` | Mission directe | — | 2026-11-04 | terminé |
+| Cursor | `cursor/spotify-enceinte-cible` | Spotify sur enceinte Connect choisie (Devialet) | — | 2026-11-04 | terminé |
 
 ## Ressource GPU / Ollama
 

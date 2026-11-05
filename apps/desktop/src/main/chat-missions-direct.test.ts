@@ -247,4 +247,40 @@ describe('missions directes depuis la discussion (5.0.69)', () => {
     expect(fallback?.objectifReprise).toBe(true);
     expect(fallback?.objectif).toContain('fichiers csv');
   });
+
+  it('arrêt pendant le tour direct → pas de carte', async () => {
+    const getSettings = () =>
+      core.parseSettings({
+        provider: 'ollama',
+        model: 'qwen2.5-coder:7b',
+        orchestra: ORCHESTRA,
+        developer: {
+          enabled: true,
+          repoPath: 'C:\\dev\\Jarvis',
+          chatMissions: true,
+          codeModel: 'qwen2.5-coder:7b',
+        },
+      });
+    const hub = new ChatMissionHub({ getSettings, developer: () => null });
+    const { session, sender, events } = sessionWithHub(hub, (config) => ({
+      id: 'ollama',
+      label: 'Ollama',
+      model: config.model,
+      requiresApiKey: false,
+      async *streamChat(request) {
+        if ((request.system ?? '').includes('chef d’orchestre')) {
+          yield { type: 'text' as const, delta: 'code' };
+          yield { type: 'done' as const, finishReason: 'stop' as const };
+          return;
+        }
+        throw new Error('modèle code interdit');
+      },
+    }));
+    const phrase =
+      'Jarvis, écris-moi un script Python pour lancer mes impressions 3D depuis Mainsail';
+    const sendPromise = session.send(sender, { conversationId: null, text: phrase });
+    session.cancel();
+    await sendPromise;
+    expect(events.some((event) => event.type === 'mission_proposal')).toBe(false);
+  });
 });

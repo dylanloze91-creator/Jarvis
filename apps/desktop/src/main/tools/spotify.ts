@@ -1,9 +1,10 @@
 import { z } from 'zod';
-import { defineTool } from '@jarvis/core';
+import { defineTool, type Settings } from '@jarvis/core';
 import type { SpotifyBridge } from '../media/SpotifyBridge.js';
 
 export interface SpotifyToolsDeps {
   spotify: SpotifyBridge;
+  getSettings: () => Settings;
 }
 
 function describeError(error: unknown): string {
@@ -23,7 +24,7 @@ function describeSpotifyFailure(error: unknown): string {
   }
   // Messages déjà rédigés : pas de lecteur audible, 204 silencieux, volume 0, mauvais appareil.
   if (
-    /aucun lecteur|lecture n'a pas démarré|lecture n'est pas confirmée|volume est à 0|pas sur l'application de bureau|Spotify est fermé|appareil Spotify est indisponible|Premium|jeton Spotify|HTTP 429|Appareils Connect|is_playing=/i.test(
+    /Je ne trouve pas|aucun lecteur|lecture n'a pas démarré|lecture n'est pas confirmée|volume est à 0|pas sur l'application de bureau|pas sur «|Spotify est fermé|appareil Spotify est indisponible|Premium|jeton Spotify|HTTP 429|Appareils Connect|is_playing=/i.test(
       message,
     )
   ) {
@@ -73,9 +74,20 @@ export function createSpotifyTools(deps: SpotifyToolsDeps) {
           artistUri: track.artistUri,
         });
 
+        const targetSpeaker = (deps.getSettings().spotifyDeviceName ?? '').trim();
+        const playback = await getSpotify().getPlaybackState();
+        const where = playback?.deviceName;
+        const artists = track.artists.join(', ');
+        const verified =
+          ' Lecture vérifiée : is_playing=true et URI confirmée.';
+        const content =
+          targetSpeaker && where
+            ? `Lecture sur « ${where} » : ${track.title} — ${artists}.${verified}`
+            : `Lecture lancée sur Spotify : ${track.title} — ${artists}.${verified}`;
+
         return {
           ok: true,
-          content: `Lecture lancée sur Spotify : ${track.title} — ${track.artists.join(', ')}. Lecture vérifiée : is_playing=true et URI confirmée.`,
+          content,
           data: track,
         };
       } catch (error) {
@@ -164,6 +176,14 @@ export function createSpotifyTools(deps: SpotifyToolsDeps) {
     execute: async ({ percent }) => {
       try {
         await getSpotify().setVolume(percent);
+        const state = await getSpotify().getPlaybackState();
+        const applied = state?.volumePercent ?? percent;
+        if (applied < percent) {
+          return {
+            ok: true,
+            content: `Volume Spotify réglé à ${applied} % (plafond de sécurité pour l'enceinte).`,
+          };
+        }
         return { ok: true, content: `Volume Spotify réglé à ${percent} %.` };
       } catch (error) {
         return { ok: false, content: `Spotify : ${describeError(error)}` };

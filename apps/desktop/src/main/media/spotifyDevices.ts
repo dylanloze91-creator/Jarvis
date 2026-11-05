@@ -52,6 +52,39 @@ export function isDesktopComputerDevice(device: ConnectDevice, hostname = ''): b
  * Parmi les ordinateurs : l'appareil déjà actif, puis le hostname local,
  * puis un nom FR/EN de PC, puis le premier Computer. Jamais le téléphone.
  */
+/** Normalise pour comparer noms d'enceintes (casse, accents). */
+export function normalizeConnectDeviceName(name: string): string {
+  return name
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .trim()
+    .toLowerCase();
+}
+
+/**
+ * Choix d'une enceinte Spotify Connect par nom (réglage `spotifyDeviceName`).
+ * Correspondance exacte d'abord, puis le nom d'appareil contient la cible.
+ * Réglage vide → null (le caller utilise le bureau).
+ */
+export function pickNamedConnectDevice(
+  devices: ConnectDevice[],
+  wantedName: string,
+): ConnectDevice | null {
+  const wanted = normalizeConnectDeviceName(wantedName);
+  if (!wanted) return null;
+
+  const eligible = devices.filter((device) => device.id && !device.is_restricted);
+  const exact = eligible.find(
+    (device) => normalizeConnectDeviceName(device.name) === wanted,
+  );
+  if (exact) return exact;
+
+  return (
+    eligible.find((device) => normalizeConnectDeviceName(device.name).includes(wanted)) ??
+    null
+  );
+}
+
 export function pickLocalDesktopDevice(
   devices: ConnectDevice[],
   hostname = '',

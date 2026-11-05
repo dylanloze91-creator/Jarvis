@@ -469,7 +469,7 @@ export class ChatSession {
       if (this.controller === controller) this.controller = null;
     }
 
-    if (appendMissionProposal) {
+    if (appendMissionProposal && !controller.signal.aborted && !superseded()) {
       appendMissionProposal();
       visibleReply = true;
     }
@@ -479,7 +479,9 @@ export class ChatSession {
       chatMissionHub &&
       !missionProposed &&
       !appendMissionProposal &&
-      !directMissionBlocked
+      !directMissionBlocked &&
+      !controller.signal.aborted &&
+      !superseded()
     ) {
       const lastAssistant = [...messages]
         .reverse()

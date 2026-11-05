@@ -753,6 +753,119 @@ describe('SpotifyProvider', () => {
     await expect(playProvider().play('spotify:track:xyz')).rejects.toThrow(/volume est à 0/);
   });
 
+  it('joue sur l’enceinte nommée sans lancer l’application de bureau', async () => {
+    await seedValidToken();
+    const speaker = spotifyDevice({
+      id: 'dev-1',
+      is_active: false,
+      type: 'Speaker',
+      name: 'Devialet Phantom',
+      volume_percent: 40,
+    });
+    const fetchMock = playbackFetchMock({
+      devices: [speaker],
+      playback: {
+        is_playing: true,
+        item: { uri: 'spotify:track:xyz', name: 'Titre' },
+        device: { id: 'dev-1', name: 'Devialet Phantom', type: 'Speaker', volume_percent: 40 },
+      },
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const launchDesktopClient = vi.fn(async () => ({ ok: true }));
+    await playProvider({
+      launchDesktopClient,
+      targetDeviceName: 'Devialet',
+    }).play('spotify:track:xyz');
+
+    expect(launchDesktopClient).not.toHaveBeenCalled();
+    expect(
+      fetchMock.mock.calls.some(([url]) =>
+        String(url).includes('/me/player/play?device_id=dev-1'),
+      ),
+    ).toBe(true);
+  });
+
+  it('réessaie quand l’enceinte endormie réapparaît au second essai', async () => {
+    await seedValidToken();
+    const speaker = spotifyDevice({
+      id: 'dev-1',
+      is_active: false,
+      type: 'Speaker',
+      name: 'Devialet Phantom',
+      volume_percent: 35,
+    });
+    const fetchMock = playbackFetchMock({
+      devicesSequence: [[], [speaker]],
+      playback: {
+        is_playing: true,
+        item: { uri: 'spotify:track:xyz', name: 'Titre' },
+        device: { id: 'dev-1', name: 'Devialet Phantom', type: 'Speaker', volume_percent: 35 },
+      },
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const launchDesktopClient = vi.fn(async () => ({ ok: true }));
+    await playProvider({
+      launchDesktopClient,
+      targetDeviceName: 'Devialet',
+      targetDeviceRetryAttempts: 2,
+      targetDeviceRetryMs: 1,
+    }).play('spotify:track:xyz');
+
+    expect(launchDesktopClient).not.toHaveBeenCalled();
+    expect(
+      fetchMock.mock.calls.some(([url]) =>
+        String(url).includes('/me/player/play?device_id=dev-1'),
+      ),
+    ).toBe(true);
+  });
+
+  it('renvoie une erreur claire en français si l’enceinte cible reste introuvable', async () => {
+    await seedValidToken();
+    const fetchMock = playbackFetchMock({
+      devices: [spotifyDevice({ id: 'pc-1', type: 'Computer', name: 'DESKTOP-THX' })],
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const launchDesktopClient = vi.fn(async () => ({ ok: true }));
+    await expect(
+      playProvider({
+        launchDesktopClient,
+        targetDeviceName: 'Devialet',
+        targetDeviceRetryAttempts: 2,
+        targetDeviceRetryMs: 1,
+      }).play('spotify:track:xyz'),
+    ).rejects.toThrow(/Je ne trouve pas « Devialet »/);
+
+    expect(launchDesktopClient).not.toHaveBeenCalled();
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/me/player/play'))).toBe(
+      false,
+    );
+  });
+
+  it('plafonne le volume sur une enceinte Speaker', async () => {
+    await seedValidToken();
+    const fetchMock = playbackFetchMock({
+      devices: [spotifyDevice({ id: 'dev-1', type: 'Speaker', name: 'Salon' })],
+      playback: {
+        is_playing: true,
+        item: { uri: 'spotify:track:1', name: 'Titre' },
+        device: { id: 'dev-1', name: 'Salon', type: 'Speaker', volume_percent: 30 },
+      },
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const provider = playProvider({ speakerMaxVolume: 70 });
+    await provider.setVolume(100);
+
+    expect(
+      fetchMock.mock.calls.some(
+        ([url]) => String(url).includes('/me/player/volume') && String(url).includes('volume_percent=70'),
+      ),
+    ).toBe(true);
+  });
+
   it('rafraîchit un jeton expiré avant d’appeler l’API, et persiste le nouveau sur disque', async () => {
     await seedExpiredToken();
 
