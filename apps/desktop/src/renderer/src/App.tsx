@@ -53,8 +53,29 @@ function sceneFromLocation(): string | null {
   return new URLSearchParams(window.location.search).get('scene');
 }
 
+function initialViewFromScene(): View {
+  const scene = sceneFromLocation();
+  if (scene === 'settings' || scene === 'settings-v2' || scene === 'settings-search') return 'settings';
+  if (scene === 'developer') return 'developer';
+  return 'chat';
+}
+
+function initialOnboardingPhase(): 'flow' | 'summary' | null {
+  const scene = sceneFromLocation();
+  if (scene === 'onboarding') return 'flow';
+  if (scene === 'onboarding-summary') return 'summary';
+  return null;
+}
+
+function initialOnboardingAnswers(): QuestionnaireAnswers {
+  if (sceneFromLocation() === 'onboarding-summary') {
+    return { talkMode: 'voice', character: 'complice', confirmBefore: 'risky' };
+  }
+  return {};
+}
+
 export default function App() {
-  const [view, setView] = useState<View>(() => (sceneFromLocation() === 'settings' ? 'settings' : 'chat'));
+  const [view, setView] = useState<View>(() => initialViewFromScene());
   const [settings, setSettings] = useState<Settings | null>(null);
   const [status, setStatus] = useState<RuntimeStatus | null>(null);
   const [tools, setTools] = useState<ToolInfo[]>([]);
@@ -62,8 +83,12 @@ export default function App() {
   const [booting, setBooting] = useState(true);
   const [showSetup, setShowSetup] = useState(false);
   const [pendingDevVoice, setPendingDevVoice] = useState<string | null>(null);
-  const [onboardingPhase, setOnboardingPhase] = useState<'flow' | 'summary' | null>(null);
-  const [onboardingAnswers, setOnboardingAnswers] = useState<QuestionnaireAnswers>({});
+  const [onboardingPhase, setOnboardingPhase] = useState<'flow' | 'summary' | null>(() =>
+    initialOnboardingPhase(),
+  );
+  const [onboardingAnswers, setOnboardingAnswers] = useState<QuestionnaireAnswers>(() =>
+    initialOnboardingAnswers(),
+  );
   const mainPaneRef = useRef<HTMLDivElement>(null);
   const seeded = useRef(false);
 
@@ -136,8 +161,25 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (seeded.current) return;
     const scene = sceneFromLocation();
+    if (scene === 'onboarding') {
+      setOnboardingPhase('flow');
+      return;
+    }
+    if (scene === 'onboarding-summary') {
+      setOnboardingAnswers({ talkMode: 'voice', character: 'complice', confirmBefore: 'risky' });
+      setOnboardingPhase('summary');
+      return;
+    }
+    if (scene === 'settings-v2' || scene === 'settings-search') {
+      setView('settings');
+      return;
+    }
+    if (scene === 'dashboard-v2') {
+      setView('chat');
+      return;
+    }
+    if (seeded.current) return;
     if (scene === 'chat') {
       seeded.current = true;
       chat.load(SAMPLE_CONVERSATION);
@@ -163,19 +205,6 @@ export default function App() {
     } else if (scene === 'google-confirm' && !booting) {
       seeded.current = true;
       chat.send('Envoie à Marie un mail pour confirmer la réunion de jeudi à 10 h.');
-    } else if (scene === 'onboarding') {
-      seeded.current = true;
-      setOnboardingPhase('flow');
-    } else if (scene === 'onboarding-summary') {
-      seeded.current = true;
-      setOnboardingAnswers({ talkMode: 'voice', character: 'complice', confirmBefore: 'risky' });
-      setOnboardingPhase('summary');
-    } else if (scene === 'settings-v2' || scene === 'settings-search') {
-      seeded.current = true;
-      setView('settings');
-    } else if (scene === 'dashboard-v2') {
-      seeded.current = true;
-      setView('chat');
     }
   }, [chat.load, chat.send, booting]);
 

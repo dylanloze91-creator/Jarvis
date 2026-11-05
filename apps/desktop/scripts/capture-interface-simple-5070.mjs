@@ -9,12 +9,33 @@ const OUT = process.env.CAPTURE_DIR ?? join(process.cwd(), 'rapports/interface-s
 const CHROME = process.env.CHROME_PATH ?? '/usr/bin/google-chrome';
 
 const shots = [
-  { scene: 'onboarding', layout: 'dashboard', file: 'onboarding.png', wait: 'Comment je t’appelle' },
-  { scene: 'onboarding-summary', layout: 'dashboard', file: 'onboarding-summary.png', wait: 'Voici ce que je vais changer' },
-  { scene: 'settings-v2', layout: 'dashboard', file: 'settings-v2.png', wait: 'Rechercher un réglage' },
-  { scene: 'settings-search', layout: 'dashboard', file: 'settings-search.png', wait: 'Rechercher un réglage' },
-  { scene: 'dashboard-v2', layout: 'dashboard', file: 'dashboard-v2.png', wait: 'JARVIS' },
-  { scene: 'settings', layout: 'compact', file: 'settings-compact-before.png', wait: 'Rechercher un réglage' },
+  { scene: 'onboarding', layout: 'compact', file: 'onboarding.png', waitText: 'Question 1' },
+  {
+    scene: 'onboarding-summary',
+    layout: 'compact',
+    file: 'onboarding-summary.png',
+    waitText: 'Voici ce que je vais changer',
+  },
+  {
+    scene: 'settings-v2',
+    layout: 'dashboard',
+    file: 'settings-v2.png',
+    waitSelector: 'input[aria-label="Rechercher un réglage"]',
+  },
+  {
+    scene: 'settings-search',
+    layout: 'dashboard',
+    file: 'settings-search.png',
+    waitSelector: 'input[aria-label="Rechercher un réglage"]',
+    search: 'spotify',
+  },
+  { scene: 'dashboard-v2', layout: 'dashboard', file: 'dashboard-v2.png', waitText: 'JARVIS' },
+  {
+    scene: 'settings',
+    layout: 'compact',
+    file: 'settings-compact-before.png',
+    waitSelector: 'input[aria-label="Rechercher un réglage"]',
+  },
 ];
 
 const browser = await puppeteer.launch({
@@ -33,16 +54,28 @@ try {
       timeout: 120_000,
     });
     await page.waitForSelector('[data-ui-ready="yes"]', { timeout: 45_000 }).catch(() => undefined);
-    await page.waitForFunction(
-      (text) => (document.body.textContent || '').includes(text),
-      { timeout: 45_000 },
-      shot.wait,
-    );
+    if (shot.waitSelector) {
+      await page.waitForSelector(shot.waitSelector, { timeout: 45_000 });
+    } else if (shot.waitText) {
+      await page.waitForFunction(
+        (text) => (document.body.textContent || '').toLowerCase().includes(text.toLowerCase()),
+        { timeout: 45_000 },
+        shot.waitText,
+      );
+    }
+    if (shot.search) {
+      const input = await page.waitForSelector('input[aria-label="Rechercher un réglage"]', { timeout: 10_000 });
+      await input.type(shot.search);
+      await new Promise((resolve) => setTimeout(resolve, 400));
+    }
     await new Promise((resolve) => setTimeout(resolve, 500));
     const path = join(OUT, shot.file);
     await page.screenshot({ path, type: 'png' });
     await page.close();
     const info = await stat(path);
+    if (info.size < 8000) {
+      throw new Error(`${path} trop petit (${info.size} octets)`);
+    }
     console.log(`OK ${path} (${info.size})`);
   }
 } finally {

@@ -7,7 +7,7 @@ Date : 2026-11-05. Branche : `cursor/interface-simple-5070` (depuis `origin/main
 - Questionnaire **« Faisons connaissance »** : cœur pur `packages/core/src/onboarding/` (`ONBOARDING_QUESTIONS`, `onboardingPlan`), stockage `userData/questionnaire.json`, résumé avant → après, retour arrière.
 - **Réglages en 6 catégories** avec accordéons, recherche, liens profonds depuis les anciens onglets, indices de dépendances.
 - **Navigation** : barre latérale allégée (Accueil, Historique, Code et projets si Développeur, Réglages, guide, Automatisation « Bientôt »).
-- Tests : `settingsMap.test.ts`, `onboarding.test.ts`, `settingsSearch.test.ts`, `settingsDeepLinks.test.ts` ; suite existante verte (hors `platformerMissionPath.test.ts` Electron sur Linux).
+- Tests : `settingsMap.test.ts`, `onboarding.test.ts`, `settingsSearch.test.ts`, `settingsDeepLinks.test.ts` ; suite desktop verte sur Linux avec `@jarvis/core` compilé et dépendances installées.
 
 ## Ancien emplacement → nouveau (réglages)
 
@@ -33,24 +33,25 @@ Chaque clé du schéma `settingsSchema` est référencée dans `packages/core/sr
 
 ## Captures d’aperçu
 
-Scènes Vite (`http://127.0.0.1:43173/?scene=…&layout=dashboard`) :
+Scènes Vite (`http://127.0.0.1:43173/?scene=…&layout=…`) — script `apps/desktop/scripts/capture-interface-simple-5070.mjs` (Chrome headless + `puppeteer-core`).
 
-| Scène | Fichier prévu |
-| --- | --- |
-| `onboarding` | `rapports/interface-simple-5070-captures/onboarding.png` |
-| `onboarding-summary` | `rapports/interface-simple-5070-captures/onboarding-summary.png` |
-| `settings-v2` | `rapports/interface-simple-5070-captures/settings-v2.png` |
-| `settings-search` | `rapports/interface-simple-5070-captures/settings-search.png` |
-| `dashboard-v2` | `rapports/interface-simple-5070-captures/dashboard-v2.png` |
-| overlay compact (`settings`, `layout=compact`) | `rapports/interface-simple-5070-captures/settings-compact-before.png` |
+![Questionnaire — question 1](interface-simple-5070-captures/onboarding.png)
 
-Script : `apps/desktop/scripts/capture-interface-simple-5070.mjs` (nécessite `puppeteer-core` ou Chrome headless fonctionnel). **Non générées dans l’agent cloud** (Chrome headless n’a pas produit de fichiers ici).
+![Questionnaire — résumé avant application](interface-simple-5070-captures/onboarding-summary.png)
+
+![Réglages — tableau de bord (6 catégories)](interface-simple-5070-captures/settings-v2.png)
+
+![Réglages — recherche « spotify »](interface-simple-5070-captures/settings-search.png)
+
+![Accueil — tableau de bord](interface-simple-5070-captures/dashboard-v2.png)
+
+![Réglages — overlay compact](interface-simple-5070-captures/settings-compact-before.png)
 
 ## Non testé sur Windows
 
 - Premier lancement réel après `MachineSetupFlow` → enchaînement questionnaire.
 - Relance « Jarvis, refais le questionnaire » à l’oral et au clavier en production Electron.
-- `platformerMissionPath.test.ts` et intégration Electron complète.
+- `platformerMissionPath.test.ts` : **échec pré-existant sur environnement incomplet** (Electron binaire absent ou `npm`/`@jarvis/core` non prêt) — même comportement sur `origin/main` une fois le même setup ; les 6 tests passent après `npm ci`, build core et binaire Electron disponible.
 - Capture d’écran Windows des six scènes ci-dessus.
 - Validation visuelle des badges « branché / à brancher / coupé » sur services réels (Spotify, Google, robot).
 
@@ -61,7 +62,7 @@ Script : `apps/desktop/scripts/capture-interface-simple-5070.mjs` (nécessite `p
 Contrôles automatisés exécutés sur la branche :
 
 - `npm run typecheck` : OK
-- `npm test` : OK (672 tests ; 1 suite Electron/`platformerMissionPath` en échec attendu sans Electron)
+- `npm test` : OK (672 tests ; échecs `.NET` / Windows connus hors scope 5.0.70)
 - `npm run lint` : OK
 
 ---

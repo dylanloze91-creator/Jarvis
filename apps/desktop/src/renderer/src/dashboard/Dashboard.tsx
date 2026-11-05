@@ -216,6 +216,9 @@ export function Dashboard({
     if (view !== 'settings') setSettingsTab(undefined);
   }, [view]);
 
+  const [preferredServices, setPreferredServices] = useState<string[] | null>(null);
+  const [questionnairePrompt, setQuestionnairePrompt] = useState(false);
+
   const visibleFunctions = useMemo(() => {
     const base = FUNCTIONS.filter((card) => card.id !== 'video' || settings?.videoAnalysis !== false);
     if (!preferredServices?.length) return base;
@@ -238,9 +241,6 @@ export function Dashboard({
   const navigate = (next: View): void => {
     setView(next);
   };
-
-  const [preferredServices, setPreferredServices] = useState<string[] | null>(null);
-  const [questionnairePrompt, setQuestionnairePrompt] = useState(false);
 
   useEffect(() => {
     void window.jarvis.questionnaire.get().then((state) => {
