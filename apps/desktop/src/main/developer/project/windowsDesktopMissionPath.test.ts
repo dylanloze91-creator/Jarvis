@@ -124,7 +124,13 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await fake.stop();
-  rmSync(base, { recursive: true, force: true });
+  // Windows : `dotnet build` garde parfois un dossier verrouillé quelques instants après la fin
+  // (EBUSY sur rmdir). On réessaie, et un dossier temporaire qui reste ne fait pas échouer la suite.
+  try {
+    rmSync(base, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 });
+  } catch {
+    // dossier temporaire laissé à Windows
+  }
 });
 
 function assertExeAndTests(_projectTitle: string, projectId: string) {
