@@ -44,7 +44,11 @@ import {
   TEAM_SPECS,
   ORCHESTRA_TEAMS,
   chatMissionsEnabled,
+  CHAT_MISSION_DIRECT_INTRO,
   CODE_MISSION_TOOL_PROMPT,
+  directMissionRequest,
+  looksLikeWrittenMissionProposal,
+  missionFromUserPhrase,
   PROPOSER_MISSION_TOOL_NAME,
   redactSecrets,
   type ChatMissionProposalPayload,
@@ -95,6 +99,12 @@ interface TurnRoute {
 async function* fixedReply(text: string): AsyncGenerator<AgentEvent> {
   yield { type: 'assistant_delta', delta: text };
   yield { type: 'assistant_message', message: createMessage('assistant', text) };
+  yield { type: 'done' };
+}
+
+async function* directMissionIntroStream(intro: string): AsyncGenerator<AgentEvent> {
+  yield { type: 'assistant_delta', delta: intro };
+  yield { type: 'assistant_message', message: createMessage('assistant', intro) };
   yield { type: 'done' };
 }
 
@@ -250,16 +260,32 @@ export class ChatSession {
     const route = orchestra
       ? await this.routeTurn(settings, orchestra, input.text, messages, controller.signal)
       : null;
+
+    const chatMissionHub = this.deps.getChatMissionHub?.() ?? null;
+    const chatMissionsOn =
+      Boolean(chatMissionHub?.enabled()) && chatMissionsEnabled(settings) && route?.team === 'code';
+    const wakeWord = { word: settings.voice.wakeWord, variants: settings.voice.wakeWordVariants };
+    const directReq =
+      chatMissionsOn && route?.team === 'code'
+        ? directMissionRequest(input.text, {
+            wakeWord,
+            knownProjectNames: chatMissionHub?.knownProjectNames() ?? [],
+          })
+        : null;
+    const directMissionTake = Boolean(directReq && chatMissionHub && !chatMissionHub.missionBusy());
+    const directMissionBlocked = Boolean(directReq && chatMissionHub && chatMissionHub.missionBusy());
+
     if (route) {
       const routeEvent: ChatEvent = {
         type: 'route',
         team: route.team,
         label: route.label,
-        model: route.model,
-        how: route.how,
+        model: directMissionTake ? 'mission directe' : route.model,
+        how: directMissionTake ? 'mission-directe' : route.how,
       };
       if (
         canOfferTeamValidation(settings) &&
+        !directMissionTake &&
         route.how !== 'calcul' &&
         ORCHESTRA_TEAMS.includes(route.team as OrchestraTeam)
       ) {
@@ -275,12 +301,34 @@ export class ChatSession {
       emit(routeEvent);
     }
 
-    const chatMissionHub = this.deps.getChatMissionHub?.() ?? null;
-    const chatMissionsOn =
-      Boolean(chatMissionHub?.enabled()) && chatMissionsEnabled(settings) && route?.team === 'code';
-
     let run: AsyncGenerator<AgentEvent>;
-    if (route?.reply !== undefined) {
+    let appendMissionProposal: (() => void) | null = null;
+    if (directMissionBlocked && chatMissionHub) {
+      run = fixedReply(
+        'Une mission est déjà en cours. Termine-la ou annule-la avant d’en lancer une autre.',
+      );
+    } else if (directMissionTake && directReq && chatMissionHub) {
+      run = directMissionIntroStream(CHAT_MISSION_DIRECT_INTRO);
+      appendMissionProposal = () => {
+        const recorded = chatMissionHub.recordProposal({
+          type: directReq.type,
+          objectif: directReq.objectif,
+          ...(directReq.langage ? { langage: directReq.langage } : {}),
+        });
+        const proposalMessage = createMessage('assistant', '', {
+          chatMission: { kind: 'proposal', data: recorded.payload },
+          missionId: recorded.payload.proposalId,
+        });
+        messages.push(proposalMessage);
+        chatMissionHub.setConversationContext(conversation.id);
+        chatMissionHub.bindMissionMessage(proposalMessage.id);
+        emit({
+          type: 'mission_proposal',
+          message: proposalMessage,
+          voiceHint: recorded.voiceHint,
+        });
+      };
+    } else if (route?.reply !== undefined) {
       run = fixedReply(route.reply);
     } else if (route?.provider && route.team !== 'calcul' && route.team !== 'horloge') {
       const team = route.team;
@@ -338,6 +386,7 @@ export class ChatSession {
     }
 
     let visibleReply = false;
+    let missionProposed = false;
     try {
       for await (const event of run) {
         switch (event.type) {
@@ -373,6 +422,7 @@ export class ChatSession {
             if (chatMissionsOn && event.outcome.name === PROPOSER_MISSION_TOOL_NAME) {
               const payload = event.outcome.data as ChatMissionProposalPayload | undefined;
               if (payload) {
+                missionProposed = true;
                 const proposalMessage = createMessage('assistant', '', {
                   chatMission: { kind: 'proposal', data: payload },
                   missionId: payload.proposalId,
@@ -417,6 +467,52 @@ export class ChatSession {
       }
     } finally {
       if (this.controller === controller) this.controller = null;
+    }
+
+    if (appendMissionProposal) {
+      appendMissionProposal();
+      visibleReply = true;
+    }
+
+    if (
+      chatMissionsOn &&
+      chatMissionHub &&
+      !missionProposed &&
+      !appendMissionProposal &&
+      !directMissionBlocked
+    ) {
+      const lastAssistant = [...messages]
+        .reverse()
+        .find((message) => message.role === 'assistant' && message.content.trim());
+      if (lastAssistant && looksLikeWrittenMissionProposal(lastAssistant.content)) {
+        const fromUser = missionFromUserPhrase(input.text, {
+          wakeWord,
+          knownProjectNames: chatMissionHub.knownProjectNames(),
+        });
+        if (fromUser) {
+          const recorded = chatMissionHub.recordProposal(
+            {
+              type: fromUser.type,
+              objectif: fromUser.objectif,
+              ...(fromUser.langage ? { langage: fromUser.langage } : {}),
+            },
+            { objectifReprise: true },
+          );
+          const proposalMessage = createMessage('assistant', '', {
+            chatMission: { kind: 'proposal', data: recorded.payload },
+            missionId: recorded.payload.proposalId,
+          });
+          messages.push(proposalMessage);
+          chatMissionHub.setConversationContext(conversation.id);
+          chatMissionHub.bindMissionMessage(proposalMessage.id);
+          emit({
+            type: 'mission_proposal',
+            message: proposalMessage,
+            voiceHint: recorded.voiceHint,
+          });
+          visibleReply = true;
+        }
+      }
     }
 
     if (superseded()) return;

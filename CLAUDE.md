@@ -634,6 +634,17 @@ Cahier : `docs/specs/chat-unifie.md`. Décision **D7** (entrée des missions dep
 - **Voix** : une phrase à l'écran quand une proposition est créée (`voiceHint`), rien d'autre lu à voix haute pour la mission.
 - Tests : `chat-missions-proposer.test.ts`, `chat-unchanged.test.ts` et `orchestra-session.test.ts` verts sans régénération des `__golden__`.
 
+## 5.0.69 — la carte de mission à coup sûr
+
+Cahier : `docs/specs/mission-directe.md`.
+
+- **Chemin direct** (`directMissionRequest`, pur) : demande claire de fichiers → carte sans modèle Code, objectif = phrase utilisateur nettoyée, pastille `mission directe` ; mission en cours → message fixe, pas de carte.
+- **Filet** : modèle Code qui écrit « Objectif : … » sans `proposer_mission` → carte depuis la demande (« Objectif repris de ta demande. »).
+- **Langage** : Python, Rust, etc. → avertissement sur la carte ; objectif transmis avec mention Node pour l'ARCHITECTE.
+- **Consigne Code** : ne jamais écrire une mission en texte ; appeler `proposer_mission` ou répondre normalement.
+- **Discussion unifiée** : avec `developer.chatMissions`, plus de bascule automatique vers l'onglet Développeur ; corrections et préférences restent dans le chat (`classifyUtterance`, `noteToRecord`).
+- Tests : `detect.test.ts`, `chat-missions-direct.test.ts`, `voiceAssistantRoute.test.ts`, `UnifiedJarvisChat.test.tsx` ; suites 5.0.68 inchangées sans régénération des `__golden__`.
+
 ## 5.0.67 — voix locale Piper
 
 Cahier des charges : `docs/specs/voix-jarvis.md` (chantier 1). **Défaut inchangé** : `ttsProvider` reste `browser-local` (`chat-unchanged.test.ts`). L'utilisateur choisit **Piper (voix locale gratuite, sans Internet)** dans Réglages → Voix.
@@ -806,6 +817,7 @@ Corrections de la revue complète (détail : `docs/audit-0410.md` du store du pr
 - **Voix Piper (5.0.67)** : défaut TTS inchangé (`browser-local`) ; Piper = processus séparé, texte jamais en argument de ligne de commande ; espeak-ng jamais lié dans l'appli ; repli voix Windows sur l'enceinte si Piper manque ; `chat-unchanged.test.ts` vert sans régénération.
 - **Trieur (5.0.68)** : coupé par défaut (`orchestra.router` absent) ; aucune phrase utilisateur dans le dépôt ; l'examen ne complète jamais avec des phrases inventées ; l'examen ne fuit pas dans `trieur:generer` (proximité ≥ 0,40 écartée) ; `jarvis-trieur` ne remplace rien tout seul ; chat sans orchestre et orchestre sans trieur = comportement d'avant (`chat-unchanged`, `ollama-unchanged` verts sans régénération).
 - **Missions depuis la discussion (5.0.68)** : `developer.chatMissions` absent ou faux = chat inchangé ; seul `proposer_mission` s'ajoute à l'équipe Code (jamais les `dev_*`) ; rien ne démarre sans « Lancer » ; une mission en cours bloque une nouvelle proposition ; l'enceinte ne lance jamais une mission ; `chat-unchanged.test.ts` vert sans régénération.
+- **Mission directe (5.0.69)** : objectif sur le chemin direct = phrase utilisateur uniquement ; pastille `mission directe` sans appel au modèle Code ; filet si mission écrite en texte ; avec `chatMissions`, pas de redirection fenêtre → panneau Développeur ; `detect.test.ts` et `chat-missions-direct.test.ts` verts sans régénération des `__golden__`.
 
 Travaux **hors scope** de cet arbre (ne pas les reprendre ici) : publication GitHub.
 

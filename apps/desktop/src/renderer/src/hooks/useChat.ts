@@ -23,7 +23,7 @@ export type ChatItem =
       id: string;
       label: string;
       model: string;
-      how: 'calcul' | 'express' | 'cerveau' | 'trieur';
+      how: 'calcul' | 'express' | 'cerveau' | 'trieur' | 'mission-directe';
       validation?: {
         phrase: string;
         context: string;

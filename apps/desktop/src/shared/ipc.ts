@@ -398,7 +398,7 @@ export type ChatEvent =
       team: string;
       label: string;
       model: string;
-      how: 'calcul' | 'express' | 'cerveau' | 'trieur';
+      how: 'calcul' | 'express' | 'cerveau' | 'trieur' | 'mission-directe';
       /** Validation en direct : pastilles ✓ / Changer (seulement si réglages actifs). */
       validation?: {
         phrase: string;
