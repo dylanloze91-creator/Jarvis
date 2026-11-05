@@ -51,6 +51,7 @@ Statuts possibles : `en cours`, `en pause`, `bloqué`, `terminé`.
 | Claude Code | `claude/entrainement-1` | Entraînement de l'élève, étapes 1 à 4 du README (préparation, mise en place, dry-run, essai 20 pas sur la carte) ; puis entraînement complet du 3B sur la carte (demandé le 2026-11-04 au soir) ; export `jarvis-coder-3b` et examen `lab:compare` ; rapports `rapports/2026-11-04-entrainement-essai-1.md`, `rapports/2026-11-05-entrainement-complet-3b.md`, `rapports/2026-11-05-examen-jarvis-coder-3b-contre-qwen2-5-coder-3b.md` | — | 2026-11-04 | terminé |
 | Cursor | `cursor/mission-directe-5069` | Mission directe | — | 2026-11-04 | terminé |
 | Cursor | `cursor/spotify-enceinte-cible` | Spotify sur enceinte Connect choisie (Devialet) | — | 2026-11-04 | terminé |
+| Claude Code | `claude/examen-7b` | Installer le 7B entraîné sur carte louée (`jarvis-coder`, GGUF Q4_K_M via `export_ollama.py --gguf`) et le faire passer l'examen `lab:compare` contre `qwen2.5-coder:7b` (3 passages) ; rapport dans `rapports/` | `AGENTS-COORDINATION.md`, `rapports/2026-11-05-examen-jarvis-coder-contre-qwen2-5-coder-7b.*` | 2026-11-05 | en cours |
 
 ## Ressource GPU / Ollama
 
@@ -58,6 +59,6 @@ Une seule carte (RTX 2060 6 Go) : un seul agent à la fois lance le banc (`npm r
 
 | État | Par qui | Pour quoi | Depuis |
 | --- | --- | --- | --- |
-| libre | — | — | — |
+| occupée | Claude Code | Installation de `jarvis-coder` (7B) et examen `lab:compare` (`claude/examen-7b`) | 2026-11-05 |
 
 Pour réserver : passer l'état à `occupée`, remplir les colonnes, commiter et pousser **avant** de lancer. Pour libérer : remettre `libre` et `—`, commiter et pousser.
