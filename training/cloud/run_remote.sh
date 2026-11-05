@@ -12,6 +12,9 @@
 #   MAX_LENGTH   non fixé par défaut : train_lora.py prend le plafond de la préparation (resume.json)
 #   QUANT=1      1 = QLoRA 4 bits (défaut, suffit sur 24 Go) ; 0 = LoRA fp16 entier (plus rapide, ≥ 24 Go)
 #   LLAMA_TAG=b12032   version de llama.cpp (la même que setup-windows.ps1)
+#   MAX_HOURS=4        garde-fou : la machine s'arrête seule au bout de ce délai, même si tout est bloqué
+#   AFTER_END_MIN=60   après la fin (réussie ou non), délai laissé pour rapatrier les fichiers, puis arrêt
+#   SANS_GARDE_FOU=1   lancer quand même si le garde-fou ne peut pas fonctionner (déconseillé)
 #
 # Résultat : training/export/jarvis-coder/jarvis-coder-Q4_K_M.gguf (≈ 4,7 Go), à rapatrier sur le PC.
 # Puis sur le PC : .venv\Scripts\python export_ollama.py --gguf <fichier.gguf>
@@ -27,6 +30,36 @@ fi
 
 ICI="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ICI"
+
+# ---- Garde-fou : la facturation ne doit jamais courir sans limite ----
+MAX_HOURS="${MAX_HOURS:-4}"
+AFTER_END_MIN="${AFTER_END_MIN:-60}"
+JOURNAL_GARDE="${ICI}/garde-fou.log"
+echo "==> Garde-fou (arrêt automatique de la machine)"
+GARDE_OK=0
+if [[ -n "${RUNPOD_POD_ID:-}" ]] && command -v runpodctl >/dev/null 2>&1 && runpodctl get pod "$RUNPOD_POD_ID" >/dev/null 2>&1; then
+  GARDE_OK=1
+fi
+if [[ "$GARDE_OK" != "1" ]]; then
+  echo "ATTENTION : la machine ne pourra pas s'arrêter toute seule (runpodctl absent, pas sur RunPod, ou sans autorisation)." >&2
+  echo "  Sur RunPod : crée une clé API sur le site (Settings → API Keys), puis dans ce terminal :" >&2
+  echo "    runpodctl config --apiKey <ta clé>      (la clé reste sur cette machine louée, jamais dans le dépôt)" >&2
+  echo "  et relance. Pour lancer quand même : SANS_GARDE_FOU=1 bash cloud/run_remote.sh ..." >&2
+  if [[ "${SANS_GARDE_FOU:-0}" != "1" ]]; then exit 2; fi
+  echo "Lancement SANS garde-fou : surveille la machine et éteins-la toi-même." >&2
+else
+  nohup setsid bash "$ICI/cloud/garde_fou.sh" "$((MAX_HOURS * 3600))" "$MAX_HOURS h écoulées" >>"$JOURNAL_GARDE" 2>&1 &
+  GARDE_PID=$!
+  echo "Arrêt automatique dans $MAX_HOURS h au plus (journal : $JOURNAL_GARDE)."
+  fin_de_session() {
+    local code=$?
+    kill "$GARDE_PID" 2>/dev/null || true
+    nohup setsid bash "$ICI/cloud/garde_fou.sh" "$((AFTER_END_MIN * 60))" "fin de session (code $code)" >>"$JOURNAL_GARDE" 2>&1 &
+    echo
+    echo "La machine s'arrêtera seule dans $AFTER_END_MIN min : rapatrie les fichiers d'ici là."
+  }
+  trap fin_de_session EXIT
+fi
 LLAMA_TAG="${LLAMA_TAG:-b12032}"
 QUANT="${QUANT:-1}"
 RUN_DIR="$ICI/runs/cloud-$(date +%Y-%m-%d-%H%M)"
@@ -75,4 +108,4 @@ echo
 echo "Terminé. Fichier à rapatrier sur le PC :"
 ls -lh "$EXPORT_DIR"/*.gguf
 echo "Journal de l'entraînement : $RUN_DIR/journal.txt (à rapatrier aussi, c'est le compte rendu)."
-echo "N'OUBLIE PAS D'ÉTEINDRE ET DE SUPPRIMER LA MACHINE LOUÉE."
+echo "Après le rapatriement : « Stop » puis « Terminate » sur le site (sinon le disque reste facturé)."
