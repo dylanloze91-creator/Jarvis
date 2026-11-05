@@ -12,9 +12,9 @@ export const SETTINGS_CATEGORY_IDS: SettingsCategoryId[] = [
 
 export const SETTINGS_CATEGORY_LABELS: Record<SettingsCategoryId, string> = {
   moi: 'Moi',
-  parler: 'Parler',
-  services: 'Services',
-  brain: 'Cerveau',
+  parler: 'Parler à Jarvis',
+  services: 'Ce que Jarvis sait faire',
+  brain: 'Le cerveau de Jarvis',
   security: 'Sécurité',
   application: 'Application',
 };

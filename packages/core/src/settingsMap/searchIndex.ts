@@ -21,7 +21,7 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = [
   { category: 'services', subcategory: 'robot', label: 'Robot', keywords: ['rover', 'voiture'] },
   { category: 'services', subcategory: 'phone', label: 'Téléphone', keywords: ['tailscale', 'mobile'] },
   { category: 'services', subcategory: 'speakers', label: 'Enceintes', keywords: ['esp32', 'enceinte'] },
-  { category: 'services', subcategory: 'developer-general', label: 'Jarvis développeur', keywords: ['code', 'projets', 'missions'] },
+  { category: 'services', subcategory: 'developer-general', label: 'Missions depuis la discussion', keywords: ['mission', 'code', 'discussion'] },
   { category: 'services', subcategory: 'developer-advanced', label: 'Développeur avancé', keywords: ['copie', 'modèle code', 'worktree'] },
   { category: 'brain', subcategory: 'provider', label: 'Fournisseur de modèle', keywords: ['ollama', 'openai', 'clé api'] },
   { category: 'brain', subcategory: 'ollama', label: 'Ollama', keywords: ['local', 'modèles'] },
