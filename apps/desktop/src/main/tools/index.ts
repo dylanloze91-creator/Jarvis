@@ -102,7 +102,7 @@ function createFullToolManager(deps: ToolManagerDeps): ToolManager {
         })),
     }),
     createGetStockQuoteTool(deps),
-    ...createSpotifyTools(deps),
+    ...spotifyToolsFor(deps),
     ...createSiteBlockTools(deps),
     ...createPersonalizationTools(deps.personalization),
     ...createKnowledgeTools(deps.knowledge, deps.getSettings),
@@ -122,14 +122,28 @@ function createFullToolManager(deps: ToolManagerDeps): ToolManager {
   ]);
 }
 
+/**
+ * 5.0.69 : `spotify_transfer` n'est enregistré qu'avec une enceinte Connect choisie dans les
+ * réglages (en plus de son `isAvailable`) : la liste complète des outils de 0.4.22
+ * (`catalogue-risques`) reste identique sans réglage, comme pour Google et le robot.
+ * `buildTools()` est refait à chaque enregistrement des réglages.
+ */
+function spotifyToolsFor(deps: ToolManagerDeps) {
+  const speakerChosen = () => deps.spotify.speakerChosen();
+  return createSpotifyTools({ spotify: deps.spotify, speakerChosen }).filter(
+    (tool) => tool.name !== 'spotify_transfer' || speakerChosen(),
+  );
+}
+
 /** Liste courte : heure, notes, ouvrir une application, recherche web. */
 function createModestToolManager(deps: ToolManagerDeps): ToolManager {
   const notes = createKnowledgeTools(deps.knowledge, deps.getSettings).filter(
     (tool) => tool.name === 'remember_jarvis' || tool.name === 'search_jarvis_memory',
   );
-  const spotify = createSpotifyTools(deps).map((tool) => ({
+  const spotify = spotifyToolsFor(deps).map((tool) => ({
     ...tool,
-    isAvailable: () => deps.spotifyConnected?.() ?? false,
+    // Connecté ET disponible par ailleurs (spotify_transfer exige une enceinte choisie).
+    isAvailable: () => (deps.spotifyConnected?.() ?? false) && (tool.isAvailable?.() ?? true),
     unavailableMessage: () =>
       'Spotify n’est pas connecté. Le compte se branche dans Réglages ; rien n’est chargé avant.',
   }));

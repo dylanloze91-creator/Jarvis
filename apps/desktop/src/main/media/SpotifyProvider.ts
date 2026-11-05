@@ -10,10 +10,14 @@ import {
   type MediaProvider,
   type MediaTrack,
   type PlaybackState,
+  type PlayedOn,
+  type SpotifyPlayTarget,
 } from '@jarvis/core';
 import { launchSpotifyDesktop } from './launchSpotifyDesktop.js';
 import {
   formatPlaybackDiagnostic,
+  isDesktopComputerDevice,
+  isSpeakerDevice,
   pickLocalDesktopDevice,
   pickNamedConnectDevice,
   type ConnectDevice,
@@ -126,7 +130,8 @@ export interface SpotifyProviderOptions {
 const DEFAULT_DEVICE_WAIT_MS = 12_000;
 const DEFAULT_POLL_MS = 700;
 const DEFAULT_PLAYBACK_VERIFY_MS = 8_000;
-const DEFAULT_SPEAKER_MAX_VOLUME = 70;
+/** Plafond de volume des enceintes quand le réglage `spotifySpeakerMaxVolume` est absent. */
+export const DEFAULT_SPEAKER_MAX_VOLUME = 70;
 const DEFAULT_TARGET_RETRY_ATTEMPTS = 5;
 const DEFAULT_TARGET_RETRY_MS = 1_500;
 const AUDIBLE_VOLUME = 50;
@@ -137,6 +142,9 @@ export type SpotifyConnectDeviceSummary = {
   type: string;
   is_active: boolean;
 };
+
+/** Où la lecture a été vérifiée. `targeted` : un appareil précis était demandé (réglage ou voix). */
+export type SpotifyPlayedOn = PlayedOn;
 
 export class SpotifyProvider implements MediaProvider {
   readonly id = 'spotify';
@@ -155,6 +163,8 @@ export class SpotifyProvider implements MediaProvider {
   private readonly speakerMaxVolume: number;
   private readonly targetDeviceRetryAttempts: number;
   private readonly targetDeviceRetryMs: number;
+  /** Dernière liste Connect vue : noms connus pour « mets X sur la Devialet » dit à la voix. */
+  private lastDevices: SpotifyDevice[] = [];
 
   constructor(
     private readonly clientId: string,
@@ -178,6 +188,14 @@ export class SpotifyProvider implements MediaProvider {
     this.targetDeviceRetryAttempts =
       options.targetDeviceRetryAttempts ?? DEFAULT_TARGET_RETRY_ATTEMPTS;
     this.targetDeviceRetryMs = options.targetDeviceRetryMs ?? DEFAULT_TARGET_RETRY_MS;
+  }
+
+  /** Noms des appareils Connect vus à la dernière liste (sans appel réseau). */
+  lastSeenDeviceNames(): string[] {
+    return this.lastDevices
+      .filter((device) => device.id && !device.is_restricted)
+      .map((device) => device.name.trim())
+      .filter(Boolean);
   }
 
   /** Liste des appareils Connect (réglages : menu « Enceinte de lecture »). */
@@ -248,12 +266,14 @@ export class SpotifyProvider implements MediaProvider {
 
   async play(
     trackUri?: string,
-    options: { contextUri?: string; artistUri?: string } = {},
-  ): Promise<void> {
+    options: { contextUri?: string; artistUri?: string; device?: SpotifyPlayTarget } = {},
+  ): Promise<SpotifyPlayedOn> {
     // Le desktop Windows ignore souvent un PUT /play 204 sur un morceau
     // isolé. On active le Computer (sans relancer l'ancien titre), on envoie
     // device_id + URI, on retente, puis album / artiste / file d'attente.
-    const { device, devices } = await this.ensurePlaybackDevice();
+    // 5.0.69 : `options.device` (dit à la voix) passe avant l'enceinte des réglages.
+    const { device, devices } = await this.ensurePlaybackDevice(options.device);
+    const targeted = Boolean(options.device) || Boolean(this.targetDeviceName);
     const diagnostic = (state: SpotifyPlayback | null): string =>
       formatPlaybackDiagnostic(devices, state, device);
 
@@ -287,8 +307,7 @@ export class SpotifyProvider implements MediaProvider {
       }
       state = await this.pollPlayback(device.id!, this.playbackVerifyMs, trackUri);
       if (this.isRequestedPlayback(state, device.id!, trackUri)) {
-        await this.ensureAudibleVolume(state, device.id!);
-        return;
+        return this.finishPlayback(state, device, targeted);
       }
     }
 
@@ -308,8 +327,7 @@ export class SpotifyProvider implements MediaProvider {
       }
       state = await this.pollPlayback(device.id!, this.playbackVerifyMs, trackUri);
       if (this.isRequestedPlayback(state, device.id!, trackUri)) {
-        await this.ensureAudibleVolume(state, device.id!);
-        return;
+        return this.finishPlayback(state, device, targeted);
       }
 
       await this.transferToDevice(device, true);
@@ -320,8 +338,7 @@ export class SpotifyProvider implements MediaProvider {
       }
       state = await this.pollPlayback(device.id!, this.playbackVerifyMs, trackUri);
       if (this.isRequestedPlayback(state, device.id!, trackUri)) {
-        await this.ensureAudibleVolume(state, device.id!);
-        return;
+        return this.finishPlayback(state, device, targeted);
       }
     }
 
@@ -369,20 +386,114 @@ export class SpotifyProvider implements MediaProvider {
 
   private async listAllDevices(): Promise<SpotifyDevice[]> {
     const response = await this.request<SpotifyDevicesResponse>('/me/player/devices');
-    return response.devices ?? [];
+    const devices = response.devices ?? [];
+    this.lastDevices = devices;
+    return devices;
   }
 
   /**
-   * Bureau Windows ou enceinte nommée dans les réglages (`spotifyDeviceName`).
+   * 5.0.69 : « passe la musique sur l'enceinte / sur le PC ». PUT /me/player avec
+   * `device_ids` et `play: true`, puis relecture de `/me/player` : « fait » seulement si la
+   * lecture est bien sur cet appareil. Le plafond de volume de l'enceinte est appliqué.
    */
-  private async ensurePlaybackDevice(): Promise<{
+  async transferPlayback(target: SpotifyPlayTarget): Promise<SpotifyPlayedOn> {
+    const { device, devices } = await this.ensurePlaybackDevice(target);
+    const diagnostic = (state: SpotifyPlayback | null): string =>
+      formatPlaybackDiagnostic(devices, state, device);
+    try {
+      await this.request('/me/player', {
+        method: 'PUT',
+        body: JSON.stringify({ device_ids: [device.id], play: true }),
+      });
+    } catch (error) {
+      if (error instanceof SpotifyApiError && error.status === 404) {
+        throw new Error(
+          `Spotify ne trouve pas de lecture à transférer sur « ${device.name} » (HTTP 404) : lance d'abord un morceau, ou dis-moi quoi jouer dessus. ${diagnostic(null)}`,
+        );
+      }
+      this.rethrowPlayError(error, diagnostic(null));
+    }
+    const state = await this.pollPlayback(device.id!, this.playbackVerifyMs);
+    if (!this.isAudibleOnDevice(state, device.id!)) {
+      const where = state?.is_playing
+        ? `elle joue sur « ${state.device?.name ?? state.device?.type ?? 'un autre appareil'} »`
+        : 'rien ne joue';
+      throw new Error(`La lecture n'est pas passée sur « ${device.name} » : ${where}. ${diagnostic(state)}`);
+    }
+    return this.finishPlayback(state, device, true);
+  }
+
+  /** Lecture vérifiée : volume audible, plafond de l'enceinte, puis où ça joue. */
+  private async finishPlayback(
+    state: SpotifyPlayback | null,
+    device: SpotifyDevice,
+    targeted: boolean,
+  ): Promise<SpotifyPlayedOn> {
+    await this.ensureAudibleVolume(state, device.id!);
+    await this.capSpeakerVolume(state, device);
+    return { deviceName: device.name, deviceType: device.type, targeted };
+  }
+
+  /** Une enceinte ne dépasse jamais `spotifySpeakerMaxVolume` quand Jarvis y lance la lecture. */
+  private async capSpeakerVolume(state: SpotifyPlayback | null, device: SpotifyDevice): Promise<void> {
+    if (!isSpeakerDevice(device)) return;
+    const volume = state?.device?.volume_percent ?? device.volume_percent ?? null;
+    if (volume == null || volume <= this.speakerMaxVolume) return;
+    try {
+      await this.request(
+        `/me/player/volume?volume_percent=${encodeURIComponent(this.speakerMaxVolume)}&device_id=${encodeURIComponent(device.id!)}`,
+        { method: 'PUT' },
+      );
+    } catch {
+      // Le plafond n'empêche pas la lecture déjà vérifiée.
+    }
+  }
+
+  /**
+   * Appareil de lecture : celui dit à la voix (« sur l'enceinte », « sur le PC », un nom
+   * Connect), sinon l'enceinte des réglages (`spotifyDeviceName`), sinon le bureau Windows.
+   */
+  private async ensurePlaybackDevice(target?: SpotifyPlayTarget): Promise<{
     device: SpotifyDevice;
     devices: SpotifyDevice[];
   }> {
+    if (target?.kind === 'pc') return this.ensureDesktopDevice();
+    if (target?.kind === 'named') return this.ensureNamedDevice(target.name);
+    if (target?.kind === 'speaker') {
+      return this.targetDeviceName
+        ? this.ensureNamedDevice(this.targetDeviceName)
+        : this.ensureOnlySpeaker();
+    }
     if (this.targetDeviceName) {
       return this.ensureNamedDevice(this.targetDeviceName);
     }
     return this.ensureDesktopDevice();
+  }
+
+  /** « L'enceinte » sans réglage : la seule enceinte Connect visible ; plusieurs → Jarvis demande laquelle. */
+  private async ensureOnlySpeaker(): Promise<{
+    device: SpotifyDevice;
+    devices: SpotifyDevice[];
+  }> {
+    let devices: SpotifyDevice[] = [];
+    for (let attempt = 0; attempt < this.targetDeviceRetryAttempts; attempt += 1) {
+      devices = await this.listAllDevices();
+      const speakers = devices.filter(
+        (device) => device.id && !device.is_restricted && isSpeakerDevice(device),
+      );
+      if (speakers.length === 1) return { device: speakers[0]!, devices };
+      if (speakers.length > 1) {
+        throw new Error(
+          `Plusieurs enceintes Spotify sont visibles : ${speakers.map((device) => `« ${device.name} »`).join(', ')}. Laquelle ? Tu peux aussi en choisir une par défaut dans Réglages → Spotify.`,
+        );
+      }
+      if (attempt < this.targetDeviceRetryAttempts - 1) {
+        await this.sleep(this.targetDeviceRetryMs);
+      }
+    }
+    throw new Error(
+      `Je ne vois aucune enceinte Spotify Connect. Allume-la ou lance une musique dessus une fois depuis ton téléphone. ${formatPlaybackDiagnostic(devices, null, null)}`,
+    );
   }
 
   private async ensureNamedDevice(wantedName: string): Promise<{
@@ -580,8 +691,8 @@ export class SpotifyProvider implements MediaProvider {
     }
     const deviceName = state.device?.name ?? state.device?.type ?? 'un autre appareil';
     if (state.device?.id && state.device.id !== expected.id) {
-      if (this.targetDeviceName) {
-        const expectedLabel = this.targetDeviceName || expected.name || 'ce PC';
+      if (this.targetDeviceName || !isDesktopComputerDevice(expected, this.hostname)) {
+        const expectedLabel = expected.name || this.targetDeviceName || 'ce PC';
         return `La lecture est sur « ${deviceName} », pas sur « ${expectedLabel} ». ${diagnostic}`;
       }
       return `La lecture est sur « ${deviceName} », pas sur l'application de bureau Windows. ${diagnostic}`;

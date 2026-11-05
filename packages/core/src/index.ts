@@ -209,7 +209,18 @@ export {
 } from './agent/homePlace.js';
 
 export * from './media/types.js';
-export { extractSpotifyPlayQuery, isMusicIntent, searchQueryVariants } from './media/playIntent.js';
+export {
+  extractSpotifyPlayQuery,
+  extractSpotifyPlayTarget,
+  extractSpotifyTransferTarget,
+  isMusicIntent,
+  normalizeSpotifyDeviceName,
+  searchQueryVariants,
+  spotifyTargetFromText,
+  spotifyTargetToText,
+  type SpotifyPlayTarget,
+  type SpotifyTargetOptions,
+} from './media/playIntent.js';
 
 export {
   DEFAULT_SITEBLOCK_BASE_URL,

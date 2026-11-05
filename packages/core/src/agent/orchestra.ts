@@ -201,6 +201,8 @@ export interface ExpressInput {
   /** Équipes dont au moins un outil est enregistré (les équipes sans outil sont toujours là). */
   available: ReadonlySet<OrchestraTeam>;
   now?: Date;
+  /** 5.0.69 : appareils Spotify Connect connus (« mets X sur la Devialet » part en express vers Musique). */
+  spotifyDeviceNames?: readonly string[];
 }
 
 /** Équipe désignée par une règle de Jarvis, sans modèle ; `null` : le cerveau décide. */
@@ -209,7 +211,12 @@ export function expressTeam(input: ExpressInput): OrchestraTeam | null {
   if (!text) return null;
   const pick = (team: OrchestraTeam) => (input.available.has(team) ? team : null);
   if (extractYoutubeUrl(text)) return pick('web');
-  if (isMusicIntent(text) || isCurrentTrackQuestion(text)) return pick('musique');
+  if (
+    isMusicIntent(text, { knownDeviceNames: input.spotifyDeviceNames ?? [] }) ||
+    isCurrentTrackQuestion(text)
+  ) {
+    return pick('musique');
+  }
   // 5.0.64 : le suivi d'un tour Google n'est plus forcé vers l'équipe Google (« ouvre Chrome »
   // juste après un mail y partait, sans outil du PC) : le cerveau tranche avec les derniers échanges.
   if (looksLikeGoogleIntent(text)) {

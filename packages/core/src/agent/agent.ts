@@ -7,7 +7,14 @@ import { googleTurnPrompt } from '../google/prompt.js';
 import { isRoverToolName, looksLikeRoverIntent, recentlyUsedRoverTools } from '../rover/intent.js';
 import { roverTurnPrompt } from '../rover/prompt.js';
 import { isCurrentTrackQuestion } from '../media/currentTrackIntent.js';
-import { extractSpotifyPlayQuery, isMusicIntent } from '../media/playIntent.js';
+import {
+  extractSpotifyPlayQuery,
+  extractSpotifyPlayTarget,
+  extractSpotifyTransferTarget,
+  isMusicIntent,
+  spotifyTargetToText,
+  type SpotifyPlayTarget,
+} from '../media/playIntent.js';
 import { extractYoutubeUrl } from '../youtube/url.js';
 import { localTimeZone } from '../search/dates.js';
 import type { CurrentSearchResult } from '../search/currentSearch.js';
@@ -87,6 +94,12 @@ export interface AgentOptions {
    * Les chemins forcés (Spotify, YouTube, actualité) restent ceux d'avant.
    */
   allowedTools?: (name: string) => boolean;
+  /**
+   * 5.0.69 : noms d'appareils Spotify Connect connus (enceinte des réglages, dernière liste
+   * vue), pour « mets X sur la Devialet » et « passe la musique sur l'enceinte ». Absent ou
+   * vide : seuls « l'enceinte » et « le PC » sont reconnus ; tout le reste est celui d'avant.
+   */
+  spotifyDeviceNames?: () => readonly string[];
 }
 
 export const DEFAULT_SYSTEM_PROMPT = [
@@ -174,7 +187,8 @@ export class Agent {
     const roverTurn =
       roverAvailable && !youtubeTurn && (looksLikeRoverIntent(lastUser) || recentlyUsedRoverTools(conversation));
     // « Arrête le robot » ne doit jamais partir vers Spotify.
-    const musicTurn = !youtubeTurn && !roverTurn && isMusicIntent(lastUser);
+    const musicTurn =
+      !youtubeTurn && !roverTurn && isMusicIntent(lastUser, { knownDeviceNames: this.spotifyDeviceNames() });
     const now = this.options.now?.() ?? new Date();
     const timeZone = this.options.timeZone ?? localTimeZone();
     const googleTurn = looksLikeGoogleIntent(lastUser) || recentlyUsedGoogleTools(conversation);
@@ -237,7 +251,10 @@ export class Agent {
         yield { type: 'assistant_message', message: forced.assistantMessage };
         conversation.push(forced.assistantMessage);
         yield { type: 'tool_start', call: forced.call };
-        const outcome = await this.tools.execute(forced.call, context);
+        const outcome = await this.tools.execute(
+          forced.call,
+          forced.playbackTarget ? { ...context, playbackTarget: forced.playbackTarget } : context,
+        );
         const toolMessage = createMessage('tool', outcome.content, {
           toolCallId: forced.call.id,
           toolName: forced.call.name,
@@ -588,7 +605,7 @@ export class Agent {
    */
   private forcedSpotify(
     conversation: ChatMessage[],
-  ): { call: ToolCall; assistantMessage: ChatMessage } | null {
+  ): { call: ToolCall; assistantMessage: ChatMessage; playbackTarget?: SpotifyPlayTarget } | null {
     const lastUserIndex = conversation.map((message) => message.role).lastIndexOf('user');
     if (lastUserIndex < 0) return null;
     if (conversation.slice(lastUserIndex).some((message) => message.role === 'tool')) return null;
@@ -596,9 +613,27 @@ export class Agent {
     const prompt = conversation[lastUserIndex]?.content ?? '';
     if (isCurrentTrackQuestion(prompt)) return this.forcedCall('spotify_current_track', {});
 
-    const query = extractSpotifyPlayQuery(prompt);
+    // 5.0.69 : appareil choisi à la voix. « passe la musique sur l'enceinte » → spotify_transfer ;
+    // « mets X sur le PC » → spotify_play avec l'appareil dans le contexte d'exécution (pas un
+    // argument : le catalogue du modèle et la description de spotify_play ne changent pas).
+    const targetOptions = { knownDeviceNames: this.spotifyDeviceNames() };
+    const transfer = extractSpotifyTransferTarget(prompt, targetOptions);
+    if (transfer) {
+      return this.forcedCall('spotify_transfer', { device: spotifyTargetToText(transfer) });
+    }
+    const targeted = extractSpotifyPlayTarget(prompt, targetOptions);
+    if (targeted) {
+      const forced = this.forcedCall('spotify_play', { query: targeted.query });
+      return forced ? { ...forced, playbackTarget: targeted.target } : null;
+    }
+
+    const query = extractSpotifyPlayQuery(prompt, targetOptions);
     if (!query) return null;
     return this.forcedCall('spotify_play', { query });
+  }
+
+  private spotifyDeviceNames(): readonly string[] {
+    return this.options.spotifyDeviceNames?.() ?? [];
   }
 
   private forcedCall(

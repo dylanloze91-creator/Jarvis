@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { extractSpotifyPlayQuery, isMusicIntent, searchQueryVariants } from './playIntent.js';
+import {
+  extractSpotifyPlayQuery,
+  extractSpotifyPlayTarget,
+  extractSpotifyTransferTarget,
+  isMusicIntent,
+  searchQueryVariants,
+  spotifyTargetFromText,
+  spotifyTargetToText,
+} from './playIntent.js';
 
 describe('extractSpotifyPlayQuery', () => {
   it('extrait « écouter On Verra de Nekfeu » (orthographe exacte du repro)', () => {
@@ -73,6 +81,70 @@ describe('extractSpotifyPlayQuery', () => {
   it('une question générale sur la musique n’expose pas Spotify', () => {
     expect(isMusicIntent('Qui chante Bohemian Rhapsody ?')).toBe(false);
     expect(isMusicIntent('Quel est le dernier album de Nekfeu ?')).toBe(false);
+  });
+});
+
+describe('appareil choisi à la voix (5.0.69)', () => {
+  it('« mets Daft Punk sur l’enceinte » → recherche « Daft Punk », cible enceinte', () => {
+    expect(extractSpotifyPlayTarget("mets Daft Punk sur l'enceinte")).toEqual({
+      query: 'Daft Punk',
+      target: { kind: 'speaker' },
+    });
+    expect(extractSpotifyPlayQuery("mets Daft Punk sur l'enceinte")).toBe('Daft Punk');
+    expect(isMusicIntent("mets Daft Punk sur l'enceinte")).toBe(true);
+    expect(extractSpotifyPlayTarget('Jarvis, écoute Get Lucky de Daft Punk sur le PC')).toEqual({
+      query: 'Get Lucky de Daft Punk',
+      target: { kind: 'pc' },
+    });
+    expect(extractSpotifyPlayTarget("mets du Jul sur l'ordinateur")).toEqual({
+      query: 'Jul',
+      target: { kind: 'pc' },
+    });
+  });
+
+  it('un appareil Connect nommé n’est reconnu que s’il est connu', () => {
+    const known = { knownDeviceNames: ['Devialet Phantom', 'DESKTOP-THX'] };
+    expect(extractSpotifyPlayTarget('mets Daft Punk sur la Devialet', known)).toEqual({
+      query: 'Daft Punk',
+      target: { kind: 'named', name: 'Devialet Phantom' },
+    });
+    expect(extractSpotifyPlayTarget('mets Daft Punk sur la Devialet')).toBeNull();
+    expect(isMusicIntent('mets Daft Punk sur la Devialet', known)).toBe(true);
+  });
+
+  it('« Sur la route de Memphis » reste entier', () => {
+    expect(extractSpotifyPlayTarget('mets Sur la route de Memphis')).toBeNull();
+    expect(extractSpotifyPlayQuery('mets Sur la route de Memphis')).toBe('Sur la route de Memphis');
+    expect(extractSpotifyPlayQuery("écoute Sur la route de Memphis sur l'enceinte")).toBe(
+      'Sur la route de Memphis',
+    );
+    expect(extractSpotifyPlayQuery('lance lomepal sur spotify')).toBe('lomepal');
+    expect(extractSpotifyPlayTarget('lance lomepal sur spotify')).toBeNull();
+  });
+
+  it('transfert : « passe la musique sur l’enceinte », « mets-la sur le PC »', () => {
+    expect(extractSpotifyTransferTarget("passe la musique sur l'enceinte")).toEqual({ kind: 'speaker' });
+    expect(extractSpotifyTransferTarget('mets-la sur le PC')).toEqual({ kind: 'pc' });
+    expect(extractSpotifyTransferTarget('Jarvis, transfère la musique sur la Devialet')).toEqual({
+      kind: 'named',
+      name: 'Devialet',
+    });
+    expect(extractSpotifyTransferTarget('bascule sur la cuisine')).toEqual({ kind: 'named', name: 'cuisine' });
+    expect(isMusicIntent("passe la musique sur l'enceinte")).toBe(true);
+    // Pas un transfert : une lecture, une pause, « sur spotify ».
+    expect(extractSpotifyTransferTarget("mets Daft Punk sur l'enceinte")).toBeNull();
+    expect(extractSpotifyTransferTarget('mets la musique sur pause')).toBeNull();
+    expect(extractSpotifyTransferTarget('mets la musique sur spotify')).toBeNull();
+    expect(extractSpotifyPlayTarget("passe la musique sur l'enceinte")).toBeNull();
+  });
+
+  it('forme texte des cibles pour les outils', () => {
+    expect(spotifyTargetToText({ kind: 'speaker' })).toBe('enceinte');
+    expect(spotifyTargetToText({ kind: 'pc' })).toBe('pc');
+    expect(spotifyTargetFromText('enceinte')).toEqual({ kind: 'speaker' });
+    expect(spotifyTargetFromText("l'enceinte")).toEqual({ kind: 'speaker' });
+    expect(spotifyTargetFromText('pc')).toEqual({ kind: 'pc' });
+    expect(spotifyTargetFromText('Devialet')).toEqual({ kind: 'named', name: 'Devialet' });
   });
 });
 

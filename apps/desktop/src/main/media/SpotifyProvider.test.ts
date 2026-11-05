@@ -866,6 +866,126 @@ describe('SpotifyProvider', () => {
     ).toBe(true);
   });
 
+  it('5.0.69 : transfert vérifié — PUT /me/player (device_ids, play: true) puis relecture sur l’enceinte, plafond appliqué', async () => {
+    await seedValidToken();
+    const speaker = spotifyDevice({
+      id: 'dev-1',
+      is_active: false,
+      type: 'Speaker',
+      name: 'Devialet Phantom',
+      volume_percent: 90,
+    });
+    let transferred = false;
+    const fetchMock = playbackFetchMock({
+      devices: [spotifyDevice({ id: 'pc-1', type: 'Computer', name: 'DESKTOP-THX' }), speaker],
+      playback: () =>
+        transferred
+          ? {
+              is_playing: true,
+              item: { uri: 'spotify:track:xyz', name: 'Titre' },
+              device: { id: 'dev-1', name: 'Devialet Phantom', type: 'Speaker', volume_percent: 90 },
+            }
+          : {
+              is_playing: true,
+              item: { uri: 'spotify:track:xyz', name: 'Titre' },
+              device: { id: 'pc-1', name: 'DESKTOP-THX', type: 'Computer', volume_percent: 50 },
+            },
+    });
+    const fetchWithTransfer = vi.fn(async (input: string | URL, init?: RequestInit) => {
+      const url = input.toString();
+      if (/\/v1\/me\/player$/.test(url) && (init?.method ?? 'GET') === 'PUT') {
+        expect(JSON.parse(String(init?.body))).toEqual({ device_ids: ['dev-1'], play: true });
+        transferred = true;
+        return new Response(null, { status: 204 });
+      }
+      return fetchMock(input, init);
+    });
+    vi.stubGlobal('fetch', fetchWithTransfer);
+
+    const played = await playProvider({ speakerMaxVolume: 70 }).transferPlayback({ kind: 'named', name: 'Devialet' });
+
+    expect(played).toEqual({ deviceName: 'Devialet Phantom', deviceType: 'Speaker', targeted: true });
+    expect(transferred).toBe(true);
+    expect(
+      fetchWithTransfer.mock.calls.some(
+        ([url]) => String(url).includes('/me/player/volume') && String(url).includes('volume_percent=70'),
+      ),
+    ).toBe(true);
+  });
+
+  it('5.0.69 : transfert non vérifié — la lecture reste sur le PC, erreur claire, jamais « fait »', async () => {
+    await seedValidToken();
+    const fetchMock = playbackFetchMock({
+      devices: [spotifyDevice({ id: 'pc-1', type: 'Computer', name: 'DESKTOP-THX' }), spotifyDevice({ id: 'dev-1', type: 'Speaker', name: 'Salon' })],
+      playback: {
+        is_playing: true,
+        item: { uri: 'spotify:track:xyz', name: 'Titre' },
+        device: { id: 'pc-1', name: 'DESKTOP-THX', type: 'Computer', volume_percent: 50 },
+      },
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(playProvider().transferPlayback({ kind: 'speaker' })).rejects.toThrow(
+      /n'est pas passée sur « Salon » : elle joue sur « DESKTOP-THX »/,
+    );
+  });
+
+  it('5.0.69 : « l’enceinte » sans réglage = la seule enceinte visible ; plusieurs → Jarvis demande laquelle ; aucune → dit tel quel', async () => {
+    await seedValidToken();
+    const pc = spotifyDevice({ id: 'pc-1', type: 'Computer', name: 'DESKTOP-THX' });
+    const salon = spotifyDevice({ id: 'dev-1', type: 'Speaker', name: 'Salon', volume_percent: 40 });
+    const cuisine = spotifyDevice({ id: 'dev-2', type: 'Speaker', name: 'Cuisine', volume_percent: 40 });
+
+    vi.stubGlobal(
+      'fetch',
+      playbackFetchMock({
+        devices: [pc, salon],
+        playback: {
+          is_playing: true,
+          item: { uri: 'spotify:track:xyz', name: 'Titre' },
+          device: { id: 'dev-1', name: 'Salon', type: 'Speaker', volume_percent: 40 },
+        },
+      }),
+    );
+    await expect(
+      playProvider().play('spotify:track:xyz', { device: { kind: 'speaker' } }),
+    ).resolves.toEqual({ deviceName: 'Salon', deviceType: 'Speaker', targeted: true });
+
+    vi.stubGlobal('fetch', playbackFetchMock({ devices: [pc, salon, cuisine] }));
+    await expect(
+      playProvider({ targetDeviceRetryAttempts: 1 }).play('spotify:track:xyz', { device: { kind: 'speaker' } }),
+    ).rejects.toThrow(/Plusieurs enceintes Spotify sont visibles : « Salon », « Cuisine »\. Laquelle \?/);
+
+    vi.stubGlobal('fetch', playbackFetchMock({ devices: [pc] }));
+    await expect(
+      playProvider({ targetDeviceRetryAttempts: 1 }).transferPlayback({ kind: 'speaker' }),
+    ).rejects.toThrow(/Je ne vois aucune enceinte Spotify Connect/);
+  });
+
+  it('5.0.69 : « sur le PC » joue sur le bureau même avec une enceinte dans les réglages', async () => {
+    await seedValidToken();
+    const pc = spotifyDevice({ id: 'pc-1', type: 'Computer', name: 'DESKTOP-THX' });
+    const salon = spotifyDevice({ id: 'dev-1', type: 'Speaker', name: 'Salon' });
+    const fetchMock = playbackFetchMock({
+      devices: [pc, salon],
+      playback: {
+        is_playing: true,
+        item: { uri: 'spotify:track:xyz', name: 'Titre' },
+        device: { id: 'pc-1', name: 'DESKTOP-THX', type: 'Computer', volume_percent: 50 },
+      },
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const played = await playProvider({ targetDeviceName: 'Salon' }).play('spotify:track:xyz', {
+      device: { kind: 'pc' },
+    });
+    expect(played).toEqual({ deviceName: 'DESKTOP-THX', deviceType: 'Computer', targeted: true });
+    expect(
+      fetchMock.mock.calls.some(([url]) => String(url).includes('/me/player/play?device_id=pc-1')),
+    ).toBe(true);
+    expect(playProvider({ targetDeviceName: 'Salon' }).lastSeenDeviceNames()).toEqual([]);
+  });
+
   it('rafraîchit un jeton expiré avant d’appeler l’API, et persiste le nouveau sur disque', async () => {
     await seedExpiredToken();
 

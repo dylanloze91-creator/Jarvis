@@ -14,16 +14,21 @@ vi.mock('electron', () => ({
 
 const { SpotifyBridge } = await import('./SpotifyBridge.js');
 
+/** 5.0.69 : `spotifyDeviceName` et `spotifySpeakerMaxVolume` sont facultatifs, absents ici comme dans un settings.json d'avant. */
 function settingsWith(spotifyClientId: string): () => Settings {
-  return () =>
-    ({
-      spotifyClientId,
-      spotifyDeviceName: '',
-      spotifySpeakerMaxVolume: 70,
-    }) as Settings;
+  return () => ({ spotifyClientId }) as Settings;
 }
 
 describe('SpotifyBridge', () => {
+  it('5.0.69 : sans réglage d’enceinte, aucune enceinte choisie et aucun nom connu', () => {
+    const bridge = new SpotifyBridge(settingsWith('client'));
+    expect(bridge.speakerChosen()).toBe(false);
+    expect(bridge.knownDeviceNames()).toEqual([]);
+    const chosen = new SpotifyBridge(() => ({ spotifyClientId: 'client', spotifyDeviceName: ' Devialet ' }) as Settings);
+    expect(chosen.speakerChosen()).toBe(true);
+    expect(chosen.knownDeviceNames()).toEqual(['Devialet']);
+  });
+
   beforeEach(() => {
     userDataDir = mkdtempSync(join(tmpdir(), 'jarvis-spotify-bridge-test-'));
   });

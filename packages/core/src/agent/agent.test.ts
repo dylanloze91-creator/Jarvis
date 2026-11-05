@@ -335,6 +335,55 @@ describe('Agent', () => {
     expect(reply.join('')).not.toContain('Necfeu');
   });
 
+  it('5.0.69 : « mets Daft Punk sur l’enceinte » force spotify_play avec « Daft Punk » et l’appareil dans le contexte', async () => {
+    const seen: Array<unknown> = [];
+    const play = defineTool({
+      name: 'spotify_play',
+      description: 'Lecture Spotify.',
+      risk: 'safe',
+      schema: z.object({ query: z.string() }),
+      execute: async ({ query }, context) => {
+        seen.push(context.playbackTarget);
+        return { ok: true, content: `Lecture lancée sur Spotify : ${query}.` };
+      },
+    });
+    const transfer = defineTool({
+      name: 'spotify_transfer',
+      description: 'Transfert Spotify.',
+      risk: 'safe',
+      schema: z.object({ device: z.string() }),
+      execute: async ({ device }) => ({ ok: true, content: `La musique joue maintenant sur ${device}.` }),
+    });
+    const provider = new ScriptedProvider([]);
+    const tools = new ToolManager().register(play).register(transfer);
+    const agent = new Agent(provider, tools, {
+      systemPrompt: 'test',
+      spotifyDeviceNames: () => ['Devialet Phantom'],
+    });
+
+    const events = await collect(agent, "mets Daft Punk sur l'enceinte");
+    const start = events.find((event) => event.type === 'tool_start');
+    expect(start?.call.name).toBe('spotify_play');
+    expect(start?.call.arguments).toEqual({ query: 'Daft Punk' });
+    expect(seen).toEqual([{ kind: 'speaker' }]);
+
+    const named = await collect(agent, 'mets Get Lucky de Daft Punk sur la Devialet');
+    expect(named.find((event) => event.type === 'tool_start')?.call.arguments).toEqual({
+      query: 'Get Lucky de Daft Punk',
+    });
+    expect(seen[1]).toEqual({ kind: 'named', name: 'Devialet Phantom' });
+
+    // Sans appareil demandé : contexte sans cible, comme avant.
+    await collect(agent, 'écouter On Verra de Nekfeu');
+    expect(seen[2]).toBeUndefined();
+
+    const moved = await collect(agent, "passe la musique sur l'enceinte");
+    const moveStart = moved.find((event) => event.type === 'tool_start');
+    expect(moveStart?.call.name).toBe('spotify_transfer');
+    expect(moveStart?.call.arguments).toEqual({ device: 'enceinte' });
+    expect(provider.requests).toHaveLength(0);
+  });
+
   it('après une lecture, un autre sujet n’appelle pas Spotify et n’expose pas les outils musicaux', async () => {
     const play = defineTool({
       name: 'spotify_play',

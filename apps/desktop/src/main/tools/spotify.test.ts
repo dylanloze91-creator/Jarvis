@@ -36,7 +36,7 @@ function stubProvider(overrides: Partial<MediaProvider> = {}): MediaProvider {
 }
 
 describe('createSpotifyTools', () => {
-  it('déclare les huit outils, tous en risque « safe » (y compris spotify_play)', () => {
+  it('déclare les neuf outils, tous en risque « safe » (y compris spotify_play)', () => {
     const tools = createSpotifyTools({ spotify: fakeBridge(() => stubProvider()) });
 
     expect(tools.map((tool) => tool.name)).toEqual([
@@ -48,11 +48,107 @@ describe('createSpotifyTools', () => {
       'spotify_set_volume',
       'spotify_set_shuffle',
       'spotify_current_track',
+      'spotify_transfer',
     ]);
     for (const tool of tools) {
       expect(tool.risk).toBe('safe');
       expect(tool.forceConfirm).toBe(false);
     }
+  });
+
+  it('5.0.69 : spotify_play garde sa description de 0.4.22 ; spotify_transfer indisponible sans enceinte choisie', () => {
+    const tools = createSpotifyTools({ spotify: fakeBridge(() => stubProvider()) });
+    const play = tools.find((tool) => tool.name === 'spotify_play')!;
+    expect(play.description).toBe(
+      "Recherche un morceau sur Spotify (requête libre, fautes d’orthographe acceptées) et le lance sur l'application de bureau Windows — pas le téléphone ni le lecteur web. Vérifie que ça joue vraiment (is_playing, appareil, volume). Nécessite Spotify Premium. Ne jamais inventer un échec ni annoncer une lecture s'il n'y a pas de son.",
+    );
+    const transfer = tools.find((tool) => tool.name === 'spotify_transfer')!;
+    expect(transfer.isAvailable?.()).toBe(false);
+    const chosen = createSpotifyTools({ spotify: fakeBridge(() => stubProvider()), speakerChosen: () => true });
+    expect(chosen.find((tool) => tool.name === 'spotify_transfer')!.isAvailable?.()).toBe(true);
+  });
+
+  it('5.0.69 : « mets Daft Punk sur l’enceinte » → recherche « Daft Punk », lecture sur l’enceinte (contexte), résultat qui dit où ça joue', async () => {
+    const track = fakeTrack();
+    const provider = stubProvider({
+      searchTrack: vi.fn(async () => track),
+      play: vi.fn(async () => ({ deviceName: 'Devialet Phantom', deviceType: 'Speaker', targeted: true })),
+    });
+    const [playTool] = createSpotifyTools({ spotify: fakeBridge(() => provider) });
+
+    const result = await playTool!.run(
+      { query: 'Daft Punk' },
+      { ...fakeContext(), playbackTarget: { kind: 'speaker' } },
+    );
+
+    expect(provider.searchTrack).toHaveBeenCalledWith('Daft Punk');
+    expect(provider.play).toHaveBeenCalledWith(track.uri, {
+      contextUri: undefined,
+      artistUri: undefined,
+      device: { kind: 'speaker' },
+    });
+    expect(result.ok).toBe(true);
+    expect(result.content).toContain('sur « Devialet Phantom »');
+    expect(result.content).toContain('Get Lucky');
+  });
+
+  it('5.0.69 : spotify_play sans appareil demandé ne dit pas où ça joue (résultat d’avant)', async () => {
+    const provider = stubProvider({
+      searchTrack: vi.fn(async () => fakeTrack()),
+      play: vi.fn(async () => ({ deviceName: 'DESKTOP-THX', deviceType: 'Computer', targeted: false })),
+    });
+    const [playTool] = createSpotifyTools({ spotify: fakeBridge(() => provider) });
+    const result = await playTool!.run({ query: 'get lucky' }, fakeContext());
+    expect(result.content).toBe(
+      'Lecture lancée sur Spotify : Get Lucky — Daft Punk, Pharrell Williams. Lecture vérifiée : is_playing=true et URI confirmée.',
+    );
+  });
+
+  it('5.0.69 : spotify_transfer dit « fait » seulement après vérification, et relaie une enceinte introuvable telle quelle', async () => {
+    const transferPlayback = vi.fn(async () => ({
+      deviceName: 'Devialet Phantom',
+      deviceType: 'Speaker',
+      targeted: true,
+    }));
+    const provider = { ...stubProvider(), transferPlayback } as unknown as MediaProvider;
+    const transfer = createSpotifyTools({
+      spotify: fakeBridge(() => provider),
+      speakerChosen: () => true,
+    }).find((tool) => tool.name === 'spotify_transfer')!;
+
+    const ok = await transfer.run({ device: 'enceinte' }, fakeContext());
+    expect(transferPlayback).toHaveBeenCalledWith({ kind: 'speaker' });
+    expect(ok.ok).toBe(true);
+    expect(ok.content).toContain('joue maintenant sur « Devialet Phantom »');
+    expect(ok.content).toContain('vérifiée');
+
+    const missing = {
+      ...stubProvider(),
+      transferPlayback: vi.fn(async () => {
+        throw new Error(
+          'Je ne trouve pas « Devialet ». Allume-la ou lance une musique dessus une fois depuis ton téléphone.',
+        );
+      }),
+    } as unknown as MediaProvider;
+    const failed = await createSpotifyTools({ spotify: fakeBridge(() => missing), speakerChosen: () => true })
+      .find((tool) => tool.name === 'spotify_transfer')!
+      .run({ device: 'Devialet' }, fakeContext());
+    expect(failed.ok).toBe(false);
+    expect(failed.content).toBe(
+      'Je ne trouve pas « Devialet ». Allume-la ou lance une musique dessus une fois depuis ton téléphone.',
+    );
+
+    const notVerified = {
+      ...stubProvider(),
+      transferPlayback: vi.fn(async () => {
+        throw new Error("La lecture n'est pas passée sur « Devialet Phantom » : rien ne joue. Appareils Connect : []");
+      }),
+    } as unknown as MediaProvider;
+    const stuck = await createSpotifyTools({ spotify: fakeBridge(() => notVerified), speakerChosen: () => true })
+      .find((tool) => tool.name === 'spotify_transfer')!
+      .run({ device: 'pc' }, fakeContext());
+    expect(stuck.ok).toBe(false);
+    expect(stuck.content).toContain("n'est pas passée sur");
   });
 
   it('spotify_play cherche puis lance le morceau trouvé — la boucle agent → outil → service simulé', async () => {

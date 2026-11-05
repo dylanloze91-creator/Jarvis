@@ -37,6 +37,18 @@ export function looksLikeLocalDesktopName(name: string, hostname = ''): boolean 
   return false;
 }
 
+/**
+ * 5.0.69 : « l'enceinte » = tout appareil Connect qui n'est ni un ordinateur, ni un téléphone
+ * ou une tablette, ni le lecteur web (enceinte, barre de son, ampli, TV, Chromecast audio).
+ */
+export function isSpeakerDevice(device: ConnectDevice): boolean {
+  if (isWebPlayerDevice(device)) return false;
+  if (/smartphone|tablet|phone/i.test(device.type)) return false;
+  return /speaker|tv|avr|stb|audiodongle|castaudio|castvideo|gameconsole|automobile/i.test(
+    device.type,
+  );
+}
+
 export function isDesktopComputerDevice(device: ConnectDevice, hostname = ''): boolean {
   if (device.is_restricted || !device.id) return false;
   if (isWebPlayerDevice(device)) return false;

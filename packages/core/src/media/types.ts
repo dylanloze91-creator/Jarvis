@@ -22,6 +22,16 @@ export interface PlaybackState {
 }
 
 /**
+ * 5.0.69 — où la lecture a été vérifiée. `targeted` : un appareil précis était demandé
+ * (réglage ou voix) ; l'outil dit alors où ça joue. Un fournisseur peut ne rien renvoyer.
+ */
+export interface PlayedOn {
+  deviceName: string;
+  deviceType: string;
+  targeted: boolean;
+}
+
+/**
  * Contrat que tout fournisseur de lecture média doit respecter — même
  * principe que `SearchProvider` ou `MarketDataProvider` : les outils
  * (`spotify_play`, etc.) ne connaissent que cette interface, jamais
@@ -33,7 +43,7 @@ export interface PlaybackState {
 export interface MediaProvider {
   readonly id: string;
   searchTrack(query: string): Promise<MediaTrack | null>;
-  play(trackUri?: string): Promise<void>;
+  play(trackUri?: string): Promise<void | PlayedOn>;
   pause(): Promise<void>;
   next(): Promise<void>;
   previous(): Promise<void>;

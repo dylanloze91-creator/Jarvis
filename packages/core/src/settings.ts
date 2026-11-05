@@ -222,16 +222,19 @@ export const settingsSchema = z.object({
    */
   spotifyClientId: z.string().default(''),
   /**
-   * Nom de l'enceinte Spotify Connect cible (ex. Devialet). Vide = application
-   * Spotify de bureau sur ce PC, comme avant. Comparaison insensible à la
-   * casse et aux accents ; correspondance exacte puis « contient ».
+   * 5.0.69 — nom de l'enceinte Spotify Connect par défaut (ex. Devialet). Absent ou vide =
+   * application Spotify de bureau sur ce PC, comme avant. Comparaison insensible à la casse
+   * et aux accents ; correspondance exacte puis « contient ». **Sans défaut Zod** : un
+   * `settings.json` déjà enregistré ne gagne aucune clé (`parseSettings({})` inchangé) ;
+   * le code lit `?? ''`.
    */
-  spotifyDeviceName: z.string().default(''),
+  spotifyDeviceName: z.string().optional(),
   /**
-   * Plafond de volume (0–100) pour les appareils Spotify de type Speaker
-   * quand Jarvis règle le volume. Les ordinateurs ne sont pas plafonnés.
+   * Plafond de volume (1–100) pour les enceintes Spotify (type Speaker) quand Jarvis règle
+   * le volume ou y transfère la lecture. Les ordinateurs ne sont pas plafonnés. **Sans défaut
+   * Zod** : absent = 70 dans le code.
    */
-  spotifySpeakerMaxVolume: z.number().int().min(1).max(100).default(70),
+  spotifySpeakerMaxVolume: z.number().int().min(1).max(100).optional(),
   /**
    * Identifiant client OAuth Google (type « Application de bureau ») de
    * l'utilisateur, pour Gmail, Agenda, Drive, Docs et Sheets. Comme

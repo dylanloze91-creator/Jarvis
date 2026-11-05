@@ -35,6 +35,7 @@ const TOOL_LABELS: Record<string, string> = {
   spotify_set_volume: 'Spotify : volume',
   spotify_set_shuffle: 'Spotify : aléatoire',
   spotify_current_track: 'Spotify : morceau en cours',
+  spotify_transfer: 'Spotify : changer d’appareil',
   siteblock_get_status: 'Blocage de sites : état',
   siteblock_set_blocking: 'Blocage de sites : activation',
   siteblock_add_domain: 'Blocage de sites : ajout d’un site',

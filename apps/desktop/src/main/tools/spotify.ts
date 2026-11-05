@@ -1,9 +1,15 @@
 import { z } from 'zod';
-import { defineTool } from '@jarvis/core';
+import { defineTool, spotifyTargetFromText, type SpotifyPlayTarget } from '@jarvis/core';
 import type { SpotifyBridge } from '../media/SpotifyBridge.js';
+import type { SpotifyPlayedOn } from '../media/SpotifyProvider.js';
 
 export interface SpotifyToolsDeps {
   spotify: SpotifyBridge;
+  /**
+   * 5.0.69 : une enceinte Connect (autre que le PC) est choisie dans les réglages. Sans elle,
+   * `spotify_transfer` reste hors du catalogue du modèle (catalogue figé de 0.4.22 inchangé).
+   */
+  speakerChosen?: () => boolean;
 }
 
 function describeError(error: unknown): string {
@@ -21,9 +27,10 @@ function describeSpotifyFailure(error: unknown): string {
   if (/premium/i.test(message)) {
     return "Spotify Premium est requis pour piloter la lecture (limite de l'API Spotify, pas de Jarvis).";
   }
-  // Messages déjà rédigés : pas de lecteur audible, 204 silencieux, volume 0, mauvais appareil.
+  // Messages déjà rédigés : pas de lecteur audible, 204 silencieux, volume 0, mauvais appareil,
+  // enceinte introuvable, plusieurs enceintes, transfert non vérifié.
   if (
-    /Je ne trouve pas|aucun lecteur|lecture n'a pas démarré|lecture n'est pas confirmée|volume est à 0|pas sur l'application de bureau|pas sur «|Spotify est fermé|appareil Spotify est indisponible|Premium|jeton Spotify|HTTP 429|Appareils Connect|is_playing=/i.test(
+    /Je ne trouve pas|Je ne vois aucune enceinte|Plusieurs enceintes|n'est pas passée sur|lecture à transférer|aucun lecteur|lecture n'a pas démarré|lecture n'est pas confirmée|volume est à 0|pas sur l'application de bureau|pas sur «|Spotify est fermé|appareil Spotify est indisponible|Premium|jeton Spotify|HTTP 429|Appareils Connect|is_playing=/i.test(
       message,
     )
   ) {
@@ -32,8 +39,20 @@ function describeSpotifyFailure(error: unknown): string {
   return `Impossible de lancer la musique sur Spotify : ${message}`;
 }
 
+/** Libellé parlé d'une cible : « l'enceinte », « le PC », « Devialet ». */
+function targetLabel(target: SpotifyPlayTarget): string {
+  if (target.kind === 'speaker') return "l'enceinte";
+  if (target.kind === 'pc') return 'le PC';
+  return `« ${target.name} »`;
+}
+
+/** 5.0.69 : quand un appareil précis était demandé, c'est le résultat qui dit où ça joue. */
+function playedWhere(played: SpotifyPlayedOn | void): string {
+  return played?.targeted ? ` sur « ${played.deviceName} »` : '';
+}
+
 /**
- * Les huit outils Spotify. Niveau de risque : `safe` pour tous, y compris les
+ * Les outils Spotify. Niveau de risque : `safe` pour tous, y compris les
  * actions qui changent l'état de lecture (pause, suivant, volume…) — décision
  * prise lors de l'intégration de cette fonctionnalité, documentée en détail
  * dans le README (section « Pourquoi les outils Spotify sont `safe` ») :
@@ -44,45 +63,88 @@ function describeSpotifyFailure(error: unknown): string {
  * déjà — mais l'interruption elle-même est tout aussi réversible (un second
  * « reprends » relance l'ancien morceau), donc `safe` aussi, par cohérence
  * avec le reste du contrôle de lecture.
+ *
+ * 5.0.69 : `spotify_transfer` (« passe la musique sur l'enceinte ») n'est proposé au modèle
+ * qu'avec une enceinte choisie dans les réglages ; « mets X sur le PC » passe par `spotify_play`
+ * avec l'appareil dans le contexte d'exécution (`ToolContext.playbackTarget`).
  */
 export function createSpotifyTools(deps: SpotifyToolsDeps) {
   const getSpotify = () => deps.spotify.getProvider();
 
+  async function searchAndPlay(
+    query: string,
+    device?: SpotifyPlayTarget,
+  ): Promise<{ ok: boolean; content: string; data?: unknown }> {
+    try {
+      const track = await getSpotify().searchTrack(query);
+
+      if (!track) {
+        return {
+          ok: false,
+          content: `Aucun morceau trouvé sur Spotify pour « ${query} ». Spotify n'a rien renvoyé pour cette recherche.`,
+        };
+      }
+
+      const played = await getSpotify().play(track.uri, {
+        contextUri: track.contextUri,
+        artistUri: track.artistUri,
+        ...(device ? { device } : {}),
+      });
+
+      return {
+        ok: true,
+        content: `Lecture lancée sur Spotify${playedWhere(played)} : ${track.title} — ${track.artists.join(', ')}. Lecture vérifiée : is_playing=true et URI confirmée.`,
+        data: track,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        content: describeSpotifyFailure(error),
+      };
+    }
+  }
+
   const spotifyPlayTool = defineTool({
     name: 'spotify_play',
     description:
-      "Recherche un morceau sur Spotify (requête libre, fautes d’orthographe acceptées) et le lance sur l'appareil Spotify choisi dans les réglages (enceinte Connect ou application de bureau Windows si aucune enceinte n'est choisie) — pas le téléphone ni le lecteur web. Vérifie que ça joue vraiment (is_playing, appareil, volume). Nécessite Spotify Premium. Ne jamais inventer un échec ni annoncer une lecture s'il n'y a pas de son.",
+      "Recherche un morceau sur Spotify (requête libre, fautes d’orthographe acceptées) et le lance sur l'application de bureau Windows — pas le téléphone ni le lecteur web. Vérifie que ça joue vraiment (is_playing, appareil, volume). Nécessite Spotify Premium. Ne jamais inventer un échec ni annoncer une lecture s'il n'y a pas de son.",
     risk: 'safe',
     schema: z.object({
       query: z.string().min(1).max(200).describe('Morceau, artiste ou combinaison à rechercher.'),
     }),
     summarize: ({ query }) => `Lancer sur Spotify : « ${query} ».`,
-    execute: async ({ query }) => {
+    // 5.0.69 : l'appareil dit à la voix (« sur l'enceinte », « sur le PC ») arrive par le contexte
+    // d'exécution, posé par le chemin forcé de l'agent ; le schéma et la description ne changent pas.
+    execute: ({ query }, context) => searchAndPlay(query, context.playbackTarget),
+  });
+
+  const spotifyTransferTool = defineTool({
+    name: 'spotify_transfer',
+    description:
+      "Passe la musique Spotify en cours sur un autre appareil : « enceinte » (l'enceinte choisie dans les réglages), « pc » (l'application de bureau Windows) ou le nom d'un appareil Spotify Connect. Vérifie que la lecture est bien passée sur cet appareil avant de le dire. Nécessite Spotify Premium.",
+    risk: 'safe',
+    isAvailable: () => deps.speakerChosen?.() ?? false,
+    unavailableMessage: () =>
+      "Aucune enceinte Spotify n'est choisie. Choisis-en une dans Réglages → Spotify → Enceinte de lecture, puis réessaie.",
+    schema: z.object({
+      device: z
+        .string()
+        .min(1)
+        .max(80)
+        .describe("« enceinte », « pc » ou le nom d'un appareil Spotify Connect."),
+    }),
+    summarize: ({ device }) =>
+      `Passer la musique Spotify sur ${targetLabel(spotifyTargetFromText(device))}.`,
+    execute: async ({ device }) => {
       try {
-        const track = await getSpotify().searchTrack(query);
-
-        if (!track) {
-          return {
-            ok: false,
-            content: `Aucun morceau trouvé sur Spotify pour « ${query} ». Spotify n'a rien renvoyé pour cette recherche.`,
-          };
-        }
-
-        await getSpotify().play(track.uri, {
-          contextUri: track.contextUri,
-          artistUri: track.artistUri,
-        });
-
+        const played = await getSpotify().transferPlayback(spotifyTargetFromText(device));
         return {
           ok: true,
-          content: `Lecture lancée sur Spotify : ${track.title} — ${track.artists.join(', ')}. Lecture vérifiée : is_playing=true et URI confirmée.`,
-          data: track,
+          content: `La musique joue maintenant sur « ${played.deviceName} ». Lecture vérifiée : is_playing=true sur cet appareil.`,
+          data: played,
         };
       } catch (error) {
-        return {
-          ok: false,
-          content: describeSpotifyFailure(error),
-        };
+        return { ok: false, content: describeSpotifyFailure(error) };
       }
     },
   });
@@ -243,5 +305,6 @@ export function createSpotifyTools(deps: SpotifyToolsDeps) {
     spotifyVolumeTool,
     spotifyShuffleTool,
     spotifyCurrentTrackTool,
+    spotifyTransferTool,
   ];
 }

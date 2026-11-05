@@ -252,6 +252,7 @@ const session = new ChatSession({
   knowledge,
   localLearning,
   getChatMissionHub: () => chatMissionHub,
+  spotifyDeviceNames: () => spotify.knownDeviceNames(),
 });
 
 // 5.0.63 — téléphone : une session de chat à part (un tour sur le téléphone n'annule pas celui de
@@ -269,6 +270,7 @@ const phoneSession = new ChatSession({
   knowledge,
   localLearning,
   getChatMissionHub: () => chatMissionHub,
+  spotifyDeviceNames: () => spotify.knownDeviceNames(),
 });
 const phone = new PhoneService({
   store: PhoneStore.inUserData(() => app.getPath('userData')),
@@ -318,6 +320,7 @@ const speakers = new SpeakerService({
       knowledge,
       localLearning,
       getChatMissionHub: () => chatMissionHub,
+      spotifyDeviceNames: () => spotify.knownDeviceNames(),
     });
     return {
       send: async (sender, input) => {

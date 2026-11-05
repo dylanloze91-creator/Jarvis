@@ -84,6 +84,20 @@ describe('chef d’orchestre — chemin express', () => {
     noMusic.delete('musique');
     expect(expressTeam({ text: 'Mets Daft Punk sur Spotify', history: [], available: noMusic })).toBeNull();
   });
+
+  it('5.0.69 : enceinte ou PC choisis à la voix → Musique en express, sans le cerveau', () => {
+    expect(expressTeam({ text: "Passe la musique sur l'enceinte", history: [], available: ALL })).toBe('musique');
+    expect(expressTeam({ text: 'Mets-la sur le PC', history: [], available: ALL })).toBe('musique');
+    expect(expressTeam({ text: "Mets Daft Punk sur l'enceinte", history: [], available: ALL })).toBe('musique');
+    expect(
+      expressTeam({
+        text: 'Mets Daft Punk sur la Devialet',
+        history: [],
+        available: ALL,
+        spotifyDeviceNames: ['Devialet Phantom'],
+      }),
+    ).toBe('musique');
+  });
 });
 
 describe('chef d’orchestre — le cerveau', () => {

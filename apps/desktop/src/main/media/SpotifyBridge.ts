@@ -1,5 +1,9 @@
 import type { Settings } from '@jarvis/core';
-import { SpotifyProvider, type SpotifyConnectDeviceSummary } from './SpotifyProvider.js';
+import {
+  DEFAULT_SPEAKER_MAX_VOLUME,
+  SpotifyProvider,
+  type SpotifyConnectDeviceSummary,
+} from './SpotifyProvider.js';
 
 export type { SpotifyConnectDeviceSummary };
 
@@ -92,10 +96,28 @@ export class SpotifyBridge {
     return (clientIdOverride ?? this.getSettings().spotifyClientId).trim();
   }
 
+  /** 5.0.69 : une enceinte Connect est choisie par défaut dans les réglages (`spotify_transfer` proposé). */
+  speakerChosen(): boolean {
+    return Boolean(this.getSettings().spotifyDeviceName?.trim());
+  }
+
+  /**
+   * Noms d'appareils Connect connus sans appel réseau : l'enceinte des réglages et la dernière
+   * liste vue (réglages, lecture). Pour « mets X sur la Devialet » dit à la voix.
+   */
+  knownDeviceNames(): string[] {
+    const names = new Set<string>();
+    const chosen = (this.getSettings().spotifyDeviceName ?? '').trim();
+    if (chosen) names.add(chosen);
+    for (const name of this.cached?.provider.lastSeenDeviceNames() ?? []) names.add(name);
+    return [...names];
+  }
+
   private providerFor(clientId: string): SpotifyProvider {
     const settings = this.getSettings();
-    const targetDeviceName = settings.spotifyDeviceName.trim();
-    const speakerMaxVolume = settings.spotifySpeakerMaxVolume;
+    // Réglages facultatifs, sans défaut Zod : absents = bureau Windows et plafond 70.
+    const targetDeviceName = (settings.spotifyDeviceName ?? '').trim();
+    const speakerMaxVolume = settings.spotifySpeakerMaxVolume ?? DEFAULT_SPEAKER_MAX_VOLUME;
     const key = `${clientId}\0${targetDeviceName}\0${speakerMaxVolume}`;
     if (!this.cached || this.cached.key !== key) {
       this.cached = {

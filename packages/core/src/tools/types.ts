@@ -1,4 +1,5 @@
 import type { z } from 'zod';
+import type { SpotifyPlayTarget } from '../media/playIntent.js';
 
 /**
  * Niveau de risque déclaré par chaque outil.
@@ -43,6 +44,12 @@ export interface ToolContext {
   onProgress?: (message: string) => void;
   /** Journal technique. Même activé, les secrets sont retirés avant l'écriture. */
   debug?: boolean;
+  /**
+   * 5.0.69 : appareil demandé à la voix pour cette lecture (« mets X sur l'enceinte / sur le
+   * PC »), posé par le chemin forcé de l'agent sur `spotify_play`. Absent : enceinte des
+   * réglages, sinon l'application de bureau. Jamais visible du modèle (pas un argument).
+   */
+  playbackTarget?: SpotifyPlayTarget;
 }
 
 /**

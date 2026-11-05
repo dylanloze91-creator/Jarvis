@@ -120,6 +120,11 @@ interface SessionDeps {
   localLearning: LocalLearningController;
   /** 5.0.68 — missions depuis la discussion (après le contrôleur Développeur). */
   getChatMissionHub?: () => ChatMissionHub | null;
+  /**
+   * 5.0.69 — noms d'appareils Spotify Connect connus (enceinte des réglages, dernière liste
+   * vue) pour « mets X sur la Devialet ». Absent : seuls « l'enceinte » et « le PC » sont compris.
+   */
+  spotifyDeviceNames?: () => readonly string[];
 }
 
 /**
@@ -355,6 +360,7 @@ export class ChatSession {
         homeLocation: settings.homeLocation ?? null,
         allowedTools: (name) =>
           teamHasTool(team, name) || (chatMissionsOn && name === PROPOSER_MISSION_TOOL_NAME),
+        spotifyDeviceNames: () => this.deps.spotifyDeviceNames?.() ?? [],
         ...(turn.learningReview ? { learningReview: turn.learningReview } : {}),
         ...(turn.learningFinalize ? { learningFinalize: turn.learningFinalize } : {}),
       });
@@ -374,6 +380,7 @@ export class ChatSession {
         systemPrompt: turn.systemPrompt,
         temperature: settings.temperature,
         homeLocation: settings.homeLocation ?? null,
+        spotifyDeviceNames: () => this.deps.spotifyDeviceNames?.() ?? [],
         ...(turn.learningReview ? { learningReview: turn.learningReview } : {}),
         ...(turn.learningFinalize ? { learningFinalize: turn.learningFinalize } : {}),
       });
@@ -622,7 +629,12 @@ export class ChatSession {
     if (clock) return { team: 'horloge', label: 'Horloge', model: 'sans modèle', how: 'express', reply: clock };
     const teams = availableTeams(this.deps.tools.schemas().map((tool) => tool.name));
     const available = new Set(teams);
-    let team: OrchestraTeam | null = expressTeam({ text, history: messages, available });
+    let team: OrchestraTeam | null = expressTeam({
+      text,
+      history: messages,
+      available,
+      spotifyDeviceNames: this.deps.spotifyDeviceNames?.() ?? [],
+    });
     let how: TurnRoute['how'] = team ? 'express' : 'cerveau';
     if (!team) {
       const router = activeRouter(settings);
