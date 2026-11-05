@@ -86,6 +86,19 @@ export class PersonalizationStore {
     return structuredClone(profile);
   }
 
+  async merge(patch: Partial<PersonalizationProfile>): Promise<PersonalizationProfile> {
+    const profile = await this.get();
+    const next: PersonalizationProfile = {
+      version: 1,
+      assistant: { ...profile.assistant, ...patch.assistant },
+      user: { ...profile.user, ...patch.user },
+      rules: patch.rules ?? profile.rules,
+      updatedAt: Date.now(),
+    };
+    await this.save(next);
+    return structuredClone(next);
+  }
+
   private async save(profile: PersonalizationProfile): Promise<void> {
     await mkdir(app.getPath('userData'), { recursive: true });
     await writeFile(filePath(), JSON.stringify(profile, null, 2), {

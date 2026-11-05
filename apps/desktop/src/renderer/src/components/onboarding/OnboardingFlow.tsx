@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import { ONBOARDING_QUESTIONS, type OnboardingQuestion, type QuestionnaireAnswers } from '@jarvis/core';
 import { Button } from '@/components/ui/button';
-import { Toggle } from '@/components/ui/field';
+import { Input } from '@/components/ui/field';
 import { cn } from '@/lib/utils';
 
 interface Props {
@@ -18,15 +18,15 @@ export function OnboardingFlow({ initialAnswers, onDone, onDismiss }: Props) {
   const total = ONBOARDING_QUESTIONS.length;
   const progress = ((index + 1) / total) * 100;
 
-  const setAnswer = useCallback((id: string, value: string | boolean | string[] | undefined) => {
+  const setAnswer = useCallback((id: string, value: string | string[] | undefined) => {
     setAnswers((current) => ({ ...current, [id]: value }));
   }, []);
 
   const canContinue = useMemo(() => {
     if (!question) return false;
-    if (question.skippable) return true;
+    if (question.skippable !== false) return true;
     const value = answers[question.id];
-    if (question.kind === 'toggle') return typeof value === 'boolean';
+    if (question.kind === 'text') return typeof value === 'string' && value.trim().length > 0;
     if (question.kind === 'single') return typeof value === 'string' && value.length > 0;
     if (question.kind === 'multi') return Array.isArray(value) && value.length > 0;
     return true;
@@ -66,16 +66,14 @@ export function OnboardingFlow({ initialAnswers, onDone, onDismiss }: Props) {
           Retour
         </Button>
         <div className="flex flex-wrap gap-2">
-          {question.skippable ? (
-            <Button type="button" size="sm" variant="ghost" onClick={next}>
-              Passer
-            </Button>
-          ) : null}
+          <Button type="button" size="sm" variant="ghost" onClick={next}>
+            Passer
+          </Button>
           <Button type="button" size="sm" variant="ghost" onClick={onDismiss}>
             Plus tard
           </Button>
           <Button type="button" size="sm" disabled={!canContinue} onClick={next}>
-            {index >= total - 1 ? 'Terminer' : 'Suivant'}
+            {index >= total - 1 ? 'Voir le résumé' : 'Suivant'}
           </Button>
         </div>
       </div>
@@ -90,14 +88,14 @@ function QuestionBody({
 }: {
   question: OnboardingQuestion;
   answers: QuestionnaireAnswers;
-  onChange: (id: string, value: string | boolean | string[] | undefined) => void;
+  onChange: (id: string, value: string | string[] | undefined) => void;
 }) {
-  if (question.kind === 'toggle') {
+  if (question.kind === 'text') {
     return (
-      <Toggle
-        label="Oui"
-        checked={answers[question.id] === true}
-        onChange={(checked) => onChange(question.id, checked)}
+      <Input
+        value={typeof answers[question.id] === 'string' ? answers[question.id] : ''}
+        placeholder="Ton prénom"
+        onChange={(event) => onChange(question.id, event.target.value)}
       />
     );
   }

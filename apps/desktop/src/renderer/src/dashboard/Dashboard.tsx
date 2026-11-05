@@ -3,16 +3,12 @@ import {
   Cable,
   Camera,
   Clapperboard,
-  CalendarClock,
   Globe2,
   History,
   Home,
   Mail,
-  MessageSquare,
-  Mic,
   Monitor,
   Music,
-  ScrollText,
   Settings as SettingsIcon,
   Shrink,
   StickyNote,
@@ -22,8 +18,8 @@ import {
   Code2,
   type LucideIcon,
 } from 'lucide-react';
-import { useEffect, useState } from 'react';
-import { activePersona, formatSeconds, personaGreeting, userFirstName, type Conversation, type Settings } from '@jarvis/core';
+import { useEffect, useMemo, useState } from 'react';
+import { activePersona, formatSeconds, looksLikeQuestionnaireIntent, personaGreeting, userFirstName, type Conversation, type Settings } from '@jarvis/core';
 import { AuditPanel } from '@/components/AuditPanel';
 import { HistoryPanel } from '@/components/HistoryPanel';
 import { UnifiedJarvisChat } from '@/components/UnifiedJarvisChat';
@@ -153,6 +149,7 @@ export interface DashboardProps {
   onNew: () => void;
   onAnalyzeMachine?: () => void;
   onOpenDeveloper: (initialMessage?: string) => void;
+  onOpenQuestionnaire?: () => void;
   pendingDevVoice: string | null;
   onPendingDevVoiceConsumed: () => void;
 }
@@ -172,6 +169,7 @@ export function Dashboard({
   onNew,
   onAnalyzeMachine,
   onOpenDeveloper,
+  onOpenQuestionnaire,
   pendingDevVoice,
   onPendingDevVoiceConsumed,
 }: DashboardProps) {
@@ -218,15 +216,51 @@ export function Dashboard({
     if (view !== 'settings') setSettingsTab(undefined);
   }, [view]);
 
+  const visibleFunctions = useMemo(() => {
+    const base = FUNCTIONS.filter((card) => card.id !== 'video' || settings?.videoAnalysis !== false);
+    if (!preferredServices?.length) return base;
+    const rank = (cardId: string): number => {
+      const map: Record<string, string> = {
+        music: 'music',
+        google: 'google',
+        search: 'web',
+        system: 'pc',
+        memory: 'web',
+      };
+      const service = map[cardId];
+      if (!service) return 50;
+      const index = preferredServices.indexOf(service);
+      return index === -1 ? 40 : index;
+    };
+    return [...base].sort((a, b) => rank(a.id) - rank(b.id));
+  }, [preferredServices, settings?.videoAnalysis]);
+
   const navigate = (next: View): void => {
     setView(next);
   };
 
+  const [preferredServices, setPreferredServices] = useState<string[] | null>(null);
+  const [questionnairePrompt, setQuestionnairePrompt] = useState(false);
+
+  useEffect(() => {
+    void window.jarvis.questionnaire.get().then((state) => {
+      setPreferredServices(state.preferredServices);
+      setQuestionnairePrompt(!state.completedAt && !state.dismissed);
+    });
+  }, [view]);
+
+  const sendText = (text: string, source: 'voice' | 'text' = 'text'): void => {
+    if (looksLikeQuestionnaireIntent(text)) {
+      onOpenQuestionnaire?.();
+      return;
+    }
+    chat.send(text, source);
+  };
+
   const ask = (prompt: string): void => {
     navigate('chat');
-    // « Analyse cette vidéo YouTube : » attend un lien : on le pose dans le champ, rien ne part.
     if (needsCompletion(prompt)) requestComposerDraft(prompt);
-    else chat.send(prompt, 'text');
+    else sendText(prompt, 'text');
   };
 
   const openSettingsTab = (tab: SettingsTabId): void => {
@@ -263,19 +297,16 @@ export function Dashboard({
           J
         </div>
         <nav className="side-nav" aria-label="Navigation">
-          <SideButton label="Accueil" icon={Home} active={view === 'chat' && chat.items.length === 0} onClick={() => navigate('chat')} />
-          <SideButton label="Discussion" icon={MessageSquare} active={view === 'chat' && chat.items.length > 0} onClick={() => navigate('chat')} />
-          <SideButton
-            label="Développeur"
-            icon={Code2}
-            active={view === 'developer'}
-            onClick={() => navigate(view === 'developer' ? 'chat' : 'developer')}
-          />
+          <SideButton label="Accueil" icon={Home} active={view === 'chat'} onClick={() => navigate('chat')} />
           <SideButton label="Historique" icon={History} active={view === 'history'} onClick={() => navigate(view === 'history' ? 'chat' : 'history')} />
-          <SideButton label="Google" icon={CalendarClock} onClick={openGoogleSettings} />
-          <SideButton label="Automatisation" icon={Workflow} soon />
-          <SideButton label="Micro et voix" icon={Mic} active={false} onClick={() => openSettingsTab('voice')} />
-          <SideButton label="Journal" icon={ScrollText} active={view === 'audit'} onClick={() => navigate(view === 'audit' ? 'chat' : 'audit')} />
+          {settings?.developer.enabled ? (
+            <SideButton
+              label="Code et projets"
+              icon={Code2}
+              active={view === 'developer'}
+              onClick={() => navigate(view === 'developer' ? 'chat' : 'developer')}
+            />
+          ) : null}
           <SideButton label="Réglages" icon={SettingsIcon} active={view === 'settings'} onClick={() => navigate(view === 'settings' ? 'chat' : 'settings')} />
           <SideButton
             label="Comment tout brancher"
@@ -283,6 +314,7 @@ export function Dashboard({
             active={view === 'setup-guide'}
             onClick={() => navigate(view === 'setup-guide' ? 'chat' : 'setup-guide')}
           />
+          <SideButton label="Automatisation" icon={Workflow} soon />
         </nav>
         <div className="side-spacer" />
         <div className="side-profile" title={profileInitial ? 'Profil local' : 'Profil'} aria-label={profileInitial ? 'Profil local' : 'Profil'}>
@@ -334,7 +366,33 @@ export function Dashboard({
             </section>
 
             <div className="fn-row">
-              {FUNCTIONS.filter((card) => card.id !== 'video' || settings?.videoAnalysis !== false).map((card) => (
+              {questionnairePrompt ? (
+                <div className="mb-3 w-full rounded-xl border border-cyan-400/20 bg-cyan-400/10 px-4 py-3 text-sm text-slate-100">
+                  <p className="font-medium">Nouveau : adapte Jarvis à toi en 2 minutes</p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <button type="button" className="quick-btn" onClick={() => onOpenQuestionnaire?.()}>
+                      C&apos;est parti
+                    </button>
+                    <button
+                      type="button"
+                      className="quick-btn opacity-80"
+                      onClick={() => void window.jarvis.questionnaire.set({ dismissed: true }).then(() => setQuestionnairePrompt(false))}
+                    >
+                      Plus tard
+                    </button>
+                    <button
+                      type="button"
+                      className="quick-btn opacity-70"
+                      onClick={() =>
+                        void window.jarvis.questionnaire.set({ dismissed: true }).then(() => setQuestionnairePrompt(false))
+                      }
+                    >
+                      Ne plus me le proposer
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+              {visibleFunctions.map((card) => (
                 <button
                   key={card.id}
                   type="button"
@@ -363,7 +421,7 @@ export function Dashboard({
               settings={settings}
               voice={voice}
               onSaved={onSaved}
-              chat={chat}
+              chat={{ ...chat, send: (text, source) => sendText(text, source ?? 'text') }}
               booting={booting}
               bootError={bootError}
               onOpenDeveloper={onOpenDeveloper}

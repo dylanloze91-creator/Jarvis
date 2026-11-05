@@ -1,12 +1,14 @@
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import {
-  applyQuestionnaireAnswers,
   emptyQuestionnaireState,
+  onboardingPlanFromAnswers,
   questionnaireSettingsBackup,
+  type OnboardingEnvironment,
   type QuestionnaireState,
   type Settings,
 } from '@jarvis/core';
+import type { PersonalizationProfile } from '@jarvis/core';
 
 function readFileState(raw: string): QuestionnaireState {
   try {
@@ -28,6 +30,13 @@ function readFileState(raw: string): QuestionnaireState {
   } catch {
     return emptyQuestionnaireState();
   }
+}
+
+export interface QuestionnaireApplyDeps {
+  readSettings: () => Promise<Settings>;
+  writeSettingsPatch: (patch: Partial<Settings>) => Promise<Settings>;
+  mergePersonalization: (patch: Partial<PersonalizationProfile>) => Promise<void>;
+  environment: OnboardingEnvironment;
 }
 
 /**
@@ -70,46 +79,42 @@ export class QuestionnaireStore {
     return this.snapshot();
   }
 
-  /** Applique les réponses au fichier de réglages ; garde une sauvegarde partielle pour restaurer. */
-  async apply(
-    readSettings: () => Promise<Settings>,
-    writeSettings: (settings: Settings) => Promise<void>,
-  ): Promise<{ state: QuestionnaireState; settings: Settings }> {
+  /** Applique les réponses après « C'est bon » ; garde une sauvegarde pour restaurer. */
+  async apply(deps: QuestionnaireApplyDeps): Promise<{ state: QuestionnaireState; settings: Settings; openDashboard: boolean }> {
     await this.load();
-    const current = await readSettings();
+    const current = await deps.readSettings();
+    const plan = onboardingPlanFromAnswers(this.state.answers, current, deps.environment);
+    if (plan.changes.length === 0) {
+      return { state: this.snapshot(), settings: current, openDashboard: false };
+    }
     const backup = questionnaireSettingsBackup(current);
-    const { patch, preferredServices, windowPreference } = applyQuestionnaireAnswers(
-      current,
-      this.state.answers,
-    );
-    const next: Settings = { ...current, ...patch };
-    await writeSettings(next);
+    const settings = await deps.writeSettingsPatch(plan.patch);
+    if (Object.keys(plan.personalization).length > 0) {
+      await deps.mergePersonalization(plan.personalization);
+    }
     this.state = {
       ...this.state,
       settingsBackup: backup,
-      preferredServices,
-      windowPreference,
+      preferredServices: plan.preferredServices,
+      windowPreference: plan.windowPreference,
       completedAt: Date.now(),
       dismissed: false,
     };
     await this.save();
-    return { state: this.snapshot(), settings: next };
+    return { state: this.snapshot(), settings, openDashboard: plan.openDashboard };
   }
 
-  /** Restaure les réglages sauvegardés avant la dernière application du questionnaire. */
   async restore(
     readSettings: () => Promise<Settings>,
-    writeSettings: (settings: Settings) => Promise<void>,
+    writeSettingsPatch: (patch: Partial<Settings>) => Promise<Settings>,
   ): Promise<{ state: QuestionnaireState; settings: Settings | null }> {
     await this.load();
     const backup = this.state.settingsBackup;
     if (!backup) return { state: this.snapshot(), settings: null };
-    const current = await readSettings();
-    const next: Settings = { ...current, ...backup };
-    await writeSettings(next);
+    const settings = await writeSettingsPatch(backup);
     this.state = { ...this.state, settingsBackup: null };
     await this.save();
-    return { state: this.snapshot(), settings: next };
+    return { state: this.snapshot(), settings };
   }
 
   private save(): Promise<void> {

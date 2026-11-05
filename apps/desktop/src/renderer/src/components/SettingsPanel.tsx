@@ -125,8 +125,7 @@ export function SettingsPanel({
 
   useEffect(() => {
     navigate(lastSettingsNavigation);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- ouverture initiale seulement
-  }, []);
+  }, [navigate]);
 
   useEffect(() => {
     if (requestedTab) navigate(SETTINGS_DEEP_LINKS[requestedTab.tab]);

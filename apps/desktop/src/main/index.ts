@@ -32,6 +32,7 @@ import {
   type OrchestraTeam,
   type Settings,
   type QuestionnaireState,
+  validateRepo,
 } from '@jarvis/core';
 import {
   IpcChannel,
@@ -56,6 +57,8 @@ import { ChatSession } from './session.js';
 import { appendTeamValidation, type TeamValidationPayload } from './orchestra/teamValidation.js';
 import { PhoneService } from './phone/service.js';
 import { PhoneStore } from './phone/store.js';
+import { gatherRepoFacts } from './developer/repo.js';
+import { runProcess } from './developer/runner.js';
 import { QuestionnaireStore } from './questionnaire/store.js';
 import { SpeakerService } from './speaker/service.js';
 import { SpeakerStore } from './speaker/store.js';
@@ -607,20 +610,39 @@ function registerIpc(): void {
     ),
   );
   ipcMain.handle(IpcChannel.questionnaireApply, async () => {
-    const applied = await questionnaire.apply(
-      () => Promise.resolve(settings),
-      async (next) => {
-        await writeSettings(next);
+    const repoPath = settings.developer.repoPath?.trim();
+    let developerRepoValid = false;
+    if (repoPath) {
+      const facts = await gatherRepoFacts(repoPath, runProcess);
+      developerRepoValid = validateRepo(facts, app.getVersion(), []).ok;
+    }
+    const ollama = await checkOllamaStatus(settings.baseUrl || ollamaDescriptor.defaultBaseUrl!);
+    const applied = await questionnaire.apply({
+      readSettings: () => Promise.resolve(settings),
+      writeSettingsPatch: async (patch) => {
+        const next = parseSettings({ ...settings, ...patch }, settings);
+        const payload = await persistSettings(next);
+        return payload.settings;
       },
-    );
-    const payload = await persistSettings(applied.settings);
-    return { state: applied.state, ...payload };
+      mergePersonalization: async (patch) => {
+        await personalization.merge(patch);
+      },
+      environment: {
+        ollamaModels: ollama.models.map((model) => model.name),
+        developerRepoValid,
+        personalization: await personalization.get(),
+      },
+    });
+    if (applied.openDashboard) overlay?.setChrome('dashboard');
+    return { state: applied.state, settings: applied.settings, status: session.status() };
   });
   ipcMain.handle(IpcChannel.questionnaireRestore, async () => {
     const restored = await questionnaire.restore(
       () => Promise.resolve(settings),
-      async (next) => {
-        await writeSettings(next);
+      async (patch) => {
+        const next = parseSettings({ ...settings, ...patch }, settings);
+        const payload = await persistSettings(next);
+        return payload.settings;
       },
     );
     if (!restored.settings) {

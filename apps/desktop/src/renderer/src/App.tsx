@@ -11,7 +11,7 @@ import {
   PinOff,
 } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { stripSourcesFooter, type Conversation, type QuestionnaireAnswers, type Settings } from '@jarvis/core';
+import { stripSourcesFooter, looksLikeQuestionnaireIntent, type Conversation, type QuestionnaireAnswers, type Settings } from '@jarvis/core';
 import { AuditPanel } from '@/components/AuditPanel';
 import { Dashboard } from '@/dashboard/Dashboard';
 import { useWideLayout } from '@/dashboard/useWideLayout';
@@ -80,8 +80,13 @@ export default function App() {
   // prompt système (voir `withVoiceOriginNotice`), jamais dans le texte
   // affiché ou enregistré, qui reste la transcription telle quelle.
   const onVoiceTranscript = useCallback(
-    (text: string, meta?: { followUp?: boolean }) =>
-      deliverVoiceTranscript(text, (t) => chat.send(t, 'voice', { followUp: meta?.followUp === true })),
+    (text: string, meta?: { followUp?: boolean }) => {
+      if (looksLikeQuestionnaireIntent(text)) {
+        setOnboardingPhase('flow');
+        return;
+      }
+      deliverVoiceTranscript(text, (t) => chat.send(t, 'voice', { followUp: meta?.followUp === true }));
+    },
     [chat.send],
   );
   const voice = useVoice({
@@ -122,6 +127,7 @@ export default function App() {
         if (!cancelled) setBooting(false);
       });
     void window.jarvis.questionnaire.get().then((state) => {
+      if (sceneFromLocation()) return;
       if (!state.completedAt && !state.dismissed) setOnboardingPhase('flow');
     });
     return () => {
@@ -157,6 +163,19 @@ export default function App() {
     } else if (scene === 'google-confirm' && !booting) {
       seeded.current = true;
       chat.send('Envoie à Marie un mail pour confirmer la réunion de jeudi à 10 h.');
+    } else if (scene === 'onboarding') {
+      seeded.current = true;
+      setOnboardingPhase('flow');
+    } else if (scene === 'onboarding-summary') {
+      seeded.current = true;
+      setOnboardingAnswers({ talkMode: 'voice', character: 'complice', confirmBefore: 'risky' });
+      setOnboardingPhase('summary');
+    } else if (scene === 'settings-v2' || scene === 'settings-search') {
+      seeded.current = true;
+      setView('settings');
+    } else if (scene === 'dashboard-v2') {
+      seeded.current = true;
+      setView('chat');
     }
   }, [chat.load, chat.send, booting]);
 
@@ -292,6 +311,7 @@ export default function App() {
         onNew={startNew}
         onAnalyzeMachine={() => setShowSetup(true)}
         onOpenDeveloper={openDeveloper}
+        onOpenQuestionnaire={() => setOnboardingPhase('flow')}
         pendingDevVoice={pendingDevVoice}
         onPendingDevVoiceConsumed={() => setPendingDevVoice(null)}
       />
@@ -495,10 +515,12 @@ export default function App() {
                   setOnboardingPhase('summary');
                 }}
               />
-            ) : (
+            ) : settings ? (
               <OnboardingSummary
                 answers={onboardingAnswers}
+                settings={settings}
                 onBack={() => setOnboardingPhase('flow')}
+                onCancel={() => setOnboardingPhase(null)}
                 onConfirm={() => {
                   void window.jarvis.questionnaire
                     .set({ answers: onboardingAnswers, dismissed: false })
@@ -513,7 +535,7 @@ export default function App() {
                     });
                 }}
               />
-            )}
+            ) : null}
           </div>
         </div>
       ) : null}

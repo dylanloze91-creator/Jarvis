@@ -51,7 +51,7 @@ Statuts possibles : `en cours`, `en pause`, `bloqué`, `terminé`.
 | Claude Code | `claude/entrainement-1` | Entraînement de l'élève, étapes 1 à 4 du README (préparation, mise en place, dry-run, essai 20 pas sur la carte) ; puis entraînement complet du 3B sur la carte (demandé le 2026-11-04 au soir) ; export `jarvis-coder-3b` et examen `lab:compare` ; rapports `rapports/2026-11-04-entrainement-essai-1.md`, `rapports/2026-11-05-entrainement-complet-3b.md`, `rapports/2026-11-05-examen-jarvis-coder-3b-contre-qwen2-5-coder-3b.md` | — | 2026-11-04 | terminé |
 | Cursor | `cursor/mission-directe-5069` | Mission directe | — | 2026-11-04 | terminé |
 | Cursor | `cursor/spotify-enceinte-cible` | Spotify sur enceinte Connect choisie (Devialet) | — | 2026-11-04 | terminé |
-| Cursor | `cursor/interface-simple-5070` | 5.0.70 interface simple + questionnaire | `packages/core/src/onboarding/`, `packages/core/src/settingsMap/`, `apps/desktop/src/renderer/src/components/settings/`, `apps/desktop/src/renderer/src/components/onboarding/`, `apps/desktop/src/main/questionnaire/`, `apps/desktop/src/renderer/src/components/SettingsPanel.tsx`, `apps/desktop/src/renderer/src/components/SettingsTabs.tsx`, `apps/desktop/src/renderer/src/dashboard/Dashboard.tsx`, `apps/desktop/src/renderer/src/App.tsx`, `rapports/2026-11-05-interface-simple-5070.md` | 2026-11-05 | en cours |
+| Cursor | `cursor/interface-simple-5070` | 5.0.70 interface simple + questionnaire | — | 2026-11-05 | terminé |
 
 ## Ressource GPU / Ollama
 
