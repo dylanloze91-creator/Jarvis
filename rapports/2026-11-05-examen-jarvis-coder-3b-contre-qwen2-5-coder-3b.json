@@ -1,0 +1,333 @@
+{
+  "at": "2026-11-05T00:23:55.895Z",
+  "set": "eval",
+  "rule": {
+    "maxLost": 2,
+    "minGain": 3
+  },
+  "base": {
+    "model": "qwen2.5-coder:3b",
+    "passed": 55,
+    "total": 87,
+    "perRun": [
+      17,
+      19,
+      19
+    ],
+    "succeeded": 19
+  },
+  "candidate": {
+    "model": "jarvis-coder-3b",
+    "passed": 69,
+    "total": 87,
+    "perRun": [
+      23,
+      23,
+      23
+    ],
+    "succeeded": 23
+  },
+  "missions": [
+    {
+      "id": "e1-count-char",
+      "level": 1,
+      "base": 3,
+      "candidate": 3,
+      "runs": 3,
+      "baseSucceeded": true,
+      "candidateSucceeded": true,
+      "change": "stable"
+    },
+    {
+      "id": "e1-is-sorted",
+      "level": 1,
+      "base": 2,
+      "candidate": 3,
+      "runs": 3,
+      "baseSucceeded": true,
+      "candidateSucceeded": true,
+      "change": "stable"
+    },
+    {
+      "id": "e1-last-n",
+      "level": 1,
+      "base": 3,
+      "candidate": 3,
+      "runs": 3,
+      "baseSucceeded": true,
+      "candidateSucceeded": true,
+      "change": "stable"
+    },
+    {
+      "id": "e1-min-of-list",
+      "level": 1,
+      "base": 3,
+      "candidate": 3,
+      "runs": 3,
+      "baseSucceeded": true,
+      "candidateSucceeded": true,
+      "change": "stable"
+    },
+    {
+      "id": "e1-strip-vowels",
+      "level": 1,
+      "base": 3,
+      "candidate": 3,
+      "runs": 3,
+      "baseSucceeded": true,
+      "candidateSucceeded": true,
+      "change": "stable"
+    },
+    {
+      "id": "e1-sum-odd",
+      "level": 1,
+      "base": 3,
+      "candidate": 3,
+      "runs": 3,
+      "baseSucceeded": true,
+      "candidateSucceeded": true,
+      "change": "stable"
+    },
+    {
+      "id": "e1-title-case",
+      "level": 1,
+      "base": 3,
+      "candidate": 3,
+      "runs": 3,
+      "baseSucceeded": true,
+      "candidateSucceeded": true,
+      "change": "stable"
+    },
+    {
+      "id": "e2-compact-falsy",
+      "level": 2,
+      "base": 0,
+      "candidate": 3,
+      "runs": 3,
+      "baseSucceeded": false,
+      "candidateSucceeded": true,
+      "change": "gagnée"
+    },
+    {
+      "id": "e2-key-value-pairs",
+      "level": 2,
+      "base": 2,
+      "candidate": 3,
+      "runs": 3,
+      "baseSucceeded": true,
+      "candidateSucceeded": true,
+      "change": "stable"
+    },
+    {
+      "id": "e2-leaf-count",
+      "level": 2,
+      "base": 0,
+      "candidate": 0,
+      "runs": 3,
+      "baseSucceeded": false,
+      "candidateSucceeded": false,
+      "change": "stable"
+    },
+    {
+      "id": "e2-median",
+      "level": 2,
+      "base": 0,
+      "candidate": 3,
+      "runs": 3,
+      "baseSucceeded": false,
+      "candidateSucceeded": true,
+      "change": "gagnée"
+    },
+    {
+      "id": "e2-roman-numerals",
+      "level": 2,
+      "base": 3,
+      "candidate": 3,
+      "runs": 3,
+      "baseSucceeded": true,
+      "candidateSucceeded": true,
+      "change": "stable"
+    },
+    {
+      "id": "e2-rotate-right",
+      "level": 2,
+      "base": 3,
+      "candidate": 3,
+      "runs": 3,
+      "baseSucceeded": true,
+      "candidateSucceeded": true,
+      "change": "stable"
+    },
+    {
+      "id": "e2-run-length",
+      "level": 2,
+      "base": 0,
+      "candidate": 3,
+      "runs": 3,
+      "baseSucceeded": false,
+      "candidateSucceeded": true,
+      "change": "gagnée"
+    },
+    {
+      "id": "e2-safe-sqrt",
+      "level": 2,
+      "base": 3,
+      "candidate": 3,
+      "runs": 3,
+      "baseSucceeded": true,
+      "candidateSucceeded": true,
+      "change": "stable"
+    },
+    {
+      "id": "e2-sum-number-file",
+      "level": 2,
+      "base": 0,
+      "candidate": 0,
+      "runs": 3,
+      "baseSucceeded": false,
+      "candidateSucceeded": false,
+      "change": "stable"
+    },
+    {
+      "id": "e2-to-bool",
+      "level": 2,
+      "base": 0,
+      "candidate": 0,
+      "runs": 3,
+      "baseSucceeded": false,
+      "candidateSucceeded": false,
+      "change": "stable"
+    },
+    {
+      "id": "e3-max-by-comparator",
+      "level": 3,
+      "base": 0,
+      "candidate": 3,
+      "runs": 3,
+      "baseSucceeded": false,
+      "candidateSucceeded": true,
+      "change": "gagnée"
+    },
+    {
+      "id": "e3-percent-zero",
+      "level": 3,
+      "base": 3,
+      "candidate": 3,
+      "runs": 3,
+      "baseSucceeded": true,
+      "candidateSucceeded": true,
+      "change": "stable"
+    },
+    {
+      "id": "e3-queue-order",
+      "level": 3,
+      "base": 3,
+      "candidate": 3,
+      "runs": 3,
+      "baseSucceeded": true,
+      "candidateSucceeded": true,
+      "change": "stable"
+    },
+    {
+      "id": "l1-basket-sum",
+      "level": 1,
+      "base": 3,
+      "candidate": 3,
+      "runs": 3,
+      "baseSucceeded": true,
+      "candidateSucceeded": true,
+      "change": "stable"
+    },
+    {
+      "id": "l1-fold-label",
+      "level": 1,
+      "base": 3,
+      "candidate": 3,
+      "runs": 3,
+      "baseSucceeded": true,
+      "candidateSucceeded": true,
+      "change": "stable"
+    },
+    {
+      "id": "l1-keel-sign",
+      "level": 1,
+      "base": 3,
+      "candidate": 3,
+      "runs": 3,
+      "baseSucceeded": true,
+      "candidateSucceeded": true,
+      "change": "stable"
+    },
+    {
+      "id": "l1-span-clamp",
+      "level": 1,
+      "base": 3,
+      "candidate": 3,
+      "runs": 3,
+      "baseSucceeded": true,
+      "candidateSucceeded": true,
+      "change": "stable"
+    },
+    {
+      "id": "l2-kind-tag",
+      "level": 2,
+      "base": 3,
+      "candidate": 3,
+      "runs": 3,
+      "baseSucceeded": true,
+      "candidateSucceeded": true,
+      "change": "stable"
+    },
+    {
+      "id": "l2-need-name",
+      "level": 2,
+      "base": 0,
+      "candidate": 0,
+      "runs": 3,
+      "baseSucceeded": false,
+      "candidateSucceeded": false,
+      "change": "stable"
+    },
+    {
+      "id": "l2-note-file",
+      "level": 2,
+      "base": 0,
+      "candidate": 0,
+      "runs": 3,
+      "baseSucceeded": false,
+      "candidateSucceeded": false,
+      "change": "stable"
+    },
+    {
+      "id": "l2-qty-json",
+      "level": 2,
+      "base": 3,
+      "candidate": 3,
+      "runs": 3,
+      "baseSucceeded": true,
+      "candidateSucceeded": true,
+      "change": "stable"
+    },
+    {
+      "id": "l3-quote-fee",
+      "level": 3,
+      "base": 0,
+      "candidate": 0,
+      "runs": 3,
+      "baseSucceeded": false,
+      "candidateSucceeded": false,
+      "change": "stable"
+    }
+  ],
+  "won": [
+    "e2-compact-falsy",
+    "e2-median",
+    "e2-run-length",
+    "e3-max-by-comparator"
+  ],
+  "lost": [],
+  "incomparable": [],
+  "verdict": "meilleur",
+  "advised": true,
+  "reason": "jarvis-coder-3b 69/87 contre qwen2.5-coder:3b 55/87 : le candidat dépasse la base de 14 (marge : au moins +3 au total et une moyenne par passage au-dessus du meilleur passage de la base, 19) et perd 0 mission(s) qu’elle réussissait (2 au plus) → conseillé."
+}
