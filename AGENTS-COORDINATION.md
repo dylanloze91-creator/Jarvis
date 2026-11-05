@@ -48,6 +48,7 @@ Statuts possibles : `en cours`, `en pause`, `bloqué`, `terminé`.
 | Cursor | `cursor/validation-equipe` | Validation en direct des équipes | — | 2026-11-04 | terminé |
 | Claude | `claude/caractere-jarvis` | Caractère de Jarvis : fiche de personnage dans les consignes des équipes du chef d'orchestre (réglage `persona`, coupé par défaut), accueil selon l'heure et le prénom ; rapport `rapports/2026-11-03-caractere-jarvis.md` ; à fusionner après rejeu des tests sur le PC | — | 2026-11-03 | terminé |
 | Cursor | `cursor/chat-unifie-5068` | Chat unifié, phase 1 (5.0.68) | — | 2026-11-04 | terminé |
+| Claude Code | `claude/entrainement-1` | Entraînement de l'élève, étapes 1 à 4 du README (préparation, mise en place, dry-run, essai 20 pas sur la carte) ; puis entraînement complet du 3B sur la carte (demandé le 2026-11-04 au soir) ; export `jarvis-coder-3b` et examen `lab:compare` ; rapports `rapports/2026-11-04-entrainement-essai-1.md`, `rapports/2026-11-05-entrainement-complet-3b.md`, `rapports/2026-11-05-examen-jarvis-coder-3b-contre-qwen2-5-coder-3b.md` | — | 2026-11-04 | terminé |
 
 ## Ressource GPU / Ollama
 

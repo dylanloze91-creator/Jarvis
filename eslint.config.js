@@ -12,6 +12,9 @@ export default tseslint.config(
       '**/node_modules/**',
       // Runtime ONNX, Whisper, openWakeWord et Vosk copiés par setup:voice : code tiers, non commité.
       'apps/desktop/voice-assets/**',
+      // Environnement Python et sources llama.cpp installés par training/setup-windows.ps1 : code tiers, non commité.
+      'training/.venv/**',
+      'training/llama.cpp/**',
     ],
   },
   js.configs.recommended,

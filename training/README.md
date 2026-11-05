@@ -119,7 +119,21 @@ comptés. L'adaptateur d'un essai 3B s'exporte comme les autres (étape 4 : `exp
 l'adaptateur ; la fusion d'un 3B demande moitié moins de mémoire et de disque) et passe le même examen (étape 5) ;
 c'est alors un `jarvis-coder` de 3 milliards de paramètres, à comparer à `qwen2.5-coder:7b` avec ça en tête.
 
-Réglages (tous visibles avec `--help`) : `--epochs 3`, `--rank 16`, `--alpha 32`, `--lr 2e-4`, `--grad-accum 16`,
+**Mesuré sur la RTX 2060 le 4 novembre 2026** (3B, 453 exemples préparés, 20 pas) : pic de mémoire de carte **5,44 Go**
+sur 6, **49 s par pas** (16 exemples), soit environ 21 min par époque et **1 h 05 pour 3 époques**. Rien d'autre ne doit
+occuper la carte pendant ce temps : un modèle chargé par Ollama (le cerveau du chat, 4,3 Go) ferait manquer la mémoire ;
+`ollama stop <modèle>` avant de lancer. Sous Windows, l'optimiseur est `adamw_bnb_8bit` et non `paged_adamw_8bit` : les
+états « paginés » (mémoire unifiée CUDA) échouent au premier pas sous Windows (`CUDA error: unknown error`) ; `--optim`
+permet de forcer l'un ou l'autre, la carte louée (Linux) garde `paged_adamw_8bit`.
+
+**Entraînement complet du 3B sur la RTX 2060, nuit du 4 au 5 novembre 2026** : avec la longueur 3 072 (plafond de la
+préparation), la carte déborde en mémoire partagée (5,4 Go dédiés + 9,6 Go de RAM vus par le pilote) et les pas ne
+passent plus (pas 5 jamais atteint en 40 min). **Relancé avec `--max-length 2048`** : aucun exemple écarté (le plus long
+fait moins de 2 000 jetons), **72 s par pas**, 78 pas en **1 h 34** pour 3 époques, pic 5,44 Go. Sur cette carte,
+`--max-length 2048` est donc le réglage à prendre pour une nuit complète ; 3 072 ne sert qu'à l'essai de 20 pas. Rapport :
+`rapports/2026-11-05-entrainement-complet-3b.md`.
+
+Réglages (tous visibles avec `--help`) : `--optim auto`, `--epochs 3`, `--rank 16`, `--alpha 32`, `--lr 2e-4`, `--grad-accum 16`,
 `--max-length` : sans valeur, c'est **le plafond de la préparation** (`options.maxTokens` de `resume.json`, 3 072 par
 défaut) : l'entraînement garde alors exactement les exemples que `lab:prepare` a gardés, rien de plus n'est laissé de
 côté. Une valeur plus basse (pour la mémoire) écarte les exemples plus longs, les compte dans le journal, et le journal

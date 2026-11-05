@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   Prépare, une fois pour toutes, l'environnement d'entraînement de l'élève de Jarvis (5.0.65) sous Windows.
 
