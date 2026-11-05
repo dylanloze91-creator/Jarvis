@@ -69,7 +69,7 @@ Plus le disque pendant la session (quelques centimes). **Moins de 1 $ sur une A5
 ## Pas à pas (RunPod ; Vast.ai est équivalent)
 
 1. **Créer la machine** : « Deploy » → choisir la carte (RTX A5000 24 Go) → image **« RunPod PyTorch »** la plus
-   récente (elle contient Python, torch et CUDA) → disque (« Container / Volume disk ») **60 Go au moins**
+   récente (elle contient Python, torch et CUDA) → disque : **« Volume Disk » 80 Go** (c'est `/workspace`, tout y est écrit ; le « Container Disk » par défaut suffit)
    (le modèle de base fait 15 Go, la fusion 15 Go, le GGUF f16 15 Go, le Q4_K_M 4,7 Go) → Deploy.
 2. **Ouvrir un terminal** sur la machine : bouton « Connect » → « Start Web Terminal » (ou la commande ssh affichée).
 3. **Mettre les fichiers sur la machine** (dans le terminal de la machine) :

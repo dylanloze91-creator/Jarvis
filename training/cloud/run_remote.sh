@@ -63,6 +63,8 @@ fi
 LLAMA_TAG="${LLAMA_TAG:-b12032}"
 QUANT="${QUANT:-1}"
 RUN_DIR="$ICI/runs/cloud-$(date +%Y-%m-%d-%H%M)"
+# Le modèle de base (15 Go) va sur le volume /workspace, pas sur le petit disque du conteneur.
+if [[ -d /workspace && -z "${HF_HOME:-}" ]]; then export HF_HOME=/workspace/.hf; fi
 EXPORT_DIR="$ICI/export/jarvis-coder"
 
 echo "==> Carte graphique"
