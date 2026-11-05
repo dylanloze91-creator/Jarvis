@@ -237,7 +237,7 @@ L’overlay compact ci-dessus est celui de la 0.4.9, conservé pour la fenêtre 
 - **Orbe et logo** (`components/JarvisOrb.tsx`) : niveau du micro seulement pendant la captation d’une commande (`voice.state === 'listening'`), immobiles (respiration habituelle) en attente de « Jarvis ». Hors captation, `level` n’est rafraîchi que 4 fois par seconde.
 - **Indicateur hors fenêtre** (`main/listeningIndicator.ts`, page `renderer/indicator.html`, preload `preload/indicator.ts`) : pastille 184×48 en haut à droite de la zone de travail de l’écran du curseur, du réveil à la fin de la captation, seulement si la fenêtre principale est cachée, réduite ou sans le focus. `focusable: false`, `showInactive`, `setIgnoreMouseEvents(true)`, `skipTaskbar`, `type: 'toolbar'` sous Windows (ni barre des tâches ni Alt-Tab). IPC `listening:indicator` / `listening:level`, acceptés seulement depuis la fenêtre principale.
 - **Apprentissage du réveil** (option `voice.wakeLearning`, désactivée par défaut ; désactivée = détection 0.4.16 à l’identique). Core : `speech/wakeLearning/` (caractéristiques = moyenne/max/écart-type des embeddings openWakeWord sur 2 s ; régression logistique ; seuil du veto borné 0,05–0,5 et actif seulement si la validation croisée garde ≥ 97 % des vrais réveils ; rattrapage des quasi-réveils borné 0,8–0,98 ; étiquetage automatique ; un quasi-réveil < 1,5 s avant un réveil = même « Jarvis », pas un raté ; plafond). Renderer : `voice/wakeLearning/` (sessions mel+embedding à part, sous `withOrtLock`). Main : `main/wakeLearningStore.ts`, uniquement `userData/wake-learning/` (`index.json`, `clips/*.wav`, `verifier.json`), au plus 300 extraits / 20 Mo, journal sans audio ni texte. « Effacer » = extraits supprimés, modèle gardé ; « Réinitialiser » = dossier supprimé. Les détecteurs Vosk et openWakeWord ne changent pas ; Vosk et openWakeWord signalent des quasi-réveils seulement si la couche est active.
-- **Réglages en onglets** (`components/SettingsTabs.tsx`) : Voix et détection, Modèle IA, Recherche et mémoire, Spotify, Outils et sécurité, Fenêtre et démarrage, Mises à jour. Un seul brouillon et un seul « Enregistrer » ; les onglets inactifs restent montés (cachés). Détails techniques repliés (`ui/disclosure.tsx`).
+- **Réglages en onglets** (`components/SettingsTabs.tsx`, remplacés en **5.0.70** par six catégories dans `SettingsPanel.tsx`) : Voix et détection, Modèle IA, Recherche et mémoire, Spotify, Outils et sécurité, Fenêtre et démarrage, Mises à jour. Un seul brouillon et un seul « Enregistrer » ; les onglets inactifs restent montés (cachés). Détails techniques repliés (`ui/disclosure.tsx`).
 
 ---
 
@@ -644,6 +644,15 @@ Cahier : `docs/specs/mission-directe.md`.
 - **Consigne Code** : ne jamais écrire une mission en texte ; appeler `proposer_mission` ou répondre normalement.
 - **Discussion unifiée** : avec `developer.chatMissions`, plus de bascule automatique vers l'onglet Développeur ; corrections et préférences restent dans le chat (`classifyUtterance`, `noteToRecord`).
 - Tests : `detect.test.ts`, `chat-missions-direct.test.ts`, `voiceAssistantRoute.test.ts`, `UnifiedJarvisChat.test.tsx` ; suites 5.0.68 inchangées sans régénération des `__golden__`.
+
+## 5.0.70 — Jarvis plus simple (branche `cursor/interface-simple-5070`, non fusionnée)
+
+Cahier : `docs/specs/interface-simple.md` (branche `claude/specs-interface-simple`). Rapport : `rapports/2026-11-05-interface-simple-5070.md`.
+
+- **Questionnaire** « Faisons connaissance » : règles pures `packages/core/src/onboarding/` (`onboardingPlan`), fichier `userData/questionnaire.json`, résumé avant → après, retour arrière dans Réglages → Application.
+- **Réglages** : six catégories (Moi, Parler à Jarvis, Ce que Jarvis sait faire, Le cerveau de Jarvis, Sécurité, Application) — `SettingsPanel.tsx`, recherche `SettingsSearch.tsx`, carte testée `settingsMap.test.ts`. Anciens `openSettingsOnTab('voice'|'google'|…)` → liens profonds `settingsDeepLinks.ts`.
+- **Navigation** : barre latérale tableau de bord allégée ; overlay compact inchangé (4 vues, catégories identiques).
+- **Invariants** : `parseSettings({})` sans clé nouvelle ; chat / orchestre / golden inchangés ; enregistrement via brouillon + `settingsPatch` conservé.
 
 ## 5.0.69 — Spotify sur l'enceinte Connect choisie
 
