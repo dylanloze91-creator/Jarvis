@@ -18,6 +18,7 @@ import type {
   RiskLevel,
   SearchProviderDescriptor,
   Settings,
+  QuestionnaireState,
   GeocodingPlace,
   ToolCategory,
   UpdateFailureKind,
@@ -151,6 +152,10 @@ export const IpcChannel = {
   machinePullCancel: 'machine:pull-cancel',
   machinePullEvent: 'machine:pull-event',
   machineApply: 'machine:apply',
+  questionnaireGet: 'questionnaire:get',
+  questionnaireSet: 'questionnaire:set',
+  questionnaireApply: 'questionnaire:apply',
+  questionnaireRestore: 'questionnaire:restore',
   phoneStatus: 'phone:status',
   phoneSetEnabled: 'phone:set-enabled',
   phoneStartPairing: 'phone:start-pairing',
@@ -776,5 +781,12 @@ export interface JarvisApi {
     cancelPull(): Promise<void>;
     apply(): Promise<{ settings: Settings; status: RuntimeStatus }>;
     onPull(listener: (progress: MachinePullProgress) => void): () => void;
+  };
+  /** Questionnaire d’accueil 5.0.70 (`userData/questionnaire.json`). */
+  questionnaire: {
+    get(): Promise<QuestionnaireState>;
+    set(patch: Partial<QuestionnaireState>): Promise<QuestionnaireState>;
+    apply(): Promise<{ state: QuestionnaireState; settings: Settings; status: RuntimeStatus }>;
+    restore(): Promise<{ state: QuestionnaireState; settings: Settings | null; status: RuntimeStatus }>;
   };
 }

@@ -11,12 +11,15 @@ import {
   PinOff,
 } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { stripSourcesFooter, type Conversation, type Settings } from '@jarvis/core';
+import { stripSourcesFooter, type Conversation, type QuestionnaireAnswers, type Settings } from '@jarvis/core';
 import { AuditPanel } from '@/components/AuditPanel';
 import { Dashboard } from '@/dashboard/Dashboard';
 import { useWideLayout } from '@/dashboard/useWideLayout';
 import { HistoryPanel } from '@/components/HistoryPanel';
-import { SettingsPanel, openSettingsOnTab } from '@/components/SettingsPanel';
+import { SettingsPanel, openSettingsAt, openSettingsOnTab } from '@/components/SettingsPanel';
+import { OnboardingFlow } from '@/components/onboarding/OnboardingFlow';
+import { OnboardingSummary } from '@/components/onboarding/OnboardingSummary';
+import { SETTINGS_SPECIAL_LINKS } from '@/components/settings/settingsDeepLinks';
 import { UpdateBadge } from '@/components/UpdateBadge';
 import { Button } from '@/components/ui/button';
 import { useChat } from '@/hooks/useChat';
@@ -59,6 +62,8 @@ export default function App() {
   const [booting, setBooting] = useState(true);
   const [showSetup, setShowSetup] = useState(false);
   const [pendingDevVoice, setPendingDevVoice] = useState<string | null>(null);
+  const [onboardingPhase, setOnboardingPhase] = useState<'flow' | 'summary' | null>(null);
+  const [onboardingAnswers, setOnboardingAnswers] = useState<QuestionnaireAnswers>({});
   const mainPaneRef = useRef<HTMLDivElement>(null);
   const seeded = useRef(false);
 
@@ -116,6 +121,9 @@ export default function App() {
       .finally(() => {
         if (!cancelled) setBooting(false);
       });
+    void window.jarvis.questionnaire.get().then((state) => {
+      if (!state.completedAt && !state.dismissed) setOnboardingPhase('flow');
+    });
     return () => {
       cancelled = true;
     };
@@ -414,7 +422,7 @@ export default function App() {
                   setView('settings');
                 }}
                 onOpenPersonaSettings={() => {
-                  openSettingsOnTab('model');
+                  openSettingsAt(SETTINGS_SPECIAL_LINKS.persona);
                   setView('settings');
                 }}
               />
@@ -457,6 +465,7 @@ export default function App() {
                 settings={settings}
                 status={status}
                 onAnalyzeMachine={() => setShowSetup(true)}
+                onRestartOnboarding={() => setOnboardingPhase('flow')}
                 onSaved={(payload) => {
                   setSettings(payload.settings);
                   setStatus(payload.status);
@@ -470,6 +479,44 @@ export default function App() {
         </div>
         )}
       </div>
+
+      {onboardingPhase ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
+          <div className="flex max-h-[min(90vh,640px)] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#070b14] shadow-2xl">
+            {onboardingPhase === 'flow' ? (
+              <OnboardingFlow
+                initialAnswers={onboardingAnswers}
+                onDismiss={() => {
+                  void window.jarvis.questionnaire.set({ dismissed: true });
+                  setOnboardingPhase(null);
+                }}
+                onDone={(answers) => {
+                  setOnboardingAnswers(answers);
+                  setOnboardingPhase('summary');
+                }}
+              />
+            ) : (
+              <OnboardingSummary
+                answers={onboardingAnswers}
+                onBack={() => setOnboardingPhase('flow')}
+                onConfirm={() => {
+                  void window.jarvis.questionnaire
+                    .set({ answers: onboardingAnswers, dismissed: false })
+                    .then(() => window.jarvis.questionnaire.apply())
+                    .then((result) => {
+                      setSettings(result.settings);
+                      setStatus(result.status);
+                      if (result.state.windowPreference === 'dashboard') {
+                        void window.jarvis.window.setChrome('dashboard');
+                      }
+                      setOnboardingPhase(null);
+                    });
+                }}
+              />
+            )}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
