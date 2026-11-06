@@ -86,6 +86,12 @@ export class PersonalizationStore {
     return structuredClone(profile);
   }
 
+  async replace(profile: PersonalizationProfile): Promise<PersonalizationProfile> {
+    const next = normalizePersonalization(profile);
+    await this.save(next);
+    return structuredClone(next);
+  }
+
   async merge(patch: Partial<PersonalizationProfile>): Promise<PersonalizationProfile> {
     const profile = await this.get();
     const next: PersonalizationProfile = {

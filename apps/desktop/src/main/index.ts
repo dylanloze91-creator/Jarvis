@@ -23,6 +23,7 @@ import {
   createWebSearchRegistry,
   ollamaDescriptor,
   parseSettings,
+  sanitizeQuestionnaireSetPatch,
   searchOpenMeteoPlaces,
   testOllamaConnection,
   PIPER_TTS_ID,
@@ -31,7 +32,6 @@ import {
   type SearchProviderDescriptor,
   type OrchestraTeam,
   type Settings,
-  type QuestionnaireState,
   validateRepo,
 } from '@jarvis/core';
 import {
@@ -605,9 +605,7 @@ function registerIpc(): void {
     return questionnaire.snapshot();
   });
   ipcMain.handle(IpcChannel.questionnaireSet, async (_event, patch: unknown) =>
-    questionnaire.set(
-      typeof patch === 'object' && patch !== null ? (patch as Partial<QuestionnaireState>) : {},
-    ),
+    questionnaire.set(sanitizeQuestionnaireSetPatch(patch)),
   );
   ipcMain.handle(IpcChannel.questionnaireApply, async () => {
     const repoPath = settings.developer.repoPath?.trim();
@@ -627,6 +625,9 @@ function registerIpc(): void {
       mergePersonalization: async (patch) => {
         await personalization.merge(patch);
       },
+      replacePersonalization: async (profile) => {
+        await personalization.replace(profile);
+      },
       environment: {
         ollamaModels: ollama.models.map((model) => model.name),
         developerRepoValid,
@@ -637,19 +638,20 @@ function registerIpc(): void {
     return { state: applied.state, settings: applied.settings, status: session.status() };
   });
   ipcMain.handle(IpcChannel.questionnaireRestore, async () => {
-    const restored = await questionnaire.restore(
-      () => Promise.resolve(settings),
-      async (patch) => {
-        const next = parseSettings({ ...settings, ...patch }, settings);
+    const restored = await questionnaire.restore({
+      readSettings: () => Promise.resolve(settings),
+      writeSettings: async (next) => {
         const payload = await persistSettings(next);
         return payload.settings;
       },
-    );
+      replacePersonalization: async (profile) => {
+        await personalization.replace(profile);
+      },
+    });
     if (!restored.settings) {
       return { state: restored.state, settings: null, status: session.status() };
     }
-    const payload = await persistSettings(restored.settings);
-    return { state: restored.state, settings: payload.settings, status: payload.status };
+    return { state: restored.state, settings: restored.settings, status: session.status() };
   });
 
   ipcMain.handle(IpcChannel.settingsProviders, (): ProviderDescriptor[] => registry.list());

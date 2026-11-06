@@ -27,6 +27,7 @@ import { DeveloperSimpleView } from '@/components/developer/DeveloperSimpleView'
 import { SetupGuideView } from '@/components/SetupGuideView';
 import { SettingsPanel, openSettingsOnTab } from '@/components/SettingsPanel';
 import type { SettingsTabId } from '@/components/SettingsTabs';
+import { filterQuickActionsForQuestionnaire } from '@/dashboard/quickActions';
 import { formatBytes, formatModelTemperature, formatPercent } from '@/dashboard/format';
 import { useMachineSnapshot } from '@/dashboard/useMachine';
 import { isDemoRuntime } from '@/lib/runtimeStatus';
@@ -217,7 +218,17 @@ export function Dashboard({
   }, [view]);
 
   const [preferredServices, setPreferredServices] = useState<string[] | null>(null);
+  const [questionnaireCompletedAt, setQuestionnaireCompletedAt] = useState<number | null>(null);
   const [questionnairePrompt, setQuestionnairePrompt] = useState(false);
+
+  const visibleQuick = useMemo(
+    () =>
+      filterQuickActionsForQuestionnaire(QUICK, {
+        completedAt: questionnaireCompletedAt,
+        preferredServices,
+      }),
+    [questionnaireCompletedAt, preferredServices],
+  );
 
   const visibleFunctions = useMemo(() => {
     const base = FUNCTIONS.filter((card) => card.id !== 'video' || settings?.videoAnalysis !== false);
@@ -245,6 +256,7 @@ export function Dashboard({
   useEffect(() => {
     void window.jarvis.questionnaire.get().then((state) => {
       setPreferredServices(state.preferredServices);
+      setQuestionnaireCompletedAt(state.completedAt);
       setQuestionnairePrompt(!state.completedAt && !state.dismissed);
     });
   }, [view]);
@@ -536,7 +548,7 @@ export function Dashboard({
         <section className="rail-card" aria-label="Outils rapides">
           <h2>Outils rapides</h2>
           <div className="quick-list">
-            {QUICK.map((action) => (
+            {visibleQuick.map((action) => (
               <button
                 key={action.id}
                 type="button"

@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { ORCHESTRA_TEAMS } from '../agent/orchestraTeams.js';
-import { parseSettings } from '../settings.js';
 import { SETTINGS_ACTION_MAP, SETTINGS_FIELD_MAP } from './fields.js';
+import { sampleSettingsFromSchema } from './schemaSample.js';
 
 function flattenPaths(value: unknown, prefix = ''): string[] {
   if (value === null || value === undefined) return prefix ? [prefix] : [];
@@ -24,58 +23,9 @@ function flattenPaths(value: unknown, prefix = ''): string[] {
   return paths;
 }
 
-/** Objet représentatif : toutes les clés possibles du schéma (y compris blocs facultatifs). */
-function fullSettingsShape() {
-  const base = parseSettings({});
-  return {
-    ...base,
-    spotifyDeviceName: '',
-    spotifySpeakerMaxVolume: 70,
-    roverBaseUrl: '',
-    roverToken: '',
-    homeLocation: { label: 'Chez moi', latitude: 48.8, longitude: 2.3 },
-    videoAnalysis: true,
-    ollamaNumCtx: 8192,
-    orchestra: {
-      enabled: true,
-      brain: 'qwen2.5:7b',
-      teams: Object.fromEntries(ORCHESTRA_TEAMS.map((team) => [team, { model: 'qwen2.5:3b', place: 'carte' }])),
-      router: { model: 'jarvis-trieur', place: 'processeur' },
-      trieurDataDir: 'C:\\data\\trieur',
-      teamValidation: true,
-    },
-    persona: { enabled: true, style: 'complice', humour: true },
-    machine: {
-      profile: 'standard',
-      cpuOnly: false,
-      measureFailed: false,
-      detected: 'PC',
-      chosen: 'Profil standard',
-    },
-    developer: {
-      ...base.developer,
-      maxFixAttempts: 3,
-      roleModels: { CODER: 'qwen2.5-coder:7b' },
-      projectsRoot: 'C:\\dev\\Projets',
-      knowledgeManual: true,
-      knowledgeLearning: true,
-      memoryRetrieval: false,
-      skillLibrary: false,
-      chatMissions: true,
-      periodicWebResearch: false,
-      watchTopics: ['actualité'],
-    },
-    voice: {
-      ...base.voice,
-      followUpSeconds: 8,
-      addresseeCheck: true,
-    },
-  };
-}
-
 describe('settingsMap — carte complète', () => {
   it('chaque chemin du schéma a une place dans la nouvelle carte', () => {
-    const paths = flattenPaths(fullSettingsShape());
+    const paths = flattenPaths(sampleSettingsFromSchema());
     const missing = paths.filter((path) => !SETTINGS_FIELD_MAP[path]);
     expect(missing).toEqual([]);
   });

@@ -1,5 +1,6 @@
 import type { PersonalizationProfile } from '../personalization/types.js';
 import type { Settings } from '../settings.js';
+import type { QuestionnaireSettingsBackup } from './questionnaireBackup.js';
 
 export type WindowPreference = 'compact' | 'dashboard';
 
@@ -68,7 +69,7 @@ export interface QuestionnaireState {
   answers: QuestionnaireAnswers;
   dismissed: boolean;
   completedAt: number | null;
-  settingsBackup: Partial<Settings> | null;
+  settingsBackup: QuestionnaireSettingsBackup | null;
   preferredServices: string[];
   windowPreference: WindowPreference;
 }

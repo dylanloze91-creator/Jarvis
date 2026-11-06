@@ -1,14 +1,17 @@
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import {
+  emptyPersonalization,
   emptyQuestionnaireState,
+  normalizeQuestionnaireSettingsBackup,
   onboardingPlanFromAnswers,
   questionnaireSettingsBackup,
+  questionnaireSettingsRestore,
   type OnboardingEnvironment,
+  type PersonalizationProfile,
   type QuestionnaireState,
   type Settings,
 } from '@jarvis/core';
-import type { PersonalizationProfile } from '@jarvis/core';
 
 function readFileState(raw: string): QuestionnaireState {
   try {
@@ -18,10 +21,7 @@ function readFileState(raw: string): QuestionnaireState {
       answers: typeof data.answers === 'object' && data.answers !== null ? { ...data.answers } : base.answers,
       dismissed: data.dismissed === true,
       completedAt: typeof data.completedAt === 'number' ? data.completedAt : null,
-      settingsBackup:
-        typeof data.settingsBackup === 'object' && data.settingsBackup !== null
-          ? (data.settingsBackup as Partial<Settings>)
-          : null,
+      settingsBackup: normalizeQuestionnaireSettingsBackup(data.settingsBackup, emptyPersonalization()),
       preferredServices: Array.isArray(data.preferredServices)
         ? data.preferredServices.filter((item): item is string => typeof item === 'string')
         : base.preferredServices,
@@ -36,6 +36,7 @@ export interface QuestionnaireApplyDeps {
   readSettings: () => Promise<Settings>;
   writeSettingsPatch: (patch: Partial<Settings>) => Promise<Settings>;
   mergePersonalization: (patch: Partial<PersonalizationProfile>) => Promise<void>;
+  replacePersonalization: (profile: PersonalizationProfile) => Promise<void>;
   environment: OnboardingEnvironment;
 }
 
@@ -87,7 +88,7 @@ export class QuestionnaireStore {
     if (plan.changes.length === 0) {
       return { state: this.snapshot(), settings: current, openDashboard: false };
     }
-    const backup = questionnaireSettingsBackup(current);
+    const backup = questionnaireSettingsBackup(current, deps.environment.personalization);
     const settings = await deps.writeSettingsPatch(plan.patch);
     if (Object.keys(plan.personalization).length > 0) {
       await deps.mergePersonalization(plan.personalization);
@@ -104,14 +105,18 @@ export class QuestionnaireStore {
     return { state: this.snapshot(), settings, openDashboard: plan.openDashboard };
   }
 
-  async restore(
-    readSettings: () => Promise<Settings>,
-    writeSettingsPatch: (patch: Partial<Settings>) => Promise<Settings>,
-  ): Promise<{ state: QuestionnaireState; settings: Settings | null }> {
+  async restore(deps: {
+    readSettings: () => Promise<Settings>;
+    writeSettings: (next: Settings) => Promise<Settings>;
+    replacePersonalization: (profile: PersonalizationProfile) => Promise<void>;
+  }): Promise<{ state: QuestionnaireState; settings: Settings | null }> {
     await this.load();
     const backup = this.state.settingsBackup;
     if (!backup) return { state: this.snapshot(), settings: null };
-    const settings = await writeSettingsPatch(backup);
+    const current = await deps.readSettings();
+    const restored = questionnaireSettingsRestore(current, backup);
+    const settings = await deps.writeSettings(restored);
+    await deps.replacePersonalization(backup.personalization);
     this.state = { ...this.state, settingsBackup: null };
     await this.save();
     return { state: this.snapshot(), settings };

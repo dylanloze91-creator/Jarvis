@@ -1,4 +1,12 @@
-import { DEFAULT_FOLLOW_UP_SECONDS, PIPER_ENGINE_CREDITS, PIPER_PREVIEW_TEXT, PIPER_VOICE_CREDITS, WHISPER_MODEL_REPO, openWakeWordSensitivityToThreshold } from '@jarvis/core';
+import {
+  DEFAULT_FOLLOW_UP_SECONDS,
+  PIPER_ENGINE_CREDITS,
+  PIPER_PREVIEW_TEXT,
+  PIPER_VOICE_CREDITS,
+  WHISPER_MODEL_REPO,
+  openWakeWordSensitivityToThreshold,
+} from '@jarvis/core';
+import { VOICE_WAKE_TEST_INTRO } from '@/components/voiceSettingsCopy';
 import type { VoiceDescriptor, VoiceSettings } from '@jarvis/core';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Field, Input, Range, Select, Textarea, Toggle } from '@/components/ui/field';
@@ -193,7 +201,7 @@ export function VoiceSettingsSection({
         onChange={onMicrophoneChange}
       />
 
-      <VoiceDiagnostic voice={voice} />
+      <VoiceDiagnostic voice={voice} compactIntro />
 
       <WakeLearningSection
         enabled={voice.wakeLearning}
@@ -242,46 +250,39 @@ export function VoiceSettingsSection({
         </p>
 
         <div className="flex flex-col gap-3">
-          <div className="flex flex-col gap-1.5">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-medium tracking-wide text-slate-400 uppercase">
-                Sensibilité
-              </span>
-              <span className="text-xs text-slate-400">
-                {Math.round(voice.wakeWordSensitivity * 100)}% · seuil {Math.round(threshold * 100)}%
-              </span>
-            </div>
-            <Range
-              min={0}
-              max={100}
-              value={Math.round(voice.wakeWordSensitivity * 100)}
-              onChange={(event) =>
-                onChange({ wakeWordSensitivity: Number(event.target.value) / 100 })
-              }
-            />
-            <div className="flex justify-between text-[11px] text-slate-500">
-              <span>Stricte (peu de faux positifs)</span>
-              <span>Sensible (se déclenche facilement)</span>
-            </div>
-          </div>
-
           <div className="flex flex-col gap-2 rounded-lg border border-white/8 bg-white/[0.03] px-3 py-2.5">
             <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="text-sm text-slate-200">Tester la détection</p>
-                <p className="text-xs text-slate-500">
-                  Dis « Hey Jarvis » ou « Jarvis » : la barre montre le score openWakeWord,
-                  et s’allume en vert quand Vosk ou openWakeWord réveille Jarvis.
-                </p>
-              </div>
+              <p className="text-xs leading-snug text-slate-500">{VOICE_WAKE_TEST_INTRO}</p>
               <Button size="sm" variant={testing ? 'danger' : 'subtle'} onClick={() => void toggleTest()}>
                 {testing ? 'Arrêter le test' : 'Tester'}
               </Button>
             </div>
-            {testing ? <ScoreMeter score={testScore} threshold={threshold} flash={testFlash} /> : null}
             {testError ? <p className="text-xs text-rose-300">{testError}</p> : null}
           </div>
-          <Disclosure title="Détails techniques du mot de réveil" hint="Vosk, openWakeWord, gabarits d’énergie, Whisper">
+          <Disclosure title="Détails" hint="Réglages avancés du mot de réveil">
+            <div className="flex flex-col gap-1.5">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-medium tracking-wide text-slate-400 uppercase">
+                  Sensibilité
+                </span>
+                <span className="text-xs text-slate-400">
+                  {Math.round(voice.wakeWordSensitivity * 100)}% · seuil {Math.round(threshold * 100)}%
+                </span>
+              </div>
+              <Range
+                min={0}
+                max={100}
+                value={Math.round(voice.wakeWordSensitivity * 100)}
+                onChange={(event) =>
+                  onChange({ wakeWordSensitivity: Number(event.target.value) / 100 })
+                }
+              />
+              <div className="flex justify-between text-[11px] text-slate-500">
+                <span>Stricte (peu de faux positifs)</span>
+                <span>Sensible (se déclenche facilement)</span>
+              </div>
+            </div>
+            {testing ? <ScoreMeter score={testScore} threshold={threshold} flash={testFlash} /> : null}
             <p className="text-xs leading-snug text-slate-500">
               Local et gratuit : openWakeWord reconnaît « Hey Jarvis », et Vosk (modèle
               français) reconnaît « Jarvis » tout court, dans un fil à part. Whisper ne sert
@@ -456,30 +457,31 @@ export function VoiceSettingsSection({
           </Field>
 
           {usingLocalPiperTts ? (
-            <div className="space-y-2 rounded-lg border border-slate-700/60 bg-slate-900/40 p-3 text-xs text-slate-400">
-              <p className="font-medium text-slate-300">Crédits des voix (Piper)</p>
-              <p>
-                Moteur {PIPER_ENGINE_CREDITS.piper.name} {PIPER_ENGINE_CREDITS.piper.version} ({PIPER_ENGINE_CREDITS.piper.license}) ;{' '}
-                {PIPER_ENGINE_CREDITS.espeakNg.name} ({PIPER_ENGINE_CREDITS.espeakNg.license}) — {PIPER_ENGINE_CREDITS.espeakNg.sourceUrl} ; texte
-                GPL : `voice-assets/piper/licenses/GPL-3.0.txt` dans l’installateur.
-              </p>
-              <ul className="list-disc space-y-1 pl-4">
-                {PIPER_VOICE_CREDITS.map((line) => (
-                  <li key={line.voice}>
-                    {line.voice} — {line.dataset}, {line.authors}, licence {line.license} (
-                    <a className="text-cyan-400 underline" href={line.url} target="_blank" rel="noreferrer">
-                      fiche
-                    </a>
-                    )
-                  </li>
-                ))}
-              </ul>
-            </div>
+            <Disclosure title="Détails" hint="Crédits des voix Piper">
+              <div className="space-y-2 text-xs text-slate-400">
+                <p>
+                  Moteur {PIPER_ENGINE_CREDITS.piper.name} {PIPER_ENGINE_CREDITS.piper.version} ({PIPER_ENGINE_CREDITS.piper.license}) ;{' '}
+                  {PIPER_ENGINE_CREDITS.espeakNg.name} ({PIPER_ENGINE_CREDITS.espeakNg.license}) — {PIPER_ENGINE_CREDITS.espeakNg.sourceUrl} ; texte
+                  GPL : `voice-assets/piper/licenses/GPL-3.0.txt` dans l’installateur.
+                </p>
+                <ul className="list-disc space-y-1 pl-4">
+                  {PIPER_VOICE_CREDITS.map((line) => (
+                    <li key={line.voice}>
+                      {line.voice} — {line.dataset}, {line.authors}, licence {line.license} (
+                      <a className="text-cyan-400 underline" href={line.url} target="_blank" rel="noreferrer">
+                        fiche
+                      </a>
+                      )
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </Disclosure>
           ) : null}
         </>
       ) : null}
 
-      <Disclosure title="Détails techniques de la dictée" hint="Moteur de reconnaissance, clé dédiée">
+      <Disclosure title="Détails" hint="Moteur de reconnaissance et clé dédiée">
         <Field
           label="Moteur de reconnaissance vocale (STT)"
           hint="Whisper local est le moteur gratuit par défaut : whisper-small et son runtime WebAssembly sont embarqués dans l’installateur, hors ligne. Le même Whisper sert au mot de réveil et à l’écoute YouTube."
@@ -541,7 +543,7 @@ function WhisperModelStatus({ progress }: { progress: WhisperLoadProgress | null
   return (
     <div className="flex items-center justify-between gap-3 rounded-lg border border-white/8 bg-white/[0.03] px-3 py-2.5">
       <div className="min-w-0 flex-1">
-        <p className="text-sm text-slate-200">Whisper local ({WHISPER_MODEL_REPO})</p>
+        <p className="text-sm text-slate-200">Modèle de dictée local ({WHISPER_MODEL_REPO})</p>
         <p className={failed ? 'text-xs break-words text-rose-300' : 'truncate text-xs text-slate-500'}>
           {progress ? describeWhisperProgress(progress) : 'Pas encore chargé.'}
         </p>

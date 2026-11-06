@@ -62,8 +62,22 @@ Scènes Vite (`http://127.0.0.1:43173/?scene=…&layout=…`) — script `apps/d
 Contrôles automatisés exécutés sur la branche :
 
 - `npm run typecheck` : OK
-- `npm test` : OK (672 tests ; échecs `.NET` / Windows connus hors scope 5.0.70)
+- `npm test` : OK (677 tests ; échecs `.NET` / Windows connus hors scope 5.0.70)
 - `npm run lint` : OK
+
+## Corrections de relecture
+
+1. **Retour arrière questionnaire** — sauvegarde `QuestionnaireSettingsBackup` (valeurs + `absentKeys` persona/orchestra + personnalisation) ; restauration supprime les clés absentes et rétablit prénom/règles. Tests : `questionnaireBackup.test.ts`, `questionnaire/store.test.ts`.
+2. **Orchestre** — activation seulement si le modèle cerveau est installé ; équipes basculées sur le cerveau si leur modèle manque. Test : `questionnaireBackup.test.ts` (modèles partiels).
+3. **Carte réglages** — `settingsMap.test.ts` parcourt un échantillon dérivé de `settingsSchema.shape` (`schemaSample.ts`).
+4. **IPC `questionnaire:set`** — `sanitizeQuestionnaireSetPatch` n’accepte que `answers` et `dismissed`. Test : `questionnaireBackup.test.ts`.
+5. **Parler à Jarvis** — surface simple (phrase + bouton) ; ONNX / jarvis-oww / openWakeWord / Vosk / Whisper sous « Détails ». Test : `voiceSettingsCopy.test.ts`.
+6. **Accueil** — outils rapides masqués si le service n’a pas été choisi (ex. mail sans Google) ; sans questionnaire appliqué, accueil inchangé. Test : `quickActions.test.ts`.
+7. **Captures** — script `capture-interface-simple-5070.mjs` (dont voix + résumé questionnaire).
+
+![Réglages — Parler à Jarvis](interface-simple-5070-captures/settings-voice.png)
+
+Contrôles après corrections (2026-11-06) : `npm run typecheck` OK · `npm test` OK (677 passés, 6 ignorés) · `npm run lint` OK.
 
 ---
 

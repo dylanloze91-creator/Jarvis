@@ -36,6 +36,14 @@ const shots = [
     file: 'settings-compact-before.png',
     waitSelector: 'input[aria-label="Rechercher un réglage"]',
   },
+  {
+    scene: 'settings-v2',
+    layout: 'dashboard',
+    file: 'settings-voice.png',
+    waitSelector: 'input[aria-label="Rechercher un réglage"]',
+    openParler: true,
+    waitText: 'Tester la voix',
+  },
 ];
 
 const browser = await puppeteer.launch({
@@ -61,6 +69,19 @@ try {
         (text) => (document.body.textContent || '').toLowerCase().includes(text.toLowerCase()),
         { timeout: 45_000 },
         shot.waitText,
+      );
+    }
+    if (shot.openParler) {
+      await page.evaluate(() => {
+        const target = [...document.querySelectorAll('button')].find((button) =>
+          (button.textContent || '').includes('Parler à Jarvis'),
+        );
+        target?.click();
+      });
+      await page.waitForFunction(
+        (text) => (document.body.textContent || '').toLowerCase().includes(text.toLowerCase()),
+        { timeout: 45_000 },
+        shot.waitText ?? 'Tester la voix',
       );
     }
     if (shot.search) {

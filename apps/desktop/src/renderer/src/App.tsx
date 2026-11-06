@@ -55,7 +55,9 @@ function sceneFromLocation(): string | null {
 
 function initialViewFromScene(): View {
   const scene = sceneFromLocation();
-  if (scene === 'settings' || scene === 'settings-v2' || scene === 'settings-search') return 'settings';
+  if (scene === 'settings' || scene === 'settings-v2' || scene === 'settings-search') {
+    return 'settings';
+  }
   if (scene === 'developer') return 'developer';
   return 'chat';
 }

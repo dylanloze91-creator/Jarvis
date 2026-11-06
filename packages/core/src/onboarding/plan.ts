@@ -1,4 +1,4 @@
-import { SUGGESTED_ORCHESTRA } from '../agent/orchestraTeams.js';
+import { SUGGESTED_ORCHESTRA, type OrchestraTeam, type TeamAssignment } from '../agent/orchestraTeams.js';
 import { PERSONA_STYLE_LABELS, type PersonaStyle } from '../agent/persona.js';
 import type { PersonalizationProfile } from '../personalization/types.js';
 import { parseSettings, type Settings } from '../settings.js';
@@ -42,8 +42,23 @@ function policySummary(settings: Settings): string {
   return [line('Applis', apps), line('Fichiers', files), line('Captures', capture)].join(' · ');
 }
 
-function orchestraModelsReady(models: string[]): boolean {
-  return models.length > 0 && models.includes(SUGGESTED_ORCHESTRA.brain);
+function orchestraBrainReady(brain: string, models: string[]): boolean {
+  const trimmed = brain.trim();
+  return models.length > 0 && trimmed.length > 0 && models.includes(trimmed);
+}
+
+function resolveOrchestraTeams(
+  brain: string,
+  teams: Partial<Record<OrchestraTeam, TeamAssignment>>,
+  models: string[],
+): Partial<Record<OrchestraTeam, TeamAssignment>> {
+  const resolved: Partial<Record<OrchestraTeam, TeamAssignment>> = {};
+  for (const [team, assignment] of Object.entries(teams) as [OrchestraTeam, TeamAssignment][]) {
+    if (!assignment?.model?.trim()) continue;
+    const model = models.includes(assignment.model.trim()) ? assignment.model.trim() : brain;
+    resolved[team] = { ...assignment, model };
+  }
+  return resolved;
 }
 
 function orderedServices(selected: OnboardingServiceId[] | undefined): OnboardingServiceId[] {
@@ -173,10 +188,11 @@ export function onboardingPlan(
   }
 
   const wantsOrchestra = answers.orchestra === 'yes';
-  const canOrchestra = settings.provider === 'ollama' && orchestraModelsReady(environment.ollamaModels);
+  const brain = settings.orchestra?.brain?.trim() || settings.model || SUGGESTED_ORCHESTRA.brain;
+  const canOrchestra = settings.provider === 'ollama' && orchestraBrainReady(brain, environment.ollamaModels);
   if (wantsOrchestra && canOrchestra) {
-    const brain = settings.orchestra?.brain?.trim() || settings.model || SUGGESTED_ORCHESTRA.brain;
-    const teams = settings.orchestra?.teams ?? SUGGESTED_ORCHESTRA.teams;
+    const rawTeams = settings.orchestra?.teams ?? SUGGESTED_ORCHESTRA.teams;
+    const teams = resolveOrchestraTeams(brain, rawTeams, environment.ollamaModels);
     pushChange(
       changes,
       'Chef d’orchestre',
@@ -260,24 +276,6 @@ export function onboardingPlan(
     openDashboard,
     setupGuideHint,
   };
-}
-
-/** Champs à sauvegarder avant d’appliquer le questionnaire (retour arrière). */
-export function questionnaireSettingsBackup(settings: Settings): Partial<Settings> {
-  const keys: (keyof Settings)[] = [
-    'voice',
-    'persona',
-    'orchestra',
-    'developer',
-    'toolPolicies',
-    'stayVisibleOnBlur',
-  ];
-  const backup: Partial<Settings> = {};
-  for (const key of keys) {
-    const value = settings[key];
-    if (value !== undefined) (backup as Record<string, unknown>)[key] = structuredClone(value);
-  }
-  return backup;
 }
 
 /** Réponses vides → aucun changement. */
