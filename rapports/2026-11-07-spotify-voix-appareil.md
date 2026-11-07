@@ -53,3 +53,47 @@ Essais vocaux non faits sur le PC :
   - « mets-la sur la Devialet »
   - transfert avec enceinte absente / plusieurs enceintes
 ```
+
+## Corrections de relecture
+
+Deux trous du premier jet, corrigés sur la même branche (pas de fusion dans `main`).
+
+1. **Nom d’appareil.** Un indice `named` n’est gardé que s’il correspond à un appareil Spotify Connect visible, avec la même comparaison que `pickNamedConnectDevice` (casse, accents, nom partiel). Sinon l’indice est ignoré : la recherche part avec la phrase entière (« Il pleut sur la ville ») et la lecture va sur l’appareil habituel (`spotifyDeviceName`, sinon le PC). Ça vaut pour `spotify_play` quand l’agent force l’appel et quand le modèle passe la requête directement. `spotify_transfer` vers un nom inconnu répond `Je ne vois pas d'appareil appelé X`, n’appelle pas `transferPlayback`, donc pas de PUT. « l’enceinte », « le PC » et « l’ordinateur » restent des cibles (l’élision `l’ordinateur` n’était pas reconnue ; elle l’est maintenant, comme le PC). Le choix enceinte (réglage, seule enceinte, ou question s’il y en a plusieurs) n’a pas été modifié dans `SpotifyProvider`.
+
+2. **Indice de tour.** `stashSpotifyPlayDeviceHint` est effacé au début de `Agent.run` et dans un `finally` (succès, arrêt, erreur). Il n’est lu que par le `spotify_play` du même tour. Un tour arrêté avant l’outil ne laisse plus la Devialet au « mets Jul » suivant.
+
+Règles gelées : `catalogue-modele.json` et `reglages-par-defaut.json` sont identiques à `origin/main` (mêmes SHA git `6ca8dd89` et `71494b6c`). `parseSettings` n’a pas été touché. La description catalogue de `spotify_play` est inchangée. `spotify_transfer` reste absent du catalogue sans enceinte réglée.
+
+## RAPPORT DE VÉRIFICATION
+
+```
+RAPPORT DE VÉRIFICATION
+Lancement : OK (npm test, pas d’appli lancée)
+Types     : OK (npm run typecheck)
+Style     : OK (npm run lint)
+Tests     : OK — cœur 2246, bureau 679 réussis et 6 ignorés (preuves live)
+            chat-unchanged 6/6, ollama-unchanged 3/3, golden non régénéré
+            dotnet : pas de SDK sur cette machine (dotnet absent).
+            dotnetProject.test.ts et windowsDesktopMissionPath.test.ts
+            sont verts : le vrai SDK est sauté quand installedDotnetTarget()
+            est null ; le chemin simulé (ENOENT) n’a pas été affaibli.
+Secrets   : rien dans le diff (pas de jeton, pas de clé)
+Diff      : relu — requête entière si le nom n’est pas visible ;
+            transfert inconnu sans PUT ; indice effacé en début et fin de tour
+Fichiers modifiés : AGENTS-COORDINATION.md,
+            packages/core/src/media/playIntent.ts,
+            packages/core/src/media/playIntent.test.ts,
+            packages/core/src/media/spotifyDeviceVoice.ts,
+            packages/core/src/index.ts,
+            packages/core/src/agent/agent.ts,
+            packages/core/src/agent/agent.test.ts,
+            apps/desktop/src/main/tools/spotify.ts,
+            apps/desktop/src/main/tools/spotify.test.ts,
+            rapports/2026-11-07-spotify-voix-appareil.md
+Prêt à fusionner : OUI sur la branche, pas dans main
+À corriger : rien côté CI cloud
+Testé en vrai (à la voix, sur le PC) : PAS FAIT
+Phrases à essayer :
+  - « mets Il pleut sur la ville »
+  - « mets Daft Punk sur l'enceinte »
+```
