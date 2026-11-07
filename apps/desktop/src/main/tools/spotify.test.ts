@@ -41,7 +41,7 @@ function spotifyDeps(getProvider: () => MediaProvider, settings = parseSettings(
 }
 
 describe('createSpotifyTools', () => {
-  it('déclare les huit outils, tous en risque « safe » (y compris spotify_play)', () => {
+  it('déclare les outils Spotify (transfert enregistré mais absent du catalogue sans enceinte réglée)', () => {
     const tools = createSpotifyTools(spotifyDeps(() => stubProvider()));
 
     expect(tools.map((tool) => tool.name)).toEqual([
@@ -54,6 +54,13 @@ describe('createSpotifyTools', () => {
       'spotify_set_shuffle',
       'spotify_current_track',
     ]);
+    const withSpeaker = createSpotifyTools(
+      spotifyDeps(() => stubProvider(), parseSettings({ spotifyDeviceName: 'Devialet' })),
+    );
+    expect(withSpeaker.map((tool) => tool.name)).toContain('spotify_transfer');
+    expect(withSpeaker.find((tool) => tool.name === 'spotify_transfer')?.isAvailable?.()).toBe(
+      true,
+    );
     for (const tool of tools) {
       expect(tool.risk).toBe('safe');
       expect(tool.forceConfirm).toBe(false);
@@ -73,6 +80,7 @@ describe('createSpotifyTools', () => {
     expect(provider.play).toHaveBeenCalledWith(track.uri, {
       contextUri: undefined,
       artistUri: undefined,
+      deviceHint: null,
     });
     expect(result.ok).toBe(true);
     expect(result.content).toContain('Lecture lancée sur Spotify');

@@ -6,6 +6,7 @@ import {
   isWebPlayerDevice,
   looksLikeLocalDesktopName,
   pickLocalDesktopDevice,
+  listConnectSpeakers,
   pickNamedConnectDevice,
 } from './spotifyDevices.js';
 import { windowsSpotifyExeCandidates } from './launchSpotifyDesktop.js';
@@ -126,6 +127,17 @@ describe('spotifyDevices', () => {
 });
 
 describe('windowsSpotifyExeCandidates', () => {
+  it('liste les enceintes Connect hors PC et téléphone', () => {
+    const speaker = {
+      id: 'sp-1',
+      is_active: false,
+      is_restricted: false,
+      name: 'Devialet',
+      type: 'Speaker',
+    };
+    expect(listConnectSpeakers([phone, web, desktop, speaker])).toEqual([speaker]);
+  });
+
   it('pointe vers AppData\\Spotify, WindowsApps et le menu Démarrer', () => {
     const paths = windowsSpotifyExeCandidates({
       APPDATA: 'C:\\Users\\dex\\AppData\\Roaming',

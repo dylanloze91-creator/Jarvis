@@ -8,6 +8,11 @@ import { isRoverToolName, looksLikeRoverIntent, recentlyUsedRoverTools } from '.
 import { roverTurnPrompt } from '../rover/prompt.js';
 import { isCurrentTrackQuestion } from '../media/currentTrackIntent.js';
 import { extractSpotifyPlayQuery, isMusicIntent } from '../media/playIntent.js';
+import {
+  extractSpotifyPlayDeviceHint,
+  extractSpotifyTransferTarget,
+  stashSpotifyPlayDeviceHint,
+} from '../media/spotifyDeviceVoice.js';
 import { extractYoutubeUrl } from '../youtube/url.js';
 import { localTimeZone } from '../search/dates.js';
 import type { CurrentSearchResult } from '../search/currentSearch.js';
@@ -596,8 +601,12 @@ export class Agent {
     const prompt = conversation[lastUserIndex]?.content ?? '';
     if (isCurrentTrackQuestion(prompt)) return this.forcedCall('spotify_current_track', {});
 
+    const transfer = extractSpotifyTransferTarget(prompt);
+    if (transfer) return this.forcedCall('spotify_transfer', { target: transfer.kind === 'named' ? transfer.name : transfer.kind });
+
     const query = extractSpotifyPlayQuery(prompt);
     if (!query) return null;
+    stashSpotifyPlayDeviceHint(extractSpotifyPlayDeviceHint(prompt));
     return this.forcedCall('spotify_play', { query });
   }
 

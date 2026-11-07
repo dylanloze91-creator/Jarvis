@@ -210,6 +210,17 @@ export {
 
 export * from './media/types.js';
 export { extractSpotifyPlayQuery, isMusicIntent, searchQueryVariants } from './media/playIntent.js';
+export {
+  extractSpotifyPlayDeviceHint,
+  extractSpotifyPlayDeviceHintFromQuery,
+  extractSpotifyTransferTarget,
+  isSpotifyTransferPhrase,
+  stashSpotifyPlayDeviceHint,
+  takeSpotifyPlayDeviceHint,
+  stripSpotifyPlayDeviceSuffix,
+  type SpotifyPlayDeviceHint,
+  type SpotifyTransferTarget,
+} from './media/spotifyDeviceVoice.js';
 
 export {
   DEFAULT_SITEBLOCK_BASE_URL,

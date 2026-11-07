@@ -70,6 +70,24 @@ describe('extractSpotifyPlayQuery', () => {
     expect(extractSpotifyPlayQuery('lance lomepal sur spotify')).toBe('lomepal');
   });
 
+  it('retire la cible d’appareil en fin de phrase pour la recherche', () => {
+    expect(extractSpotifyPlayQuery('mets Daft Punk sur l’enceinte')).toBe('Daft Punk');
+    expect(extractSpotifyPlayQuery('mets Daft Punk sur le PC')).toBe('Daft Punk');
+    expect(extractSpotifyPlayQuery('lance Get Lucky sur la Devialet')).toBe('Get Lucky');
+  });
+
+  it('garde un titre entier « Sur la route de Memphis »', () => {
+    expect(extractSpotifyPlayQuery('Sur la route de Memphis')).toBe('Sur la route de Memphis');
+    expect(extractSpotifyPlayQuery('mets Sur la route de Memphis sur l’enceinte')).toBe(
+      'Sur la route de Memphis',
+    );
+  });
+
+  it('ne confond pas transfert et lecture', () => {
+    expect(extractSpotifyPlayQuery('passe la musique sur l’enceinte')).toBeNull();
+    expect(isMusicIntent('passe la musique sur l’enceinte')).toBe(true);
+  });
+
   it('une question générale sur la musique n’expose pas Spotify', () => {
     expect(isMusicIntent('Qui chante Bohemian Rhapsody ?')).toBe(false);
     expect(isMusicIntent('Quel est le dernier album de Nekfeu ?')).toBe(false);

@@ -51,7 +51,7 @@ Statuts possibles : `en cours`, `en pause`, `bloqué`, `terminé`.
 | Claude Code | `claude/entrainement-1` | Entraînement de l'élève, étapes 1 à 4 du README (préparation, mise en place, dry-run, essai 20 pas sur la carte) ; puis entraînement complet du 3B sur la carte (demandé le 2026-11-04 au soir) ; export `jarvis-coder-3b` et examen `lab:compare` ; rapports `rapports/2026-11-04-entrainement-essai-1.md`, `rapports/2026-11-05-entrainement-complet-3b.md`, `rapports/2026-11-05-examen-jarvis-coder-3b-contre-qwen2-5-coder-3b.md` | — | 2026-11-04 | terminé |
 | Cursor | `cursor/mission-directe-5069` | Mission directe | — | 2026-11-04 | terminé |
 | Cursor | `cursor/spotify-enceinte-cible` | Spotify sur enceinte Connect choisie (Devialet) | — | 2026-11-04 | terminé |
-| Cursor | `cursor/spotify-voix-appareil` | Choix d'appareil Spotify à la voix (lecture et transfert) | `packages/core/src/media/playIntent.ts`, `packages/core/src/media/spotifyDeviceVoice.ts`, `packages/core/src/agent/agent.ts`, `packages/core/src/providers/mock.ts`, `apps/desktop/src/main/media/SpotifyProvider.ts`, `apps/desktop/src/main/media/spotifyDevices.ts`, `apps/desktop/src/main/tools/spotify.ts`, `rapports/2026-11-07-spotify-voix-appareil.md` | 2026-11-07 | en cours |
+| Cursor | `cursor/spotify-voix-appareil` | Choix d'appareil Spotify à la voix (lecture et transfert) | — | 2026-11-07 | terminé |
 
 ## Ressource GPU / Ollama
 

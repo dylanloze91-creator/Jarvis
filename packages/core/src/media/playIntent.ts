@@ -9,6 +9,11 @@
  */
 
 import { isCurrentTrackQuestion } from './currentTrackIntent.js';
+import {
+  extractSpotifyTransferTarget,
+  isSpotifyTransferPhrase,
+  stripSpotifyPlayDeviceSuffix,
+} from './spotifyDeviceVoice.js';
 
 const OPEN_SPOTIFY_ONLY =
   /^(?:jarvis[,:]?\s*)?(?:ouvre|ouvrir|lance|lancer|démarre|demarrer)\s+spotify\s*[.!]?\s*$/iu;
@@ -43,6 +48,7 @@ export function isMusicIntent(prompt: string): boolean {
   if (OPEN_SPOTIFY_ONLY.test(trimmed)) return false;
   if (isCurrentTrackQuestion(trimmed)) return true;
   if (extractSpotifyPlayQuery(trimmed)) return true;
+  if (isSpotifyTransferPhrase(trimmed) && extractSpotifyTransferTarget(trimmed)) return true;
 
   const normalized = trimmed.toLowerCase();
   if (/qu(?:'|e )est-ce qui joue|morceau (?:actuel|en cours)/.test(normalized)) return true;
@@ -69,12 +75,18 @@ export function isMusicIntent(prompt: string): boolean {
  * « lance Chrome » = autre application, « pause » = contrôle,
  * « qu'est-ce qui joue sur Spotify ? » = morceau en cours).
  */
+function finalizeSpotifyPlayQuery(query: string): string {
+  const stripped = stripSpotifyPlayDeviceSuffix(query).replace(/[.!?]+$/u, '').trim();
+  return stripped;
+}
+
 export function extractSpotifyPlayQuery(prompt: string): string | null {
   const trimmed = prompt.trim();
   if (!trimmed) return null;
   if (OPEN_SPOTIFY_ONLY.test(trimmed)) return null;
   if (isCurrentTrackQuestion(trimmed)) return null;
   if (isPlaybackControlOnly(trimmed)) return null;
+  if (isSpotifyTransferPhrase(trimmed)) return null;
 
   const normalized = trimmed.toLowerCase();
 
@@ -86,31 +98,33 @@ export function extractSpotifyPlayQuery(prompt: string): string | null {
     const withoutSuffix = trimmed.replace(/\s*sur spotify\s*[.!]?\s*$/iu, '');
     const afterVerb = withoutSuffix.replace(LISTEN_PREFIX, '').replace(LAUNCH_TRACK_PREFIX, '').trim();
     const query = (afterVerb || withoutSuffix).replace(/[.!?]+$/u, '').trim();
-    if (query && !/^spotify$/i.test(query) && !NOT_A_TRACK.test(query)) return query;
+    if (query && !/^spotify$/i.test(query) && !NOT_A_TRACK.test(query)) return finalizeSpotifyPlayQuery(query);
   }
 
   const metsDu = trimmed.match(
     /^(?:jarvis[,:]?\s*)?mets\s+(?:du|de la|de l['’])\s+(.+?)\s*[.!]?\s*$/iu,
   );
-  if (metsDu?.[1] && !NOT_A_TRACK.test(metsDu[1])) return metsDu[1].trim();
+  if (metsDu?.[1] && !NOT_A_TRACK.test(metsDu[1])) return finalizeSpotifyPlayQuery(metsDu[1].trim());
 
   if (LISTEN_PREFIX.test(trimmed)) {
     const rest = trimmed
       .replace(LISTEN_PREFIX, '')
       .replace(/[.!?]+$/u, '')
       .trim();
-    if (rest && !/^spotify$/i.test(rest) && !NOT_A_TRACK.test(rest)) return rest;
+    if (rest && !/^spotify$/i.test(rest) && !NOT_A_TRACK.test(rest)) return finalizeSpotifyPlayQuery(rest);
   }
 
   if (LAUNCH_TRACK_PREFIX.test(trimmed)) {
-    const rest = trimmed
-      .replace(LAUNCH_TRACK_PREFIX, '')
-      .replace(/[.!?]+$/u, '')
-      .trim();
-    if (rest && looksLikeTrackQuery(rest)) return rest;
+    const rest = stripSpotifyPlayDeviceSuffix(
+      trimmed
+        .replace(LAUNCH_TRACK_PREFIX, '')
+        .replace(/[.!?]+$/u, '')
+        .trim(),
+    );
+    if (rest && looksLikeTrackQuery(rest)) return finalizeSpotifyPlayQuery(rest);
   }
 
-  if (looksLikeBareTrackDeArtist(trimmed)) return trimmed.replace(/[.!?]+$/u, '').trim();
+  if (looksLikeBareTrackDeArtist(trimmed)) return finalizeSpotifyPlayQuery(trimmed.replace(/[.!?]+$/u, '').trim());
 
   return null;
 }
