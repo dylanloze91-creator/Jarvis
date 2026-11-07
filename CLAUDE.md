@@ -1,8 +1,8 @@
-# Jarvis 5.0.69 — contexte pour un autre développeur
+# Jarvis 5.0.70 — contexte pour un autre développeur
 
 Ce fichier est à la **racine du code**. Les chemins ci-dessous partent de ce dossier. Ce n’est pas un résumé marketing : c’est l’état réel de cet arbre. La voix a été refaite dans cet arbre (publiée en 0.4.11, section « Voix ») : la transcription restait « Chargement… 100 % » sur l’installateur Windows. La refonte du tableau de bord est dans cet arbre : fenêtre étroite = overlay, fenêtre large = tableau de bord.
 
-**Version confirmée :** `apps/desktop/package.json` → `"version": "5.0.69"` (décision D1 : jamais de suffixe `-beta`). La 5.0.69 (mission directe depuis la discussion, Spotify sur enceinte Connect choisie ; intégration du 5 novembre 2026, rapport `rapports/2026-11-05-publication-5069.md`) est publiée (release `v5.0.69`, voir « Updater / GitHub »). La 5.0.68 (chat unifié phase 1, garde double-lancement ; rapport `rapports/2026-11-04-publication-5068.md`) reste la release précédente. La 5.0.67 (caractère de Jarvis, validation d’équipe en direct, correctif contexte export claude.ai ; rapport `rapports/2026-11-04-publication-5067.md`) reste la release antérieure. La 5.0.66 (correctif Piper Windows, sources courtes, lieu domicile, correctifs Claude ; rapport `rapports/2026-11-03-publication-5066.md`) reste la release antérieure. Le `package.json` racine est aligné sur la même version depuis 0.5.0 (il était resté à `0.3.0`), mais il n’est lu par rien : la version qui compte pour l’exe, l’updater et GitHub est celle de `@jarvis/desktop`. `@jarvis/core` reste à `0.1.0`. Le modèle par défaut reste `qwen2.5:3b`. `qwen3.5:4b` est le modèle recommandé documenté ; le repli est réglable (`fallbackModel`, défaut `qwen2.5:3b`).
+**Version confirmée :** `apps/desktop/package.json` → `"version": "5.0.70"` (décision D1 : jamais de suffixe `-beta`). La 5.0.70 (interface simple, questionnaire « Faisons connaissance » ; intégration du 7 novembre 2026, rapport `rapports/2026-11-07-publication-5070.md`) est publiée après les contrôles (release `v5.0.70`, voir « Updater / GitHub »). La 5.0.69 (mission directe depuis la discussion, Spotify sur enceinte Connect choisie ; rapport `rapports/2026-11-05-publication-5069.md`) reste la release précédente. La 5.0.68 (chat unifié phase 1, garde double-lancement ; rapport `rapports/2026-11-04-publication-5068.md`) reste la release précédente. La 5.0.67 (caractère de Jarvis, validation d’équipe en direct, correctif contexte export claude.ai ; rapport `rapports/2026-11-04-publication-5067.md`) reste la release antérieure. La 5.0.66 (correctif Piper Windows, sources courtes, lieu domicile, correctifs Claude ; rapport `rapports/2026-11-03-publication-5066.md`) reste la release antérieure. Le `package.json` racine est aligné sur la même version depuis 0.5.0 (il était resté à `0.3.0`), mais il n’est lu par rien : la version qui compte pour l’exe, l’updater et GitHub est celle de `@jarvis/desktop`. `@jarvis/core` reste à `0.1.0`. Le modèle par défaut reste `qwen2.5:3b`. `qwen3.5:4b` est le modèle recommandé documenté ; le repli est réglable (`fallbackModel`, défaut `qwen2.5:3b`).
 
 Lis ce fichier avant de modifier le code.
 
@@ -63,7 +63,7 @@ Scripts utiles (racine) :
 
 Le script `setup:voice` remplit `apps/desktop/voice-assets/` (runtime ONNX, Whisper, openWakeWord, modèle Vosk français ; non commité, voir `.gitignore`). Premier `dev` / `build` : besoin de réseau.
 
-L’installateur publié est `Jarvis-Setup-5.0.69.exe` (release GitHub `v5.0.69`).
+L’installateur publié est `Jarvis-Setup-5.0.70.exe` (release GitHub `v5.0.70`).
 
 Données utilisateur (Electron `userData`, typiquement `%APPDATA%\Jarvis`) :
 
@@ -97,7 +97,7 @@ Données utilisateur (Electron `userData`, typiquement `%APPDATA%\Jarvis`) :
     src/media/                 intent Spotify
     src/update/                lecture latest.yml GitHub
     src/history/  src/audit/
-  apps/desktop/                Electron (version 5.0.69)
+  apps/desktop/                Electron (version 5.0.70)
     electron-builder.yml       NSIS, extraResources, publish GitHub
     electron.vite.config.ts    aliases onnxruntime-web (wasm, pas JSEP)
     scripts/setup-whisper.mjs
@@ -237,7 +237,7 @@ L’overlay compact ci-dessus est celui de la 0.4.9, conservé pour la fenêtre 
 - **Orbe et logo** (`components/JarvisOrb.tsx`) : niveau du micro seulement pendant la captation d’une commande (`voice.state === 'listening'`), immobiles (respiration habituelle) en attente de « Jarvis ». Hors captation, `level` n’est rafraîchi que 4 fois par seconde.
 - **Indicateur hors fenêtre** (`main/listeningIndicator.ts`, page `renderer/indicator.html`, preload `preload/indicator.ts`) : pastille 184×48 en haut à droite de la zone de travail de l’écran du curseur, du réveil à la fin de la captation, seulement si la fenêtre principale est cachée, réduite ou sans le focus. `focusable: false`, `showInactive`, `setIgnoreMouseEvents(true)`, `skipTaskbar`, `type: 'toolbar'` sous Windows (ni barre des tâches ni Alt-Tab). IPC `listening:indicator` / `listening:level`, acceptés seulement depuis la fenêtre principale.
 - **Apprentissage du réveil** (option `voice.wakeLearning`, désactivée par défaut ; désactivée = détection 0.4.16 à l’identique). Core : `speech/wakeLearning/` (caractéristiques = moyenne/max/écart-type des embeddings openWakeWord sur 2 s ; régression logistique ; seuil du veto borné 0,05–0,5 et actif seulement si la validation croisée garde ≥ 97 % des vrais réveils ; rattrapage des quasi-réveils borné 0,8–0,98 ; étiquetage automatique ; un quasi-réveil < 1,5 s avant un réveil = même « Jarvis », pas un raté ; plafond). Renderer : `voice/wakeLearning/` (sessions mel+embedding à part, sous `withOrtLock`). Main : `main/wakeLearningStore.ts`, uniquement `userData/wake-learning/` (`index.json`, `clips/*.wav`, `verifier.json`), au plus 300 extraits / 20 Mo, journal sans audio ni texte. « Effacer » = extraits supprimés, modèle gardé ; « Réinitialiser » = dossier supprimé. Les détecteurs Vosk et openWakeWord ne changent pas ; Vosk et openWakeWord signalent des quasi-réveils seulement si la couche est active.
-- **Réglages en onglets** (`components/SettingsTabs.tsx`) : Voix et détection, Modèle IA, Recherche et mémoire, Spotify, Outils et sécurité, Fenêtre et démarrage, Mises à jour. Un seul brouillon et un seul « Enregistrer » ; les onglets inactifs restent montés (cachés). Détails techniques repliés (`ui/disclosure.tsx`).
+- **Réglages en onglets** (`components/SettingsTabs.tsx`, remplacés en **5.0.70** par six catégories dans `SettingsPanel.tsx`) : Voix et détection, Modèle IA, Recherche et mémoire, Spotify, Outils et sécurité, Fenêtre et démarrage, Mises à jour. Un seul brouillon et un seul « Enregistrer » ; les onglets inactifs restent montés (cachés). Détails techniques repliés (`ui/disclosure.tsx`).
 
 ---
 
@@ -645,6 +645,15 @@ Cahier : `docs/specs/mission-directe.md`.
 - **Discussion unifiée** : avec `developer.chatMissions`, plus de bascule automatique vers l'onglet Développeur ; corrections et préférences restent dans le chat (`classifyUtterance`, `noteToRecord`).
 - Tests : `detect.test.ts`, `chat-missions-direct.test.ts`, `voiceAssistantRoute.test.ts`, `UnifiedJarvisChat.test.tsx` ; suites 5.0.68 inchangées sans régénération des `__golden__`.
 
+## 5.0.70 — Jarvis plus simple
+
+Cahier : `docs/specs/interface-simple.md` (branche `claude/specs-interface-simple`). Rapport : `rapports/2026-11-05-interface-simple-5070.md`.
+
+- **Questionnaire** « Faisons connaissance » : règles pures `packages/core/src/onboarding/` (`onboardingPlan`), fichier `userData/questionnaire.json`, résumé avant → après, retour arrière dans Réglages → Application.
+- **Réglages** : six catégories (Moi, Parler à Jarvis, Ce que Jarvis sait faire, Le cerveau de Jarvis, Sécurité, Application) — `SettingsPanel.tsx`, recherche `SettingsSearch.tsx`, carte testée `settingsMap.test.ts`. Anciens `openSettingsOnTab('voice'|'google'|…)` → liens profonds `settingsDeepLinks.ts`.
+- **Navigation** : barre latérale tableau de bord allégée ; overlay compact inchangé (4 vues, catégories identiques).
+- **Invariants** : `parseSettings({})` sans clé nouvelle ; chat / orchestre / golden inchangés ; enregistrement via brouillon + `settingsPatch` conservé.
+
 ## 5.0.69 — Spotify sur l'enceinte Connect choisie
 
 Branche `cursor/spotify-enceinte-cible`. Réglages facultatifs `spotifyDeviceName` et `spotifySpeakerMaxVolume` (sans défaut Zod : `parseSettings({})` ne gagne aucune clé ; absent = chaîne vide et plafond 70 en code dans `SpotifyBridge`). Réglages → Spotify : liste des appareils Connect, choix d'une enceinte (ex. Devialet) ou retour au PC. `SpotifyProvider` transfère la lecture sur l'appareil nommé (correspondance insensible à la casse et aux accents) ; les enceintes de type Speaker sont plafonnées à `spotifySpeakerMaxVolume` (défaut 70). La **description** de l'outil `spotify_play` dans le catalogue modèle reste celle de 0.4.22 (application de bureau) ; le **résultat** de l'outil annonce « Lecture sur « … » » quand une enceinte est choisie. `chat-unchanged.test.ts` et `ollama-unchanged.test.ts` verts sans régénération des `__golden__`.
@@ -676,7 +685,7 @@ Demande de l'utilisateur : « que Jarvis ait une personnalité bien à lui, limi
 
 ## Updater / GitHub
 
-Dernière publication : **5.0.69** (`https://github.com/dylanloze91-creator/Jarvis/releases/tag/v5.0.69`) — exe, `.blockmap` et `latest.yml` publiés : l’updater intégré la propose.
+Dernière publication : **5.0.70** (`https://github.com/dylanloze91-creator/Jarvis/releases/tag/v5.0.70`) — exe, `.blockmap` et `latest.yml` publiés : l’updater intégré la propose.
 
 - `apps/desktop/electron-builder.yml` : `publish.provider: github`, owner `dylanloze91-creator`, repo `Jarvis`, `releaseType: release`, artifact `Jarvis-Setup-${version}.exe`
 - `apps/desktop/src/main/updater.ts` : contrôle 15 s après le démarrage puis toutes les 4 h ; téléchargement auto ; **installation seulement si l’utilisateur clique**

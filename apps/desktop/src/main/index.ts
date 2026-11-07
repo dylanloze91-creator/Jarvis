@@ -23,6 +23,7 @@ import {
   createWebSearchRegistry,
   ollamaDescriptor,
   parseSettings,
+  sanitizeQuestionnaireSetPatch,
   searchOpenMeteoPlaces,
   testOllamaConnection,
   PIPER_TTS_ID,
@@ -31,6 +32,7 @@ import {
   type SearchProviderDescriptor,
   type OrchestraTeam,
   type Settings,
+  validateRepo,
 } from '@jarvis/core';
 import {
   IpcChannel,
@@ -38,6 +40,7 @@ import {
   type SendChatInput,
   type TeamValidationInput,
   type ChatEvent,
+  type RuntimeStatus,
   type ToolInfo,
   type VoiceSpeakInput,
   type VoicePiperSpeakInput,
@@ -54,6 +57,9 @@ import { ChatSession } from './session.js';
 import { appendTeamValidation, type TeamValidationPayload } from './orchestra/teamValidation.js';
 import { PhoneService } from './phone/service.js';
 import { PhoneStore } from './phone/store.js';
+import { gatherRepoFacts } from './developer/repo.js';
+import { runProcess } from './developer/runner.js';
+import { QuestionnaireStore } from './questionnaire/store.js';
 import { SpeakerService } from './speaker/service.js';
 import { SpeakerStore } from './speaker/store.js';
 import { createSpeakerSynthesizer } from './speaker/synth.js';
@@ -270,6 +276,7 @@ const phoneSession = new ChatSession({
   localLearning,
   getChatMissionHub: () => chatMissionHub,
 });
+const questionnaire = QuestionnaireStore.inUserData(() => app.getPath('userData'));
 const phone = new PhoneService({
   store: PhoneStore.inUserData(() => app.getPath('userData')),
   chat: {
@@ -576,6 +583,77 @@ function registerIpc(): void {
 
     return { settings, status: session.status() };
   });
+
+  const persistSettings = async (next: Settings): Promise<{ settings: Settings; status: RuntimeStatus }> => {
+    const hotkeyChanged = next.hotkey !== settings.hotkey;
+    settings = parseSettings(next, settings);
+    await writeSettings(settings);
+    overlay?.setHideOnBlur(!settings.stayVisibleOnBlur && !isDev);
+    if (hotkeyChanged && !registerHotkey(settings.hotkey)) {
+      registerHotkey('Control+Space');
+      settings = parseSettings({ ...settings, hotkey: 'Control+Space' }, settings);
+      await writeSettings(settings);
+    }
+    if (app.isPackaged) {
+      app.setLoginItemSettings({ openAtLogin: settings.launchAtLogin });
+    }
+    return { settings, status: session.status() };
+  };
+
+  ipcMain.handle(IpcChannel.questionnaireGet, async () => {
+    await questionnaire.load();
+    return questionnaire.snapshot();
+  });
+  ipcMain.handle(IpcChannel.questionnaireSet, async (_event, patch: unknown) =>
+    questionnaire.set(sanitizeQuestionnaireSetPatch(patch)),
+  );
+  ipcMain.handle(IpcChannel.questionnaireApply, async () => {
+    const repoPath = settings.developer.repoPath?.trim();
+    let developerRepoValid = false;
+    if (repoPath) {
+      const facts = await gatherRepoFacts(repoPath, runProcess);
+      developerRepoValid = validateRepo(facts, app.getVersion(), []).ok;
+    }
+    const ollama = await checkOllamaStatus(settings.baseUrl || ollamaDescriptor.defaultBaseUrl!);
+    const applied = await questionnaire.apply({
+      readSettings: () => Promise.resolve(settings),
+      writeSettingsPatch: async (patch) => {
+        const next = parseSettings({ ...settings, ...patch }, settings);
+        const payload = await persistSettings(next);
+        return payload.settings;
+      },
+      mergePersonalization: async (patch) => {
+        await personalization.merge(patch);
+      },
+      replacePersonalization: async (profile) => {
+        await personalization.replace(profile);
+      },
+      environment: {
+        ollamaModels: ollama.models.map((model) => model.name),
+        developerRepoValid,
+        personalization: await personalization.get(),
+      },
+    });
+    if (applied.openDashboard) overlay?.setChrome('dashboard');
+    return { state: applied.state, settings: applied.settings, status: session.status() };
+  });
+  ipcMain.handle(IpcChannel.questionnaireRestore, async () => {
+    const restored = await questionnaire.restore({
+      readSettings: () => Promise.resolve(settings),
+      writeSettings: async (next) => {
+        const payload = await persistSettings(next);
+        return payload.settings;
+      },
+      replacePersonalization: async (profile) => {
+        await personalization.replace(profile);
+      },
+    });
+    if (!restored.settings) {
+      return { state: restored.state, settings: null, status: session.status() };
+    }
+    return { state: restored.state, settings: restored.settings, status: session.status() };
+  });
+
   ipcMain.handle(IpcChannel.settingsProviders, (): ProviderDescriptor[] => registry.list());
   ipcMain.handle(IpcChannel.settingsSearchProviders, (): SearchProviderDescriptor[] =>
     searchRegistry.list(),

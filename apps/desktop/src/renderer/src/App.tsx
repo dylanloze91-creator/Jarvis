@@ -11,12 +11,15 @@ import {
   PinOff,
 } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { stripSourcesFooter, type Conversation, type Settings } from '@jarvis/core';
+import { stripSourcesFooter, looksLikeQuestionnaireIntent, type Conversation, type QuestionnaireAnswers, type Settings } from '@jarvis/core';
 import { AuditPanel } from '@/components/AuditPanel';
 import { Dashboard } from '@/dashboard/Dashboard';
 import { useWideLayout } from '@/dashboard/useWideLayout';
 import { HistoryPanel } from '@/components/HistoryPanel';
-import { SettingsPanel, openSettingsOnTab } from '@/components/SettingsPanel';
+import { SettingsPanel, openSettingsAt, openSettingsOnTab } from '@/components/SettingsPanel';
+import { OnboardingFlow } from '@/components/onboarding/OnboardingFlow';
+import { OnboardingSummary } from '@/components/onboarding/OnboardingSummary';
+import { SETTINGS_SPECIAL_LINKS } from '@/components/settings/settingsDeepLinks';
 import { UpdateBadge } from '@/components/UpdateBadge';
 import { Button } from '@/components/ui/button';
 import { useChat } from '@/hooks/useChat';
@@ -50,8 +53,31 @@ function sceneFromLocation(): string | null {
   return new URLSearchParams(window.location.search).get('scene');
 }
 
+function initialViewFromScene(): View {
+  const scene = sceneFromLocation();
+  if (scene === 'settings' || scene === 'settings-v2' || scene === 'settings-search') {
+    return 'settings';
+  }
+  if (scene === 'developer') return 'developer';
+  return 'chat';
+}
+
+function initialOnboardingPhase(): 'flow' | 'summary' | null {
+  const scene = sceneFromLocation();
+  if (scene === 'onboarding') return 'flow';
+  if (scene === 'onboarding-summary') return 'summary';
+  return null;
+}
+
+function initialOnboardingAnswers(): QuestionnaireAnswers {
+  if (sceneFromLocation() === 'onboarding-summary') {
+    return { talkMode: 'voice', character: 'complice', confirmBefore: 'risky' };
+  }
+  return {};
+}
+
 export default function App() {
-  const [view, setView] = useState<View>(() => (sceneFromLocation() === 'settings' ? 'settings' : 'chat'));
+  const [view, setView] = useState<View>(() => initialViewFromScene());
   const [settings, setSettings] = useState<Settings | null>(null);
   const [status, setStatus] = useState<RuntimeStatus | null>(null);
   const [tools, setTools] = useState<ToolInfo[]>([]);
@@ -59,6 +85,12 @@ export default function App() {
   const [booting, setBooting] = useState(true);
   const [showSetup, setShowSetup] = useState(false);
   const [pendingDevVoice, setPendingDevVoice] = useState<string | null>(null);
+  const [onboardingPhase, setOnboardingPhase] = useState<'flow' | 'summary' | null>(() =>
+    initialOnboardingPhase(),
+  );
+  const [onboardingAnswers, setOnboardingAnswers] = useState<QuestionnaireAnswers>(() =>
+    initialOnboardingAnswers(),
+  );
   const mainPaneRef = useRef<HTMLDivElement>(null);
   const seeded = useRef(false);
 
@@ -75,8 +107,13 @@ export default function App() {
   // prompt système (voir `withVoiceOriginNotice`), jamais dans le texte
   // affiché ou enregistré, qui reste la transcription telle quelle.
   const onVoiceTranscript = useCallback(
-    (text: string, meta?: { followUp?: boolean }) =>
-      deliverVoiceTranscript(text, (t) => chat.send(t, 'voice', { followUp: meta?.followUp === true })),
+    (text: string, meta?: { followUp?: boolean }) => {
+      if (looksLikeQuestionnaireIntent(text)) {
+        setOnboardingPhase('flow');
+        return;
+      }
+      deliverVoiceTranscript(text, (t) => chat.send(t, 'voice', { followUp: meta?.followUp === true }));
+    },
     [chat.send],
   );
   const voice = useVoice({
@@ -116,14 +153,35 @@ export default function App() {
       .finally(() => {
         if (!cancelled) setBooting(false);
       });
+    void window.jarvis.questionnaire.get().then((state) => {
+      if (sceneFromLocation()) return;
+      if (!state.completedAt && !state.dismissed) setOnboardingPhase('flow');
+    });
     return () => {
       cancelled = true;
     };
   }, []);
 
   useEffect(() => {
-    if (seeded.current) return;
     const scene = sceneFromLocation();
+    if (scene === 'onboarding') {
+      setOnboardingPhase('flow');
+      return;
+    }
+    if (scene === 'onboarding-summary') {
+      setOnboardingAnswers({ talkMode: 'voice', character: 'complice', confirmBefore: 'risky' });
+      setOnboardingPhase('summary');
+      return;
+    }
+    if (scene === 'settings-v2' || scene === 'settings-search') {
+      setView('settings');
+      return;
+    }
+    if (scene === 'dashboard-v2') {
+      setView('chat');
+      return;
+    }
+    if (seeded.current) return;
     if (scene === 'chat') {
       seeded.current = true;
       chat.load(SAMPLE_CONVERSATION);
@@ -284,6 +342,7 @@ export default function App() {
         onNew={startNew}
         onAnalyzeMachine={() => setShowSetup(true)}
         onOpenDeveloper={openDeveloper}
+        onOpenQuestionnaire={() => setOnboardingPhase('flow')}
         pendingDevVoice={pendingDevVoice}
         onPendingDevVoiceConsumed={() => setPendingDevVoice(null)}
       />
@@ -414,7 +473,7 @@ export default function App() {
                   setView('settings');
                 }}
                 onOpenPersonaSettings={() => {
-                  openSettingsOnTab('model');
+                  openSettingsAt(SETTINGS_SPECIAL_LINKS.persona);
                   setView('settings');
                 }}
               />
@@ -457,6 +516,7 @@ export default function App() {
                 settings={settings}
                 status={status}
                 onAnalyzeMachine={() => setShowSetup(true)}
+                onRestartOnboarding={() => setOnboardingPhase('flow')}
                 onSaved={(payload) => {
                   setSettings(payload.settings);
                   setStatus(payload.status);
@@ -470,6 +530,46 @@ export default function App() {
         </div>
         )}
       </div>
+
+      {onboardingPhase ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
+          <div className="flex max-h-[min(90vh,640px)] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#070b14] shadow-2xl">
+            {onboardingPhase === 'flow' ? (
+              <OnboardingFlow
+                initialAnswers={onboardingAnswers}
+                onDismiss={() => {
+                  void window.jarvis.questionnaire.set({ dismissed: true });
+                  setOnboardingPhase(null);
+                }}
+                onDone={(answers) => {
+                  setOnboardingAnswers(answers);
+                  setOnboardingPhase('summary');
+                }}
+              />
+            ) : settings ? (
+              <OnboardingSummary
+                answers={onboardingAnswers}
+                settings={settings}
+                onBack={() => setOnboardingPhase('flow')}
+                onCancel={() => setOnboardingPhase(null)}
+                onConfirm={() => {
+                  void window.jarvis.questionnaire
+                    .set({ answers: onboardingAnswers, dismissed: false })
+                    .then(() => window.jarvis.questionnaire.apply())
+                    .then((result) => {
+                      setSettings(result.settings);
+                      setStatus(result.status);
+                      if (result.state.windowPreference === 'dashboard') {
+                        void window.jarvis.window.setChrome('dashboard');
+                      }
+                      setOnboardingPhase(null);
+                    });
+                }}
+              />
+            ) : null}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

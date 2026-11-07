@@ -46,7 +46,7 @@ export function PersonaSettingsSection({ value, onChange, userName, orchestraEna
       </p>
       {persona.enabled && !orchestraEnabled ? (
         <p className="rounded-lg border border-amber-400/25 bg-amber-400/10 px-3 py-2 text-xs leading-snug text-amber-100">
-          Le chef d’orchestre est coupé : active-le plus haut dans cet onglet, sinon le caractère n’est envoyé
+          Le chef d’orchestre est coupé : active-le dans Réglages → Cerveau, sinon le caractère n’est envoyé
           à aucune réponse (seul l’accueil change).
         </p>
       ) : null}

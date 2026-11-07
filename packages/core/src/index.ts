@@ -562,3 +562,5 @@ export * from './speaker/speaker.js';
 export { encodeQr, qrSvgPath, QR_MAX_VERSION, type QrMatrix } from './qr/qrCode.js';
 export * from './rover/index.js';
 export * from './developer/index.js';
+export * from './onboarding/index.js';
+export * from './settingsMap/index.js';

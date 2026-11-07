@@ -14,6 +14,8 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { captureLog, microphone } from '@/voice/audioCapture';
 import type { MicrophoneStatus } from '@/voice/microphone';
+import { VOICE_DIAGNOSTIC_INTRO } from '@/components/voiceSettingsCopy';
+import { Disclosure } from '@/components/ui/disclosure';
 import {
   DIAGNOSTIC_STEPS,
   formatDiagnosticReport,
@@ -36,7 +38,14 @@ const initialSteps = (): DiagnosticStep[] =>
  * WebAssembly, openWakeWord, Whisper, micro) et affiche la première étape
  * en échec. « Copier le détail » donne le texte à renvoyer.
  */
-export function VoiceDiagnostic({ voice }: { voice: VoiceSettings }) {
+export function VoiceDiagnostic({
+  voice,
+  compactIntro = false,
+}: {
+  voice: VoiceSettings;
+  /** Premier niveau : une phrase simple + bouton ; le détail technique est repliable. */
+  compactIntro?: boolean;
+}) {
   const [steps, setSteps] = useState<DiagnosticStep[]>(initialSteps);
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<VoiceDiagnosticResult | null>(null);
@@ -104,21 +113,12 @@ export function VoiceDiagnostic({ voice }: { voice: VoiceSettings }) {
   const failure = result?.firstFailure ?? null;
   const allGood = result !== null && failure === null;
 
-  return (
-    <div className="flex flex-col gap-3 rounded-lg border border-white/8 bg-white/[0.02] p-3" data-testid="voice-diagnostic">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-sm text-slate-200">Tester la voix</p>
-          <p className="text-xs leading-snug text-slate-500">
-            Vérifie les fichiers, le moteur, Whisper et le micro, puis t’écoute une phrase. Tu pourras copier le détail.
-          </p>
-        </div>
-        <Button size="sm" variant={running ? 'ghost' : 'default'} onClick={() => void start()} disabled={running}>
-          {running ? <Loader2 className="size-3.5 animate-spin" /> : null}
-          {running ? 'Test en cours…' : result ? 'Relancer' : 'Tester la voix'}
-        </Button>
-      </div>
+  const headerHint = compactIntro
+    ? VOICE_DIAGNOSTIC_INTRO
+    : 'Vérifie les fichiers, le moteur, Whisper et le micro, puis t’écoute une phrase. Tu pourras copier le détail.';
 
+  const detailBody = (
+    <>
       <p className="text-xs leading-snug text-slate-500" data-testid="voice-diagnostic-device">
         {mic.phase === 'open'
           ? `Micro testé : « ${mic.label || 'sans nom'} » (celui de l’écoute). Change-le au-dessus.`
@@ -215,6 +215,29 @@ export function VoiceDiagnostic({ voice }: { voice: VoiceSettings }) {
         data-testid="voice-diagnostic-file"
         onChange={(event) => void analyzeFiles(event.target.files)}
       />
+    </>
+  );
+
+  return (
+    <div className="flex flex-col gap-3 rounded-lg border border-white/8 bg-white/[0.02] p-3" data-testid="voice-diagnostic">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-sm text-slate-200">Tester la voix</p>
+          <p className="text-xs leading-snug text-slate-500">{headerHint}</p>
+        </div>
+        <Button size="sm" variant={running ? 'ghost' : 'default'} onClick={() => void start()} disabled={running}>
+          {running ? <Loader2 className="size-3.5 animate-spin" /> : null}
+          {running ? 'Test en cours…' : result ? 'Relancer' : 'Tester la voix'}
+        </Button>
+      </div>
+
+      {compactIntro ? (
+        <Disclosure title="Détails" hint="Étapes, fichiers embarqués et analyse audio">
+          {detailBody}
+        </Disclosure>
+      ) : (
+        detailBody
+      )}
     </div>
   );
 }

@@ -3,6 +3,7 @@ import {
   defaultSettings,
   describeGoogleAccess,
   emptyPersonalization,
+  emptyQuestionnaireState,
   formatMailForConfirmation,
   googleScopesFor,
   summarizeMailSend,
@@ -404,6 +405,12 @@ export function installPreviewBridge(): void {
       onEvent: () => () => undefined,
     },
     developer: createPreviewDeveloperApi(search.get('scene'), () => settings.developer.enabled),
+    questionnaire: {
+      get: async () => emptyQuestionnaireState(),
+      set: async (patch) => ({ ...emptyQuestionnaireState(), ...patch }),
+      apply: async () => ({ state: emptyQuestionnaireState(), settings, status: status() }),
+      restore: async () => ({ state: emptyQuestionnaireState(), settings: null, status: status() }),
+    },
     machine: {
       status: async () => ({ setupRequired: false, downloadAllowed: false }),
       analyze: async () => ({

@@ -137,9 +137,8 @@ export function WakeLearningSection({ enabled, savedEnabled, wakeWord, onChange 
       <div className="flex flex-col gap-1">
         <p className="text-[11px] font-medium tracking-wide text-slate-400 uppercase">Apprendre ma voix</p>
         <p className="text-xs leading-snug text-slate-500">
-          Jarvis garde de courts extraits (2 s) de tes réveils et apprend, sur ce PC, à mieux te reconnaître :
-          moins de « Jarvis » ratés, moins de faux réveils. Les détecteurs Vosk et openWakeWord ne changent pas.
-          Les extraits restent dans le dossier de données de Jarvis et ne sont jamais envoyés.
+          Jarvis apprend, sur ce PC, à mieux reconnaître ta voix au réveil : moins de ratés, moins de faux
+          déclenchements. Rien n’est envoyé ailleurs.
         </p>
       </div>
 
