@@ -52,6 +52,7 @@ Statuts possibles : `en cours`, `en pause`, `bloqué`, `terminé`.
 | Cursor | `cursor/mission-directe-5069` | Mission directe | — | 2026-11-04 | terminé |
 | Cursor | `cursor/spotify-enceinte-cible` | Spotify sur enceinte Connect choisie (Devialet) | — | 2026-11-04 | terminé |
 | Cursor | `cursor/interface-simple-5070` | 5.0.70 interface simple + questionnaire | — | 2026-11-05 | terminé |
+| Claude Code | `claude/examen-7b` | Installer le 7B entraîné sur carte louée (`jarvis-coder`, GGUF Q4_K_M via `export_ollama.py --gguf`) et le faire passer l'examen `lab:compare` contre `qwen2.5-coder:7b` (3 passages) ; rapport dans `rapports/` | — | 2026-11-05 | terminé : `jarvis-coder` créé dans Ollama (à côté de `qwen2.5-coder:7b`, rien remplacé), examen 79/87 contre 69/87, verdict « meilleur (conseillé) », rapport `rapports/2026-11-05-examen-jarvis-coder-contre-qwen2-5-coder-7b.md` ; le choix du modèle de code reste à l'utilisateur |
 
 ## Ressource GPU / Ollama
 
