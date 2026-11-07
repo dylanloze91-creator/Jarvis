@@ -2,12 +2,17 @@ import { z } from 'zod';
 import {
   defineTool,
   extractSpotifyPlayDeviceHintFromQuery,
+  peekSpotifyPlayDeviceHint,
   stripSpotifyPlayDeviceSuffix,
   takeSpotifyPlayDeviceHint,
   type Settings,
   type SpotifyPlayDeviceHint,
 } from '@jarvis/core';
-import { looksLikeLocalDesktopName } from '../media/spotifyDevices.js';
+import {
+  looksLikeLocalDesktopName,
+  pickNamedConnectDevice,
+  type ConnectDevice,
+} from '../media/spotifyDevices.js';
 import type { SpotifyBridge } from '../media/SpotifyBridge.js';
 
 export interface SpotifyToolsDeps {
@@ -54,15 +59,46 @@ function describeSpotifyFailure(error: unknown): string {
  * « reprends » relance l'ancien morceau), donc `safe` aussi, par cohérence
  * avec le reste du contrôle de lecture.
  */
-function resolvePlayDeviceHint(query: string): {
+type ConnectListing = {
+  listConnectDevices?: () => Promise<
+    Array<{ id: string; name: string; type: string; is_active: boolean }>
+  >;
+};
+
+async function listVisibleDevices(provider: ConnectListing): Promise<ConnectDevice[]> {
+  if (typeof provider.listConnectDevices !== 'function') return [];
+  const found = await provider.listConnectDevices();
+  return found
+    .filter((device) => device.id && device.name.trim())
+    .map((device) => ({
+      id: device.id,
+      name: device.name,
+      type: device.type,
+      is_active: device.is_active,
+      is_restricted: false,
+    }));
+}
+
+/**
+ * Un nom (« ville », « Devialet ») n'est gardé que s'il correspond à un
+ * appareil Connect visible (même souplesse que `pickNamedConnectDevice`).
+ * Sinon on ignore l'indice et on cherche la requête entière.
+ */
+function resolvePlayDeviceHint(
+  query: string,
+  devices: ConnectDevice[],
+): {
   searchQuery: string;
   deviceHint: SpotifyPlayDeviceHint | null;
 } {
   const stashed = takeSpotifyPlayDeviceHint();
   const fromQuery = extractSpotifyPlayDeviceHintFromQuery(query);
-  const deviceHint = stashed ?? fromQuery;
-  const searchQuery = deviceHint ? stripSpotifyPlayDeviceSuffix(query) : query;
-  return { searchQuery: searchQuery.trim() || query.trim(), deviceHint };
+  const candidate = stashed ?? fromQuery;
+  if (candidate?.kind === 'named' && !pickNamedConnectDevice(devices, candidate.name)) {
+    return { searchQuery: query.trim(), deviceHint: null };
+  }
+  const searchQuery = candidate ? stripSpotifyPlayDeviceSuffix(query) : query;
+  return { searchQuery: searchQuery.trim() || query.trim(), deviceHint: candidate };
 }
 
 function spotifyTransferAvailable(getSettings: () => Settings): boolean {
@@ -93,7 +129,9 @@ export function createSpotifyTools(deps: SpotifyToolsDeps) {
     summarize: ({ query }) => `Lancer sur Spotify : « ${query} ».`,
     execute: async ({ query }) => {
       try {
-        const { searchQuery, deviceHint } = resolvePlayDeviceHint(query);
+        const pending = peekSpotifyPlayDeviceHint() ?? extractSpotifyPlayDeviceHintFromQuery(query);
+        const devices = pending?.kind === 'named' ? await listVisibleDevices(getSpotify()) : [];
+        const { searchQuery, deviceHint } = resolvePlayDeviceHint(query, devices);
         const track = await getSpotify().searchTrack(searchQuery);
 
         if (!track) {
@@ -112,8 +150,7 @@ export function createSpotifyTools(deps: SpotifyToolsDeps) {
         const playback = await getSpotify().getPlaybackState();
         const where = playback?.deviceName;
         const artists = track.artists.join(', ');
-        const verified =
-          ' Lecture vérifiée : is_playing=true et URI confirmée.';
+        const verified = ' Lecture vérifiée : is_playing=true et URI confirmée.';
         const content = where
           ? `Lecture sur « ${where} » : ${track.title} — ${artists}.${verified}`
           : `Lecture lancée sur Spotify : ${track.title} — ${artists}.${verified}`;
@@ -265,6 +302,15 @@ export function createSpotifyTools(deps: SpotifyToolsDeps) {
     execute: async ({ target }) => {
       try {
         const hint = transferHintFromTarget(target);
+        if (hint.kind === 'named') {
+          const devices = await listVisibleDevices(getSpotify());
+          if (!pickNamedConnectDevice(devices, hint.name)) {
+            return {
+              ok: false,
+              content: `Je ne vois pas d'appareil appelé ${hint.name}`,
+            };
+          }
+        }
         const { deviceName } = await getSpotify().transferPlayback(hint);
         return {
           ok: true,

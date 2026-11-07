@@ -70,10 +70,14 @@ describe('extractSpotifyPlayQuery', () => {
     expect(extractSpotifyPlayQuery('lance lomepal sur spotify')).toBe('lomepal');
   });
 
-  it('retire la cible d’appareil en fin de phrase pour la recherche', () => {
+  it('retire enceinte et PC, et garde un nom d’appareil dans la requête', () => {
     expect(extractSpotifyPlayQuery('mets Daft Punk sur l’enceinte')).toBe('Daft Punk');
     expect(extractSpotifyPlayQuery('mets Daft Punk sur le PC')).toBe('Daft Punk');
-    expect(extractSpotifyPlayQuery('lance Get Lucky sur la Devialet')).toBe('Get Lucky');
+    expect(extractSpotifyPlayQuery('mets Daft Punk sur l’ordinateur')).toBe('Daft Punk');
+    expect(extractSpotifyPlayQuery('lance Get Lucky sur la Devialet')).toBe(
+      'Get Lucky sur la Devialet',
+    );
+    expect(extractSpotifyPlayQuery('mets Il pleut sur la ville')).toBe('Il pleut sur la ville');
   });
 
   it('garde un titre entier « Sur la route de Memphis »', () => {

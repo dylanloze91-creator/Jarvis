@@ -215,6 +215,8 @@ export {
   extractSpotifyPlayDeviceHintFromQuery,
   extractSpotifyTransferTarget,
   isSpotifyTransferPhrase,
+  clearSpotifyPlayDeviceHint,
+  peekSpotifyPlayDeviceHint,
   stashSpotifyPlayDeviceHint,
   takeSpotifyPlayDeviceHint,
   stripSpotifyPlayDeviceSuffix,

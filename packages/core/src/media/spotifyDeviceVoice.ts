@@ -4,14 +4,16 @@
  */
 
 export type SpotifyPlayDeviceHint =
-  | { kind: 'speaker' }
-  | { kind: 'pc' }
-  | { kind: 'named'; name: string };
+  { kind: 'speaker' } | { kind: 'pc' } | { kind: 'named'; name: string };
 
 let pendingPlayDeviceHint: SpotifyPlayDeviceHint | null = null;
 
 export function stashSpotifyPlayDeviceHint(hint: SpotifyPlayDeviceHint | null): void {
   pendingPlayDeviceHint = hint;
+}
+
+export function peekSpotifyPlayDeviceHint(): SpotifyPlayDeviceHint | null {
+  return pendingPlayDeviceHint;
 }
 
 export function takeSpotifyPlayDeviceHint(): SpotifyPlayDeviceHint | null {
@@ -20,16 +22,21 @@ export function takeSpotifyPlayDeviceHint(): SpotifyPlayDeviceHint | null {
   return hint;
 }
 
+/** Oublie l'indice : il ne doit jamais servir à un autre tour. */
+export function clearSpotifyPlayDeviceHint(): void {
+  pendingPlayDeviceHint = null;
+}
+
 /** Suffixe « sur l'enceinte / le PC / la Devialet » en fin de requête de lecture. */
 const APOST = "['\u2019]";
 
 const PLAY_DEVICE_SUFFIX = new RegExp(
-  String.raw`\s+sur\s+(?:l${APOST}?(?:enceinte|haut[\s-]?parleur(?:s)?)|(?:le\s+)?(?:pc|ordinateur(?:\s+portable|\s+de\s+bureau)?)|(?:la|le|l${APOST})\s+[\p{L}\p{N}][\p{L}\p{N}\-' ]{0,48})\s*[.!?]?\s*$`,
+  String.raw`\s+sur\s+(?:l${APOST}?(?:enceinte|haut[\s-]?parleur(?:s)?)|(?:le\s+|l${APOST})?(?:pc|ordinateur(?:\s+portable|\s+de\s+bureau)?)|(?:la|le|l${APOST})\s+[\p{L}\p{N}][\p{L}\p{N}\-' ]{0,48})\s*[.!?]?\s*$`,
   'iu',
 );
 
 const DEVICE_IN_PHRASE = new RegExp(
-  String.raw`\b(?:sur|vers)\s+(?:l${APOST}?(?:enceinte|haut[\s-]?parleur(?:s)?)|(?:le\s+)?(?:pc|ordinateur(?:\s+de\s+bureau)?)|(?:la|le|l${APOST})\s+[\p{L}\p{N}][\p{L}\p{N}\-' ]{0,48})`,
+  String.raw`\b(?:sur|vers)\s+(?:l${APOST}?(?:enceinte|haut[\s-]?parleur(?:s)?)|(?:le\s+|l${APOST})?(?:pc|ordinateur(?:\s+de\s+bureau)?)|(?:la|le|l${APOST})\s+[\p{L}\p{N}][\p{L}\p{N}\-' ]{0,48})`,
   'iu',
 );
 
@@ -56,7 +63,9 @@ export function extractSpotifyPlayDeviceHint(prompt: string): SpotifyPlayDeviceH
   const inline = trimmed.match(DEVICE_IN_PHRASE);
   if (
     inline &&
-    (LAUNCH_FOR_DEVICE.test(trimmed) || TRANSFER_EXPLICIT.test(trimmed) || TRANSFER_PRONOUN.test(trimmed))
+    (LAUNCH_FOR_DEVICE.test(trimmed) ||
+      TRANSFER_EXPLICIT.test(trimmed) ||
+      TRANSFER_PRONOUN.test(trimmed))
   ) {
     return deviceHintFromSurClause(inline[0]);
   }
@@ -70,14 +79,18 @@ function deviceHintFromSurClause(clause: string): SpotifyPlayDeviceHint | null {
   const text = clause.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
   if (/enceinte|haut[\s-]?parleur/.test(text)) return { kind: 'speaker' };
   if (/\b(?:le\s+)?(?:pc|ordinateur)\b/.test(text)) return { kind: 'pc' };
-  const named = clause.match(new RegExp(String.raw`\s(?:la|le|l${APOST})\s+(.+?)\s*$`, 'iu'))?.[1]?.trim();
+  const named = clause
+    .match(new RegExp(String.raw`\s(?:la|le|l${APOST})\s+(.+?)\s*$`, 'iu'))?.[1]
+    ?.trim();
   if (named && !/enceinte|ordinateur|^pc$/i.test(named)) return { kind: 'named', name: named };
-  const bare = clause.match(
-    new RegExp(
-      String.raw`\bsur\s+(?!l${APOST}?enceinte|le\s+pc|l${APOST}ordinateur)([\p{L}\p{N}][\p{L}\p{N}\-' ]{1,48})\s*$`,
-      'iu',
-    ),
-  )?.[1]?.trim();
+  const bare = clause
+    .match(
+      new RegExp(
+        String.raw`\bsur\s+(?!l${APOST}?enceinte|le\s+pc|l${APOST}ordinateur)([\p{L}\p{N}][\p{L}\p{N}\-' ]{1,48})\s*$`,
+        'iu',
+      ),
+    )?.[1]
+    ?.trim();
   if (bare) return { kind: 'named', name: bare };
   return null;
 }
