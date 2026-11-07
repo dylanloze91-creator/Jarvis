@@ -205,6 +205,12 @@ const api: JarvisApi = {
     reportTranscript: (payload: SpeakerTranscribeResult) => ipcRenderer.send(IpcChannel.speakerTranscribeResult, payload),
   },
   developer: createDeveloperApi(ipcRenderer),
+  questionnaire: {
+    get: () => ipcRenderer.invoke(IpcChannel.questionnaireGet),
+    set: (patch) => ipcRenderer.invoke(IpcChannel.questionnaireSet, patch),
+    apply: () => ipcRenderer.invoke(IpcChannel.questionnaireApply),
+    restore: () => ipcRenderer.invoke(IpcChannel.questionnaireRestore),
+  },
   machine: {
     status: () => ipcRenderer.invoke(IpcChannel.machineStatus),
     analyze: () => ipcRenderer.invoke(IpcChannel.machineAnalyze),

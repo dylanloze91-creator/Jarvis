@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   CONFIGURABLE_CATEGORIES,
   categoryLabels,
@@ -9,10 +9,12 @@ import {
   type ProviderDescriptor,
   type SearchProviderDescriptor,
   type Settings,
+  type SettingsCategoryId,
   type VoiceSettings,
   userFirstName,
 } from '@jarvis/core';
 import { Lock } from 'lucide-react';
+import { AuditPanel } from '@/components/AuditPanel';
 import { Button } from '@/components/ui/button';
 import { Field, Input, Select, Textarea, Toggle } from '@/components/ui/field';
 import { OllamaSettingsSection } from '@/components/OllamaSettings';
@@ -29,60 +31,110 @@ import { HomeLocationSettingsSection } from '@/components/HomeLocationSettings';
 import { KnowledgeSettingsSection } from '@/components/KnowledgeSettings';
 import { UpdateSettingsSection } from '@/components/UpdateSettings';
 import { VoiceSettingsSection } from '@/components/VoiceSettings';
-import { SettingsTabBar, TabPanel, type SettingsTabId } from '@/components/SettingsTabs';
 import { DeveloperSettingsSection } from '@/components/developer/DeveloperSettings';
+import { SettingsAccordion } from '@/components/settings/SettingsAccordion';
+import { SettingsCategoryNav } from '@/components/settings/SettingsCategoryNav';
+import { SettingsDependencyHints } from '@/components/settings/SettingsDependencyHints';
+import { SettingsSearch } from '@/components/settings/SettingsSearch';
+import { QuestionnaireSettingsSection } from '@/components/settings/QuestionnaireSettingsSection';
+import {
+  SETTINGS_DEEP_LINKS,
+  type SettingsNavigationTarget,
+} from '@/components/settings/settingsDeepLinks';
+import type { SettingsTabId } from '@/components/SettingsTabs';
 import { absorbSavedSettings, settingsPatch, type SettingsDraft } from '@/lib/settingsPatch';
 import type { RuntimeStatus } from '../../../shared/ipc';
 
-/** Onglet rouvert à la prochaine visite des réglages (session en cours). */
-let lastSettingsTab: SettingsTabId = 'voice';
+/** Catégorie rouverte à la prochaine visite des réglages (session en cours). */
+let lastSettingsNavigation: SettingsNavigationTarget = SETTINGS_DEEP_LINKS.voice;
 
-/** Prochaine ouverture des réglages sur cet onglet (cartes Google du tableau de bord). */
-export function openSettingsOnTab(tab: SettingsTabId): void {
-  lastSettingsTab = tab;
+/** Prochaine ouverture des réglages (liens profonds, cartes du tableau de bord). */
+export function openSettingsAt(target: SettingsNavigationTarget): void {
+  lastSettingsNavigation = target;
 }
 
-/**
- * 5.0.64 — brouillon non enregistré gardé pour la session : Échap ou un clic
- * ailleurs ferment le panneau, mais les modifications attendent le retour
- * (« Modifications non enregistrées ») au lieu de disparaître sans prévenir.
- * Gardé avec l'instantané dont il est parti (`base`) : « Enregistrer » compare à cet
- * instantané, pas aux réglages courants, pour ne pas défaire un réglage fait ailleurs
- * entre-temps.
- */
+/** Compatibilité 5.0.64 — anciens identifiants d’onglets. */
+export function openSettingsOnTab(tab: SettingsTabId): void {
+  openSettingsAt(SETTINGS_DEEP_LINKS[tab]);
+}
+
 let keptDraft: SettingsDraft | null = null;
 
 interface SettingsPanelProps {
   settings: Settings;
   status: RuntimeStatus;
   onSaved: (payload: { settings: Settings; status: RuntimeStatus }) => void;
-  /** Bascule sur un onglet alors que le panneau est déjà ouvert (`at` change à chaque demande). */
   requestedTab?: { tab: SettingsTabId; at: number };
-  /** Relance la mesure et applique le profil. Ne part pas tout seul si des réglages existent. */
   onAnalyzeMachine?: () => void;
+  onRestartOnboarding?: () => void;
 }
 
-export function SettingsPanel({ settings, status, onSaved, requestedTab, onAnalyzeMachine }: SettingsPanelProps) {
+function CategoryPanel({
+  id,
+  active,
+  children,
+}: {
+  id: SettingsCategoryId;
+  active: SettingsCategoryId;
+  children: ReactNode;
+}) {
+  return (
+    <div role="tabpanel" hidden={id !== active} className="flex flex-col gap-3">
+      {children}
+    </div>
+  );
+}
+
+export function SettingsPanel({
+  settings,
+  status,
+  onSaved,
+  requestedTab,
+  onAnalyzeMachine,
+  onRestartOnboarding,
+}: SettingsPanelProps) {
   const [draft, setDraft] = useState<Settings>(() => keptDraft?.draft ?? settings);
-  /** Instantané des réglages à la création du brouillon : la base de comparaison de « Enregistrer ». */
   const baseRef = useRef<Settings>(keptDraft?.base ?? settings);
   const [providers, setProviders] = useState<ProviderDescriptor[]>([]);
   const [searchProviders, setSearchProviders] = useState<SearchProviderDescriptor[]>([]);
-  const [marketDataProviders, setMarketDataProviders] = useState<MarketDataProviderDescriptor[]>(
-    [],
-  );
+  const [marketDataProviders, setMarketDataProviders] = useState<MarketDataProviderDescriptor[]>([]);
   const [saved, setSaved] = useState(false);
-  /** 5.0.64 : brouillon modifié depuis le dernier enregistrement. */
   const [unsaved, setUnsaved] = useState(() => keptDraft !== null);
-  /** 5.0.64 : échec de l'enregistrement, ou raccourci refusé par Windows. */
   const [saveNotice, setSaveNotice] = useState<string | null>(null);
-  const [tab, setTab] = useState<SettingsTabId>(() => lastSettingsTab);
+
+  const [category, setCategory] = useState<SettingsCategoryId>(() => lastSettingsNavigation.category);
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>(() => ({
+    [lastSettingsNavigation.subcategory]: true,
+  }));
+  const [highlight, setHighlight] = useState<string | undefined>(lastSettingsNavigation.highlight);
+
+  const navigate = useCallback((target: SettingsNavigationTarget) => {
+    lastSettingsNavigation = target;
+    setCategory(target.category);
+    setOpenSections((current) => ({ ...current, [target.subcategory]: true }));
+    setHighlight(target.highlight ?? target.subcategory);
+    window.setTimeout(() => {
+      document.getElementById(`settings-section-${target.subcategory}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 80);
+    window.setTimeout(() => setHighlight(undefined), 2400);
+  }, []);
+
   useEffect(() => {
-    lastSettingsTab = tab;
-  }, [tab]);
+    lastSettingsNavigation = { category, subcategory: Object.keys(openSections)[0] ?? 'voice' };
+  }, [category, openSections]);
+
   useEffect(() => {
-    if (requestedTab) setTab(requestedTab.tab);
-  }, [requestedTab]);
+    navigate(lastSettingsNavigation);
+  }, [navigate]);
+
+  useEffect(() => {
+    if (requestedTab) navigate(SETTINGS_DEEP_LINKS[requestedTab.tab]);
+  }, [requestedTab, navigate]);
+
+  const toggleSection = (id: string): void => {
+    setOpenSections((current) => ({ ...current, [id]: !current[id] }));
+  };
+
   const dirty = useRef(keptDraft !== null);
   const draftRef = useRef(draft);
   draftRef.current = draft;
@@ -93,7 +145,6 @@ export function SettingsPanel({ settings, status, onSaved, requestedTab, onAnaly
     [],
   );
 
-  // Prénom connu (personnalisation), pour l'aperçu de l'accueil du caractère.
   const [userName, setUserName] = useState<string | null>(null);
   useEffect(() => {
     void window.jarvis.settings
@@ -108,10 +159,6 @@ export function SettingsPanel({ settings, status, onSaved, requestedTab, onAnaly
     void window.jarvis.settings.marketDataProviders().then(setMarketDataProviders);
   }, []);
 
-  // Un choix de micro ou le mode Développeur sont enregistrés tout de suite, et le
-  // processus principal écrit certains blocs de son côté : le brouillon prend ces
-  // nouvelles valeurs pour les clés que l'utilisateur n'a pas touchées, garde les siennes,
-  // et la base de comparaison devient les réglages enregistrés.
   useEffect(() => {
     if (!dirty.current) {
       baseRef.current = settings;
@@ -123,7 +170,6 @@ export function SettingsPanel({ settings, status, onSaved, requestedTab, onAnaly
     setDraft(next.draft);
   }, [settings]);
 
-  // Comme le micro : enregistré tout de suite, les actions du mode Développeur en dépendent.
   const onSavedRef = useRef(onSaved);
   onSavedRef.current = onSaved;
   const saveDeveloper = useCallback((developer: DeveloperSettings): void => {
@@ -133,9 +179,8 @@ export function SettingsPanel({ settings, status, onSaved, requestedTab, onAnaly
 
   const descriptor = providers.find((provider) => provider.id === draft.provider);
   const searchDescriptor = searchProviders.find((provider) => provider.id === draft.searchProvider);
-  const marketDataDescriptor = marketDataProviders.find(
-    (provider) => provider.id === draft.marketDataProvider,
-  );
+  const marketDataDescriptor = marketDataProviders.find((provider) => provider.id === draft.marketDataProvider);
+
   const patch = (values: Partial<Settings>): void => {
     dirty.current = true;
     setUnsaved(true);
@@ -167,7 +212,6 @@ export function SettingsPanel({ settings, status, onSaved, requestedTab, onAnaly
         setUnsaved(false);
         onSaved(payload);
         setSaved(true);
-        // Le processus principal retombe sur Control+Space quand Windows refuse le raccourci.
         if (payload.settings.hotkey !== wanted.hotkey) {
           setSaveNotice(
             `Le raccourci « ${wanted.hotkey} » n’a pas pu être enregistré (déjà pris ou mal écrit) : « ${payload.settings.hotkey} » est conservé.`,
@@ -182,286 +226,359 @@ export function SettingsPanel({ settings, status, onSaved, requestedTab, onAnaly
       });
   };
 
+  const orchestraEnabled = draft.provider === 'ollama' && draft.orchestra?.enabled === true;
+  const brainActive = category === 'brain';
+
+  const accordion = (id: string, title: string, hint: string | undefined, body: ReactNode) => (
+    <SettingsAccordion
+      id={id}
+      title={title}
+      hint={hint}
+      open={openSections[id] === true}
+      highlight={highlight === id}
+      onToggle={() => toggleSection(id)}
+    >
+      {body}
+    </SettingsAccordion>
+  );
+
   return (
     <div className="flex flex-col gap-4 px-4 py-4">
       {status.usingFallback ? (
         <p className="rounded-lg border border-amber-400/25 bg-amber-400/10 px-3 py-2 text-xs leading-snug text-amber-100">
           Aucune clé API valide pour « {status.providerLabel} » : Jarvis répond avec le fournisseur de
-          démonstration, hors ligne. Colle une clé dans l’onglet Modèle IA, ou choisis « Ollama (local,
+          démonstration, hors ligne. Colle une clé dans Cerveau → Fournisseur, ou choisis « Ollama (local,
           gratuit) ».
         </p>
       ) : status.providerId === 'mock' ? (
         <p className="rounded-lg border border-amber-400/25 bg-amber-400/10 px-3 py-2 text-xs leading-snug text-amber-100">
-          Mode démonstration : aucun modèle n’est branché. Dans l’onglet Modèle IA, choisis « Ollama
-          (local, gratuit) », teste, puis enregistre.
+          Mode démonstration : aucun modèle n’est branché. Dans Cerveau → Fournisseur, choisis « Ollama (local,
+          gratuit) », teste, puis enregistre.
         </p>
       ) : null}
 
-      <SettingsTabBar active={tab} onChange={setTab} />
+      <SettingsDependencyHints settings={draft} />
+      <SettingsSearch onNavigate={navigate} />
+      <SettingsCategoryNav active={category} onChange={setCategory} />
 
-      <TabPanel id="voice" active={tab}>
+      <CategoryPanel id="moi" active={category}>
+        {accordion('personalization', 'Personnalisation', 'Ce que Jarvis retient de toi', <PersonalizationSettingsSection />)}
+        {accordion(
+          'persona',
+          'Caractère de Jarvis',
+          'Ton et accueil (avec le chef d’orchestre)',
+          <PersonaSettingsSection
+            value={draft.persona}
+            userName={userName}
+            orchestraEnabled={orchestraEnabled}
+            onChange={(persona) => patch({ persona })}
+          />,
+        )}
+        {accordion(
+          'home-location',
+          'Chez moi',
+          'Météo et lieu par défaut',
+          <HomeLocationSettingsSection
+            value={draft.homeLocation}
+            onChange={(homeLocation) => patch(homeLocation ? { homeLocation } : { homeLocation: undefined })}
+          />,
+        )}
+        {accordion(
+          'knowledge',
+          'Mémoire documentaire',
+          'Index local et apprentissage',
+          <KnowledgeSettingsSection
+            learningEnabled={draft.localLearning.enabled}
+            autoTrain={draft.localLearning.autoTrain === true}
+            onLearningChange={(learningPatch) => {
+              const localLearning = { ...draft.localLearning, ...learningPatch };
+              setDraft((current) => ({ ...current, localLearning }));
+              void window.jarvis.settings.set({ localLearning }).then((payload) => onSavedRef.current(payload));
+            }}
+          />,
+        )}
+      </CategoryPanel>
+
+      <CategoryPanel id="parler" active={category}>
+        {accordion(
+          'voice',
+          'Voix et micro',
+          'Réveil, transcription, synthèse',
           <VoiceSettingsSection
             voice={draft.voice}
             voiceKeyConfigured={status.voiceKeyConfigured}
             onChange={patchVoice}
             onMicrophoneChange={chooseMicrophone}
             learningSaved={settings.voice.wakeLearning}
-          />
-      </TabPanel>
-      <TabPanel id="model" active={tab}>
-          <Field label="Fournisseur de modèle">
-            <Select
-              value={draft.provider}
-              onChange={(event) => {
-                const next = providers.find((provider) => provider.id === event.target.value);
-                patch({
-                  provider: event.target.value,
-                  model: next?.defaultModel ?? draft.model,
-                });
-              }}
-            >
-              {providers.map((provider) => (
-                <option key={provider.id} value={provider.id}>
-                  {provider.label}
-                </option>
-              ))}
-            </Select>
-          </Field>
+          />,
+        )}
+      </CategoryPanel>
 
-          <Field label="Modèle">
-            <Input
-              value={draft.model}
-              list="model-suggestions"
-              onChange={(event) => patch({ model: event.target.value })}
+      <CategoryPanel id="services" active={category}>
+        {accordion(
+          'spotify',
+          'Spotify',
+          'Musique sur ton compte',
+          <>
+            <p className="text-xs leading-snug text-slate-500">
+              Huit outils spotify_* : lecture, pause, morceau suivant, volume, etc.
+            </p>
+            <SpotifySettingsSection
+              clientId={draft.spotifyClientId}
+              onChange={(spotifyClientId) => patch({ spotifyClientId })}
+              deviceName={draft.spotifyDeviceName ?? ''}
+              onDeviceNameChange={(spotifyDeviceName) => patch({ spotifyDeviceName })}
             />
-            <datalist id="model-suggestions">
-              {(descriptor?.suggestedModels ?? []).map((model) => (
-                <option key={model} value={model} />
-              ))}
-            </datalist>
-          </Field>
+          </>,
+        )}
+        {accordion(
+          'google',
+          'Google',
+          'Gmail, agenda, Drive',
+          <GoogleSettingsSection
+            clientId={draft.googleClientId}
+            clientSecret={draft.googleClientSecret}
+            access={draft.googleAccess}
+            onChange={(values) => patch(values)}
+          />,
+        )}
+        {accordion(
+          'siteblock',
+          'Blocage de sites',
+          'Connexion à l’appli SiteBlock',
+          <SiteBlockSettingsSection
+            baseUrl={draft.siteBlockBaseUrl}
+            token={draft.siteBlockToken}
+            onChange={(values) => patch(values)}
+          />,
+        )}
+        {accordion(
+          'robot',
+          'Robot',
+          'Adresse et jeton du rover',
+          <RoverSettingsSection
+            baseUrl={draft.roverBaseUrl ?? ''}
+            token={draft.roverToken ?? ''}
+            onChange={(values) => patch(values)}
+          />,
+        )}
+        {accordion('phone', 'Téléphone', 'Jarvis via Tailscale', <PhoneSettingsSection />)}
+        {accordion('speakers', 'Enceintes', 'Cartes ESP32 sur le Wi-Fi', <SpeakerSettingsSection />)}
+        {accordion(
+          'developer-general',
+          'Jarvis développeur',
+          'Projets et missions depuis la discussion',
+          <DeveloperSettingsSection
+            developer={draft.developer}
+            onSave={saveDeveloper}
+            surface="general"
+            onOpenAdvanced={() => navigate({ category: 'services', subcategory: 'developer-advanced' })}
+          />,
+        )}
+        {accordion(
+          'developer-advanced',
+          'Code et projets (avancé)',
+          'Copie de travail, modèle, environnement',
+          <DeveloperSettingsSection developer={draft.developer} onSave={saveDeveloper} surface="advanced" />,
+        )}
+      </CategoryPanel>
 
-          {descriptor?.requiresApiKey ? (
-            <>
-              <Field label="Clé API" hint="Stockée uniquement sur cette machine, jamais versionnée.">
-                <Input
-                  type="password"
-                  value={draft.apiKey}
-                  placeholder="sk-…"
-                  onChange={(event) => patch({ apiKey: event.target.value })}
-                />
-              </Field>
-
-              <Field
-                label="URL de base"
-                hint="À renseigner pour un backend compatible OpenAI (LM Studio, OpenRouter…)."
+      <CategoryPanel id="brain" active={category}>
+        {accordion(
+          'provider',
+          'Fournisseur de modèle',
+          'Ollama ou service en ligne',
+          <>
+            <Field label="Fournisseur de modèle">
+              <Select
+                value={draft.provider}
+                onChange={(event) => {
+                  const next = providers.find((provider) => provider.id === event.target.value);
+                  patch({
+                    provider: event.target.value,
+                    model: next?.defaultModel ?? draft.model,
+                  });
+                }}
               >
-                <Input
-                  value={draft.baseUrl}
-                  placeholder={descriptor.defaultBaseUrl ?? ''}
-                  onChange={(event) => patch({ baseUrl: event.target.value })}
-                />
-              </Field>
-            </>
-          ) : null}
-
-          {draft.provider === 'ollama' ? (
-            <OllamaSettingsSection
-              baseUrl={draft.baseUrl}
-              model={draft.model}
-              active={tab === 'model'}
-              onChange={(values) => patch(values)}
-            />
-          ) : null}
-
-          {draft.provider === 'ollama' ? (
-            <OrchestraSettingsSection
-              baseUrl={draft.baseUrl}
-              chatModel={draft.model}
-              value={draft.orchestra}
-              active={tab === 'model'}
-              onChange={(orchestra) => patch({ orchestra })}
-            />
-          ) : null}
-
+                {providers.map((provider) => (
+                  <option key={provider.id} value={provider.id}>
+                    {provider.label}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <Field label="Modèle">
+              <Input
+                value={draft.model}
+                list="model-suggestions"
+                onChange={(event) => patch({ model: event.target.value })}
+              />
+              <datalist id="model-suggestions">
+                {(descriptor?.suggestedModels ?? []).map((model) => (
+                  <option key={model} value={model} />
+                ))}
+              </datalist>
+            </Field>
+            {descriptor?.requiresApiKey ? (
+              <>
+                <Field label="Clé API" hint="Stockée uniquement sur cette machine, jamais versionnée.">
+                  <Input
+                    type="password"
+                    value={draft.apiKey}
+                    placeholder="sk-…"
+                    onChange={(event) => patch({ apiKey: event.target.value })}
+                  />
+                </Field>
+                <Field label="URL de base" hint="Backend compatible OpenAI (LM Studio, OpenRouter…).">
+                  <Input
+                    value={draft.baseUrl}
+                    placeholder={descriptor.defaultBaseUrl ?? ''}
+                    onChange={(event) => patch({ baseUrl: event.target.value })}
+                  />
+                </Field>
+              </>
+            ) : null}
+          </>,
+        )}
+        {draft.provider === 'ollama'
+          ? accordion(
+              'ollama',
+              'Ollama',
+              'Serveur local et test',
+              <OllamaSettingsSection
+                baseUrl={draft.baseUrl}
+                model={draft.model}
+                active={brainActive && openSections.ollama === true}
+                onChange={(values) => patch(values)}
+              />,
+            )
+          : null}
+        {draft.provider === 'ollama'
+          ? accordion(
+              'orchestra',
+              'Chef d’orchestre',
+              'Équipes de petits modèles',
+              <OrchestraSettingsSection
+                baseUrl={draft.baseUrl}
+                chatModel={draft.model}
+                value={draft.orchestra}
+                active={brainActive && openSections.orchestra === true}
+                onChange={(orchestra) => patch({ orchestra })}
+              />,
+            )
+          : null}
+        {accordion(
+          'model',
+          'Modèle de repli',
+          'Si le modèle principal est absent',
           <Field
             label="Modèle de repli"
-            hint="Utilisé si le modèle choisi n’est pas disponible. Défaut : qwen2.5:3b. qwen3.5:4b est le modèle recommandé, pas le défaut."
+            hint="Défaut : qwen2.5:3b. qwen3.5:4b est recommandé, pas le défaut."
           >
             <Input
               value={draft.fallbackModel}
               placeholder="qwen2.5:3b"
               onChange={(event) => patch({ fallbackModel: event.target.value })}
             />
-          </Field>
-
-          <PersonaSettingsSection
-            value={draft.persona}
-            userName={userName}
-            orchestraEnabled={draft.provider === 'ollama' && draft.orchestra?.enabled === true}
-            onChange={(persona) => patch({ persona })}
-          />
-
+          </Field>,
+        )}
+        {accordion(
+          'system-prompt',
+          'Consignes de base',
+          'Prompt système à chaque conversation',
           <Field
             label="Consignes de base (prompt système)"
-            hint="Instructions envoyées au modèle à chaque conversation. Distinct de la mémoire persistante (onglet Recherche et mémoire), qui survit aux conversations et au changement de modèle Ollama."
+            hint="Distinct de la mémoire persistante (catégorie Moi)."
           >
             <Textarea
               rows={4}
               value={draft.systemPrompt}
               onChange={(event) => patch({ systemPrompt: event.target.value })}
             />
-          </Field>
-      </TabPanel>
-      <TabPanel id="search" active={tab}>
-          <div className="mt-1 flex flex-col gap-1">
-            <span className="text-[11px] font-medium tracking-wide text-slate-400 uppercase">
-              Recherche &amp; données boursières
-            </span>
+          </Field>,
+        )}
+        {accordion(
+          'search',
+          'Recherche Internet',
+          'web_search, actualités, pages',
+          <>
             <p className="text-xs leading-snug text-slate-500">
-              Utilisés par les outils « web_search », « web_research », « fetch_page » et
-              « get_stock_quote ». Pour une question d’actualité, Jarvis cherche sur Internet avant de
-              répondre et cite ses sources avec leur date.
+              Sans clé : Google Actualités, Bing, DuckDuckGo, Wikipédia, Open-Meteo. Clé Brave ou Tavily
+              optionnelle.
             </p>
-            <p className="text-xs leading-snug text-slate-500">
-              Sans clé ni compte : Google Actualités, Bing Actualités, DuckDuckGo, Bing, Google,
-              Wikipédia et la météo Open-Meteo, avec repli automatique si l’un ne répond pas.
-              Optionnel : une clé Brave Search ou Tavily (gratuite, sans carte, 1 000 recherches par
-              mois) passe en premier — choisis le fournisseur puis colle la clé.
-            </p>
-          </div>
-
-          <Field label="Fournisseur de recherche Internet">
-            <Select
-              value={draft.searchProvider}
-              onChange={(event) => patch({ searchProvider: event.target.value })}
-            >
-              {searchProviders.map((provider) => (
-                <option key={provider.id} value={provider.id}>
-                  {provider.label}
-                </option>
-              ))}
-            </Select>
-          </Field>
-
-          {searchDescriptor?.requiresApiKey ? (
-            <Field
-              label="Clé API — recherche"
-              hint="Stockée uniquement sur cette machine, jamais versionnée ni écrite dans les journaux."
-            >
-              <Input
-                type="password"
-                value={draft.searchApiKey}
-                placeholder={draft.searchProvider === 'tavily' ? 'Clé Tavily (tvly-…)' : 'Clé Brave Search…'}
-                onChange={(event) => patch({ searchApiKey: event.target.value })}
-              />
+            <Field label="Fournisseur de recherche Internet">
+              <Select
+                value={draft.searchProvider}
+                onChange={(event) => patch({ searchProvider: event.target.value })}
+              >
+                {searchProviders.map((provider) => (
+                  <option key={provider.id} value={provider.id}>
+                    {provider.label}
+                  </option>
+                ))}
+              </Select>
             </Field>
-          ) : null}
-
-          <Field label="Fournisseur de cours de bourse">
-            <Select
-              value={draft.marketDataProvider}
-              onChange={(event) => patch({ marketDataProvider: event.target.value })}
-            >
-              {marketDataProviders.map((provider) => (
-                <option key={provider.id} value={provider.id}>
-                  {provider.label}
-                </option>
-              ))}
-            </Select>
-          </Field>
-
-          {marketDataDescriptor?.requiresApiKey ? (
-            <Field
-              label="Clé API — bourse"
-              hint="Stockée uniquement sur cette machine, jamais versionnée."
-            >
-              <Input
-                type="password"
-                value={draft.marketDataApiKey}
-                placeholder="Clé Finnhub…"
-                onChange={(event) => patch({ marketDataApiKey: event.target.value })}
-              />
+            {searchDescriptor?.requiresApiKey ? (
+              <Field label="Clé API — recherche" hint="Stockée uniquement sur cette machine.">
+                <Input
+                  type="password"
+                  value={draft.searchApiKey}
+                  placeholder={draft.searchProvider === 'tavily' ? 'Clé Tavily (tvly-…)' : 'Clé Brave Search…'}
+                  onChange={(event) => patch({ searchApiKey: event.target.value })}
+                />
+              </Field>
+            ) : null}
+          </>,
+        )}
+        {accordion(
+          'market',
+          'Cours de bourse',
+          'Outil get_stock_quote',
+          <>
+            <Field label="Fournisseur de cours de bourse">
+              <Select
+                value={draft.marketDataProvider}
+                onChange={(event) => patch({ marketDataProvider: event.target.value })}
+              >
+                {marketDataProviders.map((provider) => (
+                  <option key={provider.id} value={provider.id}>
+                    {provider.label}
+                  </option>
+                ))}
+              </Select>
             </Field>
-          ) : null}
+            {marketDataDescriptor?.requiresApiKey ? (
+              <Field label="Clé API — bourse" hint="Stockée uniquement sur cette machine.">
+                <Input
+                  type="password"
+                  value={draft.marketDataApiKey}
+                  placeholder="Clé Finnhub…"
+                  onChange={(event) => patch({ marketDataApiKey: event.target.value })}
+                />
+              </Field>
+            ) : null}
+          </>,
+        )}
+      </CategoryPanel>
 
-          <HomeLocationSettingsSection
-            value={draft.homeLocation}
-            onChange={(homeLocation) => patch(homeLocation ? { homeLocation } : { homeLocation: undefined })}
-          />
-
-          <PersonalizationSettingsSection />
-
-          <KnowledgeSettingsSection
-            learningEnabled={draft.localLearning.enabled}
-            autoTrain={draft.localLearning.autoTrain === true}
-            onLearningChange={(patch) => {
-              const localLearning = { ...draft.localLearning, ...patch };
-              setDraft((current) => ({ ...current, localLearning }));
-              void window.jarvis.settings.set({ localLearning }).then((payload) => onSavedRef.current(payload));
-            }}
-          />
-      </TabPanel>
-      <TabPanel id="spotify" active={tab}>
-          <div className="mt-1 flex flex-col gap-1">
-            <span className="text-[11px] font-medium tracking-wide text-slate-400 uppercase">
-              Musique
-            </span>
+      <CategoryPanel id="security" active={category}>
+        {accordion(
+          'tool-policies',
+          'Permissions des outils',
+          'Confirmations par catégorie',
+          <>
             <p className="text-xs leading-snug text-slate-500">
-              Utilisé par les huit outils « spotify_* » : recherche et lecture, pause, reprise, morceau
-              suivant/précédent, volume, mode aléatoire, morceau en cours.
+              Choisis si Jarvis doit demander confirmation toujours, pour les actions destructrices, ou jamais.
             </p>
-          </div>
-
-          <SpotifySettingsSection
-            clientId={draft.spotifyClientId}
-            onChange={(spotifyClientId) => patch({ spotifyClientId })}
-            deviceName={draft.spotifyDeviceName ?? ''}
-            onDeviceNameChange={(spotifyDeviceName) => patch({ spotifyDeviceName })}
-          />
-      </TabPanel>
-      <TabPanel id="google" active={tab}>
-          <GoogleSettingsSection
-            clientId={draft.googleClientId}
-            clientSecret={draft.googleClientSecret}
-            access={draft.googleAccess}
-            onChange={(values) => patch(values)}
-          />
-      </TabPanel>
-      <TabPanel id="robot" active={tab}>
-          <RoverSettingsSection
-            baseUrl={draft.roverBaseUrl ?? ''}
-            token={draft.roverToken ?? ''}
-            onChange={(values) => patch(values)}
-          />
-      </TabPanel>
-      <TabPanel id="phone" active={tab}>
-          <PhoneSettingsSection />
-      </TabPanel>
-      <TabPanel id="speakers" active={tab}>
-          <SpeakerSettingsSection />
-      </TabPanel>
-      <TabPanel id="tools" active={tab}>
-          <div className="flex flex-col gap-3">
-            <div>
-              <p className="text-[11px] font-medium tracking-wide text-slate-400 uppercase">
-                Permissions
-              </p>
-              <p className="mt-1 text-xs leading-snug text-slate-500">
-                Choisis, par catégorie d’outils, si Jarvis doit te demander confirmation toujours, ou
-                seulement pour les actions destructrices, ou jamais.
-              </p>
-            </div>
-
-            {CONFIGURABLE_CATEGORIES.map((category) => (
-              <Field key={category} label={categoryLabels[category]}>
+            {CONFIGURABLE_CATEGORIES.map((toolCategory) => (
+              <Field key={toolCategory} label={categoryLabels[toolCategory]}>
                 <Select
-                  value={draft.toolPolicies[category]}
+                  value={draft.toolPolicies[toolCategory]}
                   onChange={(event) =>
                     patch({
                       toolPolicies: {
                         ...draft.toolPolicies,
-                        [category]: event.target.value as ConfirmationPolicy,
+                        [toolCategory]: event.target.value as ConfirmationPolicy,
                       },
                     })
                   }
@@ -474,96 +591,78 @@ export function SettingsPanel({ settings, status, onSaved, requestedTab, onAnaly
                 </Select>
               </Field>
             ))}
-
             <div className="flex items-start gap-2 rounded-lg border border-white/8 bg-white/[0.03] px-3 py-2.5">
               <Lock className="mt-0.5 size-3.5 shrink-0 text-slate-500" />
               <p className="text-xs leading-snug text-slate-500">
-                La suppression de fichiers, l’élévation administrateur, l’exécution de commandes (
-                <code className="text-slate-400">run_command</code>), les règles de blocage de sites,
-                l’indexation d’un dossier et l’effacement de la mémoire documentaire demandent toujours
-                une confirmation. Ce réglage n’est pas modifiable, quelle que soit la politique choisie
-                ci-dessus.
+                Suppression de fichiers, élévation admin, run_command, règles de blocage, indexation et effacement
+                mémoire : confirmation toujours obligatoire.
               </p>
             </div>
-          </div>
+          </>,
+        )}
+        {accordion(
+          'siteblock-intro',
+          'Blocage de sites (rappel)',
+          'Outils siteblock_*',
+          <p className="text-xs leading-snug text-slate-500">
+            Mode travail, liste de sites et créneaux. Toute modification demande une confirmation, même si tu as
+            mis Applications à « jamais ». Branche l’appli dans Services → Blocage de sites.
+          </p>,
+        )}
+        {accordion('audit', 'Journal d’audit', 'Actions sensibles enregistrées', <AuditPanel />)}
+      </CategoryPanel>
 
-          <div className="mt-2 flex flex-col gap-1 border-t border-white/8 pt-4">
-            <span className="text-[11px] font-medium tracking-wide text-slate-400 uppercase">
-              Blocage de sites
-            </span>
-            <p className="text-xs leading-snug text-slate-500">
-              Utilisé par les outils « siteblock_* » : mode travail, liste de sites, créneaux. Toute
-              modification de règle demande une confirmation, même si tu as mis Applications à « jamais
-              ».
-            </p>
-          </div>
-
-          <SiteBlockSettingsSection
-            baseUrl={draft.siteBlockBaseUrl}
-            token={draft.siteBlockToken}
-            onChange={(values) => patch(values)}
-          />
-      </TabPanel>
-      <TabPanel id="general" active={tab}>
-          <div className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-3">
-            <p className="text-[11px] font-medium tracking-wide text-slate-400 uppercase">Cette machine</p>
+      <CategoryPanel id="application" active={category}>
+        {accordion(
+          'machine',
+          'Cette machine',
+          'Profil matériel détecté',
+          <>
             {settings.machine ? (
               <>
-                <p className="mt-2 text-xs leading-relaxed text-slate-200">{settings.machine.detected}</p>
-                <p className="mt-1 text-xs leading-relaxed text-cyan-100/90">{settings.machine.chosen}</p>
+                <p className="text-xs leading-relaxed text-slate-200">{settings.machine.detected}</p>
+                <p className="text-xs leading-relaxed text-cyan-100/90">{settings.machine.chosen}</p>
               </>
             ) : (
-              <p className="mt-2 text-xs leading-relaxed text-slate-400">
-                Aucun profil enregistré : Jarvis garde tes réglages actuels.
-              </p>
+              <p className="text-xs leading-relaxed text-slate-400">Aucun profil enregistré.</p>
             )}
-            <Button className="mt-3" variant="subtle" size="sm" onClick={() => onAnalyzeMachine?.()}>
+            <Button className="mt-2" variant="subtle" size="sm" onClick={() => onAnalyzeMachine?.()}>
               Analyser à nouveau
             </Button>
-            <p className="mt-2 text-[11px] leading-snug text-slate-500">
-              Au démarrage, Jarvis ne mesure la machine que s’il n’y a pas encore de réglages. Ce bouton
-              relance la mesure et applique le profil : modèle, voix et mode développeur peuvent changer.
-            </p>
-          </div>
-
-          <Field label="Raccourci global" hint="Exemples : Control+Space, Alt+J, Super+K.">
-            <Input value={draft.hotkey} onChange={(event) => patch({ hotkey: event.target.value })} />
-          </Field>
-
-          <Toggle
-            label="Rester ouverte"
-            hint="La fenêtre reste visible si tu cliques dans une autre application. Masquage uniquement par Ctrl+Espace, Échap, ou le bouton fermer."
-            checked={draft.stayVisibleOnBlur}
-            onChange={(stayVisibleOnBlur) => patch({ stayVisibleOnBlur })}
-          />
-
-          <Toggle
-            label="Lancer au démarrage de Windows"
-            checked={draft.launchAtLogin}
-            onChange={(launchAtLogin) => patch({ launchAtLogin })}
-          />
-
-          <div className="mt-2 flex flex-col gap-1 border-t border-white/8 pt-4">
-            <span className="text-[11px] font-medium tracking-wide text-slate-400 uppercase">
-              Jarvis développeur
-            </span>
-          </div>
-          <DeveloperSettingsSection
-            developer={draft.developer}
-            onSave={saveDeveloper}
-            surface="general"
-            onOpenAdvanced={() => setTab('developer')}
-          />
-      </TabPanel>
-      <TabPanel id="updates" active={tab}>
-          <UpdateSettingsSection />
-      </TabPanel>
-      <TabPanel id="developer" active={tab}>
-          <Button type="button" size="sm" variant="ghost" className="self-start" onClick={() => setTab('general')}>
-            ← Retour aux réglages
-          </Button>
-          <DeveloperSettingsSection developer={draft.developer} onSave={saveDeveloper} surface="advanced" />
-      </TabPanel>
+          </>,
+        )}
+        {accordion(
+          'window',
+          'Fenêtre et raccourci',
+          'Affichage et démarrage Windows',
+          <>
+            <Field label="Raccourci global" hint="Exemples : Control+Space, Alt+J, Super+K.">
+              <Input value={draft.hotkey} onChange={(event) => patch({ hotkey: event.target.value })} />
+            </Field>
+            <Toggle
+              label="Rester ouverte"
+              hint="Visible si tu cliques ailleurs (masquage : raccourci, Échap, fermer)."
+              checked={draft.stayVisibleOnBlur}
+              onChange={(stayVisibleOnBlur) => patch({ stayVisibleOnBlur })}
+            />
+            <Toggle
+              label="Lancer au démarrage de Windows"
+              checked={draft.launchAtLogin}
+              onChange={(launchAtLogin) => patch({ launchAtLogin })}
+            />
+          </>,
+        )}
+        {accordion('updates', 'Mises à jour', 'Version et installation', <UpdateSettingsSection />)}
+        {accordion(
+          'questionnaire',
+          'Questionnaire d’accueil',
+          'Premier lancement et restauration',
+          <QuestionnaireSettingsSection
+            onSettingsApplied={onSaved}
+            onRestartOnboarding={() => onRestartOnboarding?.()}
+          />,
+        )}
+      </CategoryPanel>
 
       <div className="sticky bottom-0 z-10 -mx-4 -mb-4 flex items-center justify-end gap-3 border-t border-white/8 bg-[#070b14]/90 px-4 py-3 backdrop-blur">
         {saveNotice ? (
