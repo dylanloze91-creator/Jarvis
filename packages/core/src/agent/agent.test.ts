@@ -1,11 +1,21 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import { Agent, DEFAULT_SYSTEM_PROMPT, composeSystemPrompt, looksLikeWebResearchIntent, type AgentEvent } from './agent.js';
+import {
+  Agent,
+  DEFAULT_SYSTEM_PROMPT,
+  composeSystemPrompt,
+  looksLikeWebResearchIntent,
+  type AgentEvent,
+} from './agent.js';
 import { learningReminder, noteToRecord } from '../learning/continuous.js';
 import { enforceConstraints } from '../learning/constraints.js';
 import { ToolManager, defineTool } from '../tools/manager.js';
 import type { ChatRequest, ChatStreamEvent, LLMProvider } from '../providers/types.js';
 import { createMessage } from '../types.js';
+import {
+  takeSpotifyPlayDeviceHint,
+  type SpotifyPlayDeviceHint,
+} from '../media/spotifyDeviceVoice.js';
 
 /** Provider scripté : chaque appel consomme le tour suivant du scénario. */
 class ScriptedProvider implements LLMProvider {
@@ -112,7 +122,9 @@ describe('Agent', () => {
       learningReview: (reply) => learningReminder(reply, [rule, preference]),
     });
     const events = await collect(agent, 'Affiche le prix 12.5 euros.');
-    const deltas = events.flatMap((event) => (event.type === 'assistant_delta' ? [event.delta] : []));
+    const deltas = events.flatMap((event) =>
+      event.type === 'assistant_delta' ? [event.delta] : [],
+    );
     expect(deltas).toEqual(['ACCORD formatCampagnePrix(12.5);']);
     expect(provider.requests).toHaveLength(2);
     expect(provider.requests[1]?.messages.at(-1)?.content).toMatch(/sans le déclarer/);
@@ -139,11 +151,15 @@ describe('Agent', () => {
       },
     });
     const events = await collect(agent, 'Écris une fonction qui additionne deux nombres.');
-    const deltas = events.flatMap((event) => (event.type === 'assistant_delta' ? [event.delta] : []));
+    const deltas = events.flatMap((event) =>
+      event.type === 'assistant_delta' ? [event.delta] : [],
+    );
     expect(deltas).toEqual(['export function zz_add(a, b) { return zzWrap(a + b); }']);
     expect(provider.requests).toHaveLength(2);
     const message = events.find((event) => event.type === 'assistant_message');
-    expect(message && message.type === 'assistant_message' ? message.message.content : '').toContain('zzWrap');
+    expect(
+      message && message.type === 'assistant_message' ? message.message.content : '',
+    ).toContain('zzWrap');
   });
 
   it('diffuse une réponse textuelle puis termine', async () => {
@@ -335,6 +351,61 @@ describe('Agent', () => {
     expect(reply.join('')).not.toContain('Necfeu');
   });
 
+  it('un indice déposé puis un tour arrêté ne sert pas au « mets Jul » suivant', async () => {
+    const seen: Array<{ query: string; hint: SpotifyPlayDeviceHint | null }> = [];
+    const play = defineTool({
+      name: 'spotify_play',
+      description: 'Lecture Spotify.',
+      risk: 'safe',
+      schema: z.object({ query: z.string() }),
+      execute: async ({ query }) => {
+        seen.push({ query, hint: takeSpotifyPlayDeviceHint() });
+        return { ok: true, content: `Lecture : ${query}` };
+      },
+    });
+    const provider = new ScriptedProvider([
+      [
+        {
+          type: 'tool_call',
+          call: { id: 'c-jul', name: 'spotify_play', arguments: { query: 'Jul' } },
+        },
+        { type: 'done', finishReason: 'tool_calls' },
+      ],
+      [
+        { type: 'text', delta: 'C’est parti.' },
+        { type: 'done', finishReason: 'stop' },
+      ],
+    ]);
+    const agent = new Agent(provider, new ToolManager().register(play), { systemPrompt: 'test' });
+
+    await collect(agent, 'lance Get Lucky de Daft Punk sur la Devialet');
+    expect(seen).toEqual([
+      {
+        query: 'Get Lucky de Daft Punk sur la Devialet',
+        hint: { kind: 'named', name: 'Devialet' },
+      },
+    ]);
+    seen.length = 0;
+
+    const abort = new AbortController();
+    const first: AgentEvent[] = [];
+    for await (const event of agent.run(
+      [createMessage('user', 'lance Get Lucky de Daft Punk sur la Devialet')],
+      { requestConfirmation: async () => true, signal: abort.signal },
+    )) {
+      first.push(event);
+      if (event.type === 'tool_start') abort.abort();
+    }
+
+    expect(seen).toEqual([]);
+    expect(
+      first.some((event) => event.type === 'tool_result' && event.outcome.status === 'ok'),
+    ).toBe(false);
+
+    await collect(agent, 'mets Jul');
+    expect(seen).toEqual([{ query: 'Jul', hint: null }]);
+  });
+
   it('après une lecture, un autre sujet n’appelle pas Spotify et n’expose pas les outils musicaux', async () => {
     const play = defineTool({
       name: 'spotify_play',
@@ -408,7 +479,9 @@ describe('Agent', () => {
         { type: 'done', finishReason: 'stop' },
       ],
     ]);
-    const agent = new Agent(provider, new ToolManager().register(transcript), { systemPrompt: 'test' });
+    const agent = new Agent(provider, new ToolManager().register(transcript), {
+      systemPrompt: 'test',
+    });
 
     const events = await collect(agent, 'Résume https://youtu.be/dQw4w9WgXcQ');
     const start = events.find((event) => event.type === 'tool_start');
@@ -511,14 +584,12 @@ describe('Agent', () => {
 
     it('force spotify_current_track pour « Que joue Spotify en ce moment ? » et répond avec le titre et l’artiste', async () => {
       const provider = wmicProvider();
-      const tools = new ToolManager()
-        .register(playTool)
-        .register(
-          currentTrackTool({
-            ok: true,
-            content: 'Lecture : Trop beau — Lomepal sur Ordinateur de bureau.',
-          }),
-        );
+      const tools = new ToolManager().register(playTool).register(
+        currentTrackTool({
+          ok: true,
+          content: 'Lecture : Trop beau — Lomepal sur Ordinateur de bureau.',
+        }),
+      );
       const agent = new Agent(provider, tools, { systemPrompt: DEFAULT_SYSTEM_PROMPT });
 
       const events = await collect(agent, 'Que joue Spotify en ce moment ?');
@@ -690,21 +761,51 @@ describe('Agent', () => {
 
 describe('Agent — outils d’une équipe (5.0.60, chef d’orchestre)', () => {
   const tool = (name: string) =>
-    defineTool({ name, description: name, risk: 'safe', schema: z.object({}), execute: async () => ({ ok: true, content: name }) });
+    defineTool({
+      name,
+      description: name,
+      risk: 'safe',
+      schema: z.object({}),
+      execute: async () => ({ ok: true, content: name }),
+    });
 
   it('allowedTools remplace le tri habituel : seuls les outils de l’équipe sont proposés', async () => {
-    const tools = new ToolManager().registerAll([systemInfo, tool('spotify_pause'), tool('read_file')]);
-    const provider = new ScriptedProvider([[{ type: 'text', delta: 'ok' }, { type: 'done', finishReason: 'stop' }]]);
-    const agent = new Agent(provider, tools, { systemPrompt: 'test', allowedTools: (name) => name.startsWith('spotify_') });
+    const tools = new ToolManager().registerAll([
+      systemInfo,
+      tool('spotify_pause'),
+      tool('read_file'),
+    ]);
+    const provider = new ScriptedProvider([
+      [
+        { type: 'text', delta: 'ok' },
+        { type: 'done', finishReason: 'stop' },
+      ],
+    ]);
+    const agent = new Agent(provider, tools, {
+      systemPrompt: 'test',
+      allowedTools: (name) => name.startsWith('spotify_'),
+    });
     await collect(agent, 'Baisse un peu');
     // Sans orchestre, spotify_pause serait retiré (la demande n'est pas une intention musicale).
     expect(provider.requests[0]!.tools?.map((item) => item.name)).toEqual(['spotify_pause']);
   });
 
   it('sans allowedTools : catalogue d’avant, Spotify retiré hors intention musicale', async () => {
-    const tools = new ToolManager().registerAll([systemInfo, tool('spotify_pause'), tool('read_file')]);
-    const provider = new ScriptedProvider([[{ type: 'text', delta: 'ok' }, { type: 'done', finishReason: 'stop' }]]);
+    const tools = new ToolManager().registerAll([
+      systemInfo,
+      tool('spotify_pause'),
+      tool('read_file'),
+    ]);
+    const provider = new ScriptedProvider([
+      [
+        { type: 'text', delta: 'ok' },
+        { type: 'done', finishReason: 'stop' },
+      ],
+    ]);
     await collect(new Agent(provider, tools, { systemPrompt: 'test' }), 'Baisse un peu');
-    expect(provider.requests[0]!.tools?.map((item) => item.name)).toEqual(['get_system_info', 'read_file']);
+    expect(provider.requests[0]!.tools?.map((item) => item.name)).toEqual([
+      'get_system_info',
+      'read_file',
+    ]);
   });
 });

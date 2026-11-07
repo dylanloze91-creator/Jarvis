@@ -2,13 +2,18 @@ import type { LLMProvider } from '../providers/types.js';
 import type { ToolManager } from '../tools/manager.js';
 import type { ToolContext } from '../tools/types.js';
 import { extractKnowledgeIntent } from '../knowledge/intent.js';
-import { isGoogleToolName, looksLikeGoogleIntent, recentlyUsedGoogleTools } from '../google/intent.js';
+import {
+  isGoogleToolName,
+  looksLikeGoogleIntent,
+  recentlyUsedGoogleTools,
+} from '../google/intent.js';
 import { googleTurnPrompt } from '../google/prompt.js';
 import { isRoverToolName, looksLikeRoverIntent, recentlyUsedRoverTools } from '../rover/intent.js';
 import { roverTurnPrompt } from '../rover/prompt.js';
 import { isCurrentTrackQuestion } from '../media/currentTrackIntent.js';
 import { extractSpotifyPlayQuery, isMusicIntent } from '../media/playIntent.js';
 import {
+  clearSpotifyPlayDeviceHint,
   extractSpotifyPlayDeviceHint,
   extractSpotifyTransferTarget,
   stashSpotifyPlayDeviceHint,
@@ -108,7 +113,7 @@ export const DEFAULT_SYSTEM_PROMPT = [
   "Si l'utilisateur demande de bloquer ou débloquer des sites, d'activer un mode travail ou concentration, ou de programmer un créneau, utilise les outils siteblock_*. Ne prétends jamais avoir modifié le blocage sans un résultat positif de l'outil.",
   "Certaines actions demandent l'accord de l'utilisateur ; s'il refuse, accepte-le sans insister.",
   "N'invente jamais le contenu d'un fichier, un résultat de recherche, une action effectuée, un chiffre financier ni l'état Spotify. Si l'outil ne l'a pas renvoyé, dis-le.",
-  "Tu peux enchaîner plusieurs outils dans un même tour (mémoire, documents, web, lecture de page) puis vérifier avant de répondre.",
+  'Tu peux enchaîner plusieurs outils dans un même tour (mémoire, documents, web, lecture de page) puis vérifier avant de répondre.',
   "Si l'utilisateur demande de garder une vidéo en mémoire, utilise remember_video. Ne transforme pas une opinion de la vidéo en fait.",
 ].join(' ');
 
@@ -167,6 +172,18 @@ export class Agent {
   ) {}
 
   async *run(history: ChatMessage[], context: ToolContext): AsyncGenerator<AgentEvent> {
+    clearSpotifyPlayDeviceHint();
+    try {
+      yield* this.executeTurn(history, context);
+    } finally {
+      clearSpotifyPlayDeviceHint();
+    }
+  }
+
+  private async *executeTurn(
+    history: ChatMessage[],
+    context: ToolContext,
+  ): AsyncGenerator<AgentEvent> {
     const conversation = [...history];
     const maxRounds = Math.min(
       this.options.maxToolRounds ?? HARD_TOOL_ROUND_CAP,
@@ -177,7 +194,9 @@ export class Agent {
     // Robot réglé seulement : sans outil rover_* disponible, ce tour est celui d'avant.
     const roverAvailable = this.tools.schemas().some((tool) => isRoverToolName(tool.name));
     const roverTurn =
-      roverAvailable && !youtubeTurn && (looksLikeRoverIntent(lastUser) || recentlyUsedRoverTools(conversation));
+      roverAvailable &&
+      !youtubeTurn &&
+      (looksLikeRoverIntent(lastUser) || recentlyUsedRoverTools(conversation));
     // « Arrête le robot » ne doit jamais partir vers Spotify.
     const musicTurn = !youtubeTurn && !roverTurn && isMusicIntent(lastUser);
     const now = this.options.now?.() ?? new Date();
@@ -189,7 +208,8 @@ export class Agent {
         : this.resolveCurrentInfoTurn(conversation, lastUser, now);
     const locationAsk = currentInfoTurn === 'ask';
     const currentPlan = currentInfoTurn && currentInfoTurn !== 'ask' ? currentInfoTurn : null;
-    const webTurn = !youtubeTurn && !roverTurn && currentPlan === null && looksLikeWebResearchIntent(lastUser);
+    const webTurn =
+      !youtubeTurn && !roverTurn && currentPlan === null && looksLikeWebResearchIntent(lastUser);
     const allowed = this.options.allowedTools;
     let toolSchemas = (
       allowed
@@ -203,11 +223,17 @@ export class Agent {
     // prompt et catalogue restent ceux d'avant.
     const googleOffered = toolSchemas.some((tool) => isGoogleToolName(tool.name));
     const roverOffered = toolSchemas.some((tool) => isRoverToolName(tool.name));
-    const composed = composeSystemPrompt(this.options.systemPrompt, musicTurn, webTurn, youtubeTurn);
+    const composed = composeSystemPrompt(
+      this.options.systemPrompt,
+      musicTurn,
+      webTurn,
+      youtubeTurn,
+    );
     let system = googleOffered ? `${composed} ${googleTurnPrompt()}` : composed;
     if (roverOffered) system = `${system} ${roverTurnPrompt()}`;
     // Date et protocole seulement pour la recherche forcée : les autres tours gardent leur prompt.
-    if (currentPlan) system = `${system} ${currentDatePrompt(now, timeZone)} ${CURRENT_INFO_TURN_PROMPT}`;
+    if (currentPlan)
+      system = `${system} ${currentDatePrompt(now, timeZone)} ${CURRENT_INFO_TURN_PROMPT}`;
     let currentSearch: CurrentSearchResult | null = null;
     let learningRetried = false;
     let reviewSystem: string | null = null;
@@ -275,7 +301,12 @@ export class Agent {
       }
 
       if (round === 0 && currentPlan) {
-        const search = yield* this.forcedCurrentSearch(conversation, currentPlan, lastUser, context);
+        const search = yield* this.forcedCurrentSearch(
+          conversation,
+          currentPlan,
+          lastUser,
+          context,
+        );
         if (!search.result || search.result.sources.length === 0) {
           if (context.signal?.aborted) {
             yield { type: 'done' };
@@ -338,7 +369,8 @@ export class Agent {
 
       if (calls.length === 0 && currentSearch) {
         if (!text.trim()) {
-          const lead = 'Voici ce que la recherche a trouvé ; je n’ai pas réussi à rédiger la réponse moi-même.';
+          const lead =
+            'Voici ce que la recherche a trouvé ; je n’ai pas réussi à rédiger la réponse moi-même.';
           text = lead;
           yield { type: 'assistant_delta', delta: lead };
         }
@@ -358,7 +390,9 @@ export class Agent {
 
       if (calls.length === 0) {
         const reminder =
-          this.options.learningReview && !learningRetried ? this.options.learningReview(text) : null;
+          this.options.learningReview && !learningRetried
+            ? this.options.learningReview(text)
+            : null;
         if (reminder) {
           learningRetried = true;
           reviewSystem =
@@ -602,7 +636,10 @@ export class Agent {
     if (isCurrentTrackQuestion(prompt)) return this.forcedCall('spotify_current_track', {});
 
     const transfer = extractSpotifyTransferTarget(prompt);
-    if (transfer) return this.forcedCall('spotify_transfer', { target: transfer.kind === 'named' ? transfer.name : transfer.kind });
+    if (transfer)
+      return this.forcedCall('spotify_transfer', {
+        target: transfer.kind === 'named' ? transfer.name : transfer.kind,
+      });
 
     const query = extractSpotifyPlayQuery(prompt);
     if (!query) return null;
