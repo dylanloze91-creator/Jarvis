@@ -213,11 +213,15 @@ describe('createSpotifyTools', () => {
     const visible: Array<{ id: string; name: string; type: string; is_active: boolean }> = [
       { id: 'pc-1', name: 'Ordinateur', type: 'Computer', is_active: true },
     ];
-    const provider = stubProvider({
-      searchTrack: vi.fn(async () => fakeTrack()),
-      listConnectDevices: vi.fn(async () => visible.map((device) => ({ ...device }))),
-      transferPlayback: vi.fn(async () => ({ deviceName: 'Devialet Phantom' })),
-    });
+    const provider = Object.assign(
+      stubProvider({
+        searchTrack: vi.fn(async () => fakeTrack()),
+      }),
+      {
+        listConnectDevices: vi.fn(async () => visible.map((device) => ({ ...device }))),
+        transferPlayback: vi.fn(async () => ({ deviceName: 'Devialet Phantom' })),
+      },
+    );
     const tools = createSpotifyTools(
       spotifyDeps(() => provider, parseSettings({ spotifyDeviceName: 'Devialet' })),
     );
