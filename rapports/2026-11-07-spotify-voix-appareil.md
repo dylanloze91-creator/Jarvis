@@ -1,6 +1,6 @@
 # Spotify — choix d’appareil à la voix
 
-Date : 2026-11-07. Branche : `cursor/spotify-voix-appareil`. Base : `origin/main` (5.0.69 au démarrage, rebase sur 5.0.70 en fin de travail).
+Date : 2026-11-07. Branche : `cursor/spotify-voix-appareil`. Base finale : `origin/main` **5.0.70** (démarrage sur 5.0.69, fusion `--no-ff` en fin de travail).
 
 ## Objectif
 
