@@ -1,10 +1,11 @@
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   BrowserWindow,
   Menu,
   Tray,
   app,
+  dialog,
   clipboard,
   globalShortcut,
   ipcMain,
@@ -14,7 +15,9 @@ import {
   shell,
 } from 'electron';
 import {
+  applySecretEdit,
   checkOllamaStatus,
+  maskSecrets,
   coderLearningPrompt,
   memoryRetrievalEnabled,
   skillLibraryEnabled,
@@ -64,7 +67,11 @@ import { SpeakerService } from './speaker/service.js';
 import { SpeakerStore } from './speaker/store.js';
 import { createSpeakerSynthesizer } from './speaker/synth.js';
 import { transcribeViaRenderer } from './speaker/transcribe.js';
-import { FileConversationStore, readSettings, settingsFileExists, writeSettings } from './store.js';
+import { FileConversationStore, readSettings, setSettingsDiskStripsSecrets, settingsFileExists, writeSettings } from './store.js';
+import { KeyVault } from './vault/store.js';
+import { BackupService } from './backup/service.js';
+import { PrivacyService } from './privacy/service.js';
+import { HealthMonitor } from './health/runtime.js';
 import { readMachineSnapshot } from './machineStats.js';
 import { createToolManager } from './tools/index.js';
 import { registerMachineIpc } from './machine/ipc.js';
@@ -245,6 +252,15 @@ function ensureGoogleLoaded(): void {
 let tray: Tray | null = null;
 
 const chatActivity = new ChatActivity();
+const vault = new KeyVault(() => app.getPath('userData'), safeStorage);
+let healthMonitor: HealthMonitor | null = null;
+let backupService: BackupService | null = null;
+
+function settingsForWindow(): Settings {
+  if (!vault.encryptionAvailable()) return settings;
+  return maskSecrets(settings, vault.secretsNow());
+}
+
 const session = new ChatSession({
   registry,
   get tools() {
@@ -258,6 +274,7 @@ const session = new ChatSession({
   knowledge,
   localLearning,
   getChatMissionHub: () => chatMissionHub,
+  healthReport: () => healthMonitor?.run() ?? Promise.reject(new Error('bilan indisponible')),
 });
 
 // 5.0.63 — téléphone : une session de chat à part (un tour sur le téléphone n'annule pas celui de
@@ -275,6 +292,7 @@ const phoneSession = new ChatSession({
   knowledge,
   localLearning,
   getChatMissionHub: () => chatMissionHub,
+  healthReport: () => healthMonitor?.run() ?? Promise.reject(new Error('bilan indisponible')),
 });
 const questionnaire = QuestionnaireStore.inUserData(() => app.getPath('userData'));
 const phone = new PhoneService({
@@ -325,6 +343,7 @@ const speakers = new SpeakerService({
       knowledge,
       localLearning,
       getChatMissionHub: () => chatMissionHub,
+      healthReport: () => healthMonitor?.run() ?? Promise.reject(new Error('bilan indisponible')),
     });
     return {
       send: async (sender, input) => {
@@ -356,6 +375,88 @@ const speakers = new SpeakerService({
   },
 });
 
+backupService = new BackupService({
+  userData: () => app.getPath('userData'),
+  getSettings: () => settings,
+  version: () => app.getVersion(),
+  isIdle: () =>
+    !chatActivity.busy &&
+    !(chatMissionHub?.missionBusy() ?? false) &&
+    !localLearning.status().running &&
+    !(developerIpc?.current()?.workInProgress() ?? false),
+  relaunch: () => {
+    app.relaunch();
+    app.exit(0);
+  },
+});
+
+const privacy = new PrivacyService({
+  userData: () => app.getPath('userData'),
+  getSettings: () => settings,
+  personalization,
+  knowledge: {
+    listChunks: () => knowledge.listChunks(),
+    replaceChunks: (chunks) => knowledge.replaceChunks(chunks as never),
+    clearMemoryFiles: () => knowledge.clearMemoryFiles(),
+  },
+  conversations: {
+    list: async () => (await store.list()).map((item) => ({ id: item.id, title: item.title })),
+    read: async (id) => JSON.stringify((await store.get(id)) ?? {}),
+    remove: (id) => store.remove(id),
+    clear: () => store.clear(),
+  },
+  questionnaire: {
+    read: async () => {
+      await questionnaire.load();
+      return questionnaire.snapshot();
+    },
+    wipe: async () => {
+      await questionnaire.wipe();
+    },
+  },
+  wake: {
+    count: async () => (await wakeLearning.status()).clips,
+    clear: async () => {
+      await wakeLearning.clearSamples();
+    },
+  },
+});
+
+healthMonitor = new HealthMonitor({
+  getSettings: () => settings,
+  userData: () => app.getPath('userData'),
+  ollamaBaseUrl: () => settings.baseUrl || ollamaDescriptor.defaultBaseUrl || 'http://127.0.0.1:11434',
+  piperReady: async () => (await piper.isReady(settings.voice.ttsVoice || undefined)) === true,
+  spotify: async () => {
+    const status = await spotify.status();
+    const speakerName = (settings.spotifyDeviceName ?? '').trim();
+    if (!status.connected || !speakerName) return { tokenOk: status.connected, speakerVisible: speakerName ? false : null };
+    const devices = await spotify.listDevices().catch(() => []);
+    const wanted = speakerName.toLowerCase();
+    const visible = devices.some((device) => device.name.toLowerCase() === wanted || device.name.toLowerCase().includes(wanted));
+    return { tokenOk: true, speakerVisible: visible };
+  },
+  google: async () => {
+    ensureGoogleLoaded();
+    const status = await google.account.status();
+    return { connected: status.connected, needsReconsent: status.needsReconsent };
+  },
+  phoneEnabled: () => phone.isEnabled(),
+  phonePublished: async () => (await phone.status()).tailscale.served === true,
+  speakersEnabled: () => speakers.isEnabled(),
+  speakersHeard: async () => (await speakers.status()).speakers.some((speaker) => speaker.lastTurnAt !== null),
+  robotReachable: async () => (await rover.connectionStatus()).reachable,
+  backupState: async () => {
+    const state = await backupService!.state();
+    return { lastAt: state.lastAt, ok: state.ok };
+  },
+  vaultReady: () => vault.encryptionAvailable(),
+  broadcast: (report) => {
+    const contents = overlay?.browserWindow.webContents;
+    if (contents && !contents.isDestroyed()) contents.send(IpcChannel.healthEvent, report);
+  },
+});
+
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
@@ -376,7 +477,10 @@ async function bootstrap(): Promise<void> {
     settingsFileExisted ? readSettings() : Promise.resolve(parseSettings({})),
     app.whenReady(),
   ]);
-  settings = loaded;
+  const migrated = await vault.migrate(loaded);
+  settings = migrated.memory;
+  setSettingsDiskStripsSecrets(vault.encryptionAvailable());
+  if (migrated.changed) await writeSettings(migrated.disk);
   tools = buildTools();
   if (settings.machine?.profile === 'modest' && settings.spotifyClientId.trim()) {
     void spotify.status();
@@ -437,6 +541,9 @@ async function bootstrap(): Promise<void> {
     },
     () => loadRenderer(window),
   );
+  // Le bilan attend la première image (0.4.14) : il ne bloque pas l'ouverture.
+  void healthMonitor?.run();
+  backupService?.start();
   // 5.0.64 : un raccourci déjà pris au démarrage (ou mal écrit) laissait Jarvis sans
   // porte d'entrée ; comme à l'enregistrement, on retombe sur Control+Space.
   if (!registerHotkey(settings.hotkey) && settings.hotkey !== 'Control+Space') {
@@ -541,7 +648,7 @@ function registerIpc(): void {
         startGoogleIfAllowed();
       }
     },
-    status: () => ({ settings, status: session.status() }),
+    status: () => ({ settings: settingsForWindow(), status: session.status() }),
   });
 
   ipcMain.handle(IpcChannel.chatSend, async (event, input: SendChatInput) => {
@@ -564,12 +671,14 @@ function registerIpc(): void {
     appendTeamValidation(settings, teamValidationPayload(input)),
   );
 
-  ipcMain.handle(IpcChannel.settingsGet, () => ({ settings, status: session.status() }));
+  ipcMain.handle(IpcChannel.settingsGet, () => ({ settings: settingsForWindow(), status: session.status() }));
   ipcMain.handle(IpcChannel.settingsSet, async (_event, patch: Partial<Settings>) => {
-    const next = parseSettings({ ...settings, ...patch }, settings);
+    const edited = applySecretEdit(settings, patch, await vault.load(), vault.encryptionAvailable());
+    const next = edited.settings;
+    if (vault.encryptionAvailable()) await vault.save(edited.secrets);
     const hotkeyChanged = next.hotkey !== settings.hotkey;
     settings = next;
-    await writeSettings(settings);
+    await writeSettings(edited.disk);
 
     overlay?.setHideOnBlur(!settings.stayVisibleOnBlur && !isDev);
     if (hotkeyChanged && !registerHotkey(settings.hotkey)) {
@@ -581,7 +690,7 @@ function registerIpc(): void {
       app.setLoginItemSettings({ openAtLogin: settings.launchAtLogin });
     }
 
-    return { settings, status: session.status() };
+    return { settings: settingsForWindow(), status: session.status() };
   });
 
   const persistSettings = async (next: Settings): Promise<{ settings: Settings; status: RuntimeStatus }> => {
@@ -597,8 +706,49 @@ function registerIpc(): void {
     if (app.isPackaged) {
       app.setLoginItemSettings({ openAtLogin: settings.launchAtLogin });
     }
-    return { settings, status: session.status() };
+    return { settings: settingsForWindow(), status: session.status() };
   };
+
+  ipcMain.handle(IpcChannel.healthCurrent, () => healthMonitor?.latest() ?? null);
+  ipcMain.handle(IpcChannel.healthRefresh, () => healthMonitor?.run() ?? Promise.reject(new Error('bilan indisponible')));
+  ipcMain.handle(IpcChannel.backupState, () => backupService?.state() ?? { lastAt: null, ok: true, file: '', error: '' });
+  ipcMain.handle(IpcChannel.backupNow, () => backupService?.backupNow() ?? { ok: false, file: '', error: 'Sauvegarde indisponible.' });
+  ipcMain.handle(IpcChannel.backupList, async () => {
+    const items = (await backupService?.list()) ?? [];
+    return items.map((item) => ({
+      name: item.name,
+      createdAt: item.manifest?.createdAt ?? '',
+      note: item.manifest?.note ?? '',
+      entries: item.manifest?.entries.map((entry) => entry.path) ?? [],
+    }));
+  });
+  ipcMain.handle(IpcChannel.backupPick, async () => {
+    const picked = await dialog.showOpenDialog({ properties: ['openDirectory', 'createDirectory'] });
+    return picked.canceled ? null : (picked.filePaths[0] ?? null);
+  });
+  ipcMain.handle(IpcChannel.backupRestore, (_event, name: string) =>
+    backupService?.restore(typeof name === 'string' ? name : '') ?? { ok: false, file: '', error: 'Sauvegarde indisponible.' },
+  );
+  ipcMain.handle(IpcChannel.knowSummary, () => privacy.summary());
+  ipcMain.handle(IpcChannel.knowView, (_event, id: string) => privacy.view(id as never));
+  ipcMain.handle(IpcChannel.knowExport, async () => {
+    const picked = await dialog.showSaveDialog({
+      defaultPath: 'jarvis-ce-que-je-sais.zip',
+      filters: [{ name: 'Zip', extensions: ['zip'] }],
+    });
+    if (picked.canceled || !picked.filePath) return { ok: false, error: 'Export annulé.' };
+    const bytes = await privacy.exportAll();
+    await writeFile(picked.filePath, bytes);
+    return { ok: true };
+  });
+  ipcMain.handle(IpcChannel.knowErase, async (_event, id: string, conversationId?: string) => {
+    await privacy.erase(id as never, conversationId);
+    return privacy.summary();
+  });
+  ipcMain.handle(IpcChannel.knowEraseAll, async () => {
+    await privacy.eraseAll();
+    return privacy.summary();
+  });
 
   ipcMain.handle(IpcChannel.questionnaireGet, async () => {
     await questionnaire.load();

@@ -645,6 +645,15 @@ Cahier : `docs/specs/mission-directe.md`.
 - **Discussion unifiée** : avec `developer.chatMissions`, plus de bascule automatique vers l'onglet Développeur ; corrections et préférences restent dans le chat (`classifyUtterance`, `noteToRecord`).
 - Tests : `detect.test.ts`, `chat-missions-direct.test.ts`, `voiceAssistantRoute.test.ts`, `UnifiedJarvisChat.test.tsx` ; suites 5.0.68 inchangées sans régénération des `__golden__`.
 
+## Lot A — Fiabilité (bilan, sauvegarde, ce que Jarvis sait, coffre)
+
+Cahier : `docs/specs/lot-a-fiabilite.md` (branche `claude/specs-feuille-de-route`). Branche : `cursor/lot-a-fiabilite`. Rapport : `rapports/2026-11-08-lot-a-fiabilite.md`. Pas de publication.
+
+- **Bilan** : après la première image, contrôles bornés (3 s, 10 s en tout), sans modèle. Services non réglés ignorés. Accueil : bandeau seulement s’il y a quelque chose à régler. Réglages → Application → « Bilan de santé ». Dans la discussion, « Jarvis, est-ce que tout va bien ? » et « fais ton bilan » répondent sans modèle (phrase courte à la voix). Le bilan ne répare rien.
+- **Sauvegarde** : Réglages → Application → « Sauvegarde ». Dossier choisi par l’utilisateur, fréquence, 4 archives gardées dans le code si le nombre n’est pas réglé. `settings.json` sans secret, pas les jetons Spotify/Google ni le coffre. Zip `jarvis-sauvegarde-*.zip` écrit en `.partiel`, relu, sinon marqué raté. Rotation limitée à ces noms. Restauration après carte de confirmation, copie de sécurité, puis redémarrage. Réglage `backup` facultatif, sans défaut Zod.
+- **Ce que Jarvis sait de moi** : Réglages → Moi. Voir, exporter (zip sans secret), effacer (bouton en deux temps). « Tout effacer » passe par une carte et ne touche ni aux réglages ni aux projets.
+- **Coffre** : clés que `redactValue` masque déjà, liste unique testée contre le schéma, chiffrées dans `userData/coffre.bin` (`safeStorage`). `settings.json` garde la chaîne vide. La fenêtre reçoit « clé enregistrée », jamais la clé. Sans chiffrement : comportement d’avant, et le bilan le dit.
+
 ## 5.0.70 — Jarvis plus simple
 
 Cahier : `docs/specs/interface-simple.md` (branche `claude/specs-interface-simple`). Rapport : `rapports/2026-11-05-interface-simple-5070.md`.
@@ -831,6 +840,7 @@ Corrections de la revue complète (détail : `docs/audit-0410.md` du store du pr
 - **Trieur (5.0.68)** : coupé par défaut (`orchestra.router` absent) ; aucune phrase utilisateur dans le dépôt ; l'examen ne complète jamais avec des phrases inventées ; l'examen ne fuit pas dans `trieur:generer` (proximité ≥ 0,40 écartée) ; `jarvis-trieur` ne remplace rien tout seul ; chat sans orchestre et orchestre sans trieur = comportement d'avant (`chat-unchanged`, `ollama-unchanged` verts sans régénération).
 - **Missions depuis la discussion (5.0.68)** : `developer.chatMissions` absent ou faux = chat inchangé ; seul `proposer_mission` s'ajoute à l'équipe Code (jamais les `dev_*`) ; rien ne démarre sans « Lancer » ; une mission en cours bloque une nouvelle proposition ; l'enceinte ne lance jamais une mission ; `chat-unchanged.test.ts` vert sans régénération.
 - **Mission directe (5.0.69)** : objectif sur le chemin direct = phrase utilisateur uniquement ; pastille `mission directe` sans appel au modèle Code ; filet si mission écrite en texte ; avec `chatMissions`, pas de redirection fenêtre → panneau Développeur ; `detect.test.ts` et `chat-missions-direct.test.ts` verts sans régénération des `__golden__`.
+- **Lot A (fiabilité)** : `parseSettings({})` ne gagne pas `backup` ; le bilan ne télécharge ni ne relance rien ; un arrêt n’attend pas une carte ; la restauration et « tout effacer » passent par une carte ; le coffre n’envoie jamais une clé à la fenêtre ; sans chiffrement les clés restent dans `settings.json` comme avant ; `chat-unchanged`, `ollama-unchanged`, `orchestra-session`, `machineProfile` et `profiles/jarvis` restent verts sans régénérer les `__golden__`.
 
 Travaux **hors scope** de cet arbre (ne pas les reprendre ici) : publication GitHub.
 

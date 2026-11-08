@@ -12,6 +12,7 @@ import {
   X,
 } from 'lucide-react';
 import { GOOGLE_REDIRECT_URI, type GoogleAccessMode } from '@jarvis/core';
+import { SecretInput } from '@/components/SecretInput';
 import { Button } from '@/components/ui/button';
 import { Field, Input, Select } from '@/components/ui/field';
 import { cn } from '@/lib/utils';
@@ -108,13 +109,10 @@ export function GoogleSettingsSection({ clientId, clientSecret, access, onChange
           label="Secret client"
           hint="Google l’affiche une seule fois, à la création du client. Gardé sur ce PC, envoyé uniquement à Google."
         >
-          <Input
-            type="password"
+          <SecretInput
             value={clientSecret}
-            spellCheck={false}
-            autoComplete="off"
             placeholder="GOCSPX-…"
-            onChange={(event) => onChange({ googleClientSecret: event.target.value })}
+            onChange={(googleClientSecret) => onChange({ googleClientSecret })}
           />
         </Field>
         <Field

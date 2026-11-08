@@ -200,6 +200,10 @@ export class DeveloperController {
     return createOllamaApi(resolveLocalOllamaBase(this.deps.getSettings()), this.deps.fetch);
   }
 
+  workInProgress(): boolean {
+    return this.task !== null || this.controller !== null;
+  }
+
   constructor(private readonly deps: ControllerDeps) {
     this.run = deps.run ?? runProcess;
     this.env = deps.env ?? process.env;

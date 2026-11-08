@@ -3,6 +3,7 @@ import {
   IpcChannel,
   type ChatEvent,
   type GoogleConfigDraft,
+  type HealthReport,
   type JarvisApi,
   type MachinePullProgress,
   type PhoneStatus,
@@ -205,6 +206,29 @@ const api: JarvisApi = {
     reportTranscript: (payload: SpeakerTranscribeResult) => ipcRenderer.send(IpcChannel.speakerTranscribeResult, payload),
   },
   developer: createDeveloperApi(ipcRenderer),
+  health: {
+    current: () => ipcRenderer.invoke(IpcChannel.healthCurrent),
+    refresh: () => ipcRenderer.invoke(IpcChannel.healthRefresh),
+    onReport: (listener: (report: HealthReport) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, payload: HealthReport): void => listener(payload);
+      ipcRenderer.on(IpcChannel.healthEvent, handler);
+      return () => ipcRenderer.removeListener(IpcChannel.healthEvent, handler);
+    },
+  },
+  backup: {
+    state: () => ipcRenderer.invoke(IpcChannel.backupState),
+    now: () => ipcRenderer.invoke(IpcChannel.backupNow),
+    list: () => ipcRenderer.invoke(IpcChannel.backupList),
+    pickDirectory: () => ipcRenderer.invoke(IpcChannel.backupPick),
+    restore: (name: string) => ipcRenderer.invoke(IpcChannel.backupRestore, name),
+  },
+  know: {
+    summary: () => ipcRenderer.invoke(IpcChannel.knowSummary),
+    view: (id: string) => ipcRenderer.invoke(IpcChannel.knowView, id),
+    exportAll: () => ipcRenderer.invoke(IpcChannel.knowExport),
+    erase: (id: string, conversationId?: string) => ipcRenderer.invoke(IpcChannel.knowErase, id, conversationId),
+    eraseAll: () => ipcRenderer.invoke(IpcChannel.knowEraseAll),
+  },
   questionnaire: {
     get: () => ipcRenderer.invoke(IpcChannel.questionnaireGet),
     set: (patch) => ipcRenderer.invoke(IpcChannel.questionnaireSet, patch),

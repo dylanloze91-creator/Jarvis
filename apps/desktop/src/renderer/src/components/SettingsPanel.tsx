@@ -42,6 +42,10 @@ import {
   type SettingsNavigationTarget,
 } from '@/components/settings/settingsDeepLinks';
 import type { SettingsTabId } from '@/components/SettingsTabs';
+import { BackupSettingsSection } from '@/components/BackupSettingsSection';
+import { HealthSettingsSection } from '@/components/HealthSettingsSection';
+import { KnowSettingsSection } from '@/components/KnowSettingsSection';
+import { SecretInput } from '@/components/SecretInput';
 import { absorbSavedSettings, settingsPatch, type SettingsDraft } from '@/lib/settingsPatch';
 import type { RuntimeStatus } from '../../../shared/ipc';
 
@@ -125,6 +129,15 @@ export function SettingsPanel({
 
   useEffect(() => {
     navigate(lastSettingsNavigation);
+  }, [navigate]);
+
+  useEffect(() => {
+    const onNavigate = (event: Event): void => {
+      const target = (event as CustomEvent<SettingsNavigationTarget>).detail;
+      if (target?.category && target.subcategory) navigate(target);
+    };
+    window.addEventListener('jarvis-settings-navigate', onNavigate);
+    return () => window.removeEventListener('jarvis-settings-navigate', onNavigate);
   }, [navigate]);
 
   useEffect(() => {
@@ -263,6 +276,7 @@ export function SettingsPanel({
 
       <CategoryPanel id="moi" active={category}>
         {accordion('personalization', 'Personnalisation', 'Ce que Jarvis retient de toi', <PersonalizationSettingsSection />)}
+        {accordion('know', 'Ce que Jarvis sait de moi', 'Voir, exporter ou effacer', <KnowSettingsSection />)}
         {accordion(
           'persona',
           'Caractère de Jarvis',
@@ -422,11 +436,10 @@ export function SettingsPanel({
             {descriptor?.requiresApiKey ? (
               <>
                 <Field label="Clé API" hint="Stockée uniquement sur cette machine, jamais versionnée.">
-                  <Input
-                    type="password"
+                  <SecretInput
                     value={draft.apiKey}
                     placeholder="sk-…"
-                    onChange={(event) => patch({ apiKey: event.target.value })}
+                    onChange={(apiKey) => patch({ apiKey })}
                   />
                 </Field>
                 <Field label="URL de base" hint="Backend compatible OpenAI (LM Studio, OpenRouter…).">
@@ -520,11 +533,10 @@ export function SettingsPanel({
             </Field>
             {searchDescriptor?.requiresApiKey ? (
               <Field label="Clé API — recherche" hint="Stockée uniquement sur cette machine.">
-                <Input
-                  type="password"
+                <SecretInput
                   value={draft.searchApiKey}
                   placeholder={draft.searchProvider === 'tavily' ? 'Clé Tavily (tvly-…)' : 'Clé Brave Search…'}
-                  onChange={(event) => patch({ searchApiKey: event.target.value })}
+                  onChange={(searchApiKey) => patch({ searchApiKey })}
                 />
               </Field>
             ) : null}
@@ -549,11 +561,10 @@ export function SettingsPanel({
             </Field>
             {marketDataDescriptor?.requiresApiKey ? (
               <Field label="Clé API — bourse" hint="Stockée uniquement sur cette machine.">
-                <Input
-                  type="password"
+                <SecretInput
                   value={draft.marketDataApiKey}
                   placeholder="Clé Finnhub…"
-                  onChange={(event) => patch({ marketDataApiKey: event.target.value })}
+                  onChange={(marketDataApiKey) => patch({ marketDataApiKey })}
                 />
               </Field>
             ) : null}
@@ -651,6 +662,13 @@ export function SettingsPanel({
               onChange={(launchAtLogin) => patch({ launchAtLogin })}
             />
           </>,
+        )}
+        {accordion('health', 'Bilan de santé', 'Ce qui bloque, sans rien réparer', <HealthSettingsSection />)}
+        {accordion(
+          'backup',
+          'Sauvegarde',
+          'Copie de tes données Jarvis',
+          <BackupSettingsSection draft={draft} onChange={patch} />,
         )}
         {accordion('updates', 'Mises à jour', 'Version et installation', <UpdateSettingsSection />)}
         {accordion(

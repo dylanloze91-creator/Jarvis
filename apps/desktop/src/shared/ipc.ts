@@ -18,6 +18,7 @@ import type {
   RiskLevel,
   SearchProviderDescriptor,
   Settings,
+  HealthReport,
   QuestionnaireState,
   GeocodingPlace,
   ToolCategory,
@@ -169,7 +170,42 @@ export const IpcChannel = {
   speakerEvent: 'speaker:event',
   speakerTranscribeRequest: 'speaker:transcribe-request',
   speakerTranscribeResult: 'speaker:transcribe-result',
+  healthCurrent: 'health:current',
+  healthRefresh: 'health:refresh',
+  healthEvent: 'health:event',
+  backupState: 'backup:state',
+  backupNow: 'backup:now',
+  backupList: 'backup:list',
+  backupPick: 'backup:pick',
+  backupRestore: 'backup:restore',
+  knowSummary: 'know:summary',
+  knowView: 'know:view',
+  knowExport: 'know:export',
+  knowErase: 'know:erase',
+  knowEraseAll: 'know:erase-all',
 } as const;
+
+export type { HealthReport };
+
+export interface BackupListItem {
+  name: string;
+  createdAt: string;
+  note: string;
+  entries: string[];
+}
+
+export interface KnowSummaryItem {
+  id: string;
+  label: string;
+  hint: string;
+  count: number;
+  included: boolean;
+}
+
+export interface KnowLine {
+  id: string;
+  text: string;
+}
 
 /** 5.0.64 — Enceinte Jarvis : état montré dans Réglages → Enceintes. */
 export interface SpeakerStatus {
@@ -781,6 +817,25 @@ export interface JarvisApi {
     cancelPull(): Promise<void>;
     apply(): Promise<{ settings: Settings; status: RuntimeStatus }>;
     onPull(listener: (progress: MachinePullProgress) => void): () => void;
+  };
+  health: {
+    current(): Promise<HealthReport | null>;
+    refresh(): Promise<HealthReport>;
+    onReport(listener: (report: HealthReport) => void): () => void;
+  };
+  backup: {
+    state(): Promise<{ lastAt: number | null; ok: boolean; file: string; error: string }>;
+    now(): Promise<{ ok: boolean; file: string; error: string }>;
+    list(): Promise<BackupListItem[]>;
+    pickDirectory(): Promise<string | null>;
+    restore(name: string): Promise<{ ok: boolean; file: string; error: string }>;
+  };
+  know: {
+    summary(): Promise<KnowSummaryItem[]>;
+    view(id: string): Promise<KnowLine[]>;
+    exportAll(): Promise<{ ok: boolean; error?: string }>;
+    erase(id: string, conversationId?: string): Promise<KnowSummaryItem[]>;
+    eraseAll(): Promise<KnowSummaryItem[]>;
   };
   /** Questionnaire d’accueil 5.0.70 (`userData/questionnaire.json`). */
   questionnaire: {

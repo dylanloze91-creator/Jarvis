@@ -16,6 +16,7 @@ import { AuditPanel } from '@/components/AuditPanel';
 import { Dashboard } from '@/dashboard/Dashboard';
 import { useWideLayout } from '@/dashboard/useWideLayout';
 import { HistoryPanel } from '@/components/HistoryPanel';
+import { HealthBanner } from '@/components/HealthBanner';
 import { SettingsPanel, openSettingsAt, openSettingsOnTab } from '@/components/SettingsPanel';
 import { OnboardingFlow } from '@/components/onboarding/OnboardingFlow';
 import { OnboardingSummary } from '@/components/onboarding/OnboardingSummary';
@@ -174,6 +175,17 @@ export default function App() {
       return;
     }
     if (scene === 'settings-v2' || scene === 'settings-search') {
+      setView('settings');
+      return;
+    }
+    if (scene === 'health' || scene === 'backup' || scene === 'know') {
+      openSettingsAt(
+        scene === 'health'
+          ? SETTINGS_SPECIAL_LINKS.health
+          : scene === 'backup'
+            ? SETTINGS_SPECIAL_LINKS.backup
+            : SETTINGS_SPECIAL_LINKS.know,
+      );
       setView('settings');
       return;
     }
@@ -456,6 +468,12 @@ export default function App() {
             <BootStage label="Démarrage de Jarvis…" />
           ) : (
             <div className="flex min-h-0 flex-1 flex-col">
+              <HealthBanner
+                onOpen={() => {
+                  openSettingsAt(SETTINGS_SPECIAL_LINKS.health);
+                  setView('settings');
+                }}
+              />
               <UnifiedJarvisChat
                 settings={settings}
                 voice={voice}

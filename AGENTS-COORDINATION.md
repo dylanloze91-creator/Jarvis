@@ -53,7 +53,7 @@ Statuts possibles : `en cours`, `en pause`, `bloqué`, `terminé`.
 | Cursor | `cursor/spotify-enceinte-cible` | Spotify sur enceinte Connect choisie (Devialet) | — | 2026-11-04 | terminé |
 | Cursor | `cursor/interface-simple-5070` | 5.0.70 interface simple + questionnaire | — | 2026-11-05 | terminé |
 | Claude Code | `claude/examen-7b` | Installer le 7B entraîné sur carte louée (`jarvis-coder`, GGUF Q4_K_M via `export_ollama.py --gguf`) et le faire passer l'examen `lab:compare` contre `qwen2.5-coder:7b` (3 passages) ; rapport dans `rapports/` | — | 2026-11-05 | terminé : `jarvis-coder` créé dans Ollama (à côté de `qwen2.5-coder:7b`, rien remplacé), examen 79/87 contre 69/87, verdict « meilleur (conseillé) », rapport `rapports/2026-11-05-examen-jarvis-coder-contre-qwen2-5-coder-7b.md` ; le choix du modèle de code reste à l'utilisateur |
-| Cursor | `cursor/lot-a-fiabilite` | Lot A — Fiabilité : bilan de santé, sauvegarde, « ce que Jarvis sait de moi », coffre des clés (cahier `docs/specs/lot-a-fiabilite.md`) | `AGENTS-COORDINATION.md`, `CLAUDE.md`, `packages/core/src/health/`, `packages/core/src/backup/`, `packages/core/src/vault/`, `packages/core/src/privacy/`, `packages/core/src/settings.ts`, `apps/desktop/src/main/health/`, `apps/desktop/src/main/backup/`, `apps/desktop/src/main/vault/`, `apps/desktop/src/main/privacy/`, `apps/desktop/src/renderer/` (bilan, sauvegarde, savoir, coffre), `rapports/2026-11-08-lot-a-fiabilite.md` | 2026-11-08 | en cours |
+| Cursor | `cursor/lot-a-fiabilite` | Lot A — Fiabilité : bilan de santé, sauvegarde, « ce que Jarvis sait de moi », coffre des clés. Rapport `rapports/2026-11-08-lot-a-fiabilite.md`. Pas de fusion, pas de publication. | — | 2026-11-08 | terminé |
 
 ## Ressource GPU / Ollama
 

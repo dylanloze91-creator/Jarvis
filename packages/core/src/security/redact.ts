@@ -35,6 +35,11 @@ const INLINE_PATTERNS: Array<{ pattern: RegExp; replace: string }> = [
   },
 ];
 
+/** Vrai si ce nom de champ est un secret (même règle que `redactValue`). */
+export function isSecretObjectKey(key: string): boolean {
+  return SECRET_KEY.test(key) || SECRET_KEY_SUFFIX.test(key);
+}
+
 export function redactSecrets(input: string): string {
   let text = input;
   for (const rule of INLINE_PATTERNS) {

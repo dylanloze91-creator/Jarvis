@@ -10,6 +10,7 @@ import { VOICE_WAKE_TEST_INTRO } from '@/components/voiceSettingsCopy';
 import type { VoiceDescriptor, VoiceSettings } from '@jarvis/core';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Field, Input, Range, Select, Textarea, Toggle } from '@/components/ui/field';
+import { SecretInput } from '@/components/SecretInput';
 import { Button } from '@/components/ui/button';
 import { MicrophonePanel } from '@/components/MicrophonePanel';
 import { VoiceDiagnostic } from '@/components/VoiceDiagnostic';
@@ -507,12 +508,7 @@ export function VoiceSettingsSection({
           label="Clé API OpenAI dédiée à la voix (optionnel)"
           hint="Laisse vide pour réutiliser la clé du fournisseur OpenAI (onglet Modèle IA), si configuré. Facultative : toute la chaîne vocale par défaut fonctionne sans elle."
         >
-          <Input
-            type="password"
-            value={voice.apiKey}
-            placeholder="sk-…"
-            onChange={(event) => onChange({ apiKey: event.target.value })}
-          />
+          <SecretInput value={voice.apiKey} placeholder="sk-…" onChange={(apiKey) => onChange({ apiKey })} />
         </Field>
       </Disclosure>
     </div>

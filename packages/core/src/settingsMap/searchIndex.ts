@@ -11,6 +11,7 @@ export interface SettingsSearchEntry {
 /** Index de recherche dans les réglages (libellés en tutoiement). */
 export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = [
   { category: 'moi', subcategory: 'personalization', label: 'Personnalisation', keywords: ['prénom', 'profil', 'moi'] },
+  { category: 'moi', subcategory: 'know', label: 'Ce que Jarvis sait de moi', keywords: ['export', 'effacer', 'souvenirs'] },
   { category: 'moi', subcategory: 'persona', label: 'Caractère de Jarvis', keywords: ['persona', 'ton', 'accueil'] },
   { category: 'moi', subcategory: 'home-location', label: 'Chez moi', keywords: ['météo', 'lieu', 'ville'] },
   { category: 'moi', subcategory: 'knowledge', label: 'Mémoire documentaire', keywords: ['documents', 'index', 'apprentissage local'] },
@@ -36,4 +37,6 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = [
   { category: 'application', subcategory: 'window', label: 'Fenêtre et raccourci', keywords: ['hotkey', 'ctrl', 'espace'] },
   { category: 'application', subcategory: 'updates', label: 'Mises à jour', keywords: ['version', 'installer'] },
   { category: 'application', subcategory: 'questionnaire', label: 'Questionnaire d’accueil', keywords: ['onboarding', 'accueil'] },
+  { category: 'application', subcategory: 'health', label: 'Bilan de santé', keywords: ['santé', 'ollama', 'ça ne marche pas'] },
+  { category: 'application', subcategory: 'backup', label: 'Sauvegarde', keywords: ['copie', 'restaurer', 'disque'] },
 ];

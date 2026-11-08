@@ -2,6 +2,7 @@ import { access, copyFile, mkdir, readFile, readdir, rename, rm, writeFile } fro
 import { join } from 'node:path';
 import { app } from 'electron';
 import {
+  blankSecrets,
   parseSettings,
   summarize,
   type Conversation,
@@ -62,8 +63,16 @@ export function createSerialQueue(): (task: () => Promise<void>) => Promise<void
 
 const enqueueSettingsWrite = createSerialQueue();
 
+/** Quand le coffre est disponible, `settings.json` ne garde plus les clés. */
+let stripSecretsOnDisk = false;
+
+export function setSettingsDiskStripsSecrets(value: boolean): void {
+  stripSecretsOnDisk = value;
+}
+
 export function writeSettings(settings: Settings): Promise<void> {
-  const body = JSON.stringify(settings, null, 2);
+  const stored = stripSecretsOnDisk ? blankSecrets(settings) : settings;
+  const body = JSON.stringify(stored, null, 2);
   return enqueueSettingsWrite(async () => {
     await mkdir(userDataPath(), { recursive: true });
     // Écriture atomique (P12) : le fichier complet est écrit à côté puis renommé ; une
