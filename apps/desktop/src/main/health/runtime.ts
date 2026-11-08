@@ -18,7 +18,9 @@ export interface HealthRuntimeDeps {
   speakersHeard: () => Promise<boolean>;
   robotReachable: () => Promise<boolean>;
   backupState: () => Promise<{ lastAt: number | null; ok: boolean }>;
-  vaultReady: () => boolean;
+  vaultReady: () =>
+    | { encryptionAvailable: boolean; unreadable: boolean }
+    | Promise<{ encryptionAvailable: boolean; unreadable: boolean }>;
   broadcast: (report: HealthReport) => void;
 }
 
@@ -52,12 +54,8 @@ export class HealthMonitor {
     return {
       ollama: async (signal) => {
         const status = await checkOllamaStatus(this.deps.ollamaBaseUrl(), { timeoutMs: 2500 });
-        if (signal.aborted) throw new Error('timeout');
-        return status.status === 'detected';
-      },
-      installedModels: async () => {
-        const status = await checkOllamaStatus(this.deps.ollamaBaseUrl(), { timeoutMs: 2500 });
-        return status.models.map((model) => model.name);
+        if (signal.aborted) throw new Error('délai dépassé');
+        return { reachable: status.status === 'detected', models: status.models.map((model) => model.name) };
       },
       voiceMissing: this.deps.voiceMissing ?? (async () => {
         const files = await inspectVoiceAssets(currentVoiceAssetsRoot());

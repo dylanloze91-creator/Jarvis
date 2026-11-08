@@ -17,6 +17,8 @@ import {
 import {
   applySecretEdit,
   checkOllamaStatus,
+  isKnowCategoryId,
+  manifestIsValid,
   maskSecrets,
   coderLearningPrompt,
   memoryRetrievalEnabled,
@@ -72,6 +74,9 @@ import { KeyVault } from './vault/store.js';
 import { BackupService } from './backup/service.js';
 import { PrivacyService } from './privacy/service.js';
 import { HealthMonitor } from './health/runtime.js';
+import { readGoogleHealth } from './health/googleProbe.js';
+import { GOOGLE_TOKEN_FILE } from './google/runtime.js';
+import { GoogleTokenStore } from './google/tokenStore.js';
 import { readMachineSnapshot } from './machineStats.js';
 import { createToolManager } from './tools/index.js';
 import { registerMachineIpc } from './machine/ipc.js';
@@ -436,11 +441,11 @@ healthMonitor = new HealthMonitor({
     const visible = devices.some((device) => device.name.toLowerCase() === wanted || device.name.toLowerCase().includes(wanted));
     return { tokenOk: true, speakerVisible: visible };
   },
-  google: async () => {
-    ensureGoogleLoaded();
-    const status = await google.account.status();
-    return { connected: status.connected, needsReconsent: status.needsReconsent };
-  },
+  google: () =>
+    readGoogleHealth({
+      loaded: google.account.healthView(),
+      readToken: () => new GoogleTokenStore(() => join(app.getPath('userData'), GOOGLE_TOKEN_FILE), safeStorage).load(),
+    }),
   phoneEnabled: () => phone.isEnabled(),
   phonePublished: async () => (await phone.status()).tailscale.served === true,
   speakersEnabled: () => speakers.isEnabled(),
@@ -448,9 +453,12 @@ healthMonitor = new HealthMonitor({
   robotReachable: async () => (await rover.connectionStatus()).reachable,
   backupState: async () => {
     const state = await backupService!.state();
-    return { lastAt: state.lastAt, ok: state.ok };
+    return { lastAt: state.lastSuccessAt, ok: state.ok };
   },
-  vaultReady: () => vault.encryptionAvailable(),
+  vaultReady: async () => {
+    await vault.load();
+    return { encryptionAvailable: vault.encryptionAvailable(), unreadable: vault.isUnreadable() };
+  },
   broadcast: (report) => {
     const contents = overlay?.browserWindow.webContents;
     if (contents && !contents.isDestroyed()) contents.send(IpcChannel.healthEvent, report);
@@ -720,6 +728,7 @@ function registerIpc(): void {
       createdAt: item.manifest?.createdAt ?? '',
       note: item.manifest?.note ?? '',
       entries: item.manifest?.entries.map((entry) => entry.path) ?? [],
+      restorable: manifestIsValid(item.manifest),
     }));
   });
   ipcMain.handle(IpcChannel.backupPick, async () => {
@@ -730,7 +739,10 @@ function registerIpc(): void {
     backupService?.restore(typeof name === 'string' ? name : '') ?? { ok: false, file: '', error: 'Sauvegarde indisponible.' },
   );
   ipcMain.handle(IpcChannel.knowSummary, () => privacy.summary());
-  ipcMain.handle(IpcChannel.knowView, (_event, id: string) => privacy.view(id as never));
+  ipcMain.handle(IpcChannel.knowView, (_event, id: string) => {
+    if (!isKnowCategoryId(id)) throw new Error('Catégorie inconnue.');
+    return privacy.view(id);
+  });
   ipcMain.handle(IpcChannel.knowExport, async () => {
     const picked = await dialog.showSaveDialog({
       defaultPath: 'jarvis-ce-que-je-sais.zip',
@@ -742,7 +754,8 @@ function registerIpc(): void {
     return { ok: true };
   });
   ipcMain.handle(IpcChannel.knowErase, async (_event, id: string, conversationId?: string) => {
-    await privacy.erase(id as never, conversationId);
+    if (!isKnowCategoryId(id)) throw new Error('Catégorie inconnue.');
+    await privacy.erase(id, conversationId);
     return privacy.summary();
   });
   ipcMain.handle(IpcChannel.knowEraseAll, async () => {

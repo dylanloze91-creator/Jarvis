@@ -8,8 +8,10 @@ export {
   type HealthItem,
   type HealthLevel,
   type HealthReport,
+  isProbeError,
+  type ProbeError,
   type ProbeResult,
 } from './types.js';
 export { looksLikeHealthIntent } from './intent.js';
-export { missingModelGroups, modelsToCheck, type ModelDuty } from './models.js';
+export { missingModelGroups, modelInstalled, modelsToCheck, type ModelDuty } from './models.js';
 export { buildHealthReport, withModelOpens } from './report.js';

@@ -40,6 +40,18 @@ export function modelsToCheck(settings: Settings): ModelDuty[] {
   return duties;
 }
 
+/** `qwen2.5` sans étiquette veut `qwen2.5:latest`, jamais `qwen2.5:7b`. */
+export function canonicalOllamaModel(name: string): string {
+  const trimmed = name.trim();
+  if (!trimmed) return trimmed;
+  return trimmed.includes(':') ? trimmed : `${trimmed}:latest`;
+}
+
+export function modelInstalled(name: string, installed: readonly string[]): boolean {
+  const wanted = canonicalOllamaModel(name);
+  return installed.some((item) => canonicalOllamaModel(item) === wanted);
+}
+
 /** Un modèle manquant, une phrase : les rôles qui s'en servent sont regroupés. */
 export function missingModelGroups(duties: readonly ModelDuty[], installed: ReadonlySet<string>): Array<{ name: string; role: string; open: string }> {
   const groups = new Map<string, { name: string; roles: string[]; open: string }>();

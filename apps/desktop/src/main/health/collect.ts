@@ -4,17 +4,25 @@ import {
   backupFrequencyOf,
   backupPeriodMs,
   buildHealthReport,
+  isProbeError,
   missingModelGroups,
+  modelInstalled,
   modelsToCheck,
   withModelOpens,
   type HealthFacts,
   type HealthReport,
+  type ProbeError,
   type Settings,
 } from '@jarvis/core';
 
+export interface OllamaProbe {
+  reachable: boolean;
+  models: readonly string[];
+}
+
 export interface HealthProbeSet {
-  ollama: (signal: AbortSignal) => Promise<boolean>;
-  installedModels: (signal: AbortSignal) => Promise<readonly string[]>;
+  /** Un seul appel : joignable et modèles installés. */
+  ollama: (signal: AbortSignal) => Promise<OllamaProbe>;
   voiceMissing: (signal: AbortSignal) => Promise<number>;
   piperReady: (signal: AbortSignal) => Promise<boolean>;
   spotify: (signal: AbortSignal) => Promise<{ tokenOk: boolean; speakerVisible: boolean | null }>;
@@ -25,14 +33,14 @@ export interface HealthProbeSet {
   printerReachable: (signal: AbortSignal) => Promise<boolean>;
   diskFree: () => Promise<number>;
   backupState: () => Promise<{ lastAt: number | null; ok: boolean }>;
-  vaultReady: () => Promise<boolean>;
+  vaultReady: () => Promise<{ encryptionAvailable: boolean; unreadable: boolean }>;
   phoneEnabled: () => boolean;
   speakersEnabled: () => boolean;
   /** Lot B : faux tant qu'aucune imprimante n'est réglée. */
   printerConfigured: () => boolean;
 }
 
-async function bounded<T>(work: (signal: AbortSignal) => Promise<T>, parent: AbortSignal, ms: number): Promise<T | 'timeout'> {
+async function bounded<T>(work: (signal: AbortSignal) => Promise<T>, parent: AbortSignal, ms: number): Promise<T | 'timeout' | ProbeError> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), ms);
   const onParent = (): void => controller.abort();
@@ -46,16 +54,13 @@ async function bounded<T>(work: (signal: AbortSignal) => Promise<T>, parent: Abo
         else controller.signal.addEventListener('abort', () => resolve('timeout'), { once: true });
       }),
     ]);
-  } catch {
-    return controller.signal.aborted || parent.aborted ? 'timeout' : 'timeout';
+  } catch (error) {
+    if (controller.signal.aborted || parent.aborted) return 'timeout';
+    return { error: error instanceof Error ? error.message : String(error) };
   } finally {
     clearTimeout(timer);
     parent.removeEventListener('abort', onParent);
   }
-}
-
-function modelInstalled(name: string, installed: readonly string[]): boolean {
-  return installed.some((item) => item === name || item.startsWith(`${name}:`) || name.startsWith(`${item}:`));
 }
 
 export async function collectHealthReport(
@@ -91,76 +96,81 @@ export async function collectHealthReport(
 
   if (duties.length > 0) {
     run(async () => {
-      facts.ollama = await bounded((signal) => probes.ollama(signal).then((reachable) => ({ reachable })), parent.signal, limits.each);
-      const installed = await bounded((signal) => probes.installedModels(signal), parent.signal, limits.each);
-      if (installed === 'timeout' || facts.ollama === 'timeout') facts.models = 'timeout';
-      else if (typeof facts.ollama === 'object' && !facts.ollama.reachable) facts.models = 'skip';
-      else {
-        const installedNames = new Set(duties.filter((duty) => modelInstalled(duty.name, installed)).map((duty) => duty.name));
-        facts.models = { missing: missingModelGroups(duties, installedNames) };
+      const status = await bounded((signal) => probes.ollama(signal), parent.signal, limits.each);
+      if (status === 'timeout' || isProbeError(status)) {
+        facts.ollama = status;
+        facts.models = status;
+        return;
       }
+      facts.ollama = { reachable: status.reachable };
+      if (!status.reachable) {
+        facts.models = 'skip';
+        return;
+      }
+      const installedNames = new Set(duties.filter((duty) => modelInstalled(duty.name, status.models)).map((duty) => duty.name));
+      facts.models = { missing: missingModelGroups(duties, installedNames) };
     });
   }
 
   if (settings.voice.enabled) {
     run(async () => {
       const missing = await bounded((signal) => probes.voiceMissing(signal), parent.signal, limits.each);
-      facts.voice = missing === 'timeout' ? 'timeout' : { missing };
+      facts.voice = missing === 'timeout' || isProbeError(missing) ? missing : { missing };
     });
   }
   if (settings.voice.ttsProvider === 'local-piper') {
     run(async () => {
       const ready = await bounded((signal) => probes.piperReady(signal), parent.signal, limits.each);
-      facts.piper = ready === 'timeout' ? 'timeout' : { ready };
+      facts.piper = ready === 'timeout' || isProbeError(ready) ? ready : { ready };
     });
   }
   if (settings.spotifyClientId.trim()) {
     run(async () => {
       const spotify = await bounded((signal) => probes.spotify(signal), parent.signal, limits.each);
       facts.spotify =
-        spotify === 'timeout'
-          ? 'timeout'
+        spotify === 'timeout' || isProbeError(spotify)
+          ? spotify
           : { tokenOk: spotify.tokenOk, speakerName: (settings.spotifyDeviceName ?? '').trim(), speakerVisible: spotify.speakerVisible };
     });
   }
   if (settings.googleClientId.trim()) {
     run(async () => {
       const google = await bounded((signal) => probes.google(signal), parent.signal, limits.each);
-      facts.google = google === 'timeout' ? 'timeout' : google;
+      facts.google = google === 'timeout' || isProbeError(google) ? google : google;
     });
   }
   if (probes.phoneEnabled()) {
     run(async () => {
       const published = await bounded((signal) => probes.phonePublished(signal), parent.signal, limits.each);
-      facts.phone = published === 'timeout' ? 'timeout' : { published };
+      facts.phone = published === 'timeout' || isProbeError(published) ? published : { published };
     });
   }
   if (probes.speakersEnabled()) {
     run(async () => {
       const heard = await bounded(() => probes.speakersHeard(), parent.signal, limits.each);
-      facts.speakers = heard === 'timeout' ? 'timeout' : { heard };
+      facts.speakers = heard === 'timeout' || isProbeError(heard) ? heard : { heard };
     });
   }
   if ((settings.roverBaseUrl ?? '').trim()) {
     run(async () => {
       const reachable = await bounded((signal) => probes.robotReachable(signal), parent.signal, limits.each);
-      facts.robot = reachable === 'timeout' ? 'timeout' : { reachable };
+      facts.robot = reachable === 'timeout' || isProbeError(reachable) ? reachable : { reachable };
     });
   }
   if (probes.printerConfigured()) {
     run(async () => {
       const reachable = await bounded((signal) => probes.printerReachable(signal), parent.signal, limits.each);
-      facts.printer = reachable === 'timeout' ? 'timeout' : { reachable };
+      facts.printer = reachable === 'timeout' || isProbeError(reachable) ? reachable : { reachable };
     });
   }
   run(async () => {
     const free = await bounded(() => probes.diskFree(), parent.signal, limits.each);
-    facts.disk = free === 'timeout' ? 'timeout' : { freeBytes: free };
+    facts.disk = free === 'timeout' || isProbeError(free) ? free : { freeBytes: free };
   });
   if ((settings.backup?.directory ?? '').trim()) {
     run(async () => {
       const state = await bounded(() => probes.backupState(), parent.signal, limits.each);
-      if (state === 'timeout') facts.backup = 'timeout';
+      if (state === 'timeout' || isProbeError(state)) facts.backup = state;
       else {
         const frequency = backupFrequencyOf(settings.backup?.frequency);
         const stale = state.lastAt !== null && now - state.lastAt >= backupPeriodMs(frequency);
@@ -170,7 +180,7 @@ export async function collectHealthReport(
   }
   run(async () => {
     const ready = await bounded(() => probes.vaultReady(), parent.signal, limits.each);
-    facts.vault = ready === 'timeout' ? 'timeout' : { encryptionAvailable: ready };
+    facts.vault = ready === 'timeout' || isProbeError(ready) ? ready : ready;
   });
 
   await Promise.all(jobs);

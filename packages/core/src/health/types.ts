@@ -50,7 +50,13 @@ export interface HealthReport {
   at: number;
 }
 
-export type ProbeResult<T> = T | 'timeout' | 'skip';
+export type ProbeError = { error: string };
+
+export type ProbeResult<T> = T | 'timeout' | 'skip' | ProbeError;
+
+export function isProbeError(value: unknown): value is ProbeError {
+  return !!value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length === 1 && typeof (value as ProbeError).error === 'string';
+}
 
 export interface HealthFacts {
   ollama: ProbeResult<{ reachable: boolean }>;
@@ -65,6 +71,6 @@ export interface HealthFacts {
   printer: ProbeResult<{ reachable: boolean }>;
   disk: ProbeResult<{ freeBytes: number }>;
   backup: ProbeResult<{ configured: boolean; lastAt: number | null; ok: boolean; stale: boolean }>;
-  vault: ProbeResult<{ encryptionAvailable: boolean }>;
+  vault: ProbeResult<{ encryptionAvailable: boolean; unreadable?: boolean }>;
   now?: number;
 }

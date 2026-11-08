@@ -192,6 +192,8 @@ export interface BackupListItem {
   createdAt: string;
   note: string;
   entries: string[];
+  /** Faux si le manifeste manque ou est illisible : le bouton Restaurer reste gris. */
+  restorable: boolean;
 }
 
 export interface KnowSummaryItem {

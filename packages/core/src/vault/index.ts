@@ -3,6 +3,7 @@ export {
   SECRET_SETTING_PATHS,
   applySecretEdit,
   blankSecrets,
+  fillExistingSecrets,
   maskSecrets,
   readSecret,
   secretSettingPaths,

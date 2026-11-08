@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import type { BackupListItem } from '../../../shared/ipc';
 import { Button } from '@/components/ui/button';
 import { Field, Input, Select } from '@/components/ui/field';
-import type { Settings } from '@jarvis/core';
+import { backupKeepFromField, type Settings } from '@jarvis/core';
 
 export function BackupSettingsSection({
   draft,
@@ -65,8 +65,13 @@ export function BackupSettingsSection({
           value={backup.keep === undefined ? '' : String(backup.keep)}
           placeholder="4"
           onChange={(event) => {
-            const keep = Number(event.target.value);
-            patch({ keep: Number.isInteger(keep) && keep > 0 ? keep : undefined });
+            const parsed = backupKeepFromField(event.target.value);
+            if (parsed.error) {
+              setNotice('Le nombre de sauvegardes gardées est entre 1 et 48.');
+              return;
+            }
+            setNotice('');
+            patch({ keep: parsed.keep });
           }}
         />
       </Field>
@@ -80,11 +85,24 @@ export function BackupSettingsSection({
       </label>
       {backup.includeTrainingData ? (
         <Field label="Dossier jarvis-data">
-          <Input
-            value={backup.trainingDir ?? ''}
-            placeholder="Choisis le dossier"
-            onChange={(event) => patch({ trainingDir: event.target.value })}
-          />
+          <div className="flex gap-2">
+            <Input readOnly value={backup.trainingDir ?? ''} placeholder="Aucun dossier choisi" />
+            <Button
+              type="button"
+              size="sm"
+              variant="subtle"
+              onClick={() => {
+                void window.jarvis.backup.pickDirectory().then((trainingDir) => {
+                  if (trainingDir) patch({ trainingDir });
+                });
+              }}
+            >
+              Choisir
+            </Button>
+          </div>
+          {!(backup.trainingDir ?? '').trim() ? (
+            <p className="text-xs text-amber-200">Choisis le dossier, sinon ces fichiers ne seront pas copiés.</p>
+          ) : null}
         </Field>
       ) : null}
       <label className="flex items-center gap-2 text-sm text-slate-200">
@@ -97,11 +115,24 @@ export function BackupSettingsSection({
       </label>
       {backup.includeModels ? (
         <Field label="Dossier des modèles">
-          <Input
-            value={backup.modelsDir ?? ''}
-            placeholder="Choisis le dossier"
-            onChange={(event) => patch({ modelsDir: event.target.value })}
-          />
+          <div className="flex gap-2">
+            <Input readOnly value={backup.modelsDir ?? ''} placeholder="Aucun dossier choisi" />
+            <Button
+              type="button"
+              size="sm"
+              variant="subtle"
+              onClick={() => {
+                void window.jarvis.backup.pickDirectory().then((modelsDir) => {
+                  if (modelsDir) patch({ modelsDir });
+                });
+              }}
+            >
+              Choisir
+            </Button>
+          </div>
+          {!(backup.modelsDir ?? '').trim() ? (
+            <p className="text-xs text-amber-200">Choisis le dossier, sinon ces fichiers ne seront pas copiés.</p>
+          ) : null}
         </Field>
       ) : null}
       <div className="flex flex-wrap gap-2">
@@ -124,7 +155,7 @@ export function BackupSettingsSection({
           <li key={item.name} className="rounded-lg border border-white/10 px-3 py-2">
             <p className="text-sm text-slate-100">{item.name}</p>
             <p className="text-xs text-slate-400">{item.entries.length} éléments. {item.note}</p>
-            <Button type="button" size="sm" variant="subtle" className="mt-2" onClick={() => setPending(item)}>
+            <Button type="button" size="sm" variant="subtle" className="mt-2" disabled={!item.restorable} onClick={() => setPending(item)}>
               Restaurer
             </Button>
           </li>

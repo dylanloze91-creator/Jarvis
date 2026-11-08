@@ -78,4 +78,45 @@ describe('ce que Jarvis sait', () => {
     await expect(readFile(join(sorter, 'a-trier.jsonl'))).rejects.toThrow();
     expect(await readFile(join(kept, 'projet.txt'), 'utf8')).toBe('projet utilisateur');
   });
+
+  it('exporte les conversations en entier et masque une clé sans bloquer', async () => {
+    const long = 'phrase '.repeat(200);
+    const secret = 'sk-abcdefghijklmnopqrst';
+    let chunks: KnowChunk[] = [];
+    const service = new PrivacyService({
+      userData: () => '/tmp',
+      getSettings: () => parseSettings({}),
+      personalization: { get: async () => emptyPersonalization(), reset: async () => emptyPersonalization() },
+      knowledge: { listChunks: async () => chunks, replaceChunks: async (next) => { chunks = next; }, clearMemoryFiles: async () => undefined },
+      conversations: {
+        list: async () => [{ id: 'c1', title: 'Discussion' }],
+        read: async () => JSON.stringify({ messages: [{ role: 'user', content: `${long} ${secret}` }, { role: 'assistant', content: 'réponse complète' }] }),
+        remove: async () => undefined,
+        clear: async () => undefined,
+      },
+      questionnaire: { read: async () => ({ answers: {} }), wipe: async () => undefined },
+      wake: { count: async () => 0, clear: async () => undefined },
+    });
+    const packed = await service.exportAll();
+    const text = (await import('@jarvis/core')).unzipStore(packed).map((file) => new TextDecoder().decode(file.data)).join('\n');
+    expect(text).toContain('réponse complète');
+    expect(text.length).toBeGreaterThan(500);
+    expect(text).not.toContain(secret);
+    expect(text).toContain('[REDACTED]');
+  });
+
+  it('un identifiant inconnu n’efface pas les corrections', async () => {
+    let chunks: KnowChunk[] = [{ id: 'pref', kind: 'memory', learning: { type: 'preference', content: 'tutoiement' } }];
+    const service = new PrivacyService({
+      userData: () => '/tmp',
+      getSettings: () => parseSettings({}),
+      personalization: { get: async () => emptyPersonalization(), reset: async () => emptyPersonalization() },
+      knowledge: { listChunks: async () => chunks, replaceChunks: async (next) => { chunks = next; }, clearMemoryFiles: async () => undefined },
+      conversations: { list: async () => [], read: async () => '', remove: async () => undefined, clear: async () => undefined },
+      questionnaire: { read: async () => ({}), wipe: async () => undefined },
+      wake: { count: async () => 0, clear: async () => undefined },
+    });
+    await expect(service.erase('invente' as never)).rejects.toThrow(/inconnue/);
+    expect(chunks.map((chunk) => chunk.id)).toEqual(['pref']);
+  });
 });

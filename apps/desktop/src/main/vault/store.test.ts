@@ -33,6 +33,31 @@ describe('coffre', () => {
     expect(JSON.stringify(shown)).not.toContain('sk-clair');
   });
 
+  it('une clé en clair plus récente gagne sur le coffre', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'jarvis-coffre-recent-'));
+    const vault = new KeyVault(() => dir, cipher());
+    await vault.save({ apiKey: 'sk-ancienne-123456' });
+    const migrated = await vault.migrate(parseSettings({ provider: 'openai', apiKey: 'sk-nouvelle-123456' }));
+    expect(migrated.memory.apiKey).toBe('sk-nouvelle-123456');
+    expect(JSON.stringify(migrated.disk)).not.toContain('sk-');
+  });
+
+  it('un coffre illisible est mis de côté, pas effacé en silence', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'jarvis-coffre-illisible-'));
+    const { writeFile } = await import('node:fs/promises');
+    await writeFile(join(dir, 'coffre.bin'), Buffer.from('pas-un-coffre'));
+    const broken = cipher();
+    broken.decryptString = () => {
+      throw new Error('déchiffrement refusé');
+    };
+    const vault = new KeyVault(() => dir, broken);
+    await vault.load();
+    expect(vault.isUnreadable()).toBe(true);
+    const { readFile } = await import('node:fs/promises');
+    const kept = await readFile(join(dir, 'coffre.illisible.bin'));
+    expect(kept.toString('utf8')).toContain('pas-un-coffre');
+  });
+
   it('sans chiffrement, les réglages restent comme avant', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'jarvis-coffre-off-'));
     const vault = new KeyVault(() => dir, cipher(false));

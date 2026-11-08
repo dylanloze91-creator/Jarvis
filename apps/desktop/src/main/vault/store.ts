@@ -1,6 +1,6 @@
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { blankSecrets, secretsFromSettings, type Settings } from '@jarvis/core';
+import { blankSecrets, fillExistingSecrets, secretsFromSettings, type Settings } from '@jarvis/core';
 import type { SecretCipher } from '../google/tokenStore.js';
 
 const FILE = 'coffre.bin';
@@ -26,6 +26,7 @@ function parseVault(text: string): Record<string, string> {
 export class KeyVault {
   private secrets: Record<string, string> = {};
   private loaded = false;
+  private unreadable = false;
 
   constructor(
     private readonly userData: () => string,
@@ -48,17 +49,37 @@ export class KeyVault {
     return { ...this.secrets };
   }
 
+  isUnreadable(): boolean {
+    return this.unreadable;
+  }
+
   async load(): Promise<Record<string, string>> {
     if (this.loaded) return { ...this.secrets };
     this.loaded = true;
     if (!this.encryptionAvailable()) return {};
+    let bytes: Buffer;
     try {
-      const bytes = await readFile(this.filePath());
+      bytes = await readFile(this.filePath());
+    } catch {
+      return {};
+    }
+    try {
       this.secrets = parseVault(this.cipher.decryptString(bytes));
     } catch {
+      await this.quarantine();
+      this.unreadable = true;
       this.secrets = {};
     }
     return { ...this.secrets };
+  }
+
+  private async quarantine(): Promise<void> {
+    const dest = join(this.userData(), 'coffre.illisible.bin');
+    try {
+      await rename(this.filePath(), dest);
+    } catch {
+      await rename(this.filePath(), join(this.userData(), `coffre.illisible-${Date.now()}.bin`)).catch(() => undefined);
+    }
   }
 
   async save(secrets: Record<string, string>): Promise<void> {
@@ -81,7 +102,7 @@ export class KeyVault {
     if (!this.encryptionAvailable()) return { disk: settings, memory: settings, changed: false };
     const found = secretsFromSettings(settings);
     const current = await this.load();
-    const secrets = { ...found, ...current };
+    const secrets = { ...current, ...found };
     const hadPlain = Object.keys(found).length > 0;
     if (hadPlain || Object.keys(secrets).length !== Object.keys(current).length) await this.save(secrets);
     const disk = blankSecrets(settings);
@@ -92,22 +113,7 @@ export class KeyVault {
   async apply(settings: Settings): Promise<Settings> {
     if (!this.encryptionAvailable()) return settings;
     const secrets = await this.load();
-    const copy = blankSecrets(settings) as unknown as Record<string, unknown>;
-    for (const [path, value] of Object.entries(secrets)) {
-      const parts = path.split('.');
-      let cursor: Record<string, unknown> = copy;
-      for (const part of parts.slice(0, -1)) {
-        const next = cursor[part];
-        if (!next || typeof next !== 'object') {
-          const created: Record<string, unknown> = {};
-          cursor[part] = created;
-          cursor = created;
-        } else cursor = next as Record<string, unknown>;
-      }
-      const leaf = parts[parts.length - 1];
-      if (leaf) cursor[leaf] = value;
-    }
-    return copy as unknown as Settings;
+    return fillExistingSecrets(blankSecrets(settings), secrets);
   }
 
   async clearFile(): Promise<void> {

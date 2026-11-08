@@ -422,6 +422,7 @@ export function installPreviewBridge(): void {
           createdAt: '2026-11-07T10:00:00.000Z',
           note: 'Après une restauration, reconnecte Spotify, Google et les clés.',
           entries: ['settings.json', 'conversations/une.json', 'personalization.json'],
+          restorable: true,
         },
       ],
       pickDirectory: async () => 'Disque de sauvegarde',

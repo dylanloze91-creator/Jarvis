@@ -1,6 +1,7 @@
 export {
   KNOW_CATEGORY_IDS,
   KNOW_LABELS,
+  isKnowCategoryId,
   SORTER_PHRASE_FILES,
   countKnowledge,
   countPersonalization,

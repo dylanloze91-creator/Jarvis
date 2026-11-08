@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { parseSettings } from '../settings.js';
 import { looksLikeHealthIntent } from './intent.js';
-import { missingModelGroups, modelsToCheck } from './models.js';
+import { missingModelGroups, modelInstalled, modelsToCheck } from './models.js';
 import { buildHealthReport } from './report.js';
 import { HEALTH_CHECK_ORDER, HEALTH_DISK_ALERT_BYTES, type HealthFacts } from './types.js';
 
@@ -100,6 +100,14 @@ describe('règle express du bilan', () => {
     expect(looksLikeHealthIntent('fais le bilan de santé')).toBe(true);
     expect(looksLikeHealthIntent('Quelle heure est-il ?')).toBe(false);
     expect(looksLikeHealthIntent('est-ce que tout va bien pour le chantier')).toBe(false);
+  });
+});
+
+describe('modèle installé', () => {
+  it('qwen2.5 sans étiquette veut qwen2.5:latest, pas qwen2.5:7b', () => {
+    expect(modelInstalled('qwen2.5', ['qwen2.5:7b'])).toBe(false);
+    expect(modelInstalled('qwen2.5', ['qwen2.5:latest'])).toBe(true);
+    expect(modelInstalled('qwen2.5:7b', ['qwen2.5:7b'])).toBe(true);
   });
 });
 

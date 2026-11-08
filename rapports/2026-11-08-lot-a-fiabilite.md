@@ -14,7 +14,7 @@ Cahier lu sur `origin/claude/specs-feuille-de-route` : `docs/specs/regles-commun
 Sur cette machine (Linux, sans Windows, sans voix, sans Ollama, sans GPU) :
 
 - `npm run typecheck` : vert.
-- `npm test` : cœur 191 fichiers, 2256 tests ; bureau 135 fichiers passés, 4 ignorés, 685 tests passés, 6 ignorés. Aucun échec. Les tests qui simulent un SDK .NET absent sont verts. Aucun `ENOENT` réel de `dotnet` dans cette exécution : le SDK n’a pas été appelé.
+- `npm test` : cœur 191 fichiers, 2261 tests ; bureau 136 fichiers passés, 4 ignorés, 698 tests passés, 6 ignorés. Aucun échec. Les tests qui simulent un SDK .NET absent sont verts. Aucun `ENOENT` réel de `dotnet` dans cette exécution : le SDK n’a pas été appelé.
 - `npm run lint` : vert.
 - `parseSettings({})` ne gagne pas `backup`. Les `__golden__` n’ont pas été régénérés.
 - Aperçus Vite (scènes `health`, `backup`, `know`, accueil) : captures ci-dessous. Aucune donnée personnelle, aucun chemin de personne.
@@ -34,6 +34,25 @@ Sur cette machine (Linux, sans Windows, sans voix, sans Ollama, sans GPU) :
 - Choix de dossier (fenêtre Windows), zip sur un disque externe, restauration puis redémarrage de l’application.
 - Voix : la phrase courte du bilan n’a pas été dite.
 
+## Corrections de relecture
+
+Chaque correctif a un test qui échouait avant le changement et passe après.
+
+1. Restaurer avec `keep=1` ne supprime plus la sauvegarde restaurée : la copie de sécurité ne fait pas de rotation.
+2. Un échec garde `lastSuccessAt` et pose `failedAt`. Nouvel essai au plus tôt une heure après, sans repartir la période.
+3. Restauration : manifeste obligatoire, empreintes vérifiées avant toute écriture, extraction en `.tmp` puis renommage, écouteur `error` sur les flux. Sans manifeste, le bouton Restaurer est grisé et le processus principal refuse.
+4. Fichier de plus de 4 Gio ou plus de 65 535 entrées : « Ce fichier est trop gros pour la sauvegarde : … ». `node_modules`, `.git`, liens symboliques, dossier de destination et `.partiel` sont exclus.
+5. Sélecteur de dossier (dialogue du processus principal) pour les dossiers d’entraînement et de modèles. Case cochée sans dossier : message. Nombre gardé borné à 1–48.
+6. Le manifeste est calculé avant l’unique écriture du zip.
+7. « Tout exporter » écrit un chemin `ce-que-je-sais/`, conversations complètes, sans coupe à 500 caractères ni limite à 40. Une clé dans le texte est masquée, l’export n’est plus bloqué.
+8. `know:view` et `know:erase` refusent un identifiant hors des catégories. Un id inconnu n’efface plus les corrections.
+9. La sonde Google lit l’état déjà chargé, ou le fichier de jeton, sans `ensureGoogleLoaded` ni `init`.
+10. Une erreur de sonde est rouge, avec la cause. Ce n’est plus un délai dépassé.
+11. `qwen2.5` sans étiquette veut `qwen2.5:latest`, pas `qwen2.5:7b`. Un seul appel `/api/tags` par bilan.
+12. `blankSecrets`, `maskSecrets` et `apply` ne créent pas `roverToken` ni un bloc absent.
+13. Une clé en clair dans `settings.json` gagne sur celle du coffre.
+14. Coffre illisible : le fichier est gardé dans `coffre.illisible.bin`, et le bilan dit en rouge « Tes clés ne peuvent pas être relues : entre-les à nouveau dans les réglages ».
+
 ## Questions pour l’utilisateur
 
 1. Où sont le dossier `jarvis-data` et le dossier des fichiers `.gguf` ? Jarvis ne devine pas ces chemins : il faut les choisir dans Sauvegarde si tu veux les copier.
@@ -51,9 +70,9 @@ Testé en vrai (à la voix, sur le PC) : PAS FAIT
 ## RAPPORT DE VÉRIFICATION
 
 - Build : pas relancé en entier (`npm run build` du bureau télécharge les voix). `npm run typecheck` reconstruit le cœur et vérifie les types du bureau : vert.
-- Types : vert (`npm run typecheck`).
+- Types : vert (`npm run typecheck`), y compris après les corrections de relecture.
 - Style : vert (`npm run lint`).
-- Tests : vert (`npm test`), voir les chiffres plus haut. Les `__golden__` n’ont pas été régénérés. `chat-unchanged`, `ollama-unchanged`, orchestre, profil machine et profil Jarvis font partie de la suite verte.
+- Tests : vert (`npm test`), voir les chiffres plus haut, y compris les tests ajoutés pour les 14 corrections. Les `__golden__` n’ont pas été régénérés. `chat-unchanged`, `ollama-unchanged`, orchestre, profil machine et profil Jarvis font partie de la suite verte.
 - Secrets : les tests du coffre et de la sauvegarde vérifient qu’une clé d’exemple ne reste ni dans `settings.json` exporté, ni dans le zip, ni dans l’objet montré à la fenêtre. Aucun secret réel dans le dépôt.
 - Relecture : le bilan est en lecture seule ; restaurer et « tout effacer » passent par une carte ; effacer une catégorie passe par le bouton en deux temps ; un arrêt de chat n’est pas passé par ces cartes.
 

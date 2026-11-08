@@ -1,6 +1,7 @@
-import { mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
-import { basename, join, relative } from 'node:path';
+import { lstat, mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { basename, isAbsolute, join, relative, resolve } from 'node:path';
 import {
+  BACKUP_MAX_ENTRIES,
   BACKUP_NAME,
   backupFrequencyOf,
   backupKeepCount,
@@ -9,13 +10,14 @@ import {
   backupsToDelete,
   blankSecrets,
   buildManifest,
+  manifestIsValid,
   parseSettings,
   safeZipPath,
   shouldRunAutomaticBackup,
   type BackupManifest,
   type Settings,
 } from '@jarvis/core';
-import { publishPartial, readZipEntry, verifyZipEntries, writeVerifiedZip, type ArchivePiece } from './archive.js';
+import { measurePieces, publishPartial, readZipEntry, verifyZipEntries, writeVerifiedZip, type ArchivePiece } from './archive.js';
 
 const STATE_FILE = 'sauvegarde-etat.json';
 const SKIP = new Set(['spotify-token.json', 'google-token.bin', 'coffre.bin', STATE_FILE]);
@@ -23,7 +25,8 @@ const ROOT_FILES = ['personalization.json', 'knowledge-index.json', 'questionnai
 const ROOT_DIRS = ['conversations', 'developer', 'wake-learning'];
 
 export interface BackupState {
-  lastAt: number | null;
+  lastSuccessAt: number | null;
+  failedAt: number | null;
   ok: boolean;
   file: string;
   error: string;
@@ -35,13 +38,20 @@ export interface BackupRunResult {
   error: string;
 }
 
-const EMPTY_STATE: BackupState = { lastAt: null, ok: true, file: '', error: '' };
+const EMPTY_STATE: BackupState = { lastSuccessAt: null, failedAt: null, ok: true, file: '', error: '' };
+
+function isWithin(parent: string, child: string): boolean {
+  const base = resolve(parent);
+  const target = resolve(child);
+  const rel = relative(base, target);
+  return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-async function walk(dir: string, root: string, out: string[]): Promise<void> {
+async function walk(dir: string, root: string, out: string[], destDir: string): Promise<void> {
   let names: string[];
   try {
     names = await readdir(dir);
@@ -49,19 +59,21 @@ async function walk(dir: string, root: string, out: string[]): Promise<void> {
     return;
   }
   for (const name of names) {
+    if (name === 'node_modules' || name === '.git' || name.endsWith('.partiel')) continue;
     const abs = join(dir, name);
+    const info = await lstat(abs).catch(() => null);
+    if (!info || info.isSymbolicLink()) continue;
+    if (destDir && isWithin(destDir, abs)) continue;
     const rel = relative(root, abs).replace(/\\/g, '/');
     if (SKIP.has(rel) || SKIP.has(name)) continue;
-    const info = await stat(abs).catch(() => null);
-    if (!info) continue;
-    if (info.isDirectory()) await walk(abs, root, out);
+    if (info.isDirectory()) await walk(abs, root, out, destDir);
     else if (info.isFile()) out.push(abs);
   }
 }
 
-async function ggufFiles(dir: string): Promise<string[]> {
+async function ggufFiles(dir: string, destDir: string): Promise<string[]> {
   const out: string[] = [];
-  await walk(dir, dir, out);
+  await walk(dir, dir, out, destDir);
   return out.filter((file) => file.toLowerCase().endsWith('.gguf'));
 }
 
@@ -95,10 +107,15 @@ export class BackupService {
 
   async state(): Promise<BackupState> {
     try {
-      const raw = JSON.parse(await readFile(join(this.deps.userData(), STATE_FILE), 'utf8')) as Partial<BackupState>;
+      const raw = JSON.parse(await readFile(join(this.deps.userData(), STATE_FILE), 'utf8')) as Partial<BackupState> & {
+        lastAt?: number;
+      };
+      const legacyAt = typeof raw.lastAt === 'number' ? raw.lastAt : null;
+      const ok = raw.ok !== false;
       return {
-        lastAt: typeof raw.lastAt === 'number' ? raw.lastAt : null,
-        ok: raw.ok !== false,
+        lastSuccessAt: typeof raw.lastSuccessAt === 'number' ? raw.lastSuccessAt : ok ? legacyAt : null,
+        failedAt: typeof raw.failedAt === 'number' ? raw.failedAt : ok ? null : legacyAt,
+        ok,
         file: typeof raw.file === 'string' ? raw.file : '',
         error: typeof raw.error === 'string' ? raw.error : '',
       };
@@ -113,7 +130,8 @@ export class BackupService {
     const state = await this.state();
     const due = shouldRunAutomaticBackup({
       now: (this.deps.now?.() ?? new Date()).getTime(),
-      lastAt: state.ok ? state.lastAt : state.lastAt,
+      lastSuccessAt: state.lastSuccessAt,
+      failedAt: state.failedAt,
       frequency: backupFrequencyOf(settings.backup?.frequency),
       idle: this.deps.isIdle(),
       directoryReady: Boolean(directory),
@@ -122,7 +140,7 @@ export class BackupService {
     return this.backupNow();
   }
 
-  async backupNow(): Promise<BackupRunResult> {
+  async backupNow(options?: { rotate?: boolean }): Promise<BackupRunResult> {
     if (this.running) return { ok: false, file: '', error: 'Une sauvegarde est déjà en cours.' };
     const settings = this.deps.getSettings();
     const directory = settings.backup?.directory?.trim() ?? '';
@@ -132,33 +150,35 @@ export class BackupService {
     const name = backupZipName(at);
     const partial = join(directory, backupPartialName(name));
     const finalPath = join(directory, name);
+    const previous = await this.state();
     try {
       await mkdir(directory, { recursive: true });
-      const pieces = await this.pieces(settings);
-      const measured = await writeVerifiedZip(partial, pieces, at);
-      const manifest = buildManifest(measured.entries, this.deps.version(), at);
+      const pieces = await this.pieces(settings, directory);
+      if (pieces.length + 1 > BACKUP_MAX_ENTRIES) {
+        throw new Error('Ce fichier est trop gros pour la sauvegarde : trop de fichiers.');
+      }
+      const manifest = buildManifest(await measurePieces(pieces), this.deps.version(), at);
       const manifestBytes = new TextEncoder().encode(JSON.stringify(manifest, null, 2));
-      await rm(partial, { force: true });
-      const withManifest = await writeVerifiedZip(partial, [...pieces, { zipPath: 'manifeste.json', data: manifestBytes }], at);
+      const written = await writeVerifiedZip(partial, [...pieces, { zipPath: 'manifeste.json', data: manifestBytes }], at);
       const problems = await verifyZipEntries(
         partial,
-        withManifest.entries.filter((entry) => entry.path !== 'manifeste.json'),
+        written.entries.filter((entry) => entry.path !== 'manifeste.json'),
       );
-      const manifestProblems = verifyManifestEntries(manifest, withManifest.entries.filter((entry) => entry.path !== 'manifeste.json'));
+      const manifestProblems = verifyManifestEntries(manifest, written.entries.filter((entry) => entry.path !== 'manifeste.json'));
       if (problems.length || manifestProblems.length) {
         await rm(partial, { force: true });
         const error = [...problems, ...manifestProblems][0] ?? 'empreinte fausse';
-        await this.writeState({ lastAt: at.getTime(), ok: false, file: '', error });
+        await this.writeState({ ...previous, failedAt: at.getTime(), ok: false, file: '', error });
         return { ok: false, file: '', error };
       }
       await publishPartial(partial, finalPath);
-      await this.rotate(directory, backupKeepCount(settings.backup?.keep));
-      await this.writeState({ lastAt: at.getTime(), ok: true, file: name, error: '' });
+      if (options?.rotate !== false) await this.rotate(directory, backupKeepCount(settings.backup?.keep));
+      await this.writeState({ lastSuccessAt: at.getTime(), failedAt: null, ok: true, file: name, error: '' });
       return { ok: true, file: name, error: '' };
     } catch (error) {
       await rm(partial, { force: true }).catch(() => undefined);
       const message = error instanceof Error ? error.message : String(error);
-      await this.writeState({ lastAt: at.getTime(), ok: false, file: '', error: message });
+      await this.writeState({ ...previous, failedAt: at.getTime(), ok: false, file: '', error: message });
       return { ok: false, file: '', error: message };
     } finally {
       this.running = false;
@@ -192,14 +212,18 @@ export class BackupService {
     return out;
   }
 
-  /** À appeler seulement après une carte de confirmation. */
+  /** À appeler seulement après une carte de confirmation. Vérifie le zip avant toute écriture. */
   async restore(name: string): Promise<BackupRunResult> {
     if (!BACKUP_NAME.test(basename(name))) return { ok: false, file: '', error: 'Ce fichier n’est pas une sauvegarde Jarvis.' };
     const directory = this.deps.getSettings().backup?.directory?.trim() ?? '';
     if (!directory) return { ok: false, file: '', error: 'Choisis d’abord un dossier de sauvegarde.' };
-    const safety = await this.backupNow();
-    if (!safety.ok) return { ok: false, file: '', error: `Copie de sécurité impossible : ${safety.error}` };
     const zipPath = join(directory, basename(name));
+    const manifest = await readManifest(zipPath);
+    if (!manifestIsValid(manifest)) return { ok: false, file: '', error: 'Cette sauvegarde ne peut pas être relue.' };
+    const problems = await verifyZipEntries(zipPath, manifest.entries);
+    if (problems.length) return { ok: false, file: '', error: problems[0] ?? 'empreinte fausse' };
+    const safety = await this.backupNow({ rotate: false });
+    if (!safety.ok) return { ok: false, file: '', error: `Copie de sécurité impossible : ${safety.error}` };
     try {
       const settings = this.deps.getSettings();
       await extractZip(zipPath, {
@@ -214,7 +238,7 @@ export class BackupService {
     return { ok: true, file: basename(name), error: '' };
   }
 
-  private async pieces(settings: Settings): Promise<ArchivePiece[]> {
+  private async pieces(settings: Settings, destDir: string): Promise<ArchivePiece[]> {
     const root = this.deps.userData();
     const pieces: ArchivePiece[] = [];
     const settingsRaw = await readFile(join(root, 'settings.json'), 'utf8').catch(() => '');
@@ -233,7 +257,7 @@ export class BackupService {
     }
     for (const dir of ROOT_DIRS) {
       const files: string[] = [];
-      await walk(join(root, dir), root, files);
+      await walk(join(root, dir), root, files, destDir);
       for (const abs of files) {
         const zipPath = relative(root, abs).replace(/\\/g, '/');
         if (safeZipPath(zipPath)) pieces.push({ zipPath, source: abs });
@@ -242,7 +266,7 @@ export class BackupService {
     if (settings.backup?.includeTrainingData && settings.backup.trainingDir?.trim()) {
       const files: string[] = [];
       const base = settings.backup.trainingDir.trim();
-      await walk(base, base, files);
+      await walk(base, base, files, destDir);
       for (const abs of files) {
         const zipPath = `jarvis-data/${relative(base, abs).replace(/\\/g, '/')}`;
         if (safeZipPath(zipPath)) pieces.push({ zipPath, source: abs });
@@ -250,7 +274,7 @@ export class BackupService {
     }
     if (settings.backup?.includeModels && settings.backup.modelsDir?.trim()) {
       const base = settings.backup.modelsDir.trim();
-      for (const abs of await ggufFiles(base)) {
+      for (const abs of await ggufFiles(base, destDir)) {
         const zipPath = `modeles/${basename(abs)}`;
         if (safeZipPath(zipPath)) pieces.push({ zipPath, source: abs });
       }
@@ -285,11 +309,22 @@ function verifyManifestEntries(manifest: BackupManifest, entries: { path: string
   return problems;
 }
 
+async function readManifest(zipPath: string): Promise<BackupManifest | null> {
+  const raw = await readZipEntry(zipPath, 'manifeste.json');
+  if (!raw) return null;
+  try {
+    const parsed: unknown = JSON.parse(new TextDecoder().decode(raw));
+    return manifestIsValid(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
 async function extractZip(
   zipPath: string,
   dest: { userData: string; trainingDir: string | null; modelsDir: string | null },
 ): Promise<void> {
-  const { open, mkdir: makeDir } = await import('node:fs/promises');
+  const { open, mkdir: makeDir, rename, rm: remove } = await import('node:fs/promises');
   const { createWriteStream } = await import('node:fs');
   const file = await open(zipPath, 'r');
   try {
@@ -323,7 +358,11 @@ async function extractZip(
         continue;
       }
       await makeDir(join(target, '..'), { recursive: true });
-      const out = createWriteStream(target, { mode: 0o600 });
+      const tmp = `${target}.tmp`;
+      const out = createWriteStream(tmp, { mode: 0o600 });
+      const failed = new Promise<never>((_, reject) => {
+        out.on('error', reject);
+      });
       let left = size;
       try {
         while (left > 0) {
@@ -331,11 +370,21 @@ async function extractZip(
           const got = await file.read(chunk, 0, chunk.length, null);
           if (!got.bytesRead) break;
           const slice = chunk.subarray(0, got.bytesRead);
-          await new Promise<void>((resolve, reject) => out.write(slice, (error) => (error ? reject(error) : resolve())));
+          await Promise.race([
+            new Promise<void>((resolve, reject) => out.write(slice, (error) => (error ? reject(error) : resolve()))),
+            failed,
+          ]);
           left -= got.bytesRead;
         }
-      } finally {
-        await new Promise<void>((resolve) => out.end(() => resolve()));
+        await Promise.race([
+          new Promise<void>((resolve, reject) => out.end((error: Error | null | undefined) => (error ? reject(error) : resolve()))),
+          failed,
+        ]);
+        await rename(tmp, target);
+      } catch (error) {
+        out.destroy();
+        await remove(tmp, { force: true });
+        throw error;
       }
     }
   } finally {

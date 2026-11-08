@@ -1,8 +1,9 @@
 import { createHash } from 'node:crypto';
 import { createReadStream, createWriteStream } from 'node:fs';
-import { open, rename, rm, stat } from 'node:fs/promises';
+import { lstat, open, rename, rm, stat } from 'node:fs/promises';
 import { pipeline } from 'node:stream/promises';
 import {
+  backupTooBigMessage,
   crc32,
   crc32Finish,
   crc32Update,
@@ -12,6 +13,12 @@ import {
   type BackupEntry,
   type ZipCentralEntry,
 } from '@jarvis/core';
+
+/** Compteur de tests : une sauvegarde n'écrit le zip qu'une fois. */
+export let backupZipWrites = 0;
+export function resetBackupZipWrites(): void {
+  backupZipWrites = 0;
+}
 
 export interface ArchivePiece {
   zipPath: string;
@@ -32,6 +39,8 @@ async function measure(piece: ArchivePiece): Promise<Measured> {
   const zipPath = safeZipPath(piece.zipPath);
   if (!zipPath) throw new Error(`Chemin refusé : ${piece.zipPath}`);
   if (piece.data) {
+    const tooBig = backupTooBigMessage(piece.data.byteLength, zipPath);
+    if (tooBig) throw new Error(tooBig);
     return {
       zipPath,
       data: piece.data,
@@ -41,6 +50,9 @@ async function measure(piece: ArchivePiece): Promise<Measured> {
     };
   }
   if (!piece.source) throw new Error(`Pièce vide : ${piece.zipPath}`);
+  const info = await lstat(piece.source);
+  const tooBig = backupTooBigMessage(info.size, zipPath);
+  if (tooBig) throw new Error(tooBig);
   const hash = createHash('sha256');
   let crc = 0xffffffff;
   let bytes = 0;
@@ -65,35 +77,49 @@ function writeChunk(stream: ReturnType<typeof createWriteStream>, chunk: Uint8Ar
   });
 }
 
+export async function measurePieces(pieces: readonly ArchivePiece[]): Promise<BackupEntry[]> {
+  const measured = [];
+  for (const piece of pieces) {
+    const item = await measure(piece);
+    measured.push({ path: item.zipPath, bytes: item.bytes, sha256: item.sha256 });
+  }
+  return measured;
+}
+
 /** Écrit un zip méthode 0, puis le relit pour comparer les empreintes. */
 export async function writeVerifiedZip(
   partialPath: string,
   pieces: readonly ArchivePiece[],
   at = new Date(),
 ): Promise<{ entries: BackupEntry[] }> {
+  backupZipWrites += 1;
   const measured = [];
   for (const piece of pieces) measured.push(await measure(piece));
   const stream = createWriteStream(partialPath, { flags: 'w', mode: 0o600 });
+  const failed = new Promise<never>((_, reject) => {
+    stream.on('error', reject);
+  });
   let offset = 0;
   const central: ZipCentralEntry[] = [];
   try {
     for (const piece of measured) {
       const header = zipLocalHeader(piece.zipPath, piece.crc, piece.bytes, at);
-      await writeChunk(stream, header);
+      await Promise.race([writeChunk(stream, header), failed]);
       const start = offset;
       offset += header.byteLength;
       if (piece.data) {
-        await writeChunk(stream, piece.data);
+        await Promise.race([writeChunk(stream, piece.data), failed]);
         offset += piece.data.byteLength;
       } else if (piece.source) {
         const file = createReadStream(piece.source);
-        await pipeline(file, stream, { end: false });
+        file.on('error', () => undefined);
+        await Promise.race([pipeline(file, stream, { end: false }), failed]);
         offset += piece.bytes;
       }
       central.push({ path: piece.zipPath, crc: piece.crc, size: piece.bytes, offset: start });
     }
     const directory = zipCentralDirectory(central, offset, at);
-    await writeChunk(stream, directory);
+    await Promise.race([writeChunk(stream, directory), failed]);
     await new Promise<void>((resolve, reject) => stream.end((error: NodeJS.ErrnoException | null | undefined) => (error ? reject(error) : resolve())));
   } catch (error) {
     stream.destroy();

@@ -11,6 +11,10 @@ export const KNOW_CATEGORY_IDS = [
 
 export type KnowCategoryId = (typeof KNOW_CATEGORY_IDS)[number];
 
+export function isKnowCategoryId(value: string): value is KnowCategoryId {
+  return (KNOW_CATEGORY_IDS as readonly string[]).includes(value);
+}
+
 export interface KnowCategory {
   id: KnowCategoryId;
   label: string;

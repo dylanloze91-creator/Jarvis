@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import {
   KNOW_CATEGORY_IDS,
   KNOW_LABELS,
+  isKnowCategoryId,
   SORTER_PHRASE_FILES,
   countKnowledge,
   countPersonalization,
@@ -10,7 +11,6 @@ import {
   eraseTouchesSettingsOrProjects,
   redactSecrets,
   sorterPhraseCount,
-  unzipStore,
   zipStore,
   type KnowCategoryId,
   type KnowChunk,
@@ -32,6 +32,21 @@ export interface KnowSummaryItem {
 }
 
 const encoder = new TextEncoder();
+
+function formatConversation(raw: string): string {
+  try {
+    const parsed = JSON.parse(raw) as { messages?: Array<{ role?: string; content?: string }> };
+    if (Array.isArray(parsed.messages)) {
+      return parsed.messages
+        .filter((message) => message.role === 'user' || message.role === 'assistant')
+        .map((message) => `${message.role === 'user' ? 'Toi' : 'Jarvis'} : ${redactSecrets(String(message.content ?? ''))}`)
+        .join('\n');
+    }
+  } catch {
+    // texte déjà plat
+  }
+  return redactSecrets(raw);
+}
 
 function textOf(value: string): string {
   return redactSecrets(value).slice(0, 500);
@@ -99,7 +114,12 @@ export class PrivacyService {
     }));
   }
 
-  async view(id: KnowCategoryId): Promise<KnowLine[]> {
+  async view(id: string): Promise<KnowLine[]> {
+    if (!isKnowCategoryId(id)) throw new Error('Catégorie inconnue.');
+    return this.viewCategory(id);
+  }
+
+  private async viewCategory(id: KnowCategoryId): Promise<KnowLine[]> {
     if (id === 'personalization') {
       const profile = await this.deps.personalization.get();
       const lines: KnowLine[] = [];
@@ -144,11 +164,11 @@ export class PrivacyService {
     const summary = await this.summary();
     const files: { path: string; data: Uint8Array }[] = [
       {
-        path: 'liremoi.txt',
+        path: 'ce-que-je-sais/liremoi.txt',
         data: encoder.encode(
           [
             'Ce que Jarvis sait de moi.',
-            'Aucun secret (clés, jetons) n’est dans ce fichier.',
+            'Les textes qui ressemblent à une clé sont masqués.',
             ...summary.filter((item) => item.included).map((item) => `${item.label} : ${item.count}`),
           ].join('\n'),
         ),
@@ -156,22 +176,50 @@ export class PrivacyService {
     ];
     for (const item of summary) {
       if (!item.included) continue;
-      const lines = await this.view(item.id);
       files.push({
-        path: `${item.id}.txt`,
-        data: encoder.encode(lines.map((line) => line.text).join('\n')),
+        path: `ce-que-je-sais/${item.id}.txt`,
+        data: encoder.encode(await this.exportCategory(item.id)),
       });
     }
-    const packed = zipStore(files);
-    const checked = unzipStore(packed);
-    const blob = checked.map((file) => new TextDecoder().decode(file.data)).join('\n');
-    if (/sk-[A-Za-z0-9_-]{8,}|Bearer\s+[A-Za-z0-9]/.test(blob)) {
-      throw new Error('Export arrêté : un secret a été détecté.');
-    }
-    return packed;
+    return zipStore(files);
   }
 
-  async erase(id: KnowCategoryId, conversationId?: string): Promise<void> {
+  private async exportCategory(id: KnowCategoryId): Promise<string> {
+    if (id === 'conversations') {
+      const list = await this.deps.conversations.list();
+      const blocks: string[] = [];
+      for (const item of list) {
+        const raw = await this.deps.conversations.read(item.id);
+        blocks.push(`# ${item.title}\n${formatConversation(raw)}`);
+      }
+      return blocks.join('\n\n');
+    }
+    if (id === 'personalization') {
+      const profile = await this.deps.personalization.get();
+      const lines: string[] = [];
+      for (const [key, value] of Object.entries(profile.user)) {
+        if (value.trim()) lines.push(`${key} : ${redactSecrets(value)}`);
+      }
+      for (const rule of profile.rules) lines.push(redactSecrets(rule));
+      return lines.join('\n');
+    }
+    if (id === 'questionnaire') return redactSecrets(JSON.stringify(await this.deps.questionnaire.read()));
+    if (id === 'wake') return `${await this.deps.wake.count()} extraits`;
+    if (id === 'sorter') {
+      const lines = await this.viewCategory('sorter');
+      return lines.map((line) => line.text).join('\n');
+    }
+    const chunks = await this.deps.knowledge.listChunks();
+    const wanted = chunks.filter((chunk) => {
+      if (id === 'learning') return chunk.learning?.type === 'correction' || chunk.learning?.type === 'preference';
+      if (id === 'memories') return chunk.kind === 'memory' && !chunk.learning;
+      return chunk.kind === 'file';
+    });
+    return wanted.map((chunk) => redactSecrets(chunk.learning?.content || chunk.title || chunk.text || chunk.id)).join('\n');
+  }
+
+  async erase(id: string, conversationId?: string): Promise<void> {
+    if (!isKnowCategoryId(id)) throw new Error('Catégorie inconnue.');
     if (eraseTouchesSettingsOrProjects(id)) return;
     if (id === 'personalization') {
       await this.deps.personalization.reset();

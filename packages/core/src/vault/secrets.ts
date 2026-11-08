@@ -56,19 +56,22 @@ function readPath(source: unknown, path: string): unknown {
   return current;
 }
 
-function writePath(source: Record<string, unknown>, path: string, value: string): void {
+function hasPath(source: unknown, path: string): boolean {
+  let current: unknown = source;
+  for (const part of path.split('.')) {
+    if (!current || typeof current !== 'object' || Array.isArray(current)) return false;
+    if (!Object.prototype.hasOwnProperty.call(current, part)) return false;
+    current = (current as Record<string, unknown>)[part];
+  }
+  return true;
+}
+
+/** Ne crée jamais un champ ou un bloc qui n'existe pas déjà. */
+function setExisting(source: Record<string, unknown>, path: string, value: string): void {
+  if (!hasPath(source, path)) return;
   const parts = path.split('.');
   let current: Record<string, unknown> = source;
-  for (const part of parts.slice(0, -1)) {
-    const next = current[part];
-    if (!next || typeof next !== 'object' || Array.isArray(next)) {
-      const created: Record<string, unknown> = {};
-      current[part] = created;
-      current = created;
-    } else {
-      current = next as Record<string, unknown>;
-    }
-  }
+  for (const part of parts.slice(0, -1)) current = current[part] as Record<string, unknown>;
   const leaf = parts[parts.length - 1];
   if (leaf) current[leaf] = value;
 }
@@ -80,7 +83,7 @@ export function readSecret(settings: unknown, path: string): string {
 
 export function blankSecrets(settings: Settings): Settings {
   const copy = structuredClone(settings) as unknown as Record<string, unknown>;
-  for (const path of SECRET_SETTING_PATHS) writePath(copy, path, '');
+  for (const path of SECRET_SETTING_PATHS) setExisting(copy, path, '');
   return copy as unknown as Settings;
 }
 
@@ -97,8 +100,14 @@ export function secretsFromSettings(settings: Settings): Record<string, string> 
 export function maskSecrets(settings: Settings, secrets: Record<string, string>): Settings {
   const copy = structuredClone(settings) as unknown as Record<string, unknown>;
   for (const path of SECRET_SETTING_PATHS) {
-    writePath(copy, path, secrets[path] ? SECRET_MARKER : '');
+    setExisting(copy, path, secrets[path] ? SECRET_MARKER : '');
   }
+  return copy as unknown as Settings;
+}
+
+export function fillExistingSecrets(settings: Settings, secrets: Record<string, string>): Settings {
+  const copy = structuredClone(settings) as unknown as Record<string, unknown>;
+  for (const [path, value] of Object.entries(secrets)) setExisting(copy, path, value);
   return copy as unknown as Settings;
 }
 
@@ -134,9 +143,8 @@ export function applySecretEdit(
     if (!incoming.trim()) delete secrets[path];
     else secrets[path] = incoming.trim();
   }
-  const withSecrets = structuredClone(blankSecrets(merged)) as unknown as Record<string, unknown>;
-  for (const [path, value] of Object.entries(secrets)) writePath(withSecrets, path, value);
-  return { settings: withSecrets as unknown as Settings, disk: blankSecrets(withSecrets as unknown as Settings), secrets };
+  const withSecrets = fillExistingSecrets(blankSecrets(merged), secrets);
+  return { settings: withSecrets, disk: blankSecrets(withSecrets), secrets };
 }
 
 function pathInPatch(patch: Record<string, unknown>, path: string): boolean {

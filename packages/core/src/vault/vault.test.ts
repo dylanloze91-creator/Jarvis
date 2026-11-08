@@ -50,6 +50,16 @@ describe('coffre des clés', () => {
     expect(JSON.stringify(blankSecrets(current))).not.toContain('sk-en-clair');
   });
 
+  it('ne crée pas roverToken ni un bloc absent', () => {
+    const plain = parseSettings({});
+    expect(plain).not.toHaveProperty('roverToken');
+    expect(blankSecrets(plain)).not.toHaveProperty('roverToken');
+    expect(maskSecrets(plain, { roverToken: 'jeton-robot' })).not.toHaveProperty('roverToken');
+    const edited = applySecretEdit(plain, {}, { roverToken: 'jeton-robot' }, true);
+    expect(edited.settings).not.toHaveProperty('roverToken');
+    expect(edited.disk).not.toHaveProperty('roverToken');
+  });
+
   it('sans chiffrement, le comportement d’avant est gardé', () => {
     const edited = applySecretEdit(parseSettings({}), { apiKey: 'sk-clair-12345678', provider: 'openai' }, {}, false);
     expect(readSecret(edited.disk, 'apiKey')).toBe('sk-clair-12345678');

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   BACKUP_KEEP_DEFAULT,
+  backupKeepCount,
+  backupTooBigMessage,
   backupZipName,
   backupsToDelete,
   buildManifest,
@@ -43,17 +45,53 @@ describe('sauvegarde', () => {
   it('n’écrit une sauvegarde automatique que si le PC est inactif et la période écoulée', () => {
     const day = 24 * 60 * 60 * 1000;
     expect(
-      shouldRunAutomaticBackup({ now: day, lastAt: null, frequency: 'daily', idle: true, directoryReady: true }),
+      shouldRunAutomaticBackup({ now: day, lastSuccessAt: null, frequency: 'daily', idle: true, directoryReady: true }),
     ).toBe(true);
     expect(
-      shouldRunAutomaticBackup({ now: day, lastAt: 1, frequency: 'daily', idle: false, directoryReady: true }),
+      shouldRunAutomaticBackup({ now: day, lastSuccessAt: 1, frequency: 'daily', idle: false, directoryReady: true }),
     ).toBe(false);
     expect(
-      shouldRunAutomaticBackup({ now: day, lastAt: day, frequency: 'daily', idle: true, directoryReady: true }),
+      shouldRunAutomaticBackup({ now: day, lastSuccessAt: day, frequency: 'daily', idle: true, directoryReady: true }),
     ).toBe(false);
     expect(
-      shouldRunAutomaticBackup({ now: day * 2, lastAt: day, frequency: 'weekly', idle: true, directoryReady: true }),
+      shouldRunAutomaticBackup({ now: day * 2, lastSuccessAt: day, frequency: 'weekly', idle: true, directoryReady: true }),
     ).toBe(false);
+  });
+
+  it('un échec attend une heure et ne repousse pas la période réussie', () => {
+    const hour = 60 * 60 * 1000;
+    const day = 24 * hour;
+    expect(
+      shouldRunAutomaticBackup({
+        now: day * 3,
+        lastSuccessAt: day,
+        failedAt: day * 3 - 2 * hour,
+        frequency: 'daily',
+        idle: true,
+        directoryReady: true,
+      }),
+    ).toBe(true);
+    expect(
+      shouldRunAutomaticBackup({
+        now: day * 3,
+        lastSuccessAt: day,
+        failedAt: day * 3 - 30 * 60 * 1000,
+        frequency: 'daily',
+        idle: true,
+        directoryReady: true,
+      }),
+    ).toBe(false);
+  });
+
+  it('borne le nombre gardé entre 1 et 48', () => {
+    expect(backupKeepCount(99)).toBe(48);
+    expect(backupKeepCount(0)).toBe(BACKUP_KEEP_DEFAULT);
+    expect(backupKeepCount(1)).toBe(1);
+  });
+
+  it('refuse un fichier de plus de 4 Go', () => {
+    expect(backupTooBigMessage(0x1_0000_0000, 'gros.bin')).toMatch(/trop gros/);
+    expect(backupTooBigMessage(10, 'petit.txt')).toBeNull();
   });
 
   it('relit un zip et refuse un chemin qui remonte', () => {

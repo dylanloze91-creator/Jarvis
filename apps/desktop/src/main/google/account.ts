@@ -76,6 +76,12 @@ export class GoogleAccount {
     return this.record !== null;
   }
 
+  /** État déjà en mémoire. `null` si `init` n'a pas été appelé : le bilan ne le déclenche pas. */
+  healthView(): { connected: boolean; needsReconsent: boolean } | null {
+    if (!this.loading) return null;
+    return { connected: this.record !== null, needsReconsent: this.record?.needsReconsent === true };
+  }
+
   effectiveMode(): GoogleAccessMode | null {
     return this.effectiveModeFor(this.record, this.deps.getConfig().access);
   }
