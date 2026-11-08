@@ -356,6 +356,25 @@ export const settingsSchema = z.object({
       chosen: z.string().max(500),
     })
     .optional(),
+  /**
+   * Sauvegarde automatique. Absente : rien n'est copié, comme avant.
+   * Pas de défaut Zod : `parseSettings({})` ne gagne aucune clé.
+   * Le nombre gardé, s'il est absent, vaut 4 dans le code (`BACKUP_KEEP_DEFAULT`).
+   */
+  backup: z
+    .object({
+      /** Dossier choisi par l'utilisateur (disque externe ou dossier synchronisé). */
+      directory: z.string().max(500).optional(),
+      frequency: z.enum(['daily', 'weekly']).optional(),
+      keep: z.number().int().min(1).max(48).optional(),
+      includeTrainingData: z.boolean().optional(),
+      includeModels: z.boolean().optional(),
+      /** Dossier jarvis-data, seulement si l'utilisateur l'a choisi. */
+      trainingDir: z.string().max(500).optional(),
+      /** Dossier des fichiers .gguf, seulement si l'utilisateur l'a choisi. */
+      modelsDir: z.string().max(500).optional(),
+    })
+    .optional(),
 });
 
 export type Settings = z.infer<typeof settingsSchema>;
