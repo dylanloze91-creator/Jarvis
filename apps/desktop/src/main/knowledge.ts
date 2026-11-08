@@ -443,6 +443,20 @@ export class KnowledgeStore {
     await rm(this.memoryRoot(), { recursive: true, force: true }).catch(() => undefined);
   }
 
+  async listChunks(): Promise<KnowledgeChunk[]> {
+    return (await this.load()).chunks.map((chunk) => ({ ...chunk }));
+  }
+
+  async replaceChunks(chunks: KnowledgeChunk[]): Promise<void> {
+    await this.mutate((index) => {
+      index.chunks = chunks;
+    });
+  }
+
+  async clearMemoryFiles(): Promise<void> {
+    await rm(this.memoryRoot(), { recursive: true, force: true }).catch(() => undefined);
+  }
+
   async stats(): Promise<KnowledgeStats> {
     const index = await this.load();
     return {

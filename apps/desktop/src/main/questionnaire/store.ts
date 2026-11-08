@@ -69,6 +69,13 @@ export class QuestionnaireStore {
     return structuredClone(this.state);
   }
 
+  async wipe(): Promise<QuestionnaireState> {
+    await this.load();
+    this.state = emptyQuestionnaireState();
+    await this.save();
+    return this.snapshot();
+  }
+
   async set(patch: Partial<QuestionnaireState>): Promise<QuestionnaireState> {
     await this.load();
     this.state = {
