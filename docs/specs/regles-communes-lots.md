@@ -1,0 +1,13 @@
+# Règles communes aux lots A, B, C et D (feuille de route de novembre 2026)
+
+Rédigé par Claude pour Cursor. À relire au début de chaque lot.
+
+1. **Lire `CLAUDE.md` en entier** avant de commencer, et `AGENTS-COORDINATION.md`.
+2. **Une branche par lot** depuis `origin/main` (`cursor/lot-a-fiabilite`, `cursor/lot-b-quotidien`, `cursor/lot-c-chantier`, `cursor/lot-d-apprendre`), inscrite dans la coordination. **Jamais de fusion dans `main`, jamais de publication** : Claude relit, puis Claude Code fusionne et publie après les tests sur Windows (décision du conseil du 8 novembre 2026).
+3. **Le chat d'avant ne change pas** : `chat-unchanged`, `ollama-unchanged`, `orchestra-session`, `machineProfile`, `profiles/jarvis` verts **sans jamais régénérer** les `__golden__`. Tout nouveau réglage est **facultatif, sans défaut Zod** : `parseSettings({})` ne gagne aucune clé. Tout nouvel outil n'apparaît au catalogue que si son service est réglé (`isAvailable`), pour que `catalogue-modele.json` reste identique sans réglage. Une nouvelle équipe du chef d'orchestre n'existe que si l'un de ses outils est disponible (`availableTeams`).
+4. **Chaque nouveau réglage a sa place** dans la carte des réglages 5.0.70 (`SETTINGS_FIELD_MAP`, test `settingsMap.test.ts`) et un libellé simple ; les noms techniques vont dans « Détails » ou « Réglages avancés ».
+5. **Sécurité** : le Tool Manager reste le seul passage vers le système ; toute action qui modifie, imprime, déplace ou supprime passe par une carte de confirmation ; un arrêt (stop, pause, annuler) n'attend jamais un clic ; une enceinte refuse d'office les cartes (règle 5.0.64). Réseau local seulement pour les appareils de la maison (même contrôle que `checkRoverBaseUrl`). Aucun secret dans un message, un journal ou un rapport (`redactSecrets`).
+6. **Sans modèle quand une règle suffit** : calculs, heures, routines, imprimante, briefing. Un modèle ne doit jamais inventer une valeur (prix, cote, commande).
+7. **Écriture** : tutoiement, phrases courtes, français simple. L'utilisateur est charpentier couvreur, pas développeur.
+8. **Données personnelles** : rien de personnel dans le dépôt (dépôt public). Aucun texte écrit par Claude ou Cursor dans des données d'entraînement.
+9. **Livraison** : commits petits et nommés ; avant de pousser `npm run typecheck`, `npm test`, `npm run lint` (seuls les tests dotnet attendus sans SDK) ; scènes d'aperçu et captures pour chaque écran nouveau ; rapport `rapports/2026-11-XX-lot-<x>.md` (fait, testé, **non testé sur Windows**, questions pour l'utilisateur) puis le RAPPORT DE VÉRIFICATION. Dans `CLAUDE.md`, ajoute seulement ta section et tes lignes dans « Ce qu'il ne faut pas casser ».
