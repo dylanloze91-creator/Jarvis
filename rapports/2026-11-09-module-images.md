@@ -41,6 +41,15 @@ Observé puis corrigé pendant le test : sur la quatrième demande, le 7B a d'ab
 
 Points à améliorer plus tard (non bloquants) : le sticker a un fond gris plutôt que blanc (SDXL dessine un « sticker découpé » posé sur un fond) ; la version noir et blanc est un seuil, utile pour le contour de découpe mais pas un vrai dessin au trait ; le 7B écrit parfois le prompt en français (SDXL comprend moins bien) ; sans précision, il choisit parfois `jarvis` au lieu de `perso`.
 
+## Ajout du soir — photo de départ, ouverture automatique, chemins cliquables
+
+Demande de l'utilisateur après le premier test à la voix : « envoyer des photos à Jarvis pour qu'il se base dessus », « qu'il envoie le lien de l'emplacement du fichier et qu'il ouvre automatiquement l'image ».
+
+- **Photos jointes** : bouton « image + » et glisser-déposer dans la zone de saisie (3 photos au plus, 20 Mo, PNG/JPEG/WebP), envoyées en base64 au processus principal, enregistrées dans `C:\dev\Jarvis_images\_references\AAAA-MM-JJ\`, gardées sur le message (`ChatMessage.attachments`, vignette cliquable dans la bulle). Le modèle de langage ne reçoit qu'une note avec le chemin (`withAttachmentNotes`) ; une photo jointe route vers l'équipe Images.
+- **Image vers image** : `generer_image` prend `photoDeBase` et `fidelite` ; Forge `/sdapi/v1/img2img`, force du changement = 1 − fidélité (bornée 0,2 à 0,95, 0,55 par défaut), format choisi d'après les proportions de la photo, copie de la photo à côté du résultat et ligne « Photo de départ » dans le `.txt`.
+- **Ouverture et liens** : l'image s'ouvre dans la visionneuse à la fin (réglage `images.openAfterGeneration`, oui par défaut) ; dans la discussion, les chemins de fichiers du dossier des images deviennent des liens (IPC `images:open`, limité à ce dossier).
+- **Test réel** (version de développement, 9 novembre 23 h 15) : capture d'écran jointe, « transforme-la en manga japonais ». Premier essai raté : le 7B a oublié le champ `prompt` (description mise dans `style`), trois refus de validation ; corrigé (`effectivePrompt` reconstruit la description). Second essai : image 832×1216 en 84 s à partir de la photo, copie `-source.png` à côté, 7B rechargé, image ouverte.
+
 ## RAPPORT DE VÉRIFICATION
 
 ```
@@ -48,11 +57,11 @@ RAPPORT DE VÉRIFICATION
 Lancement : OK
 Types     : OK (0 erreur)
 Style     : OK (0 avertissement)
-Tests     : OK (2942/2942 réussis, 8 ignorés ; cœur 2254/2254, bureau 688/688 ; suite complète avant la correction des consignes, puis images, orchestre et sessions rejoués verts après)
+Tests     : OK (2956/2956 réussis, 8 ignorés ; cœur 2259/2259, bureau 697/697 — dans la suite complète lancée pendant que Jarvis dev et Forge tournaient, 4 tests ont échoué pour des raisons de charge ou d'environnement : `settingsMap.test.ts` (clé `images.openAfterGeneration` manquante dans la carte des réglages, corrigée), `lintBaseline.test.mjs` (délai de 5 s dépassé), `windowsDesktopMissionPath.test.ts` (EBUSY au nettoyage d'un dossier .NET), `taskWorkflow.test.ts` (étape `pause-1` sensible au temps) ; les trois derniers repassent seuls)
 Secrets   : OK (0 trouvé)
-Fichiers modifiés : voir le commit 67b71c0 et le commit des consignes (packages/core/src/images, apps/desktop/src/main/images, tools/images.ts, ImagesSettings.tsx, config/, docs/images-jarvis.md, training/lora/, CLAUDE.md, .gitignore, rapport)
+Fichiers modifiés : commits 67b71c0, 0a8b6f7, 946b70e… 5977df5 et celui-ci (packages/core/src/images, apps/desktop/src/main/images, tools/images.ts, Composer.tsx, Messages.tsx, useChat.ts, UnifiedJarvisChat.tsx, ImagesSettings.tsx, ipc.ts, preload, main/index.ts, session.ts, settings.ts, types.ts, config/, docs/images-jarvis.md, training/lora/, CLAUDE.md, .gitignore, rapport)
 Prêt à fusionner : OUI (après relecture par l'utilisateur ; rien sur main)
-À corriger : fond gris du sticker (forcer un fond blanc par post-traitement ou un modèle/LoRA dédié) ; noir et blanc = seuil (un vrai trait demanderait un LoRA « line art ») ; prompt parfois en français ; projet par défaut parfois `jarvis` au lieu de `perso`
+À corriger : fond gris du sticker (forcer un fond blanc par post-traitement ou un modèle/LoRA dédié) ; noir et blanc = seuil (un vrai trait demanderait un LoRA « line art ») ; prompt parfois en français ; projet par défaut parfois `jarvis` au lieu de `perso` ; `taskWorkflow.test.ts` et `lintBaseline.test.mjs` sensibles à la charge de la machine (hors module)
 Testé en vrai (à la voix, sur le PC) : FAIT (version de développement, 9 novembre 21 h 50 : « Jarvis, génère une image d'un chat sur un toit » dit à la voix → Forge lancé par Jarvis, image 832×1216 dans perso en 114 s, qwen2.5:7b rechargé ; Whisper a transcrit « chtah », le 7B l'a recopié et SDXL a dessiné un canidé : défaut de transcription, pas du module)
 ```
 

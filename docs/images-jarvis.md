@@ -20,6 +20,14 @@ Dans la discussion (ou à la voix), par exemple :
 
 Ce qui se passe : Jarvis prévient (« je décharge le modèle de langage, je reviens dans une minute ou deux »), décharge le modèle 7B de la carte graphique, allume Forge si besoin, fabrique l'image, éteint Forge (ou décharge son modèle si tu l'avais allumé toi-même), **recharge le 7B**, puis donne le chemin des fichiers. Si Forge ne répond pas, Jarvis le dit en français et recharge quand même le 7B.
 
+## Partir d'une photo
+
+Clique sur le bouton « image + » à côté du bouton d'envoi (ou glisse une photo sur la zone de saisie), puis écris ce que tu veux : « fais-en un sticker pour Drivers Ink », « transforme-la en manga japonais », « reste très proche de la photo ». Jusqu'à trois photos par message (PNG, JPEG ou WebP, 20 Mo au plus). Jarvis recopie la photo dans `C:\dev\Jarvis_images\_references\`, s'en sert comme base, et range une copie à côté du résultat (`…-source.png`). La photo n'est jamais envoyée au modèle de langage : il ne connaît que son chemin.
+
+## Voir le résultat
+
+Dès que l'image est prête, elle s'ouvre dans la visionneuse Windows (réglage « Ouvrir l'image dès qu'elle est prête », activé par défaut). Dans la réponse de Jarvis, le nom du fichier est un lien : un clic l'ouvre. Seuls les fichiers du dossier des images de Jarvis peuvent s'ouvrir ainsi.
+
 ## Où sont les images
 
 `C:\dev\Jarvis_images\<projet>\<date>\<heure>-<sujet>-<n>.png`, et à côté un fichier `.txt` du même nom avec le prompt complet, le prompt négatif, la taille, la graine, le modèle et le LoRA : de quoi refaire l'image.

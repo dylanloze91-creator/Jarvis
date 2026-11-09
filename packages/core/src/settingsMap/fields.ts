@@ -68,6 +68,7 @@ export const SETTINGS_FIELD_MAP: Record<string, SettingsFieldLocation> = {
   'images.forgeUrl': { category: 'services', subcategory: 'images', highlight: 'images' },
   'images.outputRoot': { category: 'services', subcategory: 'images', highlight: 'images' },
   'images.keepForgeRunning': { category: 'services', subcategory: 'images', highlight: 'images' },
+  'images.openAfterGeneration': { category: 'services', subcategory: 'images', highlight: 'images' },
   'homeLocation.label': { category: 'moi', subcategory: 'home-location', highlight: 'homeLocation' },
   'homeLocation.latitude': { category: 'moi', subcategory: 'home-location', highlight: 'homeLocation' },
   'homeLocation.longitude': { category: 'moi', subcategory: 'home-location', highlight: 'homeLocation' },
