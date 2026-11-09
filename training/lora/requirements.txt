@@ -1,0 +1,2 @@
+# Préparation des images sur ton PC (preparer_images.py). L'entraînement lui-même tourne sur la carte louée.
+pillow>=10.0

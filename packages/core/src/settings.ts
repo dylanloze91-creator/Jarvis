@@ -347,6 +347,24 @@ export const settingsSchema = z.object({
       humour: z.boolean().default(true),
     })
     .optional(),
+  /**
+   * Module images (Forge + SDXL, en local). Absent ou `enabled: false` : aucun outil
+   * d'image, aucune équipe « images », chat inchangé. Pas de défaut Zod : un ancien
+   * `settings.json` relu ne gagne pas de clé et les réglages figés ne bougent pas.
+   */
+  images: z
+    .object({
+      enabled: z.boolean(),
+      /** Dossier de Forge (contient `lancer_forge.bat`). Absent : `C:\\dev\\Forge`. */
+      forgeDir: z.string().max(400).optional(),
+      /** Adresse de l'API de Forge, boucle locale seulement. Absent : `http://127.0.0.1:7860`. */
+      forgeUrl: z.string().max(200).optional(),
+      /** Racine des images produites. Absent : `C:\\dev\\Jarvis_images`. */
+      outputRoot: z.string().max(400).optional(),
+      /** Laisser Forge allumé après une image (le 7B est quand même rechargé). Absent : Forge est arrêté. */
+      keepForgeRunning: z.boolean().optional(),
+    })
+    .optional(),
   machine: z
     .object({
       profile: z.enum(['modest', 'standard', 'full']),

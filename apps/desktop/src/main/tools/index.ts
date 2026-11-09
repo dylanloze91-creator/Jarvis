@@ -36,6 +36,8 @@ import type { GoogleRuntime } from '../google/runtime.js';
 import { createGoogleTools } from './google.js';
 import type { RoverClient } from '../rover/RoverClient.js';
 import { createRoverTools } from './rover.js';
+import type { ImagesService } from '../images/ImagesService.js';
+import { createImagesTools } from './images.js';
 
 export interface YoutubeSummarize {
   (
@@ -59,6 +61,8 @@ export interface ToolManagerDeps {
   google?: GoogleRuntime;
   /** Robot Jarvis Rover. Ses outils ne sont proposés qu'une fois son adresse réglée, et seulement sur un tour qui parle du robot. */
   rover?: RoverClient;
+  /** Module images (Forge + SDXL). Ses outils ne sont proposés que si `images.enabled` est vrai. */
+  images?: ImagesService;
   /**
    * Profil modeste seulement : Spotify reste enregistré mais absent du prompt
    * tant que le compte n’est pas connecté. Ignoré sur les autres profils.
@@ -119,7 +123,14 @@ function createFullToolManager(deps: ToolManagerDeps): ToolManager {
     ...(deps.google ? createGoogleTools(deps.google) : []),
     // Robot — absents du catalogue tant qu'aucune adresse n'est réglée
     ...(deps.rover ? createRoverTools(deps.rover) : []),
+    // Images — absents du catalogue tant que le module n'est pas activé
+    ...imagesToolsIfEnabled(deps),
   ]);
+}
+
+/** Les outils d'image n'entrent au catalogue qu'avec `images.enabled` : le catalogue d'avant ne change pas sinon. */
+function imagesToolsIfEnabled(deps: ToolManagerDeps) {
+  return deps.images && deps.getSettings().images?.enabled ? createImagesTools(deps.images) : [];
 }
 
 /** Liste courte : heure, notes, ouvrir une application, recherche web. */
@@ -142,5 +153,6 @@ function createModestToolManager(deps: ToolManagerDeps): ToolManager {
     ...spotify,
     ...(deps.google ? createGoogleTools(deps.google) : []),
     ...(deps.rover ? createRoverTools(deps.rover) : []),
+    ...imagesToolsIfEnabled(deps),
   ]);
 }

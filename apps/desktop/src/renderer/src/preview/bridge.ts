@@ -201,6 +201,18 @@ export function installPreviewBridge(): void {
     },
     settings: {
       get: async () => ({ settings, status: status() }),
+      imagesStatus: async () => ({
+        enabled: false,
+        forgeDir: 'C:\\dev\\Forge',
+        forgeUrl: 'http://127.0.0.1:7860',
+        outputRoot: 'C:\\dev\\Jarvis_images',
+        presetsPath: 'C:\\dev\\Jarvis_images\\images_presets.yaml',
+        launcherFound: true,
+        checkpointFound: true,
+        vaeFound: true,
+        forgeRunning: false,
+        loras: [],
+      }),
       set: async (patch) => {
         settings = { ...settings, ...patch };
         return { settings, status: status() };

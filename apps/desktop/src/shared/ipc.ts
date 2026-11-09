@@ -90,6 +90,7 @@ export const IpcChannel = {
   settingsSpotifyListDevices: 'settings:spotify-list-devices',
   settingsSiteBlockStatus: 'settings:siteblock-status',
   settingsRoverStatus: 'settings:rover-status',
+  settingsImagesStatus: 'settings:images-status',
   settingsGeocodeSearch: 'settings:geocode-search',
   settingsGoogleStatus: 'settings:google-status',
   settingsGoogleConnect: 'settings:google-connect',
@@ -338,6 +339,28 @@ export interface RoverConnectionStatus {
 export interface RoverCredentials {
   baseUrl?: string;
   token?: string;
+}
+
+/** Module images : valeurs du formulaire pas encore enregistrées, pour « Tester Forge ». */
+export interface ImagesConfigDraft {
+  forgeDir?: string;
+  forgeUrl?: string;
+  outputRoot?: string;
+}
+
+/** Module images : état de Forge et des fichiers, pour les réglages et l'outil `images_etat`. */
+export interface ImagesStatusInfo {
+  enabled: boolean;
+  forgeDir: string;
+  forgeUrl: string;
+  outputRoot: string;
+  presetsPath: string;
+  launcherFound: boolean;
+  checkpointFound: boolean;
+  vaeFound: boolean;
+  forgeRunning: boolean;
+  loras: string[];
+  error?: string;
 }
 
 /** Valeurs du formulaire Google pas encore enregistrées, pour se connecter avant « Enregistrer ». */
@@ -644,6 +667,8 @@ export interface JarvisApi {
     siteBlockStatus(credentials?: SiteBlockCredentials): Promise<SiteBlockStatus>;
     /** Teste le robot (adresse puis jeton). Les champs optionnels testent un brouillon non encore enregistré. */
     roverStatus(credentials?: RoverCredentials): Promise<RoverConnectionStatus>;
+    /** Module images : Forge installé, allumé, modèle SDXL présent. Le brouillon teste des valeurs pas encore enregistrées. */
+    imagesStatus(draft?: ImagesConfigDraft): Promise<ImagesStatusInfo>;
     /** Propositions Open-Meteo pour le lieu « Chez moi » (sans clé). */
     geocodeSearch(query: string): Promise<GeocodingPlace[]>;
     /** État de la connexion Google. Le brouillon teste des valeurs pas encore enregistrées. */

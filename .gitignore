@@ -29,3 +29,13 @@ training/runs/
 training/export/
 __pycache__/
 .pytest_cache/
+
+# Module images (Forge + SDXL) : rien de lourd dans Git.
+# Forge est installe hors du depot (C:/dev/Forge) et les images dans C:/dev/Jarvis_images.
+*.safetensors
+*.ckpt
+*.gguf
+training/lora/jeux/
+training/lora/sorties/
+training/lora/*.safetensors
+Jarvis_images/

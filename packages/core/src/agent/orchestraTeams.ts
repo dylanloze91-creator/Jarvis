@@ -17,6 +17,7 @@ export const ORCHESTRA_TEAMS = [
   'memoire',
   'google',
   'code',
+  'images',
 ] as const;
 
 export type OrchestraTeam = (typeof ORCHESTRA_TEAMS)[number];
@@ -151,6 +152,17 @@ export const TEAM_SPECS: Record<OrchestraTeam, TeamSpec> = {
     tools: [],
     prompt:
       `Tu es le spécialiste du code. Donne du code complet et correct dans un bloc, avec une explication courte. Si la demande est floue, pose une seule question. Si l’approche demandée est fragile ou qu’une plus simple existe, dis-le en une phrase avant le code. ${FRANK_ADVICE_PROMPT}`,
+  },
+  // Module images : équipe disponible seulement si l'outil generer_image est enregistré
+  // (réglage `images.enabled`). Sans lui, la liste des équipes est celle d'avant.
+  images: {
+    id: 'images',
+    label: 'Images',
+    description:
+      'générer, créer ou dessiner une image, une illustration, un sticker, un logo, une miniature ou un visuel (Stable Diffusion en local)',
+    tools: ['generer_image', 'images_etat'],
+    prompt:
+      'Tu crées des images avec generer_image. Écris le prompt en anglais, descriptif (sujet, style, lumière, cadrage). Projet : jarvis, vx (vidéo, 16:9 ou 9:16), drivers-ink (sticker vinyle) ou perso ; si l’utilisateur ne le dit pas et que rien ne l’indique, prends perso. Ne passe que les options demandées (format, nombre, graine, LoRA). Préviens en une phrase que la génération prend une à deux minutes, puis appelle l’outil. Ta réponse finale reprend les chemins des fichiers renvoyés par l’outil, tels quels, sans décrire une image que l’outil n’a pas produite.',
   },
 };
 

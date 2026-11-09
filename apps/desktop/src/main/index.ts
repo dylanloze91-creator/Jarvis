@@ -50,6 +50,7 @@ import { FileAuditLogStore } from './audit-store.js';
 import { SpotifyBridge } from './media/SpotifyBridge.js';
 import { SiteBlockBridge } from './siteblock/SiteBlockBridge.js';
 import { RoverClient } from './rover/RoverClient.js';
+import { ImagesService } from './images/ImagesService.js';
 import { createGoogleRuntime } from './google/runtime.js';
 import { PersonalizationStore } from './personalization.js';
 import { KnowledgeStore } from './knowledge.js';
@@ -172,6 +173,8 @@ localLearning.armPeriodic();
 const spotify = new SpotifyBridge(() => settings);
 const siteBlock = new SiteBlockBridge(() => settings);
 const rover = new RoverClient(() => settings);
+// Module images : Forge (Stable Diffusion) lancé au besoin, modèle de langage déchargé puis rechargé.
+const images = new ImagesService({ getSettings: () => settings, log: (line) => console.info(line) });
 // Jetons chiffrés par safeStorage (DPAPI), consentement dans le navigateur système.
 const google = createGoogleRuntime({
   userDataPath: () => app.getPath('userData'),
@@ -215,6 +218,7 @@ function buildTools() {
     knowledge,
     google,
     rover,
+    images,
     spotifyConnected: () => spotify.connectedNow(),
     summarizeYoutube: (url, onProgress, signal) =>
       summarizeYoutubeLink({
@@ -694,6 +698,9 @@ function registerIpc(): void {
     (_event, credentials?: { baseUrl?: string; token?: string }) =>
       rover.connectionStatus(sanitizeRoverCredentials(credentials)),
   );
+  ipcMain.handle(IpcChannel.settingsImagesStatus, (_event, draft?: { forgeDir?: string; forgeUrl?: string; outputRoot?: string }) =>
+    images.status(sanitizeImagesDraft(draft)),
+  );
   ipcMain.handle(IpcChannel.settingsGeocodeSearch, async (_event, query: string) => {
     const q = typeof query === 'string' ? query.trim() : '';
     if (q.length < 2 || q.length > 120) return [];
@@ -926,5 +933,21 @@ app.on('will-quit', () => {
   globalShortcut.unregisterAll();
   void phone.stop();
   void speakers.stop();
+  // Un Forge lancé par Jarvis ne survit pas à Jarvis (un Forge lancé par l'utilisateur n'est pas touché).
+  void images.shutdown();
   updateManager.stop();
 });
+
+function sanitizeImagesDraft(draft: unknown): { forgeDir?: string; forgeUrl?: string; outputRoot?: string } | undefined {
+  if (!draft || typeof draft !== 'object') return undefined;
+  const record = draft as Record<string, unknown>;
+  const pick = (key: string) => (typeof record[key] === 'string' ? (record[key] as string).slice(0, 400) : undefined);
+  const forgeDir = pick('forgeDir');
+  const forgeUrl = pick('forgeUrl');
+  const outputRoot = pick('outputRoot');
+  return {
+    ...(forgeDir !== undefined ? { forgeDir } : {}),
+    ...(forgeUrl !== undefined ? { forgeUrl } : {}),
+    ...(outputRoot !== undefined ? { outputRoot } : {}),
+  };
+}
