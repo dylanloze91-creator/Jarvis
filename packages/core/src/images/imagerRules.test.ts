@@ -10,6 +10,7 @@ import {
   buildTxt2ImgPayload,
   chooseCheckpoint,
   defaultImagerRulesYaml,
+  forgeBuiltinScriptArgs,
   nearestNativeFormat,
   parsePresetsYaml,
   personCountPhrase,
@@ -121,6 +122,7 @@ describe('Jarvis Imager — règles', () => {
     expect(wantsAdetailer(DEFAULT_IMAGER_RULES, 'logo-sticker', true)).toBe(false);
     expect(wantsAdetailer(DEFAULT_IMAGER_RULES, 'personne', true)).toBe(true);
     expect(wantsAdetailer(DEFAULT_IMAGER_RULES, 'personne', false)).toBe(false);
+    expect(forgeBuiltinScriptArgs()).toEqual({ 'Never OOM Integrated': { args: [false, false, 512, 64] } });
     const args = adetailerArgs();
     expect(args[0]).toBe(true);
     expect(args[2]).toMatchObject({ ad_model: 'face_yolov8n.pt' });

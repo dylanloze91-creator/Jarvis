@@ -401,6 +401,17 @@ export function wantsAdetailer(rules: ImagerRules, type: ImageSubjectType, exten
   return extensionAvailable && rules.general.adetailer && rules.types[type].adetailer;
 }
 
+/**
+ * Scripts intégrés de Forge dont les arguments doivent toujours être explicites par l'API.
+ * Constat du 10 novembre 2026 : avec l'extension ADetailer présente, les arguments par défaut
+ * de « Never OOM Integrated » se décalaient (il se croyait activé pour le VAE avec une tuile
+ * nulle → `ZeroDivisionError` dans `get_tiled_scale_steps`, HTTP 500 sur chaque image).
+ * Les passer explicitement (désactivé, tuile 512, chevauchement 64) rend la requête saine.
+ */
+export function forgeBuiltinScriptArgs(): Record<string, { args: unknown[] }> {
+  return { 'Never OOM Integrated': { args: [false, false, 512, 64] } };
+}
+
 /** Arguments ADetailer pour l'API de Forge (`alwayson_scripts.ADetailer.args`) : visages puis mains. */
 export function adetailerArgs(): unknown[] {
   return [

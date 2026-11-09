@@ -63,6 +63,7 @@ export {
   buildImagerPrompt,
   wantsAdetailer,
   adetailerArgs,
+  forgeBuiltinScriptArgs,
   type ImageSubjectType,
   type SubjectTypeRule,
   type CheckpointProfile,

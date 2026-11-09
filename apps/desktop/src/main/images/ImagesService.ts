@@ -19,6 +19,7 @@ import {
   defaultImagerRulesYaml,
   defaultPresetsYaml,
   denoisingForFidelity,
+  forgeBuiltinScriptArgs,
   imageAttachmentExtension,
   imageFileNames,
   isImageAttachmentPath,
@@ -128,6 +129,8 @@ export interface ImagesServiceDeps {
   now?: () => Date;
   log?: (line: string) => void;
   processDeps?: ForgeProcessDeps;
+  /** Attente avant le second essai après un 500 de Forge (tests : 0). */
+  forgeRetryDelayMs?: number;
 }
 
 /**
@@ -375,11 +378,12 @@ export class ImagesService {
     const baseRequest: ImageRequest = { ...request, count, ...(format ? { format } : {}) };
     const denoising = init ? denoisingForFidelity(request.initImage?.fidelity) : null;
     const useAdetailer = wantsAdetailer(rules, subjectType, this.adetailerInstalled(images.forgeDir));
+    // Les scripts intégrés de Forge reçoivent toujours leurs arguments explicitement (voir forgeBuiltinScriptArgs).
     const finalOptions: PayloadOptions = {
       ...payloadOptions,
       finalPrompt: assembled.prompt,
       finalNegative: assembled.negative,
-      ...(useAdetailer ? { alwaysonScripts: { ADetailer: { args: adetailerArgs() } } } : {}),
+      alwaysonScripts: { ...forgeBuiltinScriptArgs(), ...(useAdetailer ? { ADetailer: { args: adetailerArgs() } } : {}) },
     };
     const payload = init
       ? buildImg2ImgPayload(baseRequest, preset, finalOptions, init.data.toString('base64'), denoising!)
@@ -402,13 +406,26 @@ export class ImagesService {
         const scripts = await client.scripts().catch(() => [] as string[]);
         if (!scripts.includes('adetailer')) {
           warnings.push('ADetailer est installé mais ce Forge ne l’a pas chargé : image sans retouche des visages et des mains.');
-          delete (payload as { alwayson_scripts?: unknown }).alwayson_scripts;
+          delete payload.alwayson_scripts?.ADetailer;
         }
       }
-      const adetailerApplied = Boolean((payload as { alwayson_scripts?: unknown }).alwayson_scripts);
-      const response = init
-        ? await client.img2img(payload as ReturnType<typeof buildImg2ImgPayload>, context.signal)
-        : await client.txt2img(payload, context.signal);
+      const adetailerApplied = Boolean(payload.alwayson_scripts?.ADetailer);
+      const generateOnce = () =>
+        init ? client.img2img(payload as ReturnType<typeof buildImg2ImgPayload>, context.signal) : client.txt2img(payload, context.signal);
+      let response: Awaited<ReturnType<typeof generateOnce>>;
+      try {
+        response = await generateOnce();
+      } catch (error) {
+        // Juste après son démarrage (changement de modèle en cours), Forge répond parfois 500 à la
+        // première requête : un seul nouvel essai après une courte attente, puis l'erreur telle quelle.
+        if (error instanceof ForgeError && error.kind === 'http' && /\b500\b/.test(error.message) && !context.signal?.aborted) {
+          const delay = this.deps.forgeRetryDelayMs ?? 8_000;
+          this.deps.log?.(`[images] Forge a répondu 500 : nouvel essai dans ${Math.round(delay / 1000)} s`);
+          await new Promise<void>((resolve) => setTimeout(resolve, delay));
+          response = await generateOnce();
+          warnings.push('Forge a refusé la première requête (500), la seconde a réussi.');
+        } else throw error;
+      }
       const info = parseTxt2ImgInfo(response.info, count);
       // Agrandissement : toujours après une génération en taille native, jamais une génération en grand.
       let upscaled: { factor: number; upscaler: string } | null = null;

@@ -118,6 +118,7 @@ function service(world: World, overrides: Record<string, unknown> = {}, forgeDir
     getSettings: () => settings,
     fetchImpl: fakeFetch(world),
     now: () => new Date(2026, 10, 9, 21, 30, 0),
+    forgeRetryDelayMs: 0,
     processDeps: {
       spawnImpl: () => {
         const child = new FakeChild();
@@ -169,7 +170,8 @@ describe('ImagesService', () => {
     const payload = world.txt2imgPayloads[0] as Record<string, unknown>;
     expect(payload).toMatchObject({ width: 832, height: 1216, batch_size: 2, save_images: false, sampler_name: 'DPM++ 2M', steps: 28, cfg_scale: 6 });
     expect(payload.override_settings).toEqual({ sd_model_checkpoint: 'sd_xl_base_1.0.safetensors', sd_vae: 'sdxl_vae_fp16_fix.safetensors' });
-    expect(payload.alwayson_scripts).toBeUndefined();
+    // Never OOM toujours explicite (sinon Forge se trompe d'arguments avec ADetailer installé) ; pas d'ADetailer pour un sujet « autre ».
+    expect(payload.alwayson_scripts).toEqual({ 'Never OOM Integrated': { args: [false, false, 512, 64] } });
     expect(result.checkpoint).toEqual({ id: 'sdxl-base', label: 'SDXL base 1.0' });
     expect(result.subjectType).toBe('autre');
     expect(existsSync(join(outputRoot, 'imager_rules.yaml'))).toBe(true);
@@ -214,7 +216,8 @@ describe('ImagesService', () => {
     const world: World = { forgeUp: false, loaded: ['qwen2.5:7b'], calls: [], txt2imgPayloads: [], failTxt2img: true };
     const { svc } = service(world, { refinePrompts: false });
     await expect(svc.generate({ prompt: 'anything', project: 'jarvis' })).rejects.toMatchObject({ kind: 'http' });
-    expect(world.calls).toEqual(['ollama:ps', 'ollama:qwen2.5:7b:0', 'forge:spawn', 'forge:txt2img', 'forge:kill', 'ollama:qwen2.5:7b:30m']);
+    // Un 500 est retenté une fois ; le second échec est rendu tel quel, Forge libéré, 7B rechargé.
+    expect(world.calls).toEqual(['ollama:ps', 'ollama:qwen2.5:7b:0', 'forge:spawn', 'forge:txt2img', 'forge:txt2img', 'forge:kill', 'ollama:qwen2.5:7b:30m']);
     expect(world.loaded).toEqual(['qwen2.5:7b']);
   });
 
@@ -308,7 +311,7 @@ describe('ImagesService', () => {
     const { svc } = service(world, { refinePrompts: false }, join(root, 'Forge-sans-ad'), { adetailer: true });
     const result = await svc.generate({ prompt: 'a man running', project: 'perso', subjectType: 'personne' });
     expect(result.adetailer).toBe(false);
-    expect((world.txt2imgPayloads[0] as Record<string, unknown>).alwayson_scripts).toBeUndefined();
+    expect((world.txt2imgPayloads[0] as Record<string, unknown>).alwayson_scripts).toEqual({ 'Never OOM Integrated': { args: [false, false, 512, 64] } });
     expect(result.warnings.join(' ')).toContain('ADetailer');
   });
 

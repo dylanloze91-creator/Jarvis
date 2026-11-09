@@ -1,6 +1,13 @@
-# Jarvis fabrique des images (module images)
+# Jarvis Imager : Jarvis fabrique des images
 
-Jarvis peut créer des images sur ton PC, sans Internet, avec **Forge** (une interface Stable Diffusion) et le modèle **SDXL**. Tout est installé hors du dépôt de Jarvis, dans `C:\dev\Forge`, et les images vont dans `C:\dev\Jarvis_images`.
+Jarvis peut créer des images sur ton PC, sans Internet, avec **Forge** (une interface Stable Diffusion) et des modèles **SDXL**. Tout est installé hors du dépôt de Jarvis, dans `C:\dev\Forge`, et les images vont dans `C:\dev\Jarvis_images`. Le spécialiste s'appelle **Jarvis Imager** : le cerveau de Jarvis (le 7B) lui transmet ta demande, et c'est lui qui écrit la consigne, choisit le modèle, la taille et les retouches.
+
+## Ce que fait Jarvis Imager pour éviter les mains et visages ratés
+
+- **Un meilleur modèle** : RealVisXL V5.0 (photoréalisme, bonne anatomie, usage commercial autorisé) est utilisé en priorité, puis Juggernaut XI s'il est installé (réservé au perso : sa licence interdit l'usage commercial), puis le SDXL de base en secours. Les réglages recommandés par l'auteur de chaque modèle sont appliqués automatiquement.
+- **Les bonnes tailles** : seules les sept tailles natives SDXL sont envoyées à Forge ; une taille « bizarre » est ramenée à la plus proche. Pour une grande image, dis « en grand » : elle est générée en taille native puis agrandie.
+- **Retouche des visages et des mains** : pour une image avec des personnes, l'extension ADetailer repasse automatiquement sur chaque visage et chaque main.
+- **Consigne par règles** : le fichier `C:\dev\Jarvis_images\imager_rules.yaml` dit quels mots ajouter selon le type d'image (personne, objet, paysage, sticker…), quels défauts éviter (membres en trop, doigts déformés…), quel modèle utiliser. Tu peux le modifier avec le Bloc-notes.
 
 ## Lancer Forge
 
