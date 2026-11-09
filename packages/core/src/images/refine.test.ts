@@ -30,6 +30,10 @@ describe('module images — reformulation pour SDXL', () => {
   it('garde-fou : anglais plausible ; une phrase française ou trop courte est refusée', () => {
     expect(looksLikeSdxlPrompt('a red fox head, bold black outlines, flat colors, white background, sticker, centered, high quality')).toBe(true);
     expect(looksLikeSdxlPrompt('un renard roux avec des contours noirs sur un fond blanc')).toBe(false);
+    // Cas réel du 9 novembre : un seul nom français laissé dans une consigne anglaise.
+    expect(looksLikeSdxlPrompt('femme in lingerie red, anime style, standing, confident smile, minimalistic background, soft lighting')).toBe(false);
+    expect(looksLikeSdxlPrompt('woman in red lingerie, anime style, standing, confident smile, minimalistic background, soft lighting')).toBe(true);
+    expect(looksLikeSdxlPrompt('view of La Défense towers at dusk, wide angle, photo, sharp')).toBe(true);
     expect(looksLikeSdxlPrompt('fox')).toBe(false);
     expect(looksLikeSdxlPrompt('word '.repeat(130))).toBe(false);
   });

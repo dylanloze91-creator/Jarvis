@@ -28,8 +28,8 @@ export interface RefinedPrompt {
 export const REFINE_SYSTEM_PROMPT = [
   'You write prompts for Stable Diffusion XL (SDXL). You receive a request (French or English) and the rules of a project.',
   'Answer ONLY with a JSON object: {"prompt": "...", "negative": "..."}.',
-  'prompt: English only, 25 to 70 words, comma-separated phrases in this order: main subject with concrete details (what, who, how many, pose, expression), setting or background, art medium or style, lighting, camera or composition (framing, angle, lens), quality words. Keep every element the user asked for; invent only what is needed to make the picture concrete. No sentences, no "image of", no quotes, no text or letters inside the picture unless asked.',
-  'negative: English only, 5 to 20 comma-separated defects to avoid for this request (anatomy, blur, duplicates, text, watermark…). Do not repeat the project rules: they are added automatically.',
+  'prompt: English only, 25 to 70 words, comma-separated phrases in this order: main subject with concrete details (what, who, how many, pose, expression), setting or background, art medium or style, lighting, camera or composition (framing, angle, lens), quality words. Translate EVERY French word into natural English, including the subject noun and adjectives (femme → woman, homme → man, chat → cat, rouge → red) and put adjectives before nouns ("red lingerie", never "lingerie red"). Keep every element the user asked for; invent only what is needed to make the picture concrete. No sentences, no "image of", no quotes, no text or letters inside the picture unless asked.',
+  'negative: English only, 5 to 20 comma-separated defects to avoid, chosen for THIS request (for a person: bad hands, extra fingers, cross-eyed; for a building: warped perspective, melted windows; for an animal: extra legs, wrong number of tails…). Generic defects like blur, watermark or text are already added by the project rules: do not list them.',
   'If the request mentions a base photo, describe the final result and keep the subject recognizable.',
   'Never add brand logos, trademarks or real celebrities. Never answer with anything but the JSON object.',
 ].join(' ');
@@ -44,6 +44,15 @@ export function refineUserMessage(input: RefineInput): string {
     input.fromPhoto ? 'A base photo is provided (image-to-image): describe the finished picture, keep the subject of the photo.' : '',
   ].filter(Boolean);
   return lines.join('\n');
+}
+
+/** Second essai : le modèle revoit sa réponse quand elle contient encore du français ou n'est pas lisible. */
+export function refineRetryMessage(previousAnswer: string): string {
+  return [
+    `Your previous answer was: ${previousAnswer.trim().slice(0, 600)}`,
+    'It is rejected: it still contains French words, is not valid JSON, or is too short or too long.',
+    'Answer again with ONLY the JSON object {"prompt": "...", "negative": "..."}, every word in English, adjectives before nouns, 25 to 70 words in "prompt".',
+  ].join('\n');
 }
 
 /** Lit `{"prompt": …, "negative": …}`, même entouré de texte ou de ```json. `null` si illisible. */
@@ -70,17 +79,20 @@ function cleanPromptText(text: string): string {
     .trim();
 }
 
-/** Mots français fréquents qui trahissent une consigne non traduite. */
-const FRENCH_MARKERS = /\b(une|un|des|le|la|les|et|avec|sur|dans|pour|qui|est|sont|très|style de|fond|lumière|femme|homme|chat|chien|rouge|bleu|vert|noir|blanc)\b/i;
+/** Mots-outils français : un ou deux peuvent venir d'un nom propre (« La Défense »), au-delà c'est du français. */
+const FRENCH_FUNCTION_WORDS = /\b(une|un|des|le|la|les|et|avec|sur|dans|pour|qui|est|sont|très|style de)\b/gi;
+/** Noms et adjectifs français courants : un seul suffit, le modèle n'a pas traduit le sujet (observé : « femme in lingerie red »). */
+const FRENCH_CONTENT_WORDS =
+  /\b(femme|femmes|homme|hommes|fille|garçon|enfant|chat|chats|chien|chiens|oiseau|voiture|maison|ville|montagne|forêt|foret|plage|fleur|fleurs|rouge|bleu|bleue|vert|verte|noir|noire|blanc|blanche|jaune|lumière|lumiere|fond|dessin|photo de|portrait de|paysage de|ciel|nuit|jour|soleil|pluie|neige|cheveux|robe|visage|sourire)\b/gi;
 
 /** Garde-fou : consigne plausible pour SDXL (anglais, longueur raisonnable). */
 export function looksLikeSdxlPrompt(prompt: string): boolean {
   const words = prompt.split(/\s+/).filter(Boolean);
   if (words.length < 5 || words.length > 120) return false;
   if (prompt.length > 900) return false;
-  const frenchHits = (prompt.match(new RegExp(FRENCH_MARKERS.source, 'gi')) ?? []).length;
-  // Un ou deux mots ambigus (« style de », noms propres) passent ; une phrase française non.
-  return frenchHits <= 2;
+  const functionHits = (prompt.match(FRENCH_FUNCTION_WORDS) ?? []).length;
+  const contentHits = (prompt.match(FRENCH_CONTENT_WORDS) ?? []).length;
+  return functionHits <= 2 && contentHits === 0;
 }
 
 /**

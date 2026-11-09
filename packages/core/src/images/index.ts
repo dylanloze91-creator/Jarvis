@@ -52,6 +52,7 @@ export {
 export {
   REFINE_SYSTEM_PROMPT,
   refineUserMessage,
+  refineRetryMessage,
   parseRefinedPrompt,
   looksLikeSdxlPrompt,
   chooseRefinedPrompt,

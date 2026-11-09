@@ -184,7 +184,9 @@ describe('ImagesService', () => {
     expect(failed.finalPrompt).toContain('a lighthouse at night, long exposure');
     world.refineReply = JSON.stringify({ prompt: 'un phare la nuit avec une longue pose et des étoiles' });
     const french = await svc.generate({ prompt: 'a lighthouse at night', project: 'perso' });
-    expect(french.refined).toMatchObject({ used: false, reason: expect.stringContaining('douteuse') });
+    // Réponse française deux fois de suite : second essai demandé, puis consigne d'origine.
+    expect(world.calls.filter((call) => call.startsWith('ollama:refine:'))).toHaveLength(3);
+    expect(french.refined).toMatchObject({ used: false, reason: expect.stringContaining('après deux essais') });
     expect(french.finalPrompt).toContain('a lighthouse at night');
     expect(describeImagesResult(french)).toContain('Consigne envoyée telle quelle');
   });
