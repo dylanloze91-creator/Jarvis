@@ -50,6 +50,17 @@ Demande de l'utilisateur après le premier test à la voix : « envoyer des phot
 - **Ouverture et liens** : l'image s'ouvre dans la visionneuse à la fin (réglage `images.openAfterGeneration`, oui par défaut) ; dans la discussion, les chemins de fichiers du dossier des images deviennent des liens (IPC `images:open`, limité à ce dossier).
 - **Test réel** (version de développement, 9 novembre 23 h 15) : capture d'écran jointe, « transforme-la en manga japonais ». Premier essai raté : le 7B a oublié le champ `prompt` (description mise dans `style`), trois refus de validation ; corrigé (`effectivePrompt` reconstruit la description). Second essai : image 832×1216 en 84 s à partir de la photo, copie `-source.png` à côté, 7B rechargé, image ouverte.
 
+## Ajout du soir (suite) — reformulation de la demande pour SDXL
+
+Demande : « améliorer la compréhension de Stable Diffusion ». Avant de décharger le cerveau, Jarvis lui fait réécrire la demande en consigne SDXL (JSON `prompt` + `negative`, anglais structuré, négatif propre à la demande), avec garde-fou (longueur, mots français), un second essai, puis repli sur la demande d'origine. Réglage `images.refinePrompts` (oui par défaut), consigne envoyée montrée dans la réponse et dans le `.txt`.
+
+Essais réels (version de développement, 23 h 45 à 23 h 55) :
+
+| Demande (du 7B) | Consigne envoyée | Observation |
+| --- | --- | --- |
+| « femme en lingerie rouge, anime ref : SAO » | « femme in lingerie red, anime style, SAO reference, standing, confident smile, minimalistic background, soft lighting, close-up, shallow depth of field… » | structure correcte, mais un mot français gardé et ordre bancal ; négatif générique → consigne durcie (traduction de chaque mot, adjectifs avant noms, garde-fou sur les noms français, second essai, négatif spécifique) |
+| « Asuna du jeu SAO in a bikini at the beach, sunny day, vibrant colors… » | « Asuna in a blue bikini, long hair flowing, standing, smile, beach sand, palm trees, clear blue sky, watercolor style, sunlight casting shadows, wide-angle lens, dynamic composition, joyful, carefree, high quality, detailed » ; négatif « extra limbs, distorted features, unnatural colors, dark shadows, blurry background » | tout en anglais, bien ordonné, négatif adapté ; « watercolor » inventé → règle ajoutée : technique gardée si demandée, sinon déduite du contexte, jamais imposée |
+
 ## RAPPORT DE VÉRIFICATION
 
 ```

@@ -24,6 +24,12 @@ Ce qui se passe : Jarvis prévient (« je décharge le modèle de langage, je re
 
 Clique sur le bouton « image + » à côté du bouton d'envoi (ou glisse une photo sur la zone de saisie), puis écris ce que tu veux : « fais-en un sticker pour Drivers Ink », « transforme-la en manga japonais », « reste très proche de la photo ». Jusqu'à trois photos par message (PNG, JPEG ou WebP, 20 Mo au plus). Jarvis recopie la photo dans `C:\dev\Jarvis_images\_references\`, s'en sert comme base, et range une copie à côté du résultat (`…-source.png`). La photo n'est jamais envoyée au modèle de langage : il ne connaît que son chemin.
 
+## Comment Jarvis parle à Stable Diffusion
+
+Stable Diffusion comprend l'anglais, et surtout une consigne bien rangée : le sujet, puis le décor, la technique (photo, anime, illustration…), la lumière, le cadrage, la qualité. Avant chaque image, Jarvis fait donc réécrire ta demande par son cerveau en consigne de ce type, et choisit des défauts à éviter adaptés (mains et doigts pour une personne, perspective pour un bâtiment…). Si la réécriture échoue ou laisse du français, ta demande part telle quelle. La consigne réellement envoyée est écrite dans la réponse (« Consigne envoyée à Stable Diffusion ») et dans le fichier `.txt` : tu peux la recopier et la modifier dans Forge si tu veux affiner à la main. Réglage « Reformuler la demande pour Stable Diffusion » dans Réglages → Services → Images.
+
+Conseils pour de meilleures images : dis la technique voulue (« photo », « style anime », « dessin au trait »), le cadrage (« gros plan », « vue large »), la lumière (« coucher de soleil », « studio »), et le format (16:9, portrait…). Une graine (« avec la graine 123 ») permet de refaire la même image en changeant un détail.
+
 ## Voir le résultat
 
 Dès que l'image est prête, elle s'ouvre dans la visionneuse Windows (réglage « Ouvrir l'image dès qu'elle est prête », activé par défaut). Dans la réponse de Jarvis, le nom du fichier est un lien : un clic l'ouvre. Seuls les fichiers du dossier des images de Jarvis peuvent s'ouvrir ainsi.
