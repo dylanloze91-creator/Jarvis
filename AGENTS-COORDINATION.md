@@ -53,6 +53,7 @@ Statuts possibles : `en cours`, `en pause`, `bloqué`, `terminé`.
 | Cursor | `cursor/spotify-enceinte-cible` | Spotify sur enceinte Connect choisie (Devialet) | — | 2026-11-04 | terminé |
 | Cursor | `cursor/interface-simple-5070` | 5.0.70 interface simple + questionnaire | — | 2026-11-05 | terminé |
 | Claude Code | `claude/examen-7b` | Installer le 7B entraîné sur carte louée (`jarvis-coder`, GGUF Q4_K_M via `export_ollama.py --gguf`) et le faire passer l'examen `lab:compare` contre `qwen2.5-coder:7b` (3 passages) ; rapport dans `rapports/` | — | 2026-11-05 | terminé : `jarvis-coder` créé dans Ollama (à côté de `qwen2.5-coder:7b`, rien remplacé), examen 79/87 contre 69/87, verdict « meilleur (conseillé) », rapport `rapports/2026-11-05-examen-jarvis-coder-contre-qwen2-5-coder-7b.md` ; le choix du modèle de code reste à l'utilisateur |
+| Claude Code | `claude/trieur-nuit-1` | Nuit de génération du trieur : `trieur:generer` (professeur `qwen2.5:7b`, objectif 2000) puis `trieur:preparer` ; aucun code de l'application modifié, pas d'entraînement, pas de fusion ; rapport dans `rapports/` | `rapports/2026-11-09-trieur-nuit-1.md` | 2026-11-09 | en cours |
 
 ## Ressource GPU / Ollama
 
@@ -60,6 +61,6 @@ Une seule carte (RTX 2060 6 Go) : un seul agent à la fois lance le banc (`npm r
 
 | État | Par qui | Pour quoi | Depuis |
 | --- | --- | --- | --- |
-| libre | — | — | — |
+| occupée | Claude Code (`claude/trieur-nuit-1`) | Génération du cahier du trieur (`trieur:generer`, qwen2.5:7b) puis `trieur:preparer` | 2026-11-09 |
 
 Pour réserver : passer l'état à `occupée`, remplir les colonnes, commiter et pousser **avant** de lancer. Pour libérer : remettre `libre` et `—`, commiter et pousser.
