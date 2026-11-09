@@ -36,6 +36,18 @@ function failure(error: unknown): ToolResult {
  * `safe` : générer une image n'a rien d'irréversible ; l'outil prévient l'utilisateur
  * (`onProgress`) que le modèle de langage est déchargé le temps de l'image.
  */
+/**
+ * Les petits modèles oublient parfois `prompt` et mettent la description dans `style`, surtout
+ * avec une photo : on reconstruit une description plutôt que de refuser trois fois de suite.
+ */
+export function effectivePrompt(prompt: string | undefined, style: string | undefined, photoDeBase: string | undefined): string | null {
+  const text = prompt?.trim() ?? '';
+  if (text.length >= 3) return text;
+  const styleText = style?.trim() ?? '';
+  if (photoDeBase) return styleText ? `${styleText}, same subject as the photo, high quality` : 'the same subject as the photo, faithful, high quality';
+  return styleText.length >= 3 ? styleText : null;
+}
+
 export interface ImagesToolsDeps {
   /** Ouvre le fichier dans la visionneuse (processus principal : `shell.openPath`). Absent : rien n'est ouvert. */
   openPath?: (path: string) => Promise<string | void>;
@@ -55,7 +67,11 @@ export function createImagesTools(service: ImagesService, deps: ImagesToolsDeps 
         'Génère une image en local avec Stable Diffusion (Forge, modèle SDXL) à partir d’un prompt descriptif en anglais. Projets : jarvis, vx (vidéo : 16:9 miniature, 9:16 short), drivers-ink (sticker vinyle : fond blanc, contours nets, version noir et blanc produite aussi), perso. Prend une à deux minutes : le modèle de langage est déchargé puis rechargé automatiquement. Renvoie les chemins des fichiers créés.',
       risk: 'safe',
       schema: z.object({
-        prompt: z.string().min(3).max(1500).describe('Description de l’image en anglais : sujet, style, lumière, cadrage.'),
+        prompt: z
+          .string()
+          .max(1500)
+          .optional()
+          .describe('Description de l’image en anglais : sujet, style, lumière, cadrage. Obligatoire sans photo ; avec photoDeBase, décris le résultat voulu (ex. « manga style portrait of the same person »).'),
         projet: z.enum(IMAGE_PROJECTS).default('perso').describe('jarvis, vx, drivers-ink ou perso.'),
         nombre: z.number().int().min(1).max(MAX_IMAGES_PER_REQUEST).default(1).describe('Nombre d’images (1 à 4).'),
         format: z.string().max(20).optional().describe('carre, paysage, portrait, 16:9, 9:16 ou LARGEURxHAUTEUR. Absent : format par défaut du projet.'),
@@ -76,13 +92,19 @@ export function createImagesTools(service: ImagesService, deps: ImagesToolsDeps 
           .optional()
           .describe('Avec photoDeBase : à quel point rester proche de la photo, 0 (tout réinventer) à 1 (presque copier). 0,45 par défaut.'),
       }),
-      summarize: ({ prompt, projet, nombre, photoDeBase }) =>
-        `Génère ${nombre > 1 ? `${nombre} images` : 'une image'} pour le projet ${projet}${photoDeBase ? ' à partir de ta photo' : ''} : « ${prompt.length > 80 ? `${prompt.slice(0, 80)}…` : prompt} ».`,
+      summarize: ({ prompt, style, projet, nombre, photoDeBase }) => {
+        const text = effectivePrompt(prompt, style, photoDeBase) ?? '(sans description)';
+        return `Génère ${nombre > 1 ? `${nombre} images` : 'une image'} pour le projet ${projet}${photoDeBase ? ' à partir de ta photo' : ''} : « ${text.length > 80 ? `${text.slice(0, 80)}…` : text} ».`;
+      },
       execute: async ({ prompt, projet, nombre, format, style, lora, poidsLora, graine, negatif, photoDeBase, fidelite }, context) => {
+        const finalPrompt = effectivePrompt(prompt, style, photoDeBase);
+        if (!finalPrompt) {
+          return toolFailure('definitive', 'Il manque la description de l’image : rappelle generer_image avec le champ prompt (en anglais).', 'prompt absent');
+        }
         try {
           const result = await service.generate(
             {
-              prompt,
+              prompt: finalPrompt,
               project: projet,
               count: nombre,
               ...(format ? { format } : {}),
