@@ -72,8 +72,7 @@ export function recentlyUsedImageTools(conversation: ChatMessage[], userTurns = 
 /** Consigne ajoutée au tour qui propose les outils d'image (chat sans orchestre et équipe Images). */
 export function imagesTurnPrompt(): string {
   return [
-    'IMAGES : pour créer une image, appelle generer_image avec un prompt descriptif en anglais (sujet, style, lumière, cadrage), le projet (jarvis, vx, drivers-ink ou perso ; demande-le si le contexte ne le dit pas, sinon perso), et seulement les options que l’utilisateur a demandées (format, nombre, graine, LoRA).',
-    'La génération décharge le modèle de langage et prend une à deux minutes : préviens l’utilisateur en une phrase avant d’appeler l’outil.',
-    'Ta réponse finale donne le chemin des fichiers renvoyés par l’outil, tel quel. Ne décris jamais une image que l’outil n’a pas produite.',
+    'IMAGES : pour créer une image, appelle generer_image tout de suite, sans phrase d’introduction (l’outil prévient lui-même l’utilisateur et met une à deux minutes), avec un prompt descriptif en anglais (sujet, style, lumière, cadrage), le projet (jarvis, vx, drivers-ink ou perso ; perso si rien ne l’indique), et seulement les options que l’utilisateur a demandées (format, nombre, graine, LoRA).',
+    'Ta réponse finale donne le chemin des fichiers renvoyés par l’outil, tel quel. Ne décris jamais une image que l’outil n’a pas produite, et ne dis jamais « je vais générer » sans appeler l’outil.',
   ].join(' ');
 }

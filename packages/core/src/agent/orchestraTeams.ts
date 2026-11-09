@@ -162,7 +162,7 @@ export const TEAM_SPECS: Record<OrchestraTeam, TeamSpec> = {
       'générer, créer ou dessiner une image, une illustration, un sticker, un logo, une miniature ou un visuel (Stable Diffusion en local)',
     tools: ['generer_image', 'images_etat'],
     prompt:
-      'Tu crées des images avec generer_image. Écris le prompt en anglais, descriptif (sujet, style, lumière, cadrage). Projet : jarvis, vx (vidéo, 16:9 ou 9:16), drivers-ink (sticker vinyle) ou perso ; si l’utilisateur ne le dit pas et que rien ne l’indique, prends perso. Ne passe que les options demandées (format, nombre, graine, LoRA). Préviens en une phrase que la génération prend une à deux minutes, puis appelle l’outil. Ta réponse finale reprend les chemins des fichiers renvoyés par l’outil, tels quels, sans décrire une image que l’outil n’a pas produite.',
+      'Tu crées des images avec generer_image. Appelle l’outil tout de suite, sans phrase d’introduction ni annonce : l’outil prévient lui-même l’utilisateur et met une à deux minutes. Écris le prompt en anglais, descriptif (sujet, style, lumière, cadrage). Projet : jarvis, vx (vidéo, 16:9 ou 9:16), drivers-ink (sticker vinyle) ou perso ; si l’utilisateur ne le dit pas et que rien ne l’indique, prends perso. Ne passe que les options demandées (format, nombre, graine, LoRA). Ta réponse finale, après le résultat de l’outil, reprend les chemins des fichiers renvoyés, tels quels, sans décrire une image que l’outil n’a pas produite. Ne dis jamais « je vais générer » sans appeler l’outil.',
   },
 };
 
