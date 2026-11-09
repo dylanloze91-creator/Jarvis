@@ -365,6 +365,8 @@ export const settingsSchema = z.object({
       keepForgeRunning: z.boolean().optional(),
       /** Ouvrir l'image dans la visionneuse Windows dès qu'elle est faite. Absent : oui. */
       openAfterGeneration: z.boolean().optional(),
+      /** Faire réécrire la demande en consigne SDXL (anglais structuré) par le modèle de langage avant de le décharger. Absent : oui. */
+      refinePrompts: z.boolean().optional(),
     })
     .optional(),
   machine: z

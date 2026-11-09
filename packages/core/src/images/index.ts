@@ -50,6 +50,15 @@ export {
   type SidecarInput,
 } from './storage.js';
 export {
+  REFINE_SYSTEM_PROMPT,
+  refineUserMessage,
+  parseRefinedPrompt,
+  looksLikeSdxlPrompt,
+  chooseRefinedPrompt,
+  type RefineInput,
+  type RefinedPrompt,
+} from './refine.js';
+export {
   IMAGE_ATTACHMENT_EXTENSIONS,
   MAX_ATTACHMENTS_PER_MESSAGE,
   MAX_ATTACHMENT_BYTES,

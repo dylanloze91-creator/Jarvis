@@ -28,6 +28,7 @@ import {
   type Settings,
 } from '@jarvis/core';
 import { imageDimensions } from './imageInfo.js';
+import { PromptRefiner, type RefineOutcome } from './PromptRefiner.js';
 import { ForgeClient, ForgeError, checkForgeUrl, DEFAULT_FORGE_URL } from './ForgeClient.js';
 import { ForgeProcess, type ForgeProcessDeps } from './ForgeProcess.js';
 import { OllamaControl } from './OllamaControl.js';
@@ -47,6 +48,8 @@ export interface ImagesSettings {
   keepForgeRunning: boolean;
   /** Ouvrir l'image dans la visionneuse dès qu'elle est faite (défaut : oui). */
   openAfterGeneration: boolean;
+  /** Réécrire la demande en consigne SDXL par le modèle de langage avant de le décharger (défaut : oui). */
+  refinePrompts: boolean;
 }
 
 export interface ImagesStatus {
@@ -88,6 +91,9 @@ export interface ImagesResult {
   /** Modèle Ollama rechargé après l'image (ou `null` si rien n'était à recharger). */
   brainReloaded: string | null;
   warnings: string[];
+  /** Consigne réellement envoyée à Stable Diffusion, et si elle vient de la reformulation. */
+  finalPrompt: string;
+  refined: { used: boolean; model: string; reason?: string } | null;
 }
 
 export interface ImagesServiceDeps {
@@ -119,6 +125,7 @@ export class ImagesService {
       outputRoot: raw?.outputRoot?.trim() || DEFAULT_IMAGES_ROOT_WINDOWS,
       keepForgeRunning: raw?.keepForgeRunning === true,
       openAfterGeneration: raw?.openAfterGeneration !== false,
+      refinePrompts: raw?.refinePrompts !== false,
     };
   }
 
@@ -261,14 +268,36 @@ export class ImagesService {
     // Photo de départ : lue et contrôlée avant de toucher à Ollama ou à Forge.
     const init = request.initImage ? await this.readInitImage(request.initImage.path) : null;
     const format = request.format ?? (init ? closestFormatForAspect(init.width, init.height) : undefined);
-    const baseRequest: ImageRequest = { ...request, count, ...(format ? { format } : {}) };
+    const ollamaUrl = this.deps.ollamaUrl ?? (settings.baseUrl?.trim() || 'http://127.0.0.1:11434');
+    const ollama = new OllamaControl(ollamaUrl, this.deps.fetchImpl);
+
+    // Reformulation en consigne SDXL par le modèle de langage, tant qu'il est encore chargé.
+    let refined: RefineOutcome | null = null;
+    if (images.refinePrompts) {
+      const loaded = await ollama.loaded();
+      const model = pickBrainModel(settings, loaded.map((entry) => entry.name));
+      if (model) {
+        context.onProgress?.('Je traduis ta demande en consigne pour Stable Diffusion…');
+        refined = await new PromptRefiner(ollamaUrl, this.deps.fetchImpl).refine(
+          { prompt: request.prompt, project: request.project, preset, ...(request.style ? { style: request.style } : {}), ...(request.negative ? { negative: request.negative } : {}), ...(init ? { fromPhoto: true } : {}) },
+          model,
+          context.signal,
+        );
+        if (!refined.used && refined.reason) this.deps.log?.(`[images] consigne d'origine gardée : ${refined.reason}`);
+      }
+    }
+    const baseRequest: ImageRequest = {
+      ...request,
+      count,
+      ...(format ? { format } : {}),
+      ...(refined?.used ? { prompt: refined.prompt, style: undefined, negative: [request.negative, refined.negative].filter(Boolean).join(', ') || undefined } : {}),
+    };
     const denoising = init ? denoisingForFidelity(request.initImage?.fidelity) : null;
     const payload = init
       ? buildImg2ImgPayload(baseRequest, preset, payloadOptions, init.data.toString('base64'), denoising!)
       : buildTxt2ImgPayload(baseRequest, preset, payloadOptions);
 
     context.onProgress?.(init ? 'Je pars de ta photo : je décharge le modèle de langage, je reviens dans une minute ou deux…' : IMAGES_INTRO_MESSAGE);
-    const ollama = new OllamaControl(this.deps.ollamaUrl ?? (settings.baseUrl?.trim() || 'http://127.0.0.1:11434'), this.deps.fetchImpl);
     const unloaded = await ollama.unloadAll();
     const loadedBefore = unloaded.map((name) => ({ name }));
     if (unloaded.length) this.deps.log?.(`[images] modèles Ollama déchargés : ${unloaded.join(', ')}`);
@@ -330,6 +359,7 @@ export class ImagesService {
             createdAt: now,
             ...(blackAndWhite ? { blackAndWhiteFile: blackAndWhite } : {}),
             ...(source ? { sourceImage: source, fidelity: 1 - (denoising ?? 0.55) } : {}),
+            ...(refined?.used ? { refinedBy: refined.model } : refined?.reason ? { refineFallback: refined.reason } : {}),
           }),
           'utf8',
         );
@@ -346,6 +376,8 @@ export class ImagesService {
         forgeStartedByJarvis: how === 'started',
         brainReloaded: (brainReloaded = await this.release(forge, client, how, images, ollama, settings, loadedBefore, warnings)),
         warnings,
+        finalPrompt: payload.prompt,
+        refined: refined ? { used: refined.used, model: refined.model, ...(refined.reason ? { reason: refined.reason } : {}) } : null,
       };
     } finally {
       // Déjà fait sur le chemin normal ; ici, le chemin d'erreur : Forge libéré et modèle rechargé quoi qu'il arrive.
@@ -413,6 +445,8 @@ export function describeImagesResult(result: ImagesResult): string {
   ];
   const source = result.files.find((file) => file.source)?.source;
   if (source) lines.push(`Faite à partir de ta photo (copie : ${source}).`);
+  if (result.refined?.used) lines.push(`Consigne envoyée à Stable Diffusion (reformulée par ${result.refined.model}) : ${result.finalPrompt}`);
+  else if (result.refined?.reason) lines.push(`Consigne envoyée telle quelle (${result.refined.reason}) : ${result.finalPrompt}`);
   if (result.brainReloaded) lines.push(`Le modèle ${result.brainReloaded} est rechargé.`);
   if (result.warnings.length) lines.push(`Remarques : ${result.warnings.join(' ')}`);
   return lines.join('\n');

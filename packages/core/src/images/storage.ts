@@ -78,6 +78,9 @@ export interface SidecarInput {
   /** Photo de départ (copie à côté de l'image) et fidélité demandée. */
   sourceImage?: string;
   fidelity?: number;
+  /** Consigne reformulée pour SDXL : par quel modèle, ou pourquoi la consigne d'origine a été gardée. */
+  refinedBy?: string;
+  refineFallback?: string;
 }
 
 /** Texte lisible gardé à côté de chaque image : de quoi la refaire. */
@@ -87,6 +90,8 @@ export function sidecarText(input: SidecarInput): string {
     `Date : ${input.createdAt.toLocaleString('fr-FR')}`,
     `Projet : ${input.project}`,
     `Demande : ${input.userPrompt.trim()}`,
+    ...(input.refinedBy ? [`Consigne reformulée pour SDXL par ${input.refinedBy}`] : []),
+    ...(input.refineFallback ? [`Consigne d'origine gardée (${input.refineFallback})`] : []),
     '',
     `Prompt : ${input.payload.prompt}`,
     `Prompt négatif : ${input.payload.negative_prompt}`,

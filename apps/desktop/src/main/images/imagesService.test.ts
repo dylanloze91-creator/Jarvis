@@ -39,6 +39,8 @@ interface World {
   calls: string[];
   txt2imgPayloads: unknown[];
   failTxt2img?: boolean;
+  /** Réponse du faux modèle à la reformulation ; `'erreur'` = HTTP 500 ; absent = JSON plausible. */
+  refineReply?: string;
 }
 
 function fakeFetch(world: World): typeof fetch {
@@ -49,6 +51,15 @@ function fakeFetch(world: World): typeof fetch {
     if (url.includes(':11434/api/ps')) {
       world.calls.push('ollama:ps');
       return json({ models: world.loaded.map((name) => ({ name, size_vram: 5_000_000_000 })) });
+    }
+    if (url.includes(':11434/api/chat')) {
+      world.calls.push(`ollama:refine:${body.model}`);
+      const user = String((body.messages as { content: string }[])[1]?.content ?? '');
+      if (world.refineReply === 'erreur') return new Response('boom', { status: 500 });
+      const content =
+        world.refineReply ??
+        JSON.stringify({ prompt: `refined: ${/Request: (.*)/.exec(user)?.[1] ?? ''} in english, detailed, studio lighting, centered`, negative: 'blurry, duplicate' });
+      return json({ message: { role: 'assistant', content } });
     }
     if (url.includes(':11434/api/generate')) {
       const keep = body.keep_alive;
@@ -125,8 +136,11 @@ describe('ImagesService', () => {
     const progress: string[] = [];
     const result = await svc.generate({ prompt: 'a red fox sticker', project: 'drivers-ink', count: 2, format: 'portrait' }, { onProgress: (m) => progress.push(m) });
 
-    expect(progress[0]).toMatch(/décharge le modèle de langage/);
-    expect(world.calls).toEqual(['ollama:ps', 'ollama:qwen2.5:7b:0', 'forge:spawn', 'forge:txt2img', 'forge:kill', 'ollama:qwen2.5:7b:30m']);
+    expect(progress[0]).toMatch(/consigne pour Stable Diffusion/);
+    expect(progress[1]).toMatch(/décharge le modèle de langage/);
+    expect(world.calls).toEqual(['ollama:ps', 'ollama:refine:qwen2.5:7b', 'ollama:ps', 'ollama:qwen2.5:7b:0', 'forge:spawn', 'forge:txt2img', 'forge:kill', 'ollama:qwen2.5:7b:30m']);
+    expect(result.refined).toMatchObject({ used: true, model: 'qwen2.5:7b' });
+    expect(result.finalPrompt).toContain('refined: a red fox sticker in english');
     expect(killed).toEqual([4242]);
     expect(result.forgeStartedByJarvis).toBe(true);
     expect(result.brainReloaded).toBe('qwen2.5:7b');
@@ -143,24 +157,41 @@ describe('ImagesService', () => {
     expect(payload).toMatchObject({ width: 832, height: 1216, batch_size: 2, save_images: false });
     expect(payload.override_settings).toEqual({ sd_model_checkpoint: 'sd_xl_base_1.0.safetensors', sd_vae: 'sdxl_vae_fp16_fix.safetensors' });
     expect(String(payload.negative_prompt)).toContain('brand logos');
+    expect(String(payload.negative_prompt)).toContain('blurry, duplicate');
+    expect(readFileSync(result.files[0]!.txt, 'utf8')).toContain('Consigne reformulée pour SDXL par qwen2.5:7b');
     // Le fichier de réglages a été créé avec les défauts, prêt à être modifié.
     expect(existsSync(join(outputRoot, 'images_presets.yaml'))).toBe(true);
     expect(describeImagesResult(result)).toContain('2 images générées');
   });
 
-  it('Forge déjà allumé par l’utilisateur : pas de lancement, pas d’arrêt, modèle déchargé de Forge, 7B rechargé', async () => {
+  it('Forge déjà allumé par l’utilisateur : pas de lancement, pas d’arrêt, modèle déchargé de Forge, 7B rechargé ; reformulation coupée', async () => {
     const world: World = { forgeUp: true, loaded: ['qwen2.5:7b', 'qwen2.5:3b'], calls: [], txt2imgPayloads: [] };
-    const { svc, killed } = service(world);
+    const { svc, killed } = service(world, { refinePrompts: false });
     const result = await svc.generate({ prompt: 'a cat on a roof, photo', project: 'perso' });
     expect(world.calls).toEqual(['ollama:ps', 'ollama:qwen2.5:7b:0', 'ollama:qwen2.5:3b:0', 'forge:txt2img', 'forge:unload', 'ollama:qwen2.5:7b:30m']);
+    expect(result.refined).toBeNull();
+    expect(result.finalPrompt).toContain('a cat on a roof, photo');
     expect(killed).toEqual([]);
     expect(result.forgeStartedByJarvis).toBe(false);
     expect(result.files[0]!.blackAndWhite).toBeUndefined();
   });
 
+  it('reformulation en échec ou douteuse : la consigne d’origine part telle quelle, avec la raison', async () => {
+    const world: World = { forgeUp: true, loaded: ['qwen2.5:7b'], calls: [], txt2imgPayloads: [], refineReply: 'erreur' };
+    const { svc } = service(world);
+    const failed = await svc.generate({ prompt: 'a lighthouse at night, long exposure', project: 'perso' });
+    expect(failed.refined).toMatchObject({ used: false, model: 'qwen2.5:7b', reason: 'Ollama a répondu 500' });
+    expect(failed.finalPrompt).toContain('a lighthouse at night, long exposure');
+    world.refineReply = JSON.stringify({ prompt: 'un phare la nuit avec une longue pose et des étoiles' });
+    const french = await svc.generate({ prompt: 'a lighthouse at night', project: 'perso' });
+    expect(french.refined).toMatchObject({ used: false, reason: expect.stringContaining('douteuse') });
+    expect(french.finalPrompt).toContain('a lighthouse at night');
+    expect(describeImagesResult(french)).toContain('Consigne envoyée telle quelle');
+  });
+
   it('Forge échoue : erreur rendue, Forge libéré et 7B rechargé quand même', async () => {
     const world: World = { forgeUp: false, loaded: ['qwen2.5:7b'], calls: [], txt2imgPayloads: [], failTxt2img: true };
-    const { svc } = service(world);
+    const { svc } = service(world, { refinePrompts: false });
     await expect(svc.generate({ prompt: 'anything', project: 'jarvis' })).rejects.toMatchObject({ kind: 'http' });
     expect(world.calls).toEqual(['ollama:ps', 'ollama:qwen2.5:7b:0', 'forge:spawn', 'forge:txt2img', 'forge:kill', 'ollama:qwen2.5:7b:30m']);
     expect(world.loaded).toEqual(['qwen2.5:7b']);
@@ -170,7 +201,8 @@ describe('ImagesService', () => {
     const world: World = { forgeUp: false, loaded: [], calls: [], txt2imgPayloads: [] };
     const { svc } = service(world, { keepForgeRunning: true });
     const result = await svc.generate({ prompt: 'logo', project: 'vx' });
-    expect(world.calls).toEqual(['ollama:ps', 'forge:spawn', 'forge:txt2img', 'forge:unload', 'ollama:qwen2.5:7b:30m']);
+    // Rien n'était chargé : le cerveau de l'orchestre est quand même consulté pour la consigne (il se charge).
+    expect(world.calls).toEqual(['ollama:ps', 'ollama:refine:qwen2.5:7b', 'ollama:ps', 'forge:spawn', 'forge:txt2img', 'forge:unload', 'ollama:qwen2.5:7b:30m']);
     expect(result.width).toBe(1344);
     await svc.shutdown();
     expect(world.calls.at(-1)).toBe('forge:kill');
@@ -206,6 +238,7 @@ describe('ImagesService', () => {
     const result = await svc.generate({ prompt: 'sticker of this', project: 'drivers-ink', initImage: { path: saved.path, fidelity: 0.7 } });
     const payload = world.txt2imgPayloads[0] as Record<string, unknown>;
     expect(world.calls).toContain('forge:img2img');
+    expect(result.refined?.used).toBe(true);
     expect(payload.init_images).toEqual([photo.toString('base64')]);
     expect(payload.denoising_strength).toBe(0.3);
     expect([payload.width, payload.height]).toEqual([1344, 768]);

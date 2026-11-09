@@ -82,6 +82,13 @@ export function ImagesSettingsSection({ value, onChange }: ImagesSettingsSection
       </Field>
 
       <Toggle
+        label="Reformuler la demande pour Stable Diffusion"
+        hint="Avant de générer, le cerveau réécrit la demande en consigne SDXL (anglais structuré : sujet, style, lumière, cadrage, défauts à éviter). Si la réécriture échoue ou semble douteuse, la demande part telle quelle. La consigne envoyée est montrée dans la réponse et gardée dans le fichier .txt."
+        checked={value?.refinePrompts !== false}
+        onChange={(checked) => update({ refinePrompts: checked })}
+      />
+
+      <Toggle
         label="Ouvrir l’image dès qu’elle est prête"
         hint="La première image de chaque demande s’ouvre dans la visionneuse Windows. Le chemin reste cliquable dans la discussion."
         checked={value?.openAfterGeneration !== false}
