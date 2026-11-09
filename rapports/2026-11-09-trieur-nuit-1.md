@@ -111,7 +111,7 @@ Rien à tester à la voix : la nuit n'a produit que des données hors du dépôt
 
 ## Pour l'utilisateur, en simple
 
-- La nuit a produit **2000 phrases d'entraînement** vérifiées pour le trieur, en 5 h 27, à partir du professeur local `qwen2.5:7b`. Elles sont prêtes dans `C:\dev\jarvis-data	rieur\preparation\` (1807 pour apprendre, 197 pour contrôler).
+- La nuit a produit **2000 phrases d'entraînement** vérifiées pour le trieur, en 5 h 27, à partir du professeur local `qwen2.5:7b`. Elles sont prêtes dans `C:\dev\jarvis-data\trieur\preparation\` (1807 pour apprendre, 197 pour contrôler).
 - Le script fourni par la version 5.0.68 ne pouvait rien produire (réponse coupée à 12 jetons) : une copie corrigée hors du dépôt a été utilisée ; le correctif dans Jarvis reste à faire.
 - Les équipes les moins fournies sont **fichiers**, **conversation** et **musique** (environ 165 phrases chacune contre 300 pour **pc**) : une seconde nuit, avec la consigne améliorée, les rééquilibrerait.
 - Rien n'a été entraîné, rien n'a été supprimé, Jarvis n'a pas changé.
