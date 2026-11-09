@@ -41,6 +41,8 @@ interface World {
   failTxt2img?: boolean;
   /** Réponse du faux modèle à la reformulation ; `'erreur'` = HTTP 500 ; absent = JSON plausible. */
   refineReply?: string;
+  /** `false` : Forge tourne sans l'extension ADetailer chargée. */
+  adetailerLoaded?: boolean;
 }
 
 function fakeFetch(world: World): typeof fetch {
@@ -71,6 +73,15 @@ function fakeFetch(world: World): typeof fetch {
     if (!world.forgeUp) throw Object.assign(new Error('ECONNREFUSED'), { name: 'TypeError' });
     if (url.includes('/sdapi/v1/progress')) return json({ progress: 0 });
     if (url.includes('/sdapi/v1/loras')) return json([{ name: 'monstyle' }]);
+    if (url.includes('/sdapi/v1/scripts')) {
+      world.calls.push('forge:scripts');
+      return json({ txt2img: world.adetailerLoaded === false ? ['xyz'] : ['adetailer', 'xyz'] });
+    }
+    if (url.includes('/sdapi/v1/upscalers')) return json([{ name: 'None' }, { name: 'Lanczos' }, { name: 'ESRGAN' }]);
+    if (url.includes('/sdapi/v1/extra-single-image')) {
+      world.calls.push(`forge:upscale:${body.upscaler_1}:${body.upscaling_resize}`);
+      return json({ image: pngBase64() });
+    }
     if (url.includes('/sdapi/v1/unload-checkpoint')) {
       world.calls.push('forge:unload');
       return json({});
@@ -86,12 +97,14 @@ function fakeFetch(world: World): typeof fetch {
   }) as typeof fetch;
 }
 
-function service(world: World, overrides: Record<string, unknown> = {}, forgeDir = join(root, 'Forge')) {
+function service(world: World, overrides: Record<string, unknown> = {}, forgeDir = join(root, 'Forge'), extras: { realvis?: boolean; adetailer?: boolean } = {}) {
   mkdirSync(join(forgeDir, 'models', 'Stable-diffusion'), { recursive: true });
   mkdirSync(join(forgeDir, 'models', 'VAE'), { recursive: true });
   writeFileSync(join(forgeDir, 'lancer_forge.bat'), '@echo off');
   writeFileSync(join(forgeDir, 'models', 'Stable-diffusion', 'sd_xl_base_1.0.safetensors'), '');
   writeFileSync(join(forgeDir, 'models', 'VAE', 'sdxl_vae_fp16_fix.safetensors'), '');
+  if (extras.realvis) writeFileSync(join(forgeDir, 'models', 'Stable-diffusion', 'RealVisXL_V5.0_fp16.safetensors'), '');
+  if (extras.adetailer) mkdirSync(join(forgeDir, 'extensions', 'adetailer', 'scripts'), { recursive: true });
   const outputRoot = join(root, `images-${Math.random().toString(36).slice(2, 8)}`);
   const settings = parseSettings({
     provider: 'ollama',
@@ -137,7 +150,7 @@ describe('ImagesService', () => {
     const result = await svc.generate({ prompt: 'a red fox sticker', project: 'drivers-ink', count: 2, format: 'portrait' }, { onProgress: (m) => progress.push(m) });
 
     expect(progress[0]).toMatch(/consigne pour Stable Diffusion/);
-    expect(progress[1]).toMatch(/décharge le modèle de langage/);
+    expect(progress[1]).toMatch(/Jarvis Imager prend la main/);
     expect(world.calls).toEqual(['ollama:ps', 'ollama:refine:qwen2.5:7b', 'ollama:ps', 'ollama:qwen2.5:7b:0', 'forge:spawn', 'forge:txt2img', 'forge:kill', 'ollama:qwen2.5:7b:30m']);
     expect(result.refined).toMatchObject({ used: true, model: 'qwen2.5:7b' });
     expect(result.finalPrompt).toContain('refined: a red fox sticker in english');
@@ -154,10 +167,16 @@ describe('ImagesService', () => {
     }
     expect(result.files.map((file) => file.seed)).toEqual([7, 8]);
     const payload = world.txt2imgPayloads[0] as Record<string, unknown>;
-    expect(payload).toMatchObject({ width: 832, height: 1216, batch_size: 2, save_images: false });
+    expect(payload).toMatchObject({ width: 832, height: 1216, batch_size: 2, save_images: false, sampler_name: 'DPM++ 2M', steps: 28, cfg_scale: 6 });
     expect(payload.override_settings).toEqual({ sd_model_checkpoint: 'sd_xl_base_1.0.safetensors', sd_vae: 'sdxl_vae_fp16_fix.safetensors' });
+    expect(payload.alwayson_scripts).toBeUndefined();
+    expect(result.checkpoint).toEqual({ id: 'sdxl-base', label: 'SDXL base 1.0' });
+    expect(result.subjectType).toBe('autre');
+    expect(existsSync(join(outputRoot, 'imager_rules.yaml'))).toBe(true);
     expect(String(payload.negative_prompt)).toContain('brand logos');
-    expect(String(payload.negative_prompt)).toContain('blurry, duplicate');
+    // Le négatif de la reformulation s'ajoute, sans doublon (« blurry » est déjà dans la règle du projet).
+    expect(String(payload.negative_prompt)).toContain('duplicate');
+    expect(String(payload.negative_prompt).split(', ').filter((term) => term === 'blurry')).toHaveLength(1);
     expect(readFileSync(result.files[0]!.txt, 'utf8')).toContain('Consigne reformulée pour SDXL par qwen2.5:7b');
     // Le fichier de réglages a été créé avec les défauts, prêt à être modifié.
     expect(existsSync(join(outputRoot, 'images_presets.yaml'))).toBe(true);
@@ -188,7 +207,7 @@ describe('ImagesService', () => {
     expect(world.calls.filter((call) => call.startsWith('ollama:refine:'))).toHaveLength(3);
     expect(french.refined).toMatchObject({ used: false, reason: expect.stringContaining('après deux essais') });
     expect(french.finalPrompt).toContain('a lighthouse at night');
-    expect(describeImagesResult(french)).toContain('Consigne envoyée telle quelle');
+    expect(describeImagesResult(french)).toContain('sujet gardé tel quel');
   });
 
   it('Forge échoue : erreur rendue, Forge libéré et 7B rechargé quand même', async () => {
@@ -250,6 +269,47 @@ describe('ImagesService', () => {
     expect(describeImagesResult(result)).toContain('à partir de ta photo');
     expect(result.folder.startsWith(join(outputRoot, 'drivers-ink'))).toBe(true);
     await expect(svc.generate({ prompt: 'x', project: 'perso', initImage: { path: join(outputRoot, 'absente.jpg') } })).rejects.toThrow(/introuvable/);
+  });
+
+  it('Jarvis Imager : personne → RealVisXL (réglages de l’auteur), consigne par règles, ADetailer visages et mains, agrandissement après coup', async () => {
+    const world: World = { forgeUp: true, loaded: ['qwen2.5:7b'], calls: [], txt2imgPayloads: [], refineReply: JSON.stringify({ prompt: 'a smiling woman waving at the camera, city street, golden hour, medium shot', negative: 'neon signs' }) };
+    const { svc, outputRoot } = service(world, {}, join(root, 'Forge-imager'), { realvis: true, adetailer: true });
+    const result = await svc.generate({ prompt: 'une femme qui fait coucou', project: 'perso', subjectType: 'personne', personCount: 1, upscale: true });
+    const payload = world.txt2imgPayloads[0] as Record<string, unknown>;
+    expect(result.checkpoint).toEqual({ id: 'realvisxl', label: 'RealVisXL V5.0' });
+    expect(payload).toMatchObject({ sampler_name: 'DPM++ SDE', scheduler: 'Karras', steps: 30, cfg_scale: 5 });
+    // VAE : celui du modèle est intégré, mais le VAE fp16 présent est gardé contre les images noires.
+    expect(payload.override_settings).toEqual({ sd_model_checkpoint: 'RealVisXL_V5.0_fp16.safetensors', sd_vae: 'sdxl_vae_fp16_fix.safetensors' });
+    expect(String(payload.prompt).startsWith('a smiling woman waving at the camera')).toBe(true);
+    expect(String(payload.prompt)).toContain('solo, one person only');
+    expect(String(payload.prompt)).toContain('detailed hands with five fingers');
+    expect(String(payload.negative_prompt)).toContain('extra arms');
+    expect(String(payload.negative_prompt)).toContain('face asymmetry');
+    expect(String(payload.negative_prompt)).toContain('neon signs');
+    const scripts = (payload.alwayson_scripts as { ADetailer: { args: unknown[] } }).ADetailer.args;
+    expect(scripts[2]).toMatchObject({ ad_model: 'face_yolov8n.pt' });
+    expect(scripts[3]).toMatchObject({ ad_model: 'hand_yolov8n.pt' });
+    expect(result.adetailer).toBe(true);
+    expect(world.calls).toContain('forge:scripts');
+    // Agrandisseur demandé par les règles absent : Lanczos pris à la place, et dit.
+    expect(world.calls).toContain('forge:upscale:Lanczos:2');
+    expect(result.upscaled).toEqual({ factor: 2, upscaler: 'Lanczos' });
+    expect(result.files[0]!.upscaled).toMatch(/-grand\.png$/);
+    expect(existsSync(result.files[0]!.upscaled!)).toBe(true);
+    expect(result.warnings.join(' ')).toContain('R-ESRGAN 4x+');
+    const txt = readFileSync(result.files[0]!.txt, 'utf8');
+    expect(txt).toContain('Jarvis Imager : sujet « personne », 1 personne(s), modèle RealVisXL V5.0, retouche visages/mains : oui');
+    expect(describeImagesResult(result)).toContain('Jarvis Imager : modèle RealVisXL V5.0');
+    expect(result.folder.startsWith(outputRoot)).toBe(true);
+  });
+
+  it('ADetailer installé mais non chargé par Forge : image faite sans retouche, et dit', async () => {
+    const world: World = { forgeUp: true, loaded: [], calls: [], txt2imgPayloads: [], adetailerLoaded: false };
+    const { svc } = service(world, { refinePrompts: false }, join(root, 'Forge-sans-ad'), { adetailer: true });
+    const result = await svc.generate({ prompt: 'a man running', project: 'perso', subjectType: 'personne' });
+    expect(result.adetailer).toBe(false);
+    expect((world.txt2imgPayloads[0] as Record<string, unknown>).alwayson_scripts).toBeUndefined();
+    expect(result.warnings.join(' ')).toContain('ADetailer');
   });
 
   it('pickBrainModel : le cerveau de l’orchestre, sinon le modèle qui tournait, sinon celui du chat', () => {

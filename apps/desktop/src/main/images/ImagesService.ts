@@ -7,11 +7,16 @@ import {
   DEFAULT_PRESETS,
   MAX_ATTACHMENT_BYTES,
   activeOrchestra,
+  adetailerArgs,
+  applyImagerRules,
   applyPresetOverrides,
+  buildImagerPrompt,
   buildImg2ImgPayload,
   buildTxt2ImgPayload,
+  chooseCheckpoint,
   clampCount,
   closestFormatForAspect,
+  defaultImagerRulesYaml,
   defaultPresetsYaml,
   denoisingForFidelity,
   imageAttachmentExtension,
@@ -20,11 +25,17 @@ import {
   parsePresetsYaml,
   parseTxt2ImgInfo,
   referenceFileName,
+  resolveSubjectType,
   sidecarText,
+  wantsAdetailer,
   type ChatAttachment,
+  type CheckpointProfile,
   type ImagePreset,
   type ImageProject,
   type ImageRequest,
+  type ImagerRules,
+  type ImageSubjectType,
+  type PayloadOptions,
   type Settings,
 } from '@jarvis/core';
 import { imageDimensions } from './imageInfo.js';
@@ -36,9 +47,10 @@ import { PngError, toBlackAndWhitePng } from './png.js';
 
 export const DEFAULT_FORGE_DIR_WINDOWS = 'C:\\dev\\Forge';
 export const PRESETS_FILE_NAME = 'images_presets.yaml';
+export const RULES_FILE_NAME = 'imager_rules.yaml';
 export const SDXL_CHECKPOINT_FILE = 'sd_xl_base_1.0.safetensors';
 export const SDXL_VAE_FILE = 'sdxl_vae_fp16_fix.safetensors';
-export const IMAGES_INTRO_MESSAGE = 'Je génère ton image : je décharge le modèle de langage, je reviens dans une minute ou deux…';
+export const IMAGES_INTRO_MESSAGE = 'Jarvis Imager prend la main : je décharge le modèle de langage, je reviens dans une minute ou deux…';
 
 export interface ImagesSettings {
   enabled: boolean;
@@ -67,6 +79,12 @@ export interface ImagesStatus {
   forgeRunning: boolean;
   /** LoRA disponibles (seulement si Forge répond). */
   loras: string[];
+  /** Jarvis Imager : modèles connus des règles et présents sur le disque, et celui qui sera utilisé. */
+  checkpoints: { id: string; label: string; file: string }[];
+  activeCheckpoint: string | null;
+  /** Extension ADetailer installée dans Forge (dossier `extensions/adetailer`). */
+  adetailerInstalled: boolean;
+  rulesPath: string;
   error?: string;
 }
 
@@ -76,6 +94,8 @@ export interface GeneratedFile {
   blackAndWhite?: string;
   /** Copie de la photo de départ, à côté de l'image. */
   source?: string;
+  /** Version agrandie (`-grand.png`), si demandée. */
+  upscaled?: string;
   seed: number;
 }
 
@@ -94,6 +114,11 @@ export interface ImagesResult {
   /** Consigne réellement envoyée à Stable Diffusion, et si elle vient de la reformulation. */
   finalPrompt: string;
   refined: { used: boolean; model: string; reason?: string } | null;
+  /** Jarvis Imager : modèle utilisé, type du sujet, retouches visages/mains, agrandissement. */
+  checkpoint: { id: string; label: string } | null;
+  subjectType: ImageSubjectType;
+  adetailer: boolean;
+  upscaled: { factor: number; upscaler: string } | null;
 }
 
 export interface ImagesServiceDeps {
@@ -186,6 +211,35 @@ export class ImagesService {
     return join(this.settings().outputRoot, PRESETS_FILE_NAME);
   }
 
+  rulesPath(): string {
+    return join(this.settings().outputRoot, RULES_FILE_NAME);
+  }
+
+  /** Lit les règles de Jarvis Imager (créées avec les défauts si le fichier manque). */
+  async loadRules(): Promise<{ rules: ImagerRules; warnings: string[] }> {
+    const path = this.rulesPath();
+    let text: string;
+    try {
+      text = await readFile(path, 'utf8');
+    } catch {
+      await mkdir(this.settings().outputRoot, { recursive: true });
+      text = defaultImagerRulesYaml();
+      await writeFile(path, text, 'utf8');
+      return applyImagerRules({});
+    }
+    const parsed = parsePresetsYaml(text);
+    const applied = applyImagerRules(parsed.values);
+    return { rules: applied.rules, warnings: [...parsed.errors, ...applied.warnings] };
+  }
+
+  private checkpointPath(forgeDir: string, file: string): string {
+    return join(forgeDir, 'models', 'Stable-diffusion', file);
+  }
+
+  private adetailerInstalled(forgeDir: string): boolean {
+    return existsSync(join(forgeDir, 'extensions', 'adetailer', 'scripts'));
+  }
+
   /** Lit le fichier de réglages (créé avec les défauts s'il manque). */
   async loadPresets(): Promise<{ presets: Record<ImageProject, ImagePreset>; warnings: string[] }> {
     const path = this.presetsPath();
@@ -219,17 +273,26 @@ export class ImagesService {
         loras = [];
       }
     }
+    const { rules } = await this.loadRules().catch(() => applyImagerRules({}));
+    const checkpoints = Object.entries(rules.checkpoints)
+      .filter(([, profile]) => existsSync(this.checkpointPath(forgeDir, profile.fichier)))
+      .map(([id, profile]) => ({ id, label: profile.label, file: profile.fichier }));
+    const active = chooseCheckpoint(rules, (file) => existsSync(this.checkpointPath(forgeDir, file)));
     return {
       enabled: base.enabled,
       forgeDir,
       forgeUrl,
       outputRoot,
       presetsPath: join(outputRoot, PRESETS_FILE_NAME),
+      rulesPath: join(outputRoot, RULES_FILE_NAME),
       launcherFound: existsSync(join(forgeDir, 'lancer_forge.bat')),
-      checkpointFound: existsSync(join(forgeDir, 'models', 'Stable-diffusion', SDXL_CHECKPOINT_FILE)),
+      checkpointFound: checkpoints.length > 0,
       vaeFound: existsSync(join(forgeDir, 'models', 'VAE', SDXL_VAE_FILE)),
       forgeRunning,
       loras,
+      checkpoints,
+      activeCheckpoint: active?.profile.label ?? null,
+      adetailerInstalled: this.adetailerInstalled(forgeDir),
       ...(urlCheck.ok ? {} : { error: urlCheck.reason }),
     };
   }
@@ -257,13 +320,20 @@ export class ImagesService {
     const warnings: string[] = [];
     const { presets, warnings: presetWarnings } = await this.loadPresets();
     warnings.push(...presetWarnings);
+    const { rules, warnings: ruleWarnings } = await this.loadRules();
+    warnings.push(...ruleWarnings);
     const preset = presets[request.project];
     const count = clampCount(request.count);
+    const subjectType = resolveSubjectType(request.subjectType);
+    // Modèle : réglage explicite, sinon le premier présent (RealVisXL, Juggernaut, puis SDXL de base en secours).
+    const chosen = chooseCheckpoint(rules, (file) => existsSync(this.checkpointPath(images.forgeDir, file)));
+    const checkpoint: CheckpointProfile | undefined = chosen?.profile;
     const vaePath = join(images.forgeDir, 'models', 'VAE', SDXL_VAE_FILE);
-    const checkpointPath = join(images.forgeDir, 'models', 'Stable-diffusion', SDXL_CHECKPOINT_FILE);
-    const payloadOptions = {
-      ...(existsSync(checkpointPath) ? { checkpoint: SDXL_CHECKPOINT_FILE } : {}),
-      ...(existsSync(vaePath) ? { vae: SDXL_VAE_FILE } : {}),
+    const vae = checkpoint?.vae?.trim() || (existsSync(vaePath) ? SDXL_VAE_FILE : '');
+    const payloadOptions: PayloadOptions = {
+      ...(checkpoint ? { checkpoint: checkpoint.fichier } : {}),
+      ...(vae ? { vae } : {}),
+      ...(checkpoint ? { sampling: { sampler: checkpoint.sampler, scheduler: checkpoint.scheduler, steps: checkpoint.steps, cfg: checkpoint.cfg } } : {}),
     };
     // Photo de départ : lue et contrôlée avant de toucher à Ollama ou à Forge.
     const init = request.initImage ? await this.readInitImage(request.initImage.path) : null;
@@ -286,18 +356,36 @@ export class ImagesService {
         if (!refined.used && refined.reason) this.deps.log?.(`[images] consigne d'origine gardée : ${refined.reason}`);
       }
     }
-    const baseRequest: ImageRequest = {
-      ...request,
-      count,
-      ...(format ? { format } : {}),
-      ...(refined?.used ? { prompt: refined.prompt, style: undefined, negative: [request.negative, refined.negative].filter(Boolean).join(', ') || undefined } : {}),
-    };
+    // Jarvis Imager assemble la consigne finale : règle du projet, sujet (reformulé ou tel quel),
+    // nombre de personnes, mots du type, qualité ; négatif du projet, du type, de l'anatomie, du modèle.
+    const assembled = buildImagerPrompt(
+      {
+        subject: refined?.used ? refined.prompt : request.prompt,
+        type: subjectType,
+        ...(request.personCount ? { personCount: request.personCount } : {}),
+        project: request.project,
+        preset,
+        ...(request.style && !refined?.used ? { style: request.style } : {}),
+        extraNegative: [request.negative, refined?.used ? refined.negative : undefined].filter((item): item is string => Boolean(item)),
+        ...(checkpoint ? { checkpoint } : {}),
+        ...(request.lora ? { lora: request.lora } : {}),
+      },
+      rules,
+    );
+    const baseRequest: ImageRequest = { ...request, count, ...(format ? { format } : {}) };
     const denoising = init ? denoisingForFidelity(request.initImage?.fidelity) : null;
+    const useAdetailer = wantsAdetailer(rules, subjectType, this.adetailerInstalled(images.forgeDir));
+    const finalOptions: PayloadOptions = {
+      ...payloadOptions,
+      finalPrompt: assembled.prompt,
+      finalNegative: assembled.negative,
+      ...(useAdetailer ? { alwaysonScripts: { ADetailer: { args: adetailerArgs() } } } : {}),
+    };
     const payload = init
-      ? buildImg2ImgPayload(baseRequest, preset, payloadOptions, init.data.toString('base64'), denoising!)
-      : buildTxt2ImgPayload(baseRequest, preset, payloadOptions);
+      ? buildImg2ImgPayload(baseRequest, preset, finalOptions, init.data.toString('base64'), denoising!)
+      : buildTxt2ImgPayload(baseRequest, preset, finalOptions);
 
-    context.onProgress?.(init ? 'Je pars de ta photo : je décharge le modèle de langage, je reviens dans une minute ou deux…' : IMAGES_INTRO_MESSAGE);
+    context.onProgress?.(init ? 'Jarvis Imager part de ta photo : je décharge le modèle de langage, je reviens dans une minute ou deux…' : IMAGES_INTRO_MESSAGE);
     const unloaded = await ollama.unloadAll();
     const loadedBefore = unloaded.map((name) => ({ name }));
     if (unloaded.length) this.deps.log?.(`[images] modèles Ollama déchargés : ${unloaded.join(', ')}`);
@@ -309,10 +397,40 @@ export class ImagesService {
     try {
       how = await forge.ensureRunning(context.onProgress, context.signal);
       context.onProgress?.(count > 1 ? `Forge est prêt, je fabrique ${count} images…` : 'Forge est prêt, je fabrique l’image…');
+      if (useAdetailer) {
+        // L'extension est sur le disque ; elle doit aussi être chargée par ce Forge.
+        const scripts = await client.scripts().catch(() => [] as string[]);
+        if (!scripts.includes('adetailer')) {
+          warnings.push('ADetailer est installé mais ce Forge ne l’a pas chargé : image sans retouche des visages et des mains.');
+          delete (payload as { alwayson_scripts?: unknown }).alwayson_scripts;
+        }
+      }
+      const adetailerApplied = Boolean((payload as { alwayson_scripts?: unknown }).alwayson_scripts);
       const response = init
         ? await client.img2img(payload as ReturnType<typeof buildImg2ImgPayload>, context.signal)
         : await client.txt2img(payload, context.signal);
       const info = parseTxt2ImgInfo(response.info, count);
+      // Agrandissement : toujours après une génération en taille native, jamais une génération en grand.
+      let upscaled: { factor: number; upscaler: string } | null = null;
+      let upscaledImages: string[] = [];
+      if (request.upscale && response.images?.length) {
+        const available = await client.upscalers().catch(() => [] as string[]);
+        const upscaler = available.includes(rules.general.upscaler) ? rules.general.upscaler : available.includes('Lanczos') ? 'Lanczos' : available[0];
+        if (upscaler) {
+          context.onProgress?.(`J’agrandis ${count > 1 ? 'les images' : 'l’image'} (×${rules.general.facteurAgrandissement}, ${upscaler})…`);
+          try {
+            upscaledImages = [];
+            for (const image of response.images.slice(0, count)) {
+              upscaledImages.push(await client.upscale(image, rules.general.facteurAgrandissement, upscaler, context.signal));
+            }
+            upscaled = { factor: rules.general.facteurAgrandissement, upscaler };
+            if (upscaler !== rules.general.upscaler) warnings.push(`Agrandisseur « ${rules.general.upscaler} » absent de Forge : « ${upscaler} » utilisé.`);
+          } catch (error) {
+            warnings.push(`Agrandissement non fait : ${error instanceof Error ? error.message : String(error)}`);
+            upscaledImages = [];
+          }
+        } else warnings.push('Aucun agrandisseur disponible dans Forge : image en taille native seulement.');
+      }
       const now = this.deps.now?.() ?? new Date();
       const folderNames = imageFileNames({ project: request.project, prompt: request.prompt, now, index: 0 });
       const folder = join(images.outputRoot, ...folderNames.folder.split('/'));
@@ -345,6 +463,11 @@ export class ImagesService {
             source = files[0]?.source;
           }
         }
+        let upscaledPath: string | undefined;
+        if (upscaledImages[index]) {
+          upscaledPath = join(folder, `${names.base}-grand.png`);
+          await writeFile(upscaledPath, Buffer.from(upscaledImages[index]!, 'base64'));
+        }
         const txtPath = join(folder, names.txt);
         await writeFile(
           txtPath,
@@ -360,10 +483,17 @@ export class ImagesService {
             ...(blackAndWhite ? { blackAndWhiteFile: blackAndWhite } : {}),
             ...(source ? { sourceImage: source, fidelity: 1 - (denoising ?? 0.55) } : {}),
             ...(refined?.used ? { refinedBy: refined.model } : refined?.reason ? { refineFallback: refined.reason } : {}),
+            imager: {
+              subjectType,
+              ...(request.personCount ? { personCount: request.personCount } : {}),
+              checkpointLabel: chosen?.profile.label ?? 'modèle courant de Forge',
+              adetailer: adetailerApplied,
+              ...(upscaled ? { upscaled: `×${upscaled.factor} (${upscaled.upscaler})${upscaledPath ? ` : ${upscaledPath}` : ''}` } : {}),
+            },
           }),
           'utf8',
         );
-        files.push({ png: pngPath, txt: txtPath, seed, ...(blackAndWhite ? { blackAndWhite } : {}), ...(source ? { source } : {}) });
+        files.push({ png: pngPath, txt: txtPath, seed, ...(blackAndWhite ? { blackAndWhite } : {}), ...(source ? { source } : {}), ...(upscaledPath ? { upscaled: upscaledPath } : {}) });
       }
       if (!files.length) throw new ForgeError('bad_response', 'Forge n’a renvoyé aucune image.');
       return {
@@ -378,6 +508,10 @@ export class ImagesService {
         warnings,
         finalPrompt: payload.prompt,
         refined: refined ? { used: refined.used, model: refined.model, ...(refined.reason ? { reason: refined.reason } : {}) } : null,
+        checkpoint: chosen ? { id: chosen.id, label: chosen.profile.label } : null,
+        subjectType,
+        adetailer: adetailerApplied,
+        upscaled,
       };
     } finally {
       // Déjà fait sur le chemin normal ; ici, le chemin d'erreur : Forge libéré et modèle rechargé quoi qu'il arrive.
@@ -445,8 +579,14 @@ export function describeImagesResult(result: ImagesResult): string {
   ];
   const source = result.files.find((file) => file.source)?.source;
   if (source) lines.push(`Faite à partir de ta photo (copie : ${source}).`);
-  if (result.refined?.used) lines.push(`Consigne envoyée à Stable Diffusion (reformulée par ${result.refined.model}) : ${result.finalPrompt}`);
-  else if (result.refined?.reason) lines.push(`Consigne envoyée telle quelle (${result.refined.reason}) : ${result.finalPrompt}`);
+  const upscaledFiles = result.files.filter((file) => file.upscaled).map((file) => file.upscaled!);
+  if (result.upscaled && upscaledFiles.length) lines.push(`Version agrandie ×${result.upscaled.factor} (${result.upscaled.upscaler}) : ${upscaledFiles.join(', ')}`);
+  lines.push(
+    `Jarvis Imager : modèle ${result.checkpoint?.label ?? 'courant de Forge'}, sujet « ${result.subjectType} », retouche visages et mains ${result.adetailer ? 'faite' : 'non appliquée'}.`,
+  );
+  if (result.refined?.used) lines.push(`Consigne envoyée à Stable Diffusion (sujet décrit par ${result.refined.model}, règles Imager appliquées) : ${result.finalPrompt}`);
+  else if (result.refined?.reason) lines.push(`Consigne envoyée (sujet gardé tel quel, ${result.refined.reason}) : ${result.finalPrompt}`);
+  else lines.push(`Consigne envoyée à Stable Diffusion : ${result.finalPrompt}`);
   if (result.brainReloaded) lines.push(`Le modèle ${result.brainReloaded} est rechargé.`);
   if (result.warnings.length) lines.push(`Remarques : ${result.warnings.join(' ')}`);
   return lines.join('\n');

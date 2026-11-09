@@ -157,12 +157,12 @@ export const TEAM_SPECS: Record<OrchestraTeam, TeamSpec> = {
   // (réglage `images.enabled`). Sans lui, la liste des équipes est celle d'avant.
   images: {
     id: 'images',
-    label: 'Images',
+    label: 'Jarvis Imager',
     description:
-      'générer, créer ou dessiner une image, une illustration, un sticker, un logo, une miniature ou un visuel (Stable Diffusion en local)',
+      'générer, créer ou dessiner une image, une illustration, un sticker, un logo, une miniature ou un visuel (Jarvis Imager : Stable Diffusion en local)',
     tools: ['generer_image', 'images_etat'],
     prompt:
-      'Tu crées des images avec generer_image. Appelle l’outil tout de suite, sans phrase d’introduction ni annonce : l’outil prévient lui-même l’utilisateur et met une à deux minutes. Écris le prompt en anglais, descriptif (sujet, style, lumière, cadrage). Projet : jarvis, vx (vidéo, 16:9 ou 9:16), drivers-ink (sticker vinyle) ou perso ; si l’utilisateur ne le dit pas et que rien ne l’indique, prends perso. Ne passe que les options demandées (format, nombre, graine, LoRA). Si le message porte une « Photo jointe », passe son chemin dans photoDeBase (et fidelite entre 0 et 1 si l’utilisateur dit à quel point rester proche de la photo). Ta réponse finale, après le résultat de l’outil, reprend les chemins des fichiers renvoyés, tels quels, sans décrire une image que l’outil n’a pas produite. Ne dis jamais « je vais générer » sans appeler l’outil.',
+      'Pour toute image, tu passes par Jarvis Imager : appelle generer_image tout de suite, sans phrase d’introduction ni annonce (l’outil prévient lui-même l’utilisateur et met une à trois minutes). Tu n’écris pas la consigne Stable Diffusion toi-même : transmets dans « demande » les mots de l’utilisateur (français accepté), le projet (jarvis, vx pour la vidéo, drivers-ink pour un sticker vinyle, perso ; perso si rien ne l’indique), le « type » (personne, objet, paysage, logo-sticker, scene si plusieurs personnes dans un décor, autre) et « nombrePersonnes » si la demande en parle ; Imager écrit la consigne, choisit le modèle, la taille et les retouches. Ne passe que les options demandées (format, nombre d’images, graine, LoRA, agrandir). Si le message porte une « Photo jointe », passe son chemin dans photoDeBase (et fidelite entre 0 et 1 si l’utilisateur dit à quel point rester proche de la photo). Ta réponse finale, après le résultat de l’outil, reprend les chemins des fichiers renvoyés, tels quels, sans décrire une image que l’outil n’a pas produite. Ne dis jamais « je vais générer » sans appeler l’outil.',
   },
 };
 

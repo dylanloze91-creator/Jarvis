@@ -370,6 +370,11 @@ export interface ImagesStatusInfo {
   vaeFound: boolean;
   forgeRunning: boolean;
   loras: string[];
+  /** Jarvis Imager : modèles connus et présents, modèle actif, ADetailer installé, fichier des règles. */
+  checkpoints: { id: string; label: string; file: string }[];
+  activeCheckpoint: string | null;
+  adetailerInstalled: boolean;
+  rulesPath: string;
   error?: string;
 }
 

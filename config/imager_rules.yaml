@@ -1,0 +1,83 @@
+# Règles de Jarvis Imager (consignes envoyées à Stable Diffusion).
+# Modifie puis enregistre : Jarvis relit ce fichier à chaque image. Une clé absente garde sa valeur
+# par défaut ; une valeur fausse est ignorée et signalée.
+#
+# general : checkpoint (auto, ou realvisxl / juggernaut / sdxl-base), priorite (ordre essayé quand auto),
+#   adetailer (retouche visages et mains), upscaler et facteurAgrandissement (quand on demande « plus grand »).
+# qualite : mots ajoutés à la fin de chaque consigne. anatomie : défauts d’anatomie toujours évités pour les personnes.
+# type-<type> : mots ajoutés (positif), défauts évités (negatif), adetailer (true/false) selon ce que représente l’image.
+# checkpoint-<id> : fichier, label, sampler, scheduler, steps, cfg, vae (vide = celui du modèle), negatif de l’auteur.
+
+general:
+  checkpoint: auto
+  priorite: [realvisxl, juggernaut, sdxl-base]
+  adetailer: true
+  upscaler: "R-ESRGAN 4x+"
+  facteurAgrandissement: 2
+
+qualite:
+  positif: [highly detailed, sharp focus, professional quality]
+
+anatomie:
+  negatif: [extra arms, extra legs, extra limbs, extra fingers, missing fingers, fused fingers, deformed hands, bad hands, malformed limbs, deformed face, asymmetric eyes, cross-eyed, long neck, bad anatomy, bad proportions, mutated, disfigured]
+
+type-personne:
+  positif: [natural proportions, detailed face, detailed hands with five fingers]
+  negatif: [duplicate person, clone, extra heads]
+  adetailer: true
+
+type-objet:
+  positif: [centered subject, detailed materials and textures, accurate shape]
+  negatif: [melted, warped, deformed shape, floating parts]
+  adetailer: false
+
+type-paysage:
+  positif: [wide shot, atmospheric depth, coherent perspective]
+  negatif: [warped perspective, tilted horizon, duplicate sun]
+  adetailer: false
+
+type-logo-sticker:
+  positif: [vector illustration, flat colors, clean bold outlines, centered, simple shapes]
+  negatif: [photo, photorealistic, gradients, text, letters, words, complex background, noise]
+  adetailer: false
+
+type-scene:
+  positif: [coherent scene, natural proportions, detailed faces]
+  negatif: [duplicate person, extra heads, floating objects]
+  adetailer: true
+
+type-autre:
+  positif: []
+  negatif: []
+  adetailer: false
+
+checkpoint-realvisxl:
+  fichier: RealVisXL_V5.0_fp16.safetensors
+  label: "RealVisXL V5.0"
+  sampler: "DPM++ SDE"
+  scheduler: Karras
+  steps: 30
+  cfg: 5
+  vae: ""
+  negatif: [bad hands, bad anatomy, ugly, deformed, face asymmetry, eyes asymmetry, deformed eyes, deformed mouth, open mouth]
+
+checkpoint-juggernaut:
+  fichier: Juggernaut-XI-byRunDiffusion.safetensors
+  label: "Juggernaut XI"
+  sampler: "DPM++ 2M"
+  scheduler: Karras
+  steps: 35
+  cfg: 5
+  vae: ""
+  negatif: []
+
+checkpoint-sdxl-base:
+  fichier: sd_xl_base_1.0.safetensors
+  label: "SDXL base 1.0"
+  sampler: "DPM++ 2M"
+  scheduler: Karras
+  steps: 28
+  cfg: 6
+  vae: "sdxl_vae_fp16_fix.safetensors"
+  negatif: []
+

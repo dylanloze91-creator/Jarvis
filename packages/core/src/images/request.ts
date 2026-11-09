@@ -5,6 +5,7 @@
 
 import {
   FORMAT_SIZES,
+  nearestNativeFormat,
   type ImageFormat,
   type ImagePreset,
   type ImageProject,
@@ -29,6 +30,11 @@ export interface ImageRequest {
   negative?: string;
   /** Photo de départ (image vers image) : chemin d'un fichier et fidélité 0 à 1 (0,45 par défaut). */
   initImage?: { path: string; fidelity?: number };
+  /** Agrandir après génération (taille native puis agrandisseur), jamais générer directement en grand. */
+  upscale?: boolean;
+  /** Jarvis Imager : ce que représente l'image et le nombre de personnes voulu. */
+  subjectType?: string;
+  personCount?: number;
 }
 
 /** Requête « image vers image » : la photo encodée en base64, et la force du changement. */
@@ -70,6 +76,7 @@ export interface Txt2ImgPayload {
   save_images: false;
   override_settings: Record<string, unknown>;
   override_settings_restore_afterwards: boolean;
+  alwayson_scripts?: Record<string, { args: unknown[] }>;
 }
 
 export const MAX_IMAGES_PER_REQUEST = 4;
@@ -90,11 +97,9 @@ export function resolveSize(format: string | undefined, preset: ImagePreset): { 
     landscape: 'paysage',
     horizontal: 'paysage',
     '3:2': 'paysage',
-    '4:3': 'paysage',
     portrait: 'portrait',
     vertical: 'portrait',
     '2:3': 'portrait',
-    '3:4': 'portrait',
     '16:9': '16:9',
     '16/9': '16:9',
     miniature: '16:9',
@@ -105,15 +110,18 @@ export function resolveSize(format: string | undefined, preset: ImagePreset): { 
     shorts: '9:16',
     tiktok: '9:16',
     story: '9:16',
+    '4:3': 'paysage-doux',
+    '5:4': 'paysage-doux',
+    '3:4': 'portrait-doux',
+    '4:5': 'portrait-doux',
   };
   const named = aliases[text] ?? (isImageFormat(text) ? text : undefined);
   if (named) return { ...FORMAT_SIZES[named], format: named };
-  const match = /^(\d{3,4})\s*[x×*]\s*(\d{3,4})$/.exec(text);
+  // Taille libre (« 1000x700 », « 1920x1080 ») : ramenée à la taille native SDXL la plus proche.
+  const match = /^(\d{2,5})\s*[x×*]\s*(\d{2,5})$/.exec(text);
   if (match) {
-    const clamp = (n: number) => Math.min(1536, Math.max(512, Math.round(n / 64) * 64));
-    const width = clamp(Number(match[1]));
-    const height = clamp(Number(match[2]));
-    return { width, height, format: `${width}x${height}` };
+    const nearest = nearestNativeFormat(Number(match[1]), Number(match[2]));
+    return { ...FORMAT_SIZES[nearest], format: nearest };
   }
   const fallback: ImageFormat = preset.defaultFormat;
   return { ...FORMAT_SIZES[fallback], format: fallback };
@@ -151,6 +159,13 @@ export interface PayloadOptions {
   checkpoint?: string;
   /** Nom du fichier VAE ; absent = réglage courant de Forge. */
   vae?: string;
+  /** Jarvis Imager : consigne et négatif déjà assemblés (remplacent la construction par projet). */
+  finalPrompt?: string;
+  finalNegative?: string;
+  /** Réglages du modèle (recommandés par son auteur) qui priment sur ceux du projet. */
+  sampling?: { sampler: string; scheduler: string; steps: number; cfg: number };
+  /** Scripts Forge toujours actifs (ADetailer…). */
+  alwaysonScripts?: Record<string, { args: unknown[] }>;
 }
 
 export function buildTxt2ImgPayload(request: ImageRequest, preset: ImagePreset, options: PayloadOptions = {}): Txt2ImgPayload {
@@ -160,14 +175,14 @@ export function buildTxt2ImgPayload(request: ImageRequest, preset: ImagePreset, 
   if (options.checkpoint) overrides.sd_model_checkpoint = options.checkpoint;
   if (options.vae) overrides.sd_vae = options.vae;
   return {
-    prompt: buildPrompt(request, preset),
-    negative_prompt: buildNegative(request, preset),
+    prompt: options.finalPrompt ?? buildPrompt(request, preset),
+    negative_prompt: options.finalNegative ?? buildNegative(request, preset),
     width: size.width,
     height: size.height,
-    steps: preset.steps,
-    cfg_scale: preset.cfg,
-    sampler_name: preset.sampler,
-    scheduler: preset.scheduler,
+    steps: options.sampling?.steps ?? preset.steps,
+    cfg_scale: options.sampling?.cfg ?? preset.cfg,
+    sampler_name: options.sampling?.sampler ?? preset.sampler,
+    scheduler: options.sampling?.scheduler ?? preset.scheduler,
     seed,
     batch_size: clampCount(request.count),
     n_iter: 1,
@@ -175,6 +190,7 @@ export function buildTxt2ImgPayload(request: ImageRequest, preset: ImagePreset, 
     save_images: false,
     override_settings: overrides,
     override_settings_restore_afterwards: false,
+    ...(options.alwaysonScripts ? { alwayson_scripts: options.alwaysonScripts } : {}),
   };
 }
 

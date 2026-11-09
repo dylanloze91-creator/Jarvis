@@ -48,7 +48,8 @@ describe('module images — photos jointes', () => {
   });
 
   it('format d’après la photo et fidélité → force du changement', () => {
-    expect(closestFormatForAspect(4000, 3000)).toBe('paysage');
+    expect(closestFormatForAspect(4000, 3000)).toBe('paysage-doux');
+    expect(closestFormatForAspect(3000, 2000)).toBe('paysage');
     expect(closestFormatForAspect(1080, 1920)).toBe('9:16');
     expect(closestFormatForAspect(1920, 1080)).toBe('16:9');
     expect(closestFormatForAspect(500, 500)).toBe('carre');

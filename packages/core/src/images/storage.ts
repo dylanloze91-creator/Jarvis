@@ -81,6 +81,8 @@ export interface SidecarInput {
   /** Consigne reformulée pour SDXL : par quel modèle, ou pourquoi la consigne d'origine a été gardée. */
   refinedBy?: string;
   refineFallback?: string;
+  /** Jarvis Imager : type du sujet, nombre de personnes, modèle, retouches, agrandissement. */
+  imager?: { subjectType: string; personCount?: number; checkpointLabel: string; adetailer: boolean; upscaled?: string };
 }
 
 /** Texte lisible gardé à côté de chaque image : de quoi la refaire. */
@@ -102,6 +104,11 @@ export function sidecarText(input: SidecarInput): string {
     `VAE : ${input.vae ?? 'réglage de Forge'}`,
     `LoRA : ${input.lora?.name ? `${input.lora.name} (poids ${input.lora.weight ?? 0.8})` : 'aucun'}`,
   ];
+  if (input.imager) {
+    lines.push(
+      `Jarvis Imager : sujet « ${input.imager.subjectType} »${input.imager.personCount ? `, ${input.imager.personCount} personne(s)` : ''}, modèle ${input.imager.checkpointLabel}, retouche visages/mains : ${input.imager.adetailer ? 'oui' : 'non'}${input.imager.upscaled ? `, agrandissement ${input.imager.upscaled}` : ''}`,
+    );
+  }
   if (input.sourceImage) {
     lines.push(`Photo de départ : ${input.sourceImage}${input.fidelity !== undefined ? ` (fidélité ${input.fidelity})` : ''}`);
   }

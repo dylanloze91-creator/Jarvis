@@ -365,8 +365,8 @@ export function SettingsPanel({
         )}
         {accordion(
           'images',
-          'Images',
-          'Stable Diffusion en local (Forge + SDXL)',
+          'Jarvis Imager',
+          'Images en local (Forge + SDXL)',
           <ImagesSettingsSection value={draft.images} onChange={(images) => patch({ images })} />,
         )}
         {accordion('phone', 'Téléphone', 'Jarvis via Tailscale', <PhoneSettingsSection />)}

@@ -9,18 +9,43 @@
 export const IMAGE_PROJECTS = ['jarvis', 'vx', 'drivers-ink', 'perso'] as const;
 export type ImageProject = (typeof IMAGE_PROJECTS)[number];
 
-/** Formats acceptés dans une demande. `WxH` libre est accepté aussi (multiples de 64). */
-export const IMAGE_FORMATS = ['carre', 'paysage', 'portrait', '16:9', '9:16'] as const;
+/**
+ * Formats acceptés dans une demande. Jarvis Imager n'envoie à Forge que des tailles natives SDXL :
+ * toute autre taille (« 1000x700 ») est ramenée à la plus proche ; « plus grand » = génération en
+ * taille native puis agrandissement, jamais une génération directe en grand.
+ */
+export const IMAGE_FORMATS = ['carre', 'paysage', 'portrait', 'paysage-doux', 'portrait-doux', '16:9', '9:16'] as const;
 export type ImageFormat = (typeof IMAGE_FORMATS)[number];
 
-/** Tailles SDXL natives (environ 1 mégapixel), multiples de 64 : ce que le modèle sait faire. */
+/** Les sept tailles natives SDXL (environ 1 mégapixel), multiples de 64 : ce que le modèle sait faire. */
 export const FORMAT_SIZES: Record<ImageFormat, { width: number; height: number }> = {
   carre: { width: 1024, height: 1024 },
   paysage: { width: 1216, height: 832 },
   portrait: { width: 832, height: 1216 },
+  'paysage-doux': { width: 1152, height: 896 },
+  'portrait-doux': { width: 896, height: 1152 },
   '16:9': { width: 1344, height: 768 },
   '9:16': { width: 768, height: 1344 },
 };
+
+export const NATIVE_SDXL_SIZES: readonly { width: number; height: number }[] = Object.values(FORMAT_SIZES);
+
+/** Taille native la plus proche d'une taille demandée (rapport largeur/hauteur d'abord, puis surface). */
+export function nearestNativeFormat(width: number, height: number): ImageFormat {
+  if (!(width > 0) || !(height > 0)) return 'carre';
+  const target = Math.log(width / height);
+  let best: ImageFormat = 'carre';
+  let bestScore = Number.POSITIVE_INFINITY;
+  for (const format of IMAGE_FORMATS) {
+    const size = FORMAT_SIZES[format];
+    const score = Math.abs(Math.log(size.width / size.height) - target);
+    if (score < bestScore) {
+      bestScore = score;
+      best = format;
+    }
+  }
+  return best;
+}
 
 export interface ImagePreset {
   /** Nom affiché. */

@@ -72,7 +72,7 @@ export function recentlyUsedImageTools(conversation: ChatMessage[], userTurns = 
 /** Consigne ajoutée au tour qui propose les outils d'image (chat sans orchestre et équipe Images). */
 export function imagesTurnPrompt(): string {
   return [
-    'IMAGES : pour créer une image, appelle generer_image tout de suite, sans phrase d’introduction (l’outil prévient lui-même l’utilisateur et met une à deux minutes), avec un prompt descriptif en anglais (sujet, style, lumière, cadrage), le projet (jarvis, vx, drivers-ink ou perso ; perso si rien ne l’indique), et seulement les options que l’utilisateur a demandées (format, nombre, graine, LoRA). Si le message porte une « Photo jointe », passe son chemin dans photoDeBase (et fidelite entre 0 et 1 si l’utilisateur dit à quel point rester proche de la photo).',
+    'JARVIS IMAGER : pour toute image, appelle generer_image tout de suite, sans phrase d’introduction (l’outil prévient lui-même l’utilisateur et met une à trois minutes). N’écris pas la consigne Stable Diffusion toi-même : transmets dans « demande » les mots de l’utilisateur, le projet (jarvis, vx, drivers-ink ou perso ; perso si rien ne l’indique), le « type » (personne, objet, paysage, logo-sticker, scene, autre), « nombrePersonnes » si la demande en parle, et seulement les options demandées (format, nombre d’images, graine, LoRA, agrandir). Si le message porte une « Photo jointe », passe son chemin dans photoDeBase (et fidelite entre 0 et 1 si l’utilisateur dit à quel point rester proche de la photo).',
     'Ta réponse finale donne le chemin des fichiers renvoyés par l’outil, tel quel. Ne décris jamais une image que l’outil n’a pas produite, et ne dis jamais « je vais générer » sans appeler l’outil.',
   ].join(' ');
 }

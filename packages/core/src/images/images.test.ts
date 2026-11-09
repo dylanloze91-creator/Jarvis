@@ -98,8 +98,9 @@ describe('module images — requête Forge', () => {
 
   it('formats : alias, taille libre arrondie aux 64 et bornée, défaut du projet', () => {
     expect(resolveSize('miniature', DEFAULT_PRESETS.vx)).toMatchObject({ width: 1344, height: 768, format: '16:9' });
-    expect(resolveSize('1000x700', DEFAULT_PRESETS.perso)).toMatchObject({ width: 1024, height: 704 });
-    expect(resolveSize('100x9000', DEFAULT_PRESETS.perso)).toMatchObject({ width: 512, height: 1536 });
+    // Tailles libres : jamais envoyées telles quelles, ramenées à une taille native SDXL.
+    expect(resolveSize('1000x700', DEFAULT_PRESETS.perso)).toMatchObject({ width: 1216, height: 832 });
+    expect(resolveSize('100x9000', DEFAULT_PRESETS.perso)).toMatchObject({ width: 768, height: 1344 });
     expect(resolveSize('n’importe quoi', DEFAULT_PRESETS.vx).format).toBe('16:9');
     expect(resolveSize(undefined, DEFAULT_PRESETS.jarvis).format).toBe('carre');
     expect(clampCount(undefined)).toBe(1);

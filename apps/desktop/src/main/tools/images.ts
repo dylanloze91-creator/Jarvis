@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import {
   IMAGE_PROJECTS,
+  IMAGE_SUBJECT_TYPES,
   MAX_IMAGES_PER_REQUEST,
   defineTool,
   toolFailure,
@@ -64,14 +65,25 @@ export function createImagesTools(service: ImagesService, deps: ImagesToolsDeps 
       ...available,
       name: 'generer_image',
       description:
-        'Génère une image en local avec Stable Diffusion (Forge, modèle SDXL) à partir d’un prompt descriptif en anglais. Projets : jarvis, vx (vidéo : 16:9 miniature, 9:16 short), drivers-ink (sticker vinyle : fond blanc, contours nets, version noir et blanc produite aussi), perso. Prend une à deux minutes : le modèle de langage est déchargé puis rechargé automatiquement. Renvoie les chemins des fichiers créés.',
+        'Confie une image à Jarvis Imager (Stable Diffusion XL en local, dans Forge). Transmets la demande de l’utilisateur telle quelle (demande), le projet (jarvis, vx pour la vidéo en 16:9 ou 9:16, drivers-ink pour un sticker vinyle, perso), le type de sujet (personne, objet, paysage, logo-sticker, scene, autre) et le nombre de personnes s’il y en a : Imager écrit lui-même la consigne finale en anglais, choisit le modèle, la taille native et les retouches visages et mains. Prend une à trois minutes : le modèle de langage est déchargé puis rechargé automatiquement. Renvoie les chemins des fichiers créés.',
       risk: 'safe',
       schema: z.object({
+        demande: z
+          .string()
+          .max(1500)
+          .optional()
+          .describe('Ce que l’utilisateur veut voir, dans ses mots (français accepté). Imager le traduit et l’enrichit. Obligatoire sauf si prompt ou photoDeBase est donné.'),
+        type: z
+          .enum(IMAGE_SUBJECT_TYPES)
+          .optional()
+          .describe('Ce que représente l’image : personne (une ou plusieurs), objet, paysage, logo-sticker, scene (plusieurs personnes dans un décor), autre.'),
+        nombrePersonnes: z.number().int().min(1).max(6).optional().describe('Nombre de personnes voulu dans l’image, si la demande en parle.'),
+        agrandir: z.boolean().optional().describe('Vrai si l’utilisateur veut une grande image : générée en taille native puis agrandie ×2.'),
         prompt: z
           .string()
           .max(1500)
           .optional()
-          .describe('Description de l’image en anglais : sujet, style, lumière, cadrage. Obligatoire sans photo ; avec photoDeBase, décris le résultat voulu (ex. « manga style portrait of the same person »).'),
+          .describe('Facultatif : description déjà en anglais (sujet, scène). Avec photoDeBase, décris le résultat voulu (ex. « manga style portrait of the same person »).'),
         projet: z.enum(IMAGE_PROJECTS).default('perso').describe('jarvis, vx, drivers-ink ou perso.'),
         nombre: z.number().int().min(1).max(MAX_IMAGES_PER_REQUEST).default(1).describe('Nombre d’images (1 à 4).'),
         format: z.string().max(20).optional().describe('carre, paysage, portrait, 16:9, 9:16 ou LARGEURxHAUTEUR. Absent : format par défaut du projet.'),
@@ -92,14 +104,14 @@ export function createImagesTools(service: ImagesService, deps: ImagesToolsDeps 
           .optional()
           .describe('Avec photoDeBase : à quel point rester proche de la photo, 0 (tout réinventer) à 1 (presque copier). 0,45 par défaut.'),
       }),
-      summarize: ({ prompt, style, projet, nombre, photoDeBase }) => {
-        const text = effectivePrompt(prompt, style, photoDeBase) ?? '(sans description)';
-        return `Génère ${nombre > 1 ? `${nombre} images` : 'une image'} pour le projet ${projet}${photoDeBase ? ' à partir de ta photo' : ''} : « ${text.length > 80 ? `${text.slice(0, 80)}…` : text} ».`;
+      summarize: ({ demande, prompt, style, projet, nombre, photoDeBase, type }) => {
+        const text = effectivePrompt(demande ?? prompt, style, photoDeBase) ?? '(sans description)';
+        return `Jarvis Imager : ${nombre > 1 ? `${nombre} images` : 'une image'} pour le projet ${projet}${type ? ` (${type})` : ''}${photoDeBase ? ' à partir de ta photo' : ''} : « ${text.length > 80 ? `${text.slice(0, 80)}…` : text} ».`;
       },
-      execute: async ({ prompt, projet, nombre, format, style, lora, poidsLora, graine, negatif, photoDeBase, fidelite }, context) => {
-        const finalPrompt = effectivePrompt(prompt, style, photoDeBase);
+      execute: async ({ demande, type, nombrePersonnes, agrandir, prompt, projet, nombre, format, style, lora, poidsLora, graine, negatif, photoDeBase, fidelite }, context) => {
+        const finalPrompt = effectivePrompt(demande?.trim() || prompt, style, photoDeBase);
         if (!finalPrompt) {
-          return toolFailure('definitive', 'Il manque la description de l’image : rappelle generer_image avec le champ prompt (en anglais).', 'prompt absent');
+          return toolFailure('definitive', 'Il manque la demande : rappelle generer_image avec le champ demande (les mots de l’utilisateur).', 'demande absente');
         }
         try {
           const result = await service.generate(
@@ -107,6 +119,9 @@ export function createImagesTools(service: ImagesService, deps: ImagesToolsDeps 
               prompt: finalPrompt,
               project: projet,
               count: nombre,
+              ...(type ? { subjectType: type } : {}),
+              ...(nombrePersonnes !== undefined ? { personCount: nombrePersonnes } : {}),
+              ...(agrandir ? { upscale: true } : {}),
               ...(format ? { format } : {}),
               ...(style ? { style } : {}),
               ...(lora ? { lora: { name: lora, ...(poidsLora !== undefined ? { weight: poidsLora } : {}) } } : {}),
@@ -130,7 +145,7 @@ export function createImagesTools(service: ImagesService, deps: ImagesToolsDeps 
     defineTool({
       ...available,
       name: 'images_etat',
-      description: 'État du module images : Forge installé et allumé ou non, modèle SDXL présent, LoRA disponibles, dossier des images, fichier des réglages par projet.',
+      description: 'État de Jarvis Imager : Forge installé et allumé ou non, modèles SDXL présents et modèle actif, retouche ADetailer, LoRA disponibles, dossier des images, fichiers de réglages.',
       risk: 'safe',
       schema: z.object({}),
       execute: async () => {
@@ -138,9 +153,10 @@ export function createImagesTools(service: ImagesService, deps: ImagesToolsDeps 
           const status = await service.status();
           const lines = [
             `Forge : ${status.launcherFound ? `installé dans ${status.forgeDir}` : `introuvable dans ${status.forgeDir}`}, ${status.forgeRunning ? 'allumé' : 'éteint (Jarvis le lancera au besoin)'}.`,
-            `Modèle SDXL : ${status.checkpointFound ? 'présent' : 'absent (models/Stable-diffusion/sd_xl_base_1.0.safetensors)'}${status.vaeFound ? ', VAE fp16 présent' : ''}.`,
+            `Modèles SDXL présents : ${status.checkpoints.length ? status.checkpoints.map((c) => c.label).join(', ') : 'aucun'} ; modèle actif : ${status.activeCheckpoint ?? 'aucun'}${status.vaeFound ? ' ; VAE fp16 présent' : ''}.`,
+            `Retouche visages et mains (ADetailer) : ${status.adetailerInstalled ? 'installée' : 'non installée'}.`,
             `LoRA disponibles : ${status.loras.length ? status.loras.join(', ') : status.forgeRunning ? 'aucun' : 'inconnus tant que Forge est éteint'}.`,
-            `Images rangées dans ${status.outputRoot} ; réglages par projet : ${status.presetsPath}.`,
+            `Images rangées dans ${status.outputRoot} ; réglages par projet : ${status.presetsPath} ; règles Imager : ${status.rulesPath}.`,
           ];
           if (status.error) lines.push(`Attention : ${status.error}`);
           return toolSuccess(lines.join('\n'), status);

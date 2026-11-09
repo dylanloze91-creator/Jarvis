@@ -53,18 +53,20 @@ export function ImagesSettingsSection({ value, onChange }: ImagesSettingsSection
   return (
     <div className="flex flex-col gap-3">
       <div>
-        <p className="text-[11px] font-medium tracking-wide text-slate-400 uppercase">Images (Forge + SDXL, en local)</p>
+        <p className="text-[11px] font-medium tracking-wide text-slate-400 uppercase">Jarvis Imager (Forge + SDXL, en local)</p>
         <p className="mt-1 text-xs leading-snug text-slate-500">
-          « Jarvis, génère une image d’un renard en sticker » : Jarvis décharge son modèle de langage, allume Forge,
-          fabrique l’image sur ta carte graphique, range le fichier dans le dossier des images (avec un petit
-          fichier texte qui garde le prompt et les réglages), puis recharge son modèle. Une à deux minutes par image.
-          Projets : jarvis, vx, drivers-ink, perso ; réglages par projet dans le fichier <code>images_presets.yaml</code>.
+          « Jarvis, génère une image d’un renard en sticker » : le cerveau confie la demande à Jarvis Imager, qui
+          écrit la consigne Stable Diffusion, choisit le modèle (RealVisXL, Juggernaut ou SDXL de base), une taille
+          native et les retouches visages et mains, décharge le modèle de langage, allume Forge, fabrique l’image,
+          range le fichier avec un petit texte des réglages, puis recharge le modèle. Une à trois minutes par image.
+          Projets : jarvis, vx, drivers-ink, perso (<code>images_presets.yaml</code>) ; règles d’Imager dans
+          <code> imager_rules.yaml</code>, tous deux dans le dossier des images.
         </p>
       </div>
 
       <Toggle
-        label="Activer le module images"
-        hint="Ajoute l’outil generer_image et l’équipe « Images » du chef d’orchestre. Coupé : rien ne change dans Jarvis."
+        label="Activer Jarvis Imager"
+        hint="Ajoute l’outil generer_image et l’équipe « Jarvis Imager » du chef d’orchestre. Coupé : rien ne change dans Jarvis."
         checked={enabled}
         onChange={(checked) => update({ enabled: checked })}
       />
@@ -124,7 +126,10 @@ function StatusBadge({ status, loading }: { status: ImagesStatusInfo | null; loa
   const ready = status.launcherFound && status.checkpointFound && !status.error;
   const lines = [
     status.launcherFound ? `Forge installé dans ${status.forgeDir}.` : `lancer_forge.bat introuvable dans ${status.forgeDir}.`,
-    status.checkpointFound ? 'Modèle SDXL présent.' : 'Modèle SDXL absent (models\\Stable-diffusion\\sd_xl_base_1.0.safetensors).',
+    status.checkpoints.length
+      ? `Modèles : ${status.checkpoints.map((c) => c.label).join(', ')} ; actif : ${status.activeCheckpoint ?? 'aucun'}.`
+      : 'Aucun modèle SDXL dans models\\Stable-diffusion (RealVisXL_V5.0_fp16.safetensors ou sd_xl_base_1.0.safetensors).',
+    status.adetailerInstalled ? 'Retouche visages et mains (ADetailer) installée.' : 'ADetailer absent : pas de retouche des visages et des mains.',
     status.forgeRunning ? `Forge est allumé${status.loras.length ? ` ; LoRA : ${status.loras.join(', ')}` : ''}.` : 'Forge est éteint : Jarvis le lancera au besoin.',
     `Images dans ${status.outputRoot}.`,
   ];

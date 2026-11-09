@@ -215,6 +215,10 @@ export function installPreviewBridge(): void {
         vaeFound: true,
         forgeRunning: false,
         loras: [],
+        checkpoints: [{ id: 'sdxl-base', label: 'SDXL base 1.0', file: 'sd_xl_base_1.0.safetensors' }],
+        activeCheckpoint: 'SDXL base 1.0',
+        adetailerInstalled: false,
+        rulesPath: 'C:\\dev\\Jarvis_images\\imager_rules.yaml',
       }),
       set: async (patch) => {
         settings = { ...settings, ...patch };

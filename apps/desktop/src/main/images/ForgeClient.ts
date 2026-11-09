@@ -84,6 +84,29 @@ export class ForgeClient {
     return body;
   }
 
+  /** Scripts disponibles (`adetailer`…), tels que Forge les liste pour txt2img. */
+  async scripts(): Promise<string[]> {
+    const body = (await this.get('/sdapi/v1/scripts')) as { txt2img?: string[] };
+    return (body.txt2img ?? []).map((name) => String(name).toLowerCase());
+  }
+
+  /** Agrandisseurs installés (`Lanczos`, `ESRGAN`, `R-ESRGAN 4x+`…). */
+  async upscalers(): Promise<string[]> {
+    const body = (await this.get('/sdapi/v1/upscalers')) as { name?: string }[];
+    return body.map((item) => String(item.name ?? '')).filter((name) => name && name !== 'None');
+  }
+
+  /** Agrandit une image (base64 → base64) par l'onglet « Extras » de Forge. */
+  async upscale(imageBase64: string, factor: number, upscaler: string, signal?: AbortSignal): Promise<string> {
+    const body = (await this.post(
+      '/sdapi/v1/extra-single-image',
+      { image: imageBase64, resize_mode: 0, upscaling_resize: factor, upscaler_1: upscaler, show_extras_results: true },
+      { signal, timeoutMs: 5 * 60_000 },
+    )) as { image?: string };
+    if (!body.image) throw new ForgeError('bad_response', 'Forge n’a pas renvoyé l’image agrandie.');
+    return body.image;
+  }
+
   /** Libère la mémoire vidéo du modèle sans arrêter Forge. */
   async unloadCheckpoint(): Promise<void> {
     await this.post('/sdapi/v1/unload-checkpoint', {}, { timeoutMs: 60_000 });
