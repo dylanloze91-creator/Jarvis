@@ -181,6 +181,24 @@ static void brain_task(void *arg) {
     }
 }
 
+/**
+ * Mesure le bruit de fond de la pièce au démarrage (une demi-seconde) et l'écrit dans le journal :
+ * c'est le chiffre qui sert à régler SPEECH_RMS et MIC_SHIFT dans config.h. Utilise `phrase` comme
+ * brouillon (encore vide à ce moment-là).
+ */
+static void probe_room_noise(void) {
+    mic_read(phrase, SAMPLE_RATE / 4);  // le micro se stabilise, on jette
+    size_t got = mic_read(phrase, SAMPLE_RATE / 2);
+    int32_t noise = pcm_rms(phrase, got);
+    ESP_LOGI(SERIAL_TAG, "micro : bruit de fond %ld (seuil de parole SPEECH_RMS = %d)", (long)noise, SPEECH_RMS);
+    if (got == 0 || noise < 2) {
+        ESP_LOGW(SERIAL_TAG, "micro muet : vérifie VDD sur 3V3, L/R sur GND et les fils SCK/WS/SD (config.h)");
+    } else if (noise * 10 >= SPEECH_RMS * 7) {
+        ESP_LOGW(SERIAL_TAG, "pièce bruyante pour ce réglage : monte SPEECH_RMS (≈ %ld) ou MIC_SHIFT à 14",
+                 (long)(noise * 2));
+    }
+}
+
 void app_main(void) {
     led_init();
     led_set(LED_BOOT);
@@ -195,6 +213,7 @@ void app_main(void) {
     }
 
     audio_init();
+    probe_room_noise();
     if (!wake_init()) {
         led_set(LED_ERROR);
         return;

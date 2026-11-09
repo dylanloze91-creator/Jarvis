@@ -5,8 +5,11 @@
 // ---------------------------------------------------------------------------------------------
 // Micro INMP441 (I2S, entrée). L/R du micro relié à GND = canal gauche.
 // ---------------------------------------------------------------------------------------------
-#define MIC_PIN_SCK   5    // SCK (horloge des bits)   → BCLK
-#define MIC_PIN_WS    4    // WS  (horloge gauche/droite)
+// Câblage validé sur la carte de Dylan (copie « XH-S3E » N16R8 + platine à borniers MRD076A) avec les
+// programmes de test : SCK sur 4, WS sur 5. (Le guide d'origine disait l'inverse ; les deux marchent
+// tant que ce fichier suit les fils.)
+#define MIC_PIN_SCK   4    // SCK (horloge des bits)   → BCLK
+#define MIC_PIN_WS    5    // WS  (horloge gauche/droite)
 #define MIC_PIN_SD    6    // SD  (données du micro)
 // Le micro donne 24 bits dans un mot de 32 : on garde les bits hauts. 16 = volume brut,
 // 13 = ×8 (plus sensible). Si Jarvis t'entend mal de loin, baisse à 12 ; si ça sature, monte à 14.
@@ -23,11 +26,12 @@
 
 // ---------------------------------------------------------------------------------------------
 // LED de la carte. L'ESP32-S3-DevKitC-1 d'Espressif a une LED RVB adressable (WS2812) sur GPIO 38
-// (guide officiel). Beaucoup de copies la mettent sur GPIO 48 : si la LED reste éteinte, essaie 48.
+// (révision 1.1) ou 48 (révision 1.0). Les copies (dont la « XH-S3E ») la mettent presque toujours sur
+// GPIO 48 : c'est la valeur choisie ici. Si la LED reste éteinte, essaie 38.
 // Pour une LED simple (une couleur) : LED_IS_RGB 0.
 // Couleurs : veille = éteinte, écoute = vert, réflexion = bleu qui clignote, erreur = rouge.
 // ---------------------------------------------------------------------------------------------
-#define LED_PIN       38
+#define LED_PIN       48
 #define LED_IS_RGB    1
 #define LED_BRIGHTNESS 40  // 0 à 255
 

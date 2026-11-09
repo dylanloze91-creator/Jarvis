@@ -9,3 +9,6 @@ sdkconfig.*
 sdkconfig.old
 .vscode/
 __pycache__/
+
+# Journal lu par outils/journal_enceinte.py
+journal-enceinte.txt

@@ -50,8 +50,8 @@ la carte à une broche d'un module. **Débranche la carte de l'USB pendant que t
 | --- | --- | --- | --- |
 | **VDD** | → | **3V3** | alimentation 3,3 V (**jamais 5V** : le micro grillerait) |
 | **GND** | → | **GND** | masse |
-| **SCK** | → | **5** | horloge |
-| **WS** | → | **4** | horloge gauche/droite |
+| **SCK** | → | **4** | horloge |
+| **WS** | → | **5** | horloge gauche/droite |
 | **SD** | → | **6** | le son |
 | **L/R** | → | **GND** | choisit le canal « gauche » (obligatoire) |
 
@@ -69,6 +69,18 @@ la carte à une broche d'un module. **Débranche la carte de l'USB pendant que t
 
 Le haut-parleur se branche sur les deux bornes **+** et **−** de l'ampli (à visser, ou à souder si le
 module n'a pas de bornier). Le sens n'a pas d'importance pour un seul haut-parleur.
+
+### Carte copiée « XH-S3E » (ou autre) : la broche 5V peut être morte
+
+Sur beaucoup de copies (dont la « XH-S3E » N16R8), la broche **5V** n'est **pas** reliée à l'USB tant
+que deux petites pastilles marquées **« IN-OUT »** (au dos ou près de la LED, à côté des broches 10-11)
+ne sont pas reliées par un point de soudure. Sans ce pont, l'ampli n'est pas alimenté : aucun son, et au
+multimètre les fils BCLK/LRC restent vers 0,3 V au lieu de 1,6 V.
+
+- Test : carte branchée en USB, multimètre en **20 V continu** (V⎓), pointe noire sur **GND**, rouge sur
+  **5V**. Moins de 1 V = pont manquant.
+- Réparation : une goutte d'étain qui relie les deux pastilles « IN-OUT ». Après : environ **4,5 V**
+  (normal, une diode prend un demi-volt).
 
 ### Vérifications avant de brancher
 
@@ -103,9 +115,11 @@ le dossier `firmware\jarvis-speaker` du projet Jarvis (celui qui contient le fic
 > Première ouverture : PlatformIO télécharge l'outillage pour l'ESP32-S3 (environ 1 à 2 Go). Laisse-le
 > finir ; la barre en bas indique l'avancement.
 
-Le pilote USB : branche la carte avec le câble sur la prise marquée **« UART »** (la carte en a deux ;
-l'autre s'appelle « USB »). Windows 10 et 11 installent le pilote tout seuls. Si la carte n'apparaît pas
-plus tard, installe le pilote « CP210x Universal Windows Driver » depuis le site de Silicon Labs.
+Le pilote USB : branche la carte avec le câble sur la prise marquée **« UART »** ou **« COM »** selon la
+carte (elle en a deux ; l'autre s'appelle « USB »). Windows 10 et 11 installent le pilote tout seuls. Si
+la carte n'apparaît pas plus tard (Gestionnaire de périphériques → « Ports (COM et LPT) »), regarde la
+petite puce à côté de cette prise : **CP2102** → pilote « CP210x Universal Windows Driver » (Silicon
+Labs) ; **CH343** ou **CH340** (fréquent sur les copies) → pilote « CH343SER » de WCH (wch-ic.com).
 
 ---
 
@@ -114,7 +128,8 @@ plus tard, installe le pilote « CP210x Universal Windows Driver » depuis le si
 Ce fichier est **personnel** : il contient ton Wi-Fi et la clé qui prouve au PC que c'est bien ton
 enceinte. Il reste sur ton ordinateur, il n'est jamais partagé.
 
-1. Sur le PC, ouvre Jarvis (version **5.0.64** ou plus) → **Réglages → Enceintes**.
+1. Sur le PC, ouvre Jarvis (version **5.0.64** ou plus) → **Réglages → Enceintes** (depuis la 5.0.70 :
+   **Réglages → Services → Enceintes**).
 2. Active l'interrupteur **« Enceintes »**. La première fois, Windows demande si Jarvis peut recevoir des
    connexions : **coche « Réseaux privés »** et clique sur **Autoriser**. (Si tu as cliqué trop vite sur
    Annuler, voir « Si ça ne marche pas ».)
@@ -142,7 +157,7 @@ Le fichier `include/secrets.example.h` montre à quoi doit ressembler le résult
 
 ## 5. Envoyer le programme sur la carte
 
-1. Branche la carte au PC (prise **UART**).
+1. Branche la carte au PC (prise **UART** ou **COM**).
 2. En bas de VS Code, dans la barre bleue, clique sur la **flèche →** (« PlatformIO: Upload »).
 3. La première fois, ça compile longtemps (5 à 10 minutes : il télécharge aussi le modèle du mot
    « Jarvis »). Les fois suivantes, une minute.
@@ -160,7 +175,8 @@ Le programme écrit deux choses sur la carte : le programme lui-même et le **mo
 
 1. Clique sur la **prise électrique** dans la barre bleue (« PlatformIO: Serial Monitor ») : c'est le
    **journal** de la carte, il raconte ce qu'elle fait, en français.
-2. Tu dois voir, dans l'ordre : `audio prêt`, `mot de réveil : wn9_jarvis_tts`, `Wi-Fi connecté, adresse
+2. Tu dois voir, dans l'ordre : `audio prêt`, `micro : bruit de fond 40 (seuil de parole SPEECH_RMS = 393)`
+   (le chiffre dépend de ta pièce : en dessous de 150 c'est parfait), `mot de réveil : wn9_jarvis_tts`, `Wi-Fi connecté, adresse
    192.168.1.xx`, `PC trouvé : Jarvis 5.0.64`, puis **`prêt : dis « Jarvis »`**.
 3. Dis « **Jarvis** » à voix normale, à un ou deux mètres. La carte fait un petit **bip** et la LED passe
    au **vert** : elle écoute. Tu n'as pas besoin d'attendre le bip : « Jarvis, quelle heure est-il ? »
@@ -169,6 +185,10 @@ Le programme écrit deux choses sur la carte : le programme lui-même et le **mo
    (la phrase est partie au PC), puis Jarvis répond dans le haut-parleur.
 5. Après la réponse, tu as quelques secondes (8 par défaut, réglable dans Réglages → Voix) pour enchaîner
    **sans redire « Jarvis »**. Si tu ne dis rien, la LED s'éteint : retour en veille.
+
+Sans VS Code, le même journal se lit avec `python outils/journal_enceinte.py COM5` (ton numéro de
+port) : il redémarre la carte, écoute deux minutes, enregistre tout dans `journal-enceinte.txt` et
+termine par un bilan « OK / NON » avec quoi faire pour chaque ligne en NON.
 
 Sur le PC, la discussion apparaît dans l'historique avec le nom de la pièce devant : « Salon · quelle
 heure est-il ». Dans Réglages → Enceintes, la ligne de l'enceinte indique « Dernière phrase à l'instant ».
@@ -196,9 +216,9 @@ répond : « Pour ça, il me faut ton accord : demande-le-moi sur le PC ou le t�
 | **rouge** (+ deux notes qui descendent) | problème : regarde le journal (point suivant) |
 | **rouge** fixe dès le démarrage | le modèle ou la mémoire manque : voir plus bas |
 
-Si la LED ne s'allume **jamais**, même pas en orange au démarrage, c'est sûrement une carte copiée dont la
-LED est sur une autre broche : dans `include/config.h`, mets `#define LED_PIN 48` (au lieu de 38),
-renvoie le programme. Tout le reste marche quand même sans LED.
+Si la LED ne s'allume **jamais**, même pas en orange au démarrage, elle est sur l'autre broche : dans
+`include/config.h`, mets `#define LED_PIN 38` (au lieu de 48, la valeur des copies), renvoie le
+programme. Tout le reste marche quand même sans LED.
 
 ### Ce que dit le journal (Serial Monitor)
 
@@ -212,11 +232,13 @@ renvoie le programme. Tout le reste marche quand même sans LED.
 | `aucun modèle dans la partition « model »` | Le modèle du mot « Jarvis » n'a pas été écrit. Relance la **flèche** (Upload) et vérifie dans la fenêtre la ligne `flash_models.py : srmodels.bin sera écrit`. |
 | `PSRAM absente` | Mauvaise carte (N8 ou N8R2 au lieu de N8R8/N16R8). |
 | `rien dit après « Jarvis »` | Normal si tu n'as rien dit. Si tu as parlé : rapproche-toi, ou baisse `MIC_SHIFT` à 12 dans `config.h` (plus sensible). |
-| Rien du tout dans le journal | Mauvais câble USB (charge seule) ou mauvaise prise : utilise la prise **UART**. En bas de VS Code, vérifie la vitesse `115200`. |
+| `micro muet` | Le micro ne renvoie rien : VDD sur **3V3**, L/R sur **GND**, fils SCK/WS/SD sur les broches écrites dans `config.h` (4, 5, 6), soudures des broches du micro. |
+| `pièce bruyante pour ce réglage` | Le bruit de fond est proche du seuil de parole : chaque phrase durerait 15 s. Mets dans `config.h` la valeur de `SPEECH_RMS` proposée par le message, ou `MIC_SHIFT 14`. |
+| Rien du tout dans le journal | Mauvais câble USB (charge seule) ou mauvaise prise : utilise la prise **UART** (ou **COM**). En bas de VS Code, vérifie la vitesse `115200`. |
 
 ### Le son
 
-- **Pas de son, jamais** : vérifie `Vin` sur **5V**, les trois fils BCLK/LRC/DIN sur **15/16/17**, et que
+- **Pas de son, jamais** : vérifie `Vin` sur **5V** et qu'il y a bien du 5V (copies : pont « IN-OUT », section 2), les trois fils BCLK/LRC/DIN sur **15/16/17**, et que
   le haut-parleur est bien vissé. Le petit bip au réveil est le test le plus simple.
 - **Trop fort / trop faible** : `VOLUME` dans `config.h` (0 à 100).
 - **Il ne m'entend pas quand je suis loin** : `MIC_SHIFT` à 12 ; **il sature / grésille** : 14.
