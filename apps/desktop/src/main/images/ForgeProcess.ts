@@ -25,6 +25,7 @@ export interface ForgeProcessDeps {
 export class ForgeProcess {
   private child: ChildProcess | null = null;
   private stderrTail = '';
+  private stopping = false;
 
   constructor(
     private readonly forgeDir: string,
@@ -56,10 +57,16 @@ export class ForgeProcess {
     onProgress?.('Je démarre Forge (le programme qui fabrique les images), environ une minute…');
     this.stderrTail = '';
     const spawnImpl = this.deps.spawnImpl ?? defaultSpawn;
-    this.child = spawnImpl('cmd.exe', ['/d', '/c', FORGE_LAUNCHER], { cwd: this.forgeDir });
+    // Chemin complet : certains environnements refusent de résoudre un .bat par son nom relatif.
+    this.child = spawnImpl('cmd.exe', ['/d', '/c', this.launcherPath], { cwd: this.forgeDir });
     this.child.stderr?.on('data', (chunk: Buffer) => this.remember(chunk.toString('utf8')));
     this.child.stdout?.on('data', (chunk: Buffer) => this.remember(chunk.toString('utf8')));
-    this.child.on('exit', (code) => this.deps.log?.(`[images] Forge s’est arrêté (code ${code ?? '?'}).`));
+    this.child.on('exit', (code) => {
+      // Arrêt demandé par Jarvis (`stop()`) : normal, pas une alerte.
+      if (this.stopping) this.deps.log?.('[images] Forge arrêté par Jarvis après l’image.');
+      else this.deps.log?.(`[images] Forge s’est arrêté de lui-même (code ${code ?? '?'}).`);
+      this.stopping = false;
+    });
     const sleep = this.deps.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
     const deadline = Date.now() + FORGE_START_TIMEOUT_MS;
     while (Date.now() < deadline) {
@@ -85,6 +92,7 @@ export class ForgeProcess {
     const child = this.child;
     this.child = null;
     if (!child || child.exitCode !== null || !child.pid) return;
+    this.stopping = true;
     const killTree = this.deps.killTreeImpl ?? defaultKillTree;
     try {
       await killTree(child.pid);

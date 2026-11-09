@@ -53,8 +53,10 @@ Secrets   : OK (0 trouvé)
 Fichiers modifiés : voir le commit 67b71c0 et le commit des consignes (packages/core/src/images, apps/desktop/src/main/images, tools/images.ts, ImagesSettings.tsx, config/, docs/images-jarvis.md, training/lora/, CLAUDE.md, .gitignore, rapport)
 Prêt à fusionner : OUI (après relecture par l'utilisateur ; rien sur main)
 À corriger : fond gris du sticker (forcer un fond blanc par post-traitement ou un modèle/LoRA dédié) ; noir et blanc = seuil (un vrai trait demanderait un LoRA « line art ») ; prompt parfois en français ; projet par défaut parfois `jarvis` au lieu de `perso`
-Testé en vrai (à la voix, sur le PC) : PAS FAIT (testé au texte, dans la vraie session de chat, avec le vrai Ollama et le vrai Forge : 5 images)
+Testé en vrai (à la voix, sur le PC) : FAIT (version de développement, 9 novembre 21 h 50 : « Jarvis, génère une image d'un chat sur un toit » dit à la voix → Forge lancé par Jarvis, image 832×1216 dans perso en 114 s, qwen2.5:7b rechargé ; Whisper a transcrit « chtah », le 7B l'a recopié et SDXL a dessiné un canidé : défaut de transcription, pas du module)
 ```
+
+Correctif trouvé par ce test à la voix : Jarvis lançait `lancer_forge.bat` par son nom relatif, refusé dans certains environnements (« n'est pas reconnu en tant que commande interne ou externe ») ; le lancement passe maintenant par le chemin complet, et l'arrêt de Forge par Jarvis après l'image n'est plus journalisé comme une panne.
 
 À tester à la voix une fois la branche installée (version de développement `npm run dev`, ou installateur construit depuis la branche) : « Jarvis, génère une image d'un chat sur un toit, photo » → Jarvis dit qu'il décharge son modèle, une image arrive dans `perso` (ou `jarvis`) et Jarvis redonne le chemin ; « Jarvis, fais-moi un sticker de renard pour Drivers Ink » → deux fichiers (couleur et `-nb`) dans `drivers-ink` ; « Jarvis, crée une miniature pour ma vidéo sur les montres » → une image 1344×768 dans `vx`.
 
