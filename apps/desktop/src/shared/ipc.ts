@@ -91,6 +91,7 @@ export const IpcChannel = {
   settingsSiteBlockStatus: 'settings:siteblock-status',
   settingsRoverStatus: 'settings:rover-status',
   settingsImagesStatus: 'settings:images-status',
+  imagesOpen: 'images:open',
   settingsGeocodeSearch: 'settings:geocode-search',
   settingsGoogleStatus: 'settings:google-status',
   settingsGoogleConnect: 'settings:google-connect',
@@ -290,6 +291,15 @@ export interface SendChatInput {
    * d'abord qu'elle lui est adressée ; sinon `not_addressed` et rien n'est enregistré.
    */
   followUp?: boolean;
+  /** Module images : photos jointes (3 au plus, 20 Mo chacune), enregistrées par le processus principal. */
+  attachments?: ChatAttachmentInput[];
+}
+
+/** Photo jointe telle que l'interface l'envoie (octets en base64, sans préfixe `data:`). */
+export interface ChatAttachmentInput {
+  name: string;
+  mime: string;
+  dataBase64: string;
 }
 
 export interface SpotifyStatus {
@@ -644,6 +654,10 @@ export interface JarvisApi {
   };
   orchestra: {
     validateTeam(input: TeamValidationInput): Promise<{ ok: true } | { ok: false; error: string }>;
+  };
+  images: {
+    /** Ouvre dans la visionneuse une image ou un fichier du dossier des images de Jarvis (rien d'autre). */
+    open(path: string): Promise<{ ok: true } | { ok: false; error: string }>;
   };
   settings: {
     get(): Promise<{ settings: Settings; status: RuntimeStatus }>;

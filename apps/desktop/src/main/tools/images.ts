@@ -36,7 +36,12 @@ function failure(error: unknown): ToolResult {
  * `safe` : générer une image n'a rien d'irréversible ; l'outil prévient l'utilisateur
  * (`onProgress`) que le modèle de langage est déchargé le temps de l'image.
  */
-export function createImagesTools(service: ImagesService): RegisteredTool[] {
+export interface ImagesToolsDeps {
+  /** Ouvre le fichier dans la visionneuse (processus principal : `shell.openPath`). Absent : rien n'est ouvert. */
+  openPath?: (path: string) => Promise<string | void>;
+}
+
+export function createImagesTools(service: ImagesService, deps: ImagesToolsDeps = {}): RegisteredTool[] {
   const available = {
     isAvailable: () => service.isEnabled(),
     unavailableMessage: IMAGES_DISABLED_MESSAGE,
@@ -59,10 +64,21 @@ export function createImagesTools(service: ImagesService): RegisteredTool[] {
         poidsLora: z.number().min(0.1).max(1.5).optional().describe('Poids du LoRA (0,8 par défaut).'),
         graine: z.number().int().min(0).optional().describe('Graine pour refaire la même image ; absente = aléatoire.'),
         negatif: z.string().max(600).optional().describe('Ce que l’image ne doit pas contenir, en plus des règles du projet.'),
+        photoDeBase: z
+          .string()
+          .max(500)
+          .optional()
+          .describe('Chemin d’une photo de départ (celui donné par « Photo jointe ») : l’image est faite à partir d’elle.'),
+        fidelite: z
+          .number()
+          .min(0)
+          .max(1)
+          .optional()
+          .describe('Avec photoDeBase : à quel point rester proche de la photo, 0 (tout réinventer) à 1 (presque copier). 0,45 par défaut.'),
       }),
-      summarize: ({ prompt, projet, nombre }) =>
-        `Génère ${nombre > 1 ? `${nombre} images` : 'une image'} pour le projet ${projet} : « ${prompt.length > 80 ? `${prompt.slice(0, 80)}…` : prompt} ».`,
-      execute: async ({ prompt, projet, nombre, format, style, lora, poidsLora, graine, negatif }, context) => {
+      summarize: ({ prompt, projet, nombre, photoDeBase }) =>
+        `Génère ${nombre > 1 ? `${nombre} images` : 'une image'} pour le projet ${projet}${photoDeBase ? ' à partir de ta photo' : ''} : « ${prompt.length > 80 ? `${prompt.slice(0, 80)}…` : prompt} ».`,
+      execute: async ({ prompt, projet, nombre, format, style, lora, poidsLora, graine, negatif, photoDeBase, fidelite }, context) => {
         try {
           const result = await service.generate(
             {
@@ -74,9 +90,15 @@ export function createImagesTools(service: ImagesService): RegisteredTool[] {
               ...(lora ? { lora: { name: lora, ...(poidsLora !== undefined ? { weight: poidsLora } : {}) } } : {}),
               ...(graine !== undefined ? { seed: graine } : {}),
               ...(negatif ? { negative: negatif } : {}),
+              ...(photoDeBase ? { initImage: { path: photoDeBase, ...(fidelite !== undefined ? { fidelity: fidelite } : {}) } } : {}),
             },
             { ...(context.onProgress ? { onProgress: context.onProgress } : {}), ...(context.signal ? { signal: context.signal } : {}) },
           );
+          // Ouvrir la première image dans la visionneuse : confort, jamais bloquant.
+          const first = result.files[0];
+          if (first && deps.openPath && service.settings().openAfterGeneration) {
+            await deps.openPath(first.png).catch(() => undefined);
+          }
           return toolSuccess(describeImagesResult(result), result);
         } catch (error) {
           return failure(error);

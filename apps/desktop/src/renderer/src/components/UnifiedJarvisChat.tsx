@@ -10,7 +10,7 @@ import { VoiceBar } from '@/components/VoiceBar';
 import type { ChatItem, PendingConfirmation } from '@/hooks/useChat';
 import { DeveloperConfirmationCard } from '@/components/developer/DeveloperConfirmationCard';
 import type { DevConfirmation } from '../../../shared/developerIpc.js';
-import type { RuntimeStatus } from '../../../shared/ipc.js';
+import type { ChatAttachmentInput, RuntimeStatus } from '../../../shared/ipc.js';
 import type { UseVoiceResult } from '@/voice/useVoice';
 import { setVoiceTranscriptTarget } from '@/voice/voiceTranscriptRouter';
 import '@/dashboard/dashboard.css';
@@ -34,7 +34,7 @@ export function UnifiedJarvisChat({
     items: ChatItem[];
     busy: boolean;
     confirmation: PendingConfirmation | null;
-    send: (text: string, source?: 'voice' | 'text') => void;
+    send: (text: string, source?: 'voice' | 'text', extra?: { attachments?: ChatAttachmentInput[] }) => void;
     cancel: () => void;
     respond: (requestId: string, approved: boolean) => void;
   };
@@ -69,15 +69,15 @@ export function UnifiedJarvisChat({
   const busy = chat.busy;
 
   const submit = useCallback(
-    (text: string, source?: 'voice' | 'text') => {
+    (text: string, source?: 'voice' | 'text', attachments?: ChatAttachmentInput[]) => {
       const trimmed = text.trim();
       // Une transcription d'une lettre est du bruit ; un texte tapé, même court, est voulu.
       if (trimmed.length === 0 || (source === 'voice' && trimmed.length < 2) || busy) return;
-      if (onOpenDeveloper && unifiedChatSubmitTarget(trimmed, settings) === 'developer') {
+      if (!attachments?.length && onOpenDeveloper && unifiedChatSubmitTarget(trimmed, settings) === 'developer') {
         onOpenDeveloper(trimmed);
         return;
       }
-      chat.send(trimmed, source);
+      chat.send(trimmed, source, attachments?.length ? { attachments } : {});
     },
     [busy, chat, onOpenDeveloper, settings],
   );
@@ -159,7 +159,7 @@ export function UnifiedJarvisChat({
         />
       ) : null}
       {learningLine ? <p className="dash-learning-hint no-drag">{learningLine}</p> : null}
-      <Composer busy={busy} onSend={submit} onCancel={chat.cancel} />
+      <Composer busy={busy} onSend={(text, attachments) => submit(text, 'text', attachments)} onCancel={chat.cancel} />
       <VoiceBar
         voice={voice}
         voiceEnabled={settings?.voice.enabled ?? false}

@@ -82,6 +82,13 @@ export function ImagesSettingsSection({ value, onChange }: ImagesSettingsSection
       </Field>
 
       <Toggle
+        label="Ouvrir l’image dès qu’elle est prête"
+        hint="La première image de chaque demande s’ouvre dans la visionneuse Windows. Le chemin reste cliquable dans la discussion."
+        checked={value?.openAfterGeneration !== false}
+        onChange={(checked) => update({ openAfterGeneration: checked })}
+      />
+
+      <Toggle
         label="Laisser Forge allumé après une image"
         hint="Plus rapide pour enchaîner des images, mais Forge garde de la mémoire vidéo : le modèle de langage peut tourner plus lentement. Par défaut, Forge est arrêté après chaque image."
         checked={value?.keepForgeRunning === true}

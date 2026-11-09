@@ -42,6 +42,8 @@ export interface ImageFileNames {
   txt: string;
   /** Version noir et blanc, si demandée. */
   pngBw: string;
+  /** Copie de la photo de départ (extension ajoutée par l'appelant). */
+  sourceBase: string;
 }
 
 export function imageFileNames(input: { project: ImageProject; prompt: string; now: Date; index: number }): ImageFileNames {
@@ -52,7 +54,14 @@ export function imageFileNames(input: { project: ImageProject; prompt: string; n
     png: `${base}.png`,
     txt: `${base}.txt`,
     pngBw: `${base}-nb.png`,
+    sourceBase: `${base}-source`,
   };
+}
+
+/** Dossier et nom d'une photo jointe recopiée par Jarvis : `_references/AAAA-MM-JJ/HHMMSS-nom.ext`. */
+export function referenceFileName(originalName: string, extension: string, now: Date): { folder: string; file: string } {
+  const stem = originalName.replace(/\.[a-z0-9]+$/i, '');
+  return { folder: `_references/${dateFolder(now)}`, file: `${timePrefix(now)}-${imageSlug(stem, 30)}${extension}` };
 }
 
 export interface SidecarInput {
@@ -66,6 +75,9 @@ export interface SidecarInput {
   createdAt: Date;
   blackAndWhiteFile?: string;
   forgeVersion?: string;
+  /** Photo de départ (copie à côté de l'image) et fidélité demandée. */
+  sourceImage?: string;
+  fidelity?: number;
 }
 
 /** Texte lisible gardé à côté de chaque image : de quoi la refaire. */
@@ -85,6 +97,9 @@ export function sidecarText(input: SidecarInput): string {
     `VAE : ${input.vae ?? 'réglage de Forge'}`,
     `LoRA : ${input.lora?.name ? `${input.lora.name} (poids ${input.lora.weight ?? 0.8})` : 'aucun'}`,
   ];
+  if (input.sourceImage) {
+    lines.push(`Photo de départ : ${input.sourceImage}${input.fidelity !== undefined ? ` (fidélité ${input.fidelity})` : ''}`);
+  }
   if (input.blackAndWhiteFile) lines.push(`Version noir et blanc : ${input.blackAndWhiteFile}`);
   if (input.forgeVersion) lines.push(`Forge : ${input.forgeVersion}`);
   return `${lines.join('\n')}\n`;

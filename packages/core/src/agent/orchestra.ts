@@ -202,6 +202,8 @@ export interface ExpressInput {
   /** Équipes dont au moins un outil est enregistré (les équipes sans outil sont toujours là). */
   available: ReadonlySet<OrchestraTeam>;
   now?: Date;
+  /** Module images : le message porte une photo jointe (elle sert à faire une image). */
+  hasImageAttachment?: boolean;
 }
 
 /** Équipe désignée par une règle de Jarvis, sans modèle ; `null` : le cerveau décide. */
@@ -221,7 +223,7 @@ export function expressTeam(input: ExpressInput): OrchestraTeam | null {
   if (extractKnowledgeIntent(text)) return pick('memoire');
   // Module images : « génère une image… », « dessine-moi… » partent à l'équipe Images sans
   // demander au cerveau. Équipe absente (module coupé) : le chemin d'avant, inchangé.
-  if (looksLikeImageIntent(text)) {
+  if (looksLikeImageIntent(text) || input.hasImageAttachment) {
     const images = pick('images');
     if (images) return images;
   }

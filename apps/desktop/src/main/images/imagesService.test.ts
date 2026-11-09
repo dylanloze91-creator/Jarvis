@@ -64,8 +64,8 @@ function fakeFetch(world: World): typeof fetch {
       world.calls.push('forge:unload');
       return json({});
     }
-    if (url.includes('/sdapi/v1/txt2img')) {
-      world.calls.push('forge:txt2img');
+    if (url.includes('/sdapi/v1/txt2img') || url.includes('/sdapi/v1/img2img')) {
+      world.calls.push(url.includes('img2img') ? 'forge:img2img' : 'forge:txt2img');
       world.txt2imgPayloads.push(body);
       if (world.failTxt2img) return new Response('boom', { status: 500 });
       const count = Number(body.batch_size ?? 1);
@@ -188,6 +188,33 @@ describe('ImagesService', () => {
     expect(world.calls.filter((call) => call.startsWith('forge:'))).toEqual([]);
     const status = await svc.status();
     expect(status).toMatchObject({ enabled: true, launcherFound: false, checkpointFound: true, forgeRunning: false });
+  });
+
+  it('photo jointe : enregistrée sous _references, puis image vers image avec le format de la photo et la copie à côté', async () => {
+    const world: World = { forgeUp: true, loaded: ['qwen2.5:7b'], calls: [], txt2imgPayloads: [] };
+    const { svc, outputRoot } = service(world);
+    // Une « photo » 1920×1080 (PNG minuscule mais avec les bonnes dimensions dans l'en-tête).
+    const photo = encodeRgbaPng(4, 2, Buffer.alloc(4 * 2 * 4, 200), 4);
+    photo.writeUInt32BE(1920, 16);
+    photo.writeUInt32BE(1080, 20);
+    const saved = await svc.saveReference({ name: 'Ma Photo.PNG', mime: 'image/png', data: photo });
+    expect(saved.kind).toBe('image');
+    expect(saved.path.replace(/\\/g, '/')).toMatch(/\/_references\/2026-11-09\/213000-ma-photo\.png$/);
+    expect(existsSync(saved.path)).toBe(true);
+    await expect(svc.saveReference({ name: 'doc.pdf', mime: 'application/pdf', data: photo })).rejects.toThrow(/PNG, JPEG ou WebP/);
+
+    const result = await svc.generate({ prompt: 'sticker of this', project: 'drivers-ink', initImage: { path: saved.path, fidelity: 0.7 } });
+    const payload = world.txt2imgPayloads[0] as Record<string, unknown>;
+    expect(world.calls).toContain('forge:img2img');
+    expect(payload.init_images).toEqual([photo.toString('base64')]);
+    expect(payload.denoising_strength).toBe(0.3);
+    expect([payload.width, payload.height]).toEqual([1344, 768]);
+    expect(result.files[0]!.source).toMatch(/-source\.png$/);
+    expect(existsSync(result.files[0]!.source!)).toBe(true);
+    expect(readFileSync(result.files[0]!.txt, 'utf8')).toContain('Photo de départ');
+    expect(describeImagesResult(result)).toContain('à partir de ta photo');
+    expect(result.folder.startsWith(join(outputRoot, 'drivers-ink'))).toBe(true);
+    await expect(svc.generate({ prompt: 'x', project: 'perso', initImage: { path: join(outputRoot, 'absente.jpg') } })).rejects.toThrow(/introuvable/);
   });
 
   it('pickBrainModel : le cerveau de l’orchestre, sinon le modèle qui tournait, sinon celui du chat', () => {

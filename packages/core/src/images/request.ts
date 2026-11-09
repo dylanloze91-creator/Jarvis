@@ -27,6 +27,31 @@ export interface ImageRequest {
   seed?: number;
   /** Prompt négatif ajouté à celui du projet. */
   negative?: string;
+  /** Photo de départ (image vers image) : chemin d'un fichier et fidélité 0 à 1 (0,45 par défaut). */
+  initImage?: { path: string; fidelity?: number };
+}
+
+/** Requête « image vers image » : la photo encodée en base64, et la force du changement. */
+export interface Img2ImgPayload extends Txt2ImgPayload {
+  init_images: string[];
+  denoising_strength: number;
+  /** 1 = recadrer et redimensionner la photo à la taille demandée (sans déformer). */
+  resize_mode: 1;
+}
+
+export function buildImg2ImgPayload(
+  request: ImageRequest,
+  preset: ImagePreset,
+  options: PayloadOptions,
+  initImageBase64: string,
+  denoisingStrength: number,
+): Img2ImgPayload {
+  return {
+    ...buildTxt2ImgPayload(request, preset, options),
+    init_images: [initImageBase64],
+    denoising_strength: denoisingStrength,
+    resize_mode: 1,
+  };
 }
 
 export interface Txt2ImgPayload {

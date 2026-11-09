@@ -1,4 +1,4 @@
-import type { Txt2ImgPayload, Txt2ImgResponse } from '@jarvis/core';
+import type { Img2ImgPayload, Txt2ImgPayload, Txt2ImgResponse } from '@jarvis/core';
 
 export type ForgeErrorKind = 'unreachable' | 'http' | 'timeout' | 'cancelled' | 'bad_response';
 
@@ -73,6 +73,13 @@ export class ForgeClient {
 
   async txt2img(payload: Txt2ImgPayload, signal?: AbortSignal): Promise<Txt2ImgResponse> {
     const body = (await this.post('/sdapi/v1/txt2img', payload, { signal, timeoutMs: TXT2IMG_TIMEOUT_MS })) as Txt2ImgResponse;
+    if (!body || !Array.isArray(body.images)) throw new ForgeError('bad_response', 'Forge n’a pas renvoyé d’image.', JSON.stringify(body).slice(0, 500));
+    return body;
+  }
+
+  /** Image vers image : même réponse que `txt2img`. */
+  async img2img(payload: Img2ImgPayload, signal?: AbortSignal): Promise<Txt2ImgResponse> {
+    const body = (await this.post('/sdapi/v1/img2img', payload, { signal, timeoutMs: TXT2IMG_TIMEOUT_MS })) as Txt2ImgResponse;
     if (!body || !Array.isArray(body.images)) throw new ForgeError('bad_response', 'Forge n’a pas renvoyé d’image.', JSON.stringify(body).slice(0, 500));
     return body;
   }

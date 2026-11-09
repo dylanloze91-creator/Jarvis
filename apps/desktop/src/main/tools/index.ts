@@ -63,6 +63,8 @@ export interface ToolManagerDeps {
   rover?: RoverClient;
   /** Module images (Forge + SDXL). Ses outils ne sont proposés que si `images.enabled` est vrai. */
   images?: ImagesService;
+  /** Module images : ouvre une image produite dans la visionneuse (`shell.openPath`, côté main). */
+  openImagePath?: (path: string) => Promise<string | void>;
   /**
    * Profil modeste seulement : Spotify reste enregistré mais absent du prompt
    * tant que le compte n’est pas connecté. Ignoré sur les autres profils.
@@ -130,7 +132,9 @@ function createFullToolManager(deps: ToolManagerDeps): ToolManager {
 
 /** Les outils d'image n'entrent au catalogue qu'avec `images.enabled` : le catalogue d'avant ne change pas sinon. */
 function imagesToolsIfEnabled(deps: ToolManagerDeps) {
-  return deps.images && deps.getSettings().images?.enabled ? createImagesTools(deps.images) : [];
+  return deps.images && deps.getSettings().images?.enabled
+    ? createImagesTools(deps.images, deps.openImagePath ? { openPath: deps.openImagePath } : {})
+    : [];
 }
 
 /** Liste courte : heure, notes, ouvrir une application, recherche web. */

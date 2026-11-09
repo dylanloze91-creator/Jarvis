@@ -28,7 +28,7 @@ const VERBS = '(?:genere|generer|cree|creer|dessine|dessiner|fais|faire|fabrique
 
 const PATTERNS = [
   // « génère une image de… », « fais-moi un sticker… », « crée 3 miniatures… »
-  new RegExp(`\\b${VERBS}(?:[- ]?(?:moi|nous))?\\s+(?:une?|des|le|la|les|\\d+|un nouveau|une nouvelle|mon|ma|mes)?\\s*(?:nouvel(?:le)?s?\\s+)?${SUBJECTS}\\b`),
+  new RegExp(`\\b${VERBS}(?:[- ]?(?:moi|nous|en|lui))?\\s+(?:une?|des|le|la|les|\\d+|un nouveau|une nouvelle|mon|ma|mes)?\\s*(?:nouvel(?:le)?s?\\s+)?${SUBJECTS}\\b`),
   // « une image de … » en tête de phrase, sans verbe (« une image d'un chat sur un toit »)
   new RegExp(`^(?:une?|des|\\d+)\\s+${SUBJECTS}\\s+(?:de|d'|du|des|pour|avec|qui|representant|montrant)\\b`),
   // « dessine-moi un chat » (sans le mot image)
@@ -72,7 +72,7 @@ export function recentlyUsedImageTools(conversation: ChatMessage[], userTurns = 
 /** Consigne ajoutée au tour qui propose les outils d'image (chat sans orchestre et équipe Images). */
 export function imagesTurnPrompt(): string {
   return [
-    'IMAGES : pour créer une image, appelle generer_image tout de suite, sans phrase d’introduction (l’outil prévient lui-même l’utilisateur et met une à deux minutes), avec un prompt descriptif en anglais (sujet, style, lumière, cadrage), le projet (jarvis, vx, drivers-ink ou perso ; perso si rien ne l’indique), et seulement les options que l’utilisateur a demandées (format, nombre, graine, LoRA).',
+    'IMAGES : pour créer une image, appelle generer_image tout de suite, sans phrase d’introduction (l’outil prévient lui-même l’utilisateur et met une à deux minutes), avec un prompt descriptif en anglais (sujet, style, lumière, cadrage), le projet (jarvis, vx, drivers-ink ou perso ; perso si rien ne l’indique), et seulement les options que l’utilisateur a demandées (format, nombre, graine, LoRA). Si le message porte une « Photo jointe », passe son chemin dans photoDeBase (et fidelite entre 0 et 1 si l’utilisateur dit à quel point rester proche de la photo).',
     'Ta réponse finale donne le chemin des fichiers renvoyés par l’outil, tel quel. Ne décris jamais une image que l’outil n’a pas produite, et ne dis jamais « je vais générer » sans appeler l’outil.',
   ].join(' ');
 }

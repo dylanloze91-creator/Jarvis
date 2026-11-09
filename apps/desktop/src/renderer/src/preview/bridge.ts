@@ -199,6 +199,9 @@ export function installPreviewBridge(): void {
     orchestra: {
       validateTeam: async () => ({ ok: true }),
     },
+    images: {
+      open: async () => ({ ok: true as const }),
+    },
     settings: {
       get: async () => ({ settings, status: status() }),
       imagesStatus: async () => ({

@@ -363,6 +363,8 @@ export const settingsSchema = z.object({
       outputRoot: z.string().max(400).optional(),
       /** Laisser Forge allumé après une image (le 7B est quand même rechargé). Absent : Forge est arrêté. */
       keepForgeRunning: z.boolean().optional(),
+      /** Ouvrir l'image dans la visionneuse Windows dès qu'elle est faite. Absent : oui. */
+      openAfterGeneration: z.boolean().optional(),
     })
     .optional(),
   machine: z
