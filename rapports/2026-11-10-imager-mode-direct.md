@@ -22,11 +22,30 @@ Ce qui n'est pas dans le mode direct : une **photo jointe** (image vers image) p
 
 ## Essai réel (vrai Forge, vrai Ollama, service réel)
 
-__E2E__
+Script `test-direct.ts` (bloc-notes de la session) : vraie `ImagesService`, vrai Ollama, vrai Forge, `fetch` espionné pour compter les appels `/api/chat`.
+
+| Demande | Mode | Durée | Modèle | Appels au modèle de langage |
+| --- | --- | --- | --- | --- |
+| « a misty mountain lake at sunrise, pine trees, soft light » | telle quelle | 187 s (Forge démarré) | modèle courant de Forge (c'était Animagine, du tour précédent) → corrigé depuis : sans modèle choisi, celui d'Imager | **0** |
+| « portrait d’une femme rousse qui sourit, lumière douce de fin de journée » | améliorée | 679 s (suites de tests en parallèle, Forge redémarré, première requête échouée puis réussie) | RealVisXL V5.0, retouche visages/mains | **0** |
+| « une montre de plongée en acier sur un rocher mouillé, gros plan » | améliorée | arrêtée (carte graphique rendue à l'utilisateur pour son essai) | — | — |
+
+Le 7B a été déchargé avant chaque image et rechargé après (`ollama ps` : `qwen2.5:7b`).
+
+**Essai de l'utilisateur dans la fenêtre (version de développement, 17 h 49 à 17 h 56)** : trois demandes commençant par « génère une image… » parties en direct (route « Imager direct, sans modèle », journal d'audit `mode: direct`), 214 s, 214 s et 125 s ; bascule automatique sur Animagine pour « style de naruto manga anime ». Trois défauts vus et corrigés ensuite : le verbe de la demande restait dans la consigne (« génère image d'hInata… ») ; le dictionnaire ne connaissait pas la moitié des mots (nue, seins, caresser, « en train de », « vu de loin », « de face », « dans le style de », élisions « d'une ») ; le sujet était deviné « paysage » à cause de « plage » (pas de retouche du visage, format large). Et « pas mal mais en version anime manga » partait au cerveau, qui demandait des précisions : c'est maintenant une suite du tour direct (consigne précédente + changement), sans modèle. Ces quatre corrections sont testées (`direct.test.ts`, `direct-image-session.test.ts`) mais **pas rejouées en vrai** : l'utilisateur a demandé de clore le chantier images.
 
 ## Contrôles
 
-__CONTROLES__
+| Vérification | Résultat |
+| --- | --- |
+| `npm run typecheck` | OK |
+| `npm run lint` | OK |
+| `npm test` (cœur) | 2288/2289 en suite complète pendant l'essai réel (un dépassement de délai : `learning/constraints.test.ts`, vrais processus node, 5 s) → délai explicite de 60 s ajouté, vert seul en 9 s |
+| `npm test` (bureau, sans `windowsDesktopMissionPath.test.ts`) | 702/703 en suite complète pendant l'essai réel (un dépassement : `task/sandbox.test.ts`, vrai git, 5 s) → vert seul en 1,8 s, non modifié |
+| Tests du mode direct | cœur `direct.test.ts` 11/11, `imagerRules.test.ts` (section `direct`) ; bureau `imagesService.test.ts` 17/17 (dont 5 directs), `direct-image-session.test.ts` 8/8, `tools/images-direct.test.ts` 3/3 ; `chat-unchanged.test.ts`, `orchestra-session.test.ts`, `catalog-images.test.ts` verts sans régénération |
+| Secrets | 0 trouvé |
+
+`release.sh` rejoue tout avant la publication.
 
 ## Pour l'utilisateur, en simple
 
@@ -40,5 +59,13 @@ __CONTROLES__
 
 ```
 RAPPORT DE VÉRIFICATION
-__RAPPORT__
+Lancement : OK (cœur construit, version de développement lancée deux fois pour l'essai de l'utilisateur)
+Types     : OK (0 erreur)
+Style     : OK (0 avertissement)
+Tests     : OK (cœur et bureau verts ; deux dépassements de délai sous charge pendant l'essai réel, verts seuls ; windowsDesktopMissionPath.test.ts exclu depuis la 5.0.73)
+Secrets   : OK (0 trouvé ; Forge et Ollama en boucle locale, aucun appel réseau nouveau)
+Fichiers modifiés : packages/core/src/images (direct.ts, direct.test.ts, localEnglish.ts, imagerRules.ts, index.ts, storage.ts), types.ts, settings.ts, settingsMap/fields.ts, learning/constraints.test.ts ; apps/desktop/src/main (images/ImagesService.ts, images/ForgeClient.ts, tools/images.ts, tools/index.ts, session.ts, index.ts + tests), shared/ipc.ts, preload/index.ts, renderer (ImagerDirectPanel.tsx, ImagesSettings.tsx, Messages.tsx, useChat.ts, Dashboard.tsx, App.tsx, UnifiedJarvisChat.tsx, preview/bridge.ts) ; config/imager_rules.yaml ; docs/images-jarvis.md ; CLAUDE.md ; AGENTS-COORDINATION.md ; ce rapport
+Prêt à fusionner : OUI (décision de l'utilisateur : clore le chantier images et finaliser)
+À corriger : la traduction par dictionnaire reste limitée aux mots connus (un petit modèle local optionnel serait mieux) ; la photo jointe passe par l'ancien chemin ; les quatre corrections de 18 h ne sont pas rejouées en vrai
+Testé en vrai (à la voix, sur le PC) : FAIT à l'écrit par l'utilisateur dans la version de développement (trois images en direct, règles, bascule anime) ; PAS FAIT pour le panneau après les corrections de 18 h, ni à la voix
 ```
