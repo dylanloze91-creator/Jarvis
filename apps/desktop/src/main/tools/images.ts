@@ -1,17 +1,18 @@
 import { z } from 'zod';
 import {
   IMAGE_PROJECTS,
-  IMAGE_SUBJECT_TYPES,
-  IMAGE_RENDER_STYLES,
-  MAX_IMAGES_PER_REQUEST,
   defineTool,
+  guessPersonCount,
+  guessSubjectType,
+  resolveRenderStyle,
   toolFailure,
   toolSuccess,
+  type ChatAttachment,
   type RegisteredTool,
   type ToolResult,
 } from '@jarvis/core';
 import { ForgeError } from '../images/ForgeClient.js';
-import { describeImagesResult, type ImagesService } from '../images/ImagesService.js';
+import { describeDirectResult, describeImagesResult, type ImagesService } from '../images/ImagesService.js';
 
 export const IMAGES_DISABLED_MESSAGE = 'Le module images est coupé : active-le dans Réglages → Images (il faut Forge installé dans C:\\dev\\Forge).';
 
@@ -53,6 +54,11 @@ export function effectivePrompt(prompt: string | undefined, style: string | unde
 export interface ImagesToolsDeps {
   /** Ouvre le fichier dans la visionneuse (processus principal : `shell.openPath`). Absent : rien n'est ouvert. */
   openPath?: (path: string) => Promise<string | void>;
+  /**
+   * Le message de l'utilisateur en cours (texte mot pour mot et photos jointes), posé par la session
+   * de chat : le modèle de langage n'a pas à le recopier. Absent ou vide : l'outil le dit.
+   */
+  currentTurn?: () => { text: string; attachments?: ChatAttachment[] } | null;
 }
 
 export function createImagesTools(service: ImagesService, deps: ImagesToolsDeps = {}): RegisteredTool[] {
@@ -66,83 +72,58 @@ export function createImagesTools(service: ImagesService, deps: ImagesToolsDeps 
       ...available,
       name: 'generer_image',
       description:
-        'Confie une image à Jarvis Imager (Stable Diffusion XL en local, dans Forge). Transmets la demande de l’utilisateur telle quelle (demande), le projet (jarvis, vx pour la vidéo en 16:9 ou 9:16, drivers-ink pour un sticker vinyle, perso), le type de sujet (personne, objet, paysage, logo-sticker, scene, autre) et le nombre de personnes s’il y en a : Imager écrit lui-même la consigne finale en anglais, choisit le modèle, la taille native et les retouches visages et mains. Prend une à trois minutes : le modèle de langage est déchargé puis rechargé automatiquement. Renvoie les chemins des fichiers créés.',
+        'Pour toute demande d’image, appelle cet outil. Tu n’as pas à rédiger de prompt : Jarvis Imager reçoit la demande de l’utilisateur telle quelle (mot pour mot, depuis la discussion) et s’occupe de tout (traduction, modèle, taille, retouches). Indique seulement le projet si l’utilisateur le nomme (jarvis, vx, drivers-ink, perso). Prend une à trois minutes : le modèle de langage est déchargé puis rechargé automatiquement. Renvoie les chemins des fichiers créés.',
       risk: 'safe',
       schema: z.object({
-        demande: z
-          .string()
-          .max(1500)
-          .optional()
-          .describe('Ce que l’utilisateur veut voir, dans ses mots (français accepté). Imager le traduit et l’enrichit. Obligatoire sauf si prompt ou photoDeBase est donné.'),
-        type: z
-          .enum(IMAGE_SUBJECT_TYPES)
-          .optional()
-          .describe('Ce que représente l’image : personne (une ou plusieurs), objet, paysage, logo-sticker, scene (plusieurs personnes dans un décor), autre.'),
-        nombrePersonnes: z.number().int().min(1).max(6).optional().describe('Nombre de personnes voulu dans l’image, si la demande en parle.'),
-        rendu: z
-          .enum(IMAGE_RENDER_STYLES)
-          .optional()
-          .describe('anime si l’utilisateur parle d’anime, de manga, de dessin animé ou d’un personnage de série (Naruto, One Piece…) ; realiste s’il veut une photo ; absent sinon (Imager déduit).'),
-        agrandir: z.boolean().optional().describe('Vrai si l’utilisateur veut une grande image : générée en taille native puis agrandie ×2.'),
-        prompt: z
-          .string()
-          .max(1500)
-          .optional()
-          .describe('Facultatif : description déjà en anglais (sujet, scène). Avec photoDeBase, décris le résultat voulu (ex. « manga style portrait of the same person »).'),
-        projet: z.enum(IMAGE_PROJECTS).default('perso').describe('jarvis, vx, drivers-ink ou perso.'),
-        nombre: z.number().int().min(1).max(MAX_IMAGES_PER_REQUEST).default(1).describe('Nombre d’images (1 à 4).'),
-        format: z.string().max(20).optional().describe('carre, paysage, portrait, 16:9, 9:16 ou LARGEURxHAUTEUR. Absent : format par défaut du projet.'),
-        style: z.string().max(200).optional().describe('Style libre ajouté au prompt (« watercolor », « pixel art »…).'),
-        lora: z.string().max(120).optional().describe('Nom d’un LoRA installé dans Forge (sans extension), facultatif.'),
-        poidsLora: z.number().min(0.1).max(1.5).optional().describe('Poids du LoRA (0,8 par défaut).'),
-        graine: z.number().int().min(0).optional().describe('Graine pour refaire la même image ; absente = aléatoire.'),
-        negatif: z.string().max(600).optional().describe('Ce que l’image ne doit pas contenir, en plus des règles du projet.'),
+        projet: z.enum(IMAGE_PROJECTS).default('perso').describe('jarvis, vx (vidéo, 16:9 ou 9:16), drivers-ink (sticker vinyle) ou perso. perso si rien ne l’indique.'),
         photoDeBase: z
           .string()
           .max(500)
           .optional()
-          .describe('Chemin d’une photo de départ (celui donné par « Photo jointe ») : l’image est faite à partir d’elle.'),
+          .describe('Chemin d’une photo de départ (celui donné par « Photo jointe ») : l’image est faite à partir d’elle. Facultatif : Jarvis la retrouve seul.'),
         fidelite: z
           .number()
           .min(0)
           .max(1)
           .optional()
-          .describe('Avec photoDeBase : à quel point rester proche de la photo, 0 (tout réinventer) à 1 (presque copier). 0,45 par défaut.'),
+          .describe('Avec une photo de départ : à quel point rester proche de la photo, 0 (tout réinventer) à 1 (presque copier). 0,45 par défaut.'),
       }),
-      summarize: ({ demande, prompt, style, projet, nombre, photoDeBase, type }) => {
-        const text = effectivePrompt(demande ?? prompt, style, photoDeBase) ?? '(sans description)';
-        return `Jarvis Imager : ${nombre > 1 ? `${nombre} images` : 'une image'} pour le projet ${projet}${type ? ` (${type})` : ''}${photoDeBase ? ' à partir de ta photo' : ''} : « ${text.length > 80 ? `${text.slice(0, 80)}…` : text} ».`;
+      summarize: ({ projet, photoDeBase }) => {
+        const text = deps.currentTurn?.()?.text?.trim() ?? '';
+        return `Jarvis Imager : une image pour le projet ${projet}${photoDeBase ? ' à partir de ta photo' : ''}, ta demande telle quelle${text ? ` : « ${text.length > 80 ? `${text.slice(0, 80)}…` : text} »` : ''}.`;
       },
-      execute: async ({ demande, type, nombrePersonnes, rendu, agrandir, prompt, projet, nombre, format, style, lora, poidsLora, graine, negatif, photoDeBase, fidelite }, context) => {
-        const finalPrompt = effectivePrompt(demande?.trim() || prompt, style, photoDeBase);
-        if (!finalPrompt) {
-          return toolFailure('definitive', 'Il manque la demande : rappelle generer_image avec le champ demande (les mots de l’utilisateur).', 'demande absente');
+      execute: async ({ projet, photoDeBase, fidelite }, context) => {
+        const turn = deps.currentTurn?.() ?? null;
+        const text = turn?.text?.trim() ?? '';
+        if (!text) {
+          return toolFailure('definitive', 'Jarvis Imager n’a pas reçu la demande de l’utilisateur (aucun message en cours) : rien n’a été généré.', 'currentTurn absent');
         }
+        const photo = photoDeBase?.trim() || turn?.attachments?.find((attachment) => attachment.kind === 'image')?.path;
+        const progress = { ...(context.onProgress ? { onProgress: context.onProgress } : {}), ...(context.signal ? { signal: context.signal } : {}) };
         try {
-          const result = await service.generate(
-            {
-              prompt: finalPrompt,
-              project: projet,
-              count: nombre,
-              ...(type ? { subjectType: type } : {}),
-              ...(nombrePersonnes !== undefined ? { personCount: nombrePersonnes } : {}),
-              ...(rendu ? { render: rendu } : {}),
-              ...(agrandir ? { upscale: true } : {}),
-              ...(format ? { format } : {}),
-              ...(style ? { style } : {}),
-              ...(lora ? { lora: { name: lora, ...(poidsLora !== undefined ? { weight: poidsLora } : {}) } } : {}),
-              ...(graine !== undefined ? { seed: graine } : {}),
-              ...(negatif ? { negative: negatif } : {}),
-              ...(photoDeBase ? { initImage: { path: photoDeBase, ...(fidelite !== undefined ? { fidelity: fidelite } : {}) } } : {}),
-            },
-            { ...(context.onProgress ? { onProgress: context.onProgress } : {}), ...(context.signal ? { signal: context.signal } : {}) },
-          );
-          // Ouvrir la première image dans la visionneuse : confort, jamais bloquant.
-          const first = result.files[0];
-          if (first && deps.openPath && service.settings().openAfterGeneration) {
-            await deps.openPath(first.png).catch(() => undefined);
+          if (photo) {
+            // Photo de départ (image vers image) : le chemin d'avant, avec les règles d'Imager et le type deviné par mots.
+            const personCount = guessPersonCount(text);
+            const result = await service.generate(
+              {
+                prompt: text,
+                project: projet,
+                subjectType: guessSubjectType(text),
+                ...(personCount ? { personCount } : {}),
+                render: resolveRenderStyle(undefined, text),
+                initImage: { path: photo, ...(fidelite !== undefined ? { fidelity: fidelite } : {}) },
+              },
+              progress,
+            );
+            const first = result.files[0];
+            if (first && deps.openPath && service.settings().openAfterGeneration) await deps.openPath(first.png).catch(() => undefined);
+            return toolSuccess(describeImagesResult(result), result);
           }
-          return toolSuccess(describeImagesResult(result), result);
+          // Sans photo : mode direct, la demande mot pour mot complétée par les règles d'Imager (jamais réécrite par un modèle).
+          const result = await service.generateDirect({ prompt: text, negative: '', project: projet }, progress);
+          const first = result.files[0];
+          if (first && deps.openPath && service.settings().openAfterGeneration) await deps.openPath(first.png).catch(() => undefined);
+          return toolSuccess(describeDirectResult(result), result);
         } catch (error) {
           return failure(error);
         }

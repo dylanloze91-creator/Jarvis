@@ -16,6 +16,7 @@ import {
   Workflow,
   AppWindow,
   Code2,
+  ImagePlus,
   type LucideIcon,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
@@ -24,6 +25,7 @@ import { AuditPanel } from '@/components/AuditPanel';
 import { HistoryPanel } from '@/components/HistoryPanel';
 import { UnifiedJarvisChat } from '@/components/UnifiedJarvisChat';
 import { DeveloperSimpleView } from '@/components/developer/DeveloperSimpleView';
+import { ImagerDirectPanel } from '@/components/ImagerDirectPanel';
 import { SetupGuideView } from '@/components/SetupGuideView';
 import { SettingsPanel, openSettingsOnTab } from '@/components/SettingsPanel';
 import type { SettingsTabId } from '@/components/SettingsTabs';
@@ -39,7 +41,7 @@ import type { ChatItem, PendingConfirmation } from '@/hooks/useChat';
 import { JarvisOrb } from '@/components/JarvisOrb';
 import './dashboard.css';
 
-type View = 'chat' | 'developer' | 'history' | 'settings' | 'audit' | 'setup-guide';
+type View = 'chat' | 'developer' | 'imager' | 'history' | 'settings' | 'audit' | 'setup-guide';
 
 interface FunctionCard {
   id: string;
@@ -319,6 +321,14 @@ export function Dashboard({
               onClick={() => navigate(view === 'developer' ? 'chat' : 'developer')}
             />
           ) : null}
+          {settings?.images?.enabled ? (
+            <SideButton
+              label="Imager direct"
+              icon={ImagePlus}
+              active={view === 'imager'}
+              onClick={() => navigate(view === 'imager' ? 'chat' : 'imager')}
+            />
+          ) : null}
           <SideButton label="Réglages" icon={SettingsIcon} active={view === 'settings'} onClick={() => navigate(view === 'settings' ? 'chat' : 'settings')} />
           <SideButton
             label="Comment tout brancher"
@@ -441,6 +451,13 @@ export function Dashboard({
               onOpenPersonaSettings={() => openSettingsTab('model')}
             />
           </>
+        ) : view === 'imager' ? (
+          <section className="dash-panel flex min-h-0 flex-1 flex-col overflow-hidden">
+            <button type="button" className="panel-back" onClick={() => setView('chat')}>
+              Retour à l’accueil
+            </button>
+            <ImagerDirectPanel />
+          </section>
         ) : view === 'developer' ? (
           <section className="dash-panel flex min-h-0 flex-1 flex-col overflow-hidden">
             {booting ? (

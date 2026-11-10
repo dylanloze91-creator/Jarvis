@@ -104,6 +104,28 @@ export function ImagesSettingsSection({ value, onChange }: ImagesSettingsSection
         onChange={(checked) => update({ keepForgeRunning: checked })}
       />
 
+      <div className="mt-1">
+        <p className="text-[11px] font-medium tracking-wide text-slate-400 uppercase">Imager direct (sans le cerveau)</p>
+        <p className="mt-1 text-xs leading-snug text-slate-500">
+          Le panneau « Imager direct » (barre de gauche) et la commande <code>/image ta consigne</code> envoient ta demande à Forge sans passer par le modèle de
+          langage. Les débuts de phrase qui y vont automatiquement (« Imager, … », « génère une image… ») sont dans <code>imager_rules.yaml</code>, section <code>direct</code>.
+        </p>
+      </div>
+
+      <Toggle
+        label="Garder Forge chargé tant que le panneau Imager direct est ouvert"
+        hint="Pour enchaîner plusieurs images sans attendre le redémarrage de Forge. Le modèle de langage est rechargé quand tu fermes le panneau."
+        checked={value?.directHoldForge === true}
+        onChange={(checked) => update({ directHoldForge: checked })}
+      />
+
+      <Toggle
+        label="Projet perso : ne pas garder le fichier texte du prompt"
+        hint="Seule l’image est enregistrée (pas de .txt des réglages) pour le projet perso. Les autres projets gardent leur .txt."
+        checked={value?.directNoTxtPerso === true}
+        onChange={(checked) => update({ directNoTxtPerso: checked })}
+      />
+
       <StatusBadge status={status} loading={loading} />
 
       <Button size="sm" variant="subtle" onClick={refresh} disabled={loading}>

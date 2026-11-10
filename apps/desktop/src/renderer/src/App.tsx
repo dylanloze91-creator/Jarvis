@@ -1,6 +1,7 @@
 import {
   Cable,
   Code2,
+  ImagePlus,
   History,
   Maximize2,
   Plus,
@@ -37,12 +38,13 @@ import { deliverVoiceTranscript } from '@/voice/voiceTranscriptRouter';
 import { SetupGuideView } from '@/components/SetupGuideView';
 import { UnifiedJarvisChat } from '@/components/UnifiedJarvisChat';
 import { DeveloperSimpleView } from '@/components/developer/DeveloperSimpleView';
+import { ImagerDirectPanel } from '@/components/ImagerDirectPanel';
 import { BrandMark, JarvisOrb } from '@/components/JarvisOrb';
 import { MachineSetupFlow } from '@/components/MachineSetupFlow';
 import { MachineSetupScreen, previewMachineDecision } from '@/components/MachineSetupScreen';
 import type { RuntimeStatus, ToolInfo } from '../../shared/ipc';
 
-type View = 'chat' | 'developer' | 'history' | 'settings' | 'audit' | 'setup-guide';
+type View = 'chat' | 'developer' | 'imager' | 'history' | 'settings' | 'audit' | 'setup-guide';
 const HEADER_HEIGHT = 52;
 const VIEW_KICKER_HEIGHT = 46;
 const MIN_COMPACT_HEIGHT = 400;
@@ -276,7 +278,9 @@ export default function App() {
             ? 'Journal'
             : view === 'developer'
               ? 'Développeur'
-              : 'Assistant';
+              : view === 'imager'
+                ? 'Imager direct'
+                : 'Assistant';
 
   const fallback = status ? isDemoRuntime(status) : false;
   const previewKind =
@@ -392,6 +396,11 @@ export default function App() {
           >
             <Code2 className="size-4" />
           </IconButton>
+          {settings?.images?.enabled ? (
+            <IconButton label="Imager direct" active={view === 'imager'} onClick={() => setView(view === 'imager' ? 'chat' : 'imager')}>
+              <ImagePlus className="size-4" />
+            </IconButton>
+          ) : null}
           <IconButton
             label="Historique"
             active={view === 'history'}
@@ -479,6 +488,10 @@ export default function App() {
               />
             </div>
           )
+        ) : view === 'imager' ? (
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+            <ImagerDirectPanel compact />
+          </div>
         ) : view === 'developer' ? (
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
             {booting ? (

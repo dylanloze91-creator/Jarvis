@@ -33,6 +33,8 @@ import {
   type OrchestraTeam,
   type Settings,
   validateRepo,
+  normalizeDirectRequest,
+  type ChatAttachment,
 } from '@jarvis/core';
 import {
   IpcChannel,
@@ -45,6 +47,8 @@ import {
   type VoiceSpeakInput,
   type VoicePiperSpeakInput,
   type VoiceTranscribeInput,
+  type ImagerDirectEvent,
+  type ImagerDirectResult,
 } from '../shared/ipc.js';
 import { FileAuditLogStore } from './audit-store.js';
 import { SpotifyBridge } from './media/SpotifyBridge.js';
@@ -220,6 +224,7 @@ function buildTools() {
     rover,
     images,
     openImagePath: (path) => shell.openPath(path),
+    currentTurn: () => currentTurn.value,
     spotifyConnected: () => spotify.connectedNow(),
     summarizeYoutube: (url, onProgress, signal) =>
       summarizeYoutubeLink({
@@ -250,6 +255,8 @@ function ensureGoogleLoaded(): void {
 let tray: Tray | null = null;
 
 const chatActivity = new ChatActivity();
+/** Mode direct : le message de l'utilisateur en cours, lu par l'outil `generer_image` (jamais recopié par le modèle). */
+const currentTurn: { value: { text: string; attachments: ChatAttachment[] } | null } = { value: null };
 const session = new ChatSession({
   registry,
   get tools() {
@@ -263,6 +270,11 @@ const session = new ChatSession({
   knowledge,
   localLearning,
   getChatMissionHub: () => chatMissionHub,
+  images,
+  openImagePath: (path) => shell.openPath(path),
+  noteUserTurn: (turn) => {
+    currentTurn.value = turn;
+  },
   // Module images : une photo jointe est enregistrée dans le dossier des images (sous _references).
   saveAttachment: (input) => images.saveReference(input),
 });
@@ -282,6 +294,11 @@ const phoneSession = new ChatSession({
   knowledge,
   localLearning,
   getChatMissionHub: () => chatMissionHub,
+  images,
+  openImagePath: (path) => shell.openPath(path),
+  noteUserTurn: (turn) => {
+    currentTurn.value = turn;
+  },
 });
 const questionnaire = QuestionnaireStore.inUserData(() => app.getPath('userData'));
 const phone = new PhoneService({
@@ -332,6 +349,10 @@ const speakers = new SpeakerService({
       knowledge,
       localLearning,
       getChatMissionHub: () => chatMissionHub,
+      images,
+      noteUserTurn: (turn) => {
+        currentTurn.value = turn;
+      },
     });
     return {
       send: async (sender, input) => {
@@ -572,6 +593,63 @@ function registerIpc(): void {
     const error = await shell.openPath(path);
     return error ? { ok: false, error } : { ok: true };
   });
+  // Mode direct de Jarvis Imager : panneau « Imager direct » (la demande est validée ici, côté main).
+  let directController: AbortController | null = null;
+  ipcMain.handle(IpcChannel.imagesDirectCatalog, () => images.directCatalog());
+  ipcMain.handle(IpcChannel.imagesDirectGenerate, async (event, raw: unknown): Promise<ImagerDirectResult> => {
+    const parsed = normalizeDirectRequest(raw);
+    if (!parsed.ok) return { ok: false, error: parsed.error };
+    const improveRaw = (raw as { improve?: unknown } | null)?.improve;
+    const improve = improveRaw === true ? true : improveRaw === false ? false : undefined;
+    directController?.abort();
+    const controller = new AbortController();
+    directController = controller;
+    const contents = event.sender;
+    const push = (payload: ImagerDirectEvent): void => {
+      if (!contents.isDestroyed()) contents.send(IpcChannel.imagesDirectEvent, payload);
+    };
+    let last = 0;
+    chatActivity.begin();
+    try {
+      const result = await images.generateDirect(
+        { ...parsed.request, ...(improve !== undefined ? { improve } : {}) },
+        {
+          onProgress: (message) => push({ type: 'progress', value: last, message }),
+          onProgressValue: (value, eta) => {
+            last = Math.max(last, value);
+            push({ type: 'progress', value: last, message: `Forge : ${Math.round(last * 100)} %${eta > 0 ? `, encore ${Math.round(eta)} s environ` : ''}` });
+          },
+          signal: controller.signal,
+        },
+      );
+      push({ type: 'done' });
+      return {
+        ok: true,
+        folder: result.folder,
+        files: result.files,
+        width: result.width,
+        height: result.height,
+        durationMs: result.durationMs,
+        warnings: result.warnings,
+        finalPrompt: result.finalPrompt,
+        finalNegative: result.finalNegative,
+        improved: result.improved,
+        forgeHeld: result.forgeHeld,
+        brainReloaded: result.brainReloaded,
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      push({ type: 'error', message });
+      return { ok: false, error: message };
+    } finally {
+      if (directController === controller) directController = null;
+      chatActivity.end();
+    }
+  });
+  ipcMain.handle(IpcChannel.imagesDirectCancel, () => {
+    directController?.abort();
+  });
+  ipcMain.handle(IpcChannel.imagesDirectPanel, (_event, open: unknown) => images.setDirectPanelOpen(open === true));
   ipcMain.handle(IpcChannel.chatCancel, () => session.cancel());
   ipcMain.handle(IpcChannel.confirmRespond, (_event, requestId: string, approved: boolean) =>
     session.respondConfirmation(requestId, approved),

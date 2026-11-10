@@ -1,4 +1,4 @@
-import { AlertTriangle, Check, Compass, ImageIcon, MicOff, ShieldOff, Wrench } from 'lucide-react';
+import { AlertTriangle, Check, Compass, ImageIcon, ImagePlus, MicOff, ShieldOff, Wrench } from 'lucide-react';
 import { useEffect, useRef, useState, type MouseEvent, type RefObject } from 'react';
 import Markdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -12,10 +12,13 @@ import { cn } from '@/lib/utils';
 export function Messages({
   items,
   scrollParentRef,
+  onSend,
 }: {
   items: ChatItem[];
   /** Conteneur unique de discussion (évite un second panneau défilant). */
   scrollParentRef?: RefObject<HTMLElement | null>;
+  /** Envoi d'un message depuis une carte (bouton « Envoyer à Imager »). Absent : le bouton n'est pas montré. */
+  onSend?: (text: string) => void;
 }) {
   const bottom = useRef<HTMLDivElement>(null);
   const prevLength = useRef(items.length);
@@ -37,14 +40,32 @@ export function Messages({
   return (
     <div className="messages-list">
       {items.map((item) => (
-        <Item key={item.id} item={item} />
+        <Item key={item.id} item={item} onSend={onSend} />
       ))}
       <div ref={bottom} />
     </div>
   );
 }
 
-function Item({ item }: { item: ChatItem }) {
+function Item({ item, onSend }: { item: ChatItem; onSend?: (text: string) => void }) {
+  if (item.kind === 'imager_offer') {
+    if (!onSend) return null;
+    return (
+      <div className="tool-row">
+        <button
+          type="button"
+          className="tool-chip hover:bg-white/15"
+          title="Le cerveau a répondu sans passer par Jarvis Imager. Ce bouton envoie ta demande telle quelle à Imager, sans modèle de langage."
+          onClick={() => onSend(`/image ${item.text}`)}
+        >
+          <ImagePlus className="size-3.5 text-cyan-300" />
+          <span>Envoyer à Imager</span>
+          <span className="tool-status">sans le cerveau</span>
+        </button>
+      </div>
+    );
+  }
+
   if (item.kind === 'user') {
     return (
       <div className="message-row user-row">
@@ -178,6 +199,7 @@ const ROUTE_HOW: Record<Extract<ChatItem, { kind: 'route' }>['how'], string> = {
   cerveau: 'choisi par le cerveau',
   trieur: 'choisi par le trieur',
   'mission-directe': 'mission directe',
+  direct: 'Imager direct, sans modèle',
 };
 
 function RouteItem({ item }: { item: Extract<ChatItem, { kind: 'route' }> }) {

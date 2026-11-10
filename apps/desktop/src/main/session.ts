@@ -70,7 +70,16 @@ import {
   type Settings,
   type ToolCall,
   type ToolManager,
+  parseImageCommand,
+  detectDirectImageRequest,
+  guessProject,
+  stripDirectTurns,
+  isDirectImageMessage,
+  looksLikeImageIntent,
+  isImageToolName,
+  type ImageProject,
 } from '@jarvis/core';
+import { describeDirectResult, type ImagesService } from './images/ImagesService.js';
 import type { ChatEvent, RuntimeStatus, SendChatInput } from '../shared/ipc.js';
 import { IpcChannel } from '../shared/ipc.js';
 import { canOfferTeamValidation, validationPathForHow } from './orchestra/teamValidation.js';
@@ -114,6 +123,12 @@ async function* directMissionIntroStream(intro: string): AsyncGenerator<AgentEve
 
 interface SessionDeps {
   registry: ProviderRegistry;
+  /** Mode direct de Jarvis Imager (`/image`, demandes repérées par règles) : sans lui, pas de chemin direct. */
+  images?: ImagesService;
+  /** Ouvre l'image produite dans la visionneuse (`shell.openPath`, côté main). */
+  openImagePath?: (path: string) => Promise<string | void>;
+  /** Le message de l'utilisateur en cours (mot pour mot, photos), pour l'outil `generer_image`. */
+  noteUserTurn?: (turn: { text: string; attachments: ChatAttachment[] }) => void;
   tools: ToolManager;
   store: ConversationStore;
   auditLog: AuditLogStore;
@@ -261,12 +276,21 @@ export class ChatSession {
     conversationId = conversation.id;
     // Photos jointes : enregistrées sur le disque avant le tour ; seul leur chemin ira au modèle.
     const attachments = await this.saveAttachments(input);
-    const userMessage = createMessage('user', input.text, attachments.length ? { attachments } : {});
+    this.deps.noteUserTurn?.({ text: input.text, attachments });
+    // Mode direct de Jarvis Imager : `/image …` ou une demande repérée par règles part à Imager sans
+    // aucun modèle de langage ; le tour est marqué `direct` et jamais renvoyé au modèle ensuite.
+    const direct = attachments.length ? null : await this.directImageRequest(input.text);
+    const userMessage = createMessage('user', input.text, { ...(attachments.length ? { attachments } : {}), ...(direct ? { direct: 'image' as const } : {}) });
     const messages: ChatMessage[] = [...conversation.messages, userMessage];
-    /** Copie pour le modèle : les photos deviennent des notes ; `messages` (affiché, enregistré) ne change pas. */
-    const modelMessages = withAttachmentNotes(messages);
+    /** Copie pour le modèle : sans les tours directs, les photos devenues des notes ; `messages` (affiché, enregistré) ne change pas. */
+    const modelMessages = withAttachmentNotes(stripDirectTurns(messages));
 
     emit({ type: 'started', conversationId: conversation.id, message: userMessage });
+
+    if (direct) {
+      await this.directImageTurn(emit, conversation, messages, direct, controller, superseded);
+      return;
+    }
 
     const source = input.source ?? 'text';
     const orchestra = activeOrchestra(settings);
@@ -532,6 +556,19 @@ export class ChatSession {
 
     if (superseded()) return;
 
+    // Mode direct : le modèle a répondu sans Imager alors que la demande ressemblait à une image → bouton « Envoyer à Imager ».
+    if (
+      this.deps.images?.isEnabled() &&
+      !attachments.length &&
+      !controller.signal.aborted &&
+      looksLikeImageIntent(input.text) &&
+      !messages
+        .slice(conversation.messages.length)
+        .some((message) => message.toolCalls?.some((call) => isImageToolName(call.name)) || (message.role === 'tool' && message.toolName !== undefined && isImageToolName(message.toolName)))
+    ) {
+      emit({ type: 'imager_offer', text: input.text });
+    }
+
     const updated = withMessages(conversation, messages);
     try {
       await this.deps.store.save(updated);
@@ -546,13 +583,13 @@ export class ChatSession {
       .indexConversation(
         `conversation:${updated.id}`,
         messages
-          .filter((message) => message.role === 'user' || message.role === 'assistant')
+          .filter((message) => (message.role === 'user' || message.role === 'assistant') && !isDirectImageMessage(message))
           .map((message) => `${message.role}: ${message.content}`)
           .join('\n'),
         settings,
       )
       .catch(() => undefined);
-    void this.deps.localLearning.recordTurn(updated.id, updated.messages).catch(() => undefined);
+    void this.deps.localLearning.recordTurn(updated.id, stripDirectTurns(updated.messages)).catch(() => undefined);
     // 5.0.64 : un tour interrompu par l'utilisateur (bouton Arrêter) n'est pas un échec.
     if (!visibleReply && !controller.signal.aborted) {
       emit({
@@ -570,6 +607,83 @@ export class ChatSession {
       });
       emit({ type: 'done', conversationId, messages: [] });
     }
+  }
+
+  /**
+   * Mode direct de Jarvis Imager : `/image …` (commande) ou un début de phrase de `direct.declencheurs`
+   * (règles, modifiables dans `imager_rules.yaml`). Module coupé ou texte sans rapport : `null`.
+   */
+  private async directImageRequest(text: string): Promise<{ prompt: string; project: ImageProject; how: 'commande' | 'regle' } | null> {
+    const images = this.deps.images;
+    if (!images?.isEnabled()) return null;
+    const command = parseImageCommand(text);
+    if (command) return { prompt: command.prompt, project: guessProject(command.prompt), how: 'commande' };
+    const { rules } = await images.loadRules().catch(() => ({ rules: null }));
+    const detected = detectDirectImageRequest(text, rules?.direct.declencheurs);
+    if (!detected) return null;
+    return { prompt: detected.prompt, project: guessProject(detected.prompt), how: 'regle' };
+  }
+
+  /** Un tour direct : Imager seul, événements de la discussion comme pour un outil, journal d'audit, rien pour le modèle ni la mémoire. */
+  private async directImageTurn(
+    emit: (event: ChatEvent) => void,
+    conversation: Conversation,
+    messages: ChatMessage[],
+    direct: { prompt: string; project: ImageProject; how: 'commande' | 'regle' },
+    controller: AbortController,
+    superseded: () => boolean,
+  ): Promise<void> {
+    const images = this.deps.images!;
+    emit({ type: 'route', team: 'images', label: 'Jarvis Imager', model: direct.how === 'commande' ? 'commande /image, sans modèle' : 'règle, sans modèle', how: 'direct' });
+    let content: string;
+    let status: 'ok' | 'error' = 'ok';
+    const callId = randomId();
+    const started = Date.now();
+    if (!direct.prompt) {
+      content = 'Écris ta consigne après /image, par exemple : /image un renard roux dans la neige.';
+      status = 'error';
+    } else {
+      emit({ type: 'tool_start', callId, toolName: 'generer_image', summary: `Jarvis Imager, mode direct (projet ${direct.project}) : « ${direct.prompt.length > 80 ? `${direct.prompt.slice(0, 80)}…` : direct.prompt} ».` });
+      try {
+        const result = await images.generateDirect(
+          { prompt: direct.prompt, negative: '', project: direct.project },
+          { onProgress: (message) => emit({ type: 'tool_progress', callId, message }), signal: controller.signal },
+        );
+        content = describeDirectResult(result);
+        const first = result.files[0];
+        if (first && this.deps.openImagePath && images.settings().openAfterGeneration) await this.deps.openImagePath(first.png).catch(() => undefined);
+      } catch (error) {
+        status = 'error';
+        content = `${error instanceof Error ? error.message : String(error)} Le modèle de langage est rechargé.`;
+      }
+      emit({ type: 'tool_result', callId, toolName: 'generer_image', status, content });
+      void this.deps.auditLog
+        .append(
+          buildAuditEntry({
+            callId,
+            name: 'generer_image',
+            status,
+            content,
+            arguments: { mode: 'direct', projet: direct.project, demande: direct.prompt },
+            decision: 'auto',
+            durationMs: Date.now() - started,
+            outcome: status === 'ok' ? 'success' : controller.signal.aborted ? 'cancelled' : 'definitive',
+          }),
+        )
+        .catch((error: unknown) => console.error('[jarvis] journal d’audit non écrit :', error));
+    }
+    if (this.controller === controller) this.controller = null;
+    if (superseded()) return;
+    emit({ type: 'delta', text: content });
+    messages.push(createMessage('assistant', content, { direct: 'image' }));
+    const updated = withMessages(conversation, messages);
+    try {
+      await this.deps.store.save(updated);
+    } catch (error) {
+      emit({ type: 'error', message: `Conversation non enregistrée dans l'historique : ${error instanceof Error ? error.message : String(error)}` });
+    }
+    // Rien pour la mémoire ni pour l'apprentissage : un tour direct ne nourrit aucun modèle.
+    emit({ type: 'done', conversationId: updated.id, messages: updated.messages });
   }
 
   /**

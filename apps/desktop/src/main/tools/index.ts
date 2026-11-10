@@ -1,4 +1,5 @@
 import {
+  type ChatAttachment,
   ToolManager,
   type MarketDataProviderRegistry,
   type SearchProviderRegistry,
@@ -65,6 +66,8 @@ export interface ToolManagerDeps {
   images?: ImagesService;
   /** Module images : ouvre une image produite dans la visionneuse (`shell.openPath`, côté main). */
   openImagePath?: (path: string) => Promise<string | void>;
+  /** Module images : le message de l'utilisateur en cours (texte mot pour mot, photos), posé par la session de chat. */
+  currentTurn?: () => { text: string; attachments?: ChatAttachment[] } | null;
   /**
    * Profil modeste seulement : Spotify reste enregistré mais absent du prompt
    * tant que le compte n’est pas connecté. Ignoré sur les autres profils.
@@ -133,7 +136,7 @@ function createFullToolManager(deps: ToolManagerDeps): ToolManager {
 /** Les outils d'image n'entrent au catalogue qu'avec `images.enabled` : le catalogue d'avant ne change pas sinon. */
 function imagesToolsIfEnabled(deps: ToolManagerDeps) {
   return deps.images && deps.getSettings().images?.enabled
-    ? createImagesTools(deps.images, deps.openImagePath ? { openPath: deps.openImagePath } : {})
+    ? createImagesTools(deps.images, deps.openImagePath ? { openPath: deps.openImagePath, currentTurn: deps.currentTurn } : {})
     : [];
 }
 

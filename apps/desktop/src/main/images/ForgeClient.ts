@@ -55,6 +55,12 @@ export class ForgeClient {
     }
   }
 
+  /** Avancement de la génération en cours (0 à 1) et temps restant estimé, pour la barre du panneau direct. */
+  async progress(): Promise<{ progress: number; etaSeconds: number }> {
+    const body = (await this.get('/sdapi/v1/progress?skip_current_image=true')) as { progress?: number; eta_relative?: number };
+    return { progress: Number(body.progress ?? 0), etaSeconds: Number(body.eta_relative ?? 0) };
+  }
+
   async models(): Promise<ForgeModel[]> {
     return (await this.get('/sdapi/v1/sd-models')) as ForgeModel[];
   }

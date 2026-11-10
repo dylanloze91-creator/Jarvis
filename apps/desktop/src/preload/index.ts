@@ -3,6 +3,7 @@ import {
   IpcChannel,
   type ChatEvent,
   type GoogleConfigDraft,
+  type ImagerDirectEvent,
   type JarvisApi,
   type MachinePullProgress,
   type PhoneStatus,
@@ -54,6 +55,15 @@ const api: JarvisApi = {
   },
   images: {
     open: (path: string) => ipcRenderer.invoke(IpcChannel.imagesOpen, path),
+    directCatalog: () => ipcRenderer.invoke(IpcChannel.imagesDirectCatalog),
+    directGenerate: (request: unknown) => ipcRenderer.invoke(IpcChannel.imagesDirectGenerate, request),
+    directCancel: () => ipcRenderer.invoke(IpcChannel.imagesDirectCancel),
+    directPanel: (open: boolean) => ipcRenderer.invoke(IpcChannel.imagesDirectPanel, open),
+    onDirectEvent: (listener: (event: ImagerDirectEvent) => void) => {
+      const handler = (_event: unknown, payload: ImagerDirectEvent) => listener(payload);
+      ipcRenderer.on(IpcChannel.imagesDirectEvent, handler);
+      return () => ipcRenderer.removeListener(IpcChannel.imagesDirectEvent, handler);
+    },
   },
   settings: {
     get: () => ipcRenderer.invoke(IpcChannel.settingsGet),

@@ -28,6 +28,7 @@ import type {
   WakeVerifierModel,
 } from '@jarvis/core';
 import type { LocalLearningRuntimeStatus } from '@jarvis/core';
+import type { DirectProjectDefaults, ImageFormat, ImageProject } from '@jarvis/core';
 import type { DeveloperApi } from './developerIpc.js';
 
 /** Exemple étiqueté envoyé au main : caractéristiques + extrait de 2 s (aucun extrait pour un fond sonore). */
@@ -92,6 +93,11 @@ export const IpcChannel = {
   settingsRoverStatus: 'settings:rover-status',
   settingsImagesStatus: 'settings:images-status',
   imagesOpen: 'images:open',
+  imagesDirectCatalog: 'images:direct-catalog',
+  imagesDirectGenerate: 'images:direct-generate',
+  imagesDirectCancel: 'images:direct-cancel',
+  imagesDirectPanel: 'images:direct-panel',
+  imagesDirectEvent: 'images:direct-event',
   settingsGeocodeSearch: 'settings:geocode-search',
   settingsGoogleStatus: 'settings:google-status',
   settingsGoogleConnect: 'settings:google-connect',
@@ -351,6 +357,55 @@ export interface RoverCredentials {
   token?: string;
 }
 
+/** Mode direct de Jarvis Imager : ce que le panneau affiche (modèles sur le disque, défauts par projet). */
+export interface ImagerDirectCatalog {
+  enabled: boolean;
+  forgeDir: string;
+  outputRoot: string;
+  checkpoints: { file: string; label: string }[];
+  loras: string[];
+  samplers: readonly string[];
+  schedulers: readonly string[];
+  formats: { id: ImageFormat; width: number; height: number }[];
+  projects: Record<ImageProject, DirectProjectDefaults>;
+  adetailerInstalled: boolean;
+  improve: boolean;
+  holdForge: boolean;
+  keepTxtPerso: boolean;
+  busy: boolean;
+}
+
+export interface ImagerDirectFile {
+  png: string;
+  txt?: string;
+  seed: number;
+  /** `data:image/png;base64,…` pour l'aperçu. */
+  preview: string;
+}
+
+export type ImagerDirectResult =
+  | {
+      ok: true;
+      folder: string;
+      files: ImagerDirectFile[];
+      width: number;
+      height: number;
+      durationMs: number;
+      warnings: string[];
+      finalPrompt: string;
+      finalNegative: string;
+      improved: boolean;
+      forgeHeld: boolean;
+      brainReloaded: string | null;
+    }
+  | { ok: false; error: string };
+
+/** Avancement d'une image directe, poussé au panneau. */
+export type ImagerDirectEvent =
+  | { type: 'progress'; value: number; message: string }
+  | { type: 'done' }
+  | { type: 'error'; message: string };
+
 /** Module images : valeurs du formulaire pas encore enregistrées, pour « Tester Forge ». */
 export interface ImagesConfigDraft {
   forgeDir?: string;
@@ -449,7 +504,7 @@ export type ChatEvent =
       team: string;
       label: string;
       model: string;
-      how: 'calcul' | 'express' | 'cerveau' | 'trieur' | 'mission-directe';
+      how: 'calcul' | 'express' | 'cerveau' | 'trieur' | 'mission-directe' | 'direct';
       /** Validation en direct : pastilles ✓ / Changer (seulement si réglages actifs). */
       validation?: {
         phrase: string;
@@ -489,6 +544,11 @@ export type ChatEvent =
       messageId: string;
       envelope: ChatMissionEnvelope;
     }
+  /**
+   * Mode direct d'Imager : le modèle a répondu sans appeler generer_image alors que la demande
+   * ressemblait à une image. Le bouton « Envoyer à Imager » renvoie `/image <texte>`.
+   */
+  | { type: 'imager_offer'; text: string }
   | { type: 'done'; conversationId: string; messages: ChatMessage[] };
 
 export type WindowChrome = 'compact' | 'dashboard';
@@ -663,6 +723,14 @@ export interface JarvisApi {
   images: {
     /** Ouvre dans la visionneuse une image ou un fichier du dossier des images de Jarvis (rien d'autre). */
     open(path: string): Promise<{ ok: true } | { ok: false; error: string }>;
+    /** Mode direct : modèles et LoRA présents, défauts par projet, options. */
+    directCatalog(): Promise<ImagerDirectCatalog>;
+    /** Mode direct : génère depuis le panneau (la demande est validée côté processus principal). */
+    directGenerate(request: unknown): Promise<ImagerDirectResult>;
+    directCancel(): Promise<void>;
+    /** Panneau ouvert ou fermé (option « garder Forge chargé »). */
+    directPanel(open: boolean): Promise<void>;
+    onDirectEvent(listener: (event: ImagerDirectEvent) => void): () => void;
   };
   settings: {
     get(): Promise<{ settings: Settings; status: RuntimeStatus }>;

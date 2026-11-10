@@ -1,10 +1,21 @@
 import { copyFile, mkdir, readFile, stat, writeFile } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
 import { extname, join, resolve } from 'node:path';
 import {
   BRAIN_KEEP_ALIVE,
   DEFAULT_IMAGES_ROOT_WINDOWS,
   DEFAULT_PRESETS,
+  DIRECT_SAMPLERS,
+  DIRECT_SCHEDULERS,
+  FORMAT_SIZES,
+  IMAGE_FORMATS,
+  IMAGE_PROJECTS,
+  buildDirectPayload,
+  directProjectDefaults,
+  guessPersonCount,
+  guessSubjectType,
+  isSafeModelFileName,
+  toEnglishIfNeeded,
   MAX_ATTACHMENT_BYTES,
   activeOrchestra,
   adetailerArgs,
@@ -33,6 +44,11 @@ import {
   wantsAdetailer,
   type ChatAttachment,
   type CheckpointProfile,
+  type DirectImageRequest,
+  type DirectProjectDefaults,
+  type ImageFormat,
+  type Txt2ImgPayload,
+  type Txt2ImgResponse,
   type ImagePreset,
   type ImageProject,
   type ImageRequest,
@@ -66,6 +82,76 @@ export interface ImagesSettings {
   openAfterGeneration: boolean;
   /** Réécrire la demande en consigne SDXL par le modèle de langage avant de le décharger (défaut : oui). */
   refinePrompts: boolean;
+  /** Mode direct : garder Forge chargé tant que le panneau « Imager direct » est ouvert (défaut : non). */
+  directHoldForge: boolean;
+  /** Mode direct : pas de fichier .txt pour le projet perso (défaut : le .txt est écrit). */
+  directNoTxtPerso: boolean;
+}
+
+/** Ce que le panneau « Imager direct » affiche : modèles et LoRA sur le disque, défauts par projet, options. */
+export interface DirectCatalog {
+  enabled: boolean;
+  forgeDir: string;
+  outputRoot: string;
+  checkpoints: { file: string; label: string }[];
+  loras: string[];
+  samplers: readonly string[];
+  schedulers: readonly string[];
+  formats: { id: ImageFormat; width: number; height: number }[];
+  projects: Record<ImageProject, DirectProjectDefaults>;
+  adetailerInstalled: boolean;
+  /** « Améliorer mon prompt » par défaut (`direct.ameliorer` des règles). */
+  improve: boolean;
+  holdForge: boolean;
+  keepTxtPerso: boolean;
+  busy: boolean;
+}
+
+export interface DirectContext {
+  onProgress?: (message: string) => void;
+  /** Avancement de Forge (0 à 1) et temps restant estimé, une fois par seconde pendant la génération. */
+  onProgressValue?: (value: number, etaSeconds: number) => void;
+  signal?: AbortSignal;
+}
+
+export interface DirectFile {
+  png: string;
+  txt?: string;
+  seed: number;
+  /** `data:image/png;base64,…` pour l'aperçu du panneau. */
+  preview: string;
+}
+
+export interface DirectResult {
+  project: ImageProject;
+  folder: string;
+  files: DirectFile[];
+  width: number;
+  height: number;
+  durationMs: number;
+  warnings: string[];
+  /** Consigne et négatif réellement envoyés à Forge. */
+  finalPrompt: string;
+  finalNegative: string;
+  /** Vrai si Imager a complété la demande avec ses règles (sinon : envoyée telle quelle). */
+  improved: boolean;
+  translatedBy?: string;
+  checkpoint: { id: string; label: string } | null;
+  subjectType: ImageSubjectType;
+  adetailer: boolean;
+  /** Forge gardé chargé (panneau ouvert + option) : le modèle de langage reviendra à la fermeture du panneau. */
+  forgeHeld: boolean;
+  brainReloaded: string | null;
+}
+
+/** Demande directe complète : la demande validée, plus ce que le chemin direct sait en plus. */
+export interface DirectGenerateInput extends DirectImageRequest {
+  /** Imager complète la demande (règles seules) ; absent = `direct.ameliorer` des règles. */
+  improve?: boolean;
+  /** Avec `improve` : type et nombre de personnes connus (sinon devinés par mots). */
+  subjectType?: string;
+  personCount?: number;
+  render?: string;
 }
 
 export interface ImagesStatus {
@@ -146,6 +232,18 @@ export interface ImagesServiceDeps {
 export class ImagesService {
   private processes = new Map<string, ForgeProcess>();
   private busy: Promise<unknown> | null = null;
+  /** Panneau « Imager direct » ouvert dans la fenêtre. */
+  private directPanelOpen = false;
+  /** Forge gardé chargé après une image directe (panneau ouvert + option), à libérer à la fermeture. */
+  private held: {
+    forge: ForgeProcess;
+    client: ForgeClient;
+    how: 'already' | 'started';
+    images: ImagesSettings;
+    ollama: OllamaControl;
+    settings: Settings;
+    loadedBefore: { name: string }[];
+  } | null = null;
   /** Adresses de Forge dont l'ouverture du navigateur au démarrage a déjà été coupée. */
   private browserLaunchDisabled = new Set<string>();
 
@@ -162,6 +260,8 @@ export class ImagesService {
       keepForgeRunning: raw?.keepForgeRunning === true,
       openAfterGeneration: raw?.openAfterGeneration !== false,
       refinePrompts: raw?.refinePrompts !== false,
+      directHoldForge: raw?.directHoldForge === true,
+      directNoTxtPerso: raw?.directNoTxtPerso === true,
     };
   }
 
@@ -634,8 +734,284 @@ export class ImagesService {
     return process;
   }
 
+  /* ------------------------------------------------------------------ */
+  /* Mode direct : la consigne de l'utilisateur, sans le modèle de langage */
+  /* ------------------------------------------------------------------ */
+
+  /** Panneau « Imager direct » ouvert : avec `directHoldForge`, Forge reste chargé entre deux images. */
+  setDirectPanelOpen(open: boolean): Promise<void> {
+    this.directPanelOpen = open;
+    if (open || !this.held) return Promise.resolve();
+    // Fermeture : Forge est libéré et le modèle de langage rechargé, comme après une image ordinaire.
+    const held = this.held;
+    this.held = null;
+    return this.release(held.forge, held.client, held.how, held.images, held.ollama, held.settings, held.loadedBefore, []).then(() => undefined);
+  }
+
+  /** Vrai si le mode direct garde Forge chargé en ce moment (panneau ouvert et option active). */
+  private holdsForge(images: ImagesSettings): boolean {
+    return this.directPanelOpen && images.directHoldForge;
+  }
+
+  /** Ce que le panneau « Imager direct » a besoin de savoir : modèles et LoRA sur le disque, défauts par projet. */
+  async directCatalog(): Promise<DirectCatalog> {
+    const images = this.settings();
+    const { presets } = await this.loadPresets();
+    const { rules } = await this.loadRules();
+    const byFile = new Map(Object.values(rules.checkpoints).map((profile) => [profile.fichier.toLowerCase(), profile.label]));
+    const checkpoints = this.listModelFiles(join(images.forgeDir, 'models', 'Stable-diffusion')).map((file) => ({ file, label: byFile.get(file.toLowerCase()) ?? file.replace(/\.(safetensors|ckpt)$/iu, '') }));
+    const loras = this.listModelFiles(join(images.forgeDir, 'models', 'Lora')).map((file) => file.replace(/\.(safetensors|ckpt|pt)$/iu, ''));
+    return {
+      enabled: images.enabled,
+      forgeDir: images.forgeDir,
+      outputRoot: images.outputRoot,
+      checkpoints,
+      loras,
+      samplers: DIRECT_SAMPLERS,
+      schedulers: DIRECT_SCHEDULERS,
+      formats: IMAGE_FORMATS.map((id) => ({ id, ...FORMAT_SIZES[id] })),
+      projects: Object.fromEntries(IMAGE_PROJECTS.map((id) => [id, directProjectDefaults(presets[id], rules.negatifAnatomie)])) as Record<ImageProject, DirectProjectDefaults>,
+      adetailerInstalled: this.adetailerInstalled(images.forgeDir),
+      improve: rules.direct.ameliorer,
+      holdForge: images.directHoldForge,
+      keepTxtPerso: !images.directNoTxtPerso,
+      busy: this.busy !== null,
+    };
+  }
+
+  private listModelFiles(dir: string): string[] {
+    try {
+      return readdirSync(dir)
+        .filter((name) => /\.(safetensors|ckpt|pt)$/iu.test(name) && isSafeModelFileName(name))
+        .sort((a, b) => a.localeCompare(b, 'fr'));
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Génère depuis la consigne de l'utilisateur, sans le modèle de langage. `improve` : Imager
+   * complète la demande avec ses règles (traduction par un petit modèle local si la demande est en
+   * français, mots de qualité, style du projet, négatif anti-défauts, taille native du type) ; le
+   * contenu de la demande n'est ni jugé ni filtré. Sinon la consigne part telle quelle.
+   * Même ordre que `generate` : décharger Ollama → Forge → générer → ranger → libérer → recharger.
+   */
+  async generateDirect(request: DirectGenerateInput, context: DirectContext = {}): Promise<DirectResult> {
+    if (this.busy) throw new ForgeError('http', 'Une image est déjà en cours de génération : attends qu’elle finisse.');
+    const work = this.generateDirectNow(request, context);
+    this.busy = work.catch(() => undefined);
+    try {
+      return await work;
+    } finally {
+      this.busy = null;
+    }
+  }
+
+  private async generateDirectNow(request: DirectGenerateInput, context: DirectContext): Promise<DirectResult> {
+    const settings = this.deps.getSettings();
+    const images = this.settings();
+    if (!images.enabled) throw new ForgeError('http', 'Jarvis Imager est coupé : active-le dans Réglages → Services → Jarvis Imager.');
+    const started = Date.now();
+    const warnings: string[] = [];
+    const { presets, warnings: presetWarnings } = await this.loadPresets();
+    warnings.push(...presetWarnings);
+    const { rules, warnings: ruleWarnings } = await this.loadRules();
+    warnings.push(...ruleWarnings);
+    const preset = presets[request.project];
+    const improve = request.improve ?? rules.direct.ameliorer;
+    const ollamaUrl = this.deps.ollamaUrl ?? (settings.baseUrl?.trim() || 'http://127.0.0.1:11434');
+    const ollama = new OllamaControl(ollamaUrl, this.deps.fetchImpl);
+
+    // Modèle : celui du panneau (fichier), sinon pour « améliorer » le choix d'Imager selon le rendu, sinon le modèle courant de Forge.
+    const byFile = Object.entries(rules.checkpoints).find(([, profile]) => profile.fichier.toLowerCase() === request.checkpoint?.toLowerCase());
+    const render = improve ? resolveRenderStyle(request.render, request.prompt) : 'auto';
+    const chosen = request.checkpoint
+      ? byFile
+        ? { id: byFile[0], profile: byFile[1] }
+        : null
+      : improve
+        ? chooseCheckpoint(rules, (file) => existsSync(this.checkpointPath(images.forgeDir, file)), render)
+        : null;
+    const checkpointFile = request.checkpoint ?? chosen?.profile.fichier;
+    const profile = chosen?.profile;
+    const vaePath = join(images.forgeDir, 'models', 'VAE', SDXL_VAE_FILE);
+    const vae = profile?.vae?.trim() || (existsSync(vaePath) ? SDXL_VAE_FILE : '');
+
+    // « Améliorer mon prompt » : type, nombre de personnes et format devinés par mots, consigne assemblée par les règles.
+    const subjectType = improve ? (request.subjectType ? resolveSubjectType(request.subjectType) : guessSubjectType(request.prompt)) : 'autre';
+    const personCount = improve ? (request.personCount ?? (guessPersonCount(request.prompt) || undefined)) : undefined;
+    const format: ImageFormat = request.format ?? (improve ? defaultFormatFor(rules, subjectType, preset) ?? preset.defaultFormat : preset.defaultFormat);
+    const useAdetailer = request.adetailer
+      ? request.adetailer.faces || request.adetailer.hands
+      : improve && wantsAdetailer(rules, subjectType, this.adetailerInstalled(images.forgeDir));
+    const adetailerHands = request.adetailer ? request.adetailer.hands : rules.types[subjectType].adetailerMains;
+
+    context.onProgress?.(improve ? 'Imager complète ta consigne, puis décharge le modèle de langage…' : 'Imager envoie ta consigne telle quelle : je décharge le modèle de langage…');
+    const unloaded = await ollama.unloadAll();
+    const loadedBefore = unloaded.map((name) => ({ name }));
+    if (unloaded.length) this.deps.log?.(`[images] modèles Ollama déchargés : ${unloaded.join(', ')}`);
+
+    // Traduction en anglais par le dictionnaire local (aucun modèle, rien n'est jugé ni filtré) : seulement si la demande est en français.
+    const english = improve ? toEnglishIfNeeded(request.prompt) : null;
+    const translated = english?.translated ? { text: english.text, model: 'dictionnaire local' } : null;
+
+    const assembled = improve
+      ? buildImagerPrompt(
+          {
+            subject: translated?.text ?? request.prompt,
+            type: subjectType,
+            ...(personCount ? { personCount } : {}),
+            project: request.project,
+            preset,
+            ...(render !== 'auto' ? { render } : {}),
+            extraNegative: request.negative ? [request.negative] : [],
+            ...(profile ? { checkpoint: profile } : {}),
+            ...(request.loras?.[0] ? { lora: request.loras[0] } : {}),
+          },
+          rules,
+        )
+      : null;
+    const sampling = profile && (improve || !request.sampler) ? { sampler: profile.sampler, scheduler: profile.scheduler, steps: profile.steps, cfg: profile.cfg } : null;
+    const payload = buildDirectPayload(
+      {
+        ...request,
+        ...(assembled ? { prompt: assembled.prompt, negative: assembled.negative, loras: request.loras?.slice(1) } : {}),
+        format,
+        ...(checkpointFile ? { checkpoint: checkpointFile } : {}),
+        steps: request.steps ?? sampling?.steps,
+        cfg: request.cfg ?? sampling?.cfg,
+        sampler: request.sampler ?? sampling?.sampler,
+        scheduler: request.scheduler ?? sampling?.scheduler,
+      },
+      {
+        ...(vae ? { vae } : {}),
+        builtinScripts: forgeBuiltinScriptArgs(),
+        ...(useAdetailer ? { adetailerArgs: adetailerArgs({ hands: adetailerHands, anime: profile?.rendu === 'anime' }) } : {}),
+      },
+    );
+
+    const client = new ForgeClient(images.forgeUrl, this.deps.fetchImpl);
+    const forge = this.processFor(images.forgeDir, client);
+    let how: 'already' | 'started' | null = null;
+    let released = false;
+    try {
+      how = this.held ? this.held.how : await forge.ensureRunning(context.onProgress, context.signal);
+      if (how === 'started') await this.disableBrowserLaunch(client, images.forgeUrl);
+      const count = payload.batch_size;
+      context.onProgress?.(count > 1 ? `Forge est prêt, je fabrique ${count} images…` : 'Forge est prêt, je fabrique l’image…');
+      if (useAdetailer) {
+        const scripts = await client.scripts().catch(() => [] as string[]);
+        if (!scripts.includes('adetailer')) {
+          warnings.push('ADetailer est installé mais ce Forge ne l’a pas chargé : image sans retouche des visages et des mains.');
+          delete payload.alwayson_scripts?.ADetailer;
+        }
+      }
+      const response = await this.txt2imgWithProgress(client, payload, context, warnings);
+      const info = parseTxt2ImgInfo(response.info, count);
+      const now = this.deps.now?.() ?? new Date();
+      const folderNames = imageFileNames({ project: request.project, prompt: request.prompt, now, index: 0 });
+      const folder = join(images.outputRoot, ...folderNames.folder.split('/'));
+      await mkdir(folder, { recursive: true });
+      const keepTxt = request.keepTxt ?? !(request.project === 'perso' && images.directNoTxtPerso);
+      const files: DirectFile[] = [];
+      const imagesData = (response.images ?? []).slice(0, count);
+      for (let index = 0; index < imagesData.length; index += 1) {
+        const names = imageFileNames({ project: request.project, prompt: request.prompt, now, index });
+        const png = Buffer.from(imagesData[index]!, 'base64');
+        const pngPath = join(folder, names.png);
+        await writeFile(pngPath, png);
+        const seed = info.seeds[index] ?? -1;
+        let txtPath: string | undefined;
+        if (keepTxt) {
+          txtPath = join(folder, names.txt);
+          await writeFile(
+            txtPath,
+            sidecarText({
+              project: request.project,
+              userPrompt: request.prompt,
+              payload,
+              seed,
+              ...(checkpointFile ? { checkpoint: checkpointFile } : {}),
+              ...(vae ? { vae } : {}),
+              ...(request.loras?.[0] ? { lora: request.loras[0] } : {}),
+              createdAt: now,
+              direct: improve ? `complétée par Imager (règles seules${translated ? ', traduite par le dictionnaire local' : ''})` : 'envoyée telle quelle',
+              ...(improve ? { imager: { subjectType, ...(personCount ? { personCount } : {}), ...(render !== 'auto' ? { render } : {}), checkpointLabel: profile?.label ?? 'modèle courant de Forge', adetailer: Boolean(payload.alwayson_scripts?.ADetailer) } } : {}),
+            }),
+            'utf8',
+          );
+        }
+        files.push({ png: pngPath, ...(txtPath ? { txt: txtPath } : {}), seed, preview: `data:image/png;base64,${imagesData[index]!}` });
+      }
+      if (!files.length) throw new ForgeError('bad_response', 'Forge n’a renvoyé aucune image.');
+      const hold = this.holdsForge(images);
+      let brainReloaded: string | null = null;
+      if (hold) {
+        this.held = { forge, client, how, images, ollama, settings, loadedBefore: this.held?.loadedBefore.length ? this.held.loadedBefore : loadedBefore };
+      } else {
+        this.held = null;
+        brainReloaded = await this.release(forge, client, how, images, ollama, settings, loadedBefore, warnings);
+      }
+      released = true;
+      return {
+        project: request.project,
+        folder,
+        files,
+        width: payload.width,
+        height: payload.height,
+        durationMs: Date.now() - started,
+        warnings,
+        finalPrompt: payload.prompt,
+        finalNegative: payload.negative_prompt,
+        improved: improve,
+        ...(translated ? { translatedBy: translated.model } : {}),
+        checkpoint: profile ? { id: chosen!.id, label: profile.label } : checkpointFile ? { id: checkpointFile, label: checkpointFile } : null,
+        subjectType,
+        adetailer: Boolean(payload.alwayson_scripts?.ADetailer),
+        forgeHeld: hold,
+        brainReloaded,
+      };
+    } finally {
+      if (!released) {
+        // Chemin d'erreur : Forge libéré et modèle rechargé quoi qu'il arrive (même si le panneau garde Forge d'habitude).
+        this.held = null;
+        await this.release(forge, client, how, images, ollama, settings, loadedBefore, warnings);
+      }
+    }
+  }
+
+  /** `txt2img` avec l'avancement de Forge (`/sdapi/v1/progress`) relayé chaque seconde, et le second essai après un 500. */
+  private async txt2imgWithProgress(client: ForgeClient, payload: Txt2ImgPayload, context: DirectContext, warnings: string[]): Promise<Txt2ImgResponse> {
+    const poll = context.onProgressValue
+      ? setInterval(() => {
+          void client.progress().then((p) => context.onProgressValue?.(p.progress, p.etaSeconds)).catch(() => undefined);
+        }, 1_000)
+      : null;
+    try {
+      const once = () => client.txt2img(payload, context.signal);
+      try {
+        return await once();
+      } catch (error) {
+        const transient =
+          error instanceof ForgeError &&
+          !context.signal?.aborted &&
+          ((error.kind === 'http' && /\b500\b/.test(error.message)) || (error.kind === 'unreachable' && (await client.ping(5_000))));
+        if (!transient) throw error;
+        const delay = this.deps.forgeRetryDelayMs ?? 8_000;
+        this.deps.log?.(`[images] Forge a échoué (${(error as ForgeError).message}) : nouvel essai dans ${Math.round(delay / 1000)} s`);
+        await new Promise<void>((resolve) => setTimeout(resolve, delay));
+        const response = await once();
+        warnings.push(`Forge a échoué à la première requête (${(error as ForgeError).message}), la seconde a réussi.`);
+        return response;
+      }
+    } finally {
+      if (poll) clearInterval(poll);
+    }
+  }
+
   /** À la fermeture de Jarvis : un Forge lancé par Jarvis ne doit pas survivre. */
   async shutdown(): Promise<void> {
+    this.held = null;
     for (const process of this.processes.values()) await process.stop();
   }
 }
@@ -646,6 +1022,23 @@ export function pickBrainModel(settings: Settings, loadedBefore: string[]): stri
   if (orchestra) return orchestra.brain;
   if (settings.provider !== 'ollama') return loadedBefore[0] ?? null;
   return loadedBefore[0] ?? settings.model?.trim() ?? null;
+}
+
+/** Phrase française du résultat du mode direct (discussion, enceinte, journal). */
+export function describeDirectResult(result: DirectResult): string {
+  const lines = [
+    result.files.length > 1
+      ? `${result.files.length} images générées (${result.width}×${result.height}, projet ${result.project}) dans ${result.folder} :`
+      : `Image générée (${result.width}×${result.height}, projet ${result.project}) :`,
+    ...result.files.map((file) => `- ${file.png} — graine ${file.seed}`),
+    `Durée : ${Math.round(result.durationMs / 1000)} s. Mode direct, sans le modèle de langage${result.improved ? ` : consigne complétée par Imager (règles seules${result.translatedBy ? ', traduite par le dictionnaire local' : ''})` : ' : consigne envoyée telle quelle'}.`,
+    `Consigne envoyée à Stable Diffusion : ${result.finalPrompt}`,
+  ];
+  if (result.checkpoint) lines.push(`Modèle : ${result.checkpoint.label}${result.adetailer ? ', retouche visages/mains faite' : ''}.`);
+  for (const warning of result.warnings) lines.push(`Attention : ${warning}`);
+  if (result.forgeHeld) lines.push('Forge reste chargé tant que le panneau Imager direct est ouvert ; le modèle de langage reviendra à sa fermeture.');
+  else if (result.brainReloaded) lines.push(`Le modèle ${result.brainReloaded} est rechargé.`);
+  return lines.join('\n');
 }
 
 /** Phrase française du résultat, pour le modèle et l'utilisateur. */

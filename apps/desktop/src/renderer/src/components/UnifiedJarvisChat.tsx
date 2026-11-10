@@ -143,7 +143,7 @@ export function UnifiedJarvisChat({
               </p>
             </div>
           ) : (
-            <Messages items={chat.items} scrollParentRef={scrollRef} />
+            <Messages items={chat.items} scrollParentRef={scrollRef} onSend={(text) => submit(text, 'text')} />
           )}
         </div>
       </div>

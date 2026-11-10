@@ -23,7 +23,7 @@ export type ChatItem =
       id: string;
       label: string;
       model: string;
-      how: 'calcul' | 'express' | 'cerveau' | 'trieur' | 'mission-directe';
+      how: 'calcul' | 'express' | 'cerveau' | 'trieur' | 'mission-directe' | 'direct';
       validation?: {
         phrase: string;
         context: string;
@@ -34,6 +34,8 @@ export type ChatItem =
     }
   /** 5.0.62 : phrase entendue pendant la discussion vocale, jugée pas pour Jarvis (rien n'est enregistré). */
   | { kind: 'ignored'; id: string; text: string }
+  /** Mode direct d'Imager : le modèle a répondu sans Imager à ce qui ressemblait à une demande d'image. */
+  | { kind: 'imager_offer'; id: string; text: string }
   | { kind: 'chat_mission'; id: string; envelope: ChatMissionEnvelope };
 
 export interface PendingConfirmation {
@@ -166,6 +168,10 @@ export function useChat(options: UseChatOptions = {}) {
         }
         case 'error': {
           setItems((current) => [...current, { kind: 'error', id: nextId(), text: event.message }]);
+          break;
+        }
+        case 'imager_offer': {
+          setItems((current) => [...closeStreaming(current), { kind: 'imager_offer', id: nextId(), text: event.text }]);
           break;
         }
         case 'not_addressed': {
