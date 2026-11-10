@@ -20,6 +20,8 @@ export interface SpeakerChronoSample {
   firstTextMs: number | null;
   spokenReadyMs: number | null;
   synthesisMs: number | null;
+  /** Premier morceau de son réellement écrit sur le flux. */
+  firstSoundMs: number | null;
   responseMs: number | null;
   totalMs: number;
 }
@@ -33,6 +35,7 @@ const SAMPLE_KEYS = [
   'firstTextMs',
   'spokenReadyMs',
   'synthesisMs',
+  'firstSoundMs',
   'responseMs',
   'totalMs',
 ] as const;
@@ -45,6 +48,7 @@ export const SPEAKER_CHRONO_STEPS: ReadonlyArray<{ id: keyof SpeakerChronoSample
   { id: 'firstTextMs', label: 'la réponse du modèle' },
   { id: 'spokenReadyMs', label: 'le texte à dire' },
   { id: 'synthesisMs', label: 'la voix' },
+  { id: 'firstSoundMs', label: 'le premier son' },
   { id: 'responseMs', label: "l'envoi" },
 ];
 
@@ -78,6 +82,7 @@ export function sanitizeChronoSample(input: SpeakerChronoSample): SpeakerChronoS
     firstTextMs: finiteMs(input.firstTextMs, true),
     spokenReadyMs: finiteMs(input.spokenReadyMs, true),
     synthesisMs: finiteMs(input.synthesisMs, true),
+    firstSoundMs: finiteMs(input.firstSoundMs, true),
     responseMs: finiteMs(input.responseMs, true),
     totalMs: finiteMs(input.totalMs, false) ?? 0,
   };

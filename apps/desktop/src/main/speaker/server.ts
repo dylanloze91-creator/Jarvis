@@ -10,17 +10,25 @@ import {
   SPEAKER_TURN_TIMEOUT_MS,
   SPEAKER_HEADER_CAPTURE_MS,
   SPEAKER_WAKE_INTERVAL_MS,
+  SPEAKER_CONFIRMATION_REFUSAL,
+  SPEAKER_MISSION_PROPOSAL,
+  SPEAKER_DETAIL_ON_PC,
+  SPEAKER_EARLY_SENTENCES,
+  SPEAKER_IMAGE_WAIT,
+  SPEAKER_SAMPLE_RATE,
+  SentenceStreamer,
   checkTurnWav,
+  streamingWavHeader,
+  wavPcmBytes,
   classifySpokenTurn,
-  decideSpeakerSpeech,
+  speakerReplyForEars,
+  speakerReflexPhrase,
   followUpWindowMs,
   isSpotifyDeviceQuestion,
   looksLikeImageIntent,
   isPrivateAddress,
   isWavContentType,
   readCaptureMs,
-  SPEAKER_IMAGE_WAIT,
-  SPEAKER_SAMPLE_RATE,
   type SpeakerChrono,
   type SpeakerChronoPath,
   type SpeakerChronoSample,
@@ -123,6 +131,21 @@ interface TurnLink {
   detach(): void;
 }
 
+/** File de phrases en cours d'envoi à la carte (réponse en flux). */
+interface SpeakerStream {
+  /** Entêtes HTTP et WAV déjà partis (première phrase envoyée). */
+  started: boolean;
+  /** Phrases mises en file (0 = rien à dire). */
+  queued: number;
+  /** Première erreur de synthèse, s'il y en a eu une. */
+  failed: string | null;
+  enqueue(sentence: string): void;
+  /** Jette les phrases pas encore synthétisées (une carte refusée) ; ce qui est parti reste. */
+  discard(): void;
+  /** Attend la fin de la file et termine la réponse. */
+  finish(): Promise<void>;
+}
+
 interface ChatOutcome {
   reply: string;
   refused: boolean;
@@ -133,6 +156,8 @@ interface ChatOutcome {
   tools: string[];
   path: SpeakerChronoPath;
   firstAt: number | null;
+  /** Texte du dernier message assistant quand le chat n'a rien diffusé en deltas. */
+  fromMessages: string;
 }
 
 function sendJson(res: ServerResponse, status: number, body: unknown, headers: Record<string, string> = {}): void {
@@ -348,6 +373,7 @@ export class SpeakerServer {
       firstTextMs: null,
       spokenReadyMs: null,
       synthesisMs: null,
+      firstSoundMs: null,
       responseMs: null,
       totalMs: 0,
     };
@@ -420,79 +446,116 @@ export class SpeakerServer {
         const synthStarted = this.now();
         await this.backgroundImage(res, state, speaker, decision.text, transcript, followUp, link);
         mark.synthesisMs = Math.max(0, this.now() - synthStarted);
+        mark.firstSoundMs = mark.synthesisMs;
         note('reflexe');
         return;
       }
 
-      let speechStarted = false;
-      let resolveSpeech: () => void = () => undefined;
-      const speechGate = new Promise<void>((resolve) => {
-        resolveSpeech = resolve;
-      });
       const imageAtStart = state.image;
-      const pending = this.runChat(state, decision.text, followUp, link, (conversationId) => {
-        if (wasNew) void this.titleConversation(conversationId, speaker);
-      }, undefined, (outcome, finished) => {
-        if (outcome.path) mark.path = outcome.path;
-        if (outcome.firstAt !== null && mark.firstTextMs === null) mark.firstTextMs = Math.max(0, outcome.firstAt - started);
-        if (speechStarted) return;
-        const speech = decideSpeakerSpeech({
-          reply: outcome.reply,
-          finished,
-          refused: outcome.refused,
-          mission: outcome.missionProposal,
-          notAddressed: outcome.notAddressed,
-          tools: outcome.tools,
-          userText: decision.text,
-        });
-        if (!speech.ready && !finished) return;
-        speechStarted = true;
-        if (speech.reflex) mark.path = 'reflexe';
+      let conversationSeen: string | null = state.conversationId;
+      const streamer = new SentenceStreamer();
+      let earCount = 0;
+      let earClosed = false;
+      let reflexPhrase: string | null = null;
+      let earFinish: Promise<void> = Promise.resolve();
+      const stream = this.openStream(
+        res,
+        link,
+        (first) => ({
+          [SPEAKER_HEADER_CONTINUE]: followUpWindowMs(voice) > 0 || isSpotifyDeviceQuestion(first) ? '1' : '0',
+          [SPEAKER_HEADER_TRANSCRIPT]: encodeURIComponent(transcript),
+        }),
+        () => {
+          if (mark.firstSoundMs === null) mark.firstSoundMs = Math.max(0, this.now() - started);
+        },
+        (synthMs) => {
+          mark.synthesisMs = (mark.synthesisMs ?? 0) + synthMs;
+        },
+      );
+      const park = (): void => {
+        if (parked) return;
+        parked = true;
+        link.detach();
+        const chat = state.chat;
+        if (chat) {
+          state.live = { chat, conversationId: state.conversationId };
+          state.chat = null;
+          state.conversationId = null;
+        }
+        state.busy = false;
+      };
+      const closeEar = (): void => {
+        if (earClosed) return;
+        earClosed = true;
         mark.spokenReadyMs = Math.max(0, this.now() - started);
-        const keepGoing = !finished && !outcome.notAddressed && !outcome.refused;
-        void (async () => {
-          try {
-            if (link.gone) return;
-            const spoken = speech.spoken || (outcome.error ? SPEAKER_NO_REPLY : '');
-            if (!spoken) {
-              this.noReply(res, transcript);
-              return;
-            }
-            if (speech.showOnPc && outcome.conversationId) this.deps.onShowOnPc?.(outcome.conversationId);
-            const synthStarted = this.now();
-            const wav = await this.deps.synthesizer.synthesize(spoken);
-            mark.synthesisMs = Math.max(0, this.now() - synthStarted);
-            if (link.gone || res.headersSent) return;
-            if (keepGoing) {
-              parked = true;
-              link.detach();
-              const chat = state.chat;
-              if (chat) {
-                state.live = { chat, conversationId: outcome.conversationId };
-                state.chat = null;
-                state.conversationId = null;
-              }
-              state.busy = false;
-            }
-            const responseStarted = this.now();
-            const keepMic = followUpWindowMs(voice) > 0 || isSpotifyDeviceQuestion(spoken);
-            this.writeWav(res, wav, transcript, keepMic);
-            mark.responseMs = Math.max(0, this.now() - responseStarted);
-          } finally {
-            resolveSpeech();
+        stream.enqueue(SPEAKER_DETAIL_ON_PC);
+        const showId = state.conversationId ?? conversationSeen;
+        if (showId) this.deps.onShowOnPc?.(showId);
+        park();
+        earFinish = stream.finish();
+      };
+      const say = (sentences: string[], chatFinished: boolean): void => {
+        for (const sentence of sentences) {
+          if (earClosed || reflexPhrase) return;
+          if (earCount >= SPEAKER_EARLY_SENTENCES) {
+            closeEar();
+            return;
           }
-        })();
-      });
-      await Promise.race([speechGate, pending.then(() => undefined, () => undefined)]);
-      if (!speechStarted) {
-        speechStarted = true;
-        if (!res.headersSent && !link.gone) this.noReply(res, transcript);
-        resolveSpeech();
-      }
-      await speechGate;
-      if (parked) {
+          if (mark.spokenReadyMs === null) mark.spokenReadyMs = Math.max(0, this.now() - started);
+          stream.enqueue(sentence);
+          earCount += 1;
+          if (earCount >= SPEAKER_EARLY_SENTENCES && !chatFinished) closeEar();
+        }
+      };
+      const pending = this.runChat(
+        state,
+        decision.text,
+        followUp,
+        link,
+        (conversationId) => {
+          conversationSeen = conversationId;
+          if (wasNew) void this.titleConversation(conversationId, speaker);
+        },
+        undefined,
+        {
+          onDelta: (delta) => {
+            if (reflexPhrase) return;
+            say(streamer.push(delta), false);
+          },
+          onUpdate: (outcome) => {
+            if (outcome.path) mark.path = outcome.path;
+            if (outcome.firstAt !== null && mark.firstTextMs === null) {
+              mark.firstTextMs = Math.max(0, outcome.firstAt - started);
+            }
+            if (reflexPhrase || outcome.refused) return;
+            for (const toolName of outcome.tools) {
+              const phrase = speakerReflexPhrase(toolName, decision.text);
+              if (!phrase) continue;
+              reflexPhrase = phrase;
+              mark.path = 'reflexe';
+              stream.discard();
+              earClosed = true;
+              mark.spokenReadyMs = Math.max(0, this.now() - started);
+              stream.enqueue(phrase);
+              if (outcome.conversationId) this.deps.onShowOnPc?.(outcome.conversationId);
+              break;
+            }
+          },
+        },
+      );
+      const outcome = await pending;
+      if (!parked && outcome.conversationId) {
+        const imageStillRunning = imageAtStart !== null && state.image === imageAtStart;
+        const imageEndedDuring = imageAtStart !== null && state.image === null;
+        if (!imageStillRunning && !imageEndedDuring) {
+          state.conversationId = outcome.conversationId;
+          if (wasNew) await this.titleConversation(outcome.conversationId, speaker);
+        } else if (wasNew) {
+          await this.titleConversation(outcome.conversationId, speaker);
+        }
+      } else if (parked) {
         const jobChat = state.live?.chat ?? null;
-        void pending.then((final) => {
+        void Promise.resolve(outcome).then((final) => {
           if (!jobChat || state.live?.chat !== jobChat) return;
           state.live = null;
           if (state.chat === null) {
@@ -503,19 +566,47 @@ export class SpeakerServer {
             this.deps.onShowOnPc?.(final.conversationId);
           }
         });
-      } else {
-        const outcome = await pending;
-        if (outcome.conversationId) {
-          const imageStillRunning = imageAtStart !== null && state.image === imageAtStart;
-          const imageEndedDuring = imageAtStart !== null && state.image === null;
-          if (!imageStillRunning && !imageEndedDuring) {
-            state.conversationId = outcome.conversationId;
-            if (wasNew) await this.titleConversation(outcome.conversationId, speaker);
-          } else if (wasNew) {
-            await this.titleConversation(outcome.conversationId, speaker);
-          }
-        }
       }
+      if (link.gone && !stream.started) {
+        note(mark.path);
+        return;
+      }
+      if (outcome.notAddressed && !stream.started) {
+        note('reflexe');
+        return this.noReply(res, transcript);
+      }
+      if (outcome.refused) {
+        stream.discard();
+        earClosed = true;
+        stream.enqueue(SPEAKER_CONFIRMATION_REFUSAL);
+      } else if (!reflexPhrase && !earClosed) {
+        say(streamer.flush(), true);
+        const full = outcome.reply || outcome.fromMessages;
+        if (!stream.queued && full) {
+          const late = new SentenceStreamer();
+          say([...late.push(full), ...late.flush()], true);
+        }
+        const ears = speakerReplyForEars(full);
+        if (ears.showOnPc && ears.spoken.includes(SPEAKER_DETAIL_ON_PC) && !earClosed) {
+          stream.enqueue(SPEAKER_DETAIL_ON_PC);
+          if (outcome.conversationId) this.deps.onShowOnPc?.(outcome.conversationId);
+        } else if (ears.showOnPc && outcome.conversationId) {
+          this.deps.onShowOnPc?.(outcome.conversationId);
+        }
+        if (outcome.missionProposal) stream.enqueue(SPEAKER_MISSION_PROPOSAL);
+      }
+      if (!stream.queued && outcome.error) stream.enqueue(SPEAKER_NO_REPLY);
+      if (!stream.queued && !stream.started) {
+        note(mark.path);
+        return this.noReply(res, transcript);
+      }
+      if (earClosed && parked) await earFinish;
+      else {
+        const responseStarted = this.now();
+        await stream.finish();
+        mark.responseMs = Math.max(0, this.now() - responseStarted);
+      }
+      if (stream.failed && !stream.started) throw new HttpError(500, stream.failed);
       note(mark.path);
     } finally {
       note();
@@ -524,15 +615,63 @@ export class SpeakerServer {
     }
   }
 
-  private writeWav(res: ServerResponse, wav: Uint8Array, transcript: string, keepMic: boolean): void {
-    if (res.headersSent) return;
-    res.writeHead(200, {
-      'Content-Type': 'audio/wav',
-      'Content-Length': String(wav.byteLength),
-      [SPEAKER_HEADER_CONTINUE]: keepMic ? '1' : '0',
-      [SPEAKER_HEADER_TRANSCRIPT]: encodeURIComponent(transcript),
-    });
-    res.end(Buffer.from(wav.buffer, wav.byteOffset, wav.byteLength));
+  /**
+   * Flux de réponse : une file de phrases, synthétisées une à une et envoyées dès que possible ;
+   * l'entête HTTP et l'entête WAV partent avec la première. Une synthèse qui échoue avant la
+   * première phrase remonte en erreur ; après, le flux s'arrête proprement.
+   */
+  private openStream(
+    res: ServerResponse,
+    link: TurnLink,
+    headersFor: (firstSentence: string) => Record<string, string>,
+    onFirstSound: () => void,
+    onSynth: (ms: number) => void,
+  ): SpeakerStream {
+    const stream: SpeakerStream = {
+      started: false,
+      queued: 0,
+      failed: null,
+      discard: () => {
+        generation += 1;
+        if (!stream.started) stream.queued = 0;
+      },
+      enqueue: (sentence: string) => {
+        stream.queued += 1;
+        const mine = generation;
+        chain = chain.then(async () => {
+          if (link.gone || stream.failed || mine !== generation) return;
+          let wav: Uint8Array;
+          const synthStarted = this.now();
+          try {
+            wav = await this.deps.synthesizer.synthesize(sentence);
+          } catch (error) {
+            stream.failed = error instanceof Error ? error.message : String(error);
+            this.deps.log?.(`[enceinte] synthèse impossible : ${stream.failed}`);
+            return;
+          }
+          onSynth(Math.max(0, this.now() - synthStarted));
+          if (link.gone) return;
+          if (!stream.started) {
+            stream.started = true;
+            res.writeHead(200, { 'Content-Type': 'audio/wav', ...headersFor(sentence) });
+            res.write(Buffer.from(streamingWavHeader()));
+          }
+          const pcm = wavPcmBytes(wav);
+          await new Promise<void>((resolve) => {
+            if (!res.write(Buffer.from(pcm.buffer, pcm.byteOffset, pcm.byteLength))) res.once('drain', () => resolve());
+            else resolve();
+          });
+          onFirstSound();
+        });
+      },
+      finish: async () => {
+        await chain;
+        if (stream.started && !res.writableEnded) res.end();
+      },
+    };
+    let chain: Promise<void> = Promise.resolve();
+    let generation = 0;
+    return stream;
   }
 
   /**
@@ -678,7 +817,10 @@ export class SpeakerServer {
     onConversation?: (conversationId: string) => void,
     /** Session déjà choisie (l'image), qui ne doit pas devenir celle des phrases d'après. */
     bound?: { chat: SpeakerChat; conversationId: string | null },
-    onUpdate?: (outcome: ChatOutcome, finished: boolean) => void,
+    hooks?: {
+      onDelta?: (text: string) => void;
+      onUpdate?: (outcome: ChatOutcome, finished: boolean) => void;
+    },
   ): Promise<ChatOutcome> {
     const conversationId = bound ? bound.conversationId : state.conversationId;
     const outcome: ChatOutcome = {
@@ -691,6 +833,7 @@ export class SpeakerServer {
       tools: [],
       path: 'cerveau',
       firstAt: null,
+      fromMessages: '',
     };
     let fromMessages = '';
     const chat = bound?.chat ?? state.chat ?? (state.chat = this.deps.chatFor(state.speaker));
@@ -706,29 +849,31 @@ export class SpeakerServer {
             break;
           case 'route':
             outcome.path = chronoPath(event.how, event.model);
-            onUpdate?.(outcome, false);
+            hooks?.onUpdate?.(outcome, false);
             break;
           case 'delta':
             outcome.reply += event.text;
             if (outcome.firstAt === null) outcome.firstAt = this.now();
-            onUpdate?.(outcome, false);
+            hooks?.onUpdate?.(outcome, false);
+            // Après une carte refusée, le texte du modèle (« tu as refusé… ») ne s'adresse pas à l'enceinte.
+            if (!outcome.refused) hooks?.onDelta?.(event.text);
             break;
           case 'tool_result':
             if (event.status === 'ok') outcome.tools.push(event.toolName);
-            onUpdate?.(outcome, false);
+            hooks?.onUpdate?.(outcome, false);
             break;
           case 'mission_proposal':
             outcome.missionProposal = true;
-            onUpdate?.(outcome, false);
+            hooks?.onUpdate?.(outcome, false);
             break;
           case 'confirm':
             outcome.refused = true;
             chat.respondConfirmation(event.requestId, false);
-            onUpdate?.(outcome, true);
+            hooks?.onUpdate?.(outcome, true);
             break;
           case 'not_addressed':
             outcome.notAddressed = true;
-            onUpdate?.(outcome, true);
+            hooks?.onUpdate?.(outcome, true);
             break;
           case 'error':
             outcome.error = event.message;
@@ -736,7 +881,8 @@ export class SpeakerServer {
           case 'done':
             fromMessages = lastAssistantText(event.messages);
             if (!outcome.reply.trim() && fromMessages) outcome.reply = fromMessages;
-            onUpdate?.(outcome, true);
+            outcome.fromMessages = fromMessages;
+            hooks?.onUpdate?.(outcome, true);
             break;
           default:
             break;
@@ -758,11 +904,11 @@ export class SpeakerServer {
         ...(followUp ? { followUp: true } : {}),
         ...(rulesOnly ? { rulesOnlyAddressee: true } : {}),
       })
-      .then(() => ({ ...outcome, reply: outcome.reply.trim() || fromMessages }))
+      .then(() => ({ ...outcome, reply: outcome.reply.trim(), fromMessages }))
       .catch((error: unknown) => {
         outcome.error = error instanceof Error ? error.message : String(error);
-        onUpdate?.(outcome, true);
-        return outcome;
+        hooks?.onUpdate?.(outcome, true);
+        return { ...outcome, fromMessages };
       });
   }
 

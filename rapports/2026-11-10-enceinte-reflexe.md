@@ -4,6 +4,25 @@ Cahier : `docs/specs/enceinte-reflexe.md` (branche `claude/specs-enceinte-reflex
 
 **Non testé avec la vraie enceinte.** Le programme de la carte (`firmware/jarvis-speaker/`) n’a pas été lu ni modifié. Le chantier images n’a pas été repris : la garde « une demande d’image n’est jamais un morceau » de `main` est restée, avec le suffixe d’appareil Spotify.
 
+## Fusion avec la réponse en flux
+
+Branche `claude/enceinte-flux` fusionnée dans `cursor/enceinte-reflexe` (10 novembre, nuit). La version de l’application reste **5.0.73** : les commits de publication 5.0.74 qui étaient sous cette branche n’ont pas été repris dans les `package.json`.
+
+Ce qui vient de Claude Code, et qui devient la façon de parler à l’enceinte :
+
+- chaque phrase finie est synthétisée et envoyée pendant que le cerveau écrit la suite (`SentenceStreamer`) ;
+- l’entête WAV n’annonce pas de taille (`streamingWavHeader`), le corps part en morceaux ;
+- une carte refusée jette les phrases pas encore parties, puis dit le refus.
+
+Ce qui reste de `cursor/enceinte-reflexe` :
+
+- l’enceinte ne dit que les 3 premières phrases (la règle de `speakerReplyForEars`), puis « Le détail est sur le PC. » si la réponse continue ; la suite s’écrit dans la discussion, et une nouvelle phrase ne l’annule pas ;
+- le chrono, avec en plus l’étape « le premier son » (`firstSoundMs`), mesurée quand le premier morceau du flux part ;
+- les phrases réflexes courtes, « Devialet ou PC ? », l’image qui ne s’annule pas ;
+- Whisper préchargé, Piper résident (le flux l’appelle phrase par phrase), `/api/speaker/wake`, destinataire par règles, « Mode enceinte rapide ».
+
+**Non testé avec la vraie enceinte.**
+
 ## Fait
 
 0. **Base.** Les deux branches déjà relues sont dans celle-ci. `playIntent.ts` garde la garde image et le suffixe « sur la Devialet ».
@@ -24,9 +43,9 @@ Cahier : `docs/specs/enceinte-reflexe.md` (branche `claude/specs-enceinte-reflex
 
 | Commande | Résultat |
 | --- | --- |
-| `npm run typecheck` | OK, 0 erreur |
-| `npm test` | Cœur 2330/2330. Bureau 729 réussis, 6 ignorés, 1 échec (voir ci-dessous) |
-| `npm run lint` | OK, 0 erreur, 0 avertissement |
+| `npm run typecheck` | OK, 0 erreur (après la fusion aussi) |
+| `npm test` | Après la fusion : cœur 2332/2332. Bureau 731 réussis, 6 ignorés, 1 échec (voir ci-dessous) |
+| `npm run lint` | OK, 0 erreur, 0 avertissement (après la fusion aussi) |
 
 Tests ajoutés : chrono (aucun texte dans la ligne, médianes), réponse anticipée (HTTP avant la fin, suite non annulée, réponse courte inchangée), phrase Spotify courte, stop après la réponse anticipée, Piper résident (un lancement, relance, repli), `/api/speaker/wake` (jeton, adresse, 204, une fois par 10 s), chargement Ollama sans génération, destinataire par règles sur l’enceinte. `chat-unchanged`, `ollama-unchanged`, `orchestra-session` verts, `__golden__` non régénérés. `parseSettings({})` ne gagne aucune des nouvelles clés.
 
@@ -65,9 +84,9 @@ RAPPORT DE VÉRIFICATION
 Lancement : non exécuté (build Electron non lancé)
 Types     : OK (0 erreur)
 Style     : OK (0 avertissement)
-Tests     : ÉCHEC (3059/3066 réussis, 6 ignorés, 1 échec : « Construire manuel » dans windowsDesktopMissionPath.test.ts, fichier déjà fragile, code developer inchangé)
+Tests     : ÉCHEC (3063/3070 réussis, 6 ignorés, 1 échec : « Construire manuel » dans windowsDesktopMissionPath.test.ts, fichier déjà fragile, code developer inchangé)
 Secrets   : OK (0 vraie valeur ; seulement des clés factices de tests déjà dans le dépôt)
-Fichiers modifiés : cœur enceinte (chrono, phrases, préchauffage, réglages), pont desktop, Piper résident, réglages Enceintes, CLAUDE.md, ce rapport
+Fichiers modifiés : fusion claude/enceinte-flux dans le pont des enceintes, limite d’oreille, chrono « premier son », ce rapport
 Prêt à fusionner : NON
 À corriger : mesurer avec la vraie enceinte ; npm run build sur Windows ; l’échec « Construire manuel » (hors de ce chantier)
 Testé en vrai (à la voix, sur le PC) : PAS FAIT

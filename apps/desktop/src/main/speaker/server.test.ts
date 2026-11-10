@@ -13,6 +13,7 @@ import {
   decodeWav,
   encodeWav,
   newConversation,
+  boundedWav,
   silenceWav,
   withMessages,
   type SpeakerChrono,
@@ -242,9 +243,12 @@ describe('pont des enceintes (5.0.64)', () => {
     expect(reply.headers['content-type']).toBe('audio/wav');
     expect(reply.headers['x-jarvis-continue']).toBe('1');
     expect(decodeURIComponent(String(reply.headers['x-jarvis-transcript']))).toBe('Jarvis, quelle heure est-il ?');
-    const wav = decodeWav(new Uint8Array(reply.body));
+    // Réponse en flux : pas de Content-Length, entête WAV sans taille, PCM à la suite.
+    expect(reply.headers['content-length']).toBeUndefined();
+    expect(reply.headers['transfer-encoding']).toBe('chunked');
+    const wav = decodeWav(boundedWav(new Uint8Array(reply.body)));
     expect(wav.sampleRate).toBe(SPEAKER_SAMPLE_RATE);
-    expect(Number(reply.headers['content-length'])).toBe(reply.body.byteLength);
+    expect(wav.samples.length).toBe(Math.round(((100 + 'Réponse à : quelle heure est-il'.length) / 1000) * SPEAKER_SAMPLE_RATE));
     // Le mot de réveil est retiré avant le chat ; source vocale, pas de suivi.
     expect(chat().inputs).toEqual([{ conversationId: null, text: 'quelle heure est-il', source: 'voice' }]);
     expect(synth.spoken).toEqual(['Réponse à : quelle heure est-il']);
@@ -254,6 +258,35 @@ describe('pont des enceintes (5.0.64)', () => {
     const list = await conversations.list();
     expect(list).toHaveLength(1);
     expect(list[0]!.title).toBe('Salon · quelle heure est-il');
+  });
+
+  it('réponse en flux : la première phrase est synthétisée et envoyée avant que le cerveau ait fini', async () => {
+    let firstSynth: () => void = () => undefined;
+    const firstSynthDone = new Promise<void>((resolve) => {
+      firstSynth = resolve;
+    });
+    const { port, token, synth, setTranscript } = await setup({
+      script: async (sender, input) => {
+        sender.send('', { type: 'started', conversationId: 'c1', message: createMessage('user', input.text) });
+        sender.send('', { type: 'delta', text: 'Première phrase. ' });
+        // Si le pont attendait la fin de la réponse, cette attente ne finirait jamais (délai de garde).
+        await Promise.race([firstSynthDone, new Promise<void>((_resolve, reject) => setTimeout(() => reject(new Error('la première phrase n’a pas été synthétisée pendant la réponse')), 5_000))]);
+        sender.send('', { type: 'delta', text: 'Seconde phrase.' });
+        sender.send('', { type: 'done', conversationId: 'c1', messages: [] });
+      },
+    });
+    const origin = synth.synthesize.bind(synth);
+    synth.synthesize = async (text: string) => {
+      const wav = await origin(text);
+      if (text === 'Première phrase.') firstSynth();
+      return wav;
+    };
+    setTranscript('Jarvis raconte');
+    const reply = await call(port, '/api/speaker/turn', { token, body: voiceWav() });
+    expect(reply.status).toBe(200);
+    expect(synth.spoken).toEqual(['Première phrase.', 'Seconde phrase.']);
+    const wav = decodeWav(boundedWav(new Uint8Array(reply.body)));
+    expect(wav.samples.length).toBe(Math.round(((100 + 16 + 100 + 15) / 1000) * SPEAKER_SAMPLE_RATE));
   });
 
   it('la discussion continue sur la même conversation, puis une nouvelle après 10 minutes', async () => {
@@ -381,9 +414,9 @@ describe('pont des enceintes (5.0.64)', () => {
     });
     setTranscript('Jarvis quelle météo ?');
     await call(port, '/api/speaker/turn', { token, body: voiceWav() });
-    expect(synth.spoken).toEqual(['Il fait 22 degrés. Le détail est sur le PC.']);
-    expect(synth.spoken[0]).not.toContain('meteo.fr');
-    expect(synth.spoken[0]).not.toContain('code');
+    expect(synth.spoken).toEqual(['Il fait 22 degrés.', 'Le détail est sur le PC.']);
+    expect(synth.spoken.join(' ')).not.toContain('meteo.fr');
+    expect(synth.spoken.join(' ')).not.toContain('code');
     expect(shown).toEqual(['c1']);
   });
 
@@ -481,10 +514,13 @@ describe('pont des enceintes (5.0.64)', () => {
     });
     const reply = await call(port, '/api/speaker/turn', { token, body: voiceWav() });
     expect(reply.status).toBe(200);
-    expect(synth.spoken).toHaveLength(1);
-    expect(synth.spoken[0]).toContain('Première phrase.');
-    expect(synth.spoken[0]).toContain('Le détail est sur le PC.');
-    expect(synth.spoken[0]).not.toContain('Quatrième');
+    expect(synth.spoken).toEqual([
+      'Première phrase.',
+      'Deuxième phrase.',
+      'Troisième phrase.',
+      'Le détail est sur le PC.',
+    ]);
+    expect(synth.spoken.join(' ')).not.toContain('Quatrième');
     expect(shown).toEqual(['conv-long']);
   });
 
@@ -941,9 +977,13 @@ describe('enceinte réflexe', () => {
     const pending = call(port, '/api/speaker/turn', { token, body: voiceWav() });
     const reply = await pending;
     expect(reply.status).toBe(200);
-    expect(synth.spoken[0]).toContain('Troisième phrase.');
-    expect(synth.spoken[0]).toContain('Le détail est sur le PC.');
-    expect(synth.spoken[0]).not.toContain('secrète');
+    expect(synth.spoken).toEqual([
+      'Première phrase.',
+      'Deuxième phrase.',
+      'Troisième phrase.',
+      'Le détail est sur le PC.',
+    ]);
+    expect(synth.spoken.join(' ')).not.toContain('secrète');
     release();
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(conversations).toBeTruthy();
@@ -972,6 +1012,43 @@ describe('enceinte réflexe', () => {
     const reply = await call(port, '/api/speaker/turn', { token, body: voiceWav() });
     expect(reply.status).toBe(200);
     expect(synth.spoken).toEqual(['Il est 14 h.']);
+  });
+
+  it('réponse longue en flux : 2 ou 3 phrases envoyées une par une, puis « Le détail est sur le PC », la suite sur le PC', async () => {
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let suite = '';
+    const { port, token, synth, chat } = await setup({
+      script: async (sender) => {
+        sender.send('', { type: 'started', conversationId: 'long', message: createMessage('user', 'raconte') });
+        sender.send('', { type: 'delta', text: 'Première phrase. Deuxième phrase. Troisième phrase. ' });
+        await gate;
+        suite = 'Quatrième phrase qui reste écrite sur le PC.';
+        sender.send('', { type: 'delta', text: suite });
+        sender.send('', {
+          type: 'done',
+          conversationId: 'long',
+          messages: [createMessage('assistant', `Première phrase. Deuxième phrase. Troisième phrase. ${suite}`)],
+        });
+      },
+    });
+    const reply = await call(port, '/api/speaker/turn', { token, body: voiceWav() });
+    expect(reply.status).toBe(200);
+    expect(reply.headers['content-length']).toBeUndefined();
+    expect(synth.spoken).toEqual([
+      'Première phrase.',
+      'Deuxième phrase.',
+      'Troisième phrase.',
+      'Le détail est sur le PC.',
+    ]);
+    expect(suite).toBe('');
+    expect(chat().cancelled).toBe(0);
+    release();
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(suite).toContain('Quatrième');
+    expect(synth.spoken.join(' ')).not.toContain('Quatrième');
   });
 
   it('Spotify express dit une phrase courte', async () => {

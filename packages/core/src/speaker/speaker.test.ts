@@ -2,6 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { decodeWav, encodeWav } from '../speech/wav.js';
 import {
   SPEAKER_MAX_SPEECH_CHARS,
+  SentenceStreamer,
+  boundedWav,
+  streamingWavHeader,
+  wavPcmBytes,
   SPEAKER_PORT,
   SPEAKER_SAMPLE_RATE,
   cString,
@@ -213,5 +217,43 @@ describe('enceinte (5.0.64) — texte et secrets', () => {
     expect(block).toContain('"pc-dylan.local"');
     expect(block).toContain('#define WIFI_SSID        "A_REMPLIR"');
     expect(speakerSecretsBlock({ host: '10.0.0.2', port: 1, token: 't', name: 'n' })).not.toContain('Autre possibilité');
+  });
+});
+
+describe('réponse en flux (phrase par phrase)', () => {
+  it('découpe les deltas en phrases nettoyées, retire sources et code, respecte la limite', () => {
+    const streamer = new SentenceStreamer(60);
+    expect(streamer.push('Il fait **22')).toEqual([]);
+    expect(streamer.push(' degrés**. Le ciel')).toEqual(['Il fait 22 degrés.']);
+    expect(streamer.push(' est dégagé !\n\n```\ncode')).toEqual(['Le ciel est dégagé !']);
+    // Bloc de code ouvert : on attend sa fin ; il est retiré en entier.
+    expect(streamer.push('\n```\n\nUne liste :\n- un\n- deux\n')).toEqual(['Une liste :', 'un']);
+    // « deux » attendait la suite ; le bloc des sources ferme le flux et libère ce qui précède.
+    expect(streamer.push('Sources (recherche web du 2 novembre 2026) :\n- [1] x')).toEqual(['deux']);
+    expect(streamer.flush()).toEqual([]);
+    const long = new SentenceStreamer(20);
+    expect(long.push('Une phrase assez longue pour dépasser. Une autre phrase. ')).toEqual(['Une phrase assez lon']);
+    expect(long.flush()).toEqual([]);
+    const plain = new SentenceStreamer();
+    expect(plain.push('Réponse à : quelle heure')).toEqual([]);
+    expect(plain.flush()).toEqual(['Réponse à : quelle heure']);
+  });
+
+  it('entête WAV sans taille, octets PCM d’un WAV, WAV rendu lisible', () => {
+    const head = streamingWavHeader();
+    expect(head.byteLength).toBe(44);
+    const view = new DataView(head.buffer);
+    expect(view.getUint32(4, true)).toBe(0xffffffff);
+    expect(view.getUint32(40, true)).toBe(0xffffffff);
+    expect(view.getUint32(24, true)).toBe(SPEAKER_SAMPLE_RATE);
+    const clip = silenceWav(10);
+    expect(wavPcmBytes(clip).byteLength).toBe(clip.byteLength - 44);
+    const streamed = new Uint8Array([...head, ...wavPcmBytes(clip), ...wavPcmBytes(clip)]);
+    expect(wavPcmBytes(streamed).byteLength).toBe(2 * (clip.byteLength - 44));
+    const bounded = boundedWav(streamed);
+    const fixed = new DataView(bounded.buffer, bounded.byteOffset, bounded.byteLength);
+    expect(fixed.getUint32(4, true)).toBe(bounded.byteLength - 8);
+    expect(fixed.getUint32(40, true)).toBe(2 * (clip.byteLength - 44));
+    expect(decodeWav(bounded).samples.length).toBe(2 * Math.round(0.01 * SPEAKER_SAMPLE_RATE));
   });
 });
