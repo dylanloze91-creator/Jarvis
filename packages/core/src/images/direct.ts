@@ -81,6 +81,7 @@ export interface DirectImageRequest {
 const SAFE_FILE_NAME = /^(?!\.)(?!.*\.\.)[\p{L}\p{N} _.\-()[\]+@']{1,200}$/u;
 
 export function isSafeModelFileName(name: string): boolean {
+  // eslint-disable-next-line no-control-regex -- caractères de contrôle interdits dans un nom de fichier (voulu).
   return SAFE_FILE_NAME.test(name) && !/[\\/:*?"<>|\u0000-\u001f]/u.test(name);
 }
 
@@ -318,7 +319,7 @@ export function normalizeForTriggers(text: string): string {
     .toLowerCase()
     .normalize('NFD')
     .replace(/[̀-ͯ]/g, '')
-    .replace(/[’'`\-]/g, ' ')
+    .replace(/[’'`-]/g, ' ')
     .replace(/[.,;:!?«»"()]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
