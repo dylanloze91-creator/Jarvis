@@ -33,8 +33,42 @@ Le 7B transmet `demande` (mots de l'utilisateur), `projet`, `type` (personne, ob
 
 ## Étape 6 — comparaisons
 
-RESULTATS_COMPARAISON
+Cinq demandes avec personnes, mêmes consignes et mêmes graines des deux côtés, Forge laissé allumé entre les images, 7B déchargé puis rechargé à chaque image (vérifié : `qwen2.5:7b` chargé après chacune des dix). Fichiers dans `C:\dev\Jarvis_images\tests_imager\` : `ancien\perso\2026-11-10\` (SDXL de base, aucune règle, aucune retouche, DPM++ 2M 28 pas) et `nouveau\perso\2026-11-10\` (Jarvis Imager : RealVisXL, règles, ADetailer), récapitulatif `COMPARAISON.md`.
+
+| Cas | Ancien | Nouveau (Imager) | Ce que j'ai vu |
+| --- | --- | --- | --- |
+| 1 portrait (femme, taches de rousseur) | 77 s | 249 s | les deux corrects ; le nouveau est plus photographique, mains sous le menton plausibles |
+| 2 personne entière debout (homme en costume) | 58 s | 236 s | nouveau : visage et mains nets, pose naturelle |
+| 3 deux personnes au café | 58 s | 193 s (après correctif) | l'ancien était déjà correct ; le nouveau a d'abord **planté Forge deux fois** (erreur interne de placement de tenseurs pendant la passe « mains » sur une image 1216×832 à deux personnes, mémoire vidéo saturée) → règle : pour une scène à plusieurs personnes, retouche des visages seulement |
+| 4 mains visibles (tasse à deux mains) | 58 s | 242 s | **ancien : doigts fusionnés et pouces déformés ; nouveau : deux mains à cinq doigts, ongles nets** |
+| 5 geste (homme qui salue) | 58 s | 240 s | **ancien : deux bras levés et mains floues alors qu'une seule main devait saluer ; nouveau : une main levée, cinq doigts, visage net** |
+
+Temps moyen par image : **ancien 62 s, nouveau 242 s** (avec les retouches à 30 pas ; mesure faite avant le passage des retouches à 16 pas, qui devrait ramener une personne seule vers 2 minutes ; à remesurer). Le surcoût vient de l'échantillonneur recommandé par RealVisXL (DPM++ SDE, environ deux fois plus lent par pas) et des deux passes de retouche. Pour aller plus vite : `adetailer: false` ou `adetailerMains: false` dans `imager_rules.yaml`, ou `checkpoint-realvisxl` avec `sampler: "DPM++ 2M"`.
+
+Autres défauts relevés sur Forge Classic en 6 Go, contournés dans Jarvis : HTTP 500 systématique (« Never OOM » mal argumenté dès qu'ADetailer est installé) → arguments explicites ; coupure « fetch failed » sur une image lourde → un nouvel essai, puis l'erreur dite telle quelle.
+
+Juggernaut XI : non téléchargé (dépôt réservé aux comptes Hugging Face ayant accepté la licence). Dès que le fichier `Juggernaut-XI-byRunDiffusion.safetensors` est dans `C:\dev\Forge\models\Stable-diffusion\`, Imager le voit (section `checkpoint-juggernaut`) ; il passe après RealVisXL dans l'ordre `auto`, et sa licence interdit l'usage commercial.
 
 ## RAPPORT DE VÉRIFICATION
 
-RAPPORT_VERIFICATION
+```
+RAPPORT DE VÉRIFICATION
+Lancement : OK
+Types     : OK (0 erreur)
+Style     : OK (0 avertissement)
+Tests     : OK (2971/2971 réussis, 8 ignorés ; cœur 2271/2271, bureau 700/700 — dans la suite complète, `windowsDesktopMissionPath.test.ts` a échoué au nettoyage d'un dossier (EBUSY, verrou .NET sous charge) et repasse seul 6/6)
+Secrets   : OK (0 trouvé)
+Fichiers modifiés : 24 fichiers depuis claude/module-images (packages/core/src/images : imagerRules, presets, request, refine, storage, intent, index, tests ; apps/desktop/src/main/images : ForgeClient, ImagesService, PromptRefiner, tests ; tools/images.ts ; orchestraTeams.ts ; ImagesSettings.tsx, SettingsPanel.tsx, ipc.ts, preview/bridge.ts ; config/imager_rules.yaml ; docs/images-jarvis.md ; CLAUDE.md ; AGENTS-COORDINATION.md ; ce rapport)
+Prêt à fusionner : OUI (après relecture de l'utilisateur ; rien sur main ; la branche contient aussi tout claude/module-images)
+À corriger : temps par image avec personnes (≈ 4 min à 30 pas de retouche ; 16 pas maintenant, à remesurer) ; Juggernaut XI à poser à la main ; Forge Classic en 6 Go reste fragile sur une image 1216×832 à plusieurs personnes avec deux passes de retouche (contourné : visages seuls pour les scènes) ; fond gris des stickers et noir et blanc par seuil (inchangé, voir rapport du 9 novembre)
+Testé en vrai (à la voix, sur le PC) : PAS FAIT (testé par le service réel avec le vrai Forge, le vrai Ollama et les vrais modèles : 10 images de comparaison + 5 images d'essai ; pas de test dans la fenêtre de Jarvis cette nuit)
+```
+
+À tester toi-même dans Jarvis (version de développement `npm run dev`) : « Jarvis, génère le portrait d'une femme rousse qui sourit » → réponse « Jarvis Imager : modèle RealVisXL V5.0, sujet « personne », retouche visages et mains faite » et une image nette ; « Jarvis, fais une image de deux amis qui trinquent en terrasse » → type scène, retouche des visages ; « Jarvis, un sticker de renard pour Drivers Ink » → règles sticker, pas de retouche.
+
+## Pour l'utilisateur, en simple
+
+- **Ce qui a changé** : pour toute image, le cerveau passe par Jarvis Imager, qui écrit lui-même la consigne (règles dans `C:\dev\Jarvis_images\imager_rules.yaml`), choisit RealVisXL (meilleure anatomie, usage commercial permis), n'envoie que des tailles natives SDXL, repasse sur les visages et les mains des personnes, et dit dans sa réponse quel modèle et quelles retouches il a utilisés.
+- **Où voir les comparaisons** : `C:\dev\Jarvis_images\tests_imager\ancien\` contre `…\nouveau\` (mêmes demandes, mêmes graines), tableau dans `COMPARAISON.md`. Regarde surtout « mains » et « geste » : doigts fusionnés et deux bras levés avant, mains correctes après.
+- **Temps moyen par image** : ancien 62 s, nouveau 242 s (mesure avec les retouches à 30 pas ; passées à 16 pas depuis, à remesurer). Réglable dans le fichier de règles.
+- **Ce qui reste à faire** : poser Juggernaut XI dans le dossier des modèles si tu le veux (compte Hugging Face, licence non commerciale) ; relire et fusionner la branche ; remesurer le temps avec les retouches à 16 pas ; essayer à la voix dans Jarvis.
