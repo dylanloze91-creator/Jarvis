@@ -10,7 +10,10 @@ import {
   SPEAKER_SESSION_IDLE_MS,
   SPEAKER_TRANSCRIBE_FAILED,
   SPEAKER_TURN_TIMEOUT_MS,
+  SentenceStreamer,
   checkTurnWav,
+  streamingWavHeader,
+  wavPcmBytes,
   classifySpokenTurn,
   followUpWindowMs,
   isPrivateAddress,
@@ -93,6 +96,21 @@ interface TurnLink {
   release(): void;
 }
 
+/** File de phrases en cours d'envoi à la carte (réponse en flux). */
+interface SpeakerStream {
+  /** Entêtes HTTP et WAV déjà partis (première phrase envoyée). */
+  started: boolean;
+  /** Phrases mises en file (0 = rien à dire). */
+  queued: number;
+  /** Première erreur de synthèse, s'il y en a eu une. */
+  failed: string | null;
+  enqueue(sentence: string): void;
+  /** Jette les phrases pas encore synthétisées (une carte refusée) ; ce qui est parti reste. */
+  discard(): void;
+  /** Attend la fin de la file et termine la réponse. */
+  finish(): Promise<void>;
+}
+
 interface ChatOutcome {
   reply: string;
   refused: boolean;
@@ -100,6 +118,8 @@ interface ChatOutcome {
   error: string | null;
   conversationId: string | null;
   missionProposal: boolean;
+  /** Texte du dernier message assistant quand le chat n'a rien diffusé en deltas. */
+  fromMessages: string;
 }
 
 function sendJson(res: ServerResponse, status: number, body: unknown, headers: Record<string, string> = {}): void {
@@ -309,7 +329,18 @@ export class SpeakerServer {
       state.lastTurnAt = now;
       const wasNew = state.conversationId === null;
 
-      const outcome = await this.runChat(state, decision.text, followUp, link);
+      // Réponse en flux : chaque phrase finie est synthétisée et envoyée pendant que le cerveau écrit
+      // la suite ; la carte parle dès la première phrase. L'entête WAV n'annonce pas de taille
+      // (la carte joue jusqu'à la fin de la réponse), le corps part en morceaux (chunked).
+      const streamer = new SentenceStreamer();
+      const stream = this.openStream(res, link, {
+        [SPEAKER_HEADER_CONTINUE]: followUpWindowMs(voice) > 0 ? '1' : '0',
+        [SPEAKER_HEADER_TRANSCRIPT]: encodeURIComponent(transcript),
+      });
+      const say = (sentences: string[]): void => {
+        for (const sentence of sentences) stream.enqueue(sentence);
+      };
+      const outcome = await this.runChat(state, decision.text, followUp, link, (delta) => say(streamer.push(delta)));
       if (outcome.conversationId) {
         state.conversationId = outcome.conversationId;
         if (wasNew) await this.titleConversation(outcome.conversationId, speaker);
@@ -318,27 +349,79 @@ export class SpeakerServer {
         this.deps.log?.(`[enceinte] ${speaker.name} : ${link.timedOut ? 'trop long' : 'la carte a raccroché'}, réponse abandonnée`);
         return;
       }
-      if (outcome.notAddressed) return this.noReply(res, transcript);
+      if (outcome.notAddressed && !stream.started) return this.noReply(res, transcript);
 
-      const spoken = outcome.refused
-        ? SPEAKER_CONFIRMATION_REFUSAL
-        : outcome.missionProposal
-          ? SPEAKER_MISSION_PROPOSAL
-          : speechTextForSpeaker(outcome.reply) || (outcome.error ? SPEAKER_NO_REPLY : '');
-      if (!spoken) return this.noReply(res, transcript);
-      const wav = await this.deps.synthesizer.synthesize(spoken);
-      if (link.gone) return;
-      res.writeHead(200, {
-        'Content-Type': 'audio/wav',
-        'Content-Length': String(wav.byteLength),
-        [SPEAKER_HEADER_CONTINUE]: followUpWindowMs(voice) > 0 ? '1' : '0',
-        [SPEAKER_HEADER_TRANSCRIPT]: encodeURIComponent(transcript),
-      });
-      res.end(Buffer.from(wav.buffer, wav.byteOffset, wav.byteLength));
+      if (outcome.refused) {
+        // Ce qui n'est pas encore parti est jeté ; ce qui a déjà été dit reste dit.
+        stream.discard();
+        say([SPEAKER_CONFIRMATION_REFUSAL]);
+      } else {
+        say(streamer.flush());
+        if (outcome.missionProposal) say([SPEAKER_MISSION_PROPOSAL]);
+      }
+      if (!stream.queued && !outcome.reply && outcome.fromMessages) {
+        // Un chat qui n'a pas diffusé de deltas (réponse d'un coup) : le texte final, phrase par phrase.
+        const late = new SentenceStreamer();
+        say([...late.push(outcome.fromMessages), ...late.flush()]);
+      }
+      if (!stream.queued && outcome.error) say([SPEAKER_NO_REPLY]);
+      if (!stream.queued) return this.noReply(res, transcript);
+      await stream.finish();
+      if (stream.failed && !stream.started) throw new HttpError(500, stream.failed);
     } finally {
       link.release();
       state.busy = false;
     }
+  }
+
+  /**
+   * Flux de réponse : une file de phrases, synthétisées une à une et envoyées dès que possible ;
+   * l'entête HTTP et l'entête WAV partent avec la première. Une synthèse qui échoue avant la
+   * première phrase remonte en erreur ; après, le flux s'arrête proprement.
+   */
+  private openStream(res: ServerResponse, link: TurnLink, headers: Record<string, string>): SpeakerStream {
+    const stream: SpeakerStream = {
+      started: false,
+      queued: 0,
+      failed: null,
+      discard: () => {
+        generation += 1;
+        if (!stream.started) stream.queued = 0;
+      },
+      enqueue: (sentence: string) => {
+        stream.queued += 1;
+        const mine = generation;
+        chain = chain.then(async () => {
+          if (link.gone || stream.failed || mine !== generation) return;
+          let wav: Uint8Array;
+          try {
+            wav = await this.deps.synthesizer.synthesize(sentence);
+          } catch (error) {
+            stream.failed = error instanceof Error ? error.message : String(error);
+            this.deps.log?.(`[enceinte] synthèse impossible : ${stream.failed}`);
+            return;
+          }
+          if (link.gone) return;
+          if (!stream.started) {
+            stream.started = true;
+            res.writeHead(200, { 'Content-Type': 'audio/wav', ...headers });
+            res.write(Buffer.from(streamingWavHeader()));
+          }
+          const pcm = wavPcmBytes(wav);
+          await new Promise<void>((resolve) => {
+            if (!res.write(Buffer.from(pcm.buffer, pcm.byteOffset, pcm.byteLength))) res.once('drain', () => resolve());
+            else resolve();
+          });
+        });
+      },
+      finish: async () => {
+        await chain;
+        if (stream.started && !res.writableEnded) res.end();
+      },
+    };
+    let chain: Promise<void> = Promise.resolve();
+    let generation = 0;
+    return stream;
   }
 
   /**
@@ -407,7 +490,7 @@ export class SpeakerServer {
    * Un tour de la session de l'enceinte. Une carte de confirmation est **refusée** tout de suite
    * (aucun écran sur une enceinte) et Jarvis le dira ; `not_addressed` (5.0.62) = rien à dire.
    */
-  private runChat(state: SpeakerState, text: string, followUp: boolean, link: TurnLink): Promise<ChatOutcome> {
+  private runChat(state: SpeakerState, text: string, followUp: boolean, link: TurnLink, onDelta?: (text: string) => void): Promise<ChatOutcome> {
     const outcome: ChatOutcome = {
       reply: '',
       refused: false,
@@ -415,6 +498,7 @@ export class SpeakerServer {
       error: null,
       conversationId: state.conversationId,
       missionProposal: false,
+      fromMessages: '',
     };
     let fromMessages = '';
     const chat = state.chat ?? (state.chat = this.deps.chatFor(state.speaker));
@@ -428,6 +512,8 @@ export class SpeakerServer {
             break;
           case 'delta':
             outcome.reply += event.text;
+            // Après une carte refusée, le texte du modèle (« tu as refusé… ») ne s'adresse pas à l'enceinte.
+            if (!outcome.refused) onDelta?.(event.text);
             break;
           case 'mission_proposal':
             outcome.missionProposal = true;
@@ -458,7 +544,7 @@ export class SpeakerServer {
     };
     return chat
       .send(sender, { conversationId: state.conversationId, text, source: 'voice', ...(followUp ? { followUp: true } : {}) })
-      .then(() => ({ ...outcome, reply: outcome.reply.trim() || fromMessages }))
+      .then(() => ({ ...outcome, reply: outcome.reply.trim(), fromMessages }))
       .catch((error: unknown) => ({ ...outcome, error: error instanceof Error ? error.message : String(error) }));
   }
 

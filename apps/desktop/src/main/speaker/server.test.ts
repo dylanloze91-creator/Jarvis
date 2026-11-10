@@ -12,6 +12,7 @@ import {
   decodeWav,
   encodeWav,
   newConversation,
+  boundedWav,
   silenceWav,
   withMessages,
 } from '@jarvis/core';
@@ -221,9 +222,12 @@ describe('pont des enceintes (5.0.64)', () => {
     expect(reply.headers['content-type']).toBe('audio/wav');
     expect(reply.headers['x-jarvis-continue']).toBe('1');
     expect(decodeURIComponent(String(reply.headers['x-jarvis-transcript']))).toBe('Jarvis, quelle heure est-il ?');
-    const wav = decodeWav(new Uint8Array(reply.body));
+    // Réponse en flux : pas de Content-Length, entête WAV sans taille, PCM à la suite.
+    expect(reply.headers['content-length']).toBeUndefined();
+    expect(reply.headers['transfer-encoding']).toBe('chunked');
+    const wav = decodeWav(boundedWav(new Uint8Array(reply.body)));
     expect(wav.sampleRate).toBe(SPEAKER_SAMPLE_RATE);
-    expect(Number(reply.headers['content-length'])).toBe(reply.body.byteLength);
+    expect(wav.samples.length).toBe(Math.round(((100 + 'Réponse à : quelle heure est-il'.length) / 1000) * SPEAKER_SAMPLE_RATE));
     // Le mot de réveil est retiré avant le chat ; source vocale, pas de suivi.
     expect(chat().inputs).toEqual([{ conversationId: null, text: 'quelle heure est-il', source: 'voice' }]);
     expect(synth.spoken).toEqual(['Réponse à : quelle heure est-il']);
@@ -233,6 +237,35 @@ describe('pont des enceintes (5.0.64)', () => {
     const list = await conversations.list();
     expect(list).toHaveLength(1);
     expect(list[0]!.title).toBe('Salon · quelle heure est-il');
+  });
+
+  it('réponse en flux : la première phrase est synthétisée et envoyée avant que le cerveau ait fini', async () => {
+    let firstSynth: () => void = () => undefined;
+    const firstSynthDone = new Promise<void>((resolve) => {
+      firstSynth = resolve;
+    });
+    const { port, token, synth, setTranscript } = await setup({
+      script: async (sender, input) => {
+        sender.send('', { type: 'started', conversationId: 'c1', message: createMessage('user', input.text) });
+        sender.send('', { type: 'delta', text: 'Première phrase. ' });
+        // Si le pont attendait la fin de la réponse, cette attente ne finirait jamais (délai de garde).
+        await Promise.race([firstSynthDone, new Promise<void>((_resolve, reject) => setTimeout(() => reject(new Error('la première phrase n’a pas été synthétisée pendant la réponse')), 5_000))]);
+        sender.send('', { type: 'delta', text: 'Seconde phrase.' });
+        sender.send('', { type: 'done', conversationId: 'c1', messages: [] });
+      },
+    });
+    const origin = synth.synthesize.bind(synth);
+    synth.synthesize = async (text: string) => {
+      const wav = await origin(text);
+      if (text === 'Première phrase.') firstSynth();
+      return wav;
+    };
+    setTranscript('Jarvis raconte');
+    const reply = await call(port, '/api/speaker/turn', { token, body: voiceWav() });
+    expect(reply.status).toBe(200);
+    expect(synth.spoken).toEqual(['Première phrase.', 'Seconde phrase.']);
+    const wav = decodeWav(boundedWav(new Uint8Array(reply.body)));
+    expect(wav.samples.length).toBe(Math.round(((100 + 16 + 100 + 15) / 1000) * SPEAKER_SAMPLE_RATE));
   });
 
   it('la discussion continue sur la même conversation, puis une nouvelle après 10 minutes', async () => {
