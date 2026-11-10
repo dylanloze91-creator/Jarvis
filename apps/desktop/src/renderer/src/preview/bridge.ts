@@ -412,6 +412,7 @@ export function installPreviewBridge(): void {
       onEvent: () => () => undefined,
       onTranscribe: () => () => undefined,
       reportTranscript: () => undefined,
+      onShow: () => () => undefined,
     },
     update: {
       getState: async () => ({

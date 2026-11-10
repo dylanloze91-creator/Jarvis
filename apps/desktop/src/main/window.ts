@@ -68,6 +68,8 @@ export interface OverlayWindow {
   browserWindow: BrowserWindow;
   toggle(): void;
   show(): void;
+  /** Affiche la fenêtre sans prendre le clavier (résultat venu d'une enceinte). */
+  showInactive(): void;
   hide(): void;
   setHideOnBlur(enabled: boolean): void;
   resize(height: number): void;
@@ -149,7 +151,13 @@ export function createOverlayWindow(
   });
 
   let hideOnBlurEnabled = hideOnBlur;
+  /** Montré pour une enceinte sans prendre le clavier : on ne le recache pas tant qu'il n'a pas eu le focus. */
+  let stickVisible = false;
+  browserWindow.on('focus', () => {
+    stickVisible = false;
+  });
   browserWindow.on('blur', () => {
+    if (stickVisible) return;
     if (hideOnBlurEnabled && !browserWindow.webContents.isDevToolsOpened()) {
       browserWindow.hide();
     }
@@ -170,9 +178,18 @@ export function createOverlayWindow(
     browserWindow.webContents.send(IpcChannel.windowShown);
   };
 
+  const showInactive = (): void => {
+    stickVisible = true;
+    position();
+    if (browserWindow.isMinimized()) browserWindow.restore();
+    browserWindow.showInactive();
+    browserWindow.webContents.send(IpcChannel.windowShown);
+  };
+
   return {
     browserWindow,
     show,
+    showInactive,
     hide: () => browserWindow.hide(),
     toggle: () => (browserWindow.isVisible() ? browserWindow.hide() : show()),
     setHideOnBlur: (enabled) => {

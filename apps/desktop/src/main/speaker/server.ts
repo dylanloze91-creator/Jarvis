@@ -13,9 +13,11 @@ import {
   checkTurnWav,
   classifySpokenTurn,
   followUpWindowMs,
+  looksLikeImageIntent,
   isPrivateAddress,
   isWavContentType,
-  speechTextForSpeaker,
+  SPEAKER_IMAGE_WAIT,
+  speakerReplyForEars,
   type ChatMessage,
   type ConversationStore,
   type VoiceSettings,
@@ -59,6 +61,8 @@ export interface SpeakerServerDeps {
   conversations?: Pick<ConversationStore, 'get' | 'save'>;
   /** Une phrase vient d'arriver (heure gardée en mémoire pour les réglages). */
   onTurn?: (speaker: Speaker, at: number) => void;
+  /** Ouvre la discussion de l'enceinte sur l'écran du PC, sans prendre le clavier. */
+  onShowOnPc?: (conversationId: string) => void;
   log?: (line: string) => void;
   now?: () => number;
   /** Délai maximal d'une phrase côté PC (défaut `SPEAKER_TURN_TIMEOUT_MS`) ; court dans les tests. */
@@ -89,8 +93,11 @@ interface SpeakerState {
 interface TurnLink {
   gone: boolean;
   timedOut: boolean;
+  /** Génération laissée tourner sur le PC : fermer la réponse HTTP ne l'annule pas. */
+  detached: boolean;
   listeners: Set<() => void>;
   release(): void;
+  detach(): void;
 }
 
 interface ChatOutcome {
@@ -309,6 +316,10 @@ export class SpeakerServer {
       state.lastTurnAt = now;
       const wasNew = state.conversationId === null;
 
+      if (looksLikeImageIntent(decision.text)) {
+        return this.backgroundImage(res, state, speaker, decision.text, transcript, followUp, link);
+      }
+
       const outcome = await this.runChat(state, decision.text, followUp, link);
       if (outcome.conversationId) {
         state.conversationId = outcome.conversationId;
@@ -320,12 +331,14 @@ export class SpeakerServer {
       }
       if (outcome.notAddressed) return this.noReply(res, transcript);
 
-      const spoken = outcome.refused
-        ? SPEAKER_CONFIRMATION_REFUSAL
+      const ears = outcome.refused
+        ? { spoken: SPEAKER_CONFIRMATION_REFUSAL, showOnPc: false }
         : outcome.missionProposal
-          ? SPEAKER_MISSION_PROPOSAL
-          : speechTextForSpeaker(outcome.reply) || (outcome.error ? SPEAKER_NO_REPLY : '');
+          ? { spoken: SPEAKER_MISSION_PROPOSAL, showOnPc: true }
+          : speakerReplyForEars(outcome.reply);
+      const spoken = ears.spoken || (outcome.error ? SPEAKER_NO_REPLY : '');
       if (!spoken) return this.noReply(res, transcript);
+      if (ears.showOnPc && outcome.conversationId) this.deps.onShowOnPc?.(outcome.conversationId);
       const wav = await this.deps.synthesizer.synthesize(spoken);
       if (link.gone) return;
       res.writeHead(200, {
@@ -351,15 +364,21 @@ export class SpeakerServer {
     const link: TurnLink = {
       gone: false,
       timedOut: false,
+      detached: false,
       listeners,
       release: () => {
         clearTimeout(timer);
         res.off('close', onClose);
         listeners.clear();
       },
+      detach: () => {
+        link.detached = true;
+        clearTimeout(timer);
+        res.off('close', onClose);
+      },
     };
     const drop = (): void => {
-      if (link.gone) return;
+      if (link.detached || link.gone) return;
       link.gone = true;
       state.chat?.cancel();
       for (const listener of listeners) listener();
@@ -404,10 +423,59 @@ export class SpeakerServer {
   }
 
   /**
+   * Image : la carte reçoit tout de suite la phrase d'attente. Le calcul continue sur le PC
+   * (fermer cette réponse HTTP ne l'annule pas). La phrase de fin est dans la discussion,
+   * pas renvoyée à l'enceinte : il n'y a pas de canal pour la prévenir plus tard.
+   */
+  private async backgroundImage(
+    res: ServerResponse,
+    state: SpeakerState,
+    speaker: Speaker,
+    text: string,
+    transcript: string,
+    followUp: boolean,
+    link: TurnLink,
+  ): Promise<void> {
+    link.detach();
+    const voice = this.deps.voiceSettings();
+    let titled = false;
+    let known = state.conversationId;
+    const show = (conversationId: string, finished: boolean): void => {
+      if (!conversationId) return;
+      const first = known === null;
+      known = conversationId;
+      state.conversationId = conversationId;
+      if (finished && first && !titled) {
+        titled = true;
+        void this.titleConversation(conversationId, speaker);
+      }
+      this.deps.onShowOnPc?.(conversationId);
+    };
+    void this.runChat(state, text, followUp, link, (id) => show(id, false)).then((outcome) => {
+      if (outcome.conversationId) show(outcome.conversationId, true);
+    });
+    const wav = await this.deps.synthesizer.synthesize(SPEAKER_IMAGE_WAIT);
+    if (res.headersSent) return;
+    res.writeHead(200, {
+      'Content-Type': 'audio/wav',
+      'Content-Length': String(wav.byteLength),
+      [SPEAKER_HEADER_CONTINUE]: followUpWindowMs(voice) > 0 ? '1' : '0',
+      [SPEAKER_HEADER_TRANSCRIPT]: encodeURIComponent(transcript),
+    });
+    res.end(Buffer.from(wav.buffer, wav.byteOffset, wav.byteLength));
+  }
+
+  /**
    * Un tour de la session de l'enceinte. Une carte de confirmation est **refusée** tout de suite
    * (aucun écran sur une enceinte) et Jarvis le dira ; `not_addressed` (5.0.62) = rien à dire.
    */
-  private runChat(state: SpeakerState, text: string, followUp: boolean, link: TurnLink): Promise<ChatOutcome> {
+  private runChat(
+    state: SpeakerState,
+    text: string,
+    followUp: boolean,
+    link: TurnLink,
+    onConversation?: (conversationId: string) => void,
+  ): Promise<ChatOutcome> {
     const outcome: ChatOutcome = {
       reply: '',
       refused: false,
@@ -425,6 +493,7 @@ export class SpeakerServer {
         switch (event.type) {
           case 'started':
             outcome.conversationId = event.conversationId;
+            onConversation?.(event.conversationId);
             break;
           case 'delta':
             outcome.reply += event.text;

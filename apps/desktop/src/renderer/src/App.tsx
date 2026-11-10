@@ -102,6 +102,17 @@ export default function App() {
   // 5.0.62 : la phrase de suivi était pour quelqu'un d'autre → fin de la discussion vocale.
   const handleNotAddressed = useCallback(() => voiceRef.current?.endConversation(), []);
   const chat = useChat({ onAssistantFinal: handleAssistantFinal, onNotAddressed: handleNotAddressed });
+  const loadSpeakerConversation = useRef(chat.load);
+  loadSpeakerConversation.current = chat.load;
+  useEffect(() => {
+    return window.jarvis.speaker.onShow((event) => {
+      void window.jarvis.history.get(event.conversationId).then((conversation) => {
+        if (!conversation) return;
+        loadSpeakerConversation.current(conversation);
+        setView('chat');
+      });
+    });
+  }, []);
   const update = useUpdate();
   // Marque explicitement l'origine vocale : le modèle en est averti côté
   // prompt système (voir `withVoiceOriginNotice`), jamais dans le texte
