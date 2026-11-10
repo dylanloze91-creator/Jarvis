@@ -291,7 +291,8 @@ describe('projets indépendants, connaissances séparées de la règle', () => {
       await writeFile(join(dir, `${item.fn}.test.ts`), spec(item.fn, item.body));
       expect(runNode(dir, `${item.fn}.test.ts`).status, `${item.id}\n${skilled.source}`).toBe(0);
     }
-  });
+    // Plusieurs vrais processus node par cas : sous charge (Forge, autre suite), 5 s ne suffisent pas (5.0.58 : même règle que skillProof).
+  }, 60_000);
 
   it.skipIf(!STRIP_TYPES)('corrige le calcul sans réécrire la fonction déjà verte', async () => {
     const skill = validatedSkill('align-garde', 'return a * b;', 'return a + b;', 'projet-produit', 'addition', 'somme');
