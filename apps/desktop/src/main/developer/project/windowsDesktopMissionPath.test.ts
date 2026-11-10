@@ -198,6 +198,7 @@ describe('chemin mission bureau .exe (apply + Construire)', () => {
       'Appli Windows .exe minimaliste.',
       true,
     );
+    expect(done.mission?.status, String(done.mission?.summary ?? '')).toBe('finished');
     const projectId = done.mission!.projectId!;
     await h.instance.discardTask();
     h.cards.length = 0;

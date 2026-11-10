@@ -36,16 +36,24 @@ npm run typecheck
 npm run lint
 npm test -w @jarvis/core
 
+# Les 2 fichiers qui lancent dotnet (vrais git, npm, publish) tournent à part, après la suite :
+# dans la suite complète en parallèle, leurs missions dépassaient leurs délais sous charge
+# (observé les 10 novembre 2026 : EBUSY au nettoyage, puis « Construire manuel » sans carte),
+# alors qu'ils sont verts seuls à chaque fois. Aucun test n'est retiré.
+npm test -w @jarvis/desktop -- \
+  --exclude '**/dotnetProject.test.ts' \
+  --exclude '**/windowsDesktopMissionPath.test.ts'
+
 if command -v dotnet >/dev/null 2>&1; then
-  npm test -w @jarvis/desktop
+  echo "== SDK .NET présent : les 2 fichiers de tests qui lancent dotnet tournent seuls, sans charge"
+  npm test -w @jarvis/desktop -- \
+    src/main/developer/project/dotnetProject.test.ts \
+    src/main/developer/project/windowsDesktopMissionPath.test.ts
 else
   echo "== SDK .NET absent (dotnet introuvable) : les 2 fichiers de tests qui lancent dotnet sont ignorés"
   echo "   - src/main/developer/project/dotnetProject.test.ts"
   echo "   - src/main/developer/project/windowsDesktopMissionPath.test.ts"
-  echo "   Tous les autres tests du bureau sont exécutés et doivent être verts."
-  npm test -w @jarvis/desktop -- \
-    --exclude '**/dotnetProject.test.ts' \
-    --exclude '**/windowsDesktopMissionPath.test.ts'
+  echo "   Tous les autres tests du bureau ont été exécutés et sont verts."
 fi
 
 # ---------------------------------------------------------------------------

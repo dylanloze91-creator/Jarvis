@@ -719,7 +719,7 @@ Dernière publication : **5.0.72** (`https://github.com/dylanloze91-creator/Jarv
 - `apps/desktop/src/main/updater.ts` : contrôle 15 s après le démarrage puis toutes les 4 h ; téléchargement auto ; **installation seulement si l’utilisateur clique**
 - Hors exe packagé, le bouton « Vérifier » lit `latest.yml` public (`packages/core/src/update/feed.ts`, `githubLatestYmlUrl`) **sans jeton**
 - Ne pas committer ni lire un jeton GitHub. Les clés de publication ne font pas partie de cet arbre.
-- `release.sh` (racine) : s'appuie sur le compte déjà connecté dans `gh` (`gh auth status`), aucun fichier de jeton ; typecheck, lint, tests du cœur et du bureau obligatoires ; sans SDK .NET, seuls `dotnetProject.test.ts` et `windowsDesktopMissionPath.test.ts` sont exclus (`vitest --exclude`), tout autre test rouge arrête la publication ; le tag n'est jamais forcé (tag déjà présent sur origin à un autre commit = arrêt) ; `latest.yml` doit annoncer la version publiée.
+- `release.sh` (racine) : s'appuie sur le compte déjà connecté dans `gh` (`gh auth status`), aucun fichier de jeton ; typecheck, lint, tests du cœur et du bureau obligatoires ; la suite du bureau tourne sans `dotnetProject.test.ts` ni `windowsDesktopMissionPath.test.ts`, puis ces deux fichiers tournent seuls si le SDK .NET est là (5.0.72 : dans la suite complète en parallèle, leurs missions dépassaient leurs délais sous charge), sans SDK ils sont ignorés ; tout autre test rouge arrête la publication ; le tag n'est jamais forcé (tag déjà présent sur origin à un autre commit = arrêt) ; `latest.yml` doit annoncer la version publiée.
 
 ---
 
