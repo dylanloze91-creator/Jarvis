@@ -18,7 +18,6 @@ import {
   followUpWindowMs,
   isPrivateAddress,
   isWavContentType,
-  speechTextForSpeaker,
   type ChatMessage,
   type ConversationStore,
   type VoiceSettings,
