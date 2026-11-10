@@ -8,7 +8,7 @@
  * une liste `[a, b]` ou `- a`, ou un texte replié `>`.
  */
 
-import type { ImagePreset, ImageProject } from './presets.js';
+import { isImageFormat, type ImageFormat, type ImagePreset, type ImageProject } from './presets.js';
 
 /** Ce que représente l'image : décide des mots ajoutés, du négatif et des retouches. */
 export const IMAGE_SUBJECT_TYPES = ['personne', 'objet', 'paysage', 'logo-sticker', 'scene', 'autre'] as const;
@@ -38,6 +38,11 @@ export interface SubjectTypeRule {
   positif: readonly string[];
   /** Défauts ajoutés au prompt négatif pour ce type. */
   negatif: readonly string[];
+  /**
+   * Format par défaut pour ce type quand la demande n'en donne pas (personne → portrait, scène → paysage),
+   * seulement s'il fait partie des formats conseillés du projet (vx garde 16:9) ; vide = celui du projet.
+   */
+  format: ImageFormat | '';
   /** Repasser sur les visages et les mains (ADetailer) quand l'extension est là. */
   adetailer: boolean;
   /**
@@ -114,34 +119,39 @@ export const DEFAULT_IMAGER_RULES: ImagerRules = {
     personne: {
       positif: ['natural proportions', 'detailed face', 'detailed hands with five fingers'],
       negatif: ['duplicate person', 'clone', 'extra heads'],
+      format: 'portrait',
       adetailer: true,
       adetailerMains: true,
     },
     scene: {
       positif: ['coherent scene', 'natural proportions', 'detailed faces'],
       negatif: ['duplicate person', 'extra heads', 'floating objects'],
+      format: 'paysage',
       adetailer: true,
       adetailerMains: false,
     },
     objet: {
       positif: ['centered subject', 'detailed materials and textures', 'accurate shape'],
       negatif: ['melted', 'warped', 'deformed shape', 'floating parts'],
+      format: '',
       adetailer: false,
       adetailerMains: false,
     },
     paysage: {
       positif: ['wide shot', 'atmospheric depth', 'coherent perspective'],
       negatif: ['warped perspective', 'tilted horizon', 'duplicate sun'],
+      format: 'paysage',
       adetailer: false,
       adetailerMains: false,
     },
     'logo-sticker': {
       positif: ['vector illustration', 'flat colors', 'clean bold outlines', 'centered', 'simple shapes'],
       negatif: ['photo', 'photorealistic', 'gradients', 'text', 'letters', 'words', 'complex background', 'noise'],
+      format: '',
       adetailer: false,
       adetailerMains: false,
     },
-    autre: { positif: [], negatif: [], adetailer: false, adetailerMains: false },
+    autre: { positif: [], negatif: [], format: '', adetailer: false, adetailerMains: false },
   },
   rendus: {
     realiste: {
@@ -340,6 +350,11 @@ export function applyImagerRules(sections: Partial<Record<string, Record<string,
       const negatif = values.negatif !== undefined ? asStringList(values.negatif) : null;
       if (positif) current.positif = positif;
       if (negatif) current.negatif = negatif;
+      if (values.format !== undefined) {
+        const format = typeof values.format === 'string' ? values.format.trim() : null;
+        if (format === '' || (format && isImageFormat(format))) current.format = format;
+        else warnings.push(`${section}.format : carre, paysage, portrait, paysage-doux, portrait-doux, 16:9, 9:16 ou vide attendu (ignoré).`);
+      }
       if (values.adetailer !== undefined) {
         if (typeof values.adetailer === 'boolean') current.adetailer = values.adetailer;
         else warnings.push(`${section}.adetailer : true ou false attendu (ignoré).`);
@@ -416,7 +431,8 @@ export function defaultImagerRulesYaml(rules: ImagerRules = DEFAULT_IMAGER_RULES
     '# general : checkpoint (auto, ou realvisxl / juggernaut / sdxl-base), priorite (ordre essayé quand auto),',
     '#   adetailer (retouche visages et mains), upscaler et facteurAgrandissement (quand on demande « plus grand »).',
     '# qualite : mots ajoutés à la fin de chaque consigne. anatomie : défauts d’anatomie toujours évités pour les personnes.',
-    '# type-<type> : mots ajoutés (positif), défauts évités (negatif), adetailer (retouche visages), adetailerMains (retouche mains en plus) selon ce que représente l’image.',
+    '# type-<type> : mots ajoutés (positif), défauts évités (negatif), format par défaut quand la demande n’en donne pas (vide = celui du projet ;',
+    '#   ignoré s’il n’est pas dans les formats conseillés du projet), adetailer (retouche visages), adetailerMains (retouche mains en plus).',
     '# rendu-realiste / rendu-anime : mots ajoutés (positif), défauts évités (negatif) et modèles essayés dans l’ordre (priorite)',
     '#   quand la demande veut une photo ou un dessin (anime, manga, dessin animé, série connue). Sans indication : general.priorite.',
     '# checkpoint-<id> : fichier, label, sampler, scheduler, steps, cfg, vae (vide = celui du modèle), negatif de l’auteur,',
@@ -442,6 +458,7 @@ export function defaultImagerRulesYaml(rules: ImagerRules = DEFAULT_IMAGER_RULES
       `type-${type}:`,
       `  positif: ${yamlList(rule.positif)}`,
       `  negatif: ${yamlList(rule.negatif)}`,
+      `  format: "${rule.format}"`,
       `  adetailer: ${rule.adetailer ? 'true' : 'false'}`,
       `  adetailerMains: ${rule.adetailerMains ? 'true' : 'false'}`,
       '',
@@ -569,6 +586,12 @@ export function buildImagerPrompt(input: ImagerPromptInput, rules: ImagerRules):
     ...(input.extraNegative ?? []).flatMap((item) => splitTerms(item)),
   ]);
   return { prompt: positive.join(', '), negative: negative.join(', ') };
+}
+
+/** Format par défaut du type s'il est conseillé pour le projet, sinon `undefined` (le projet décide). */
+export function defaultFormatFor(rules: ImagerRules, type: ImageSubjectType, preset: ImagePreset): ImageFormat | undefined {
+  const format = rules.types[type].format;
+  return format && preset.formats.includes(format) ? format : undefined;
 }
 
 /** Faut-il repasser sur visages et mains ? Règle générale, type, et présence de l'extension. */

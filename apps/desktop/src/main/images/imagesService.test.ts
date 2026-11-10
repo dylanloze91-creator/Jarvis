@@ -299,6 +299,8 @@ describe('ImagesService', () => {
     const payload = world.txt2imgPayloads[0] as Record<string, unknown>;
     expect(result.checkpoint).toEqual({ id: 'realvisxl', label: 'RealVisXL V5.0' });
     expect(payload).toMatchObject({ sampler_name: 'DPM++ SDE', scheduler: 'Karras', steps: 30, cfg_scale: 5 });
+    // Personne sans format demandé : portrait (règle du type), pas le carré du projet.
+    expect([payload.width, payload.height]).toEqual([832, 1216]);
     // VAE : celui du modèle est intégré, mais le VAE fp16 présent est gardé contre les images noires.
     expect(payload.override_settings).toEqual({ sd_model_checkpoint: 'RealVisXL_V5.0_fp16.safetensors', sd_vae: 'sdxl_vae_fp16_fix.safetensors' });
     expect(String(payload.prompt).startsWith('a smiling woman waving at the camera')).toBe(true);
@@ -338,7 +340,7 @@ describe('ImagesService', () => {
     expect(result.render).toBe('anime');
     expect(result.renderHonored).toBe(true);
     expect(result.checkpoint).toEqual({ id: 'animagine', label: 'Animagine XL 4.0 Opt' });
-    expect(payload).toMatchObject({ sampler_name: 'Euler a', scheduler: 'Automatic', steps: 28, cfg_scale: 5 });
+    expect(payload).toMatchObject({ sampler_name: 'Euler a', scheduler: 'Automatic', steps: 28, cfg_scale: 5, width: 832, height: 1216 });
     expect(String(payload.prompt).startsWith('1girl, hyuuga hinata, naruto (series)')).toBe(true);
     expect(String(payload.prompt)).toContain('masterpiece, high score, great score, absurdres');
     expect(String(payload.prompt)).not.toContain('professional quality');

@@ -45,6 +45,9 @@ describe('module images — reformulation pour SDXL', () => {
     expect(refineUserMessage({ ...base, render: 'realiste' })).toContain('realistic photograph');
     expect(refineUserMessage(base)).not.toContain('Rendering');
     expect(REFINE_SYSTEM_PROMPT).toContain('Never replace a named character');
+    // Cadrage : « close-up » réservé au portrait du visage (observé : bikini dans un jacuzzi rendu en gros plan du visage).
+    expect(REFINE_SYSTEM_PROMPT).toContain('"close-up" only when');
+    expect(refineUserMessage({ ...base, render: 'anime' })).toContain('framing tag');
   });
 
   it('négatif reformulé en français : écarté seul, la consigne reste utilisée', () => {

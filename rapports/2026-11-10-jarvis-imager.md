@@ -64,6 +64,8 @@ Essai réel (vrai service, vrai Ollama, vrai Forge, `C:\dev\Jarvis_images\tests_
 
 Le 7B est rechargé après chacune des deux images.
 
+**Second essai de l'utilisateur dans la fenêtre** (« Hinata dans Naruto, dans le style de Naruto, en bikini dans un jacuzzi ») : le tour est bien passé par Jarvis Imager (rendu anime, Animagine, « 1girl, hyuuga hinata, naruto (series), bikini, in a jacuzzi, … »), mais le 7B avait ajouté « close-up » : visage plein cadre, bikini et jacuzzi invisibles, main déformée par l'eau, image carrée. Correctifs : la reformulation réserve « close-up » au portrait du visage et choisit sinon un cadrage qui montre la tenue et le décor (upper body, cowboy shot, full body ; en anime, une étiquette de cadrage) ; chaque type a un format par défaut (`format` dans `type-<type>` : personne → portrait, scène et paysage → paysage), appliqué s'il est conseillé par le projet. Entre-temps, le Jarvis installé (5.0.70) lancé par l'utilisateur avait effacé le bloc `images` de `settings.json` (réglage inconnu de cette version) : remis, copie `settings.json.avant-images-2`.
+
 ## RAPPORT DE VÉRIFICATION
 
 ```

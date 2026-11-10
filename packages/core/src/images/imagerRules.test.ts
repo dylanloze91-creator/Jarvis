@@ -9,6 +9,7 @@ import {
   buildImagerPrompt,
   buildTxt2ImgPayload,
   chooseCheckpoint,
+  defaultFormatFor,
   defaultImagerRulesYaml,
   forgeBuiltinScriptArgs,
   nearestNativeFormat,
@@ -61,6 +62,20 @@ describe('Jarvis Imager — règles', () => {
     expect(rules.checkpoints.maison).toMatchObject({ fichier: 'mon.safetensors', steps: 25, label: 'maison' });
     expect(warnings.join(' ')).toContain('facteurAgrandissement');
     expect(warnings.join(' ')).toContain('robot');
+  });
+
+  it('format par défaut du type : personne → portrait, scène → paysage, seulement si le projet le conseille ; réglable', () => {
+    expect(defaultFormatFor(DEFAULT_IMAGER_RULES, 'personne', DEFAULT_PRESETS.perso)).toBe('portrait');
+    expect(defaultFormatFor(DEFAULT_IMAGER_RULES, 'scene', DEFAULT_PRESETS.jarvis)).toBe('paysage');
+    expect(defaultFormatFor(DEFAULT_IMAGER_RULES, 'objet', DEFAULT_PRESETS.perso)).toBeUndefined();
+    // vx (vidéo) ne conseille que 16:9 et 9:16 : le format du type ne s'applique pas.
+    expect(defaultFormatFor(DEFAULT_IMAGER_RULES, 'personne', DEFAULT_PRESETS.vx)).toBeUndefined();
+    const parsed = parsePresetsYaml(['type-personne:', '  format: carre', 'type-scene:', '  format: bizarre', 'type-objet:', '  format: ""'].join('\n'));
+    const { rules, warnings } = applyImagerRules(parsed.values);
+    expect(rules.types.personne.format).toBe('carre');
+    expect(rules.types.scene.format).toBe('paysage');
+    expect(rules.types.objet.format).toBe('');
+    expect(warnings.join(' ')).toContain('type-scene.format');
   });
 
   it('choix du modèle : réglage explicite présent, sinon le premier présent dans l’ordre de priorité', () => {

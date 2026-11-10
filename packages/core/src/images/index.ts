@@ -64,6 +64,7 @@ export {
   chooseCheckpoint,
   personCountPhrase,
   buildImagerPrompt,
+  defaultFormatFor,
   wantsAdetailer,
   adetailerArgs,
   forgeBuiltinScriptArgs,

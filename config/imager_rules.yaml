@@ -5,7 +5,8 @@
 # general : checkpoint (auto, ou realvisxl / juggernaut / sdxl-base), priorite (ordre essayé quand auto),
 #   adetailer (retouche visages et mains), upscaler et facteurAgrandissement (quand on demande « plus grand »).
 # qualite : mots ajoutés à la fin de chaque consigne. anatomie : défauts d’anatomie toujours évités pour les personnes.
-# type-<type> : mots ajoutés (positif), défauts évités (negatif), adetailer (retouche visages), adetailerMains (retouche mains en plus) selon ce que représente l’image.
+# type-<type> : mots ajoutés (positif), défauts évités (negatif), format par défaut quand la demande n’en donne pas (vide = celui du projet ;
+#   ignoré s’il n’est pas dans les formats conseillés du projet), adetailer (retouche visages), adetailerMains (retouche mains en plus).
 # rendu-realiste / rendu-anime : mots ajoutés (positif), défauts évités (negatif) et modèles essayés dans l’ordre (priorite)
 #   quand la demande veut une photo ou un dessin (anime, manga, dessin animé, série connue). Sans indication : general.priorite.
 # checkpoint-<id> : fichier, label, sampler, scheduler, steps, cfg, vae (vide = celui du modèle), negatif de l’auteur,
@@ -27,36 +28,42 @@ anatomie:
 type-personne:
   positif: [natural proportions, detailed face, detailed hands with five fingers]
   negatif: [duplicate person, clone, extra heads]
+  format: "portrait"
   adetailer: true
   adetailerMains: true
 
 type-objet:
   positif: [centered subject, detailed materials and textures, accurate shape]
   negatif: [melted, warped, deformed shape, floating parts]
+  format: ""
   adetailer: false
   adetailerMains: false
 
 type-paysage:
   positif: [wide shot, atmospheric depth, coherent perspective]
   negatif: [warped perspective, tilted horizon, duplicate sun]
+  format: "paysage"
   adetailer: false
   adetailerMains: false
 
 type-logo-sticker:
   positif: [vector illustration, flat colors, clean bold outlines, centered, simple shapes]
   negatif: [photo, photorealistic, gradients, text, letters, words, complex background, noise]
+  format: ""
   adetailer: false
   adetailerMains: false
 
 type-scene:
   positif: [coherent scene, natural proportions, detailed faces]
   negatif: [duplicate person, extra heads, floating objects]
+  format: "paysage"
   adetailer: true
   adetailerMains: false
 
 type-autre:
   positif: []
   negatif: []
+  format: ""
   adetailer: false
   adetailerMains: false
 

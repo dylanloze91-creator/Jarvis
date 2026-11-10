@@ -28,6 +28,7 @@ import {
   referenceFileName,
   resolveSubjectType,
   resolveRenderStyle,
+  defaultFormatFor,
   sidecarText,
   wantsAdetailer,
   type ChatAttachment,
@@ -358,7 +359,8 @@ export class ImagesService {
     };
     // Photo de départ : lue et contrôlée avant de toucher à Ollama ou à Forge.
     const init = request.initImage ? await this.readInitImage(request.initImage.path) : null;
-    const format = request.format ?? (init ? closestFormatForAspect(init.width, init.height) : undefined);
+    // Format : celui demandé, sinon celui de la photo de départ, sinon celui du type (personne → portrait, scène → paysage) s'il convient au projet.
+    const format = request.format ?? (init ? closestFormatForAspect(init.width, init.height) : defaultFormatFor(rules, subjectType, preset));
     const ollamaUrl = this.deps.ollamaUrl ?? (settings.baseUrl?.trim() || 'http://127.0.0.1:11434');
     const ollama = new OllamaControl(ollamaUrl, this.deps.fetchImpl);
 
