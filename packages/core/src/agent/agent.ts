@@ -9,6 +9,7 @@ import {
 } from '../google/intent.js';
 import { googleTurnPrompt } from '../google/prompt.js';
 import { isRoverToolName, looksLikeRoverIntent, recentlyUsedRoverTools } from '../rover/intent.js';
+import { imagesTurnPrompt, isImageToolName, looksLikeImageIntent, recentlyUsedImageTools } from '../images/intent.js';
 import { roverTurnPrompt } from '../rover/prompt.js';
 import { isCurrentTrackQuestion } from '../media/currentTrackIntent.js';
 import { extractSpotifyPlayQuery, isMusicIntent } from '../media/playIntent.js';
@@ -194,9 +195,11 @@ export class Agent {
     // Robot réglé seulement : sans outil rover_* disponible, ce tour est celui d'avant.
     const roverAvailable = this.tools.schemas().some((tool) => isRoverToolName(tool.name));
     const roverTurn =
-      roverAvailable &&
-      !youtubeTurn &&
-      (looksLikeRoverIntent(lastUser) || recentlyUsedRoverTools(conversation));
+      roverAvailable && !youtubeTurn && (looksLikeRoverIntent(lastUser) || recentlyUsedRoverTools(conversation));
+    // Module images réglé seulement : sans outil d'image enregistré, ce tour est celui d'avant.
+    const imagesAvailable = this.tools.schemas().some((tool) => isImageToolName(tool.name));
+    const imagesTurn =
+      imagesAvailable && !youtubeTurn && !roverTurn && (looksLikeImageIntent(lastUser) || recentlyUsedImageTools(conversation));
     // « Arrête le robot » ne doit jamais partir vers Spotify.
     const musicTurn = !youtubeTurn && !roverTurn && isMusicIntent(lastUser);
     const now = this.options.now?.() ?? new Date();
@@ -218,19 +221,20 @@ export class Agent {
             .schemas()
             .filter((tool) => musicTurn || !isSpotifyToolName(tool.name))
             .filter((tool) => googleTurn || !isGoogleToolName(tool.name))
-    ).filter((tool) => roverTurn || !isRoverToolName(tool.name));
+    )
+      .filter((tool) => roverTurn || !isRoverToolName(tool.name))
+      // Outils d'image : seulement sur un tour qui parle d'image (ou son suivi), et jamais
+      // retirés quand l'appelant a donné sa propre liste (`allowedTools`, équipe de l'orchestre).
+      .filter((tool) => allowed || imagesTurn || !isImageToolName(tool.name));
     // Sans compte Google connecté, aucun outil google_* n'est disponible :
     // prompt et catalogue restent ceux d'avant.
     const googleOffered = toolSchemas.some((tool) => isGoogleToolName(tool.name));
     const roverOffered = toolSchemas.some((tool) => isRoverToolName(tool.name));
-    const composed = composeSystemPrompt(
-      this.options.systemPrompt,
-      musicTurn,
-      webTurn,
-      youtubeTurn,
-    );
+    const imagesOffered = !allowed && toolSchemas.some((tool) => isImageToolName(tool.name));
+    const composed = composeSystemPrompt(this.options.systemPrompt, musicTurn, webTurn, youtubeTurn);
     let system = googleOffered ? `${composed} ${googleTurnPrompt()}` : composed;
     if (roverOffered) system = `${system} ${roverTurnPrompt()}`;
+    if (imagesOffered) system = `${system} ${imagesTurnPrompt()}`;
     // Date et protocole seulement pour la recherche forcée : les autres tours gardent leur prompt.
     if (currentPlan)
       system = `${system} ${currentDatePrompt(now, timeZone)} ${CURRENT_INFO_TURN_PROMPT}`;

@@ -17,6 +17,7 @@ export const ORCHESTRA_TEAMS = [
   'memoire',
   'google',
   'code',
+  'images',
 ] as const;
 
 export type OrchestraTeam = (typeof ORCHESTRA_TEAMS)[number];
@@ -151,6 +152,17 @@ export const TEAM_SPECS: Record<OrchestraTeam, TeamSpec> = {
     tools: [],
     prompt:
       `Tu es le spécialiste du code. Donne du code complet et correct dans un bloc, avec une explication courte. Si la demande est floue, pose une seule question. Si l’approche demandée est fragile ou qu’une plus simple existe, dis-le en une phrase avant le code. ${FRANK_ADVICE_PROMPT}`,
+  },
+  // Module images : équipe disponible seulement si l'outil generer_image est enregistré
+  // (réglage `images.enabled`). Sans lui, la liste des équipes est celle d'avant.
+  images: {
+    id: 'images',
+    label: 'Jarvis Imager',
+    description:
+      'générer, créer ou dessiner une image, une illustration, un sticker, un logo, une miniature ou un visuel (Jarvis Imager : Stable Diffusion en local)',
+    tools: ['generer_image', 'images_etat'],
+    prompt:
+      'Pour toute image, tu passes par Jarvis Imager : appelle generer_image tout de suite, sans phrase d’introduction ni annonce (l’outil prévient lui-même l’utilisateur et met une à trois minutes). Tu n’écris pas la consigne Stable Diffusion toi-même : transmets dans « demande » les mots de l’utilisateur (français accepté), le projet (jarvis, vx pour la vidéo, drivers-ink pour un sticker vinyle, perso ; perso si rien ne l’indique), le « type » (personne, objet, paysage, logo-sticker, scene si plusieurs personnes dans un décor, autre), « nombrePersonnes » si la demande en parle, et « rendu » : anime si l’utilisateur parle d’anime, de manga, de dessin animé ou d’un personnage de série (Naruto, One Piece…), realiste s’il veut une photo, rien sinon ; Imager écrit la consigne, choisit le modèle (un modèle anime pour le rendu anime), la taille et les retouches. Ne passe que les options demandées (format, nombre d’images, graine, LoRA, agrandir). Si le message porte une « Photo jointe », passe son chemin dans photoDeBase (et fidelite entre 0 et 1 si l’utilisateur dit à quel point rester proche de la photo). Ta réponse finale, après le résultat de l’outil, reprend les chemins des fichiers renvoyés, tels quels, sans décrire une image que l’outil n’a pas produite. Ne dis jamais « je vais générer » sans appeler l’outil.',
   },
 };
 

@@ -1,0 +1,127 @@
+# Règles de Jarvis Imager (consignes envoyées à Stable Diffusion).
+# Modifie puis enregistre : Jarvis relit ce fichier à chaque image. Une clé absente garde sa valeur
+# par défaut ; une valeur fausse est ignorée et signalée.
+#
+# general : checkpoint (auto, ou realvisxl / juggernaut / sdxl-base), priorite (ordre essayé quand auto),
+#   adetailer (retouche visages et mains), upscaler et facteurAgrandissement (quand on demande « plus grand »).
+# qualite : mots ajoutés à la fin de chaque consigne. anatomie : défauts d’anatomie toujours évités pour les personnes.
+# type-<type> : mots ajoutés (positif), défauts évités (negatif), format par défaut quand la demande n’en donne pas (vide = celui du projet ;
+#   ignoré s’il n’est pas dans les formats conseillés du projet), adetailer (retouche visages), adetailerMains (retouche mains en plus).
+# rendu-realiste / rendu-anime : mots ajoutés (positif), défauts évités (negatif) et modèles essayés dans l’ordre (priorite)
+#   quand la demande veut une photo ou un dessin (anime, manga, dessin animé, série connue). Sans indication : general.priorite.
+# checkpoint-<id> : fichier, label, sampler, scheduler, steps, cfg, vae (vide = celui du modèle), negatif de l’auteur,
+#   rendu (realiste ou anime : ce que le modèle sait faire), qualite (mots de qualité propres au modèle ; vide = ceux de qualite).
+
+general:
+  checkpoint: auto
+  priorite: [realvisxl, juggernaut, sdxl-base]
+  adetailer: true
+  upscaler: "R-ESRGAN 4x+"
+  facteurAgrandissement: 2
+
+qualite:
+  positif: [highly detailed, sharp focus, professional quality]
+
+anatomie:
+  negatif: [extra arms, extra legs, extra limbs, extra fingers, missing fingers, fused fingers, deformed hands, bad hands, malformed limbs, deformed face, asymmetric eyes, cross-eyed, long neck, bad anatomy, bad proportions, mutated, disfigured]
+
+type-personne:
+  positif: [natural proportions, detailed face, detailed hands with five fingers]
+  negatif: [duplicate person, clone, extra heads]
+  format: "portrait"
+  adetailer: true
+  adetailerMains: true
+
+type-objet:
+  positif: [centered subject, detailed materials and textures, accurate shape]
+  negatif: [melted, warped, deformed shape, floating parts]
+  format: ""
+  adetailer: false
+  adetailerMains: false
+
+type-paysage:
+  positif: [wide shot, atmospheric depth, coherent perspective]
+  negatif: [warped perspective, tilted horizon, duplicate sun]
+  format: "paysage"
+  adetailer: false
+  adetailerMains: false
+
+type-logo-sticker:
+  positif: [vector illustration, flat colors, clean bold outlines, centered, simple shapes]
+  negatif: [photo, photorealistic, gradients, text, letters, words, complex background, noise]
+  format: ""
+  adetailer: false
+  adetailerMains: false
+
+type-scene:
+  positif: [coherent scene, natural proportions, detailed faces]
+  negatif: [duplicate person, extra heads, floating objects]
+  format: "paysage"
+  adetailer: true
+  adetailerMains: false
+
+type-autre:
+  positif: []
+  negatif: []
+  format: ""
+  adetailer: false
+  adetailerMains: false
+
+rendu-realiste:
+  positif: []
+  negatif: [anime, cartoon, drawing, illustration, painting, 3d render]
+  priorite: [realvisxl, juggernaut, sdxl-base]
+
+rendu-anime:
+  positif: []
+  negatif: [photo, photorealistic, realistic, real person, 3d, 3d render]
+  priorite: [animagine, sdxl-base]
+
+checkpoint-realvisxl:
+  fichier: RealVisXL_V5.0_fp16.safetensors
+  label: "RealVisXL V5.0"
+  sampler: "DPM++ SDE"
+  scheduler: Karras
+  steps: 30
+  cfg: 5
+  vae: ""
+  negatif: [bad hands, bad anatomy, ugly, deformed, face asymmetry, eyes asymmetry, deformed eyes, deformed mouth, open mouth]
+  rendu: realiste
+  qualite: []
+
+checkpoint-juggernaut:
+  fichier: Juggernaut-XI-byRunDiffusion.safetensors
+  label: "Juggernaut XI"
+  sampler: "DPM++ 2M"
+  scheduler: Karras
+  steps: 35
+  cfg: 5
+  vae: ""
+  negatif: []
+  rendu: realiste
+  qualite: []
+
+checkpoint-sdxl-base:
+  fichier: sd_xl_base_1.0.safetensors
+  label: "SDXL base 1.0"
+  sampler: "DPM++ 2M"
+  scheduler: Karras
+  steps: 28
+  cfg: 6
+  vae: "sdxl_vae_fp16_fix.safetensors"
+  negatif: []
+  rendu: realiste
+  qualite: []
+
+checkpoint-animagine:
+  fichier: animagine-xl-4.0-opt.safetensors
+  label: "Animagine XL 4.0 Opt"
+  sampler: "Euler a"
+  scheduler: Automatic
+  steps: 28
+  cfg: 5
+  vae: ""
+  negatif: [lowres, bad anatomy, bad hands, text, error, missing finger, extra digits, fewer digits, cropped, worst quality, low quality, low score, bad score, average score, signature, watermark, username, blurry]
+  rendu: anime
+  qualite: [masterpiece, high score, great score, absurdres]
+

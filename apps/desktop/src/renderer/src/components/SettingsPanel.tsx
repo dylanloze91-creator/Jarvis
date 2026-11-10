@@ -24,6 +24,7 @@ import { SpotifySettingsSection } from '@/components/SpotifySettings';
 import { GoogleSettingsSection } from '@/components/GoogleSettings';
 import { SiteBlockSettingsSection } from '@/components/SiteBlockSettings';
 import { RoverSettingsSection } from '@/components/RoverSettings';
+import { ImagesSettingsSection } from '@/components/ImagesSettings';
 import { PhoneSettingsSection } from '@/components/PhoneSettings';
 import { SpeakerSettingsSection } from '@/components/SpeakerSettings';
 import { PersonalizationSettingsSection } from '@/components/PersonalizationSettings';
@@ -361,6 +362,12 @@ export function SettingsPanel({
             token={draft.roverToken ?? ''}
             onChange={(values) => patch(values)}
           />,
+        )}
+        {accordion(
+          'images',
+          'Jarvis Imager',
+          'Images en local (Forge + SDXL)',
+          <ImagesSettingsSection value={draft.images} onChange={(images) => patch({ images })} />,
         )}
         {accordion('phone', 'Téléphone', 'Jarvis via Tailscale', <PhoneSettingsSection />)}
         {accordion('speakers', 'Enceintes', 'Cartes ESP32 sur le Wi-Fi', <SpeakerSettingsSection />)}

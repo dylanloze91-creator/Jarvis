@@ -78,6 +78,8 @@ const TOOL_LABELS: Record<string, string> = {
   rover_stop: 'Robot : arrêt',
   rover_emergency_stop: 'Robot : arrêt d’urgence',
   rover_release_emergency: 'Robot : fin de l’arrêt d’urgence',
+  generer_image: 'Génération d’image',
+  images_etat: 'Images : état de Forge',
 };
 
 export function toolLabel(name: string): string {

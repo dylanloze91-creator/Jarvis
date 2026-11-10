@@ -1,0 +1,57 @@
+# Réglages kohya sd-scripts pour un LoRA SDXL sur une carte louée de 24 Go (RTX 3090 / 4090).
+# Lancement (voir GUIDE_ENTRAINEMENT.md) :
+#   accelerate launch sdxl_train_network.py --config_file config_sdxl_lora_24go.toml
+# Les trois chemins marqués « À ADAPTER » sont les seuls à changer.
+
+# ----- Modèle de base et données -----
+pretrained_model_name_or_path = "/workspace/sd_xl_base_1.0.safetensors"   # À ADAPTER : le SDXL base 1.0 officiel
+train_data_dir = "/workspace/jeux/mon-style"                                # À ADAPTER : dossier produit par preparer_images.py (contient 20_<declencheur>/)
+output_dir = "/workspace/sorties"
+output_name = "mon-style"                                                   # À ADAPTER : nom du fichier .safetensors final
+logging_dir = "/workspace/sorties/logs"
+
+# ----- Résolution et découpe -----
+resolution = "1024,1024"
+enable_bucket = true            # accepte des images de rapports différents (paysage, portrait)
+min_bucket_reso = 512
+max_bucket_reso = 1536
+bucket_reso_steps = 64
+bucket_no_upscale = true
+caption_extension = ".txt"      # les descriptions écrites par preparer_images.py
+shuffle_caption = false         # le déclencheur reste en premier
+keep_tokens = 1
+
+# ----- LoRA -----
+network_module = "networks.lora"
+network_dim = 32                # taille du LoRA (16 à 64 ; 32 = bon compromis style/objet)
+network_alpha = 16
+network_train_unet_only = true  # SDXL : on n'entraîne pas les encodeurs de texte (plus stable, moins de mémoire)
+
+# ----- Optimisation -----
+optimizer_type = "AdamW8bit"
+learning_rate = 1e-4
+unet_lr = 1e-4
+lr_scheduler = "cosine_with_restarts"
+lr_scheduler_num_cycles = 3
+lr_warmup_steps = 100
+max_train_epochs = 10           # 20 répétitions × 15 à 40 images × 10 époques = 3 000 à 8 000 pas
+train_batch_size = 2
+gradient_accumulation_steps = 1
+gradient_checkpointing = true
+mixed_precision = "bf16"        # RTX 30/40 : bf16 ; sur une carte plus ancienne, mettre "fp16"
+save_precision = "fp16"
+xformers = true
+cache_latents = true
+cache_latents_to_disk = true
+cache_text_encoder_outputs = true
+no_half_vae = true              # évite les images noires du VAE SDXL en demi-précision
+min_snr_gamma = 5
+noise_offset = 0.03
+seed = 5071
+max_data_loader_n_workers = 2
+persistent_data_loader_workers = true
+
+# ----- Sauvegardes -----
+save_model_as = "safetensors"
+save_every_n_epochs = 2         # un fichier intermédiaire toutes les 2 époques, pour comparer
+save_last_n_epochs = 3

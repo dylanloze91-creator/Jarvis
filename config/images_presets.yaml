@@ -1,0 +1,86 @@
+# Réglages des images par projet (Jarvis, module images).
+# Modifie les valeurs puis enregistre : Jarvis relit ce fichier à chaque image.
+# Une clé absente garde sa valeur par défaut. Une valeur fausse est ignorée et signalée.
+#
+# Clés : label, description, positivePrefix (texte ajouté devant ta demande),
+#   positiveSuffix (texte ajouté derrière), negative (ce que l’image ne doit pas avoir),
+#   defaultFormat et formats (parmi : carre, paysage, portrait, 16:9, 9:16),
+#   steps (20 à 40), cfg (4 à 9), sampler, scheduler, blackAndWhite (true/false).
+
+jarvis:
+  label: Jarvis
+  description: >
+    Images pour Jarvis lui-même (icônes, fonds, illustrations de l’assistant). Libre.
+  positivePrefix: ""
+  positiveSuffix: >
+    high quality, detailed
+  negative: >
+    low quality, worst quality, blurry, jpeg artifacts, deformed, disfigured, bad anatomy,
+    extra limbs, extra fingers, watermark, signature, text, cropped, out of frame
+  defaultFormat: carre
+  formats: [carre, paysage, portrait]
+  steps: 28
+  cfg: 6
+  sampler: DPM++ 2M
+  scheduler: Karras
+  blackAndWhite: false
+
+vx:
+  label: VX (montage vidéo)
+  description: >
+    Miniatures et visuels pour les vidéos : 16:9 (YouTube) et 9:16 (shorts, TikTok).
+  positivePrefix: ""
+  positiveSuffix: >
+    cinematic lighting, high contrast, sharp focus, high quality, detailed
+  negative: >
+    low quality, worst quality, blurry, jpeg artifacts, deformed, disfigured, bad anatomy,
+    extra limbs, extra fingers, watermark, signature, text, cropped, out of frame
+  defaultFormat: "16:9"
+  formats: [16:9, 9:16]
+  steps: 28
+  cfg: 6
+  sampler: DPM++ 2M
+  scheduler: Karras
+  blackAndWhite: false
+
+drivers-ink:
+  label: Drivers Ink (stickers vinyle)
+  description: >
+    Stickers en vinyle découpé : fond blanc uni, dessin net à contours francs, peu de
+    couleurs. Une version noir et blanc est produite à côté.
+  positivePrefix: >
+    sticker design, vector illustration, flat colors, bold clean black outlines, limited color
+    palette, high contrast, centered subject, plain solid white background,
+  positiveSuffix: >
+    simple shapes, die-cut sticker, no gradients, no shading, high quality
+  negative: >
+    low quality, worst quality, blurry, jpeg artifacts, deformed, disfigured, bad anatomy,
+    extra limbs, extra fingers, watermark, signature, text, cropped, out of frame, brand
+    logos, trademarks, text, letters, words, typography, real person face, celebrity,
+    photorealistic, photo, gradients, soft shading, complex background, shadows, noise,
+    texture
+  defaultFormat: carre
+  formats: [carre, portrait, paysage]
+  steps: 30
+  cfg: 7
+  sampler: DPM++ 2M
+  scheduler: Karras
+  blackAndWhite: true
+
+perso:
+  label: Perso
+  description: >
+    Images personnelles, sans règle imposée.
+  positivePrefix: ""
+  positiveSuffix: >
+    high quality, detailed
+  negative: >
+    low quality, worst quality, blurry, jpeg artifacts, deformed, disfigured, bad anatomy,
+    extra limbs, extra fingers, watermark, signature, text, cropped, out of frame
+  defaultFormat: carre
+  formats: [carre, paysage, portrait, 16:9, 9:16]
+  steps: 28
+  cfg: 6
+  sampler: DPM++ 2M
+  scheduler: Karras
+  blackAndWhite: false

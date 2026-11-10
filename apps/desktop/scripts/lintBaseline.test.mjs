@@ -26,7 +26,8 @@ function describeMessages(results) {
   );
 }
 
-describe('lint : base verte', () => {
+// Sous Windows, l'initialisation d'ESLint dépasse les 5 s par défaut quand la suite tourne en parallèle.
+describe('lint : base verte', { timeout: 120_000 }, () => {
   const eslint = new ESLint({ cwd: root });
 
   it('le runtime voix copié par setup:voice est ignoré, pas le code', async () => {

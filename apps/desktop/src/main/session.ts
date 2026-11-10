@@ -51,6 +51,10 @@ import {
   missionFromUserPhrase,
   PROPOSER_MISSION_TOOL_NAME,
   redactSecrets,
+  withAttachmentNotes,
+  lastUserHasImageAttachment,
+  MAX_ATTACHMENTS_PER_MESSAGE,
+  type ChatAttachment,
   type ChatMissionProposalPayload,
   type AgentEvent,
   type LLMProvider,
@@ -120,6 +124,11 @@ interface SessionDeps {
   localLearning: LocalLearningController;
   /** 5.0.68 — missions depuis la discussion (après le contrôleur Développeur). */
   getChatMissionHub?: () => ChatMissionHub | null;
+  /**
+   * Module images : enregistre une photo jointe (dossier des images) et rend la pièce jointe
+   * du message. Absent : les photos jointes sont refusées avec un message clair.
+   */
+  saveAttachment?: (input: { name: string; mime: string; data: Buffer }) => Promise<ChatAttachment>;
 }
 
 /**
@@ -250,8 +259,12 @@ export class ChatSession {
     const settings = this.deps.getSettings();
     const conversation = await this.loadConversation(input.conversationId);
     conversationId = conversation.id;
-    const userMessage = createMessage('user', input.text);
+    // Photos jointes : enregistrées sur le disque avant le tour ; seul leur chemin ira au modèle.
+    const attachments = await this.saveAttachments(input);
+    const userMessage = createMessage('user', input.text, attachments.length ? { attachments } : {});
     const messages: ChatMessage[] = [...conversation.messages, userMessage];
+    /** Copie pour le modèle : les photos deviennent des notes ; `messages` (affiché, enregistré) ne change pas. */
+    const modelMessages = withAttachmentNotes(messages);
 
     emit({ type: 'started', conversationId: conversation.id, message: userMessage });
 
@@ -358,7 +371,7 @@ export class ChatSession {
         ...(turn.learningReview ? { learningReview: turn.learningReview } : {}),
         ...(turn.learningFinalize ? { learningFinalize: turn.learningFinalize } : {}),
       });
-      run = agent.run(messages, {
+      run = agent.run(modelMessages, {
         signal: controller.signal,
         policies: settings.toolPolicies,
         debug: settings.debugLogging,
@@ -377,7 +390,7 @@ export class ChatSession {
         ...(turn.learningReview ? { learningReview: turn.learningReview } : {}),
         ...(turn.learningFinalize ? { learningFinalize: turn.learningFinalize } : {}),
       });
-      run = agent.run(messages, {
+      run = agent.run(modelMessages, {
         signal: controller.signal,
         policies: settings.toolPolicies,
         debug: settings.debugLogging,
@@ -599,6 +612,24 @@ export class ChatSession {
     return verdict === 'yes';
   }
 
+  /** Photos jointes du message : enregistrées par le module images, 3 au plus ; refus clair sinon. */
+  private async saveAttachments(input: SendChatInput): Promise<ChatAttachment[]> {
+    const list = input.attachments ?? [];
+    if (!list.length) return [];
+    if (!this.deps.saveAttachment) {
+      throw new Error('Les photos jointes demandent le module images (Réglages → Services → Images).');
+    }
+    if (list.length > MAX_ATTACHMENTS_PER_MESSAGE) {
+      throw new Error(`Au plus ${MAX_ATTACHMENTS_PER_MESSAGE} photos par message.`);
+    }
+    const saved: ChatAttachment[] = [];
+    for (const item of list) {
+      const data = Buffer.from(item.dataBase64, 'base64');
+      saved.push(await this.deps.saveAttachment({ name: item.name, mime: item.mime, data }));
+    }
+    return saved;
+  }
+
   /**
    * 5.0.60 — chef d'orchestre. Calcul exact sans modèle, puis règles express, puis le cerveau.
    * `null` : le cerveau n'a pas pu choisir (Ollama arrêté, réponse illisible) ; le tour suit
@@ -619,7 +650,12 @@ export class ChatSession {
     if (clock) return { team: 'horloge', label: 'Horloge', model: 'sans modèle', how: 'express', reply: clock };
     const teams = availableTeams(this.deps.tools.schemas().map((tool) => tool.name));
     const available = new Set(teams);
-    let team: OrchestraTeam | null = expressTeam({ text, history: messages, available });
+    let team: OrchestraTeam | null = expressTeam({
+      text,
+      history: messages,
+      available,
+      hasImageAttachment: lastUserHasImageAttachment(messages),
+    });
     let how: TurnRoute['how'] = team ? 'express' : 'cerveau';
     if (!team) {
       const router = activeRouter(settings);

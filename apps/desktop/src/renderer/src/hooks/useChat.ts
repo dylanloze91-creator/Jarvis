@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { ChatMessage, ChatMissionEnvelope, Conversation } from '@jarvis/core';
-import type { ChatEvent } from '../../../shared/ipc';
+import type { ChatAttachment, ChatMessage, ChatMissionEnvelope, Conversation } from '@jarvis/core';
+import type { ChatAttachmentInput, ChatEvent } from '../../../shared/ipc';
 
 export type ChatItem =
-  | { kind: 'user'; id: string; text: string }
+  | { kind: 'user'; id: string; text: string; attachments?: ChatAttachment[] }
   | { kind: 'assistant'; id: string; text: string; streaming: boolean }
   | {
       kind: 'tool';
@@ -74,7 +74,12 @@ export function useChat(options: UseChatOptions = {}) {
           setConversationId(event.conversationId);
           setItems((current) => [
             ...closeStreaming(current),
-            { kind: 'user', id: event.message.id, text: event.message.content },
+            {
+              kind: 'user',
+              id: event.message.id,
+              text: event.message.content,
+              ...(event.message.attachments?.length ? { attachments: event.message.attachments } : {}),
+            },
           ]);
           break;
         }
@@ -187,12 +192,18 @@ export function useChat(options: UseChatOptions = {}) {
   }, []);
 
   const send = useCallback(
-    (text: string, source: 'voice' | 'text' = 'text', extra: { followUp?: boolean } = {}) => {
+    (text: string, source: 'voice' | 'text' = 'text', extra: { followUp?: boolean; attachments?: ChatAttachmentInput[] } = {}) => {
       const trimmed = text.trim();
       if (trimmed.length === 0 || (busy && source !== 'voice')) return;
       setBusy(true);
       void window.jarvis.chat
-        .send({ conversationId, text: trimmed, source, ...(extra.followUp ? { followUp: true } : {}) })
+        .send({
+          conversationId,
+          text: trimmed,
+          source,
+          ...(extra.followUp ? { followUp: true } : {}),
+          ...(extra.attachments?.length ? { attachments: extra.attachments } : {}),
+        })
         .catch(() => {
           setItems((current) => [
             ...current,
@@ -260,7 +271,12 @@ export function toItems(messages: ChatMessage[]): ChatItem[] {
   const items: ChatItem[] = [];
   for (const message of messages) {
     if (message.role === 'user') {
-      items.push({ kind: 'user', id: message.id, text: message.content });
+      items.push({
+        kind: 'user',
+        id: message.id,
+        text: message.content,
+        ...(message.attachments?.length ? { attachments: message.attachments } : {}),
+      });
     } else if (message.role === 'assistant' && message.content.trim().length > 0) {
       items.push({ kind: 'assistant', id: message.id, text: message.content, streaming: false });
     } else if (message.chatMission) {

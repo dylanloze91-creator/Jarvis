@@ -52,6 +52,9 @@ const api: JarvisApi = {
     validateTeam: (input: TeamValidationInput) =>
       ipcRenderer.invoke(IpcChannel.orchestraValidateTeam, input),
   },
+  images: {
+    open: (path: string) => ipcRenderer.invoke(IpcChannel.imagesOpen, path),
+  },
   settings: {
     get: () => ipcRenderer.invoke(IpcChannel.settingsGet),
     set: (patch: Partial<Settings>) => ipcRenderer.invoke(IpcChannel.settingsSet, patch),
@@ -74,6 +77,8 @@ const api: JarvisApi = {
       ipcRenderer.invoke(IpcChannel.settingsSiteBlockStatus, credentials),
     roverStatus: (credentials?: { baseUrl?: string; token?: string }) =>
       ipcRenderer.invoke(IpcChannel.settingsRoverStatus, credentials),
+    imagesStatus: (draft?: { forgeDir?: string; forgeUrl?: string; outputRoot?: string }) =>
+      ipcRenderer.invoke(IpcChannel.settingsImagesStatus, draft),
     geocodeSearch: (query: string) => ipcRenderer.invoke(IpcChannel.settingsGeocodeSearch, query),
     googleStatus: (draft?: GoogleConfigDraft) => ipcRenderer.invoke(IpcChannel.settingsGoogleStatus, draft),
     googleConnect: (draft?: GoogleConfigDraft) => ipcRenderer.invoke(IpcChannel.settingsGoogleConnect, draft),

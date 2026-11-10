@@ -199,8 +199,27 @@ export function installPreviewBridge(): void {
     orchestra: {
       validateTeam: async () => ({ ok: true }),
     },
+    images: {
+      open: async () => ({ ok: true as const }),
+    },
     settings: {
       get: async () => ({ settings, status: status() }),
+      imagesStatus: async () => ({
+        enabled: false,
+        forgeDir: 'C:\\dev\\Forge',
+        forgeUrl: 'http://127.0.0.1:7860',
+        outputRoot: 'C:\\dev\\Jarvis_images',
+        presetsPath: 'C:\\dev\\Jarvis_images\\images_presets.yaml',
+        launcherFound: true,
+        checkpointFound: true,
+        vaeFound: true,
+        forgeRunning: false,
+        loras: [],
+        checkpoints: [{ id: 'sdxl-base', label: 'SDXL base 1.0', file: 'sd_xl_base_1.0.safetensors' }],
+        activeCheckpoint: 'SDXL base 1.0',
+        adetailerInstalled: false,
+        rulesPath: 'C:\\dev\\Jarvis_images\\imager_rules.yaml',
+      }),
       set: async (patch) => {
         settings = { ...settings, ...patch };
         return { settings, status: status() };

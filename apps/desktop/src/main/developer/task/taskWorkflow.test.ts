@@ -134,7 +134,16 @@ describe('tâche de code : plan → validation → modification → tests → co
           if (round === 2 && !pausedOnce && chat.current) {
             pausedOnce = true;
             chat.current.begin();
-            setTimeout(() => chat.current!.end(), 150);
+            // Le tour de chat dure jusqu'à ce que la tâche ait marqué sa pause (ou 20 s au plus) :
+            // un délai fixe de 150 ms laissait un PC lent arriver au contrôle après la fin du tour.
+            const startedAt = Date.now();
+            const tick = setInterval(() => {
+              const paused = success.states.some((s) => s.task?.steps.some((step) => step.id === 'pause-1'));
+              if (paused || Date.now() - startedAt > 20_000) {
+                clearInterval(tick);
+                chat.current!.end();
+              }
+            }, 20);
           }
         },
       }),

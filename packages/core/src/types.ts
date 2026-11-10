@@ -46,12 +46,28 @@ export interface ToolCallOutcome {
   data?: unknown;
 }
 
+/**
+ * Module images : une photo jointe par l'utilisateur à son message, enregistrée sur le
+ * disque par le processus principal (jamais envoyée au modèle de langage : seul son chemin
+ * lui est dit, pour l'outil `generer_image`).
+ */
+export interface ChatAttachment {
+  /** Nom d'origine du fichier (affiché). */
+  name: string;
+  /** Chemin de la copie faite par Jarvis (dossier des images, sous `_references`). */
+  path: string;
+  mime: string;
+  kind: 'image';
+}
+
 export interface ChatMessage {
   id: string;
   role: MessageRole;
   content: string;
   /** Images jointes (base64 brut, API Ollama). */
   images?: string[];
+  /** Photos jointes par l'utilisateur (module images). */
+  attachments?: ChatAttachment[];
   /** Présent sur les messages `assistant` qui demandent l'exécution d'outils. */
   toolCalls?: ToolCall[];
   /** Présent sur les messages `tool`, référence l'appel auquel ils répondent. */

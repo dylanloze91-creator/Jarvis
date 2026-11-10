@@ -50,6 +50,7 @@ import { FileAuditLogStore } from './audit-store.js';
 import { SpotifyBridge } from './media/SpotifyBridge.js';
 import { SiteBlockBridge } from './siteblock/SiteBlockBridge.js';
 import { RoverClient } from './rover/RoverClient.js';
+import { ImagesService } from './images/ImagesService.js';
 import { createGoogleRuntime } from './google/runtime.js';
 import { PersonalizationStore } from './personalization.js';
 import { KnowledgeStore } from './knowledge.js';
@@ -172,6 +173,8 @@ localLearning.armPeriodic();
 const spotify = new SpotifyBridge(() => settings);
 const siteBlock = new SiteBlockBridge(() => settings);
 const rover = new RoverClient(() => settings);
+// Module images : Forge (Stable Diffusion) lancé au besoin, modèle de langage déchargé puis rechargé.
+const images = new ImagesService({ getSettings: () => settings, log: (line) => console.info(line) });
 // Jetons chiffrés par safeStorage (DPAPI), consentement dans le navigateur système.
 const google = createGoogleRuntime({
   userDataPath: () => app.getPath('userData'),
@@ -215,6 +218,8 @@ function buildTools() {
     knowledge,
     google,
     rover,
+    images,
+    openImagePath: (path) => shell.openPath(path),
     spotifyConnected: () => spotify.connectedNow(),
     summarizeYoutube: (url, onProgress, signal) =>
       summarizeYoutubeLink({
@@ -258,6 +263,8 @@ const session = new ChatSession({
   knowledge,
   localLearning,
   getChatMissionHub: () => chatMissionHub,
+  // Module images : une photo jointe est enregistrée dans le dossier des images (sous _references).
+  saveAttachment: (input) => images.saveReference(input),
 });
 
 // 5.0.63 — téléphone : une session de chat à part (un tour sur le téléphone n'annule pas celui de
@@ -551,10 +558,19 @@ function registerIpc(): void {
     // Jarvis Développeur (décision 5) : une tâche de code en cours cède la place pendant ce tour.
     chatActivity.begin();
     try {
-      await session.send(event.sender, input);
+      await session.send(event.sender, { ...input, attachments: sanitizeAttachments(input.attachments) });
     } finally {
       chatActivity.end();
     }
+  });
+  // Module images : l'interface ne peut ouvrir que les fichiers du dossier des images de Jarvis.
+  ipcMain.handle(IpcChannel.imagesOpen, async (_event, path: unknown) => {
+    if (typeof path !== 'string' || path.length > 600) return { ok: false, error: 'Chemin invalide.' };
+    if (!images.isInsideOutputRoot(path) || !/\.(png|jpe?g|webp|txt)$/i.test(path)) {
+      return { ok: false, error: 'Seuls les fichiers du dossier des images de Jarvis peuvent être ouverts ici.' };
+    }
+    const error = await shell.openPath(path);
+    return error ? { ok: false, error } : { ok: true };
   });
   ipcMain.handle(IpcChannel.chatCancel, () => session.cancel());
   ipcMain.handle(IpcChannel.confirmRespond, (_event, requestId: string, approved: boolean) =>
@@ -693,6 +709,9 @@ function registerIpc(): void {
     IpcChannel.settingsRoverStatus,
     (_event, credentials?: { baseUrl?: string; token?: string }) =>
       rover.connectionStatus(sanitizeRoverCredentials(credentials)),
+  );
+  ipcMain.handle(IpcChannel.settingsImagesStatus, (_event, draft?: { forgeDir?: string; forgeUrl?: string; outputRoot?: string }) =>
+    images.status(sanitizeImagesDraft(draft)),
   );
   ipcMain.handle(IpcChannel.settingsGeocodeSearch, async (_event, query: string) => {
     const q = typeof query === 'string' ? query.trim() : '';
@@ -926,5 +945,37 @@ app.on('will-quit', () => {
   globalShortcut.unregisterAll();
   void phone.stop();
   void speakers.stop();
+  // Un Forge lancé par Jarvis ne survit pas à Jarvis (un Forge lancé par l'utilisateur n'est pas touché).
+  void images.shutdown();
   updateManager.stop();
 });
+
+/** Photos jointes venues de l'interface : 3 au plus, type image, base64 bornée (≈ 20 Mo d'octets). */
+function sanitizeAttachments(list: unknown): SendChatInput['attachments'] {
+  if (!Array.isArray(list) || !list.length) return undefined;
+  const clean: NonNullable<SendChatInput['attachments']> = [];
+  for (const item of list.slice(0, 3)) {
+    if (!item || typeof item !== 'object') continue;
+    const record = item as Record<string, unknown>;
+    const name = typeof record.name === 'string' ? record.name.slice(0, 120) : '';
+    const mime = typeof record.mime === 'string' ? record.mime.slice(0, 60) : '';
+    const dataBase64 = typeof record.dataBase64 === 'string' ? record.dataBase64 : '';
+    if (!name || !dataBase64 || dataBase64.length > 28_000_000) continue;
+    clean.push({ name, mime, dataBase64 });
+  }
+  return clean.length ? clean : undefined;
+}
+
+function sanitizeImagesDraft(draft: unknown): { forgeDir?: string; forgeUrl?: string; outputRoot?: string } | undefined {
+  if (!draft || typeof draft !== 'object') return undefined;
+  const record = draft as Record<string, unknown>;
+  const pick = (key: string) => (typeof record[key] === 'string' ? (record[key] as string).slice(0, 400) : undefined);
+  const forgeDir = pick('forgeDir');
+  const forgeUrl = pick('forgeUrl');
+  const outputRoot = pick('outputRoot');
+  return {
+    ...(forgeDir !== undefined ? { forgeDir } : {}),
+    ...(forgeUrl !== undefined ? { forgeUrl } : {}),
+    ...(outputRoot !== undefined ? { outputRoot } : {}),
+  };
+}

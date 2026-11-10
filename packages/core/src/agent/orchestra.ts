@@ -18,6 +18,7 @@ import { looksLikeGoogleIntent } from '../google/intent.js';
 import { isCurrentTrackQuestion } from '../media/currentTrackIntent.js';
 import { isMusicIntent } from '../media/playIntent.js';
 import { extractSiteBlockIntent } from '../siteblock/intent.js';
+import { looksLikeImageIntent } from '../images/intent.js';
 import { extractYoutubeUrl } from '../youtube/url.js';
 import { DEFAULT_SYSTEM_PROMPT, looksLikeWebResearchIntent } from './agent.js';
 import { detectCurrentInfoIntent } from './currentInfo.js';
@@ -201,6 +202,8 @@ export interface ExpressInput {
   /** Équipes dont au moins un outil est enregistré (les équipes sans outil sont toujours là). */
   available: ReadonlySet<OrchestraTeam>;
   now?: Date;
+  /** Module images : le message porte une photo jointe (elle sert à faire une image). */
+  hasImageAttachment?: boolean;
 }
 
 /** Équipe désignée par une règle de Jarvis, sans modèle ; `null` : le cerveau décide. */
@@ -218,6 +221,12 @@ export function expressTeam(input: ExpressInput): OrchestraTeam | null {
   }
   if (extractSiteBlockIntent(text)) return pick('concentration');
   if (extractKnowledgeIntent(text)) return pick('memoire');
+  // Module images : « génère une image… », « dessine-moi… » partent à l'équipe Images sans
+  // demander au cerveau. Équipe absente (module coupé) : le chemin d'avant, inchangé.
+  if (looksLikeImageIntent(text) || input.hasImageAttachment) {
+    const images = pick('images');
+    if (images) return images;
+  }
   if (detectCurrentInfoIntent(text, input.now ?? new Date()) || looksLikeWebResearchIntent(text)) return pick('web');
   return null;
 }

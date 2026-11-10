@@ -1,6 +1,6 @@
-import { AlertTriangle, Check, Compass, MicOff, ShieldOff, Wrench } from 'lucide-react';
-import { useEffect, useRef, useState, type RefObject } from 'react';
-import Markdown from 'react-markdown';
+import { AlertTriangle, Check, Compass, ImageIcon, MicOff, ShieldOff, Wrench } from 'lucide-react';
+import { useEffect, useRef, useState, type MouseEvent, type RefObject } from 'react';
+import Markdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { splitSourcesFooterForDisplay } from '@jarvis/core';
 import type { ChatItem } from '@/hooks/useChat';
@@ -48,7 +48,25 @@ function Item({ item }: { item: ChatItem }) {
   if (item.kind === 'user') {
     return (
       <div className="message-row user-row">
-        <div className="user-bubble">{item.text}</div>
+        <div className="user-bubble">
+          {item.attachments?.length ? (
+            <div className="mb-1.5 flex flex-wrap gap-1.5">
+              {item.attachments.map((attachment) => (
+                <button
+                  key={attachment.path}
+                  type="button"
+                  className="flex items-center gap-1 rounded-md border border-white/15 bg-white/10 px-2 py-0.5 text-[11px] hover:bg-white/20"
+                  title={`Ouvrir ${attachment.path}`}
+                  onClick={() => void window.jarvis.images.open(attachment.path)}
+                >
+                  <ImageIcon className="size-3" />
+                  <span className="max-w-[180px] truncate">{attachment.name}</span>
+                </button>
+              ))}
+            </div>
+          ) : null}
+          {item.text}
+        </div>
       </div>
     );
   }
@@ -108,10 +126,49 @@ function Item({ item }: { item: ChatItem }) {
   return <ToolItem item={item} />;
 }
 
+/**
+ * Module images : un chemin de fichier du dossier des images (`C:\…\Jarvis_images\…\x.png`)
+ * devient un lien qui ouvre le fichier dans la visionneuse, par le processus principal.
+ */
+const IMAGE_PATH_PATTERN = /(?<![\w(])([A-Za-z]:\\[^\s"'()<>*?|]+?\.(?:png|jpe?g|webp|txt))(?![\w\\])/g;
+const FILE_LINK_PREFIX = 'jarvis-file:';
+
+export function linkifyImagePaths(text: string): string {
+  return text.replace(IMAGE_PATH_PATTERN, (path) => {
+    const name = path.slice(path.lastIndexOf('\\') + 1);
+    return `[${name}](${FILE_LINK_PREFIX}${encodeURIComponent(path)})`;
+  });
+}
+
+const MARKDOWN_COMPONENTS: Components = {
+  a: ({ href, children, ...rest }) => {
+    if (href?.startsWith(FILE_LINK_PREFIX)) {
+      const path = decodeURIComponent(href.slice(FILE_LINK_PREFIX.length));
+      const open = (event: MouseEvent<HTMLAnchorElement>): void => {
+        event.preventDefault();
+        void window.jarvis.images.open(path);
+      };
+      return (
+        <a href={href} title={`Ouvrir ${path}`} onClick={open} className="inline-flex items-center gap-1 underline decoration-cyan-300/50">
+          <ImageIcon className="inline size-3.5" />
+          {children}
+        </a>
+      );
+    }
+    return (
+      <a href={href} {...rest}>
+        {children}
+      </a>
+    );
+  },
+};
+
 function AssistantMarkdown({ text }: { text: string }) {
   const { body } = splitSourcesFooterForDisplay(text);
   return (
-    <Markdown remarkPlugins={[remarkGfm]}>{body}</Markdown>
+    <Markdown remarkPlugins={[remarkGfm]} components={MARKDOWN_COMPONENTS}>
+      {linkifyImagePaths(body)}
+    </Markdown>
   );
 }
 
