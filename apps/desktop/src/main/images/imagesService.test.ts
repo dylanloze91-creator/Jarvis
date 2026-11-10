@@ -220,6 +220,9 @@ describe('ImagesService — mode direct (sans le modèle de langage)', () => {
     const first = await svc.generateDirect({ prompt: 'a cat', negative: '', project: 'perso', improve: false });
     expect(first.forgeHeld).toBe(true);
     expect(first.brainReloaded).toBeNull();
+    // Sans modèle choisi : celui d'Imager (ici SDXL de base), jamais « le modèle courant de Forge ».
+    expect((world.txt2imgPayloads[0] as Record<string, unknown>).override_settings).toMatchObject({ sd_model_checkpoint: 'sd_xl_base_1.0.safetensors' });
+    expect(first.checkpoint).toEqual({ id: 'sdxl-base', label: 'SDXL base 1.0' });
     expect(world.calls).toEqual(['ollama:ps', 'ollama:qwen2.5:7b:0', 'forge:spawn', 'forge:options', 'forge:txt2img']);
     world.calls.length = 0;
     // Seconde image : Forge déjà là, pas de nouveau démarrage.

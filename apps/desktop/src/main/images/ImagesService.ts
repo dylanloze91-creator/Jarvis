@@ -825,13 +825,13 @@ export class ImagesService {
     // Modèle : celui du panneau (fichier), sinon pour « améliorer » le choix d'Imager selon le rendu, sinon le modèle courant de Forge.
     const byFile = Object.entries(rules.checkpoints).find(([, profile]) => profile.fichier.toLowerCase() === request.checkpoint?.toLowerCase());
     const render = improve ? resolveRenderStyle(request.render, request.prompt) : 'auto';
+    // Sans modèle choisi : celui d'Imager (rendu demandé si « améliorer », sinon l'ordre général), jamais « le modèle
+    // courant de Forge » (observé : le modèle anime du tour précédent sur un paysage demandé tel quel).
     const chosen = request.checkpoint
       ? byFile
         ? { id: byFile[0], profile: byFile[1] }
         : null
-      : improve
-        ? chooseCheckpoint(rules, (file) => existsSync(this.checkpointPath(images.forgeDir, file)), render)
-        : null;
+      : chooseCheckpoint(rules, (file) => existsSync(this.checkpointPath(images.forgeDir, file)), improve ? render : "auto");
     const checkpointFile = request.checkpoint ?? chosen?.profile.fichier;
     const profile = chosen?.profile;
     const vaePath = join(images.forgeDir, 'models', 'VAE', SDXL_VAE_FILE);
