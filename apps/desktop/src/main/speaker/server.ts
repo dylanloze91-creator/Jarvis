@@ -13,6 +13,7 @@ import {
   checkTurnWav,
   classifySpokenTurn,
   followUpWindowMs,
+  isSpotifyDeviceQuestion,
   isPrivateAddress,
   isWavContentType,
   speechTextForSpeaker,
@@ -328,10 +329,12 @@ export class SpeakerServer {
       if (!spoken) return this.noReply(res, transcript);
       const wav = await this.deps.synthesizer.synthesize(spoken);
       if (link.gone) return;
+      const keepMic =
+        followUpWindowMs(voice) > 0 || isSpotifyDeviceQuestion(spoken);
       res.writeHead(200, {
         'Content-Type': 'audio/wav',
         'Content-Length': String(wav.byteLength),
-        [SPEAKER_HEADER_CONTINUE]: followUpWindowMs(voice) > 0 ? '1' : '0',
+        [SPEAKER_HEADER_CONTINUE]: keepMic ? '1' : '0',
         [SPEAKER_HEADER_TRANSCRIPT]: encodeURIComponent(transcript),
       });
       res.end(Buffer.from(wav.buffer, wav.byteOffset, wav.byteLength));

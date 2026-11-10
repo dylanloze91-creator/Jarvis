@@ -112,3 +112,171 @@ export function isSpotifyTransferPhrase(prompt: string): boolean {
   if (TRANSFER_EXPLICIT.test(trimmed)) return true;
   return false;
 }
+
+/** Une question « où jouer ? » reste valable 60 secondes, puis ce n'est plus un choix d'appareil. */
+export const SPOTIFY_DEVICE_ASK_MS = 60_000;
+
+export const SPOTIFY_DEVICE_FALLBACK_REPLY =
+  "Je n'ai pas compris. Je le mets sur l'appareil des réglages.";
+
+export interface SpotifyDeviceAsk {
+  sessionId: string;
+  query: string;
+  askedAt: number;
+  retried: boolean;
+  /** Noms cités dans la question (enceintes, trois au plus). */
+  speakerNames: string[];
+  /** Noms d'appareils visibles acceptés comme réponse, plus l'enceinte du réglage. */
+  deviceNames: string[];
+}
+
+const deviceAsks = new Map<string, SpotifyDeviceAsk>();
+let suppressDeviceAsk = false;
+
+export function rememberSpotifyDeviceAsk(ask: SpotifyDeviceAsk): void {
+  deviceAsks.set(ask.sessionId, ask);
+}
+
+export function peekSpotifyDeviceAsk(sessionId: string, nowMs: number): SpotifyDeviceAsk | null {
+  const ask = deviceAsks.get(sessionId);
+  if (!ask) return null;
+  if (nowMs - ask.askedAt > SPOTIFY_DEVICE_ASK_MS) {
+    deviceAsks.delete(sessionId);
+    return null;
+  }
+  return ask;
+}
+
+export function noteSpotifyDeviceAskRetried(sessionId: string): void {
+  const ask = deviceAsks.get(sessionId);
+  if (ask) ask.retried = true;
+}
+
+export function clearSpotifyDeviceAsk(sessionId: string): void {
+  deviceAsks.delete(sessionId);
+}
+
+export function clearSpotifyDeviceAsks(): void {
+  deviceAsks.clear();
+  suppressDeviceAsk = false;
+}
+
+/** La réponse « peu importe » joue sur l'appareil du réglage : ne pas reposer la question. */
+export function suppressNextSpotifyDeviceAsk(): void {
+  suppressDeviceAsk = true;
+}
+
+export function consumeSpotifyDeviceAskSuppressed(): boolean {
+  const suppressed = suppressDeviceAsk;
+  suppressDeviceAsk = false;
+  return suppressed;
+}
+
+export function clearSpotifyDeviceAskSuppression(): void {
+  suppressDeviceAsk = false;
+}
+
+const HALT_PHRASE =
+  /^(?:jarvis[,:]?\s*)?(?:stop|pause|tais[-\s]?toi|arr[êe]te(?:r)?(?:\s+(?:la\s+)?(?:musique|lecture))?|coupe(?:\s+(?:la\s+)?(?:musique|lecture))?)\s*[.!]?\s*$/iu;
+
+/** « stop » et « pause » ne sont jamais une réponse à la question d'appareil. */
+export function isSpotifyHaltPhrase(prompt: string): boolean {
+  return HALT_PHRASE.test(prompt.trim());
+}
+
+export type SpotifyDeviceAnswer =
+  | { kind: 'speaker' }
+  | { kind: 'pc' }
+  | { kind: 'named'; name: string }
+  | { kind: 'usual' }
+  | { kind: 'fuzzy' }
+  | { kind: 'unrelated' };
+
+function foldDeviceWords(text: string): string {
+  return text
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .toLowerCase()
+    .replace(/['’]/g, '')
+    .replace(/[.!?]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * Réponse à « Devialet ou PC ? », sans « Jarvis ». Une phrase qui n'y répond
+ * pas (autre demande, question) reste `unrelated` : la recherche attend encore.
+ */
+export function interpretSpotifyDeviceAnswer(
+  prompt: string,
+  deviceNames: readonly string[],
+): SpotifyDeviceAnswer {
+  const trimmed = prompt.trim().replace(/^(?:jarvis[,:]?\s*)/iu, '').trim();
+  if (!trimmed || isSpotifyHaltPhrase(prompt)) return { kind: 'unrelated' };
+  const body = foldDeviceWords(trimmed).replace(/^sur\s+/, '');
+  if (body === 'peu importe' || body === 'comme dhabitude') return { kind: 'usual' };
+  if (/^(?:lenceinte|enceinte|haut[\s-]?parleurs?|les haut[\s-]?parleurs?)$/.test(body)) {
+    return { kind: 'speaker' };
+  }
+  if (/^(?:le pc|pc|lordi|lordinateur|ordinateur)$/.test(body)) return { kind: 'pc' };
+
+  const bare = body.replace(/^(?:la|le|l)\s+/, '');
+  for (const name of deviceNames) {
+    const folded = foldDeviceWords(name);
+    if (!folded || folded.length < 2) continue;
+    if (bare === folded || body === folded) return { kind: 'named', name };
+  }
+
+  const words = body.split(' ').filter(Boolean);
+  if (words.length === 0 || words.length > 6) return { kind: 'unrelated' };
+  if (/[?]/.test(trimmed)) return { kind: 'unrelated' };
+  return { kind: 'fuzzy' };
+}
+
+function deviceArticle(name: string): string {
+  const head = name.normalize('NFD').replace(/\p{M}/gu, '');
+  return /^[aeiouyhœæ]/i.test(head) ? `l'${name}` : `la ${name}`;
+}
+
+/** Question dite telle quelle, sans passer par le modèle. */
+export function spotifyDeviceQuestion(speakerNames: readonly string[], retry = false): string {
+  const names = speakerNames.map((name) => name.trim()).filter(Boolean).slice(0, 3);
+  if (names.length === 0) return retry ? 'PC ?' : 'Sur le PC ?';
+  if (retry) {
+    return names.length === 1 ? `${names[0]} ou PC ?` : `${names.join(', ')} ou PC ?`;
+  }
+  const cited = names.map(deviceArticle);
+  if (cited.length === 1) return `Sur ${cited[0]} ou sur le PC ?`;
+  const last = cited[cited.length - 1];
+  const head = cited.slice(0, -1).join(', ');
+  return `Sur ${head}, ${last} ou sur le PC ?`;
+}
+
+export function isSpotifyDeviceQuestion(text: string): boolean {
+  const folded = text.trim();
+  return /ou sur le PC\s*\?\s*$/iu.test(folded) || /ou PC\s*\?\s*$/iu.test(folded);
+}
+
+/**
+ * Noms à citer : l'enceinte du réglage, ou la seule enceinte visible ;
+ * plusieurs enceintes visibles : elles sont citées, trois au plus.
+ */
+export function connectSpeakerNamesForAsk(
+  visibleSpeakerNames: readonly string[],
+  configuredName: string | undefined,
+  configuredIsComputer: boolean,
+): string[] {
+  const visible: string[] = [];
+  for (const name of visibleSpeakerNames) {
+    const trimmed = name.trim();
+    if (!trimmed || visible.some((known) => foldDeviceWords(known) === foldDeviceWords(trimmed))) continue;
+    visible.push(trimmed);
+    if (visible.length === 3) break;
+  }
+  const configured = (configuredName ?? '').trim();
+  if (configured && !configuredIsComputer) {
+    if (visible.length > 1) return visible;
+    return [configured];
+  }
+  return visible;
+}

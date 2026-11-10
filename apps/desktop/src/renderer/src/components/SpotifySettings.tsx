@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { CheckCircle2, CircleSlash, ExternalLink, Loader2, LogOut, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Field, Input } from '@/components/ui/field';
+import { Field, Input, Toggle } from '@/components/ui/field';
 import type { SpotifyConnectDeviceSummary, SpotifyStatus } from '../../../shared/ipc';
 
 interface SpotifySettingsSectionProps {
@@ -9,6 +9,8 @@ interface SpotifySettingsSectionProps {
   onChange: (clientId: string) => void;
   deviceName: string;
   onDeviceNameChange: (deviceName: string) => void;
+  askDevice: boolean;
+  onAskDeviceChange: (askDevice: boolean) => void;
 }
 
 const PC_PLAYBACK_VALUE = '';
@@ -21,6 +23,8 @@ export function SpotifySettingsSection({
   onChange,
   deviceName,
   onDeviceNameChange,
+  askDevice,
+  onAskDeviceChange,
 }: SpotifySettingsSectionProps) {
   const [status, setStatus] = useState<SpotifyStatus | null>(null);
   const [loadingStatus, setLoadingStatus] = useState(false);
@@ -151,6 +155,13 @@ export function SpotifySettingsSection({
           </p>
         ) : null}
       </Field>
+
+      <Toggle
+        label="Me demander où jouer la musique"
+        hint="Si la phrase ne dit pas où, Jarvis demande « Sur la Devialet ou sur le PC ? ». Coupé : l'enceinte choisie ci-dessus, ou le PC."
+        checked={askDevice}
+        onChange={onAskDeviceChange}
+      />
 
       <StatusBadge status={status} loading={loadingStatus} clientId={clientId} />
 

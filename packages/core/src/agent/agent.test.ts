@@ -13,6 +13,9 @@ import { ToolManager, defineTool } from '../tools/manager.js';
 import type { ChatRequest, ChatStreamEvent, LLMProvider } from '../providers/types.js';
 import { createMessage } from '../types.js';
 import {
+  clearSpotifyDeviceAsks,
+  peekSpotifyDeviceAsk,
+  rememberSpotifyDeviceAsk,
   takeSpotifyPlayDeviceHint,
   type SpotifyPlayDeviceHint,
 } from '../media/spotifyDeviceVoice.js';
@@ -807,5 +810,170 @@ describe('Agent — outils d’une équipe (5.0.60, chef d’orchestre)', () => 
       'get_system_info',
       'read_file',
     ]);
+  });
+});
+
+describe('question Spotify « Devialet ou PC ? »', () => {
+  const pending = {
+    sessionId: 'salon',
+    query: 'Daft Punk',
+    askedAt: 1_000,
+    retried: false,
+    speakerNames: ['Devialet'],
+    deviceNames: ['Devialet', 'Ordinateur'],
+  };
+
+  function playTool(seen: Array<{ query: string; hint: SpotifyPlayDeviceHint | null }>) {
+    return defineTool({
+      name: 'spotify_play',
+      description: 'Lecture.',
+      risk: 'safe',
+      schema: z.object({ query: z.string() }),
+      execute: async ({ query }) => {
+        seen.push({ query, hint: takeSpotifyPlayDeviceHint() });
+        return { ok: true, content: `Lecture lancée : ${query}` };
+      },
+    });
+  }
+
+  function pauseTool(seen: string[]) {
+    return defineTool({
+      name: 'spotify_pause',
+      description: 'Pause.',
+      risk: 'safe',
+      schema: z.object({}),
+      execute: async () => {
+        seen.push('pause');
+        return { ok: true, content: 'Spotify est en pause.' };
+      },
+    });
+  }
+
+  function agentFor(
+    tools: ToolManager,
+    provider: ScriptedProvider,
+    nowMs: number,
+    sessionId = 'salon',
+  ) {
+    return new Agent(provider, tools, {
+      systemPrompt: 'test',
+      spotifyAskDevice: true,
+      spotifyVoiceSessionId: sessionId,
+      now: () => new Date(nowMs),
+    });
+  }
+
+  it('« la Devialet » lance la recherche gardée, sans modèle', async () => {
+    clearSpotifyDeviceAsks();
+    rememberSpotifyDeviceAsk(pending);
+    const seen: Array<{ query: string; hint: SpotifyPlayDeviceHint | null }> = [];
+    const provider = new ScriptedProvider([]);
+    const agent = agentFor(new ToolManager().register(playTool(seen)), provider, 5_000);
+    const events = await collect(agent, 'la Devialet');
+    const reply = events
+      .filter((event) => event.type === 'assistant_delta')
+      .map((event) => event.delta)
+      .join('');
+    expect(provider.requests).toHaveLength(0);
+    expect(seen).toEqual([{ query: 'Daft Punk', hint: { kind: 'named', name: 'Devialet' } }]);
+    expect(reply).toContain('Lecture lancée');
+    clearSpotifyDeviceAsks();
+  });
+
+  it('« peu importe » joue sur l’appareil du réglage', async () => {
+    clearSpotifyDeviceAsks();
+    rememberSpotifyDeviceAsk(pending);
+    const seen: Array<{ query: string; hint: SpotifyPlayDeviceHint | null }> = [];
+    const provider = new ScriptedProvider([]);
+    const agent = agentFor(new ToolManager().register(playTool(seen)), provider, 5_000);
+    await collect(agent, 'peu importe');
+    expect(provider.requests).toHaveLength(0);
+    expect(seen).toEqual([{ query: 'Daft Punk', hint: null }]);
+    clearSpotifyDeviceAsks();
+  });
+
+  it('une réponse floue relance une fois, puis l’appareil du réglage', async () => {
+    clearSpotifyDeviceAsks();
+    rememberSpotifyDeviceAsk(pending);
+    const seen: Array<{ query: string; hint: SpotifyPlayDeviceHint | null }> = [];
+    const provider = new ScriptedProvider([]);
+    const tools = new ToolManager().register(playTool(seen));
+    const first = agentFor(tools, provider, 5_000);
+    const retry = await collect(first, 'euh ailleurs');
+    const retryText = retry
+      .filter((event) => event.type === 'assistant_delta')
+      .map((event) => event.delta)
+      .join('');
+    expect(retryText).toBe('Devialet ou PC ?');
+    expect(seen).toEqual([]);
+    expect(provider.requests).toHaveLength(0);
+
+    const second = agentFor(tools, provider, 6_000);
+    const done = await collect(second, 'bof');
+    const doneText = done
+      .filter((event) => event.type === 'assistant_delta')
+      .map((event) => event.delta)
+      .join('');
+    expect(provider.requests).toHaveLength(0);
+    expect(seen).toEqual([{ query: 'Daft Punk', hint: null }]);
+    expect(doneText).toContain("appareil des réglages");
+    clearSpotifyDeviceAsks();
+  });
+
+  it('« pause » et « stop » n’attendent pas la question', async () => {
+    for (const phrase of ['pause', 'stop']) {
+      clearSpotifyDeviceAsks();
+      rememberSpotifyDeviceAsk(pending);
+      const pauses: string[] = [];
+      const plays: Array<{ query: string; hint: SpotifyPlayDeviceHint | null }> = [];
+      const provider = new ScriptedProvider([]);
+      const tools = new ToolManager().register(playTool(plays)).register(pauseTool(pauses));
+      const events = await collect(agentFor(tools, provider, 5_000), phrase);
+      const reply = events
+        .filter((event) => event.type === 'assistant_delta')
+        .map((event) => event.delta)
+        .join('');
+      expect(provider.requests).toHaveLength(0);
+      expect(pauses).toEqual(['pause']);
+      expect(plays).toEqual([]);
+      expect(reply).not.toMatch(/ou (?:sur le )?PC/i);
+      expect(reply).toContain('pause');
+    }
+    clearSpotifyDeviceAsks();
+  });
+
+  it('après 60 s, « la Devialet » n’est plus un choix d’appareil', async () => {
+    clearSpotifyDeviceAsks();
+    rememberSpotifyDeviceAsk(pending);
+    const seen: Array<{ query: string; hint: SpotifyPlayDeviceHint | null }> = [];
+    const provider = new ScriptedProvider([
+      [
+        { type: 'text', delta: 'Laquelle ?' },
+        { type: 'done', finishReason: 'stop' },
+      ],
+    ]);
+    const agent = agentFor(new ToolManager().register(playTool(seen)), provider, 1_000 + 60_001);
+    await collect(agent, 'la Devialet');
+    expect(seen).toEqual([]);
+    expect(provider.requests).toHaveLength(1);
+    clearSpotifyDeviceAsks();
+  });
+
+  it('une autre session ne prend pas la question du salon', async () => {
+    clearSpotifyDeviceAsks();
+    rememberSpotifyDeviceAsk(pending);
+    const seen: Array<{ query: string; hint: SpotifyPlayDeviceHint | null }> = [];
+    const provider = new ScriptedProvider([
+      [
+        { type: 'text', delta: 'Oui.' },
+        { type: 'done', finishReason: 'stop' },
+      ],
+    ]);
+    const agent = agentFor(new ToolManager().register(playTool(seen)), provider, 5_000, 'fenetre');
+    await collect(agent, 'la Devialet');
+    expect(seen).toEqual([]);
+    expect(provider.requests).toHaveLength(1);
+    expect(peekSpotifyDeviceAsk(pending.sessionId, 5_000)?.query).toBe('Daft Punk');
+    clearSpotifyDeviceAsks();
   });
 });

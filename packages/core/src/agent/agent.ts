@@ -14,10 +14,20 @@ import { roverTurnPrompt } from '../rover/prompt.js';
 import { isCurrentTrackQuestion } from '../media/currentTrackIntent.js';
 import { extractSpotifyPlayQuery, isMusicIntent } from '../media/playIntent.js';
 import {
+  clearSpotifyDeviceAsk,
+  clearSpotifyDeviceAskSuppression,
   clearSpotifyPlayDeviceHint,
   extractSpotifyPlayDeviceHint,
   extractSpotifyTransferTarget,
+  interpretSpotifyDeviceAnswer,
+  isSpotifyHaltPhrase,
+  noteSpotifyDeviceAskRetried,
+  peekSpotifyDeviceAsk,
+  SPOTIFY_DEVICE_FALLBACK_REPLY,
+  spotifyDeviceQuestion,
   stashSpotifyPlayDeviceHint,
+  suppressNextSpotifyDeviceAsk,
+  type SpotifyPlayDeviceHint,
 } from '../media/spotifyDeviceVoice.js';
 import { extractYoutubeUrl } from '../youtube/url.js';
 import { localTimeZone } from '../search/dates.js';
@@ -98,6 +108,13 @@ export interface AgentOptions {
    * Les chemins forcés (Spotify, YouTube, actualité) restent ceux d'avant.
    */
   allowedTools?: (name: string) => boolean;
+  /**
+   * Question « Devialet ou PC ? ». Absent ou faux : lecture comme avant
+   * (appareil du réglage, sinon le PC). La recherche en attente est par session.
+   */
+  spotifyAskDevice?: boolean;
+  /** Fenêtre, téléphone ou enceinte : chacun garde sa question 60 secondes. */
+  spotifyVoiceSessionId?: string;
 }
 
 export const DEFAULT_SYSTEM_PROMPT = [
@@ -174,10 +191,12 @@ export class Agent {
 
   async *run(history: ChatMessage[], context: ToolContext): AsyncGenerator<AgentEvent> {
     clearSpotifyPlayDeviceHint();
+    clearSpotifyDeviceAskSuppression();
     try {
       yield* this.executeTurn(history, context);
     } finally {
       clearSpotifyPlayDeviceHint();
+      clearSpotifyDeviceAskSuppression();
     }
   }
 
@@ -267,7 +286,40 @@ export class Agent {
         return;
       }
 
-      const forced = round === 0 && musicTurn ? this.forcedSpotify(conversation) : null;
+      const deviceFollowUp = round === 0 ? this.spotifyDeviceFollowUp(lastUser, now.getTime()) : null;
+      if (deviceFollowUp?.kind === 'retry') {
+        yield { type: 'assistant_delta', delta: deviceFollowUp.text };
+        const reply = createMessage('assistant', deviceFollowUp.text);
+        conversation.push(reply);
+        yield { type: 'assistant_message', message: reply };
+        yield { type: 'done' };
+        return;
+      }
+      if (deviceFollowUp?.kind === 'halt') {
+        const pause = this.forcedCall('spotify_pause', {});
+        if (pause) {
+          yield { type: 'assistant_message', message: pause.assistantMessage };
+          conversation.push(pause.assistantMessage);
+          yield { type: 'tool_start', call: pause.call };
+          const outcome = await this.tools.execute(pause.call, context);
+          const toolMessage = createMessage('tool', outcome.content, {
+            toolCallId: pause.call.id,
+            toolName: pause.call.name,
+            toolStatus: outcome.status,
+          });
+          conversation.push(toolMessage);
+          yield { type: 'tool_result', outcome, message: toolMessage };
+          yield { type: 'assistant_delta', delta: outcome.content };
+          const reply = createMessage('assistant', outcome.content);
+          conversation.push(reply);
+          yield { type: 'assistant_message', message: reply };
+          yield { type: 'done' };
+          return;
+        }
+      }
+      const answered =
+        deviceFollowUp?.kind === 'play' ? this.forcedPlayAnswer(deviceFollowUp) : null;
+      const forced = answered ?? (round === 0 && musicTurn ? this.forcedSpotify(conversation) : null);
       if (forced) {
         yield { type: 'assistant_message', message: forced.assistantMessage };
         conversation.push(forced.assistantMessage);
@@ -283,10 +335,14 @@ export class Agent {
         // Ne pas relancer le modèle : c'est lui qui inventait « introuvable »
         // sans appeler l'API, ou une commande wmic pour le morceau en cours.
         // Le texte de l'outil est la réponse.
-        const text =
+        const spoken =
           forced.call.name === 'spotify_current_track'
             ? currentTrackReply(outcome)
             : outcome.content;
+        const text =
+          deviceFollowUp?.kind === 'play' && deviceFollowUp.prefix
+            ? `${deviceFollowUp.prefix} ${spoken}`
+            : spoken;
         yield { type: 'assistant_delta', delta: text };
         const reply = createMessage('assistant', text);
         conversation.push(reply);
@@ -620,6 +676,65 @@ export class Agent {
     }
 
     return outcomePromise;
+  }
+
+  /**
+   * Réponse à « Devialet ou PC ? » dans les 60 secondes de CETTE session.
+   * Express, sans modèle. « stop » / « pause » n'attendent pas la question.
+   */
+  private spotifyDeviceFollowUp(
+    prompt: string,
+    nowMs: number,
+  ):
+    | { kind: 'retry'; text: string }
+    | { kind: 'halt' }
+    | { kind: 'play'; query: string; hint: SpotifyPlayDeviceHint | null; prefix?: string }
+    | null {
+    if (this.options.spotifyAskDevice !== true) return null;
+    const sessionId = this.options.spotifyVoiceSessionId ?? 'default';
+    const pending = peekSpotifyDeviceAsk(sessionId, nowMs);
+    if (!pending) return null;
+    if (isSpotifyHaltPhrase(prompt)) {
+      clearSpotifyDeviceAsk(sessionId);
+      return { kind: 'halt' };
+    }
+    if (
+      extractSpotifyPlayQuery(prompt) ||
+      extractSpotifyTransferTarget(prompt) ||
+      isCurrentTrackQuestion(prompt)
+    ) {
+      clearSpotifyDeviceAsk(sessionId);
+      return null;
+    }
+    const answer = interpretSpotifyDeviceAnswer(prompt, pending.deviceNames);
+    if (answer.kind === 'unrelated') return null;
+    if (answer.kind === 'fuzzy') {
+      if (!pending.retried) {
+        noteSpotifyDeviceAskRetried(sessionId);
+        return { kind: 'retry', text: spotifyDeviceQuestion(pending.speakerNames, true) };
+      }
+      clearSpotifyDeviceAsk(sessionId);
+      return {
+        kind: 'play',
+        query: pending.query,
+        hint: null,
+        prefix: SPOTIFY_DEVICE_FALLBACK_REPLY,
+      };
+    }
+    clearSpotifyDeviceAsk(sessionId);
+    if (answer.kind === 'usual') return { kind: 'play', query: pending.query, hint: null };
+    if (answer.kind === 'speaker') return { kind: 'play', query: pending.query, hint: { kind: 'speaker' } };
+    if (answer.kind === 'pc') return { kind: 'play', query: pending.query, hint: { kind: 'pc' } };
+    return { kind: 'play', query: pending.query, hint: { kind: 'named', name: answer.name } };
+  }
+
+  private forcedPlayAnswer(answer: {
+    query: string;
+    hint: SpotifyPlayDeviceHint | null;
+  }): { call: ToolCall; assistantMessage: ChatMessage } | null {
+    if (!answer.hint) suppressNextSpotifyDeviceAsk();
+    stashSpotifyPlayDeviceHint(answer.hint);
+    return this.forcedCall('spotify_play', { query: answer.query });
   }
 
   /**

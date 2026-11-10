@@ -148,7 +148,8 @@ export function extractSpotifyPlayQuery(prompt: string): string | null {
       .trim();
     const bodyOk = Boolean(body) && !/^spotify$/i.test(body) && !NOT_A_TRACK.test(body);
     if (hint && bodyOk) return hint.kind === 'named' ? raw : body;
-    if (body && looksLikeTrackQuery(body)) return finalizeSpotifyPlayQuery(body);
+    // « mets Daft Punk », « mets autre chose » : lecture express, sans exiger « Titre de Artiste ».
+    if (bodyOk) return finalizeSpotifyPlayQuery(body);
   }
 
   if (looksLikeBareTrackDeArtist(trimmed))
@@ -164,14 +165,6 @@ function isPlaybackControlOnly(prompt: string): boolean {
   if (/morceau suivant|morceau pr[ée]c[ée]dent|mode al[ée]atoire|\bshuffle\b/.test(normalized)) {
     return true;
   }
-  return false;
-}
-
-function looksLikeTrackQuery(rest: string): boolean {
-  if (!rest || /^spotify$/i.test(rest)) return false;
-  if (NOT_A_TRACK.test(rest)) return false;
-  if (looksLikeBareTrackDeArtist(rest)) return true;
-  if (MUSIC_CONTROL.test(rest)) return true;
   return false;
 }
 

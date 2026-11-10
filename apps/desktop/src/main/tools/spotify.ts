@@ -1,14 +1,21 @@
 import { z } from 'zod';
 import {
+  connectSpeakerNamesForAsk,
+  consumeSpotifyDeviceAskSuppressed,
   defineTool,
   extractSpotifyPlayDeviceHintFromQuery,
   peekSpotifyPlayDeviceHint,
+  clearSpotifyDeviceAsk,
+  rememberSpotifyDeviceAsk,
+  spotifyDeviceQuestion,
   stripSpotifyPlayDeviceSuffix,
   takeSpotifyPlayDeviceHint,
   type Settings,
   type SpotifyPlayDeviceHint,
+  type ToolContext,
 } from '@jarvis/core';
 import {
+  listConnectSpeakers,
   looksLikeLocalDesktopName,
   pickNamedConnectDevice,
   type ConnectDevice,
@@ -101,6 +108,56 @@ function resolvePlayDeviceHint(
   return { searchQuery: searchQuery.trim() || query.trim(), deviceHint: candidate };
 }
 
+/**
+ * Réglage « Me demander où jouer » : sans appareil nommé, et si rien ne joue,
+ * Jarvis pose la question au lieu de lancer. La recherche reste 60 s dans la session.
+ */
+async function maybeAskWhereToPlay(
+  deps: SpotifyToolsDeps,
+  getSpotify: () => ReturnType<SpotifyToolsDeps['spotify']['getProvider']>,
+  resolved: { searchQuery: string; deviceHint: SpotifyPlayDeviceHint | null },
+  devices: ConnectDevice[],
+  context: ToolContext,
+): Promise<{ ok: true; content: string } | null> {
+  if (deps.getSettings().spotifyAskDevice !== true) return null;
+  if (resolved.deviceHint) return null;
+  if (consumeSpotifyDeviceAskSuppressed()) return null;
+
+  try {
+    const state = await getSpotify().getPlaybackState();
+    const playingOn = state?.isPlaying ? state.deviceName?.trim() : '';
+    if (playingOn) {
+      resolved.deviceHint = { kind: 'named', name: playingOn };
+      return null;
+    }
+  } catch {
+    // État illisible : on demande quand une enceinte est connue, sinon lecture habituelle.
+  }
+
+  const settingsName = deps.getSettings().spotifyDeviceName;
+  const speakerNames = connectSpeakerNamesForAsk(
+    listConnectSpeakers(devices).map((device) => device.name),
+    settingsName,
+    looksLikeLocalDesktopName(settingsName ?? ''),
+  );
+  if (speakerNames.length === 0) return null;
+
+  const deviceNames = [
+    ...speakerNames,
+    ...devices.map((device) => device.name),
+    ...(settingsName?.trim() && !looksLikeLocalDesktopName(settingsName) ? [settingsName.trim()] : []),
+  ];
+  rememberSpotifyDeviceAsk({
+    sessionId: context.spotifyVoiceSessionId ?? 'default',
+    query: resolved.searchQuery,
+    askedAt: context.spotifyNowMs ?? Date.now(),
+    retried: false,
+    speakerNames,
+    deviceNames,
+  });
+  return { ok: true, content: spotifyDeviceQuestion(speakerNames) };
+}
+
 function spotifyTransferAvailable(getSettings: () => Settings): boolean {
   const name = (getSettings().spotifyDeviceName ?? '').trim();
   if (!name) return false;
@@ -127,11 +184,24 @@ export function createSpotifyTools(deps: SpotifyToolsDeps) {
       query: z.string().min(1).max(200).describe('Morceau, artiste ou combinaison à rechercher.'),
     }),
     summarize: ({ query }) => `Lancer sur Spotify : « ${query} ».`,
-    execute: async ({ query }) => {
+    execute: async ({ query }, context) => {
       try {
         const pending = peekSpotifyPlayDeviceHint() ?? extractSpotifyPlayDeviceHintFromQuery(query);
-        const devices = pending?.kind === 'named' ? await listVisibleDevices(getSpotify()) : [];
-        const { searchQuery, deviceHint } = resolvePlayDeviceHint(query, devices);
+        const askDevice = deps.getSettings().spotifyAskDevice === true;
+        const needDevices = pending?.kind === 'named' || (askDevice && !pending);
+        let devices: ConnectDevice[] = [];
+        if (needDevices) {
+          try {
+            devices = await listVisibleDevices(getSpotify());
+          } catch {
+            devices = [];
+          }
+        }
+        const resolved = resolvePlayDeviceHint(query, devices);
+        const asked = await maybeAskWhereToPlay(deps, getSpotify, resolved, devices, context);
+        if (asked) return asked;
+        clearSpotifyDeviceAsk(context.spotifyVoiceSessionId ?? 'default');
+        const { searchQuery, deviceHint } = resolved;
         const track = await getSpotify().searchTrack(searchQuery);
 
         if (!track) {

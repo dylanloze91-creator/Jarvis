@@ -55,6 +55,7 @@ export const SETTINGS_FIELD_MAP: Record<string, SettingsFieldLocation> = {
   marketDataApiKey: { category: 'brain', subcategory: 'market', highlight: 'marketDataApiKey' },
   spotifyClientId: { category: 'services', subcategory: 'spotify', highlight: 'spotifyClientId' },
   spotifyDeviceName: { category: 'services', subcategory: 'spotify', highlight: 'spotifyDeviceName' },
+  spotifyAskDevice: { category: 'services', subcategory: 'spotify', highlight: 'spotifyAskDevice' },
   spotifySpeakerMaxVolume: { category: 'services', subcategory: 'spotify', highlight: 'spotifySpeakerMaxVolume' },
   googleClientId: { category: 'services', subcategory: 'google', highlight: 'googleClientId' },
   googleClientSecret: { category: 'services', subcategory: 'google', highlight: 'googleClientSecret' },

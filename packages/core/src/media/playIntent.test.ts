@@ -25,6 +25,11 @@ describe('extractSpotifyPlayQuery', () => {
     expect(extractSpotifyPlayQuery('mets du Jul')).toBe('Jul');
   });
 
+  it('extrait « mets Daft Punk » et « mets autre chose » sans appareil', () => {
+    expect(extractSpotifyPlayQuery('mets Daft Punk')).toBe('Daft Punk');
+    expect(extractSpotifyPlayQuery('mets autre chose')).toBe('autre chose');
+  });
+
   it('laisse « Lance Spotify » à open_application', () => {
     expect(extractSpotifyPlayQuery('Lance Spotify')).toBeNull();
     expect(extractSpotifyPlayQuery('ouvre Spotify')).toBeNull();

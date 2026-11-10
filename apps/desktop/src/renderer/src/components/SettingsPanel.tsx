@@ -329,6 +329,8 @@ export function SettingsPanel({
               onChange={(spotifyClientId) => patch({ spotifyClientId })}
               deviceName={draft.spotifyDeviceName ?? ''}
               onDeviceNameChange={(spotifyDeviceName) => patch({ spotifyDeviceName })}
+              askDevice={draft.spotifyAskDevice === true}
+              onAskDeviceChange={(spotifyAskDevice) => patch({ spotifyAskDevice })}
             />
           </>,
         )}
