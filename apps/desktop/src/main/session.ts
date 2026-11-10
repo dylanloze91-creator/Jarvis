@@ -157,6 +157,8 @@ export class ChatSession {
   private controller: AbortController | null = null;
   /** 5.0.62 : un envoi plus récent rend caduque une vérification de destinataire en cours. */
   private sendSeq = 0;
+  /** Fenêtre, téléphone et chaque enceinte ont leur question Spotify. */
+  private readonly spotifyVoiceSessionId = randomId();
 
   constructor(private readonly deps: SessionDeps) {}
 
@@ -396,6 +398,8 @@ export class ChatSession {
         homeLocation: settings.homeLocation ?? null,
         allowedTools: (name) =>
           teamHasTool(team, name) || (chatMissionsOn && name === PROPOSER_MISSION_TOOL_NAME),
+        spotifyAskDevice: settings.spotifyAskDevice === true,
+        spotifyVoiceSessionId: this.spotifyVoiceSessionId,
         ...(turn.learningReview ? { learningReview: turn.learningReview } : {}),
         ...(turn.learningFinalize ? { learningFinalize: turn.learningFinalize } : {}),
       });
@@ -403,6 +407,7 @@ export class ChatSession {
         signal: controller.signal,
         policies: settings.toolPolicies,
         debug: settings.debugLogging,
+        spotifyVoiceSessionId: this.spotifyVoiceSessionId,
         requestConfirmation: (request) => this.askUser(sender, emit, request, controller.signal),
       });
     } else {
@@ -415,6 +420,8 @@ export class ChatSession {
         systemPrompt: turn.systemPrompt,
         temperature: settings.temperature,
         homeLocation: settings.homeLocation ?? null,
+        spotifyAskDevice: settings.spotifyAskDevice === true,
+        spotifyVoiceSessionId: this.spotifyVoiceSessionId,
         ...(turn.learningReview ? { learningReview: turn.learningReview } : {}),
         ...(turn.learningFinalize ? { learningFinalize: turn.learningFinalize } : {}),
       });
@@ -422,6 +429,7 @@ export class ChatSession {
         signal: controller.signal,
         policies: settings.toolPolicies,
         debug: settings.debugLogging,
+        spotifyVoiceSessionId: this.spotifyVoiceSessionId,
         requestConfirmation: (request) => this.askUser(sender, emit, request, controller.signal),
       });
     }

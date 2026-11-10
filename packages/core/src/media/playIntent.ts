@@ -10,6 +10,12 @@
 
 import { looksLikeImageIntent } from '../images/intent.js';
 import { isCurrentTrackQuestion } from './currentTrackIntent.js';
+import {
+  extractSpotifyPlayDeviceHintFromQuery,
+  extractSpotifyTransferTarget,
+  isSpotifyTransferPhrase,
+  stripSpotifyPlayDeviceSuffix,
+} from './spotifyDeviceVoice.js';
 
 const OPEN_SPOTIFY_ONLY =
   /^(?:jarvis[,:]?\s*)?(?:ouvre|ouvrir|lance|lancer|démarre|demarrer)\s+spotify\s*[.!]?\s*$/iu;
@@ -18,14 +24,12 @@ const OPEN_SPOTIFY_ONLY =
 const LISTEN_PREFIX =
   /^(?:jarvis[,:]?\s*)?(?:(?:est-ce que tu peux|peux-tu|pourrais-tu|je (?:veux|voudrais|aimerais)|j['’]aimerais)\s+)?(?:écouter|ecouter|écoute|ecoute|jouer|joue)\s+(?:moi\s+)?(?:un peu\s+(?:de\s+)?)?/iu;
 
-const LAUNCH_TRACK_PREFIX =
-  /^(?:jarvis[,:]?\s*)?(?:lancer|lance|mettre|mets)\s+(?:moi\s+)?/iu;
+const LAUNCH_TRACK_PREFIX = /^(?:jarvis[,:]?\s*)?(?:lancer|lance|mettre|mets)\s+(?:moi\s+)?/iu;
 
 const NOT_A_TRACK =
   /\b(images?|photos?|dessins?|illustrations?|stickers?|logos?|miniatures?|affiches?|visuels?|vid[ée]os?|syst[eè]me|machine|fichier|dossier|fen[eê]tre|processus|application|chrome|firefox|edge|notepad|calculatrice|word|excel|vscode|code|ordinateur|pc|ram|cpu|erreur|bourse|cours|action|navigateur|terminal|powershell|r[ée]glages?|m[ée]t[ée]o|heure|date|e-?mails?|courrier|google|wikipedia|recherche|internet|personnalisation|m[ée]moire)\b/iu;
 
-const MUSIC_CONTROL =
-  /\b(spotify|musique|morceau|chanson|playlist|shuffle|al[ée]atoire)\b/iu;
+const MUSIC_CONTROL = /\b(spotify|musique|morceau|chanson|playlist|shuffle|al[ée]atoire)\b/iu;
 
 /** Fautes phonétiques observées (voix / frappe), appliquées en plus de la requête brute. */
 const SPELLING_ALIASES: Array<[RegExp, string]> = [
@@ -44,6 +48,7 @@ export function isMusicIntent(prompt: string): boolean {
   if (OPEN_SPOTIFY_ONLY.test(trimmed)) return false;
   if (isCurrentTrackQuestion(trimmed)) return true;
   if (extractSpotifyPlayQuery(trimmed)) return true;
+  if (isSpotifyTransferPhrase(trimmed) && extractSpotifyTransferTarget(trimmed)) return true;
 
   const normalized = trimmed.toLowerCase();
   if (/qu(?:'|e )est-ce qui joue|morceau (?:actuel|en cours)/.test(normalized)) return true;
@@ -54,10 +59,17 @@ export function isMusicIntent(prompt: string): boolean {
   if (/\bshuffle\b|mode al[ée]atoire/.test(normalized)) return true;
   if (/\bvolume\b/.test(normalized)) return true;
   if (/^(?:jarvis[,:]?\s*)?pause\b/iu.test(trimmed) && !NOT_A_TRACK.test(trimmed)) return true;
-  if (MUSIC_CONTROL.test(normalized) && /\b(pause|reprend|reprendre|arr[êe]te)\b/.test(normalized)) {
+  if (
+    MUSIC_CONTROL.test(normalized) &&
+    /\b(pause|reprend|reprendre|arr[êe]te)\b/.test(normalized)
+  ) {
     return true;
   }
-  if (/^(?:jarvis[,:]?\s*)?(?:reprend(?:s|re)?(?:\s+la\s+musique)?|mets la musique)\s*[.!]?\s*$/iu.test(trimmed)) {
+  if (
+    /^(?:jarvis[,:]?\s*)?(?:reprend(?:s|re)?(?:\s+la\s+musique)?|mets la musique)\s*[.!]?\s*$/iu.test(
+      trimmed,
+    )
+  ) {
     return true;
   }
   if (/\bsur spotify\b/.test(normalized)) return true;
@@ -70,6 +82,22 @@ export function isMusicIntent(prompt: string): boolean {
  * « lance Chrome » = autre application, « pause » = contrôle,
  * « qu'est-ce qui joue sur Spotify ? » = morceau en cours).
  */
+/**
+ * Enceinte et PC sont des cibles sûres : on les retire tout de suite.
+ * Un nom (« sur la ville », « sur la Devialet ») reste dans la requête tant
+ * qu'un appareil Connect visible ne l'a pas confirmé.
+ */
+function finalizeSpotifyPlayQuery(query: string): string {
+  const cleaned = query.replace(/[.!?]+$/u, '').trim();
+  const hint = extractSpotifyPlayDeviceHintFromQuery(cleaned);
+  if (hint && hint.kind !== 'named') {
+    return stripSpotifyPlayDeviceSuffix(cleaned)
+      .replace(/[.!?]+$/u, '')
+      .trim();
+  }
+  return cleaned;
+}
+
 export function extractSpotifyPlayQuery(prompt: string): string | null {
   const trimmed = prompt.trim();
   if (!trimmed) return null;
@@ -79,6 +107,7 @@ export function extractSpotifyPlayQuery(prompt: string): string | null {
   if (looksLikeImageIntent(trimmed)) return null;
   if (isCurrentTrackQuestion(trimmed)) return null;
   if (isPlaybackControlOnly(trimmed)) return null;
+  if (isSpotifyTransferPhrase(trimmed)) return null;
 
   const normalized = trimmed.toLowerCase();
 
@@ -88,33 +117,47 @@ export function extractSpotifyPlayQuery(prompt: string): string | null {
 
   if (/\bsur spotify\b/.test(normalized)) {
     const withoutSuffix = trimmed.replace(/\s*sur spotify\s*[.!]?\s*$/iu, '');
-    const afterVerb = withoutSuffix.replace(LISTEN_PREFIX, '').replace(LAUNCH_TRACK_PREFIX, '').trim();
+    const afterVerb = withoutSuffix
+      .replace(LISTEN_PREFIX, '')
+      .replace(LAUNCH_TRACK_PREFIX, '')
+      .trim();
     const query = (afterVerb || withoutSuffix).replace(/[.!?]+$/u, '').trim();
-    if (query && !/^spotify$/i.test(query) && !NOT_A_TRACK.test(query)) return query;
+    if (query && !/^spotify$/i.test(query) && !NOT_A_TRACK.test(query))
+      return finalizeSpotifyPlayQuery(query);
   }
 
   const metsDu = trimmed.match(
     /^(?:jarvis[,:]?\s*)?mets\s+(?:du|de la|de l['’])\s+(.+?)\s*[.!]?\s*$/iu,
   );
-  if (metsDu?.[1] && !NOT_A_TRACK.test(metsDu[1])) return metsDu[1].trim();
+  if (metsDu?.[1] && !NOT_A_TRACK.test(metsDu[1]))
+    return finalizeSpotifyPlayQuery(metsDu[1].trim());
 
   if (LISTEN_PREFIX.test(trimmed)) {
     const rest = trimmed
       .replace(LISTEN_PREFIX, '')
       .replace(/[.!?]+$/u, '')
       .trim();
-    if (rest && !/^spotify$/i.test(rest) && !NOT_A_TRACK.test(rest)) return rest;
+    if (rest && !/^spotify$/i.test(rest) && !NOT_A_TRACK.test(rest))
+      return finalizeSpotifyPlayQuery(rest);
   }
 
   if (LAUNCH_TRACK_PREFIX.test(trimmed)) {
-    const rest = trimmed
+    const raw = trimmed
       .replace(LAUNCH_TRACK_PREFIX, '')
       .replace(/[.!?]+$/u, '')
       .trim();
-    if (rest && looksLikeTrackQuery(rest)) return rest;
+    const hint = extractSpotifyPlayDeviceHintFromQuery(raw);
+    const body = stripSpotifyPlayDeviceSuffix(raw)
+      .replace(/[.!?]+$/u, '')
+      .trim();
+    const bodyOk = Boolean(body) && !/^spotify$/i.test(body) && !NOT_A_TRACK.test(body);
+    if (hint && bodyOk) return hint.kind === 'named' ? raw : body;
+    // « mets Daft Punk », « mets autre chose » : lecture express, sans exiger « Titre de Artiste ».
+    if (bodyOk) return finalizeSpotifyPlayQuery(body);
   }
 
-  if (looksLikeBareTrackDeArtist(trimmed)) return trimmed.replace(/[.!?]+$/u, '').trim();
+  if (looksLikeBareTrackDeArtist(trimmed))
+    return finalizeSpotifyPlayQuery(trimmed.replace(/[.!?]+$/u, '').trim());
 
   return null;
 }
@@ -129,14 +172,6 @@ function isPlaybackControlOnly(prompt: string): boolean {
   return false;
 }
 
-function looksLikeTrackQuery(rest: string): boolean {
-  if (!rest || /^spotify$/i.test(rest)) return false;
-  if (NOT_A_TRACK.test(rest)) return false;
-  if (looksLikeBareTrackDeArtist(rest)) return true;
-  if (MUSIC_CONTROL.test(rest)) return true;
-  return false;
-}
-
 /** Verbes de dessin ou de génération en tête : « Dessine Hinata de Naruto » n'est pas « titre de artiste ». */
 const CREATION_VERB_PREFIX =
   /^(?:jarvis[,:]?\s*)?(?:g[ée]n[èe]re|g[ée]n[ée]rement|g[ée]n[ée]rer|cr[ée]e|cr[ée]er|dessine|dessiner|peins|peindre|imagine|invente|fabrique|r[ée]alise)(?:[- ]?(?:moi|nous))?\b/iu;
@@ -145,7 +180,11 @@ function looksLikeBareTrackDeArtist(prompt: string): boolean {
   if (/[?]/.test(prompt)) return false;
   if (NOT_A_TRACK.test(prompt)) return false;
   if (CREATION_VERB_PREFIX.test(prompt)) return false;
-  if (/^(?:le|la|les|l['’]|un|une|des|du|de la|cette?|mon|ma|mes|ton|ta|tes|quel(?:le)?s?)\b/iu.test(prompt)) {
+  if (
+    /^(?:le|la|les|l['’]|un|une|des|du|de la|cette?|mon|ma|mes|ton|ta|tes|quel(?:le)?s?)\b/iu.test(
+      prompt,
+    )
+  ) {
     return false;
   }
   // eslint-disable-next-line no-useless-escape -- motif Spotify validé sur le PC : laissé tel quel.

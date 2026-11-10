@@ -1,6 +1,16 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { MediaProvider, MediaTrack, ToolContext } from '@jarvis/core';
-import { parseSettings } from '@jarvis/core';
+import {
+  clearSpotifyDeviceAsks,
+  consumeSpotifyDeviceAskSuppressed,
+  extractSpotifyPlayDeviceHint,
+  extractSpotifyPlayQuery,
+  parseSettings,
+  peekSpotifyDeviceAsk,
+  stashSpotifyPlayDeviceHint,
+  suppressNextSpotifyDeviceAsk,
+  takeSpotifyPlayDeviceHint,
+} from '@jarvis/core';
 import { createSpotifyTools } from './spotify.js';
 import type { SpotifyBridge } from '../media/SpotifyBridge.js';
 
@@ -41,7 +51,7 @@ function spotifyDeps(getProvider: () => MediaProvider, settings = parseSettings(
 }
 
 describe('createSpotifyTools', () => {
-  it('déclare les huit outils, tous en risque « safe » (y compris spotify_play)', () => {
+  it('déclare les outils Spotify (transfert enregistré mais absent du catalogue sans enceinte réglée)', () => {
     const tools = createSpotifyTools(spotifyDeps(() => stubProvider()));
 
     expect(tools.map((tool) => tool.name)).toEqual([
@@ -54,6 +64,13 @@ describe('createSpotifyTools', () => {
       'spotify_set_shuffle',
       'spotify_current_track',
     ]);
+    const withSpeaker = createSpotifyTools(
+      spotifyDeps(() => stubProvider(), parseSettings({ spotifyDeviceName: 'Devialet' })),
+    );
+    expect(withSpeaker.map((tool) => tool.name)).toContain('spotify_transfer');
+    expect(withSpeaker.find((tool) => tool.name === 'spotify_transfer')?.isAvailable?.()).toBe(
+      true,
+    );
     for (const tool of tools) {
       expect(tool.risk).toBe('safe');
       expect(tool.forceConfirm).toBe(false);
@@ -73,6 +90,7 @@ describe('createSpotifyTools', () => {
     expect(provider.play).toHaveBeenCalledWith(track.uri, {
       contextUri: undefined,
       artistUri: undefined,
+      deviceHint: null,
     });
     expect(result.ok).toBe(true);
     expect(result.content).toContain('Lecture lancée sur Spotify');
@@ -192,5 +210,177 @@ describe('createSpotifyTools', () => {
     expect(result.ok).toBe(true);
     expect(result.content).toContain('70');
     expect(result.content).toMatch(/plafond/);
+  });
+
+  it('ne retient un nom d’appareil que s’il est visible ; sinon la phrase entière part sur l’appareil habituel', async () => {
+    takeSpotifyPlayDeviceHint();
+    const visible: Array<{ id: string; name: string; type: string; is_active: boolean }> = [
+      { id: 'pc-1', name: 'Ordinateur', type: 'Computer', is_active: true },
+    ];
+    const provider = Object.assign(
+      stubProvider({
+        searchTrack: vi.fn(async () => fakeTrack()),
+      }),
+      {
+        listConnectDevices: vi.fn(async () => visible.map((device) => ({ ...device }))),
+        transferPlayback: vi.fn(async () => ({ deviceName: 'Devialet Phantom' })),
+      },
+    );
+    const tools = createSpotifyTools(
+      spotifyDeps(() => provider, parseSettings({ spotifyDeviceName: 'Devialet' })),
+    );
+    const playTool = tools.find((tool) => tool.name === 'spotify_play')!;
+    const transferTool = tools.find((tool) => tool.name === 'spotify_transfer')!;
+    const playOn = async (prompt: string, queryFromModel?: string) => {
+      const extracted = extractSpotifyPlayQuery(prompt);
+      stashSpotifyPlayDeviceHint(extractSpotifyPlayDeviceHint(prompt));
+      return playTool.run({ query: queryFromModel ?? extracted ?? prompt }, fakeContext());
+    };
+
+    expect(extractSpotifyPlayQuery('mets Il pleut sur la ville')).toBe('Il pleut sur la ville');
+    await playOn('mets Il pleut sur la ville');
+    expect(provider.searchTrack).toHaveBeenLastCalledWith('Il pleut sur la ville');
+    expect(provider.play).toHaveBeenLastCalledWith('spotify:track:1', {
+      contextUri: undefined,
+      artistUri: undefined,
+      deviceHint: null,
+    });
+
+    await playTool.run({ query: 'Il pleut sur la ville' }, fakeContext());
+    expect(provider.searchTrack).toHaveBeenLastCalledWith('Il pleut sur la ville');
+    expect(provider.play).toHaveBeenLastCalledWith('spotify:track:1', {
+      contextUri: undefined,
+      artistUri: undefined,
+      deviceHint: null,
+    });
+
+    visible.push({ id: 'dv-1', name: 'Devialet Phantom', type: 'Speaker', is_active: false });
+    expect(extractSpotifyPlayQuery('mets Daft Punk sur la Devialet')).toBe(
+      'Daft Punk sur la Devialet',
+    );
+    await playOn('mets Daft Punk sur la Devialet');
+    expect(provider.searchTrack).toHaveBeenLastCalledWith('Daft Punk');
+    expect(provider.play).toHaveBeenLastCalledWith('spotify:track:1', {
+      contextUri: undefined,
+      artistUri: undefined,
+      deviceHint: { kind: 'named', name: 'Devialet' },
+    });
+
+    const speaker = 'mets Daft Punk sur l’enceinte';
+    const pc = 'mets Daft Punk sur le PC';
+    const computer = 'mets Daft Punk sur l’ordinateur';
+    expect(extractSpotifyPlayQuery(speaker)).toBe('Daft Punk');
+    expect(extractSpotifyPlayDeviceHint(speaker)).toEqual({ kind: 'speaker' });
+    expect(extractSpotifyPlayQuery(pc)).toBe('Daft Punk');
+    expect(extractSpotifyPlayDeviceHint(pc)).toEqual({ kind: 'pc' });
+    expect(extractSpotifyPlayQuery(computer)).toBe('Daft Punk');
+    expect(extractSpotifyPlayDeviceHint(computer)).toEqual({ kind: 'pc' });
+
+    await playOn(speaker);
+    expect(provider.searchTrack).toHaveBeenLastCalledWith('Daft Punk');
+    expect(provider.play).toHaveBeenLastCalledWith('spotify:track:1', {
+      contextUri: undefined,
+      artistUri: undefined,
+      deviceHint: { kind: 'speaker' },
+    });
+    await playOn(pc);
+    expect(provider.play).toHaveBeenLastCalledWith('spotify:track:1', {
+      contextUri: undefined,
+      artistUri: undefined,
+      deviceHint: { kind: 'pc' },
+    });
+    await playOn(computer);
+    expect(provider.searchTrack).toHaveBeenLastCalledWith('Daft Punk');
+    expect(provider.play).toHaveBeenLastCalledWith('spotify:track:1', {
+      contextUri: undefined,
+      artistUri: undefined,
+      deviceHint: { kind: 'pc' },
+    });
+
+    const unknown = await transferTool.run({ target: 'ville' }, fakeContext());
+    expect(unknown.ok).toBe(false);
+    expect(unknown.content).toBe("Je ne vois pas d'appareil appelé ville");
+    expect(provider.transferPlayback).not.toHaveBeenCalled();
+
+    const moved = await transferTool.run({ target: 'Devialet' }, fakeContext());
+    expect(moved.ok).toBe(true);
+    expect(provider.transferPlayback).toHaveBeenCalledTimes(1);
+    expect(provider.transferPlayback).toHaveBeenCalledWith({ kind: 'named', name: 'Devialet' });
+  });
+
+  it('demande Devialet ou PC seulement si le réglage est actif et qu’aucun appareil n’est nommé', async () => {
+    clearSpotifyDeviceAsks();
+    takeSpotifyPlayDeviceHint();
+    const provider = stubProvider({
+      searchTrack: vi.fn(async () => fakeTrack()),
+      getPlaybackState: vi.fn(async () => null),
+    });
+    const ask = parseSettings({ spotifyAskDevice: true, spotifyDeviceName: 'Devialet' });
+    const withoutDevice = createSpotifyTools(
+      spotifyDeps(() => provider, parseSettings({ spotifyAskDevice: true })),
+    );
+    expect(withoutDevice.map((tool) => tool.name)).not.toContain('spotify_transfer');
+    const tools = createSpotifyTools(spotifyDeps(() => provider, ask));
+    expect(tools.map((tool) => tool.name)).toContain('spotify_transfer');
+
+    const playTool = tools.find((tool) => tool.name === 'spotify_play')!;
+    const question = await playTool.run(
+      { query: 'Daft Punk' },
+      { ...fakeContext(), spotifyVoiceSessionId: 'salon', spotifyNowMs: 5_000 },
+    );
+    expect(provider.play).not.toHaveBeenCalled();
+    expect(question.content).toBe('Sur la Devialet ou sur le PC ?');
+    expect(peekSpotifyDeviceAsk('salon', 5_000)?.query).toBe('Daft Punk');
+
+    stashSpotifyPlayDeviceHint({ kind: 'named', name: 'Devialet' });
+    Object.assign(provider, {
+      listConnectDevices: vi.fn(async () => [
+        { id: 'dv', name: 'Devialet', type: 'Speaker', is_active: false },
+      ]),
+    });
+    const named = await playTool.run({ query: 'Daft Punk sur la Devialet' }, fakeContext());
+    expect(named.content).not.toMatch(/ou sur le PC/i);
+    expect(provider.play).toHaveBeenCalledWith('spotify:track:1', {
+      contextUri: undefined,
+      artistUri: undefined,
+      deviceHint: { kind: 'named', name: 'Devialet' },
+    });
+
+    const playing = stubProvider({
+      searchTrack: vi.fn(async () => fakeTrack()),
+      getPlaybackState: vi.fn(async () => ({
+        isPlaying: true,
+        deviceName: 'Cuisine',
+        track: fakeTrack(),
+      })),
+    });
+    const playingTool = createSpotifyTools(
+      spotifyDeps(() => playing, ask),
+    ).find((tool) => tool.name === 'spotify_play')!;
+    const direct = await playingTool.run({ query: 'autre chose' }, fakeContext());
+    expect(direct.content).not.toMatch(/ou sur le PC/i);
+    expect(playing.play).toHaveBeenCalledWith('spotify:track:1', {
+      contextUri: undefined,
+      artistUri: undefined,
+      deviceHint: { kind: 'named', name: 'Cuisine' },
+    });
+
+    suppressNextSpotifyDeviceAsk();
+    const usual = stubProvider({
+      searchTrack: vi.fn(async () => fakeTrack()),
+      getPlaybackState: vi.fn(async () => null),
+    });
+    const usualTool = createSpotifyTools(spotifyDeps(() => usual, ask)).find(
+      (tool) => tool.name === 'spotify_play',
+    )!;
+    const fallback = await usualTool.run({ query: 'Daft Punk' }, fakeContext());
+    expect(consumeSpotifyDeviceAskSuppressed()).toBe(false);
+    expect(fallback.content).toContain('Lecture');
+    expect(usual.play).toHaveBeenCalledWith('spotify:track:1', {
+      contextUri: undefined,
+      artistUri: undefined,
+      deviceHint: null,
+    });
+    clearSpotifyDeviceAsks();
   });
 });

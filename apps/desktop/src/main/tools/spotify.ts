@@ -1,5 +1,25 @@
 import { z } from 'zod';
-import { defineTool, type Settings } from '@jarvis/core';
+import {
+  connectSpeakerNamesForAsk,
+  consumeSpotifyDeviceAskSuppressed,
+  defineTool,
+  extractSpotifyPlayDeviceHintFromQuery,
+  peekSpotifyPlayDeviceHint,
+  clearSpotifyDeviceAsk,
+  rememberSpotifyDeviceAsk,
+  spotifyDeviceQuestion,
+  stripSpotifyPlayDeviceSuffix,
+  takeSpotifyPlayDeviceHint,
+  type Settings,
+  type SpotifyPlayDeviceHint,
+  type ToolContext,
+} from '@jarvis/core';
+import {
+  listConnectSpeakers,
+  looksLikeLocalDesktopName,
+  pickNamedConnectDevice,
+  type ConnectDevice,
+} from '../media/spotifyDevices.js';
 import type { SpotifyBridge } from '../media/SpotifyBridge.js';
 
 export interface SpotifyToolsDeps {
@@ -46,6 +66,112 @@ function describeSpotifyFailure(error: unknown): string {
  * « reprends » relance l'ancien morceau), donc `safe` aussi, par cohérence
  * avec le reste du contrôle de lecture.
  */
+type ConnectListing = {
+  listConnectDevices?: () => Promise<
+    Array<{ id: string; name: string; type: string; is_active: boolean }>
+  >;
+};
+
+async function listVisibleDevices(provider: ConnectListing): Promise<ConnectDevice[]> {
+  if (typeof provider.listConnectDevices !== 'function') return [];
+  const found = await provider.listConnectDevices();
+  return found
+    .filter((device) => device.id && device.name.trim())
+    .map((device) => ({
+      id: device.id,
+      name: device.name,
+      type: device.type,
+      is_active: device.is_active,
+      is_restricted: false,
+    }));
+}
+
+/**
+ * Un nom (« ville », « Devialet ») n'est gardé que s'il correspond à un
+ * appareil Connect visible (même souplesse que `pickNamedConnectDevice`).
+ * Sinon on ignore l'indice et on cherche la requête entière.
+ */
+function resolvePlayDeviceHint(
+  query: string,
+  devices: ConnectDevice[],
+): {
+  searchQuery: string;
+  deviceHint: SpotifyPlayDeviceHint | null;
+} {
+  const stashed = takeSpotifyPlayDeviceHint();
+  const fromQuery = extractSpotifyPlayDeviceHintFromQuery(query);
+  const candidate = stashed ?? fromQuery;
+  if (candidate?.kind === 'named' && !pickNamedConnectDevice(devices, candidate.name)) {
+    return { searchQuery: query.trim(), deviceHint: null };
+  }
+  const searchQuery = candidate ? stripSpotifyPlayDeviceSuffix(query) : query;
+  return { searchQuery: searchQuery.trim() || query.trim(), deviceHint: candidate };
+}
+
+/**
+ * Réglage « Me demander où jouer » : sans appareil nommé, et si rien ne joue,
+ * Jarvis pose la question au lieu de lancer. La recherche reste 60 s dans la session.
+ */
+async function maybeAskWhereToPlay(
+  deps: SpotifyToolsDeps,
+  getSpotify: () => ReturnType<SpotifyToolsDeps['spotify']['getProvider']>,
+  resolved: { searchQuery: string; deviceHint: SpotifyPlayDeviceHint | null },
+  devices: ConnectDevice[],
+  context: ToolContext,
+): Promise<{ ok: true; content: string } | null> {
+  if (deps.getSettings().spotifyAskDevice !== true) return null;
+  if (resolved.deviceHint) return null;
+  if (consumeSpotifyDeviceAskSuppressed()) return null;
+
+  try {
+    const state = await getSpotify().getPlaybackState();
+    const playingOn = state?.isPlaying ? state.deviceName?.trim() : '';
+    if (playingOn) {
+      resolved.deviceHint = { kind: 'named', name: playingOn };
+      return null;
+    }
+  } catch {
+    // État illisible : on demande quand une enceinte est connue, sinon lecture habituelle.
+  }
+
+  const settingsName = deps.getSettings().spotifyDeviceName;
+  const speakerNames = connectSpeakerNamesForAsk(
+    listConnectSpeakers(devices).map((device) => device.name),
+    settingsName,
+    looksLikeLocalDesktopName(settingsName ?? ''),
+  );
+  if (speakerNames.length === 0) return null;
+
+  const deviceNames = [
+    ...speakerNames,
+    ...devices.map((device) => device.name),
+    ...(settingsName?.trim() && !looksLikeLocalDesktopName(settingsName) ? [settingsName.trim()] : []),
+  ];
+  rememberSpotifyDeviceAsk({
+    sessionId: context.spotifyVoiceSessionId ?? 'default',
+    query: resolved.searchQuery,
+    askedAt: context.spotifyNowMs ?? Date.now(),
+    retried: false,
+    speakerNames,
+    deviceNames,
+  });
+  return { ok: true, content: spotifyDeviceQuestion(speakerNames) };
+}
+
+function spotifyTransferAvailable(getSettings: () => Settings): boolean {
+  const name = (getSettings().spotifyDeviceName ?? '').trim();
+  if (!name) return false;
+  return !looksLikeLocalDesktopName(name);
+}
+
+function transferHintFromTarget(target: string): SpotifyPlayDeviceHint {
+  const trimmed = target.trim();
+  const normalized = trimmed.toLowerCase();
+  if (normalized === 'speaker' || normalized === 'enceinte') return { kind: 'speaker' };
+  if (normalized === 'pc' || normalized === 'ordinateur') return { kind: 'pc' };
+  return { kind: 'named', name: trimmed };
+}
+
 export function createSpotifyTools(deps: SpotifyToolsDeps) {
   const getSpotify = () => deps.spotify.getProvider();
 
@@ -58,32 +184,46 @@ export function createSpotifyTools(deps: SpotifyToolsDeps) {
       query: z.string().min(1).max(200).describe('Morceau, artiste ou combinaison à rechercher.'),
     }),
     summarize: ({ query }) => `Lancer sur Spotify : « ${query} ».`,
-    execute: async ({ query }) => {
+    execute: async ({ query }, context) => {
       try {
-        const track = await getSpotify().searchTrack(query);
+        const pending = peekSpotifyPlayDeviceHint() ?? extractSpotifyPlayDeviceHintFromQuery(query);
+        const askDevice = deps.getSettings().spotifyAskDevice === true;
+        const needDevices = pending?.kind === 'named' || (askDevice && !pending);
+        let devices: ConnectDevice[] = [];
+        if (needDevices) {
+          try {
+            devices = await listVisibleDevices(getSpotify());
+          } catch {
+            devices = [];
+          }
+        }
+        const resolved = resolvePlayDeviceHint(query, devices);
+        const asked = await maybeAskWhereToPlay(deps, getSpotify, resolved, devices, context);
+        if (asked) return asked;
+        clearSpotifyDeviceAsk(context.spotifyVoiceSessionId ?? 'default');
+        const { searchQuery, deviceHint } = resolved;
+        const track = await getSpotify().searchTrack(searchQuery);
 
         if (!track) {
           return {
             ok: false,
-            content: `Aucun morceau trouvé sur Spotify pour « ${query} ». Spotify n'a rien renvoyé pour cette recherche.`,
+            content: `Aucun morceau trouvé sur Spotify pour « ${searchQuery} ». Spotify n'a rien renvoyé pour cette recherche.`,
           };
         }
 
         await getSpotify().play(track.uri, {
           contextUri: track.contextUri,
           artistUri: track.artistUri,
+          deviceHint,
         });
 
-        const targetSpeaker = (deps.getSettings().spotifyDeviceName ?? '').trim();
         const playback = await getSpotify().getPlaybackState();
         const where = playback?.deviceName;
         const artists = track.artists.join(', ');
-        const verified =
-          ' Lecture vérifiée : is_playing=true et URI confirmée.';
-        const content =
-          targetSpeaker && where
-            ? `Lecture sur « ${where} » : ${track.title} — ${artists}.${verified}`
-            : `Lecture lancée sur Spotify : ${track.title} — ${artists}.${verified}`;
+        const verified = ' Lecture vérifiée : is_playing=true et URI confirmée.';
+        const content = where
+          ? `Lecture sur « ${where} » : ${track.title} — ${artists}.${verified}`
+          : `Lecture lancée sur Spotify : ${track.title} — ${artists}.${verified}`;
 
         return {
           ok: true,
@@ -213,6 +353,48 @@ export function createSpotifyTools(deps: SpotifyToolsDeps) {
     },
   });
 
+  const spotifyTransferTool = defineTool({
+    name: 'spotify_transfer',
+    description:
+      "Transfère la lecture Spotify en cours vers un autre appareil Connect (enceinte des réglages, le PC, ou un nom d'appareil). Vérifie que la musique joue vraiment sur la cible avant de confirmer.",
+    risk: 'safe',
+    schema: z.object({
+      target: z
+        .string()
+        .min(1)
+        .max(80)
+        .describe('speaker, pc, ou le nom d’une enceinte Connect (ex. Devialet).'),
+    }),
+    summarize: ({ target }) => `Transférer Spotify vers ${target}.`,
+    isAvailable: () => spotifyTransferAvailable(deps.getSettings),
+    unavailableMessage:
+      "Transfert Spotify indisponible : règle d'abord une enceinte Connect (autre que le PC) dans Musique.",
+    execute: async ({ target }) => {
+      try {
+        const hint = transferHintFromTarget(target);
+        if (hint.kind === 'named') {
+          const devices = await listVisibleDevices(getSpotify());
+          if (!pickNamedConnectDevice(devices, hint.name)) {
+            return {
+              ok: false,
+              content: `Je ne vois pas d'appareil appelé ${hint.name}`,
+            };
+          }
+        }
+        const { deviceName } = await getSpotify().transferPlayback(hint);
+        return {
+          ok: true,
+          content: `La musique joue maintenant sur « ${deviceName} ».`,
+        };
+      } catch (error) {
+        return {
+          ok: false,
+          content: describeSpotifyFailure(error),
+        };
+      }
+    },
+  });
+
   const spotifyCurrentTrackTool = defineTool({
     name: 'spotify_current_track',
     description: 'Indique le morceau actuellement joué sur Spotify.',
@@ -246,7 +428,7 @@ export function createSpotifyTools(deps: SpotifyToolsDeps) {
     },
   });
 
-  return [
+  const tools = [
     spotifyPlayTool,
     spotifyPauseTool,
     spotifyResumeTool,
@@ -256,4 +438,8 @@ export function createSpotifyTools(deps: SpotifyToolsDeps) {
     spotifyShuffleTool,
     spotifyCurrentTrackTool,
   ];
+  if (spotifyTransferAvailable(deps.getSettings)) {
+    tools.splice(tools.length - 1, 0, spotifyTransferTool);
+  }
+  return tools;
 }

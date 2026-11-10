@@ -228,6 +228,12 @@ export const settingsSchema = z.object({
    */
   spotifyDeviceName: z.string().optional(),
   /**
+   * Demander « Devialet ou PC ? » quand une lecture ne nomme pas d'appareil.
+   * Absent ou faux : l'appareil du réglage, sinon le PC. Pas de défaut Zod :
+   * `parseSettings({})` ne gagne pas la clé.
+   */
+  spotifyAskDevice: z.boolean().optional(),
+  /**
    * Plafond de volume (0–100) pour les appareils Spotify de type Speaker
    * quand Jarvis règle le volume. Les ordinateurs ne sont pas plafonnés.
    * Absent des réglages par défaut : 70 en code (`SpotifyBridge`).

@@ -441,6 +441,24 @@ describe('pont des enceintes (5.0.64)', () => {
     expect(reply.headers['x-jarvis-continue']).toBe('0');
   });
 
+  it('une question Spotify garde le micro ouvert même si le suivi est à 0', async () => {
+    const { port, token, synth } = await setup({
+      followUpSeconds: 0,
+      script: (sender) => {
+        sender.send('chat:event', { type: 'delta', text: 'Sur la Devialet ou sur le PC ?' });
+        sender.send('chat:event', {
+          type: 'done',
+          conversationId: 'c1',
+          messages: [],
+        });
+      },
+    });
+    const reply = await call(port, '/api/speaker/turn', { token, body: voiceWav() });
+    expect(reply.status).toBe(200);
+    expect(reply.headers['x-jarvis-continue']).toBe('1');
+    expect(synth.spoken).toEqual(['Sur la Devialet ou sur le PC ?']);
+  });
+
   it('enceinte retirée : son jeton ne marche plus et sa discussion est oubliée', async () => {
     const { port, token, store, server, speaker, chat } = await setup();
     expect((await call(port, '/api/speaker/turn', { token, body: voiceWav() })).status).toBe(200);

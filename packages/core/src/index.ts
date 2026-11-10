@@ -210,6 +210,36 @@ export {
 
 export * from './media/types.js';
 export { extractSpotifyPlayQuery, isMusicIntent, searchQueryVariants } from './media/playIntent.js';
+export {
+  extractSpotifyPlayDeviceHint,
+  extractSpotifyPlayDeviceHintFromQuery,
+  extractSpotifyTransferTarget,
+  isSpotifyTransferPhrase,
+  clearSpotifyPlayDeviceHint,
+  peekSpotifyPlayDeviceHint,
+  stashSpotifyPlayDeviceHint,
+  takeSpotifyPlayDeviceHint,
+  stripSpotifyPlayDeviceSuffix,
+  SPOTIFY_DEVICE_ASK_MS,
+  SPOTIFY_DEVICE_FALLBACK_REPLY,
+  rememberSpotifyDeviceAsk,
+  peekSpotifyDeviceAsk,
+  noteSpotifyDeviceAskRetried,
+  clearSpotifyDeviceAsk,
+  clearSpotifyDeviceAsks,
+  suppressNextSpotifyDeviceAsk,
+  consumeSpotifyDeviceAskSuppressed,
+  clearSpotifyDeviceAskSuppression,
+  isSpotifyHaltPhrase,
+  interpretSpotifyDeviceAnswer,
+  spotifyDeviceQuestion,
+  isSpotifyDeviceQuestion,
+  connectSpeakerNamesForAsk,
+  type SpotifyPlayDeviceHint,
+  type SpotifyTransferTarget,
+  type SpotifyDeviceAsk,
+  type SpotifyDeviceAnswer,
+} from './media/spotifyDeviceVoice.js';
 
 export {
   DEFAULT_SITEBLOCK_BASE_URL,

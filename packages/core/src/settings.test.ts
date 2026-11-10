@@ -77,6 +77,12 @@ describe('parseSettings', () => {
     expect(next.apiKey).toBe('k');
   });
 
+  it('parseSettings({}) ne gagne pas spotifyAskDevice', () => {
+    expect(parseSettings({})).not.toHaveProperty('spotifyAskDevice');
+    expect(parseSettings({ spotifyAskDevice: true }).spotifyAskDevice).toBe(true);
+    expect(parseSettings({ spotifyAskDevice: false }).spotifyAskDevice).toBe(false);
+  });
+
   it('place l’URL et le jeton SiteBlock dans les réglages, pas dans l’environnement', () => {
     const defaults = parseSettings({});
     expect(defaults.siteBlockBaseUrl).toBe(DEFAULT_SITEBLOCK_BASE_URL);
