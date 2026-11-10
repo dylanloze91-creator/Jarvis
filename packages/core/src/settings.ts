@@ -234,6 +234,21 @@ export const settingsSchema = z.object({
    */
   spotifyAskDevice: z.boolean().optional(),
   /**
+   * Voix des enceintes. Absente : la voix de Jarvis (`voice.ttsProvider`).
+   * `local-piper` : Piper pour les enceintes seulement. Pas de défaut Zod.
+   */
+  speakerVoice: z.enum(['local-piper']).nullable().optional(),
+  /** Précharger Whisper pour les enceintes et le garder. Absent : le comportement d'aujourd'hui. */
+  speakerPreloadWhisper: z.boolean().optional(),
+  /** Au mot « Jarvis », charger les modèles et Piper. Absent : pas de préchauffage. */
+  speakerWarmup: z.boolean().optional(),
+  /** Suivi d'enceinte : règles seulement, sans question au modèle. Absent : comme la fenêtre. */
+  speakerRulesAddressee: z.boolean().optional(),
+  /** Garder le modèle qui trie chargé (`keep_alive` long). La carte graphique reste occupée. */
+  speakerKeepAwake: z.boolean().optional(),
+  /** Active d'un coup Piper (s'il est prêt), Whisper, préchauffage, règles et modèle éveillé. */
+  speakerFastMode: z.boolean().optional(),
+  /**
    * Plafond de volume (0–100) pour les appareils Spotify de type Speaker
    * quand Jarvis règle le volume. Les ordinateurs ne sont pas plafonnés.
    * Absent des réglages par défaut : 70 en code (`SpotifyBridge`).
@@ -391,6 +406,36 @@ export const settingsSchema = z.object({
 });
 
 export type Settings = z.infer<typeof settingsSchema>;
+
+export function speakerFastOn(settings: { speakerFastMode?: boolean }): boolean {
+  return settings.speakerFastMode === true;
+}
+
+export function speakerWhisperHeld(settings: { speakerFastMode?: boolean; speakerPreloadWhisper?: boolean }): boolean {
+  return settings.speakerFastMode === true || settings.speakerPreloadWhisper === true;
+}
+
+export function speakerWarmupEnabled(settings: { speakerFastMode?: boolean; speakerWarmup?: boolean }): boolean {
+  return settings.speakerFastMode === true || settings.speakerWarmup === true;
+}
+
+export function speakerRulesOnly(settings: { speakerFastMode?: boolean; speakerRulesAddressee?: boolean }): boolean {
+  return settings.speakerFastMode === true || settings.speakerRulesAddressee === true;
+}
+
+export function speakerStaysAwake(settings: { speakerFastMode?: boolean; speakerKeepAwake?: boolean }): boolean {
+  return settings.speakerFastMode === true || settings.speakerKeepAwake === true;
+}
+
+/** Piper pour l'enceinte : réglage dédié, ou la voix de Jarvis si elle est déjà Piper. */
+export function speakerUsesPiper(settings: {
+  speakerVoice?: 'local-piper' | null;
+  voice: { ttsProvider: string };
+}): boolean {
+  if (settings.speakerVoice === 'local-piper') return true;
+  if (settings.speakerVoice === null) return false;
+  return settings.voice.ttsProvider === 'local-piper';
+}
 export type HomeLocation = NonNullable<Settings['homeLocation']>;
 
 export const defaultSettings: Settings = settingsSchema.parse({});

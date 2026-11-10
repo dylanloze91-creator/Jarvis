@@ -3,7 +3,8 @@
  * Une phrase ordinaire, tapée ou dite au PC, ne passe pas par ici.
  */
 
-import { speechTextForSpeaker } from './speaker.js';
+import { SPEAKER_CONFIRMATION_REFUSAL, SPEAKER_MISSION_PROPOSAL, speechTextForSpeaker } from './speaker.js';
+import { speakerReflexPhrase } from './reflex.js';
 
 /** Pas d'estimation Imager avant le calcul : phrase fixe. */
 export const SPEAKER_IMAGE_WAIT = 'Je la prépare sur le PC, ça prend environ une minute.';
@@ -66,6 +67,78 @@ function withDetail(prose: string): string {
  * Phrase courte et vraie pour l'enceinte. Le texte complet reste dans la
  * discussion, sur l'écran du PC quand `showOnPc` est vrai.
  */
+/** Même plafond que `speakerReplyForEars` : 3 phrases, ou 300 caractères. */
+export const SPEAKER_EARLY_SENTENCES = 3;
+export const SPEAKER_EARLY_CHARS = 300;
+
+/**
+ * Pendant que le texte arrive : dès que la partie dite est complète, on peut
+ * répondre à l'enceinte. Réponse déjà finie : la règle d'aujourd'hui
+ * (`speakerReplyForEars`), y compris une phrase courte sans « le détail est sur le PC ».
+ */
+export function earlySpeakerUtterance(
+  partial: string,
+  finished: boolean,
+): { ready: boolean; spoken: string; showOnPc: boolean } {
+  if (finished) {
+    const ears = speakerReplyForEars(partial);
+    return { ready: Boolean(ears.spoken), spoken: ears.spoken, showOnPc: ears.showOnPc };
+  }
+  const raw = partial.trim();
+  if (!raw) return { ready: false, spoken: '', showOnPc: false };
+  if (isGeneratedImage(raw)) return { ready: true, spoken: SPEAKER_IMAGE_READY, showOnPc: true };
+  if (isListOrTable(raw)) return { ready: true, spoken: SPEAKER_LIST_ON_PC, showOnPc: true };
+  const prose = speechTextForSpeaker(raw);
+  const complete = sentencesOf(prose).filter((sentence) => /[.!?…]$/u.test(sentence));
+  if (complete.length < SPEAKER_EARLY_SENTENCES && prose.length < SPEAKER_EARLY_CHARS) {
+    return { ready: false, spoken: '', showOnPc: false };
+  }
+  const head =
+    complete.length >= SPEAKER_EARLY_SENTENCES
+      ? complete.slice(0, SPEAKER_EARLY_SENTENCES).join(' ')
+      : prose.slice(0, SPEAKER_EARLY_CHARS).trim();
+  if (!head) return { ready: false, spoken: '', showOnPc: false };
+  const spoken = head.includes(SPEAKER_DETAIL_ON_PC) ? head : `${head} ${SPEAKER_DETAIL_ON_PC}`;
+  return { ready: true, spoken, showOnPc: true };
+}
+
+export interface SpeakerSpeechDecision {
+  ready: boolean;
+  spoken: string;
+  showOnPc: boolean;
+  /** Un outil déjà connu : phrase courte, le détail reste sur le PC. */
+  reflex: boolean;
+}
+
+/**
+ * Ce que l'enceinte doit dire maintenant. `finished` : le tour est fini.
+ * Un outil Spotify réussi raccourcit la phrase tout de suite. Une carte
+ * reste la phrase de refus d'aujourd'hui.
+ */
+export function decideSpeakerSpeech(input: {
+  reply: string;
+  finished: boolean;
+  refused: boolean;
+  mission: boolean;
+  notAddressed: boolean;
+  tools: readonly string[];
+  userText: string;
+}): SpeakerSpeechDecision {
+  if (input.notAddressed) return { ready: true, spoken: '', showOnPc: false, reflex: true };
+  if (input.refused) {
+    return { ready: true, spoken: SPEAKER_CONFIRMATION_REFUSAL, showOnPc: false, reflex: true };
+  }
+  for (let index = input.tools.length - 1; index >= 0; index -= 1) {
+    const phrase = speakerReflexPhrase(input.tools[index]!, input.userText);
+    if (phrase) return { ready: true, spoken: phrase, showOnPc: true, reflex: true };
+  }
+  if (input.mission && input.finished) {
+    return { ready: true, spoken: SPEAKER_MISSION_PROPOSAL, showOnPc: true, reflex: false };
+  }
+  const early = earlySpeakerUtterance(input.reply, input.finished);
+  return { ready: early.ready, spoken: early.spoken, showOnPc: early.showOnPc, reflex: false };
+}
+
 export function speakerReplyForEars(reply: string): SpeakerEarsReply {
   const raw = reply.trim();
   if (!raw) return { spoken: '', showOnPc: false };
