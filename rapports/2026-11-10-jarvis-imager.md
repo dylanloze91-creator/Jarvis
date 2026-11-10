@@ -138,7 +138,7 @@ Style     : OK (0 avertissement)
 Tests     : OK (cœur 2280/2280 ; bureau 694/694 réussis, 8 ignorés, suite complète avec le SDK .NET)
 Secrets   : OK (0 trouvé)
 Fichiers modifiés : packages/core/src/media/playIntent.ts (+ test), packages/core/src/images/intent.ts, refine.ts, index.ts (+ tests images.test.ts, refine.test.ts), CLAUDE.md, AGENTS-COORDINATION.md, ce rapport
-Prêt à fusionner : OUI (rien sur main ; à publier en 5.0.72 si l'utilisateur le veut)
+Prêt à fusionner : OUI (rien sur main ; à publier en 5.0.73 si l'utilisateur le veut)
 À corriger : Whisper à l'enceinte (« Inata Tenauto ») ; Jarvis ne sait pas dire nettement qu'il ne fait pas de vidéo
 Testé en vrai (à la voix, sur le PC) : PAS FAIT (cas réel rejoué dans les tests avec la phrase exacte du journal ; l'essai à l'enceinte revient à l'utilisateur après la prochaine version)
 ```

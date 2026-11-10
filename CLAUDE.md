@@ -1,8 +1,8 @@
-# Jarvis 5.0.72 — contexte pour un autre développeur
+# Jarvis 5.0.73 — contexte pour un autre développeur
 
 Ce fichier est à la **racine du code**. Les chemins ci-dessous partent de ce dossier. Ce n’est pas un résumé marketing : c’est l’état réel de cet arbre. La voix a été refaite dans cet arbre (publiée en 0.4.11, section « Voix ») : la transcription restait « Chargement… 100 % » sur l’installateur Windows. La refonte du tableau de bord est dans cet arbre : fenêtre étroite = overlay, fenêtre large = tableau de bord.
 
-**Version confirmée :** `apps/desktop/package.json` → `"version": "5.0.72"` (décision D1 : jamais de suffixe `-beta`). La 5.0.72 (correctif après l'essai de la 5.0.71 : une demande d'image dite à l'enceinte lançait Spotify ; une seule étiquette de cadrage ; rapport `rapports/2026-11-10-publication-5072.md`) est publiée après les contrôles (release `v5.0.72`, voir « Updater / GitHub »). La 5.0.71 (module images Forge + SDXL et Jarvis Imager : RealVisXL, Animagine pour l'anime, ADetailer, règles, photos jointes ; rapport `rapports/2026-11-10-publication-5071.md`) reste la release précédente. La 5.0.70 (interface simple, questionnaire « Faisons connaissance » ; rapport `rapports/2026-11-07-publication-5070.md`) reste la release précédente. La 5.0.69 (mission directe depuis la discussion, Spotify sur enceinte Connect choisie ; rapport `rapports/2026-11-05-publication-5069.md`) reste la release précédente. La 5.0.68 (chat unifié phase 1, garde double-lancement ; rapport `rapports/2026-11-04-publication-5068.md`) reste la release précédente. La 5.0.67 (caractère de Jarvis, validation d’équipe en direct, correctif contexte export claude.ai ; rapport `rapports/2026-11-04-publication-5067.md`) reste la release antérieure. La 5.0.66 (correctif Piper Windows, sources courtes, lieu domicile, correctifs Claude ; rapport `rapports/2026-11-03-publication-5066.md`) reste la release antérieure. Le `package.json` racine est aligné sur la même version depuis 0.5.0 (il était resté à `0.3.0`), mais il n’est lu par rien : la version qui compte pour l’exe, l’updater et GitHub est celle de `@jarvis/desktop`. `@jarvis/core` reste à `0.1.0`. Le modèle par défaut reste `qwen2.5:3b`. `qwen3.5:4b` est le modèle recommandé documenté ; le repli est réglable (`fallbackModel`, défaut `qwen2.5:3b`).
+**Version confirmée :** `apps/desktop/package.json` → `"version": "5.0.73"` (décision D1 : jamais de suffixe `-beta`). La 5.0.73 (correctif après l'essai de la 5.0.71 : une demande d'image dite à l'enceinte lançait Spotify ; une seule étiquette de cadrage ; rapport `rapports/2026-11-10-publication-5073.md`) est publiée après les contrôles (release `v5.0.73`, voir « Updater / GitHub »). La 5.0.71 (module images Forge + SDXL et Jarvis Imager : RealVisXL, Animagine pour l'anime, ADetailer, règles, photos jointes ; rapport `rapports/2026-11-10-publication-5071.md`) reste la release précédente. La 5.0.70 (interface simple, questionnaire « Faisons connaissance » ; rapport `rapports/2026-11-07-publication-5070.md`) reste la release précédente. La 5.0.69 (mission directe depuis la discussion, Spotify sur enceinte Connect choisie ; rapport `rapports/2026-11-05-publication-5069.md`) reste la release précédente. La 5.0.68 (chat unifié phase 1, garde double-lancement ; rapport `rapports/2026-11-04-publication-5068.md`) reste la release précédente. La 5.0.67 (caractère de Jarvis, validation d’équipe en direct, correctif contexte export claude.ai ; rapport `rapports/2026-11-04-publication-5067.md`) reste la release antérieure. La 5.0.66 (correctif Piper Windows, sources courtes, lieu domicile, correctifs Claude ; rapport `rapports/2026-11-03-publication-5066.md`) reste la release antérieure. Le `package.json` racine est aligné sur la même version depuis 0.5.0 (il était resté à `0.3.0`), mais il n’est lu par rien : la version qui compte pour l’exe, l’updater et GitHub est celle de `@jarvis/desktop`. `@jarvis/core` reste à `0.1.0`. Le modèle par défaut reste `qwen2.5:3b`. `qwen3.5:4b` est le modèle recommandé documenté ; le repli est réglable (`fallbackModel`, défaut `qwen2.5:3b`).
 
 Lis ce fichier avant de modifier le code.
 
@@ -63,7 +63,7 @@ Scripts utiles (racine) :
 
 Le script `setup:voice` remplit `apps/desktop/voice-assets/` (runtime ONNX, Whisper, openWakeWord, modèle Vosk français ; non commité, voir `.gitignore`). Premier `dev` / `build` : besoin de réseau.
 
-L’installateur publié est `Jarvis-Setup-5.0.72.exe` (release GitHub `v5.0.72`).
+L’installateur publié est `Jarvis-Setup-5.0.73.exe` (release GitHub `v5.0.73`).
 
 Données utilisateur (Electron `userData`, typiquement `%APPDATA%\Jarvis`) :
 
@@ -97,7 +97,7 @@ Données utilisateur (Electron `userData`, typiquement `%APPDATA%\Jarvis`) :
     src/media/                 intent Spotify
     src/update/                lecture latest.yml GitHub
     src/history/  src/audit/
-  apps/desktop/                Electron (version 5.0.72)
+  apps/desktop/                Electron (version 5.0.73)
     electron-builder.yml       NSIS, extraResources, publish GitHub
     electron.vite.config.ts    aliases onnxruntime-web (wasm, pas JSEP)
     scripts/setup-whisper.mjs
@@ -713,13 +713,13 @@ Demande de l'utilisateur : générer des images en local pour quatre usages (`ja
 
 ## Updater / GitHub
 
-Dernière publication : **5.0.72** (`https://github.com/dylanloze91-creator/Jarvis/releases/tag/v5.0.72`) — exe, `.blockmap` et `latest.yml` publiés : l’updater intégré la propose.
+Dernière publication : **5.0.73** (`https://github.com/dylanloze91-creator/Jarvis/releases/tag/v5.0.73`) — exe, `.blockmap` et `latest.yml` publiés : l’updater intégré la propose.
 
 - `apps/desktop/electron-builder.yml` : `publish.provider: github`, owner `dylanloze91-creator`, repo `Jarvis`, `releaseType: release`, artifact `Jarvis-Setup-${version}.exe`
 - `apps/desktop/src/main/updater.ts` : contrôle 15 s après le démarrage puis toutes les 4 h ; téléchargement auto ; **installation seulement si l’utilisateur clique**
 - Hors exe packagé, le bouton « Vérifier » lit `latest.yml` public (`packages/core/src/update/feed.ts`, `githubLatestYmlUrl`) **sans jeton**
 - Ne pas committer ni lire un jeton GitHub. Les clés de publication ne font pas partie de cet arbre.
-- `release.sh` (racine) : s'appuie sur le compte déjà connecté dans `gh` (`gh auth status`), aucun fichier de jeton ; typecheck, lint, tests du cœur et du bureau obligatoires ; la suite du bureau tourne sans `dotnetProject.test.ts` ni `windowsDesktopMissionPath.test.ts`, puis `dotnetProject.test.ts` tourne seul si le SDK .NET est là ; `windowsDesktopMissionPath.test.ts` est **exclu depuis la 5.0.72** (« Construire manuel » échoue 8/8 depuis le 10 novembre après-midi, mission .exe simulée : gabarit par règles rapides, fichier du faux modèle introuvable ; décision de l'utilisateur, à réparer puis à remettre dans le script) ; sans SDK les deux sont ignorés ; tout autre test rouge arrête la publication ; le tag n'est jamais forcé (tag déjà présent sur origin à un autre commit = arrêt) ; `latest.yml` doit annoncer la version publiée.
+- `release.sh` (racine) : s'appuie sur le compte déjà connecté dans `gh` (`gh auth status`), aucun fichier de jeton ; typecheck, lint, tests du cœur et du bureau obligatoires ; la suite du bureau tourne sans `dotnetProject.test.ts` ni `windowsDesktopMissionPath.test.ts`, puis `dotnetProject.test.ts` tourne seul si le SDK .NET est là ; `windowsDesktopMissionPath.test.ts` est **exclu depuis la 5.0.73** (« Construire manuel » échoue 8/8 depuis le 10 novembre après-midi, mission .exe simulée : gabarit par règles rapides, fichier du faux modèle introuvable ; décision de l'utilisateur, à réparer puis à remettre dans le script) ; sans SDK les deux sont ignorés ; tout autre test rouge arrête la publication ; le tag n'est jamais forcé (tag déjà présent sur origin à un autre commit = arrêt) ; `latest.yml` doit annoncer la version publiée.
 
 ---
 
