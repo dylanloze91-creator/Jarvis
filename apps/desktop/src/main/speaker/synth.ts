@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { SPEAKER_SAMPLE_RATE, decodeWav, toSpeakerWav, type Settings } from '@jarvis/core';
+import { SPEAKER_SAMPLE_RATE, decodeWav, speakerUsesPiper, toSpeakerWav, type Settings } from '@jarvis/core';
 import { POWERSHELL_UTF8_PREAMBLE, run, type RunOptions, type RunResult } from '../tools/platform/exec.js';
 import type { VoiceBridge } from '../voice.js';
 import type { PiperService } from '../piper/service.js';
@@ -144,7 +144,7 @@ export function createSpeakerSynthesizer(deps: DefaultSynthesizerDeps): SpeakerS
   return {
     async synthesize(text: string): Promise<Uint8Array> {
       const settings = deps.getSettings();
-      if (settings.voice.ttsProvider === 'local-piper' && piper) {
+      if (speakerUsesPiper(settings) && piper) {
         try {
           return await piper.synthesize(text);
         } catch (error) {

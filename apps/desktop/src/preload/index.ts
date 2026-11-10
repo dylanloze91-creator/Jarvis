@@ -224,6 +224,13 @@ const api: JarvisApi = {
       ipcRenderer.on(IpcChannel.speakerShowConversation, handler);
       return () => ipcRenderer.removeListener(IpcChannel.speakerShowConversation, handler);
     },
+    chrono: () => ipcRenderer.invoke(IpcChannel.speakerChrono),
+    resetChrono: () => ipcRenderer.invoke(IpcChannel.speakerChronoReset),
+    onHoldWhisper: (listener) => {
+      const handler = (): void => listener();
+      ipcRenderer.on(IpcChannel.speakerHoldWhisper, handler);
+      return () => ipcRenderer.removeListener(IpcChannel.speakerHoldWhisper, handler);
+    },
   },
   developer: createDeveloperApi(ipcRenderer),
   questionnaire: {

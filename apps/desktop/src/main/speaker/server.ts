@@ -1,7 +1,5 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import {
-  SPEAKER_CONFIRMATION_REFUSAL,
-  SPEAKER_MISSION_PROPOSAL,
   SPEAKER_HEADER_CONTINUE,
   SPEAKER_HEADER_FOLLOW_UP,
   SPEAKER_HEADER_TRANSCRIPT,
@@ -10,15 +8,22 @@ import {
   SPEAKER_SESSION_IDLE_MS,
   SPEAKER_TRANSCRIBE_FAILED,
   SPEAKER_TURN_TIMEOUT_MS,
+  SPEAKER_HEADER_CAPTURE_MS,
+  SPEAKER_WAKE_INTERVAL_MS,
   checkTurnWav,
   classifySpokenTurn,
+  decideSpeakerSpeech,
   followUpWindowMs,
   isSpotifyDeviceQuestion,
   looksLikeImageIntent,
   isPrivateAddress,
   isWavContentType,
+  readCaptureMs,
   SPEAKER_IMAGE_WAIT,
-  speakerReplyForEars,
+  SPEAKER_SAMPLE_RATE,
+  type SpeakerChrono,
+  type SpeakerChronoPath,
+  type SpeakerChronoSample,
   type ChatMessage,
   type ConversationStore,
   type VoiceSettings,
@@ -70,6 +75,14 @@ export interface SpeakerServerDeps {
   turnTimeoutMs?: number;
   /** Adresse distante d'une requête ; remplaçable dans les tests (tout vient de 127.0.0.1). */
   remoteAddress?: (req: IncomingMessage) => string | undefined;
+  /** Durées des phrases (jamais le texte). */
+  chrono?: SpeakerChrono;
+  /** Suivi d'enceinte jugé par les règles seulement. */
+  rulesOnlyAddressee?: () => boolean;
+  /** Le préchauffage au mot « Jarvis » est activé. */
+  warmupEnabled?: () => boolean;
+  /** Charge Whisper, les modèles et Piper. Ne doit rien générer. */
+  warm?: () => void | Promise<void>;
 }
 
 class HttpError extends Error {
@@ -93,6 +106,8 @@ interface SpeakerState {
    * jusqu'à la fin : `send` d'une même session annulerait le calcul.
    */
   image: { chat: SpeakerChat; conversationId: string | null } | null;
+  /** Réponse déjà partie : la suite du modèle continue sans être annulée par la phrase d'après. */
+  live: { chat: SpeakerChat; conversationId: string | null } | null;
 }
 
 /** Lien avec la carte pendant une phrase : rompu (fermé ou trop long) = plus rien ne lui est dû. */
@@ -115,6 +130,9 @@ interface ChatOutcome {
   error: string | null;
   conversationId: string | null;
   missionProposal: boolean;
+  tools: string[];
+  path: SpeakerChronoPath;
+  firstAt: number | null;
 }
 
 function sendJson(res: ServerResponse, status: number, body: unknown, headers: Record<string, string> = {}): void {
@@ -144,6 +162,13 @@ async function readBody(req: IncomingMessage, max: number): Promise<Uint8Array> 
 }
 
 /** Texte des messages de l'assistant après le dernier message de l'utilisateur. */
+function chronoPath(how: string, model: string): SpeakerChronoPath {
+  if (how === 'calcul' || model === 'sans modèle') return 'reflexe';
+  if (how === 'express' || how === 'direct') return 'express';
+  if (how === 'trieur') return 'trieur';
+  return 'cerveau';
+}
+
 function lastAssistantText(messages: readonly ChatMessage[]): string {
   const lastUser = messages.map((message) => message.role).lastIndexOf('user');
   return messages
@@ -158,6 +183,7 @@ export class SpeakerServer {
   private boundPort: number | null = null;
   private readonly states = new Map<string, SpeakerState>();
   private queue: Promise<void> = Promise.resolve();
+  private lastWarmAt = Number.NEGATIVE_INFINITY;
 
   constructor(private readonly deps: SpeakerServerDeps) {}
 
@@ -234,6 +260,7 @@ export class SpeakerServer {
     for (const state of this.states.values()) {
       state.chat?.cancel();
       state.image?.chat.cancel();
+      state.live?.chat.cancel();
     }
     this.states.clear();
     if (!server) return;
@@ -249,13 +276,14 @@ export class SpeakerServer {
     if (!state) return;
     state.chat?.cancel();
     state.image?.chat.cancel();
+    state.live?.chat.cancel();
     this.states.delete(speakerId);
   }
 
   private stateFor(speaker: Speaker): SpeakerState {
     let state = this.states.get(speaker.id);
     if (!state) {
-      state = { speaker, chat: null, conversationId: null, lastTurnAt: 0, busy: false, image: null };
+      state = { speaker, chat: null, conversationId: null, lastTurnAt: 0, busy: false, image: null, live: null };
       this.states.set(speaker.id, state);
     }
     return state;
@@ -288,92 +316,223 @@ export class SpeakerServer {
       if (method !== 'POST') throw new HttpError(405, 'Méthode refusée.');
       return this.turn(req, res, speaker);
     }
+    if (path === '/api/speaker/wake') {
+      if (method !== 'POST') throw new HttpError(405, 'Méthode refusée.');
+      res.writeHead(204);
+      res.end();
+      this.scheduleWarm();
+      return;
+    }
     throw new HttpError(404, 'Introuvable.');
+  }
+
+  private scheduleWarm(): void {
+    if (!this.deps.warmupEnabled?.()) return;
+    const now = this.now();
+    if (now - this.lastWarmAt < SPEAKER_WAKE_INTERVAL_MS) return;
+    this.lastWarmAt = now;
+    void Promise.resolve(this.deps.warm?.()).catch((error: unknown) => {
+      this.deps.log?.(`[enceinte] préchauffage : ${error instanceof Error ? error.message : String(error)}`);
+    });
   }
 
   private async turn(req: IncomingMessage, res: ServerResponse, speaker: Speaker): Promise<void> {
     if (!isWavContentType(req.headers['content-type'])) throw new HttpError(415, 'Format attendu : audio/wav (PCM 16 bits, mono, 16 kHz).');
+    const started = this.now();
+    const mark: SpeakerChronoSample = {
+      audioMs: 0,
+      captureMs: readCaptureMs(req.headers[SPEAKER_HEADER_CAPTURE_MS]),
+      transcriptionMs: 0,
+      decisionMs: 0,
+      path: 'cerveau',
+      firstTextMs: null,
+      spokenReadyMs: null,
+      synthesisMs: null,
+      responseMs: null,
+      totalMs: 0,
+    };
+    let noted = false;
+    const note = (path?: SpeakerChronoPath): void => {
+      if (noted) return;
+      noted = true;
+      if (path) mark.path = path;
+      mark.totalMs = Math.max(0, this.now() - started);
+      this.deps.chrono?.record(mark);
+    };
     const body = await readBody(req, SPEAKER_MAX_BODY_BYTES);
     const state = this.stateFor(speaker);
-    if (state.busy) throw new HttpError(429, 'Une phrase de cette enceinte est déjà en cours.');
+    // Une phrase à la fois : la seconde est refusée tout de suite, sans refaire
+    // la transcription (le test et la carte comptent sur ce 429 immédiat).
+    if (state.busy) {
+      note();
+      throw new HttpError(429, 'Une phrase de cette enceinte est déjà en cours.');
+    }
     state.busy = true;
-    // La carte abandonne après SPEAKER_CARD_TIMEOUT_MS ; le PC s'arrête un peu avant, et dès que la
-    // connexion se ferme : la session est annulée, et la phrase suivante n'est pas refusée en 429.
-    const link = this.watchLink(res);
+    const check = checkTurnWav(body);
+    if (!check.ok) {
+      state.busy = false;
+      throw new HttpError(400, `WAV refusé : ${check.error}`);
+    }
+    mark.audioMs = Math.round((check.pcm.length / SPEAKER_SAMPLE_RATE) * 1000);
+    const transcribeStarted = this.now();
+    let transcript: string;
     try {
-      const check = checkTurnWav(body);
-      if (!check.ok) throw new HttpError(400, `WAV refusé : ${check.error}`);
-      const followUp = String(req.headers[SPEAKER_HEADER_FOLLOW_UP] ?? '') === '1';
+      transcript = (await this.deps.transcribe(check.pcm)).trim();
+    } catch (error) {
+      mark.transcriptionMs = Math.max(0, this.now() - transcribeStarted);
+      note();
+      state.busy = false;
+      this.deps.log?.(`[enceinte] ${speaker.name} : transcription impossible (${error instanceof Error ? error.message : String(error)})`);
+      return this.errorWav(res, 503, SPEAKER_TRANSCRIBE_FAILED);
+    }
+    mark.transcriptionMs = Math.max(0, this.now() - transcribeStarted);
+    const followUp = String(req.headers[SPEAKER_HEADER_FOLLOW_UP] ?? '') === '1';
+    const voice = this.deps.voiceSettings();
+    const wake = { word: voice.wakeWord, variants: voice.wakeWordVariants };
+    const classifiedAt = this.now();
+    const decision = classifySpokenTurn(transcript, followUp ? 'follow-up' : 'command', wake);
+    mark.decisionMs = Math.max(0, this.now() - classifiedAt);
+    // Un « stop » n'attend ni la phrase en cours, ni la fin de la transcription suivante.
+    if (decision.kind === 'stop') {
+      state.chat?.cancel();
+      state.live?.chat.cancel();
+      state.image?.chat.cancel();
+      note('reflexe');
+      state.busy = false;
+      return this.noReply(res, transcript);
+    }
+    const link = this.watchLink(res);
+    let parked = false;
+    try {
       const now = this.now();
       this.deps.onTurn?.(speaker, now);
-
-      let transcript: string;
-      try {
-        transcript = (await this.deps.transcribe(check.pcm)).trim();
-      } catch (error) {
-        if (link.gone) return;
-        this.deps.log?.(`[enceinte] ${speaker.name} : transcription impossible (${error instanceof Error ? error.message : String(error)})`);
-        return this.errorWav(res, 503, SPEAKER_TRANSCRIBE_FAILED);
-      }
-      if (link.gone) return;
       this.deps.log?.(`[enceinte] ${speaker.name}${followUp ? ' (suivi)' : ''} : « ${transcript.slice(0, 120)} »`);
-
-      const voice = this.deps.voiceSettings();
-      const wake = { word: voice.wakeWord, variants: voice.wakeWordVariants };
-      const decision = classifySpokenTurn(transcript, followUp ? 'follow-up' : 'command', wake);
-      if (decision.kind !== 'send') return this.noReply(res, transcript);
-
-      // Une discussion continue tant que l'enceinte envoie des phrases ; après 10 minutes, une nouvelle.
+      if (decision.kind !== 'send') {
+        note('reflexe');
+        return this.noReply(res, transcript);
+      }
       if (state.conversationId && now - state.lastTurnAt > SPEAKER_SESSION_IDLE_MS) state.conversationId = null;
       state.lastTurnAt = now;
       const wasNew = state.conversationId === null;
-
       if (looksLikeImageIntent(decision.text)) {
-        return this.backgroundImage(res, state, speaker, decision.text, transcript, followUp, link);
-      }
-
-      const imageAtStart = state.image;
-      const outcome = await this.runChat(state, decision.text, followUp, link);
-      if (outcome.conversationId) {
-        const imageStillRunning = imageAtStart !== null && state.image === imageAtStart;
-        const imageEndedDuring = imageAtStart !== null && state.image === null;
-        if (imageStillRunning || imageEndedDuring) {
-          // Discussion à part : on ne la met pas à la place de celle de l'image.
-          if (wasNew) await this.titleConversation(outcome.conversationId, speaker);
-        } else {
-          state.conversationId = outcome.conversationId;
-          if (wasNew) await this.titleConversation(outcome.conversationId, speaker);
-        }
-      }
-      if (link.gone) {
-        this.deps.log?.(`[enceinte] ${speaker.name} : ${link.timedOut ? 'trop long' : 'la carte a raccroché'}, réponse abandonnée`);
+        mark.path = 'reflexe';
+        mark.spokenReadyMs = Math.max(0, this.now() - started);
+        const synthStarted = this.now();
+        await this.backgroundImage(res, state, speaker, decision.text, transcript, followUp, link);
+        mark.synthesisMs = Math.max(0, this.now() - synthStarted);
+        note('reflexe');
         return;
       }
-      if (outcome.notAddressed) return this.noReply(res, transcript);
 
-      const ears = outcome.refused
-        ? { spoken: SPEAKER_CONFIRMATION_REFUSAL, showOnPc: false }
-        : outcome.missionProposal
-          ? { spoken: SPEAKER_MISSION_PROPOSAL, showOnPc: true }
-          : speakerReplyForEars(outcome.reply);
-      const spoken = ears.spoken || (outcome.error ? SPEAKER_NO_REPLY : '');
-      if (!spoken) return this.noReply(res, transcript);
-      if (ears.showOnPc && outcome.conversationId) this.deps.onShowOnPc?.(outcome.conversationId);
-      const wav = await this.deps.synthesizer.synthesize(spoken);
-      if (link.gone) return;
-      const keepMic =
-        followUpWindowMs(voice) > 0 || isSpotifyDeviceQuestion(spoken);
-      res.writeHead(200, {
-        'Content-Type': 'audio/wav',
-        'Content-Length': String(wav.byteLength),
-        [SPEAKER_HEADER_CONTINUE]: keepMic ? '1' : '0',
-        [SPEAKER_HEADER_TRANSCRIPT]: encodeURIComponent(transcript),
+      let speechStarted = false;
+      let resolveSpeech: () => void = () => undefined;
+      const speechGate = new Promise<void>((resolve) => {
+        resolveSpeech = resolve;
       });
-      res.end(Buffer.from(wav.buffer, wav.byteOffset, wav.byteLength));
+      const imageAtStart = state.image;
+      const pending = this.runChat(state, decision.text, followUp, link, (conversationId) => {
+        if (wasNew) void this.titleConversation(conversationId, speaker);
+      }, undefined, (outcome, finished) => {
+        if (outcome.path) mark.path = outcome.path;
+        if (outcome.firstAt !== null && mark.firstTextMs === null) mark.firstTextMs = Math.max(0, outcome.firstAt - started);
+        if (speechStarted) return;
+        const speech = decideSpeakerSpeech({
+          reply: outcome.reply,
+          finished,
+          refused: outcome.refused,
+          mission: outcome.missionProposal,
+          notAddressed: outcome.notAddressed,
+          tools: outcome.tools,
+          userText: decision.text,
+        });
+        if (!speech.ready && !finished) return;
+        speechStarted = true;
+        if (speech.reflex) mark.path = 'reflexe';
+        mark.spokenReadyMs = Math.max(0, this.now() - started);
+        const keepGoing = !finished && !outcome.notAddressed && !outcome.refused;
+        void (async () => {
+          try {
+            if (link.gone) return;
+            const spoken = speech.spoken || (outcome.error ? SPEAKER_NO_REPLY : '');
+            if (!spoken) {
+              this.noReply(res, transcript);
+              return;
+            }
+            if (speech.showOnPc && outcome.conversationId) this.deps.onShowOnPc?.(outcome.conversationId);
+            const synthStarted = this.now();
+            const wav = await this.deps.synthesizer.synthesize(spoken);
+            mark.synthesisMs = Math.max(0, this.now() - synthStarted);
+            if (link.gone || res.headersSent) return;
+            if (keepGoing) {
+              parked = true;
+              link.detach();
+              const chat = state.chat;
+              if (chat) {
+                state.live = { chat, conversationId: outcome.conversationId };
+                state.chat = null;
+                state.conversationId = null;
+              }
+              state.busy = false;
+            }
+            const responseStarted = this.now();
+            const keepMic = followUpWindowMs(voice) > 0 || isSpotifyDeviceQuestion(spoken);
+            this.writeWav(res, wav, transcript, keepMic);
+            mark.responseMs = Math.max(0, this.now() - responseStarted);
+          } finally {
+            resolveSpeech();
+          }
+        })();
+      });
+      await Promise.race([speechGate, pending.then(() => undefined, () => undefined)]);
+      if (!speechStarted) {
+        speechStarted = true;
+        if (!res.headersSent && !link.gone) this.noReply(res, transcript);
+        resolveSpeech();
+      }
+      await speechGate;
+      if (parked) {
+        const jobChat = state.live?.chat ?? null;
+        void pending.then((final) => {
+          if (!jobChat || state.live?.chat !== jobChat) return;
+          state.live = null;
+          if (state.chat === null) {
+            state.chat = jobChat;
+            state.conversationId = final.conversationId;
+          }
+          if (final.conversationId && (final.refused || final.missionProposal)) {
+            this.deps.onShowOnPc?.(final.conversationId);
+          }
+        });
+      } else {
+        const outcome = await pending;
+        if (outcome.conversationId) {
+          const imageStillRunning = imageAtStart !== null && state.image === imageAtStart;
+          const imageEndedDuring = imageAtStart !== null && state.image === null;
+          if (!imageStillRunning && !imageEndedDuring) {
+            state.conversationId = outcome.conversationId;
+            if (wasNew) await this.titleConversation(outcome.conversationId, speaker);
+          } else if (wasNew) {
+            await this.titleConversation(outcome.conversationId, speaker);
+          }
+        }
+      }
+      note(mark.path);
     } finally {
+      note();
       link.release();
-      state.busy = false;
+      if (!parked) state.busy = false;
     }
+  }
+
+  private writeWav(res: ServerResponse, wav: Uint8Array, transcript: string, keepMic: boolean): void {
+    if (res.headersSent) return;
+    res.writeHead(200, {
+      'Content-Type': 'audio/wav',
+      'Content-Length': String(wav.byteLength),
+      [SPEAKER_HEADER_CONTINUE]: keepMic ? '1' : '0',
+      [SPEAKER_HEADER_TRANSCRIPT]: encodeURIComponent(transcript),
+    });
+    res.end(Buffer.from(wav.buffer, wav.byteOffset, wav.byteLength));
   }
 
   /**
@@ -519,6 +678,7 @@ export class SpeakerServer {
     onConversation?: (conversationId: string) => void,
     /** Session déjà choisie (l'image), qui ne doit pas devenir celle des phrases d'après. */
     bound?: { chat: SpeakerChat; conversationId: string | null },
+    onUpdate?: (outcome: ChatOutcome, finished: boolean) => void,
   ): Promise<ChatOutcome> {
     const conversationId = bound ? bound.conversationId : state.conversationId;
     const outcome: ChatOutcome = {
@@ -528,37 +688,55 @@ export class SpeakerServer {
       error: null,
       conversationId,
       missionProposal: false,
+      tools: [],
+      path: 'cerveau',
+      firstAt: null,
     };
     let fromMessages = '';
     const chat = bound?.chat ?? state.chat ?? (state.chat = this.deps.chatFor(state.speaker));
     link.bind(chat);
     const sender: SpeakerSender = {
-      isDestroyed: () => link.gone,
+      isDestroyed: () => link.gone && !link.detached,
       send: (_channel, event) => {
-        if (link.gone) return;
+        if (link.gone && !link.detached) return;
         switch (event.type) {
           case 'started':
             outcome.conversationId = event.conversationId;
             onConversation?.(event.conversationId);
             break;
+          case 'route':
+            outcome.path = chronoPath(event.how, event.model);
+            onUpdate?.(outcome, false);
+            break;
           case 'delta':
             outcome.reply += event.text;
+            if (outcome.firstAt === null) outcome.firstAt = this.now();
+            onUpdate?.(outcome, false);
+            break;
+          case 'tool_result':
+            if (event.status === 'ok') outcome.tools.push(event.toolName);
+            onUpdate?.(outcome, false);
             break;
           case 'mission_proposal':
             outcome.missionProposal = true;
+            onUpdate?.(outcome, false);
             break;
           case 'confirm':
             outcome.refused = true;
             chat.respondConfirmation(event.requestId, false);
+            onUpdate?.(outcome, true);
             break;
           case 'not_addressed':
             outcome.notAddressed = true;
+            onUpdate?.(outcome, true);
             break;
           case 'error':
             outcome.error = event.message;
             break;
           case 'done':
             fromMessages = lastAssistantText(event.messages);
+            if (!outcome.reply.trim() && fromMessages) outcome.reply = fromMessages;
+            onUpdate?.(outcome, true);
             break;
           default:
             break;
@@ -571,10 +749,21 @@ export class SpeakerServer {
         link.listeners.delete(listener);
       },
     };
+    const rulesOnly = followUp && this.deps.rulesOnlyAddressee?.() === true;
     return chat
-      .send(sender, { conversationId, text, source: 'voice', ...(followUp ? { followUp: true } : {}) })
+      .send(sender, {
+        conversationId,
+        text,
+        source: 'voice',
+        ...(followUp ? { followUp: true } : {}),
+        ...(rulesOnly ? { rulesOnlyAddressee: true } : {}),
+      })
       .then(() => ({ ...outcome, reply: outcome.reply.trim() || fromMessages }))
-      .catch((error: unknown) => ({ ...outcome, error: error instanceof Error ? error.message : String(error) }));
+      .catch((error: unknown) => {
+        outcome.error = error instanceof Error ? error.message : String(error);
+        onUpdate?.(outcome, true);
+        return outcome;
+      });
   }
 
   /** Titre de l'historique préfixé du nom de l'enceinte (format inchangé par ailleurs). */

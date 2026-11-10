@@ -722,6 +722,8 @@ export class ChatSession {
     const wake = { word: settings.voice.wakeWord, variants: settings.voice.wakeWordVariants };
     const rule = followUpAddressee(input.text, wake);
     if (rule !== 'unsure') return rule === 'yes';
+    // Enceinte en mode rapide : pas d'appel de modèle. Règles muettes = on répond.
+    if (input.rulesOnlyAddressee) return true;
     const history = input.conversationId
       ? ((await this.deps.store.get(input.conversationId).catch(() => null))?.messages ?? [])
       : [];

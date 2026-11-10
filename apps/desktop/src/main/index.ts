@@ -27,6 +27,12 @@ import {
   searchOpenMeteoPlaces,
   testOllamaConnection,
   PIPER_TTS_ID,
+  SpeakerChrono,
+  speakerRulesOnly,
+  speakerStaysAwake,
+  speakerUsesPiper,
+  speakerWarmupEnabled,
+  speakerWhisperHeld,
   type MarketDataProviderDescriptor,
   type ProviderDescriptor,
   type SearchProviderDescriptor,
@@ -83,6 +89,8 @@ import { summarizeYoutubeLink } from './youtube/runtime.js';
 import { UpdateManager } from './updater.js';
 import { VoiceBridge } from './voice.js';
 import { PiperService, phoneVoiceMode } from './piper/service.js';
+import { SpeakerChronoFile } from './speaker/chronoFile.js';
+import { warmOllamaModels } from './speaker/warmupRun.js';
 import { presentWindow } from './startup.js';
 import { allowPermissionCheck, allowPermissionRequest, originForLog } from './mediaPermissions.js';
 import { VoiceCaptureLog } from './voiceCaptureLog.js';
@@ -125,6 +133,11 @@ const knowledge = new KnowledgeStore({ getUserDataPath: () => app.getPath('userD
 const auditLog = new FileAuditLogStore();
 const voice = new VoiceBridge(() => settings);
 const piper = new PiperService();
+const speakerChronoFile = new SpeakerChronoFile(() => join(app.getPath('userData'), 'logs', 'enceinte-chrono.jsonl'));
+const speakerChrono = new SpeakerChrono({
+  append: (line) => speakerChronoFile.append(line),
+  clear: () => speakerChronoFile.clear(),
+});
 const updateManager = new UpdateManager();
 const voiceCaptureLog = new VoiceCaptureLog(() => join(app.getPath('userData'), 'logs', 'voice-capture.log'));
 const wakeLearning = new WakeLearningStore(() => app.getPath('userData'), (line) => voiceCaptureLog.append(line));
@@ -330,6 +343,19 @@ const phone = new PhoneService({
   },
 });
 
+async function warmSpeakerSide(): Promise<void> {
+  const base =
+    settings.provider === 'ollama' && settings.baseUrl.trim()
+      ? settings.baseUrl.trim()
+      : (ollamaDescriptor.defaultBaseUrl ?? 'http://127.0.0.1:11434');
+  if (speakerStaysAwake(settings) || speakerWarmupEnabled(settings)) {
+    await warmOllamaModels(settings, base);
+  }
+  if (speakerWarmupEnabled(settings) || speakerUsesPiper(settings)) {
+    await piper.warm(settings.voice.ttsVoice || undefined);
+  }
+}
+
 // 5.0.64 — enceintes : une session de chat **par enceinte** (une phrase au salon n'annule ni la
 // fenêtre, ni le téléphone, ni la cuisine), mêmes outils, même historique. Une carte de
 // confirmation y est refusée d'office (`server.ts`) : l'enceinte n'a pas d'écran.
@@ -376,6 +402,12 @@ const speakers = new SpeakerService({
   }),
   voiceSettings: () => settings.voice,
   version: () => app.getVersion(),
+  chrono: speakerChrono,
+  rulesOnlyAddressee: () => speakerRulesOnly(settings),
+  warmupEnabled: () => speakerWarmupEnabled(settings),
+  warm: () => {
+    void warmSpeakerSide();
+  },
   conversations: store,
   log: (line) => console.info(line),
   broadcast: (status) => {
@@ -425,6 +457,7 @@ async function bootstrap(): Promise<void> {
   void phone.init().catch((error: unknown) => console.error(error));
   // Coupé par défaut aussi : sans « Enceintes », le port 53131 reste fermé.
   void speakers.init().catch((error: unknown) => console.error(error));
+  void speakerChronoFile.readLast().then((samples) => speakerChrono.replace(samples));
   registerVoiceAssetsProtocol();
   voiceCaptureLog.append(
     `[démarrage] Jarvis ${app.getVersion()} · Electron ${process.versions.electron} · Chromium ${process.versions.chrome} · ${process.platform} ${process.arch} · écoute ${settings.voice.enabled ? 'activée' : 'coupée'}`,
@@ -460,6 +493,11 @@ async function bootstrap(): Promise<void> {
 
   // En développement, garder la fenêtre visible quand le focus part (devtools, éditeur).
   overlay = createOverlayWindow(!settings.stayVisibleOnBlur && !isDev, () => quitting);
+  overlay.browserWindow.webContents.on('did-finish-load', () => {
+    if (speakerWhisperHeld(settings)) {
+      overlay?.browserWindow.webContents.send(IpcChannel.speakerHoldWhisper);
+    }
+  });
   registerIpc();
   const window = overlay.browserWindow;
   listeningIndicator = new ListeningIndicatorWindow(
@@ -684,6 +722,8 @@ function registerIpc(): void {
       app.setLoginItemSettings({ openAtLogin: settings.launchAtLogin });
     }
 
+    if (speakerWhisperHeld(settings)) overlay?.browserWindow.webContents.send(IpcChannel.speakerHoldWhisper);
+    if (speakerStaysAwake(settings) || speakerWarmupEnabled(settings)) void warmSpeakerSide();
     return { settings, status: session.status() };
   });
 
@@ -930,7 +970,17 @@ function registerIpc(): void {
   ipcMain.handle(IpcChannel.phoneStartPairing, () => phone.startPairing());
   ipcMain.handle(IpcChannel.phoneCancelPairing, () => phone.cancelPairing());
   ipcMain.handle(IpcChannel.speakerStatus, () => speakers.status());
-  ipcMain.handle(IpcChannel.speakerSetEnabled, (_event, enabled: unknown) => speakers.setEnabled(enabled === true));
+  ipcMain.handle(IpcChannel.speakerSetEnabled, async (_event, enabled: unknown) => {
+    const status = await speakers.setEnabled(enabled === true);
+    if (status.running) void warmSpeakerSide();
+    if (speakerWhisperHeld(settings)) overlay?.browserWindow.webContents.send(IpcChannel.speakerHoldWhisper);
+    return status;
+  });
+  ipcMain.handle(IpcChannel.speakerChrono, () => speakerChrono.view());
+  ipcMain.handle(IpcChannel.speakerChronoReset, () => {
+    speakerChrono.reset();
+    return speakerChrono.view();
+  });
   ipcMain.handle(IpcChannel.speakerAdd, (_event, name: unknown) => speakers.add(typeof name === 'string' ? name : ''));
   ipcMain.handle(IpcChannel.speakerRemove, (_event, id: unknown) =>
     typeof id === 'string' && id.length <= 100 ? speakers.remove(id) : speakers.status(),
@@ -1032,6 +1082,7 @@ app.on('will-quit', () => {
   globalShortcut.unregisterAll();
   void phone.stop();
   void speakers.stop();
+  void piper.stop();
   // Un Forge lancé par Jarvis ne survit pas à Jarvis (un Forge lancé par l'utilisateur n'est pas touché).
   void images.shutdown();
   updateManager.stop();

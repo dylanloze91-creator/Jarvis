@@ -135,6 +135,16 @@ describe('vérification du destinataire (5.0.62)', () => {
     expect(answered).toHaveLength(1);
   });
 
+  it('enceinte : règles seulement, un doute répond sans modèle', async () => {
+    const { asked, answered, events } = await turn(
+      { text: 'Franchement, c’est une bonne idée', source: 'voice', followUp: true, rulesOnlyAddressee: true },
+      'non',
+    );
+    expect(asked).toHaveLength(0);
+    expect(answered).toHaveLength(1);
+    expect(events.map((event) => event.type)).toContain('started');
+  });
+
   it('texte tapé ou première commande après « Jarvis » : jamais vérifiés', async () => {
     for (const input of [
       { text: 'Chérie, tu as vu mes clés ?' },

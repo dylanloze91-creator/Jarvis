@@ -18,6 +18,7 @@ import type {
   RiskLevel,
   SearchProviderDescriptor,
   Settings,
+  SpeakerChronoView,
   QuestionnaireState,
   GeocodingPlace,
   ToolCategory,
@@ -178,6 +179,9 @@ export const IpcChannel = {
   speakerTranscribeRequest: 'speaker:transcribe-request',
   speakerTranscribeResult: 'speaker:transcribe-result',
   speakerShowConversation: 'speaker:show-conversation',
+  speakerChrono: 'speaker:chrono',
+  speakerChronoReset: 'speaker:chrono-reset',
+  speakerHoldWhisper: 'speaker:hold-whisper',
 } as const;
 
 /** 5.0.64 — Enceinte Jarvis : état montré dans Réglages → Enceintes. */
@@ -303,6 +307,11 @@ export interface SendChatInput {
    * d'abord qu'elle lui est adressée ; sinon `not_addressed` et rien n'est enregistré.
    */
   followUp?: boolean;
+  /**
+   * Enceinte seulement : la phrase de suivi est jugée par les règles
+   * (`followUpAddressee`), jamais par un modèle. La fenêtre ne le met pas.
+   */
+  rulesOnlyAddressee?: boolean;
   /** Module images : photos jointes (3 au plus, 20 Mo chacune), enregistrées par le processus principal. */
   attachments?: ChatAttachmentInput[];
 }
@@ -882,6 +891,10 @@ export interface JarvisApi {
     reportTranscript(payload: SpeakerTranscribeResult): void;
     /** La discussion de l'enceinte a quelque chose à montrer. */
     onShow(listener: (event: SpeakerShowConversation) => void): () => void;
+    chrono(): Promise<SpeakerChronoView>;
+    resetChrono(): Promise<SpeakerChronoView>;
+    /** Whisper des enceintes : le charger et ne plus le lâcher. */
+    onHoldWhisper(listener: () => void): () => void;
   };
   update: {
     getState(): Promise<UpdateState>;

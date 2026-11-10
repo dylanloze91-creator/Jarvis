@@ -1,6 +1,6 @@
 import { WHISPER_DICTATION_LANGUAGE, peakEnergy } from '@jarvis/core';
 import type { SpeakerStatus, SpeakerTranscribeRequest } from '../../../shared/ipc';
-import { DICTATION_MAX_NEW_TOKENS, getWhisperPipeline, transcribeWithWhisper, type TranscribeOptions } from './whisper/pipelineLoader';
+import { DICTATION_MAX_NEW_TOKENS, getWhisperPipeline, holdWhisper, transcribeWithWhisper, type TranscribeOptions } from './whisper/pipelineLoader';
 
 let installed = false;
 
@@ -8,6 +8,8 @@ export interface SpeakerWhisperDeps {
   transcribe: (pcm: Float32Array, options: TranscribeOptions) => Promise<string>;
   /** Charge le modèle sans rien transcrire : la première phrase d'une enceinte ne paie pas le réveil de Whisper. */
   warm: () => Promise<unknown>;
+  /** Le garder chargé (le worker multi-thread, pas le chargeur de la page). */
+  hold?: () => void;
   log?: (line: string) => void;
 }
 
@@ -27,6 +29,7 @@ export function installSpeakerWhisperListener(): void {
   createSpeakerWhisperBridge({
     transcribe: transcribeWithWhisper,
     warm: () => getWhisperPipeline(),
+    hold: holdWhisper,
     log: (line) => console.info(line),
   });
 }
@@ -57,6 +60,11 @@ export function createSpeakerWhisperBridge(deps: SpeakerWhisperDeps): () => void
     void transcribeRequest(deps, request);
   });
   const offEvent = speaker.onEvent(warmIfNeeded);
+  const offHold = speaker.onHoldWhisper?.(() => {
+    deps.hold?.();
+    deps.log?.('[enceinte] Whisper gardé chargé (worker)');
+    warmIfNeeded({ enabled: true, running: true });
+  }) ?? (() => undefined);
   void speaker
     .status()
     .then(warmIfNeeded)
@@ -64,6 +72,7 @@ export function createSpeakerWhisperBridge(deps: SpeakerWhisperDeps): () => void
   return () => {
     offTranscribe();
     offEvent();
+    offHold();
   };
 }
 

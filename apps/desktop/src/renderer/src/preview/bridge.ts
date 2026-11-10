@@ -438,6 +438,9 @@ export function installPreviewBridge(): void {
       onTranscribe: () => () => undefined,
       reportTranscript: () => undefined,
       onShow: () => () => undefined,
+      chrono: async () => ({ sentence: 'Pas encore de phrase mesurée.', steps: [] }),
+      resetChrono: async () => ({ sentence: 'Pas encore de phrase mesurée.', steps: [] }),
+      onHoldWhisper: () => () => undefined,
     },
     update: {
       getState: async () => ({

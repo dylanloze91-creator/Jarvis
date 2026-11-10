@@ -11,6 +11,7 @@ import {
 import { piperAssetsRoot, piperBinaryPath, piperEspeakDataDir, piperModelPath } from './paths.js';
 import type { PiperRunner } from './runner.js';
 import { ProcessPiperRunner } from './runner.js';
+import { ResidentPiper } from './resident.js';
 import { access } from 'node:fs/promises';
 
 export interface PiperSynthInput {
@@ -24,13 +25,34 @@ const BENCHMARK_MIN_CHARS = 40;
 export class PiperService {
   private benchmarkMs: number | null = null;
   private readonly runner: PiperRunner;
+  private readonly resident: ResidentPiper | null;
 
   constructor(runner: PiperRunner = new ProcessPiperRunner()) {
     this.runner = runner;
+    this.resident = runner instanceof ProcessPiperRunner ? new ResidentPiper({ fallback: runner }) : null;
   }
 
   get streamingBenchmarkMs(): number | null {
     return this.benchmarkMs;
+  }
+
+  /** Garde un Piper ouvert pour cette voix (le modèle se charge tout de suite). */
+  async warm(voiceId?: string): Promise<void> {
+    if (!this.resident || !(await this.isReady(voiceId))) return;
+    const voice = describePiperVoice(voiceId);
+    const root = piperAssetsRoot();
+    const binaryPath = piperBinaryPath(root);
+    this.resident.prepare({
+      binaryPath,
+      modelPath: piperModelPath(root, voice.modelFile),
+      espeakDataDir: piperEspeakDataDir(binaryPath),
+      voice,
+      text: '.',
+    });
+  }
+
+  async stop(): Promise<void> {
+    await this.resident?.stop();
   }
 
   async isReady(voiceId?: string): Promise<boolean> {
@@ -74,13 +96,14 @@ export class PiperService {
     await access(binaryPath);
     await access(modelPath);
     const start = performance.now();
-    const wav = await this.runner.synthesize({
+    const request = {
       binaryPath,
       modelPath,
       espeakDataDir: piperEspeakDataDir(binaryPath),
       voice,
       text,
-    });
+    };
+    const wav = this.resident ? await this.resident.synthesize(request) : await this.runner.synthesize(request);
     this.recordBenchmark(text, performance.now() - start);
     return wav;
   }
