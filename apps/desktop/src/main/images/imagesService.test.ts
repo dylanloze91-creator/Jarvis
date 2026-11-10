@@ -47,6 +47,8 @@ interface World {
   browserLaunch?: string;
   /** Dernier corps envoyé à `/sdapi/v1/options`. */
   forgeOptions?: Record<string, unknown>;
+  /** Messages (système + utilisateur) reçus par le faux modèle à chaque reformulation. */
+  refinePrompts?: string[];
 }
 
 function fakeFetch(world: World): typeof fetch {
@@ -61,6 +63,7 @@ function fakeFetch(world: World): typeof fetch {
     if (url.includes(':11434/api/chat')) {
       world.calls.push(`ollama:refine:${body.model}`);
       const user = String((body.messages as { content: string }[])[1]?.content ?? '');
+      (world.refinePrompts ??= []).push(...(body.messages as { content: string }[]).map((message) => message.content));
       if (world.refineReply === 'erreur') return new Response('boom', { status: 500 });
       const content =
         world.refineReply ??
@@ -109,13 +112,14 @@ function fakeFetch(world: World): typeof fetch {
   }) as typeof fetch;
 }
 
-function service(world: World, overrides: Record<string, unknown> = {}, forgeDir = join(root, 'Forge'), extras: { realvis?: boolean; adetailer?: boolean } = {}) {
+function service(world: World, overrides: Record<string, unknown> = {}, forgeDir = join(root, 'Forge'), extras: { realvis?: boolean; adetailer?: boolean; animagine?: boolean } = {}) {
   mkdirSync(join(forgeDir, 'models', 'Stable-diffusion'), { recursive: true });
   mkdirSync(join(forgeDir, 'models', 'VAE'), { recursive: true });
   writeFileSync(join(forgeDir, 'lancer_forge.bat'), '@echo off');
   writeFileSync(join(forgeDir, 'models', 'Stable-diffusion', 'sd_xl_base_1.0.safetensors'), '');
   writeFileSync(join(forgeDir, 'models', 'VAE', 'sdxl_vae_fp16_fix.safetensors'), '');
   if (extras.realvis) writeFileSync(join(forgeDir, 'models', 'Stable-diffusion', 'RealVisXL_V5.0_fp16.safetensors'), '');
+  if (extras.animagine) writeFileSync(join(forgeDir, 'models', 'Stable-diffusion', 'animagine-xl-4.0-opt.safetensors'), '');
   if (extras.adetailer) mkdirSync(join(forgeDir, 'extensions', 'adetailer', 'scripts'), { recursive: true });
   const outputRoot = join(root, `images-${Math.random().toString(36).slice(2, 8)}`);
   const settings = parseSettings({
@@ -318,6 +322,59 @@ describe('ImagesService', () => {
     expect(txt).toContain('Jarvis Imager : sujet « personne », 1 personne(s), modèle RealVisXL V5.0, retouche visages/mains : oui');
     expect(describeImagesResult(result)).toContain('Jarvis Imager : modèle RealVisXL V5.0');
     expect(result.folder.startsWith(outputRoot)).toBe(true);
+  });
+
+  it('rendu anime (mots de la demande) : Animagine avec ses réglages et ses étiquettes de qualité, négatif « photo », noms gardés, ligne « rendu anime »', async () => {
+    const world: World = {
+      forgeUp: true,
+      loaded: ['qwen2.5:7b'],
+      calls: [],
+      txt2imgPayloads: [],
+      refineReply: JSON.stringify({ prompt: '1girl, hyuuga hinata, naruto (series), long hair, smile, looking at viewer, outdoors, night', negative: 'très pudique, extra tails' }),
+    };
+    const { svc } = service(world, {}, join(root, 'Forge-anime'), { realvis: true, adetailer: true, animagine: true });
+    const result = await svc.generate({ prompt: 'Hinata dans Naruto, style anime', project: 'perso', subjectType: 'personne', personCount: 1 });
+    const payload = world.txt2imgPayloads[0] as Record<string, unknown>;
+    expect(result.render).toBe('anime');
+    expect(result.renderHonored).toBe(true);
+    expect(result.checkpoint).toEqual({ id: 'animagine', label: 'Animagine XL 4.0 Opt' });
+    expect(payload).toMatchObject({ sampler_name: 'Euler a', scheduler: 'Automatic', steps: 28, cfg_scale: 5 });
+    expect(String(payload.prompt).startsWith('1girl, hyuuga hinata, naruto (series)')).toBe(true);
+    expect(String(payload.prompt)).toContain('masterpiece, high score, great score, absurdres');
+    expect(String(payload.prompt)).not.toContain('professional quality');
+    expect(String(payload.negative_prompt)).toContain('photorealistic');
+    expect(String(payload.negative_prompt)).toContain('low score');
+    expect(String(payload.negative_prompt)).toContain('extra arms');
+    // Le négatif reformulé contenait du français : écarté seul, la consigne est gardée.
+    expect(String(payload.negative_prompt)).not.toContain('pudique');
+    expect(String(payload.negative_prompt)).not.toContain('extra tails');
+    // La reformulation a reçu la consigne « anime » (étiquettes Danbooru, noms gardés).
+    expect(world.refinePrompts?.some((text) => text.includes('Danbooru') && text.includes('hyuuga hinata'))).toBe(true);
+    const scripts = (payload.alwayson_scripts as { ADetailer: { args: unknown[] } }).ADetailer.args;
+    expect(scripts[2]).toMatchObject({ ad_model: 'face_yolov8n.pt', ad_prompt: expect.stringContaining('anime face') });
+    const txt = readFileSync(result.files[0]!.txt, 'utf8');
+    expect(txt).toContain('Jarvis Imager : sujet « personne », 1 personne(s), rendu anime, modèle Animagine XL 4.0 Opt, retouche visages/mains : oui');
+    expect(describeImagesResult(result)).toContain('rendu anime');
+    // Une demande sans mot de rendu garde le modèle photo, sans négatif de rendu.
+    world.txt2imgPayloads = [];
+    const plain = await svc.generate({ prompt: 'une femme qui sourit', project: 'perso', subjectType: 'personne' });
+    expect(plain.render).toBe('auto');
+    expect(plain.checkpoint?.id).toBe('realvisxl');
+    expect(String((world.txt2imgPayloads[0] as Record<string, unknown>).negative_prompt)).not.toContain('photorealistic');
+  });
+
+  it('rendu anime demandé sans modèle anime sur le disque : SDXL de base, prévenu dans la réponse et le .txt', async () => {
+    const world: World = { forgeUp: true, loaded: [], calls: [], txt2imgPayloads: [] };
+    const { svc } = service(world, { refinePrompts: false }, join(root, 'Forge-sans-anime'), { realvis: true });
+    const result = await svc.generate({ prompt: 'un renard', project: 'perso', render: 'anime' });
+    expect(result.render).toBe('anime');
+    expect(result.renderHonored).toBe(false);
+    // L'ordre du rendu anime continue avec SDXL de base (plus polyvalent que les modèles photo).
+    expect(result.checkpoint?.id).toBe('sdxl-base');
+    expect(result.warnings.join(' ')).toContain('aucun modèle anime');
+    expect(result.warnings.join(' ')).toContain('animagine-xl-4.0-opt.safetensors');
+    expect(describeImagesResult(result)).toContain('rendu anime demandé mais aucun modèle de ce rendu');
+    expect(readFileSync(result.files[0]!.txt, 'utf8')).toContain('rendu anime demandé, modèle realiste');
   });
 
   it('ADetailer installé mais non chargé par Forge : image faite sans retouche, et dit', async () => {

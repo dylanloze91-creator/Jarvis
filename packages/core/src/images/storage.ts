@@ -82,7 +82,7 @@ export interface SidecarInput {
   refinedBy?: string;
   refineFallback?: string;
   /** Jarvis Imager : type du sujet, nombre de personnes, modèle, retouches, agrandissement. */
-  imager?: { subjectType: string; personCount?: number; checkpointLabel: string; adetailer: boolean; upscaled?: string };
+  imager?: { subjectType: string; personCount?: number; render?: string; checkpointLabel: string; adetailer: boolean; upscaled?: string };
 }
 
 /** Texte lisible gardé à côté de chaque image : de quoi la refaire. */
@@ -106,7 +106,7 @@ export function sidecarText(input: SidecarInput): string {
   ];
   if (input.imager) {
     lines.push(
-      `Jarvis Imager : sujet « ${input.imager.subjectType} »${input.imager.personCount ? `, ${input.imager.personCount} personne(s)` : ''}, modèle ${input.imager.checkpointLabel}, retouche visages/mains : ${input.imager.adetailer ? 'oui' : 'non'}${input.imager.upscaled ? `, agrandissement ${input.imager.upscaled}` : ''}`,
+      `Jarvis Imager : sujet « ${input.imager.subjectType} »${input.imager.personCount ? `, ${input.imager.personCount} personne(s)` : ''}${input.imager.render && input.imager.render !== 'auto' ? `, rendu ${input.imager.render}` : ''}, modèle ${input.imager.checkpointLabel}, retouche visages/mains : ${input.imager.adetailer ? 'oui' : 'non'}${input.imager.upscaled ? `, agrandissement ${input.imager.upscaled}` : ''}`,
     );
   }
   if (input.sourceImage) {

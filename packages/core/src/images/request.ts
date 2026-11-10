@@ -35,6 +35,8 @@ export interface ImageRequest {
   /** Jarvis Imager : ce que représente l'image et le nombre de personnes voulu. */
   subjectType?: string;
   personCount?: number;
+  /** Jarvis Imager : rendu voulu (`auto`, `realiste`, `anime`) ; absent = déduit de la demande. */
+  render?: string;
 }
 
 /** Requête « image vers image » : la photo encodée en base64, et la force du changement. */

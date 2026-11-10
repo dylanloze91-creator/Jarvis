@@ -14,6 +14,7 @@ import {
   nearestNativeFormat,
   parsePresetsYaml,
   personCountPhrase,
+  resolveRenderStyle,
   resolveSize,
   resolveSubjectType,
   wantsAdetailer,
@@ -131,6 +132,85 @@ describe('Jarvis Imager — règles', () => {
     expect(adetailerArgs({ hands: false })).toHaveLength(3);
     expect(DEFAULT_IMAGER_RULES.types.scene.adetailerMains).toBe(false);
     expect(DEFAULT_IMAGER_RULES.types.personne.adetailerMains).toBe(true);
+  });
+
+  it('rendu : d’après le choix du 7B, sinon les mots de la demande (anime, manga, série connue ; photo, réaliste)', () => {
+    expect(resolveRenderStyle('anime', 'une photo')).toBe('anime');
+    expect(resolveRenderStyle('realiste', 'un manga')).toBe('realiste');
+    expect(resolveRenderStyle(undefined, 'Hinata dans Naruto, mode sexy')).toBe('anime');
+    expect(resolveRenderStyle('auto', 'un chat', 'style manga')).toBe('anime');
+    expect(resolveRenderStyle(undefined, 'un dessin animé de renard')).toBe('anime');
+    expect(resolveRenderStyle(undefined, 'photo d’Hinata style anime')).toBe('anime');
+    expect(resolveRenderStyle(undefined, 'photo réaliste d’un renard')).toBe('realiste');
+    expect(resolveRenderStyle(undefined, 'une femme qui sourit')).toBe('auto');
+    expect(resolveRenderStyle(undefined, 'un animal de compagnie')).toBe('auto');
+    expect(resolveRenderStyle(undefined, undefined)).toBe('auto');
+  });
+
+  it('rendu anime : Animagine en priorité, sinon SDXL de base ; rendu réaliste : jamais un modèle anime ; auto : ordre général', () => {
+    const present = (files: string[]) => (f: string) => files.includes(f);
+    const all = ['sd_xl_base_1.0.safetensors', 'RealVisXL_V5.0_fp16.safetensors', 'animagine-xl-4.0-opt.safetensors'];
+    expect(chooseCheckpoint(DEFAULT_IMAGER_RULES, present(all), 'anime')?.id).toBe('animagine');
+    expect(chooseCheckpoint(DEFAULT_IMAGER_RULES, present(all), 'realiste')?.id).toBe('realvisxl');
+    expect(chooseCheckpoint(DEFAULT_IMAGER_RULES, present(all), 'auto')?.id).toBe('realvisxl');
+    expect(chooseCheckpoint(DEFAULT_IMAGER_RULES, present(all))?.id).toBe('realvisxl');
+    // Sans Animagine, l'anime part sur SDXL de base (plus polyvalent qu'un modèle photo).
+    expect(chooseCheckpoint(DEFAULT_IMAGER_RULES, present(['sd_xl_base_1.0.safetensors', 'RealVisXL_V5.0_fp16.safetensors']), 'anime')?.id).toBe('sdxl-base');
+    expect(chooseCheckpoint(DEFAULT_IMAGER_RULES, present(['RealVisXL_V5.0_fp16.safetensors']), 'anime')?.id).toBe('realvisxl');
+    // Réglage explicite sur un modèle anime : respecté pour l'anime, ignoré pour une photo.
+    const forced = { ...DEFAULT_IMAGER_RULES, general: { ...DEFAULT_IMAGER_RULES.general, checkpoint: 'animagine' } };
+    expect(chooseCheckpoint(forced, present(all), 'anime')?.id).toBe('animagine');
+    expect(chooseCheckpoint(forced, present(all), 'realiste')?.id).toBe('realvisxl');
+    expect(chooseCheckpoint(forced, present(all), 'auto')?.id).toBe('animagine');
+    // Seul Animagine présent : pris même pour une photo (dernier recours), les modèles anime après les autres sinon.
+    expect(chooseCheckpoint(DEFAULT_IMAGER_RULES, present(['animagine-xl-4.0-opt.safetensors']), 'realiste')?.id).toBe('animagine');
+    expect(DEFAULT_IMAGER_RULES.checkpoints.animagine).toMatchObject({ sampler: 'Euler a', steps: 28, cfg: 5, rendu: 'anime' });
+  });
+
+  it('consigne anime : étiquettes de qualité du modèle à la place des mots généraux, négatif « photo » et négatif de l’auteur, noms gardés', () => {
+    const out = buildImagerPrompt(
+      {
+        subject: '1girl, hyuuga hinata, naruto (series), long hair, smile, outdoors',
+        type: 'personne',
+        personCount: 1,
+        project: 'perso',
+        preset: DEFAULT_PRESETS.perso,
+        render: 'anime',
+        checkpoint: DEFAULT_IMAGER_RULES.checkpoints.animagine,
+      },
+      DEFAULT_IMAGER_RULES,
+    );
+    expect(out.prompt.startsWith('1girl, hyuuga hinata, naruto (series)')).toBe(true);
+    expect(out.prompt.endsWith('masterpiece, high score, great score, absurdres')).toBe(true);
+    expect(out.prompt).not.toContain('professional quality');
+    expect(out.negative).toContain('photorealistic');
+    expect(out.negative).toContain('real person');
+    expect(out.negative).toContain('low score');
+    expect(out.negative).toContain('extra arms');
+    // Rendu réaliste : négatif « dessin » ; rendu auto : ni l'un ni l'autre.
+    const real = buildImagerPrompt({ subject: 'a red fox', type: 'objet', project: 'perso', preset: DEFAULT_PRESETS.perso, render: 'realiste' }, DEFAULT_IMAGER_RULES);
+    expect(real.negative).toContain('cartoon');
+    expect(real.negative).not.toContain('photorealistic');
+    const auto = buildImagerPrompt({ subject: 'a red fox', type: 'objet', project: 'perso', preset: DEFAULT_PRESETS.perso }, DEFAULT_IMAGER_RULES);
+    expect(auto.negative).not.toContain('cartoon');
+    expect(auto.negative).not.toContain('photorealistic');
+    expect(auto.prompt).toContain('professional quality');
+    expect(adetailerArgs({ anime: true })[2]).toMatchObject({ ad_prompt: expect.stringContaining('anime face') });
+  });
+
+  it('règles : section rendu-anime (priorité, négatif), clés rendu et qualite d’un modèle ; valeurs fausses signalées', () => {
+    const parsed = parsePresetsYaml(
+      ['rendu-anime:', '  priorite: [maison, animagine]', '  negatif: [photo]', 'rendu-pastel:', '  positif: [x]', 'checkpoint-maison:', '  fichier: maison.safetensors', '  rendu: anime', '  qualite: [best quality]', 'checkpoint-realvisxl:', '  rendu: cartoon'].join('\n'),
+    );
+    const { rules, warnings } = applyImagerRules(parsed.values);
+    expect(rules.rendus.anime.priorite).toEqual(['maison', 'animagine']);
+    expect(rules.rendus.anime.negatif).toEqual(['photo']);
+    expect(rules.rendus.realiste).toEqual(DEFAULT_IMAGER_RULES.rendus.realiste);
+    expect(rules.checkpoints.maison).toMatchObject({ fichier: 'maison.safetensors', rendu: 'anime', qualite: ['best quality'] });
+    expect(rules.checkpoints.realvisxl.rendu).toBe('realiste');
+    expect(warnings.join(' ')).toContain('pastel');
+    expect(warnings.join(' ')).toContain('checkpoint-realvisxl.rendu');
+    expect(chooseCheckpoint(rules, (f) => f === 'maison.safetensors', 'anime')?.id).toBe('maison');
   });
 
   it('les réglages du modèle priment sur ceux du projet dans la requête', () => {

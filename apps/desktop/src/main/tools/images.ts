@@ -2,6 +2,7 @@ import { z } from 'zod';
 import {
   IMAGE_PROJECTS,
   IMAGE_SUBJECT_TYPES,
+  IMAGE_RENDER_STYLES,
   MAX_IMAGES_PER_REQUEST,
   defineTool,
   toolFailure,
@@ -78,6 +79,10 @@ export function createImagesTools(service: ImagesService, deps: ImagesToolsDeps 
           .optional()
           .describe('Ce que représente l’image : personne (une ou plusieurs), objet, paysage, logo-sticker, scene (plusieurs personnes dans un décor), autre.'),
         nombrePersonnes: z.number().int().min(1).max(6).optional().describe('Nombre de personnes voulu dans l’image, si la demande en parle.'),
+        rendu: z
+          .enum(IMAGE_RENDER_STYLES)
+          .optional()
+          .describe('anime si l’utilisateur parle d’anime, de manga, de dessin animé ou d’un personnage de série (Naruto, One Piece…) ; realiste s’il veut une photo ; absent sinon (Imager déduit).'),
         agrandir: z.boolean().optional().describe('Vrai si l’utilisateur veut une grande image : générée en taille native puis agrandie ×2.'),
         prompt: z
           .string()
@@ -108,7 +113,7 @@ export function createImagesTools(service: ImagesService, deps: ImagesToolsDeps 
         const text = effectivePrompt(demande ?? prompt, style, photoDeBase) ?? '(sans description)';
         return `Jarvis Imager : ${nombre > 1 ? `${nombre} images` : 'une image'} pour le projet ${projet}${type ? ` (${type})` : ''}${photoDeBase ? ' à partir de ta photo' : ''} : « ${text.length > 80 ? `${text.slice(0, 80)}…` : text} ».`;
       },
-      execute: async ({ demande, type, nombrePersonnes, agrandir, prompt, projet, nombre, format, style, lora, poidsLora, graine, negatif, photoDeBase, fidelite }, context) => {
+      execute: async ({ demande, type, nombrePersonnes, rendu, agrandir, prompt, projet, nombre, format, style, lora, poidsLora, graine, negatif, photoDeBase, fidelite }, context) => {
         const finalPrompt = effectivePrompt(demande?.trim() || prompt, style, photoDeBase);
         if (!finalPrompt) {
           return toolFailure('definitive', 'Il manque la demande : rappelle generer_image avec le champ demande (les mots de l’utilisateur).', 'demande absente');
@@ -121,6 +126,7 @@ export function createImagesTools(service: ImagesService, deps: ImagesToolsDeps 
               count: nombre,
               ...(type ? { subjectType: type } : {}),
               ...(nombrePersonnes !== undefined ? { personCount: nombrePersonnes } : {}),
+              ...(rendu ? { render: rendu } : {}),
               ...(agrandir ? { upscale: true } : {}),
               ...(format ? { format } : {}),
               ...(style ? { style } : {}),

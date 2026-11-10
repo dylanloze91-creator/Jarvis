@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_PRESETS, chooseRefinedPrompt, looksLikeSdxlPrompt, parseRefinedPrompt, refineUserMessage, REFINE_SYSTEM_PROMPT } from './index.js';
+import { DEFAULT_PRESETS, chooseRefinedPrompt, looksLikeEnglishNegative, looksLikeSdxlPrompt, parseRefinedPrompt, refineUserMessage, REFINE_SYSTEM_PROMPT } from './index.js';
 
 describe('module images — reformulation pour SDXL', () => {
   it('la consigne au modèle demande un JSON en anglais, ordonné, sans logos', () => {
@@ -36,6 +36,24 @@ describe('module images — reformulation pour SDXL', () => {
     expect(looksLikeSdxlPrompt('view of La Défense towers at dusk, wide angle, photo, sharp')).toBe(true);
     expect(looksLikeSdxlPrompt('fox')).toBe(false);
     expect(looksLikeSdxlPrompt('word '.repeat(130))).toBe(false);
+  });
+
+  it('rendu anime : étiquettes Danbooru et noms gardés dans la consigne ; la consigne système garde les noms propres', () => {
+    const base = { project: 'perso' as const, preset: DEFAULT_PRESETS.perso, prompt: 'Hinata dans Naruto' };
+    expect(refineUserMessage({ ...base, render: 'anime' })).toContain('Danbooru');
+    expect(refineUserMessage({ ...base, render: 'anime' })).toContain('hyuuga hinata, naruto (series)');
+    expect(refineUserMessage({ ...base, render: 'realiste' })).toContain('realistic photograph');
+    expect(refineUserMessage(base)).not.toContain('Rendering');
+    expect(REFINE_SYSTEM_PROMPT).toContain('Never replace a named character');
+  });
+
+  it('négatif reformulé en français : écarté seul, la consigne reste utilisée', () => {
+    const chosen = chooseRefinedPrompt('x', { prompt: 'a young woman with long dark hair, smiling, city street at night, soft light', negative: 'très pudique, pudique, overly explicit' });
+    expect(chosen.used).toBe(true);
+    expect(chosen.negative).toBeUndefined();
+    expect(chooseRefinedPrompt('x', { prompt: 'a young woman with long dark hair, smiling, city street at night, soft light', negative: 'neon signs, extra tails' }).negative).toBe('neon signs, extra tails');
+    expect(looksLikeEnglishNegative('blurry, trop flou')).toBe(false);
+    expect(looksLikeEnglishNegative('blurry, lowres')).toBe(true);
   });
 
   it('choix final : reformulée si plausible, sinon l’originale avec la raison', () => {

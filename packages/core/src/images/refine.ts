@@ -18,6 +18,8 @@ export interface RefineInput {
   negative?: string;
   /** Vrai quand une photo sert de base : décrire le résultat final, garder le sujet. */
   fromPhoto?: boolean;
+  /** Rendu voulu : `anime` = étiquettes Danbooru (personnage, série) ; `realiste` = photo. */
+  render?: 'auto' | 'realiste' | 'anime';
 }
 
 export interface RefinedPrompt {
@@ -31,6 +33,7 @@ export const REFINE_SYSTEM_PROMPT = [
   'prompt: English only, 20 to 60 words, comma-separated phrases in this order: main subject with concrete details (what, who, exactly how many people, age, pose, expression, clothing), setting or background, art medium or style, lighting, camera or composition (framing, angle, lens). Translate EVERY French word into natural English, including the subject noun and adjectives (femme → woman, homme → man, chat → cat, rouge → red) and put adjectives before nouns ("red lingerie", never "lingerie red"). Keep every element the user asked for; invent only what is needed to make the picture concrete. Do NOT add quality words (no "high quality", "detailed", "masterpiece", "8k"): Jarvis Imager adds them. No sentences, no "image of", no quotes, no text or letters inside the picture unless asked.',
   'negative: English only, 3 to 12 comma-separated defects to avoid, chosen for THIS request only (for a building: warped perspective, melted windows; for an animal: extra legs, wrong number of tails; for food: unappetizing colors…). Anatomy defects (hands, fingers, limbs, faces), blur, watermark and text are already handled by Jarvis Imager: do not list them.',
   'Art medium: keep the one the user asked for. If none is given, infer it from the context (a game, anime or manga character → anime style; a product, place or real person → photo, realistic; "sticker", "logo", "icon" → flat vector illustration). Never impose an unrelated medium such as watercolor or oil painting on your own.',
+  'Proper names: keep the names of characters, series, games, places and styles exactly as given (Hinata from Naruto stays "Hinata Hyuga, Naruto"). Never replace a named character by a generic description, and never invent their hair or eye colour: the image model knows the character by name.',
   'If the request mentions a base photo, describe the final result and keep the subject recognizable.',
   'Never add brand logos, trademarks or real celebrities. Never answer with anything but the JSON object.',
 ].join(' ');
@@ -43,6 +46,11 @@ export function refineUserMessage(input: RefineInput): string {
     input.style?.trim() ? `Requested style: ${input.style.trim()}` : '',
     input.negative?.trim() ? `Things to avoid, from the user: ${input.negative.trim()}` : '',
     input.fromPhoto ? 'A base photo is provided (image-to-image): describe the finished picture, keep the subject of the photo.' : '',
+    input.render === 'anime'
+      ? 'Rendering: anime (an anime model trained on Danbooru tags will draw it). Write "prompt" as Danbooru-style tags: first 1girl, 1boy, 2girls… then the character\'s full name and the series in parentheses, e.g. "hyuuga hinata, naruto (series)", then appearance, outfit, pose, expression, setting, lighting, framing. Keep character and series names exactly as given.'
+      : input.render === 'realiste'
+        ? 'Rendering: realistic photograph.'
+        : '',
   ].filter(Boolean);
   return lines.join('\n');
 }
@@ -81,10 +89,10 @@ function cleanPromptText(text: string): string {
 }
 
 /** Mots-outils français : un ou deux peuvent venir d'un nom propre (« La Défense »), au-delà c'est du français. */
-const FRENCH_FUNCTION_WORDS = /\b(une|un|des|le|la|les|et|avec|sur|dans|pour|qui|est|sont|très|style de)\b/gi;
+const FRENCH_FUNCTION_WORDS = /\b(une|un|des|le|la|les|et|avec|sur|dans|pour|qui|est|sont|très|trop|pas|style de)\b/gi;
 /** Noms et adjectifs français courants : un seul suffit, le modèle n'a pas traduit le sujet (observé : « femme in lingerie red »). */
 const FRENCH_CONTENT_WORDS =
-  /\b(femme|femmes|homme|hommes|fille|garçon|enfant|chat|chats|chien|chiens|oiseau|voiture|maison|ville|montagne|forêt|foret|plage|fleur|fleurs|rouge|bleu|bleue|vert|verte|noir|noire|blanc|blanche|jaune|lumière|lumiere|fond|dessin|photo de|portrait de|paysage de|ciel|nuit|jour|soleil|pluie|neige|cheveux|robe|visage|sourire)\b/gi;
+  /\b(femme|femmes|homme|hommes|fille|garçon|enfant|chat|chats|chien|chiens|oiseau|voiture|maison|ville|montagne|forêt|foret|plage|fleur|fleurs|rouge|bleu|bleue|vert|verte|noir|noire|blanc|blanche|jaune|lumière|lumiere|fond|dessin|photo de|portrait de|paysage de|ciel|nuit|jour|soleil|pluie|neige|cheveux|robe|visage|sourire|pudique|vulgaire|flou|floue|déformé|deforme|moche)\b/gi;
 
 /** Garde-fou : consigne plausible pour SDXL (anglais, longueur raisonnable). */
 export function looksLikeSdxlPrompt(prompt: string): boolean {
@@ -103,5 +111,14 @@ export function looksLikeSdxlPrompt(prompt: string): boolean {
 export function chooseRefinedPrompt(original: string, refined: RefinedPrompt | null): { prompt: string; negative?: string; used: boolean; reason?: string } {
   if (!refined) return { prompt: original, used: false, reason: 'réponse illisible' };
   if (!looksLikeSdxlPrompt(refined.prompt)) return { prompt: original, used: false, reason: 'consigne reformulée douteuse (langue ou longueur)' };
-  return { prompt: refined.prompt, ...(refined.negative ? { negative: refined.negative } : {}), used: true };
+  // Négatif en français (observé : « très pudique, pudique ») : écarté seul, la consigne est gardée.
+  const negative = refined.negative && looksLikeEnglishNegative(refined.negative) ? refined.negative : undefined;
+  return { prompt: refined.prompt, ...(negative ? { negative } : {}), used: true };
+}
+
+/** Négatif plausible : anglais, sans mot français (un négatif douteux est simplement écarté). */
+export function looksLikeEnglishNegative(negative: string): boolean {
+  const functionHits = (negative.match(FRENCH_FUNCTION_WORDS) ?? []).length;
+  const contentHits = (negative.match(FRENCH_CONTENT_WORDS) ?? []).length;
+  return functionHits === 0 && contentHits === 0 && negative.length <= 600;
 }

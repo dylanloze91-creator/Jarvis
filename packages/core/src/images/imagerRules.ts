@@ -14,6 +14,25 @@ import type { ImagePreset, ImageProject } from './presets.js';
 export const IMAGE_SUBJECT_TYPES = ['personne', 'objet', 'paysage', 'logo-sticker', 'scene', 'autre'] as const;
 export type ImageSubjectType = (typeof IMAGE_SUBJECT_TYPES)[number];
 
+/**
+ * Rendu voulu : `realiste` (photo), `anime` (dessin animé, manga), `auto` (rien d'imposé).
+ * Décide du modèle (un modèle photo ignore « anime style » : observé le 10 novembre avec
+ * RealVisXL sur « Hinata dans Naruto, style anime » → une Japonaise réaliste) et du négatif.
+ */
+export const IMAGE_RENDER_STYLES = ['auto', 'realiste', 'anime'] as const;
+export type ImageRenderStyle = (typeof IMAGE_RENDER_STYLES)[number];
+/** Rendu d'un modèle : ce qu'il sait faire. */
+export type CheckpointRender = Exclude<ImageRenderStyle, 'auto'>;
+
+export interface RenderRule {
+  /** Mots ajoutés au prompt pour ce rendu. */
+  positif: readonly string[];
+  /** Défauts ajoutés au négatif (pour l'anime : photo, réaliste, 3D ; pour le réaliste : dessin, cartoon). */
+  negatif: readonly string[];
+  /** Modèles essayés dans l'ordre pour ce rendu (identifiants de `checkpoints`). */
+  priorite: readonly string[];
+}
+
 export interface SubjectTypeRule {
   /** Mots ajoutés au prompt pour ce type. */
   positif: readonly string[];
@@ -40,6 +59,10 @@ export interface CheckpointProfile {
   vae: string;
   /** Négatif recommandé par l'auteur du modèle. */
   negatif: readonly string[];
+  /** Ce que le modèle sait rendre : photo (`realiste`) ou dessin (`anime`). */
+  rendu: CheckpointRender;
+  /** Mots de qualité propres au modèle (Animagine : « masterpiece, high score… ») ; vide = ceux de `qualite`. */
+  qualite: readonly string[];
 }
 
 export interface ImagerRules {
@@ -55,6 +78,7 @@ export interface ImagerRules {
   qualite: readonly string[];
   negatifAnatomie: readonly string[];
   types: Record<ImageSubjectType, SubjectTypeRule>;
+  rendus: Record<CheckpointRender, RenderRule>;
   checkpoints: Record<string, CheckpointProfile>;
 }
 
@@ -119,6 +143,19 @@ export const DEFAULT_IMAGER_RULES: ImagerRules = {
     },
     autre: { positif: [], negatif: [], adetailer: false, adetailerMains: false },
   },
+  rendus: {
+    realiste: {
+      positif: [],
+      negatif: ['anime', 'cartoon', 'drawing', 'illustration', 'painting', '3d render'],
+      priorite: ['realvisxl', 'juggernaut', 'sdxl-base'],
+    },
+    anime: {
+      positif: [],
+      negatif: ['photo', 'photorealistic', 'realistic', 'real person', '3d', '3d render'],
+      // Animagine d'abord ; sans lui, SDXL de base dessine mieux que les modèles photo.
+      priorite: ['animagine', 'sdxl-base'],
+    },
+  },
   checkpoints: {
     realvisxl: {
       fichier: 'RealVisXL_V5.0_fp16.safetensors',
@@ -129,6 +166,8 @@ export const DEFAULT_IMAGER_RULES: ImagerRules = {
       cfg: 5,
       vae: '',
       negatif: ['bad hands', 'bad anatomy', 'ugly', 'deformed', 'face asymmetry', 'eyes asymmetry', 'deformed eyes', 'deformed mouth', 'open mouth'],
+      rendu: 'realiste',
+      qualite: [],
     },
     juggernaut: {
       fichier: 'Juggernaut-XI-byRunDiffusion.safetensors',
@@ -139,6 +178,8 @@ export const DEFAULT_IMAGER_RULES: ImagerRules = {
       cfg: 5,
       vae: '',
       negatif: [],
+      rendu: 'realiste',
+      qualite: [],
     },
     'sdxl-base': {
       fichier: 'sd_xl_base_1.0.safetensors',
@@ -149,9 +190,72 @@ export const DEFAULT_IMAGER_RULES: ImagerRules = {
       cfg: 6,
       vae: 'sdxl_vae_fp16_fix.safetensors',
       negatif: [],
+      rendu: 'realiste',
+      qualite: [],
+    },
+    // Animagine XL 4.0 Opt (Cagliostro Lab, CreativeML Open RAIL++-M comme SDXL de base, 6,94 Go) :
+    // entraîné sur 8,4 M d'images d'anime avec les étiquettes Danbooru (personnages, séries).
+    // Réglages de la fiche du modèle : Euler a, 28 pas, CFG 5, étiquettes de qualité et négatif ci-dessous.
+    animagine: {
+      fichier: 'animagine-xl-4.0-opt.safetensors',
+      label: 'Animagine XL 4.0 Opt',
+      sampler: 'Euler a',
+      scheduler: 'Automatic',
+      steps: 28,
+      cfg: 5,
+      vae: '',
+      negatif: [
+        'lowres',
+        'bad anatomy',
+        'bad hands',
+        'text',
+        'error',
+        'missing finger',
+        'extra digits',
+        'fewer digits',
+        'cropped',
+        'worst quality',
+        'low quality',
+        'low score',
+        'bad score',
+        'average score',
+        'signature',
+        'watermark',
+        'username',
+        'blurry',
+      ],
+      rendu: 'anime',
+      qualite: ['masterpiece', 'high score', 'great score', 'absurdres'],
     },
   },
 };
+
+export function isImageRenderStyle(value: string): value is ImageRenderStyle {
+  return (IMAGE_RENDER_STYLES as readonly string[]).includes(value);
+}
+
+/** Mots qui demandent un dessin : styles, supports et séries d'animation connues (bornes Unicode : `\\b` ignore « animé »). */
+const ANIME_WORDS =
+  /(?<!\p{L})(anime|anim[ée]e?s?|manga|mangas|dessins? anim[ée]s?|cartoon|toon|chibi|ghibli|webtoon|manhwa|manhua|cel[- ]?shad\w*|otaku|sh[oō]nen|seinen|sh[oō]jo|kawaii|naruto|boruto|one piece|dragon ?ball|pok[ée]mon|bleach|demon slayer|kimetsu|attack on titan|shingeki|my hero academia|jujutsu kaisen|sailor moon|evangelion|genshin|fairy tail|hunter x hunter|death note|fullmetal|jojo|chainsaw man|spy x family|haikyuu|one punch man|tokyo ghoul|sword art online|cowboy bebop|akira|studio ghibli|totoro|disney|pixar)(?!\p{L})/iu;
+/** Mots qui demandent une photo. */
+const REALISTIC_WORDS = /(?<!\p{L})(photo|photos|photographie|photographique|photor[ée]aliste|photorealistic|r[ée]aliste|realistic|hyperr[ée]aliste|hyperrealistic|comme en vrai|en vrai)(?!\p{L})/iu;
+
+/**
+ * Rendu voulu : le choix explicite du 7B (`rendu`), sinon ce que disent la demande et le style.
+ * Les mots « anime » l'emportent sur « photo » (« photo d'Hinata style anime » = anime).
+ */
+export function resolveRenderStyle(explicit: string | undefined | null, ...texts: (string | undefined | null)[]): ImageRenderStyle {
+  const wanted = (explicit ?? '').trim().toLowerCase();
+  if (wanted === 'anime' || wanted === 'realiste' || wanted === 'réaliste') return wanted === 'anime' ? 'anime' : 'realiste';
+  const text = texts
+    .filter((item): item is string => typeof item === 'string')
+    .join(' ')
+    .normalize('NFC');
+  if (!text.trim()) return 'auto';
+  if (ANIME_WORDS.test(text)) return 'anime';
+  if (REALISTIC_WORDS.test(text)) return 'realiste';
+  return 'auto';
+}
 
 export function isImageSubjectType(value: string): value is ImageSubjectType {
   return (IMAGE_SUBJECT_TYPES as readonly string[]).includes(value);
@@ -191,6 +295,7 @@ export function applyImagerRules(sections: Partial<Record<string, Record<string,
     qualite: [...DEFAULT_IMAGER_RULES.qualite],
     negatifAnatomie: [...DEFAULT_IMAGER_RULES.negatifAnatomie],
     types: Object.fromEntries(Object.entries(DEFAULT_IMAGER_RULES.types).map(([key, rule]) => [key, { ...rule }])) as ImagerRules['types'],
+    rendus: Object.fromEntries(Object.entries(DEFAULT_IMAGER_RULES.rendus).map(([key, rule]) => [key, { ...rule }])) as ImagerRules['rendus'],
     checkpoints: Object.fromEntries(Object.entries(DEFAULT_IMAGER_RULES.checkpoints).map(([key, profile]) => [key, { ...profile }])),
   };
   for (const [section, values] of Object.entries(sections)) {
@@ -246,10 +351,33 @@ export function applyImagerRules(sections: Partial<Record<string, Record<string,
       rules.types[type] = current;
       continue;
     }
+    if (section.startsWith('rendu-')) {
+      const rendu = section.slice(6);
+      if (rendu !== 'anime' && rendu !== 'realiste') {
+        warnings.push(`Rendu inconnu : « ${rendu} » (ignoré ; connus : realiste, anime).`);
+        continue;
+      }
+      const current = { ...rules.rendus[rendu] };
+      const positif = values.positif !== undefined ? asStringList(values.positif) : null;
+      const negatif = values.negatif !== undefined ? asStringList(values.negatif) : null;
+      const priorite = values.priorite !== undefined ? asStringList(values.priorite) : null;
+      if (positif) current.positif = positif;
+      if (negatif) current.negatif = negatif;
+      if (priorite?.length) current.priorite = priorite;
+      else if (values.priorite !== undefined) warnings.push(`${section}.priorite : liste attendue (ignorée).`);
+      rules.rendus[rendu] = current;
+      continue;
+    }
     if (section.startsWith('checkpoint-')) {
       const id = section.slice(11);
-      const base = rules.checkpoints[id] ?? { fichier: '', label: id, sampler: 'DPM++ 2M', scheduler: 'Karras', steps: 30, cfg: 5, vae: '', negatif: [] };
+      const base = rules.checkpoints[id] ?? { fichier: '', label: id, sampler: 'DPM++ 2M', scheduler: 'Karras', steps: 30, cfg: 5, vae: '', negatif: [], rendu: 'realiste', qualite: [] };
       const next: CheckpointProfile = { ...base };
+      if (values.rendu !== undefined) {
+        if (values.rendu === 'anime' || values.rendu === 'realiste') next.rendu = values.rendu;
+        else warnings.push(`${section}.rendu : realiste ou anime attendu (ignoré).`);
+      }
+      const qualite = values.qualite !== undefined ? asStringList(values.qualite) : null;
+      if (qualite) next.qualite = qualite;
       for (const key of ['fichier', 'label', 'sampler', 'scheduler', 'vae'] as const) {
         if (typeof values[key] === 'string') next[key] = (values[key] as string).trim();
       }
@@ -289,7 +417,10 @@ export function defaultImagerRulesYaml(rules: ImagerRules = DEFAULT_IMAGER_RULES
     '#   adetailer (retouche visages et mains), upscaler et facteurAgrandissement (quand on demande « plus grand »).',
     '# qualite : mots ajoutés à la fin de chaque consigne. anatomie : défauts d’anatomie toujours évités pour les personnes.',
     '# type-<type> : mots ajoutés (positif), défauts évités (negatif), adetailer (retouche visages), adetailerMains (retouche mains en plus) selon ce que représente l’image.',
-    '# checkpoint-<id> : fichier, label, sampler, scheduler, steps, cfg, vae (vide = celui du modèle), negatif de l’auteur.',
+    '# rendu-realiste / rendu-anime : mots ajoutés (positif), défauts évités (negatif) et modèles essayés dans l’ordre (priorite)',
+    '#   quand la demande veut une photo ou un dessin (anime, manga, dessin animé, série connue). Sans indication : general.priorite.',
+    '# checkpoint-<id> : fichier, label, sampler, scheduler, steps, cfg, vae (vide = celui du modèle), negatif de l’auteur,',
+    '#   rendu (realiste ou anime : ce que le modèle sait faire), qualite (mots de qualité propres au modèle ; vide = ceux de qualite).',
     '',
     'general:',
     `  checkpoint: ${rules.general.checkpoint}`,
@@ -316,6 +447,10 @@ export function defaultImagerRulesYaml(rules: ImagerRules = DEFAULT_IMAGER_RULES
       '',
     );
   }
+  for (const rendu of ['realiste', 'anime'] as const) {
+    const rule = rules.rendus[rendu];
+    lines.push(`rendu-${rendu}:`, `  positif: ${yamlList(rule.positif)}`, `  negatif: ${yamlList(rule.negatif)}`, `  priorite: ${yamlList(rule.priorite)}`, '');
+  }
   for (const [id, profile] of Object.entries(rules.checkpoints)) {
     lines.push(
       `checkpoint-${id}:`,
@@ -327,24 +462,36 @@ export function defaultImagerRulesYaml(rules: ImagerRules = DEFAULT_IMAGER_RULES
       `  cfg: ${profile.cfg}`,
       `  vae: "${profile.vae}"`,
       `  negatif: ${yamlList(profile.negatif)}`,
+      `  rendu: ${profile.rendu}`,
+      `  qualite: ${yamlList(profile.qualite)}`,
       '',
     );
   }
   return `${lines.join('\n')}\n`;
 }
 
-/** Profil du modèle à utiliser : réglage explicite, sinon le premier présent dans l'ordre de priorité. */
-export function chooseCheckpoint(rules: ImagerRules, present: (fichier: string) => boolean): { id: string; profile: CheckpointProfile } | null {
+/**
+ * Profil du modèle à utiliser. Rendu `auto` : réglage explicite, sinon l'ordre général.
+ * Rendu demandé (`anime`, `realiste`) : réglage explicite s'il sait faire ce rendu, sinon l'ordre
+ * du rendu, sinon l'ordre général (le résultat ne rend alors pas ce qui est demandé : l'appelant le dit).
+ * En dernier recours, n'importe quel modèle présent, les modèles anime après les autres.
+ */
+export function chooseCheckpoint(rules: ImagerRules, present: (fichier: string) => boolean, render: ImageRenderStyle = 'auto'): { id: string; profile: CheckpointProfile } | null {
   const wanted = rules.general.checkpoint.trim();
+  const fits = (profile: CheckpointProfile) => render === 'auto' || profile.rendu === render;
   if (wanted && wanted !== 'auto') {
     const profile = rules.checkpoints[wanted];
-    if (profile && present(profile.fichier)) return { id: wanted, profile };
+    if (profile && present(profile.fichier) && fits(profile)) return { id: wanted, profile };
   }
-  for (const id of rules.general.priorite) {
-    const profile = rules.checkpoints[id];
-    if (profile && present(profile.fichier)) return { id, profile };
+  const orders = render === 'auto' ? [rules.general.priorite] : [rules.rendus[render].priorite, rules.general.priorite];
+  for (const order of orders) {
+    for (const id of order) {
+      const profile = rules.checkpoints[id];
+      if (profile && present(profile.fichier)) return { id, profile };
+    }
   }
-  for (const [id, profile] of Object.entries(rules.checkpoints)) if (present(profile.fichier)) return { id, profile };
+  const entries = Object.entries(rules.checkpoints).sort(([, a], [, b]) => Number(a.rendu === 'anime') - Number(b.rendu === 'anime'));
+  for (const [id, profile] of entries) if (present(profile.fichier)) return { id, profile };
   return null;
 }
 
@@ -357,6 +504,8 @@ export interface ImagerPromptInput {
   project: ImageProject;
   preset: ImagePreset;
   style?: string;
+  /** Rendu voulu ; `auto` ou absent = rien d'ajouté. */
+  render?: ImageRenderStyle;
   /** Négatif propre à la demande (reformulation) et négatif de l'utilisateur. */
   extraNegative?: readonly string[];
   checkpoint?: CheckpointProfile;
@@ -392,14 +541,18 @@ export function personCountPhrase(count: number | undefined): string[] {
  */
 export function buildImagerPrompt(input: ImagerPromptInput, rules: ImagerRules): { prompt: string; negative: string } {
   const typeRule = rules.types[input.type];
+  const renderRule = input.render && input.render !== 'auto' ? rules.rendus[input.render] : null;
+  // Mots de qualité du modèle (Animagine lit « masterpiece, high score… »), sinon ceux des règles.
+  const quality = input.checkpoint?.qualite?.length ? input.checkpoint.qualite : rules.qualite;
   const positive = dedupeTerms([
     ...splitTerms(input.preset.positivePrefix),
     ...splitTerms(input.subject),
     ...personCountPhrase(input.personCount),
     ...splitTerms(input.style ?? ''),
+    ...(renderRule?.positif ?? []),
     ...typeRule.positif,
     ...splitTerms(input.preset.positiveSuffix),
-    ...rules.qualite,
+    ...quality,
   ]);
   if (input.lora?.name?.trim()) {
     const name = input.lora.name.trim().replace(/\.safetensors$/i, '');
@@ -410,6 +563,7 @@ export function buildImagerPrompt(input: ImagerPromptInput, rules: ImagerRules):
   const negative = dedupeTerms([
     ...splitTerms(input.preset.negative),
     ...typeRule.negatif,
+    ...(renderRule?.negatif ?? []),
     ...anatomy,
     ...(input.checkpoint?.negatif ?? []),
     ...(input.extraNegative ?? []).flatMap((item) => splitTerms(item)),
@@ -434,14 +588,14 @@ export function forgeBuiltinScriptArgs(): Record<string, { args: unknown[] }> {
 }
 
 /** Arguments ADetailer pour l'API de Forge (`alwayson_scripts.ADetailer.args`) : visages, puis mains si demandé. */
-export function adetailerArgs(options: { hands?: boolean } = {}): unknown[] {
+export function adetailerArgs(options: { hands?: boolean; anime?: boolean } = {}): unknown[] {
   const hands = options.hands !== false;
   return [
     true,
     false,
     {
       ad_model: 'face_yolov8n.pt',
-      ad_prompt: 'detailed face, natural skin, symmetric eyes, sharp focus',
+      ad_prompt: options.anime ? 'detailed anime face, clean lineart, symmetric eyes, sharp focus' : 'detailed face, natural skin, symmetric eyes, sharp focus',
       ad_negative_prompt: 'deformed face, asymmetric eyes, cross-eyed, blurry, extra eyes',
       ad_confidence: 0.3,
       ad_dilate_erode: 4,

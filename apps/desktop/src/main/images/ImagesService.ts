@@ -27,6 +27,7 @@ import {
   parseTxt2ImgInfo,
   referenceFileName,
   resolveSubjectType,
+  resolveRenderStyle,
   sidecarText,
   wantsAdetailer,
   type ChatAttachment,
@@ -36,6 +37,7 @@ import {
   type ImageRequest,
   type ImagerRules,
   type ImageSubjectType,
+  type ImageRenderStyle,
   type PayloadOptions,
   type Settings,
 } from '@jarvis/core';
@@ -118,6 +120,9 @@ export interface ImagesResult {
   /** Jarvis Imager : modèle utilisé, type du sujet, retouches visages/mains, agrandissement. */
   checkpoint: { id: string; label: string } | null;
   subjectType: ImageSubjectType;
+  /** Rendu voulu (`auto`, `realiste`, `anime`) et si le modèle choisi sait le faire. */
+  render: ImageRenderStyle;
+  renderHonored: boolean;
   adetailer: boolean;
   upscaled: { factor: number; upscaler: string } | null;
 }
@@ -330,9 +335,20 @@ export class ImagesService {
     const preset = presets[request.project];
     const count = clampCount(request.count);
     const subjectType = resolveSubjectType(request.subjectType);
-    // Modèle : réglage explicite, sinon le premier présent (RealVisXL, Juggernaut, puis SDXL de base en secours).
-    const chosen = chooseCheckpoint(rules, (file) => existsSync(this.checkpointPath(images.forgeDir, file)));
+    // Rendu : choix du 7B, sinon les mots de la demande (« anime », « manga », « Naruto »… ; « photo », « réaliste »).
+    const render = resolveRenderStyle(request.render, request.prompt, request.style);
+    // Modèle : réglage explicite, sinon l'ordre du rendu (anime → Animagine), sinon l'ordre général.
+    const chosen = chooseCheckpoint(rules, (file) => existsSync(this.checkpointPath(images.forgeDir, file)), render);
     const checkpoint: CheckpointProfile | undefined = chosen?.profile;
+    const renderHonored = render === 'auto' || (checkpoint?.rendu ?? 'realiste') === render;
+    if (!renderHonored && render === 'anime') {
+      const animeFiles = Object.values(rules.checkpoints)
+        .filter((profile) => profile.rendu === 'anime')
+        .map((profile) => profile.fichier);
+      warnings.push(
+        `Rendu anime demandé mais aucun modèle anime n’est dans ${join(images.forgeDir, 'models', 'Stable-diffusion')} (${animeFiles.join(', ') || 'aucun profil'}) : image faite avec ${checkpoint?.label ?? 'le modèle courant de Forge'}, rendu réaliste probable.`,
+      );
+    }
     const vaePath = join(images.forgeDir, 'models', 'VAE', SDXL_VAE_FILE);
     const vae = checkpoint?.vae?.trim() || (existsSync(vaePath) ? SDXL_VAE_FILE : '');
     const payloadOptions: PayloadOptions = {
@@ -354,7 +370,15 @@ export class ImagesService {
       if (model) {
         context.onProgress?.('Je traduis ta demande en consigne pour Stable Diffusion…');
         refined = await new PromptRefiner(ollamaUrl, this.deps.fetchImpl).refine(
-          { prompt: request.prompt, project: request.project, preset, ...(request.style ? { style: request.style } : {}), ...(request.negative ? { negative: request.negative } : {}), ...(init ? { fromPhoto: true } : {}) },
+          {
+            prompt: request.prompt,
+            project: request.project,
+            preset,
+            ...(request.style ? { style: request.style } : {}),
+            ...(request.negative ? { negative: request.negative } : {}),
+            ...(init ? { fromPhoto: true } : {}),
+            ...(render !== 'auto' && renderHonored ? { render } : {}),
+          },
           model,
           context.signal,
         );
@@ -371,6 +395,7 @@ export class ImagesService {
         project: request.project,
         preset,
         ...(request.style && !refined?.used ? { style: request.style } : {}),
+        ...(render !== 'auto' ? { render } : {}),
         extraNegative: [request.negative, refined?.used ? refined.negative : undefined].filter((item): item is string => Boolean(item)),
         ...(checkpoint ? { checkpoint } : {}),
         ...(request.lora ? { lora: request.lora } : {}),
@@ -387,7 +412,7 @@ export class ImagesService {
       finalNegative: assembled.negative,
       alwaysonScripts: {
         ...forgeBuiltinScriptArgs(),
-        ...(useAdetailer ? { ADetailer: { args: adetailerArgs({ hands: rules.types[subjectType].adetailerMains }) } } : {}),
+        ...(useAdetailer ? { ADetailer: { args: adetailerArgs({ hands: rules.types[subjectType].adetailerMains, anime: checkpoint?.rendu === 'anime' }) } } : {}),
       },
     };
     const payload = init
@@ -516,6 +541,7 @@ export class ImagesService {
             imager: {
               subjectType,
               ...(request.personCount ? { personCount: request.personCount } : {}),
+              ...(render !== 'auto' ? { render: renderHonored ? render : `${render} demandé, modèle ${checkpoint?.rendu ?? 'inconnu'}` } : {}),
               checkpointLabel: chosen?.profile.label ?? 'modèle courant de Forge',
               adetailer: adetailerApplied,
               ...(upscaled ? { upscaled: `×${upscaled.factor} (${upscaled.upscaler})${upscaledPath ? ` : ${upscaledPath}` : ''}` } : {}),
@@ -540,6 +566,8 @@ export class ImagesService {
         refined: refined ? { used: refined.used, model: refined.model, ...(refined.reason ? { reason: refined.reason } : {}) } : null,
         checkpoint: chosen ? { id: chosen.id, label: chosen.profile.label } : null,
         subjectType,
+        render,
+        renderHonored,
         adetailer: adetailerApplied,
         upscaled,
       };
@@ -632,7 +660,7 @@ export function describeImagesResult(result: ImagesResult): string {
   const upscaledFiles = result.files.filter((file) => file.upscaled).map((file) => file.upscaled!);
   if (result.upscaled && upscaledFiles.length) lines.push(`Version agrandie ×${result.upscaled.factor} (${result.upscaled.upscaler}) : ${upscaledFiles.join(', ')}`);
   lines.push(
-    `Jarvis Imager : modèle ${result.checkpoint?.label ?? 'courant de Forge'}, sujet « ${result.subjectType} », retouche visages et mains ${result.adetailer ? 'faite' : 'non appliquée'}.`,
+    `Jarvis Imager : modèle ${result.checkpoint?.label ?? 'courant de Forge'}, sujet « ${result.subjectType} »${result.render !== 'auto' ? `, rendu ${result.render}${result.renderHonored ? '' : ' demandé mais aucun modèle de ce rendu sur le disque'}` : ''}, retouche visages et mains ${result.adetailer ? 'faite' : 'non appliquée'}.`,
   );
   if (result.refined?.used) lines.push(`Consigne envoyée à Stable Diffusion (sujet décrit par ${result.refined.model}, règles Imager appliquées) : ${result.finalPrompt}`);
   else if (result.refined?.reason) lines.push(`Consigne envoyée (sujet gardé tel quel, ${result.refined.reason}) : ${result.finalPrompt}`);

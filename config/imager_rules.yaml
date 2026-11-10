@@ -6,7 +6,10 @@
 #   adetailer (retouche visages et mains), upscaler et facteurAgrandissement (quand on demande « plus grand »).
 # qualite : mots ajoutés à la fin de chaque consigne. anatomie : défauts d’anatomie toujours évités pour les personnes.
 # type-<type> : mots ajoutés (positif), défauts évités (negatif), adetailer (retouche visages), adetailerMains (retouche mains en plus) selon ce que représente l’image.
-# checkpoint-<id> : fichier, label, sampler, scheduler, steps, cfg, vae (vide = celui du modèle), negatif de l’auteur.
+# rendu-realiste / rendu-anime : mots ajoutés (positif), défauts évités (negatif) et modèles essayés dans l’ordre (priorite)
+#   quand la demande veut une photo ou un dessin (anime, manga, dessin animé, série connue). Sans indication : general.priorite.
+# checkpoint-<id> : fichier, label, sampler, scheduler, steps, cfg, vae (vide = celui du modèle), negatif de l’auteur,
+#   rendu (realiste ou anime : ce que le modèle sait faire), qualite (mots de qualité propres au modèle ; vide = ceux de qualite).
 
 general:
   checkpoint: auto
@@ -57,6 +60,16 @@ type-autre:
   adetailer: false
   adetailerMains: false
 
+rendu-realiste:
+  positif: []
+  negatif: [anime, cartoon, drawing, illustration, painting, 3d render]
+  priorite: [realvisxl, juggernaut, sdxl-base]
+
+rendu-anime:
+  positif: []
+  negatif: [photo, photorealistic, realistic, real person, 3d, 3d render]
+  priorite: [animagine, sdxl-base]
+
 checkpoint-realvisxl:
   fichier: RealVisXL_V5.0_fp16.safetensors
   label: "RealVisXL V5.0"
@@ -66,6 +79,8 @@ checkpoint-realvisxl:
   cfg: 5
   vae: ""
   negatif: [bad hands, bad anatomy, ugly, deformed, face asymmetry, eyes asymmetry, deformed eyes, deformed mouth, open mouth]
+  rendu: realiste
+  qualite: []
 
 checkpoint-juggernaut:
   fichier: Juggernaut-XI-byRunDiffusion.safetensors
@@ -76,6 +91,8 @@ checkpoint-juggernaut:
   cfg: 5
   vae: ""
   negatif: []
+  rendu: realiste
+  qualite: []
 
 checkpoint-sdxl-base:
   fichier: sd_xl_base_1.0.safetensors
@@ -86,4 +103,18 @@ checkpoint-sdxl-base:
   cfg: 6
   vae: "sdxl_vae_fp16_fix.safetensors"
   negatif: []
+  rendu: realiste
+  qualite: []
+
+checkpoint-animagine:
+  fichier: animagine-xl-4.0-opt.safetensors
+  label: "Animagine XL 4.0 Opt"
+  sampler: "Euler a"
+  scheduler: Automatic
+  steps: 28
+  cfg: 5
+  vae: ""
+  negatif: [lowres, bad anatomy, bad hands, text, error, missing finger, extra digits, fewer digits, cropped, worst quality, low quality, low score, bad score, average score, signature, watermark, username, blurry]
+  rendu: anime
+  qualite: [masterpiece, high score, great score, absurdres]
 

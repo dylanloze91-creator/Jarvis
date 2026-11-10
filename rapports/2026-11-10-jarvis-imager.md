@@ -49,6 +49,21 @@ Autres défauts relevés sur Forge Classic en 6 Go, contournés dans Jarvis : HT
 
 Juggernaut XI : non téléchargé (dépôt réservé aux comptes Hugging Face ayant accepté la licence). Dès que le fichier `Juggernaut-XI-byRunDiffusion.safetensors` est dans `C:\dev\Forge\models\Stable-diffusion\`, Imager le voit (section `checkpoint-juggernaut`) ; il passe après RealVisXL dans l'ordre `auto`, et sa licence interdit l'usage commercial.
 
+## Suite du 10 novembre (matin) — essai de l'utilisateur, deux correctifs
+
+**Onglet du navigateur à chaque image.** Forge ouvre son interface dans le navigateur à chaque démarrage (réglage `auto_launch_browser` à « Local » par défaut, aucun `config.json` dans le dossier de Forge) ; Jarvis l'arrêtant après chaque image et le relançant à la suivante, un onglet s'ouvrait à chaque fois. Correctif : `config.json` de Forge écrit avec le réglage coupé, et `ImagesService` coupe lui-même ce réglage par `/sdapi/v1/options` au premier lancement par Jarvis (jamais pour un Forge lancé par l'utilisateur). Commit `0092e61`.
+
+**« Hinata dans Naruto, style anime » rendue en Japonaise réaliste.** La consigne envoyée disait bien « anime style, Naruto universe », mais RealVisXL est un modèle photo : il ignore le style et ne connaît aucun personnage ; le 7B avait en plus inventé « yeux bleus, cheveux noirs ». Correctif : notion de **rendu** (`auto`, `realiste`, `anime`) transmise par le 7B (`rendu` de `generer_image`) ou lue dans la demande (anime, manga, dessin animé, séries connues ; photo, réaliste), modèle **Animagine XL 4.0 Opt** téléchargé avec l'accord de l'utilisateur (6,94 Go, CreativeML Open RAIL++-M comme SDXL de base, usage commercial permis ; entraîné sur 8,4 M d'images d'anime avec les étiquettes Danbooru), réglages de la fiche du modèle (Euler a, 28 pas, CFG 5, qualité « masterpiece, high score, great score, absurdres », négatif de l'auteur), reformulation en étiquettes Danbooru avec les noms gardés (« 1girl, hyuuga hinata (naruto), … »), négatif « photo, réaliste, 3D » en anime et « cartoon, dessin » en réaliste, modèle anime jamais pris pour une photo, avertissement si le rendu anime est demandé sans modèle anime (SDXL de base alors), ligne « rendu … » dans le `.txt` et la réponse. Un négatif reformulé en français (« très pudique ») est maintenant écarté seul. Sections `rendu-anime` / `rendu-realiste` et clés `rendu`, `qualite` dans `imager_rules.yaml` (fichier de référence et copie vivante régénérés : l'utilisateur ne l'avait pas modifié).
+
+Essai réel (vrai service, vrai Ollama, vrai Forge, `C:\dev\Jarvis_images\tests_imager\anime\perso\2026-11-10\`) :
+
+| Cas | Rendu | Modèle | Durée | Résultat |
+| --- | --- | --- | --- | --- |
+| « Hinata dans Naruto, style anime, qui sourit » | anime | Animagine XL 4.0 Opt, retouche visages et mains | 179 s (Forge démarré) | **vraie Hinata en anime** (cheveux bleu nuit, yeux clairs du Byakugan, sourire), consigne « 1girl, hyuuga hinata (naruto), smiling, … masterpiece, high score, great score, absurdres » |
+| « un renard roux dans une forêt, en photo » | realiste | RealVisXL V5.0 | 182 s (Forge redémarré) | photo réaliste, négatif « anime, cartoon, drawing » ajouté |
+
+Le 7B est rechargé après chacune des deux images.
+
 ## RAPPORT DE VÉRIFICATION
 
 ```
@@ -72,3 +87,18 @@ Testé en vrai (à la voix, sur le PC) : PAS FAIT (testé par le service réel a
 - **Où voir les comparaisons** : `C:\dev\Jarvis_images\tests_imager\ancien\` contre `…\nouveau\` (mêmes demandes, mêmes graines), tableau dans `COMPARAISON.md`. Regarde surtout « mains » et « geste » : doigts fusionnés et deux bras levés avant, mains correctes après.
 - **Temps moyen par image** : ancien 62 s, nouveau 242 s (mesure avec les retouches à 30 pas ; passées à 16 pas depuis, à remesurer). Réglable dans le fichier de règles.
 - **Ce qui reste à faire** : poser Juggernaut XI dans le dossier des modèles si tu le veux (compte Hugging Face, licence non commerciale) ; relire et fusionner la branche ; remesurer le temps avec les retouches à 16 pas ; essayer à la voix dans Jarvis.
+
+## RAPPORT DE VÉRIFICATION (suite du 10 novembre, matin)
+
+```
+RAPPORT DE VÉRIFICATION
+Lancement : OK (cœur construit ; version de développement lancée pour l'essai de l'utilisateur ; au second lancement, le Jarvis installé tournait déjà et tient le verrou d'instance unique : à fermer avant de relancer)
+Types     : OK (0 erreur)
+Style     : OK (0 avertissement sur les fichiers modifiés)
+Tests     : OK (cœur 2277/2277 ; bureau 693/693 réussis, 8 ignorés — dans la suite complète, lancée pendant l'essai réel sur Forge, `lintBaseline.test.mjs` (délai 5 s) et `windowsDesktopMissionPath.test.ts` (EBUSY) ont échoué sous charge et repassent seuls 3/3 et 6/6)
+Secrets   : OK (0 trouvé)
+Fichiers modifiés : packages/core/src/images (imagerRules, refine, request, storage, intent, index + tests), packages/core/src/agent/orchestraTeams.ts, apps/desktop/src/main/images/ImagesService.ts (+ test), apps/desktop/src/main/tools/images.ts, config/imager_rules.yaml, docs/images-jarvis.md, CLAUDE.md, ce rapport
+Prêt à fusionner : OUI (après relecture de l'utilisateur ; rien sur main)
+À corriger : temps par image toujours ≈ 3 min quand Forge doit démarrer (≈ 1 min de démarrage) ; les mains de la Hinata anime sont correctes mais un peu raides (retouche « mains » faite avec le modèle de visage/main photo) ; le trieur ne connaît pas le champ « rendu » (règle express inchangée)
+Testé en vrai (à la voix, sur le PC) : PAS FAIT (testé par le service réel : Hinata en anime sur Animagine et renard en photo sur RealVisXL, 7B rechargé ; l'essai dans la fenêtre de Jarvis revient à l'utilisateur)
+```
