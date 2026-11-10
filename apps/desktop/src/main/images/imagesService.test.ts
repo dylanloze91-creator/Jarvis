@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import type { ChildProcess } from 'node:child_process';
 import { afterAll, describe, expect, it } from 'vitest';
 import { parseSettings } from '@jarvis/core';
-import { ImagesService, describeImagesResult, pickBrainModel } from './ImagesService.js';
+import { ImagesService, describeDirectResult, describeImagesResult, pickBrainModel } from './ImagesService.js';
 import { encodeRgbaPng } from './png.js';
 
 /**
@@ -78,7 +78,7 @@ function fakeFetch(world: World): typeof fetch {
       return json({ done: true });
     }
     if (!world.forgeUp) throw Object.assign(new Error('ECONNREFUSED'), { name: 'TypeError' });
-    if (url.includes('/sdapi/v1/progress')) return json({ progress: 0 });
+    if (url.includes('/sdapi/v1/progress')) return json({ progress: 0.5, eta_relative: 12 });
     if (url.includes('/sdapi/v1/options')) {
       if (init?.method === 'POST') {
         world.calls.push('forge:options');
@@ -158,6 +158,107 @@ function service(world: World, overrides: Record<string, unknown> = {}, forgeDir
   });
   return { svc, settings, outputRoot, spawned, killed };
 }
+
+describe('ImagesService — mode direct (sans le modèle de langage)', () => {
+  it('consigne telle quelle : aucun appel au modèle, décharge → Forge → génère → arrête → recharge ; .txt « envoyée telle quelle »', async () => {
+    const world: World = { forgeUp: false, loaded: ['qwen2.5:7b'], calls: [], txt2imgPayloads: [] };
+    const { svc, outputRoot, killed } = service(world, {}, join(root, 'Forge-direct'), { realvis: true });
+    const progress: string[] = [];
+    const values: number[] = [];
+    const result = await svc.generateDirect(
+      { prompt: ' femme in lingerie red, très pudique ', negative: 'flou', project: 'perso', improve: false, checkpoint: 'RealVisXL_V5.0_fp16.safetensors', format: '16:9', steps: 12, cfg: 3, sampler: 'Euler a', scheduler: 'Simple', seed: 5, loras: [{ name: 'monstyle', weight: 0.6 }] },
+      { onProgress: (m) => progress.push(m), onProgressValue: (v) => values.push(v) },
+    );
+    // Jamais /api/chat : ni reformulation, ni jugement.
+    expect(world.calls.filter((call) => call.startsWith('ollama:refine'))).toEqual([]);
+    expect(world.calls).toEqual(['ollama:ps', 'ollama:qwen2.5:7b:0', 'forge:spawn', 'forge:options', 'forge:txt2img', 'forge:kill', 'ollama:qwen2.5:7b:30m']);
+    const payload = world.txt2imgPayloads[0] as Record<string, unknown>;
+    expect(payload.prompt).toBe('femme in lingerie red, très pudique <lora:monstyle:0.6>');
+    expect(payload.negative_prompt).toBe('flou');
+    expect(payload).toMatchObject({ width: 1344, height: 768, steps: 12, cfg_scale: 3, sampler_name: 'Euler a', scheduler: 'Simple', seed: 5, batch_size: 1 });
+    expect(payload.override_settings).toEqual({ sd_model_checkpoint: 'RealVisXL_V5.0_fp16.safetensors', sd_vae: 'sdxl_vae_fp16_fix.safetensors' });
+    expect(payload.alwayson_scripts).toEqual({ 'Never OOM Integrated': { args: [false, false, 512, 64] } });
+    expect(result.improved).toBe(false);
+    expect(result.finalPrompt).toBe(String(payload.prompt));
+    expect(result.brainReloaded).toBe('qwen2.5:7b');
+    expect(result.forgeHeld).toBe(false);
+    expect(killed).toEqual([4242]);
+    expect(result.folder).toBe(join(outputRoot, 'perso', '2026-11-09'));
+    expect(result.files).toHaveLength(1);
+    expect(result.files[0]!.preview.startsWith('data:image/png;base64,')).toBe(true);
+    expect(existsSync(result.files[0]!.png)).toBe(true);
+    expect(readFileSync(result.files[0]!.txt!, 'utf8')).toContain('Mode direct (sans le modèle de langage) : consigne envoyée telle quelle');
+    expect(progress.some((m) => m.includes('telle quelle'))).toBe(true);
+    // L'avancement de Forge est relayé (faux Forge : 50 %).
+    expect(values.length === 0 || values[0] === 0.5).toBe(true);
+    expect(describeDirectResult(result)).toContain('consigne envoyée telle quelle');
+  });
+
+  it('« améliorer » : règles d’Imager seules (type deviné, négatif d’anatomie, qualité du modèle, portrait pour une personne), traduction par dictionnaire, toujours sans modèle', async () => {
+    const world: World = { forgeUp: true, loaded: ['qwen2.5:7b'], calls: [], txt2imgPayloads: [] };
+    const { svc } = service(world, {}, join(root, 'Forge-direct-2'), { realvis: true, adetailer: true });
+    const result = await svc.generateDirect({ prompt: 'portrait d’une femme rousse qui sourit', negative: '', project: 'perso' });
+    expect(world.calls.filter((call) => call.includes('refine') || call.includes('chat'))).toEqual([]);
+    const payload = world.txt2imgPayloads[0] as Record<string, unknown>;
+    // Traduit par le dictionnaire local (mots connus), pas par un modèle ; règles de type « personne ».
+    expect(String(payload.prompt)).toContain('portrait');
+    expect(String(payload.prompt)).toContain('woman');
+    expect(String(payload.prompt)).not.toContain('femme');
+    expect(String(payload.prompt)).toContain('detailed hands with five fingers');
+    expect(String(payload.negative_prompt)).toContain('deformed hands');
+    expect(payload).toMatchObject({ width: 832, height: 1216, sampler_name: 'DPM++ SDE', scheduler: 'Karras', steps: 30, cfg_scale: 5 });
+    expect(payload.override_settings).toMatchObject({ sd_model_checkpoint: 'RealVisXL_V5.0_fp16.safetensors' });
+    expect(payload.alwayson_scripts).toHaveProperty('ADetailer');
+    expect(result).toMatchObject({ improved: true, translatedBy: 'dictionnaire local', subjectType: 'personne', adetailer: true, checkpoint: { id: 'realvisxl' } });
+    expect(readFileSync(result.files[0]!.txt!, 'utf8')).toContain('complétée par Imager (règles seules, traduite par le dictionnaire local)');
+  });
+
+  it('panneau ouvert + option : Forge reste chargé et le modèle n’est pas rechargé ; à la fermeture, Forge est libéré et le modèle revient', async () => {
+    const world: World = { forgeUp: false, loaded: ['qwen2.5:7b'], calls: [], txt2imgPayloads: [] };
+    const { svc, killed } = service(world, { directHoldForge: true }, join(root, 'Forge-direct-3'));
+    await svc.setDirectPanelOpen(true);
+    const first = await svc.generateDirect({ prompt: 'a cat', negative: '', project: 'perso', improve: false });
+    expect(first.forgeHeld).toBe(true);
+    expect(first.brainReloaded).toBeNull();
+    expect(world.calls).toEqual(['ollama:ps', 'ollama:qwen2.5:7b:0', 'forge:spawn', 'forge:options', 'forge:txt2img']);
+    world.calls.length = 0;
+    // Seconde image : Forge déjà là, pas de nouveau démarrage.
+    const second = await svc.generateDirect({ prompt: 'a dog', negative: '', project: 'perso', improve: false });
+    expect(second.forgeHeld).toBe(true);
+    expect(world.calls).toEqual(['ollama:ps', 'forge:txt2img']);
+    world.calls.length = 0;
+    await svc.setDirectPanelOpen(false);
+    expect(world.calls).toEqual(['forge:kill', 'ollama:qwen2.5:7b:30m']);
+    expect(killed).toEqual([4242]);
+  });
+
+  it('projet perso sans .txt (réglage) ; catalogue : modèles et LoRA du disque, défauts par projet', async () => {
+    const world: World = { forgeUp: true, loaded: [], calls: [], txt2imgPayloads: [] };
+    const forgeDir = join(root, 'Forge-direct-4');
+    const { svc } = service(world, { directNoTxtPerso: true }, forgeDir, { realvis: true, animagine: true });
+    mkdirSync(join(forgeDir, 'models', 'Lora'), { recursive: true });
+    writeFileSync(join(forgeDir, 'models', 'Lora', 'monstyle.safetensors'), '');
+    const result = await svc.generateDirect({ prompt: 'a cat', negative: '', project: 'perso', improve: false });
+    expect(result.files[0]!.txt).toBeUndefined();
+    expect(existsSync(result.files[0]!.png)).toBe(true);
+    const catalog = await svc.directCatalog();
+    expect(catalog.enabled).toBe(true);
+    expect(catalog.checkpoints.map((c) => c.label)).toEqual(['Animagine XL 4.0 Opt', 'RealVisXL V5.0', 'SDXL base 1.0']);
+    expect(catalog.loras).toEqual(['monstyle']);
+    expect(catalog.formats).toHaveLength(7);
+    expect(catalog.projects.perso.negative).toContain('deformed hands');
+    expect(catalog.projects.vx.formats).toEqual(['16:9', '9:16']);
+    expect(catalog).toMatchObject({ improve: true, holdForge: false, keepTxtPerso: false, busy: false });
+  });
+
+  it('échec de Forge en mode direct : le modèle est quand même rechargé, Forge libéré', async () => {
+    const world: World = { forgeUp: false, loaded: ['qwen2.5:7b'], calls: [], txt2imgPayloads: [], failTxt2img: true };
+    const { svc } = service(world, {}, join(root, 'Forge-direct-5'));
+    await expect(svc.generateDirect({ prompt: 'a cat', negative: '', project: 'perso', improve: false })).rejects.toThrow(/500/);
+    expect(world.calls.at(-1)).toBe('ollama:qwen2.5:7b:30m');
+    expect(world.calls).toContain('forge:kill');
+  });
+});
 
 describe('ImagesService', () => {
   it('décharge le 7B, lance Forge, génère, range PNG + txt (+ noir et blanc pour drivers-ink), arrête Forge, recharge le 7B', async () => {
