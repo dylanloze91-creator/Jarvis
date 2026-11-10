@@ -140,6 +140,8 @@ export interface ImagesServiceDeps {
 export class ImagesService {
   private processes = new Map<string, ForgeProcess>();
   private busy: Promise<unknown> | null = null;
+  /** Adresses de Forge dont l'ouverture du navigateur au démarrage a déjà été coupée. */
+  private browserLaunchDisabled = new Set<string>();
 
   constructor(private readonly deps: ImagesServiceDeps) {}
 
@@ -403,6 +405,7 @@ export class ImagesService {
     let brainReloaded: string | null = null;
     try {
       how = await forge.ensureRunning(context.onProgress, context.signal);
+      if (how === 'started') await this.disableBrowserLaunch(client, images.forgeUrl);
       context.onProgress?.(count > 1 ? `Forge est prêt, je fabrique ${count} images…` : 'Forge est prêt, je fabrique l’image…');
       if (useAdetailer) {
         // L'extension est sur le disque ; elle doit aussi être chargée par ce Forge.
@@ -569,6 +572,26 @@ export class ImagesService {
     const ok = await ollama.preload(brain, keepAlive);
     if (!ok) warnings.push(`Le modèle ${brain} n’a pas pu être rechargé : il reviendra à la prochaine demande.`);
     return ok ? brain : null;
+  }
+
+  /**
+   * Forge ouvre son interface dans le navigateur à chaque démarrage (réglage `auto_launch_browser`
+   * à « Local » par défaut, sans `config.json`). Lancé par Jarvis après chaque image, il ouvrait un
+   * onglet à chaque fois. Le réglage est coupé une fois par l'API (Forge l'écrit dans son
+   * `config.json`) ; un Forge lancé par l'utilisateur n'est jamais modifié.
+   */
+  private async disableBrowserLaunch(client: ForgeClient, forgeUrl: string): Promise<void> {
+    if (this.browserLaunchDisabled.has(forgeUrl)) return;
+    try {
+      const options = await client.options();
+      if (options.auto_launch_browser !== 'Disable') {
+        await client.setOptions({ auto_launch_browser: 'Disable' });
+        this.deps.log?.('[images] Forge : ouverture du navigateur au démarrage coupée (config.json de Forge).');
+      }
+      this.browserLaunchDisabled.add(forgeUrl);
+    } catch (error) {
+      this.deps.log?.(`[images] Forge : réglage du navigateur laissé tel quel (${error instanceof Error ? error.message : String(error)}).`);
+    }
   }
 
   private processFor(forgeDir: string, client: ForgeClient): ForgeProcess {

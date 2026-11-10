@@ -43,6 +43,10 @@ interface World {
   refineReply?: string;
   /** `false` : Forge tourne sans l'extension ADetailer chargée. */
   adetailerLoaded?: boolean;
+  /** Réglage `auto_launch_browser` de Forge avant le tour (défaut de Forge : `'Local'`). */
+  browserLaunch?: string;
+  /** Dernier corps envoyé à `/sdapi/v1/options`. */
+  forgeOptions?: Record<string, unknown>;
 }
 
 function fakeFetch(world: World): typeof fetch {
@@ -72,6 +76,14 @@ function fakeFetch(world: World): typeof fetch {
     }
     if (!world.forgeUp) throw Object.assign(new Error('ECONNREFUSED'), { name: 'TypeError' });
     if (url.includes('/sdapi/v1/progress')) return json({ progress: 0 });
+    if (url.includes('/sdapi/v1/options')) {
+      if (init?.method === 'POST') {
+        world.calls.push('forge:options');
+        world.forgeOptions = body;
+        return json({});
+      }
+      return json({ auto_launch_browser: world.browserLaunch ?? 'Local' });
+    }
     if (url.includes('/sdapi/v1/loras')) return json([{ name: 'monstyle' }]);
     if (url.includes('/sdapi/v1/scripts')) {
       world.calls.push('forge:scripts');
@@ -152,7 +164,9 @@ describe('ImagesService', () => {
 
     expect(progress[0]).toMatch(/consigne pour Stable Diffusion/);
     expect(progress[1]).toMatch(/Jarvis Imager prend la main/);
-    expect(world.calls).toEqual(['ollama:ps', 'ollama:refine:qwen2.5:7b', 'ollama:ps', 'ollama:qwen2.5:7b:0', 'forge:spawn', 'forge:txt2img', 'forge:kill', 'ollama:qwen2.5:7b:30m']);
+    expect(world.calls).toEqual(['ollama:ps', 'ollama:refine:qwen2.5:7b', 'ollama:ps', 'ollama:qwen2.5:7b:0', 'forge:spawn', 'forge:options', 'forge:txt2img', 'forge:kill', 'ollama:qwen2.5:7b:30m']);
+    // Forge ouvrait son interface dans le navigateur à chaque lancement : coupé une fois, par l'API.
+    expect(world.forgeOptions).toEqual({ auto_launch_browser: 'Disable' });
     expect(result.refined).toMatchObject({ used: true, model: 'qwen2.5:7b' });
     expect(result.finalPrompt).toContain('refined: a red fox sticker in english');
     expect(killed).toEqual([4242]);
@@ -217,12 +231,12 @@ describe('ImagesService', () => {
     const { svc } = service(world, { refinePrompts: false });
     await expect(svc.generate({ prompt: 'anything', project: 'jarvis' })).rejects.toMatchObject({ kind: 'http' });
     // Un 500 est retenté une fois ; le second échec est rendu tel quel, Forge libéré, 7B rechargé.
-    expect(world.calls).toEqual(['ollama:ps', 'ollama:qwen2.5:7b:0', 'forge:spawn', 'forge:txt2img', 'forge:txt2img', 'forge:kill', 'ollama:qwen2.5:7b:30m']);
+    expect(world.calls).toEqual(['ollama:ps', 'ollama:qwen2.5:7b:0', 'forge:spawn', 'forge:options', 'forge:txt2img', 'forge:txt2img', 'forge:kill', 'ollama:qwen2.5:7b:30m']);
     expect(world.loaded).toEqual(['qwen2.5:7b']);
   });
 
-  it('réglage « laisser Forge allumé » : Forge n’est pas arrêté, le modèle de Forge est déchargé', async () => {
-    const world: World = { forgeUp: false, loaded: [], calls: [], txt2imgPayloads: [] };
+  it('réglage « laisser Forge allumé » : Forge n’est pas arrêté, le modèle de Forge est déchargé ; navigateur déjà coupé = rien n’est réécrit', async () => {
+    const world: World = { forgeUp: false, loaded: [], calls: [], txt2imgPayloads: [], browserLaunch: 'Disable' };
     const { svc } = service(world, { keepForgeRunning: true });
     const result = await svc.generate({ prompt: 'logo', project: 'vx' });
     // Rien n'était chargé : le cerveau de l'orchestre est quand même consulté pour la consigne (il se charge).

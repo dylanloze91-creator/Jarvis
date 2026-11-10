@@ -12,6 +12,7 @@ Jarvis peut créer des images sur ton PC, sans Internet, avec **Forge** (une int
 ## Lancer Forge
 
 - Double-clique sur `C:\dev\Forge\lancer_forge.bat`. Une fenêtre noire s'ouvre ; quand tu lis `Running on local URL: http://127.0.0.1:7860`, Forge est prêt. Tu peux ouvrir cette adresse dans ton navigateur pour t'en servir à la main.
+- Forge ouvre son interface dans le navigateur à chaque démarrage (son réglage par défaut). Comme Jarvis le relance pour chaque image, un onglet s'ouvrait à chaque fois : Jarvis coupe ce réglage la première fois qu'il lance Forge (Forge l'écrit dans `C:\dev\Forge\config.json`, ligne `"auto_launch_browser": "Disable"`). Pour le remettre, change cette ligne en `"Local"` ou ouvre l'adresse à la main.
 - Tu n'es **pas obligé** de le lancer : si Forge est éteint quand tu demandes une image, Jarvis le démarre lui-même (environ une minute) et l'arrête après l'image.
 - Le premier lancement installe PyTorch et les dépendances (environ 3 Go, 10 à 20 minutes). Les suivants prennent 30 à 60 secondes.
 
