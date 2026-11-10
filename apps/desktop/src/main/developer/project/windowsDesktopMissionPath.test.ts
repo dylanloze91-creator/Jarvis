@@ -124,7 +124,12 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await fake.stop();
-  rmSync(base, { recursive: true, force: true });
+  // Windows : un processus .NET (serveur de build, publish) tient parfois le dossier quelques instants (EBUSY).
+  try {
+    rmSync(base, { recursive: true, force: true, maxRetries: 20, retryDelay: 250 });
+  } catch (error) {
+    console.warn(`nettoyage de ${base} impossible (dossier temporaire laissé) : ${error instanceof Error ? error.message : String(error)}`);
+  }
 });
 
 function assertExeAndTests(_projectTitle: string, projectId: string) {
