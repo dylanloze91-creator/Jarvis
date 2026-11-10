@@ -29,6 +29,19 @@ Dans la discussion (ou à la voix), par exemple :
 
 Ce qui se passe : Jarvis prévient (« je décharge le modèle de langage, je reviens dans une minute ou deux »), décharge le modèle 7B de la carte graphique, allume Forge si besoin, fabrique l'image, éteint Forge (ou décharge son modèle si tu l'avais allumé toi-même), **recharge le 7B**, puis donne le chemin des fichiers. Si Forge ne répond pas, Jarvis le dit en français et recharge quand même le 7B.
 
+## Mode direct : passer outre le cerveau
+
+Quand tu veux envoyer **ta** consigne telle quelle à Forge, sans que le modèle de langage la lise, la réécrive ou la juge :
+
+- **Dans la discussion** : commence par `/image`, par exemple `/image un renard roux dans la neige, lumière douce`. La demande part directement à Jarvis Imager (projet perso, sauf si tu nommes « pour Driver's Ink », « miniature », « pour Jarvis »). Les phrases qui commencent par « Imager, … », « génère une image… », « dessine-moi… », « fais-moi une image… » y vont aussi toutes seules (liste modifiable dans `imager_rules.yaml`, section `direct`, clé `declencheurs`).
+- **Le panneau « Imager direct »** (bouton dans la barre de gauche, visible quand Jarvis Imager est activé) : ta consigne, le prompt négatif pré-rempli, le modèle et les LoRA présents dans Forge, la taille (natives SDXL), le nombre d'images, la graine, les pas, le CFG, l'échantillonneur, ADetailer, le projet de rangement, « Générer », une barre d'avancement et l'aperçu des images.
+- **« Améliorer mon prompt »** (coché par défaut, réglable dans le panneau et par `direct.ameliorer` du fichier de règles) : Imager ajoute seulement ce qui aide Stable Diffusion — traduction en anglais par un petit dictionnaire local (aucun modèle), mots de qualité, style du projet, taille native selon le sujet, défauts à éviter. Le contenu de ta demande n'est ni jugé ni filtré. Décoché : la consigne part mot pour mot. La consigne finale est montrée dans la réponse et gardée dans le fichier `.txt`.
+- **Si le cerveau répond sans faire l'image** alors que ta phrase ressemblait à une demande d'image, un bouton « Envoyer à Imager » apparaît sous sa réponse : il renvoie ta demande telle quelle à Imager.
+- **Carte graphique** : comme d'habitude, le modèle de langage est déchargé, l'image faite, puis le modèle rechargé, même en cas d'erreur. Option (Réglages → Jarvis Imager) : « garder Forge chargé tant que le panneau est ouvert » pour enchaîner plusieurs images ; le modèle de langage revient quand tu fermes le panneau.
+- **Rangement** : `C:\dev\Jarvis_images\<projet>\<date>\` avec le `.txt` des réglages. Option : « projet perso : ne pas garder le fichier texte du prompt ». Rien de tout ça ne sort de ton PC.
+
+Les tours `/image` ne sont jamais renvoyés au modèle de langage dans la suite de la conversation, ni mis dans sa mémoire.
+
 ## Partir d'une photo
 
 Clique sur le bouton « image + » à côté du bouton d'envoi (ou glisse une photo sur la zone de saisie), puis écris ce que tu veux : « fais-en un sticker pour Drivers Ink », « transforme-la en manga japonais », « reste très proche de la photo ». Jusqu'à trois photos par message (PNG, JPEG ou WebP, 20 Mo au plus). Jarvis recopie la photo dans `C:\dev\Jarvis_images\_references\`, s'en sert comme base, et range une copie à côté du résultat (`…-source.png`). La photo n'est jamais envoyée au modèle de langage : il ne connaît que son chemin.
