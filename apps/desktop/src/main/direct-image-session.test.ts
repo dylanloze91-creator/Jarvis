@@ -188,6 +188,22 @@ describe('mode direct de Jarvis Imager dans la session', () => {
     ]);
   });
 
+  it('« pas mal mais en version anime » après un tour direct : la consigne précédente plus le changement, toujours sans modèle', async () => {
+    const state: FakeImages = { enabled: true, generated: [] };
+    const h = harness(state, { orchestra: true });
+    const first = await h.turn('génère une image de Hinata au bord de la plage');
+    const second = await h.turn('pas mal mes en version anime manga', first.conversationId);
+    expect(h.requests).toHaveLength(0);
+    expect(state.generated.map((g) => g.prompt)).toEqual(['génère une image de Hinata au bord de la plage', 'génère une image de Hinata au bord de la plage, version anime manga']);
+    expect(second.events.find((event) => event.type === 'route')).toMatchObject({ how: 'direct', model: 'suite de l’image précédente, sans modèle' });
+    expect(second.done?.messages.at(-2)).toMatchObject({ role: 'user', direct: 'image', directPrompt: 'génère une image de Hinata au bord de la plage, version anime manga' });
+    // Une vraie question après : le cerveau, sans les tours directs.
+    const third = await h.turn('Quelle heure est-il à Tokyo ?', first.conversationId);
+    expect(h.requests.length).toBeGreaterThan(0);
+    expect(h.requests.at(-1)!.userMessages).toEqual(['Quelle heure est-il à Tokyo ?']);
+    expect(third.done?.messages).toHaveLength(6);
+  });
+
   it('/image sans texte : réponse fixe, rien n’est généré', async () => {
     const state: FakeImages = { enabled: true, generated: [] };
     const h = harness(state);

@@ -108,6 +108,8 @@ export {
   guessProject,
   guessSubjectType,
   guessPersonCount,
+  stripImageRequestPrefix,
+  directFollowUp,
   type DirectLora,
   type DirectImageRequest,
   type DirectProjectDefaults,

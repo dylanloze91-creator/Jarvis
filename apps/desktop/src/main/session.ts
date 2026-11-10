@@ -73,6 +73,7 @@ import {
   parseImageCommand,
   detectDirectImageRequest,
   guessProject,
+  directFollowUp,
   stripDirectTurns,
   isDirectImageMessage,
   looksLikeImageIntent,
@@ -279,8 +280,11 @@ export class ChatSession {
     this.deps.noteUserTurn?.({ text: input.text, attachments });
     // Mode direct de Jarvis Imager : `/image …` ou une demande repérée par règles part à Imager sans
     // aucun modèle de langage ; le tour est marqué `direct` et jamais renvoyé au modèle ensuite.
-    const direct = attachments.length ? null : await this.directImageRequest(input.text);
-    const userMessage = createMessage('user', input.text, { ...(attachments.length ? { attachments } : {}), ...(direct ? { direct: 'image' as const } : {}) });
+    const direct = attachments.length ? null : await this.directImageRequest(input.text, conversation.messages);
+    const userMessage = createMessage('user', input.text, {
+      ...(attachments.length ? { attachments } : {}),
+      ...(direct ? { direct: 'image' as const, directPrompt: direct.prompt } : {}),
+    });
     const messages: ChatMessage[] = [...conversation.messages, userMessage];
     /** Copie pour le modèle : sans les tours directs, les photos devenues des notes ; `messages` (affiché, enregistré) ne change pas. */
     const modelMessages = withAttachmentNotes(stripDirectTurns(messages));
@@ -613,15 +617,24 @@ export class ChatSession {
    * Mode direct de Jarvis Imager : `/image …` (commande) ou un début de phrase de `direct.declencheurs`
    * (règles, modifiables dans `imager_rules.yaml`). Module coupé ou texte sans rapport : `null`.
    */
-  private async directImageRequest(text: string): Promise<{ prompt: string; project: ImageProject; how: 'commande' | 'regle' } | null> {
+  private async directImageRequest(
+    text: string,
+    history: readonly ChatMessage[],
+  ): Promise<{ prompt: string; project: ImageProject; how: 'commande' | 'regle' | 'suite' } | null> {
     const images = this.deps.images;
     if (!images?.isEnabled()) return null;
     const command = parseImageCommand(text);
     if (command) return { prompt: command.prompt, project: guessProject(command.prompt), how: 'commande' };
     const { rules } = await images.loadRules().catch(() => ({ rules: null }));
     const detected = detectDirectImageRequest(text, rules?.direct.declencheurs);
-    if (!detected) return null;
-    return { prompt: detected.prompt, project: guessProject(detected.prompt), how: 'regle' };
+    if (detected) return { prompt: detected.prompt, project: guessProject(detected.prompt), how: 'regle' };
+    // Suite d'un tour direct (« pas mal mais en version anime ») : la consigne précédente plus le changement.
+    const lastUser = [...history].reverse().find((message) => message.role === 'user');
+    if (lastUser?.direct === 'image' && lastUser.directPrompt) {
+      const followUp = directFollowUp(text, lastUser.directPrompt);
+      if (followUp) return { prompt: followUp, project: guessProject(followUp), how: 'suite' };
+    }
+    return null;
   }
 
   /** Un tour direct : Imager seul, événements de la discussion comme pour un outil, journal d'audit, rien pour le modèle ni la mémoire. */
@@ -629,12 +642,18 @@ export class ChatSession {
     emit: (event: ChatEvent) => void,
     conversation: Conversation,
     messages: ChatMessage[],
-    direct: { prompt: string; project: ImageProject; how: 'commande' | 'regle' },
+    direct: { prompt: string; project: ImageProject; how: 'commande' | 'regle' | 'suite' },
     controller: AbortController,
     superseded: () => boolean,
   ): Promise<void> {
     const images = this.deps.images!;
-    emit({ type: 'route', team: 'images', label: 'Jarvis Imager', model: direct.how === 'commande' ? 'commande /image, sans modèle' : 'règle, sans modèle', how: 'direct' });
+    emit({
+      type: 'route',
+      team: 'images',
+      label: 'Jarvis Imager',
+      model: direct.how === 'commande' ? 'commande /image, sans modèle' : direct.how === 'suite' ? 'suite de l’image précédente, sans modèle' : 'règle, sans modèle',
+      how: 'direct',
+    });
     let content: string;
     let status: 'ok' | 'error' = 'ok';
     const callId = randomId();

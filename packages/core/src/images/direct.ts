@@ -372,6 +372,43 @@ function stripLeadingFiller(text: string): string {
   return rest;
 }
 
+/**
+ * En mode « améliorer », le verbe de la demande n'a rien à faire dans la consigne (observé : « génère image
+ * d'hInata nue… » envoyé à Stable Diffusion). Retire « génère(-moi) une image de », « dessine-moi », « fais-moi
+ * un sticker de »… en tête ; le reste est gardé mot pour mot. Le mode « telle quelle » n'y touche pas.
+ */
+export function stripImageRequestPrefix(text: string): string {
+  let rest = text.trim();
+  for (let guard = 0; guard < 4; guard += 1) {
+    const next = rest
+      .replace(LEADING_FILLER_RAW, '')
+      .replace(/^imager\s*[,:\u2013\u2014-]?\s*/iu, '')
+      .replace(
+        /^(?:g[ée]n[èe]re|g[ée]n[ée]rement|g[ée]n[ée]rer|cr[ée]e|cr[ée]er|dessine|dessiner|peins|peindre|fais|faire|fabrique|imagine|invente|r[ée]alise|produis|montre)(?:[- ]?(?:moi|nous))?\s*[,:]?\s*/iu,
+        '',
+      )
+      .replace(/^(?:une?|des|\d+|le|la|les|mon|ma|mes)?\s*(?:nouvel(?:le)?s?\s+)?(?:images?|illustrations?|dessins?|stickers?|autocollants?|logos?|photos?|visuels?|affiches?|miniatures?)\s+(?:de\s+|d[\u2019']\s*|du\s+|des\s+|repr[ée]sentant\s+|montrant\s+|avec\s+)?/iu, '')
+      .trim();
+    if (next === rest) break;
+    rest = next;
+  }
+  return rest || text.trim();
+}
+
+/**
+ * Suite d'un tour direct (« pas mal mais en version anime », « la même de face », « refais-la en 16:9 ») :
+ * la consigne précédente plus le changement demandé. `null` si la phrase ne ressemble pas à une suite.
+ */
+export function directFollowUp(text: string, previousPrompt: string): string | null {
+  const t = text.trim();
+  if (!t || !previousPrompt.trim()) return null;
+  const match =
+    /^(?:(?:pas mal|ok|oui|bien|super|cool|top|parfait|nickel|j[\u2019']aime|c[\u2019']est bien)\s*[,.!]?\s*)?(?:mais|mes|la m[êe]me|pareil|m[êe]me chose|refais(?:[- ]?la|[- ]?en)?|encore(?: une)?|en version|plut[ôo]t|cette fois|maintenant|et)\b\s*(.*)$/iu.exec(t);
+  if (!match) return null;
+  const change = (match[1] ?? '').replace(/^(?:en|mais|mes|avec|,)\s+/iu, '').trim();
+  return change ? `${previousPrompt.trim()}, ${change}` : previousPrompt.trim();
+}
+
 /* ------------------------------------------------------------------ */
 /* Déductions par mots (projet, type, nombre de personnes)             */
 /* ------------------------------------------------------------------ */
@@ -395,10 +432,25 @@ const STICKER_WORDS = /\b(?:sticker|stickers|autocollant|autocollants|logo|logos
 const OBJECT_WORDS =
   /\b(?:objet|voiture|voitures|moto|motos|velo|camion|bateau|avion|montre|bague|bijou|bouteille|verre|tasse|chaise|table|lampe|telephone|ordinateur|robot|vaisseau|epee|arme|casque|chaussure|chaussures|sac|fleur|fleurs|fruit|fruits|gateau|plat|nourriture|animal|chat|chien|renard|loup|lion|tigre|cheval|oiseau|dragon|poisson|papillon)\b/u;
 
+/** Mots du corps, de la pose, de la tenue : une personne, même sans le mot (observé : « Hinata nue … seins » deviné paysage à cause de « plage »). */
+const BODY_WORDS =
+  /\b(?:nue?s?|nude|naked|seins?|poitrine|fesses?|peau|corps|torse|ventre|hanches?|cuisses?|jambes?|bras|epaules?|visage|bouche|levres?|regard|cheveux|chevelure|blonde?|brune?|rousse|roux|caress\w*|allong[ée]e?s?|couch[ée]e?s?|assise?s?|debout|agenouill[ée]e?|a genoux|penche[ée]?|cambr[ée]e?|lingerie|culotte|soutien gorge|string|bikini|maillot|nuisette|bas|talons|tenue|cosplay|kimono|uniforme|robe|jupe|chemise|decollete|sourit|souriante?|sexy|sensuelle?|erotique|pose|posant)\b/u;
+/** Séries d'animation connues : un nom de personnage suit presque toujours (« Hinata de Naruto »). */
+const SERIES_WORDS = /\b(?:naruto|boruto|one piece|dragon ?ball|pokemon|bleach|demon slayer|kimetsu|attack on titan|shingeki|my hero academia|jujutsu kaisen|sailor moon|evangelion|genshin|fairy tail|hunter x hunter|death note|fullmetal|jojo|chainsaw man|spy x family|haikyuu|one punch man|tokyo ghoul|sword art online|cowboy bebop|akira|ghibli|totoro|disney|pixar|marvel|dc comics|final fantasy|zelda|overwatch|league of legends|fortnite)\b/u;
+
+/** Un nom propre au milieu de la phrase (« une image de Hinata ») : presque toujours un personnage. */
+function hasInnerProperName(text: string, includeFirst = false): boolean {
+  const words = text.trim().split(/\s+/u);
+  return (includeFirst ? words : words.slice(1)).some(
+    (word) => /^[\p{Lu}][\p{Ll}]{2,}/u.test(word.replace(/^[«"'(]+/u, '')) && !/^(?:Driver|Ink|Jarvis|VX|Forge|Stable|Diffusion|SDXL|Imager)$/u.test(word.replace(/[^\p{L}]/gu, '')),
+  );
+}
+
 /** Type du sujet deviné par mots (pas de modèle) : personne, scène, paysage, logo-sticker, objet, sinon autre. */
 export function guessSubjectType(text: string): ImageSubjectType {
   const t = normalizeForTriggers(text);
-  const persons = PERSON_WORDS.test(t);
+  const stripped = stripImageRequestPrefix(text);
+  const persons = PERSON_WORDS.test(t) || BODY_WORDS.test(t) || SERIES_WORDS.test(t) || hasInnerProperName(text) || hasInnerProperName(stripped, stripped !== text.trim());
   if (STICKER_WORDS.test(t) && !persons) return 'logo-sticker';
   if (persons && (SCENE_WORDS.test(t) || guessPersonCount(text) > 1)) return 'scene';
   if (persons) return 'personne';

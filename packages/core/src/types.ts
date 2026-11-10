@@ -81,6 +81,8 @@ export interface ChatMessage {
   missionId?: string;
   /** Mode direct de Jarvis Imager (`/image`, règles) : ce tour n'est jamais renvoyé au modèle de langage. */
   direct?: 'image';
+  /** Message utilisateur direct : la consigne réellement confiée à Imager (sert aux suites « la même en anime »). */
+  directPrompt?: string;
   createdAt: number;
 }
 

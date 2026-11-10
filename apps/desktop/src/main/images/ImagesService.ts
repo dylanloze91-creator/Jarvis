@@ -15,6 +15,7 @@ import {
   guessPersonCount,
   guessSubjectType,
   isSafeModelFileName,
+  stripImageRequestPrefix,
   toEnglishIfNeeded,
   MAX_ATTACHMENT_BYTES,
   activeOrchestra,
@@ -852,13 +853,15 @@ export class ImagesService {
     if (unloaded.length) this.deps.log?.(`[images] modèles Ollama déchargés : ${unloaded.join(', ')}`);
 
     // Traduction en anglais par le dictionnaire local (aucun modèle, rien n'est jugé ni filtré) : seulement si la demande est en français.
-    const english = improve ? toEnglishIfNeeded(request.prompt) : null;
+    // Sujet : sans le verbe de la demande (« génère une image de »), puis traduit par le dictionnaire s'il est en français.
+    const subject = improve ? stripImageRequestPrefix(request.prompt) : request.prompt;
+    const english = improve ? toEnglishIfNeeded(subject) : null;
     const translated = english?.translated ? { text: english.text, model: 'dictionnaire local' } : null;
 
     const assembled = improve
       ? buildImagerPrompt(
           {
-            subject: translated?.text ?? request.prompt,
+            subject: translated?.text ?? subject,
             type: subjectType,
             ...(personCount ? { personCount } : {}),
             project: request.project,

@@ -5,6 +5,40 @@
  */
 
 const PHRASES: readonly (readonly [string, string])[] = [
+  // Ajouts du 10 novembre (essai de l'utilisateur : « en train de », « vu de loin », « de face », « dans le style de »).
+  ['en train de se', ''],
+  ['en train de', ''],
+  ['vue de loin', 'seen from afar, wide shot'],
+  ['vu de loin', 'seen from afar, wide shot'],
+  ['vue de près', 'close view'],
+  ['vu de près', 'close view'],
+  ['de face', 'front view'],
+  ['de dos', 'from behind'],
+  ['de profil', 'side profile'],
+  ['en plongée', 'high angle'],
+  ['en contre-plongée', 'low angle'],
+  ['dans le style de', 'in the style of'],
+  ['dans le style', 'in the style of'],
+  ['style de', 'style of'],
+  ['au bord de la plage', 'on the beach shore'],
+  ['au bord de la mer', 'by the sea'],
+  ['au bord du lac', 'by the lake'],
+  ['au bord de', 'at the edge of'],
+  ['bord de la plage', 'beach shore'],
+  ['fin de journée', 'late afternoon'],
+  ['fin d’après-midi', 'late afternoon'],
+  ['tôt le matin', 'early morning'],
+  ['en pleine nuit', 'at night'],
+  ['cheveux longs', 'long hair'],
+  ['cheveux courts', 'short hair'],
+  ['sa main sur', 'her hand on'],
+  ['ses mains sur', 'her hands on'],
+  ['du bon temps', 'a good time'],
+  ['montre de plongée', 'dive watch'],
+  ['en acier', 'steel'],
+  ['rocher mouillé', 'wet rock'],
+  ['soutien-gorge', 'bra'],
+  ['soutien gorge', 'bra'],
   ['coucher du soleil', 'sunset'],
   ['lever du soleil', 'sunrise'],
   ['au bord de la mer', 'by the sea'],
@@ -198,6 +232,149 @@ const WORDS: Record<string, string> = {
   fenetre: 'window',
   fenêtre: 'window',
   porte: 'door',
+  // Ajouts du 10 novembre : corps, pose, tenue, lieux, vues (vocabulaire neutre : rien n'est filtré).
+  nu: 'nude',
+  nue: 'nude',
+  nus: 'nude',
+  nues: 'nude',
+  seins: 'breasts',
+  sein: 'breast',
+  poitrine: 'chest',
+  fesses: 'buttocks',
+  peau: 'skin',
+  corps: 'body',
+  torse: 'torso',
+  ventre: 'belly',
+  hanches: 'hips',
+  cuisses: 'thighs',
+  jambes: 'legs',
+  jambe: 'leg',
+  bras: 'arms',
+  epaules: 'shoulders',
+  épaules: 'shoulders',
+  dos: 'back',
+  pieds: 'feet',
+  bouche: 'mouth',
+  levres: 'lips',
+  lèvres: 'lips',
+  regard: 'gaze',
+  caresser: 'caressing',
+  caressant: 'caressing',
+  caresse: 'caressing',
+  allongee: 'lying down',
+  allongée: 'lying down',
+  allonge: 'lying down',
+  allongé: 'lying down',
+  couchee: 'lying',
+  couchée: 'lying',
+  agenouillee: 'kneeling',
+  agenouillée: 'kneeling',
+  penchee: 'leaning',
+  penchée: 'leaning',
+  souriante: 'smiling',
+  souriant: 'smiling',
+  sourit: 'smiling',
+  rousse: 'red-haired',
+  roux: 'red-haired',
+  blonde: 'blonde',
+  blond: 'blond',
+  brune: 'brunette',
+  brun: 'brown-haired',
+  longs: 'long',
+  courts: 'short',
+  lingerie: 'lingerie',
+  culotte: 'panties',
+  string: 'thong',
+  bikini: 'bikini',
+  maillot: 'swimsuit',
+  nuisette: 'nightie',
+  serviette: 'towel',
+  tenue: 'outfit',
+  chemise: 'shirt',
+  jupe: 'skirt',
+  pantalon: 'pants',
+  short: 'shorts',
+  chaussures: 'shoes',
+  talons: 'heels',
+  bas: 'stockings',
+  lunettes: 'glasses',
+  tatouage: 'tattoo',
+  tatouages: 'tattoos',
+  kimono: 'kimono',
+  uniforme: 'uniform',
+  cosplay: 'cosplay',
+  sexy: 'sexy',
+  sensuelle: 'sensual',
+  sensuel: 'sensual',
+  mignonne: 'cute',
+  mignon: 'cute',
+  sable: 'sand',
+  rocher: 'rock',
+  rochers: 'rocks',
+  mouille: 'wet',
+  mouillé: 'wet',
+  mouillee: 'wet',
+  mouillée: 'wet',
+  humide: 'damp',
+  jacuzzi: 'hot tub',
+  piscine: 'pool',
+  baignoire: 'bathtub',
+  douche: 'shower',
+  lit: 'bed',
+  chambre: 'bedroom',
+  canape: 'sofa',
+  canapé: 'sofa',
+  salon: 'living room',
+  cuisine: 'kitchen',
+  bureau: 'office',
+  terrasse: 'terrace',
+  balcon: 'balcony',
+  loin: 'far',
+  pres: 'close',
+  près: 'close',
+  vu: 'seen',
+  vue: 'view',
+  face: 'front',
+  bord: 'edge',
+  gros: 'big',
+  grosse: 'big',
+  version: 'version',
+  heroine: 'heroine',
+  héroïne: 'heroine',
+  heros: 'hero',
+  héros: 'hero',
+  guerriere: 'female warrior',
+  guerrière: 'female warrior',
+  guerrier: 'warrior',
+  ninja: 'ninja',
+  princesse: 'princess',
+  reine: 'queen',
+  roi: 'king',
+  sorciere: 'witch',
+  sorcière: 'witch',
+  elfe: 'elf',
+  pirate: 'pirate',
+  chevalier: 'knight',
+  montre: 'watch',
+  acier: 'steel',
+  bague: 'ring',
+  bijou: 'jewel',
+  moto: 'motorbike',
+  renard: 'fox',
+  loup: 'wolf',
+  dragon: 'dragon',
+  papillon: 'butterfly',
+  brume: 'mist',
+  brumeux: 'misty',
+  brouillard: 'fog',
+  coucher: 'setting',
+  lever: 'rising',
+  journee: 'day',
+  journée: 'day',
+  fin: 'end',
+  temps: 'time',
+  bon: 'good',
+  bonne: 'good',
 };
 
 const FRENCH_HINT = /[àâäéèêëïîôùûüçœ]/i;
@@ -226,8 +403,13 @@ export function toEnglishIfNeeded(text: string): { text: string; translated: boo
   if (!trimmed || !looksFrench(trimmed)) return { text: trimmed, translated: false };
   let working = ` ${trimmed} `;
   const phrases = [...PHRASES].sort((a, b) => b[0].length - a[0].length);
+  // Une phrase traduite est mise à l'abri du mot à mot (« on », « a » sont aussi des mots-outils français).
+  const kept: string[] = [];
   for (const [from, to] of phrases) {
-    working = working.replace(new RegExp(from.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'giu'), ` ${to} `);
+    working = working.replace(new RegExp(from.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'giu'), () => {
+      kept.push(to);
+      return ` \uE000${kept.length - 1}\uE000 `;
+    });
   }
   const translated = working
     .trim()
@@ -235,10 +417,13 @@ export function toEnglishIfNeeded(text: string): { text: string; translated: boo
     .map((token) => {
       if (!token.trim()) return token;
       const bare = token.replace(/^[«»"'(]+|[»"'),.:;!?]+$/g, '');
-      const key = bare.toLowerCase();
+      // Élision (« d’une », « l’eau ») : le mot-outil collé est retiré, le mot qui suit est traduit.
+      const elided = bare.replace(/^(?:d|l|qu|j|n|s|c|m|t)[’']/iu, '');
+      const key = elided.toLowerCase();
       const mapped = WORDS[key] ?? WORDS[fold(key)];
       if (mapped === undefined) {
         if (DROP.has(fold(key))) return '';
+        if (elided !== bare) return `${token.slice(0, token.indexOf(bare))}${elided}${token.slice(token.indexOf(bare) + bare.length)}`;
         return token;
       }
       if (!mapped) return '';
@@ -247,9 +432,11 @@ export function toEnglishIfNeeded(text: string): { text: string; translated: boo
       return `${lead}${mapped}${tail}`;
     })
     .join('')
+    .replace(/\uE000(\d+)\uE000/g, (_match, index: string) => kept[Number(index)] ?? '')
     .replace(/\s+,/g, ',')
     .replace(/\s{2,}/g, ' ')
     .replace(/\s+([,.;!?])/g, '$1')
+    .replace(/^[,\s]+|[,\s]+$/g, '')
     .trim();
   return { text: translated || trimmed, translated: true };
 }

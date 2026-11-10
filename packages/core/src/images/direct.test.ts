@@ -5,7 +5,10 @@ import {
   DEFAULT_PRESETS,
   buildDirectPayload,
   detectDirectImageRequest,
+  directFollowUp,
   directProjectDefaults,
+  stripImageRequestPrefix,
+  toEnglishIfNeeded,
   guessPersonCount,
   guessProject,
   guessSubjectType,
@@ -117,12 +120,47 @@ describe('mode direct : repérage par règles (avant tout modèle)', () => {
     expect(detectDirectImageRequest('Hé Imager fais un chat', ['he imager'])).toEqual({ prompt: 'Hé Imager fais un chat', trigger: 'he imager' });
   });
 
+  it('sujet sans le verbe de la demande (mode « améliorer ») ; « portrait » reste', () => {
+    expect(stripImageRequestPrefix('génère une image d’hInata nue au bord de la plage, vu de loin')).toBe('hInata nue au bord de la plage, vu de loin');
+    expect(stripImageRequestPrefix('Jarvis, génère-moi une image de renard roux')).toBe('renard roux');
+    expect(stripImageRequestPrefix('Imager, fais-moi un sticker de renard')).toBe('renard');
+    expect(stripImageRequestPrefix('dessine-moi un robot qui lit')).toBe('un robot qui lit');
+    expect(stripImageRequestPrefix('portrait d’une femme rousse qui sourit')).toBe('portrait d’une femme rousse qui sourit');
+    expect(stripImageRequestPrefix('a red fox in the snow')).toBe('a red fox in the snow');
+  });
+
+  it('dictionnaire local : les phrases de l’essai de l’utilisateur sont traduites, rien n’est filtré', () => {
+    const t = toEnglishIfNeeded('hInata nue au bord de la plage, en train de se caresser les seins, vu de loin, de face dans le style de naruto manga anime');
+    expect(t.translated).toBe(true);
+    expect(t.text).toContain('hInata nude');
+    expect(t.text).toContain('on the beach shore');
+    expect(t.text).toContain('caressing');
+    expect(t.text).toContain('breasts');
+    expect(t.text).toContain('seen from afar, wide shot');
+    expect(t.text).toContain('front view');
+    expect(t.text).toContain('in the style of naruto manga anime');
+    expect(t.text).not.toMatch(/\b(?:nue|seins|loin|train)\b/);
+    expect(toEnglishIfNeeded('portrait d’une femme rousse qui sourit, lumière douce de fin de journée').text).toBe('portrait woman red-haired smiling, light soft late afternoon');
+  });
+
+  it('suite d’un tour direct : la consigne précédente plus le changement', () => {
+    expect(directFollowUp('pas mal mes en version anime manga', 'hinata nue au bord de la plage')).toBe('hinata nue au bord de la plage, version anime manga');
+    expect(directFollowUp('la même de face', 'un renard roux')).toBe('un renard roux, de face');
+    expect(directFollowUp('refais-la en 16:9', 'un renard roux')).toBe('un renard roux, 16:9');
+    expect(directFollowUp('Quelle heure est-il ?', 'un renard roux')).toBeNull();
+    expect(directFollowUp('génère autre chose', 'un renard roux')).toBeNull();
+  });
+
   it('devine le projet, le type et le nombre de personnes par mots', () => {
     expect(guessProject("un sticker de renard pour Driver's Ink")).toBe('drivers-ink');
     expect(guessProject('une miniature YouTube pour ma vidéo')).toBe('vx');
     expect(guessProject('un fond d’écran pour le projet Jarvis')).toBe('jarvis');
     expect(guessProject('Hinata en bikini sur la plage')).toBe('perso');
     expect(guessSubjectType('Hinata de Naruto, une femme ninja qui sourit')).toBe('personne');
+    // Observé : « Hinata nue au bord de la plage … seins » deviné paysage à cause de « plage ».
+    expect(guessSubjectType('génère une image d’hInata nue au bord de la plage, en train de se caresser les seins, vu de loin')).toBe('personne');
+    expect(guessSubjectType('une image de Hinata dans un jacuzzi')).toBe('personne');
+    expect(guessSubjectType('mets de la musique sur mon enceinte')).not.toBe('personne');
     expect(guessSubjectType('deux amis qui trinquent en terrasse')).toBe('scene');
     expect(guessSubjectType('un paysage de montagne au coucher de soleil')).toBe('paysage');
     expect(guessSubjectType('un sticker de renard')).toBe('logo-sticker');
