@@ -497,11 +497,82 @@ describe('pont des enceintes (5.0.64)', () => {
     setTranscript('Jarvis, génère une image d’un chat');
     const reply = await call(port, '/api/speaker/turn', { token, body: voiceWav() });
     expect(reply.status).toBe(200);
+    expect(reply.headers['x-jarvis-continue']).toBe('0');
     expect(synth.spoken).toEqual([SPEAKER_IMAGE_WAIT]);
     expect(shown).toContain('img-1');
     release();
     await new Promise((resolve) => setTimeout(resolve, 30));
     expect(shown.filter((id) => id === 'img-1').length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('une phrase pendant une image ne l’annule pas, et le micro se ferme après l’attente', async () => {
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const shown: string[] = [];
+    const seen: Array<{ chat: FakeChat; input: SendChatInput }> = [];
+    const box: { store?: InMemoryConversationStore } = {};
+    const { port, token, synth, setTranscript, conversations } = await setup({
+      followUpSeconds: 8,
+      onShowOnPc: (id) => shown.push(id),
+      script: async (sender, input, chat) => {
+        seen.push({ chat, input });
+        if (input.text.includes('image')) {
+          sender.send('chat:event', {
+            type: 'started',
+            conversationId: 'img-1',
+            message: createMessage('user', input.text),
+          });
+          await gate;
+          const text = 'Image générée (1024×1024, projet perso) :\n- C:/img/chat.png — graine 1';
+          sender.send('chat:event', { type: 'delta', text });
+          sender.send('chat:event', {
+            type: 'done',
+            conversationId: 'img-1',
+            messages: [createMessage('assistant', text)],
+          });
+          return;
+        }
+        const store = box.store!;
+        const existing = input.conversationId ? await store.get(input.conversationId) : null;
+        const user = createMessage('user', input.text);
+        const conversation = existing ?? newConversation([user]);
+        const text = 'Lecture lancée.';
+        const updated = withMessages(conversation, [...conversation.messages, user, createMessage('assistant', text)]);
+        await store.save(updated);
+        sender.send('chat:event', { type: 'started', conversationId: updated.id, message: user });
+        sender.send('chat:event', { type: 'delta', text });
+        sender.send('chat:event', { type: 'done', conversationId: updated.id, messages: updated.messages });
+      },
+    });
+    box.store = conversations;
+    setTranscript('Jarvis, génère une image d’un chat');
+    const waiting = await call(port, '/api/speaker/turn', { token, body: voiceWav() });
+    expect(waiting.status).toBe(200);
+    expect(waiting.headers['x-jarvis-continue']).toBe('0');
+    expect(synth.spoken).toEqual([SPEAKER_IMAGE_WAIT]);
+
+    setTranscript('Jarvis, mets de la musique');
+    const music = await call(port, '/api/speaker/turn', { token, body: voiceWav() });
+    expect(music.status).toBe(200);
+    expect(synth.spoken[1]).toBe('Lecture lancée.');
+    expect(seen[0]!.chat).not.toBe(seen[1]!.chat);
+    expect(seen[0]!.chat.cancelled).toBe(0);
+    expect(seen[1]!.input.conversationId).toBeNull();
+    const titles = (await conversations.list()).map((item) => item.title);
+    expect(titles.some((title) => title.startsWith('Salon · ') && title.includes('musique'))).toBe(true);
+
+    release();
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(seen[0]!.chat.cancelled).toBe(0);
+    expect(shown).toContain('img-1');
+
+    setTranscript('Jarvis, merci');
+    await call(port, '/api/speaker/turn', { token, body: voiceWav() });
+    expect(seen[2]!.chat).toBe(seen[0]!.chat);
+    expect(seen[2]!.input.conversationId).toBe('img-1');
+    expect(seen[0]!.chat.cancelled).toBe(0);
   });
 
   it('fenêtre de suivi à 0 : réponse jouée mais X-Jarvis-Continue 0', async () => {

@@ -87,6 +87,11 @@ interface SpeakerState {
   conversationId: string | null;
   lastTurnAt: number;
   busy: boolean;
+  /**
+   * Image en cours sur sa propre session. Les phrases d'après vont ailleurs
+   * jusqu'à la fin : `send` d'une même session annulerait le calcul.
+   */
+  image: { chat: SpeakerChat; conversationId: string | null } | null;
 }
 
 /** Lien avec la carte pendant une phrase : rompu (fermé ou trop long) = plus rien ne lui est dû. */
@@ -96,6 +101,8 @@ interface TurnLink {
   /** Génération laissée tourner sur le PC : fermer la réponse HTTP ne l'annule pas. */
   detached: boolean;
   listeners: Set<() => void>;
+  /** Session de CE tour : un raccrochage n'annule pas une image partie sur une autre. */
+  bind(chat: SpeakerChat): void;
   release(): void;
   detach(): void;
 }
@@ -223,7 +230,10 @@ export class SpeakerServer {
     const server = this.server;
     this.server = null;
     this.boundPort = null;
-    for (const state of this.states.values()) state.chat?.cancel();
+    for (const state of this.states.values()) {
+      state.chat?.cancel();
+      state.image?.chat.cancel();
+    }
     this.states.clear();
     if (!server) return;
     await new Promise<void>((resolve) => {
@@ -237,13 +247,14 @@ export class SpeakerServer {
     const state = this.states.get(speakerId);
     if (!state) return;
     state.chat?.cancel();
+    state.image?.chat.cancel();
     this.states.delete(speakerId);
   }
 
   private stateFor(speaker: Speaker): SpeakerState {
     let state = this.states.get(speaker.id);
     if (!state) {
-      state = { speaker, chat: null, conversationId: null, lastTurnAt: 0, busy: false };
+      state = { speaker, chat: null, conversationId: null, lastTurnAt: 0, busy: false, image: null };
       this.states.set(speaker.id, state);
     }
     return state;
@@ -287,7 +298,7 @@ export class SpeakerServer {
     state.busy = true;
     // La carte abandonne après SPEAKER_CARD_TIMEOUT_MS ; le PC s'arrête un peu avant, et dès que la
     // connexion se ferme : la session est annulée, et la phrase suivante n'est pas refusée en 429.
-    const link = this.watchLink(res, state);
+    const link = this.watchLink(res);
     try {
       const check = checkTurnWav(body);
       if (!check.ok) throw new HttpError(400, `WAV refusé : ${check.error}`);
@@ -320,10 +331,18 @@ export class SpeakerServer {
         return this.backgroundImage(res, state, speaker, decision.text, transcript, followUp, link);
       }
 
+      const imageAtStart = state.image;
       const outcome = await this.runChat(state, decision.text, followUp, link);
       if (outcome.conversationId) {
-        state.conversationId = outcome.conversationId;
-        if (wasNew) await this.titleConversation(outcome.conversationId, speaker);
+        const imageStillRunning = imageAtStart !== null && state.image === imageAtStart;
+        const imageEndedDuring = imageAtStart !== null && state.image === null;
+        if (imageStillRunning || imageEndedDuring) {
+          // Discussion à part : on ne la met pas à la place de celle de l'image.
+          if (wasNew) await this.titleConversation(outcome.conversationId, speaker);
+        } else {
+          state.conversationId = outcome.conversationId;
+          if (wasNew) await this.titleConversation(outcome.conversationId, speaker);
+        }
       }
       if (link.gone) {
         this.deps.log?.(`[enceinte] ${speaker.name} : ${link.timedOut ? 'trop long' : 'la carte a raccroché'}, réponse abandonnée`);
@@ -359,13 +378,17 @@ export class SpeakerServer {
    * la session de chat est annulée tout de suite (le modèle et les outils s'arrêtent, rien n'est
    * exécuté pour personne) et `busy` est rendu par `turn`.
    */
-  private watchLink(res: ServerResponse, state: SpeakerState): TurnLink {
+  private watchLink(res: ServerResponse): TurnLink {
     const listeners = new Set<() => void>();
+    let bound: SpeakerChat | null = null;
     const link: TurnLink = {
       gone: false,
       timedOut: false,
       detached: false,
       listeners,
+      bind: (chat) => {
+        bound = chat;
+      },
       release: () => {
         clearTimeout(timer);
         res.off('close', onClose);
@@ -380,7 +403,7 @@ export class SpeakerServer {
     const drop = (): void => {
       if (link.detached || link.gone) return;
       link.gone = true;
-      state.chat?.cancel();
+      bound?.cancel();
       for (const listener of listeners) listener();
       listeners.clear();
     };
@@ -437,29 +460,45 @@ export class SpeakerServer {
     link: TurnLink,
   ): Promise<void> {
     link.detach();
-    const voice = this.deps.voiceSettings();
-    let titled = false;
-    let known = state.conversationId;
-    const show = (conversationId: string, finished: boolean): void => {
+    const imageChat = state.chat ?? this.deps.chatFor(speaker);
+    const imageConversationId = state.conversationId;
+    // La phrase suivante ne doit pas entrer dans cette session : send() annulerait l'image.
+    state.chat = null;
+    state.conversationId = null;
+    const job = { chat: imageChat, conversationId: imageConversationId };
+    state.image = job;
+    link.bind(imageChat);
+
+    const show = (conversationId: string): void => {
       if (!conversationId) return;
-      const first = known === null;
-      known = conversationId;
-      state.conversationId = conversationId;
-      if (finished && first && !titled) {
-        titled = true;
-        void this.titleConversation(conversationId, speaker);
+      if (state.image === job) {
+        const fresh = job.conversationId === null;
+        job.conversationId = conversationId;
+        if (fresh) void this.titleConversation(conversationId, speaker);
       }
       this.deps.onShowOnPc?.(conversationId);
     };
-    void this.runChat(state, text, followUp, link, (id) => show(id, false)).then((outcome) => {
-      if (outcome.conversationId) show(outcome.conversationId, true);
+    void this.runChat(state, text, followUp, link, show, {
+      chat: imageChat,
+      conversationId: imageConversationId,
+    }).then((outcome) => {
+      const id = outcome.conversationId ?? job.conversationId;
+      if (id) {
+        void this.titleConversation(id, speaker);
+        this.deps.onShowOnPc?.(id);
+      }
+      if (state.image !== job) return;
+      state.image = null;
+      state.chat = imageChat;
+      state.conversationId = id;
     });
     const wav = await this.deps.synthesizer.synthesize(SPEAKER_IMAGE_WAIT);
     if (res.headersSent) return;
     res.writeHead(200, {
       'Content-Type': 'audio/wav',
       'Content-Length': String(wav.byteLength),
-      [SPEAKER_HEADER_CONTINUE]: followUpWindowMs(voice) > 0 ? '1' : '0',
+      // Pas de suivi : le micro se referme. Une phrase dite pendant l'image ne doit pas partir dans ce tour.
+      [SPEAKER_HEADER_CONTINUE]: '0',
       [SPEAKER_HEADER_TRANSCRIPT]: encodeURIComponent(transcript),
     });
     res.end(Buffer.from(wav.buffer, wav.byteOffset, wav.byteLength));
@@ -475,17 +514,21 @@ export class SpeakerServer {
     followUp: boolean,
     link: TurnLink,
     onConversation?: (conversationId: string) => void,
+    /** Session déjà choisie (l'image), qui ne doit pas devenir celle des phrases d'après. */
+    bound?: { chat: SpeakerChat; conversationId: string | null },
   ): Promise<ChatOutcome> {
+    const conversationId = bound ? bound.conversationId : state.conversationId;
     const outcome: ChatOutcome = {
       reply: '',
       refused: false,
       notAddressed: false,
       error: null,
-      conversationId: state.conversationId,
+      conversationId,
       missionProposal: false,
     };
     let fromMessages = '';
-    const chat = state.chat ?? (state.chat = this.deps.chatFor(state.speaker));
+    const chat = bound?.chat ?? state.chat ?? (state.chat = this.deps.chatFor(state.speaker));
+    link.bind(chat);
     const sender: SpeakerSender = {
       isDestroyed: () => link.gone,
       send: (_channel, event) => {
@@ -526,7 +569,7 @@ export class SpeakerServer {
       },
     };
     return chat
-      .send(sender, { conversationId: state.conversationId, text, source: 'voice', ...(followUp ? { followUp: true } : {}) })
+      .send(sender, { conversationId, text, source: 'voice', ...(followUp ? { followUp: true } : {}) })
       .then(() => ({ ...outcome, reply: outcome.reply.trim() || fromMessages }))
       .catch((error: unknown) => ({ ...outcome, error: error instanceof Error ? error.message : String(error) }));
   }
