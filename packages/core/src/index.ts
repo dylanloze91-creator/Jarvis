@@ -578,6 +578,7 @@ export {
 export * from './google/index.js';
 export * from './phone/phone.js';
 export * from './speaker/speaker.js';
+export * from './speaker/pcScreen.js';
 export { encodeQr, qrSvgPath, QR_MAX_VERSION, type QrMatrix } from './qr/qrCode.js';
 export * from './rover/index.js';
 export * from './images/index.js';

@@ -63,6 +63,8 @@ Statuts possibles : `en cours`, `en pause`, `bloqué`, `terminé`.
 | Cursor | `cursor/spotify-voix-appareil` | Enceinte, partie 2 : Spotify « Devialet ou PC ? ». Partie 1 sur `cursor/enceinte-ecran-pc`. Rapport `rapports/2026-11-10-enceinte-oreilles-bouche.md`. Pas de fusion, pas de publication. | — | 2026-11-10 | terminé |
 | Cursor | `cursor/enceinte-reflexe` | Jarvis Réflexe : enceinte plus rapide côté PC (chrono, réponse dès que la partie dite est prête, phrases réflexes courtes, Whisper et Piper toujours prêts, préchauffage, destinataire par règles, interrupteur « Mode enceinte rapide »). Pas de fusion dans main, pas de publication. Le firmware (`firmware/jarvis-speaker/`, réservé par `cursor/enceinte-materiel`) et le chantier images ne sont pas touchés. | `AGENTS-COORDINATION.md`, `CLAUDE.md` (section ajoutée), `packages/core/src/speaker/`, `packages/core/src/settings.ts`, `packages/core/src/speech/`, `packages/core/src/media/playIntent.ts` (fusion seulement), `apps/desktop/src/main/speaker/`, `apps/desktop/src/main/session.ts`, `apps/desktop/src/renderer/src/components/SpeakerSettings.tsx`, `apps/desktop/src/renderer/src/voice/`, `rapports/2026-11-10-enceinte-reflexe.md` | 2026-11-10 | en cours |
 
+| Cursor | `cursor/enceinte-ecran-pc` | Enceinte, partie 1 : écran du PC. Correction : une phrase pendant une image ne l'annule pas (autre session, micro refermé). Rapport `rapports/2026-11-10-enceinte-oreilles-bouche.md`. Pas de fusion, pas de publication. | — | 2026-11-10 | terminé |
+
 ## Ressource GPU / Ollama
 
 Une seule carte (RTX 2060 6 Go) : un seul agent à la fois lance le banc (`npm run lab --workspace @jarvis/core`) ou le générateur (`npm run lab:generate --workspace @jarvis/core`).

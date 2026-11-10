@@ -65,5 +65,41 @@ Testé en vrai (à la voix, sur le PC) : PAS FAIT
 À essayer soi-même, enceinte allumée, réglage « Me demander où jouer la musique » activé :
 
 1. « Jarvis, mets Daft Punk. » → « Sur la Devialet ou sur le PC ? », le micro reste ouvert. « La Devialet » → lecture sur la Devialet.
-2. « Jarvis, génère une image d'un chat. » → tout de suite « Je la prépare sur le PC, ça prend environ une minute. » La fenêtre du PC montre la discussion du salon, sans passer devant ce que vous tapez ailleurs. L'image s'ouvre sur le PC ; l'enceinte ne redit pas la fin.
+2. « Jarvis, génère une image d'un chat. » → tout de suite « Je la prépare sur le PC, ça prend environ une minute. » Le micro se referme. La fenêtre du PC montre la discussion du salon, sans passer devant ce que vous tapez ailleurs. L'image s'ouvre sur le PC ; l'enceinte ne redit pas la fin.
 3. « Pause » pendant la question Spotify → pause tout de suite, pas une nouvelle question.
+
+## Correction de relecture
+
+Branche `cursor/enceinte-ecran-pc` seulement. Pendant qu'une image lancée depuis l'enceinte tourne encore :
+
+- après « Je la prépare sur le PC, ça prend environ une minute. », `X-Jarvis-Continue` vaut **0** : le micro se referme, il faut redire « Jarvis » ;
+- une nouvelle phrase (« mets de la musique ») part dans **une autre session** et une **nouvelle** discussion « Salon · … ». Elle n'entre pas dans la session de l'image, donc elle ne l'annule pas ;
+- la musique est dite normalement. L'image continue et s'affiche sur le PC quand elle est prête ;
+- ensuite l'enceinte redevient normale : la phrase suivante, si elle arrive dans les 10 minutes, reprend la discussion de l'image.
+
+Test : phrase « mets de la musique » pendant une image → l'image n'est pas annulée et s'affiche ; la réponse musique arrive ; `X-Jarvis-Continue` est 0 après la phrase d'attente.
+
+### Commandes de la correction (10 novembre 2026, `cursor/enceinte-ecran-pc`)
+
+| Commande | Résultat |
+| --- | --- |
+| `npm run typecheck` | OK, 0 erreur |
+| `npm test` | OK, 0 échec. Bureau 699 réussis, 6 ignorés (705). `chat-unchanged`, `ollama-unchanged`, `orchestra-session` verts, `__golden__` non régénérés. |
+| `npm run lint` | OK, 0 erreur, 0 avertissement |
+
+`dotnet` absent : les contrôles `.exe` ne lancent pas le vrai SDK et ne font pas échouer la suite. `parseSettings({})` ne gagne aucune clé. **Non testé avec la vraie enceinte.**
+
+```
+RAPPORT DE VÉRIFICATION
+Lancement : non exécuté (build Electron non lancé)
+Types     : OK (0 erreur)
+Style     : OK (0 avertissement)
+Tests     : OK (bureau 699/705 réussis, 6 ignorés, 0 échec)
+Secrets   : OK (0 vraie valeur ajoutée)
+Fichiers modifiés : apps/desktop/src/main/speaker/server.ts, apps/desktop/src/main/speaker/server.test.ts, AGENTS-COORDINATION.md, rapports/2026-11-10-enceinte-oreilles-bouche.md
+Prêt à fusionner : NON
+À corriger : rejouer npm run build sur le PC Windows ; essayer avec la vraie enceinte. Pas de fusion demandée.
+Testé en vrai (à la voix, sur le PC) : PAS FAIT
+```
+
+À essayer : « Jarvis, génère une image d'un chat », puis, une fois le micro refermé, « Jarvis, mets de la musique ». La musique répond. L'image apparaît ensuite sur le PC, sans avoir été coupée. Une phrase dans les 10 minutes d'après reprend la discussion de l'image.

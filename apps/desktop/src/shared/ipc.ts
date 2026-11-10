@@ -177,6 +177,7 @@ export const IpcChannel = {
   speakerEvent: 'speaker:event',
   speakerTranscribeRequest: 'speaker:transcribe-request',
   speakerTranscribeResult: 'speaker:transcribe-result',
+  speakerShowConversation: 'speaker:show-conversation',
 } as const;
 
 /** 5.0.64 — Enceinte Jarvis : état montré dans Réglages → Enceintes. */
@@ -207,6 +208,11 @@ export interface SpeakerAdded {
   speaker: { id: string; name: string };
   /** Bloc à coller dans `include/secrets.h` du programme de la carte. */
   secrets: string;
+}
+
+/** Main → renderer : afficher la discussion de l'enceinte sur l'écran du PC. */
+export interface SpeakerShowConversation {
+  conversationId: string;
 }
 
 /** Main → renderer : une phrase de l'enceinte à transcrire par le Whisper local. */
@@ -874,6 +880,8 @@ export interface JarvisApi {
     /** Le processus principal demande une transcription Whisper (la fenêtre a Whisper, pas lui). */
     onTranscribe(listener: (request: SpeakerTranscribeRequest) => void): () => void;
     reportTranscript(payload: SpeakerTranscribeResult): void;
+    /** La discussion de l'enceinte a quelque chose à montrer. */
+    onShow(listener: (event: SpeakerShowConversation) => void): () => void;
   };
   update: {
     getState(): Promise<UpdateState>;

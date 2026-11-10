@@ -382,6 +382,15 @@ const speakers = new SpeakerService({
     const contents = overlay?.browserWindow.webContents;
     if (contents && !contents.isDestroyed()) contents.send(IpcChannel.speakerEvent, status);
   },
+  onShowOnPc: (conversationId) => {
+    const win = overlay;
+    if (!win || win.browserWindow.isDestroyed()) return;
+    win.showInactive();
+    const contents = win.browserWindow.webContents;
+    if (!contents.isDestroyed()) {
+      contents.send(IpcChannel.speakerShowConversation, { conversationId });
+    }
+  },
 });
 
 if (!app.requestSingleInstanceLock()) {
