@@ -83,6 +83,8 @@ export interface SidecarInput {
   refineFallback?: string;
   /** Jarvis Imager : type du sujet, nombre de personnes, modèle, retouches, agrandissement. */
   imager?: { subjectType: string; personCount?: number; render?: string; checkpointLabel: string; adetailer: boolean; upscaled?: string };
+  /** Mode direct : « envoyée telle quelle » ou « complétée par Imager (règles seules…) ». */
+  direct?: string;
 }
 
 /** Texte lisible gardé à côté de chaque image : de quoi la refaire. */
@@ -94,6 +96,7 @@ export function sidecarText(input: SidecarInput): string {
     `Demande : ${input.userPrompt.trim()}`,
     ...(input.refinedBy ? [`Consigne reformulée pour SDXL par ${input.refinedBy}`] : []),
     ...(input.refineFallback ? [`Consigne d'origine gardée (${input.refineFallback})`] : []),
+    ...(input.direct ? [`Mode direct (sans le modèle de langage) : consigne ${input.direct}`] : []),
     '',
     `Prompt : ${input.payload.prompt}`,
     `Prompt négatif : ${input.payload.negative_prompt}`,

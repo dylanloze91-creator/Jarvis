@@ -11,6 +11,9 @@
 #   quand la demande veut une photo ou un dessin (anime, manga, dessin animé, série connue). Sans indication : general.priorite.
 # checkpoint-<id> : fichier, label, sampler, scheduler, steps, cfg, vae (vide = celui du modèle), negatif de l’auteur,
 #   rendu (realiste ou anime : ce que le modèle sait faire), qualite (mots de qualité propres au modèle ; vide = ceux de qualite).
+# direct : mode direct (panneau « Imager direct », commande /image, demandes repérées par règles). ameliorer : Imager complète
+#   la demande avec ces règles (traduction locale, qualité, style du projet, négatif) sans aucun modèle de langage ; declencheurs :
+#   débuts de phrase (après « Jarvis, », « peux-tu »…) qui envoient la demande à Imager sans passer par le cerveau.
 
 general:
   checkpoint: auto
@@ -76,6 +79,10 @@ rendu-anime:
   positif: []
   negatif: [photo, photorealistic, realistic, real person, 3d, 3d render]
   priorite: [animagine, sdxl-base]
+
+direct:
+  ameliorer: true
+  declencheurs: [imager, genere une image, genere moi une image, genere une illustration, genere moi une illustration, genere un sticker, genere moi un sticker, genere un logo, genere moi un logo, genere une photo, genere moi une photo, dessine moi, dessine, fais moi une image, fais une image, fais moi un sticker, fais moi un logo, fais moi un dessin, cree une image, cree moi une image, cree un sticker, cree un logo, une image de, une illustration de, un dessin de, un sticker de, generement une image, peins moi, imagine une image]
 
 checkpoint-realvisxl:
   fichier: RealVisXL_V5.0_fp16.safetensors

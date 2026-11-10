@@ -90,6 +90,33 @@ export {
   type RefinedPrompt,
 } from './refine.js';
 export {
+  IMAGE_COMMAND,
+  DIRECT_SAMPLERS,
+  DIRECT_SCHEDULERS,
+  DIRECT_LIMITS,
+  DEFAULT_DIRECT_TRIGGERS,
+  DEFAULT_DIRECT_RULES,
+  parseImageCommand,
+  isSafeModelFileName,
+  normalizeDirectRequest,
+  directProjectDefaults,
+  buildDirectPayload,
+  isDirectImageMessage,
+  stripDirectTurns,
+  normalizeForTriggers,
+  detectDirectImageRequest,
+  guessProject,
+  guessSubjectType,
+  guessPersonCount,
+  type DirectLora,
+  type DirectImageRequest,
+  type DirectProjectDefaults,
+  type DirectPayloadOptions,
+  type DirectRules,
+  type DirectImageDetection,
+} from './direct.js';
+export { looksFrench, toEnglishIfNeeded } from './localEnglish.js';
+export {
   IMAGE_ATTACHMENT_EXTENSIONS,
   MAX_ATTACHMENTS_PER_MESSAGE,
   MAX_ATTACHMENT_BYTES,

@@ -9,6 +9,7 @@
  */
 
 import { isImageFormat, type ImageFormat, type ImagePreset, type ImageProject } from './presets.js';
+import { DEFAULT_DIRECT_RULES, type DirectRules } from './direct.js';
 
 /** Ce que représente l'image : décide des mots ajoutés, du négatif et des retouches. */
 export const IMAGE_SUBJECT_TYPES = ['personne', 'objet', 'paysage', 'logo-sticker', 'scene', 'autre'] as const;
@@ -85,6 +86,8 @@ export interface ImagerRules {
   types: Record<ImageSubjectType, SubjectTypeRule>;
   rendus: Record<CheckpointRender, RenderRule>;
   checkpoints: Record<string, CheckpointProfile>;
+  /** Mode direct : « Améliorer mon prompt » par défaut, et les débuts de phrase qui court-circuitent le modèle de langage. */
+  direct: DirectRules;
 }
 
 export const DEFAULT_IMAGER_RULES: ImagerRules = {
@@ -238,6 +241,7 @@ export const DEFAULT_IMAGER_RULES: ImagerRules = {
       qualite: ['masterpiece', 'high score', 'great score', 'absurdres'],
     },
   },
+  direct: DEFAULT_DIRECT_RULES,
 };
 
 export function isImageRenderStyle(value: string): value is ImageRenderStyle {
@@ -307,9 +311,22 @@ export function applyImagerRules(sections: Partial<Record<string, Record<string,
     types: Object.fromEntries(Object.entries(DEFAULT_IMAGER_RULES.types).map(([key, rule]) => [key, { ...rule }])) as ImagerRules['types'],
     rendus: Object.fromEntries(Object.entries(DEFAULT_IMAGER_RULES.rendus).map(([key, rule]) => [key, { ...rule }])) as ImagerRules['rendus'],
     checkpoints: Object.fromEntries(Object.entries(DEFAULT_IMAGER_RULES.checkpoints).map(([key, profile]) => [key, { ...profile }])),
+    direct: { ameliorer: DEFAULT_IMAGER_RULES.direct.ameliorer, declencheurs: [...DEFAULT_IMAGER_RULES.direct.declencheurs] },
   };
   for (const [section, values] of Object.entries(sections)) {
     if (!values) continue;
+    if (section === 'direct') {
+      if (values.ameliorer !== undefined) {
+        if (typeof values.ameliorer === 'boolean') rules.direct.ameliorer = values.ameliorer;
+        else warnings.push('direct.ameliorer : true ou false attendu (ignoré).');
+      }
+      if (values.declencheurs !== undefined) {
+        const list = asStringList(values.declencheurs);
+        if (list) rules.direct.declencheurs = list;
+        else warnings.push('direct.declencheurs : liste attendue (ignorée).');
+      }
+      continue;
+    }
     if (section === 'general') {
       if (typeof values.checkpoint === 'string') rules.general.checkpoint = values.checkpoint.trim() || 'auto';
       const priorite = values.priorite !== undefined ? asStringList(values.priorite) : null;
@@ -437,6 +454,9 @@ export function defaultImagerRulesYaml(rules: ImagerRules = DEFAULT_IMAGER_RULES
     '#   quand la demande veut une photo ou un dessin (anime, manga, dessin animé, série connue). Sans indication : general.priorite.',
     '# checkpoint-<id> : fichier, label, sampler, scheduler, steps, cfg, vae (vide = celui du modèle), negatif de l’auteur,',
     '#   rendu (realiste ou anime : ce que le modèle sait faire), qualite (mots de qualité propres au modèle ; vide = ceux de qualite).',
+    '# direct : mode direct (panneau « Imager direct », commande /image, demandes repérées par règles). ameliorer : Imager complète',
+    '#   la demande avec ces règles (traduction locale, qualité, style du projet, négatif) sans aucun modèle de langage ; declencheurs :',
+    '#   débuts de phrase (après « Jarvis, », « peux-tu »…) qui envoient la demande à Imager sans passer par le cerveau.',
     '',
     'general:',
     `  checkpoint: ${rules.general.checkpoint}`,
@@ -468,6 +488,7 @@ export function defaultImagerRulesYaml(rules: ImagerRules = DEFAULT_IMAGER_RULES
     const rule = rules.rendus[rendu];
     lines.push(`rendu-${rendu}:`, `  positif: ${yamlList(rule.positif)}`, `  negatif: ${yamlList(rule.negatif)}`, `  priorite: ${yamlList(rule.priorite)}`, '');
   }
+  lines.push('direct:', `  ameliorer: ${rules.direct.ameliorer ? 'true' : 'false'}`, `  declencheurs: ${yamlList(rules.direct.declencheurs)}`, '');
   for (const [id, profile] of Object.entries(rules.checkpoints)) {
     lines.push(
       `checkpoint-${id}:`,

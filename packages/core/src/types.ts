@@ -79,6 +79,8 @@ export interface ChatMessage {
   chatMission?: ChatMissionEnvelope;
   /** Mission Jarvis Développeur rattachée à ce message (historique). */
   missionId?: string;
+  /** Mode direct de Jarvis Imager (`/image`, règles) : ce tour n'est jamais renvoyé au modèle de langage. */
+  direct?: 'image';
   createdAt: number;
 }
 

@@ -64,6 +64,22 @@ describe('Jarvis Imager — règles', () => {
     expect(warnings.join(' ')).toContain('robot');
   });
 
+  it('section direct : ameliorer et declencheurs lus, écrits dans le YAML par défaut', () => {
+    expect(DEFAULT_IMAGER_RULES.direct.ameliorer).toBe(true);
+    expect(DEFAULT_IMAGER_RULES.direct.declencheurs).toContain('imager');
+    const parsed = parsePresetsYaml(['direct:', '  ameliorer: false', '  declencheurs: [hé imager, fais une image]'].join('\n'));
+    const { rules, warnings } = applyImagerRules(parsed.values);
+    expect(rules.direct).toEqual({ ameliorer: false, declencheurs: ['hé imager', 'fais une image'] });
+    expect(warnings).toEqual([]);
+    const bad = applyImagerRules(parsePresetsYaml(['direct:', '  ameliorer: 7'].join('\n')).values);
+    expect(bad.rules.direct.ameliorer).toBe(true);
+    expect(bad.warnings.join(' ')).toContain('direct.ameliorer');
+    const yaml = defaultImagerRulesYaml();
+    expect(yaml).toContain('direct:');
+    expect(yaml).toContain('  ameliorer: true');
+    expect(applyImagerRules(parsePresetsYaml(yaml).values).rules.direct).toEqual(DEFAULT_IMAGER_RULES.direct);
+  });
+
   it('format par défaut du type : personne → portrait, scène → paysage, seulement si le projet le conseille ; réglable', () => {
     expect(defaultFormatFor(DEFAULT_IMAGER_RULES, 'personne', DEFAULT_PRESETS.perso)).toBe('portrait');
     expect(defaultFormatFor(DEFAULT_IMAGER_RULES, 'scene', DEFAULT_PRESETS.jarvis)).toBe('paysage');

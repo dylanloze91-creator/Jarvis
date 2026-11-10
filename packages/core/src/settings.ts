@@ -367,6 +367,10 @@ export const settingsSchema = z.object({
       openAfterGeneration: z.boolean().optional(),
       /** Faire réécrire la demande en consigne SDXL (anglais structuré) par le modèle de langage avant de le décharger. Absent : oui. */
       refinePrompts: z.boolean().optional(),
+      /** Mode direct : garder Forge chargé tant que le panneau « Imager direct » est ouvert (le modèle de langage revient à sa fermeture). Absent : non. */
+      directHoldForge: z.boolean().optional(),
+      /** Mode direct : pas de fichier .txt des réglages pour le projet perso. Absent : le .txt est écrit. */
+      directNoTxtPerso: z.boolean().optional(),
     })
     .optional(),
   machine: z
