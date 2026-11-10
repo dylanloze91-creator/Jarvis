@@ -5,7 +5,7 @@
 # general : checkpoint (auto, ou realvisxl / juggernaut / sdxl-base), priorite (ordre essayé quand auto),
 #   adetailer (retouche visages et mains), upscaler et facteurAgrandissement (quand on demande « plus grand »).
 # qualite : mots ajoutés à la fin de chaque consigne. anatomie : défauts d’anatomie toujours évités pour les personnes.
-# type-<type> : mots ajoutés (positif), défauts évités (negatif), adetailer (true/false) selon ce que représente l’image.
+# type-<type> : mots ajoutés (positif), défauts évités (negatif), adetailer (retouche visages), adetailerMains (retouche mains en plus) selon ce que représente l’image.
 # checkpoint-<id> : fichier, label, sampler, scheduler, steps, cfg, vae (vide = celui du modèle), negatif de l’auteur.
 
 general:
@@ -25,31 +25,37 @@ type-personne:
   positif: [natural proportions, detailed face, detailed hands with five fingers]
   negatif: [duplicate person, clone, extra heads]
   adetailer: true
+  adetailerMains: true
 
 type-objet:
   positif: [centered subject, detailed materials and textures, accurate shape]
   negatif: [melted, warped, deformed shape, floating parts]
   adetailer: false
+  adetailerMains: false
 
 type-paysage:
   positif: [wide shot, atmospheric depth, coherent perspective]
   negatif: [warped perspective, tilted horizon, duplicate sun]
   adetailer: false
+  adetailerMains: false
 
 type-logo-sticker:
   positif: [vector illustration, flat colors, clean bold outlines, centered, simple shapes]
   negatif: [photo, photorealistic, gradients, text, letters, words, complex background, noise]
   adetailer: false
+  adetailerMains: false
 
 type-scene:
   positif: [coherent scene, natural proportions, detailed faces]
   negatif: [duplicate person, extra heads, floating objects]
   adetailer: true
+  adetailerMains: false
 
 type-autre:
   positif: []
   negatif: []
   adetailer: false
+  adetailerMains: false
 
 checkpoint-realvisxl:
   fichier: RealVisXL_V5.0_fp16.safetensors

@@ -21,6 +21,11 @@ export interface SubjectTypeRule {
   negatif: readonly string[];
   /** Repasser sur les visages et les mains (ADetailer) quand l'extension est là. */
   adetailer: boolean;
+  /**
+   * Passe « mains » en plus des visages. Coupée pour les scènes à plusieurs personnes : mesuré le
+   * 10 novembre, deux passes sur une image 1216×832 faisaient planter Forge (6 Go) ; visages seuls : ok.
+   */
+  adetailerMains: boolean;
 }
 
 export interface CheckpointProfile {
@@ -86,28 +91,33 @@ export const DEFAULT_IMAGER_RULES: ImagerRules = {
       positif: ['natural proportions', 'detailed face', 'detailed hands with five fingers'],
       negatif: ['duplicate person', 'clone', 'extra heads'],
       adetailer: true,
+      adetailerMains: true,
     },
     scene: {
       positif: ['coherent scene', 'natural proportions', 'detailed faces'],
       negatif: ['duplicate person', 'extra heads', 'floating objects'],
       adetailer: true,
+      adetailerMains: false,
     },
     objet: {
       positif: ['centered subject', 'detailed materials and textures', 'accurate shape'],
       negatif: ['melted', 'warped', 'deformed shape', 'floating parts'],
       adetailer: false,
+      adetailerMains: false,
     },
     paysage: {
       positif: ['wide shot', 'atmospheric depth', 'coherent perspective'],
       negatif: ['warped perspective', 'tilted horizon', 'duplicate sun'],
       adetailer: false,
+      adetailerMains: false,
     },
     'logo-sticker': {
       positif: ['vector illustration', 'flat colors', 'clean bold outlines', 'centered', 'simple shapes'],
       negatif: ['photo', 'photorealistic', 'gradients', 'text', 'letters', 'words', 'complex background', 'noise'],
       adetailer: false,
+      adetailerMains: false,
     },
-    autre: { positif: [], negatif: [], adetailer: false },
+    autre: { positif: [], negatif: [], adetailer: false, adetailerMains: false },
   },
   checkpoints: {
     realvisxl: {
@@ -229,6 +239,10 @@ export function applyImagerRules(sections: Partial<Record<string, Record<string,
         if (typeof values.adetailer === 'boolean') current.adetailer = values.adetailer;
         else warnings.push(`${section}.adetailer : true ou false attendu (ignoré).`);
       }
+      if (values.adetailerMains !== undefined) {
+        if (typeof values.adetailerMains === 'boolean') current.adetailerMains = values.adetailerMains;
+        else warnings.push(`${section}.adetailerMains : true ou false attendu (ignoré).`);
+      }
       rules.types[type] = current;
       continue;
     }
@@ -274,7 +288,7 @@ export function defaultImagerRulesYaml(rules: ImagerRules = DEFAULT_IMAGER_RULES
     '# general : checkpoint (auto, ou realvisxl / juggernaut / sdxl-base), priorite (ordre essayé quand auto),',
     '#   adetailer (retouche visages et mains), upscaler et facteurAgrandissement (quand on demande « plus grand »).',
     '# qualite : mots ajoutés à la fin de chaque consigne. anatomie : défauts d’anatomie toujours évités pour les personnes.',
-    '# type-<type> : mots ajoutés (positif), défauts évités (negatif), adetailer (true/false) selon ce que représente l’image.',
+    '# type-<type> : mots ajoutés (positif), défauts évités (negatif), adetailer (retouche visages), adetailerMains (retouche mains en plus) selon ce que représente l’image.',
     '# checkpoint-<id> : fichier, label, sampler, scheduler, steps, cfg, vae (vide = celui du modèle), negatif de l’auteur.',
     '',
     'general:',
@@ -293,7 +307,14 @@ export function defaultImagerRulesYaml(rules: ImagerRules = DEFAULT_IMAGER_RULES
   ];
   for (const type of IMAGE_SUBJECT_TYPES) {
     const rule = rules.types[type];
-    lines.push(`type-${type}:`, `  positif: ${yamlList(rule.positif)}`, `  negatif: ${yamlList(rule.negatif)}`, `  adetailer: ${rule.adetailer ? 'true' : 'false'}`, '');
+    lines.push(
+      `type-${type}:`,
+      `  positif: ${yamlList(rule.positif)}`,
+      `  negatif: ${yamlList(rule.negatif)}`,
+      `  adetailer: ${rule.adetailer ? 'true' : 'false'}`,
+      `  adetailerMains: ${rule.adetailerMains ? 'true' : 'false'}`,
+      '',
+    );
   }
   for (const [id, profile] of Object.entries(rules.checkpoints)) {
     lines.push(
@@ -412,8 +433,9 @@ export function forgeBuiltinScriptArgs(): Record<string, { args: unknown[] }> {
   return { 'Never OOM Integrated': { args: [false, false, 512, 64] } };
 }
 
-/** Arguments ADetailer pour l'API de Forge (`alwayson_scripts.ADetailer.args`) : visages puis mains. */
-export function adetailerArgs(): unknown[] {
+/** Arguments ADetailer pour l'API de Forge (`alwayson_scripts.ADetailer.args`) : visages, puis mains si demandé. */
+export function adetailerArgs(options: { hands?: boolean } = {}): unknown[] {
+  const hands = options.hands !== false;
   return [
     true,
     false,
@@ -427,17 +449,27 @@ export function adetailerArgs(): unknown[] {
       ad_denoising_strength: 0.35,
       ad_inpaint_only_masked: true,
       ad_inpaint_only_masked_padding: 32,
+      // Mesuré le 10 novembre : chaque passe au nombre de pas de l'image doublait le temps total
+      // (≈ 240 s contre ≈ 60 s). 16 pas suffisent pour une retouche locale.
+      ad_use_steps: true,
+      ad_steps: 16,
     },
-    {
-      ad_model: 'hand_yolov8n.pt',
-      ad_prompt: 'detailed hand, five fingers, natural hand anatomy',
-      ad_negative_prompt: 'extra fingers, missing fingers, fused fingers, deformed hand, bad hands',
-      ad_confidence: 0.3,
-      ad_dilate_erode: 4,
-      ad_mask_blur: 4,
-      ad_denoising_strength: 0.3,
-      ad_inpaint_only_masked: true,
-      ad_inpaint_only_masked_padding: 32,
-    },
+    ...(hands
+      ? [
+          {
+            ad_model: 'hand_yolov8n.pt',
+            ad_prompt: 'detailed hand, five fingers, natural hand anatomy',
+            ad_negative_prompt: 'extra fingers, missing fingers, fused fingers, deformed hand, bad hands',
+            ad_confidence: 0.3,
+            ad_dilate_erode: 4,
+            ad_mask_blur: 4,
+            ad_denoising_strength: 0.3,
+            ad_inpaint_only_masked: true,
+            ad_inpaint_only_masked_padding: 32,
+            ad_use_steps: true,
+            ad_steps: 16,
+          },
+        ]
+      : []),
   ];
 }

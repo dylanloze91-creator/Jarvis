@@ -383,7 +383,10 @@ export class ImagesService {
       ...payloadOptions,
       finalPrompt: assembled.prompt,
       finalNegative: assembled.negative,
-      alwaysonScripts: { ...forgeBuiltinScriptArgs(), ...(useAdetailer ? { ADetailer: { args: adetailerArgs() } } : {}) },
+      alwaysonScripts: {
+        ...forgeBuiltinScriptArgs(),
+        ...(useAdetailer ? { ADetailer: { args: adetailerArgs({ hands: rules.types[subjectType].adetailerMains }) } } : {}),
+      },
     };
     const payload = init
       ? buildImg2ImgPayload(baseRequest, preset, finalOptions, init.data.toString('base64'), denoising!)
@@ -418,12 +421,19 @@ export class ImagesService {
       } catch (error) {
         // Juste après son démarrage (changement de modèle en cours), Forge répond parfois 500 à la
         // première requête : un seul nouvel essai après une courte attente, puis l'erreur telle quelle.
-        if (error instanceof ForgeError && error.kind === 'http' && /\b500\b/.test(error.message) && !context.signal?.aborted) {
+        // De même quand la connexion tombe en cours de route (« fetch failed ») alors que Forge
+        // répond toujours : observé sur une image lourde (1216×832, deux personnes, retouches),
+        // erreur interne de placement de tenseurs côté Forge, la requête suivante passe.
+        const transient =
+          error instanceof ForgeError &&
+          !context.signal?.aborted &&
+          ((error.kind === 'http' && /\b500\b/.test(error.message)) || (error.kind === 'unreachable' && (await client.ping(5_000))));
+        if (transient) {
           const delay = this.deps.forgeRetryDelayMs ?? 8_000;
-          this.deps.log?.(`[images] Forge a répondu 500 : nouvel essai dans ${Math.round(delay / 1000)} s`);
+          this.deps.log?.(`[images] Forge a échoué (${(error as ForgeError).message}) : nouvel essai dans ${Math.round(delay / 1000)} s`);
           await new Promise<void>((resolve) => setTimeout(resolve, delay));
           response = await generateOnce();
-          warnings.push('Forge a refusé la première requête (500), la seconde a réussi.');
+          warnings.push(`Forge a échoué à la première requête (${(error as ForgeError).message}), la seconde a réussi.`);
         } else throw error;
       }
       const info = parseTxt2ImgInfo(response.info, count);

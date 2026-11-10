@@ -125,8 +125,12 @@ describe('Jarvis Imager — règles', () => {
     expect(forgeBuiltinScriptArgs()).toEqual({ 'Never OOM Integrated': { args: [false, false, 512, 64] } });
     const args = adetailerArgs();
     expect(args[0]).toBe(true);
-    expect(args[2]).toMatchObject({ ad_model: 'face_yolov8n.pt' });
+    expect(args[2]).toMatchObject({ ad_model: 'face_yolov8n.pt', ad_use_steps: true, ad_steps: 16 });
     expect(args[3]).toMatchObject({ ad_model: 'hand_yolov8n.pt' });
+    // Scène à plusieurs personnes : visages seulement (deux passes faisaient planter Forge en 6 Go).
+    expect(adetailerArgs({ hands: false })).toHaveLength(3);
+    expect(DEFAULT_IMAGER_RULES.types.scene.adetailerMains).toBe(false);
+    expect(DEFAULT_IMAGER_RULES.types.personne.adetailerMains).toBe(true);
   });
 
   it('les réglages du modèle priment sur ceux du projet dans la requête', () => {
