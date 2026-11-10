@@ -39,6 +39,22 @@ describe('extractSpotifyPlayQuery', () => {
     expect(isMusicIntent('la capitale de la France')).toBe(false);
   });
 
+  it('ne lance jamais Spotify sur une demande d’image (enceinte, 10 novembre : « Générement une image de Inata Tenauto » → spotify_play)', () => {
+    for (const text of [
+      'Générement une image de Inata Tenauto',
+      'Génère une image de Hinata de Naruto',
+      'Génère-moi une image de Hinata dans Naruto',
+      'Fais-moi un sticker de Renard',
+      'Une Photo de Paris',
+      'Dessine Hinata de Naruto',
+    ]) {
+      expect(extractSpotifyPlayQuery(text), text).toBeNull();
+      expect(isMusicIntent(text), text).toBe(false);
+    }
+    // Un vrai titre nu reste un morceau.
+    expect(extractSpotifyPlayQuery('Get Lucky de Daft Punk')).toBe('Get Lucky de Daft Punk');
+  });
+
   it('ne prend pas « lance Chrome » pour une lecture', () => {
     expect(extractSpotifyPlayQuery('lance Chrome')).toBeNull();
     expect(isMusicIntent('lance Chrome')).toBe(false);

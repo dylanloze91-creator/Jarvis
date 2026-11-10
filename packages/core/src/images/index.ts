@@ -84,6 +84,7 @@ export {
   parseRefinedPrompt,
   looksLikeSdxlPrompt,
   looksLikeEnglishNegative,
+  keepOneFramingTag,
   chooseRefinedPrompt,
   type RefineInput,
   type RefinedPrompt,

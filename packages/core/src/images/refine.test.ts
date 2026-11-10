@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_PRESETS, chooseRefinedPrompt, looksLikeEnglishNegative, looksLikeSdxlPrompt, parseRefinedPrompt, refineUserMessage, REFINE_SYSTEM_PROMPT } from './index.js';
+import { DEFAULT_PRESETS, chooseRefinedPrompt, keepOneFramingTag, looksLikeEnglishNegative, looksLikeSdxlPrompt, parseRefinedPrompt, refineUserMessage, REFINE_SYSTEM_PROMPT } from './index.js';
 
 describe('module images — reformulation pour SDXL', () => {
   it('la consigne au modèle demande un JSON en anglais, ordonné, sans logos', () => {
@@ -55,6 +55,14 @@ describe('module images — reformulation pour SDXL', () => {
     expect(chosen.used).toBe(true);
     expect(chosen.negative).toBeUndefined();
     expect(chooseRefinedPrompt('x', { prompt: 'a young woman with long dark hair, smiling, city street at night, soft light', negative: 'neon signs, extra tails' }).negative).toBe('neon signs, extra tails');
+  });
+
+  it('garde une seule étiquette de cadrage (observé le 10 novembre : « upper body … full body » dans la même consigne)', () => {
+    const observed = '1girl, hyuuga hinata, naruto (series), bikini, beach, upper body, sitting, wet hair, water splashing, sunlight, full body';
+    expect(keepOneFramingTag(observed)).toBe('1girl, hyuuga hinata, naruto (series), bikini, beach, upper body, sitting, wet hair, water splashing, sunlight');
+    expect(keepOneFramingTag('a red fox in a forest, full body, soft light')).toBe('a red fox in a forest, full body, soft light');
+    expect(keepOneFramingTag('a Close-Up, portrait of a man')).toBe('a Close-Up, portrait of a man');
+    expect(chooseRefinedPrompt('x', { prompt: observed }).prompt).not.toContain('full body');
     expect(looksLikeEnglishNegative('blurry, trop flou')).toBe(false);
     expect(looksLikeEnglishNegative('blurry, lowres')).toBe(true);
   });

@@ -8,6 +8,7 @@
  * musique. Un « X de Y » du type « la capitale de la France » n'en est pas.
  */
 
+import { looksLikeImageIntent } from '../images/intent.js';
 import { isCurrentTrackQuestion } from './currentTrackIntent.js';
 
 const OPEN_SPOTIFY_ONLY =
@@ -21,7 +22,7 @@ const LAUNCH_TRACK_PREFIX =
   /^(?:jarvis[,:]?\s*)?(?:lancer|lance|mettre|mets)\s+(?:moi\s+)?/iu;
 
 const NOT_A_TRACK =
-  /\b(syst[eè]me|machine|fichier|dossier|fen[eê]tre|processus|application|chrome|firefox|edge|notepad|calculatrice|word|excel|vscode|code|ordinateur|pc|ram|cpu|erreur|bourse|cours|action|navigateur|terminal|powershell|r[ée]glages?|m[ée]t[ée]o|heure|date|e-?mails?|courrier|google|wikipedia|recherche|internet|personnalisation|m[ée]moire)\b/iu;
+  /\b(images?|photos?|dessins?|illustrations?|stickers?|logos?|miniatures?|affiches?|visuels?|vid[ée]os?|syst[eè]me|machine|fichier|dossier|fen[eê]tre|processus|application|chrome|firefox|edge|notepad|calculatrice|word|excel|vscode|code|ordinateur|pc|ram|cpu|erreur|bourse|cours|action|navigateur|terminal|powershell|r[ée]glages?|m[ée]t[ée]o|heure|date|e-?mails?|courrier|google|wikipedia|recherche|internet|personnalisation|m[ée]moire)\b/iu;
 
 const MUSIC_CONTROL =
   /\b(spotify|musique|morceau|chanson|playlist|shuffle|al[ée]atoire)\b/iu;
@@ -73,6 +74,9 @@ export function extractSpotifyPlayQuery(prompt: string): string | null {
   const trimmed = prompt.trim();
   if (!trimmed) return null;
   if (OPEN_SPOTIFY_ONLY.test(trimmed)) return null;
+  // Une demande d'image (« génère une image de Hinata de Naruto ») n'est jamais un morceau :
+  // dite à l'enceinte, elle commençait par une majuscule et « … de Naruto » passait pour « titre de artiste ».
+  if (looksLikeImageIntent(trimmed)) return null;
   if (isCurrentTrackQuestion(trimmed)) return null;
   if (isPlaybackControlOnly(trimmed)) return null;
 
@@ -133,9 +137,14 @@ function looksLikeTrackQuery(rest: string): boolean {
   return false;
 }
 
+/** Verbes de dessin ou de génération en tête : « Dessine Hinata de Naruto » n'est pas « titre de artiste ». */
+const CREATION_VERB_PREFIX =
+  /^(?:jarvis[,:]?\s*)?(?:g[ée]n[èe]re|g[ée]n[ée]rement|g[ée]n[ée]rer|cr[ée]e|cr[ée]er|dessine|dessiner|peins|peindre|imagine|invente|fabrique|r[ée]alise)(?:[- ]?(?:moi|nous))?\b/iu;
+
 function looksLikeBareTrackDeArtist(prompt: string): boolean {
   if (/[?]/.test(prompt)) return false;
   if (NOT_A_TRACK.test(prompt)) return false;
+  if (CREATION_VERB_PREFIX.test(prompt)) return false;
   if (/^(?:le|la|les|l['’]|un|une|des|du|de la|cette?|mon|ma|mes|ton|ta|tes|quel(?:le)?s?)\b/iu.test(prompt)) {
     return false;
   }

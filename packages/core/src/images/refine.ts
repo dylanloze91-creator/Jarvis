@@ -114,7 +114,28 @@ export function chooseRefinedPrompt(original: string, refined: RefinedPrompt | n
   if (!looksLikeSdxlPrompt(refined.prompt)) return { prompt: original, used: false, reason: 'consigne reformulée douteuse (langue ou longueur)' };
   // Négatif en français (observé : « très pudique, pudique ») : écarté seul, la consigne est gardée.
   const negative = refined.negative && looksLikeEnglishNegative(refined.negative) ? refined.negative : undefined;
-  return { prompt: refined.prompt, ...(negative ? { negative } : {}), used: true };
+  return { prompt: keepOneFramingTag(refined.prompt), ...(negative ? { negative } : {}), used: true };
+}
+
+/** Étiquettes de cadrage qui s'excluent (Danbooru et photo) : la première l'emporte. */
+const FRAMING_TAGS = new Set(['close-up', 'close up', 'portrait', 'headshot', 'bust shot', 'upper body', 'cowboy shot', 'full body', 'wide shot']);
+
+/**
+ * Une seule étiquette de cadrage : le modèle en met parfois deux (observé « upper body, …, full body »),
+ * et Stable Diffusion tranche au hasard. La première, placée près du sujet, est gardée.
+ */
+export function keepOneFramingTag(prompt: string): string {
+  let seen = false;
+  const kept: string[] = [];
+  for (const part of prompt.split(',')) {
+    const tag = part.trim().toLowerCase();
+    if (FRAMING_TAGS.has(tag)) {
+      if (seen) continue;
+      seen = true;
+    }
+    kept.push(part.trim());
+  }
+  return kept.filter(Boolean).join(', ');
 }
 
 /** Négatif plausible : anglais, sans mot français (un négatif douteux est simplement écarté). */

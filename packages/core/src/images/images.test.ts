@@ -125,6 +125,8 @@ describe('module images — intention', () => {
       'Jarvis, peux-tu créer une image de montagne au lever du soleil ?',
       'Génère une nouvelle image avec Stable Diffusion',
       'Je veux un logo pour ma chaîne, fais une image',
+      // « Génère-moi » entendu « Générement » par Whisper (enceinte, 10 novembre).
+      'Générement une image de Inata Tenauto',
     ]) {
       expect(looksLikeImageIntent(text), text).toBe(true);
     }

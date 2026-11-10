@@ -104,3 +104,41 @@ Prêt à fusionner : OUI (après relecture de l'utilisateur ; rien sur main)
 À corriger : temps par image toujours ≈ 3 min quand Forge doit démarrer (≈ 1 min de démarrage) ; les mains de la Hinata anime sont correctes mais un peu raides (retouche « mains » faite avec le modèle de visage/main photo) ; le trieur ne connaît pas le champ « rendu » (règle express inchangée)
 Testé en vrai (à la voix, sur le PC) : PAS FAIT (testé par le service réel : Hinata en anime sur Animagine et renard en photo sur RealVisXL, 7B rechargé ; l'essai dans la fenêtre de Jarvis revient à l'utilisateur)
 ```
+
+## Essai de l'utilisateur sur la 5.0.71 installée (10 novembre, après-midi)
+
+Journal de l'application installée (`conversations/`, `audit-log.json`), après la mise à jour vers la 5.0.71 et l'activation de Jarvis Imager.
+
+| Heure | Où | Demande (telle que transcrite) | Ce qui s'est passé |
+| --- | --- | --- | --- |
+| 15:07 | enceinte « chambre » | « Générement une image de Inata Tenauto » | **Spotify** lancé (`spotify_play` avec toute la phrase comme recherche, sans modèle) : « L'HYMNE DE MA GÉNÉRATION » de Vyana |
+| 15:09 | fenêtre | « Génère, une image de Hinata dans Naruto. En bikini sur la plage avec de l'eau qui éclabousse son visage. » | `generer_image` (type personne, rendu anime, projet jarvis) → Animagine XL 4.0 Opt, 832×1216, Euler a 28 pas CFG 5, retouches visages et mains, **169 s**, image `151159-hinata-dans-naruto-en-bikini-sur-la-plag-1.png`, 7B rechargé |
+| 15:19 | enceinte « chambre » | « Mets de la musique sur ma deviale » | Spotify lancé (attendu) |
+| 15:20 | fenêtre | « À partir de l'image… fais-moi une vidéo » | Jarvis ne fait pas de vidéo ; le modèle a tourné autour sans le dire nettement (hors périmètre, non corrigé) |
+
+**Cause du lancement de Spotify.** `looksLikeBareTrackDeArtist` (`packages/core/src/media/playIntent.ts`) reconnaît un titre nu « On Verra de Nekfeu » par le motif « Majuscule … de Majuscule ». Une transcription vocale commence toujours par une majuscule, et le nom du personnage aussi : « Générement une image de Inata Tenauto » passait pour « titre de artiste ». La règle express du chef d'orchestre (`isMusicIntent`) a envoyé le tour à l'équipe Musique, dont le chemin forcé (`forcedSpotify`) a appelé `spotify_play` sans modèle. Dans la fenêtre, le point au milieu de la phrase a empêché le motif de prendre.
+
+**Correctifs** (branche `claude/imager-enceinte-spotify`) :
+
+- `extractSpotifyPlayQuery` rend `null` pour toute demande d'image (`looksLikeImageIntent`), donc `isMusicIntent` est faux et le tour va à Jarvis Imager ;
+- `NOT_A_TRACK` connaît image, photo, dessin, illustration, sticker, logo, miniature, affiche, visuel, vidéo ;
+- un verbe de création en tête (« Dessine Hinata de Naruto », « Génère-moi… », `CREATION_VERB_PREFIX`) n'est jamais un titre nu ; « Get Lucky de Daft Punk » reste un morceau ;
+- `images/intent.ts` accepte « generement » (« génère-moi » tel que Whisper l'entend à l'enceinte) ;
+- la reformulation ne garde qu'une étiquette de cadrage (`keepOneFramingTag`) : la consigne observée portait « upper body » et « full body » ensemble.
+
+Reste tel quel : la transcription « Inata Tenauto » (Whisper à l'enceinte) — même bien routée, cette demande aurait donné un personnage inconnu ; dire « Hinata, de Naruto » distinctement ou taper la demande. La vidéo n'est pas une fonction de Jarvis.
+
+## RAPPORT DE VÉRIFICATION (10 novembre, après-midi)
+
+```
+RAPPORT DE VÉRIFICATION
+Lancement : OK (cœur construit, `npm run build --workspace @jarvis/core`)
+Types     : OK (0 erreur)
+Style     : OK (0 avertissement)
+Tests     : OK (cœur 2280/2280 ; bureau 694/694 réussis, 8 ignorés, suite complète avec le SDK .NET)
+Secrets   : OK (0 trouvé)
+Fichiers modifiés : packages/core/src/media/playIntent.ts (+ test), packages/core/src/images/intent.ts, refine.ts, index.ts (+ tests images.test.ts, refine.test.ts), CLAUDE.md, AGENTS-COORDINATION.md, ce rapport
+Prêt à fusionner : OUI (rien sur main ; à publier en 5.0.72 si l'utilisateur le veut)
+À corriger : Whisper à l'enceinte (« Inata Tenauto ») ; Jarvis ne sait pas dire nettement qu'il ne fait pas de vidéo
+Testé en vrai (à la voix, sur le PC) : PAS FAIT (cas réel rejoué dans les tests avec la phrase exacte du journal ; l'essai à l'enceinte revient à l'utilisateur après la prochaine version)
+```

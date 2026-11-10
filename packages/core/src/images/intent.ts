@@ -23,8 +23,8 @@ function normalize(text: string): string {
 const SUBJECTS =
   '(?:images?|illustrations?|dessins?|stickers?|autocollants?|logos?|miniatures?|visuels?|affiches?|posters?|icones?|fonds? d\'ecran|wallpapers?|vignettes?|artworks?|portraits? (?:dessine|illustre)s?)';
 
-/** Verbes de création. */
-const VERBS = '(?:genere|generer|cree|creer|dessine|dessiner|fais|faire|fabrique|fabriquer|produis|produire|invente|inventer|imagine|imaginer|realise|realiser|conçois|concevoir|peins|peindre)';
+/** Verbes de création (« generement » : « génère-moi » tel que Whisper l'entend à l'enceinte). */
+const VERBS = '(?:genere|generement|generer|cree|creer|dessine|dessiner|fais|faire|fabrique|fabriquer|produis|produire|invente|inventer|imagine|imaginer|realise|realiser|conçois|concevoir|peins|peindre)';
 
 const PATTERNS = [
   // « génère une image de… », « fais-moi un sticker… », « crée 3 miniatures… »
