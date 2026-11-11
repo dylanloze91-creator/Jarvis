@@ -80,8 +80,15 @@ static phrase_result_t record_and_send(uint32_t wait_ms, bool follow_up, turn_re
         length += take;
         total_ms += frame_ms;
 
-        bool loud = pcm_rms(frame.pcm, frame.samples) >= speech_rms_threshold;
-        if (loud) {
+        // Le bip de réveil (≈ 120 ms joué, 250 ms captés avec la pièce) passe par le micro : sans cette
+        // garde, il comptait comme « la parole a commencé » et un silence de 650 ms juste après « Jarvis »
+        // envoyait 1 s de bip au PC (observé le 2026-11-11 : LED bleue puis rien). Pendant la garde, une
+        // trame n'est ni parole ni silence.
+        bool guarded = !follow_up && total_ms <= WAKE_BEEP_GUARD_MS;
+        bool loud = !guarded && pcm_rms(frame.pcm, frame.samples) >= speech_rms_threshold;
+        if (guarded) {
+            // on garde l'audio, on n'en tire rien
+        } else if (loud) {
             speech_ms += frame_ms;
             silence_ms = 0;
             if (speech_ms >= SPEECH_STARTED_MS) started = true;

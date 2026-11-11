@@ -44,19 +44,19 @@ int main(void) {
     run(15000.0, 400.0, 0.0, out);
     double floor_rms = rms_last_second(out);
     printf("dérive ±15000 à 2 Hz seule → RMS %.0f (seuil de parole 393)\n", floor_rms);
-    CHECK(floor_rms < 150.0);
+    CHECK(floor_rms < 60.0);
 
-    // 2. Voix seule à 400 Hz : elle passe presque entière (perte < 1,5 dB).
+    // 2. Voix seule à 400 Hz : elle passe presque entière (perte < 1 dB).
     run(0.0, 400.0, 1000.0, out);
     double tone_rms = rms_last_second(out);
     printf("ton 400 Hz RMS 1000 → RMS %.0f\n", tone_rms);
     CHECK(tone_rms > 850.0 && tone_rms < 1050.0);
 
-    // 3. Grave de la voix à 150 Hz : atténué mais encore là (plus de la moitié).
+    // 3. Grave de la voix à 150 Hz (fondamentale d'une voix d'homme) : gardé à plus de 80 %.
     run(0.0, 150.0, 1000.0, out);
     double low_rms = rms_last_second(out);
     printf("ton 150 Hz RMS 1000 → RMS %.0f\n", low_rms);
-    CHECK(low_rms > 600.0 && low_rms < 1000.0);
+    CHECK(low_rms > 800.0 && low_rms < 1000.0);
 
     // 4. Les deux ensemble : la voix domine, la dérive ne la cache plus.
     run(15000.0, 400.0, 1000.0, out);
