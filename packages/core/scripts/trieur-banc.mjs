@@ -3,6 +3,9 @@
  * Banc du trieur : passe l'examen sur un ou plusieurs modèles Ollama.
  *
  *   npm run trieur:banc --workspace @jarvis/core -- --dir C:\\dev\\jarvis-data\\trieur --model qwen2.5:7b,qwen2.5:3b
+ *
+ * `--examen <nom>` passe l'examen `examen-<nom>.jsonl` (rapport `<date>-trieur-banc-<nom>.json`) ; les phrases validées
+ * en direct (`valide.jsonl`) ne sont comptées qu'avec l'examen principal.
  */
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
@@ -26,6 +29,7 @@ function parseArgs(argv) {
   let models = ['qwen2.5:7b'];
   let url = 'http://127.0.0.1:11434';
   let out = null;
+  let examName = '';
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     const next = () => {
@@ -42,16 +46,17 @@ function parseArgs(argv) {
         .filter(Boolean);
     } else if (arg === '--url') url = next().replace(/\/+$/, '');
     else if (arg === '--out') out = next();
+    else if (arg === '--examen') examName = next();
     else if (arg === '--help' || arg === '-h') {
-      console.log('Usage : trieur:banc -- [--dir <données>] --model a,b [--url URL] [--out rapport.json]');
+      console.log('Usage : trieur:banc -- [--dir <données>] --model a,b [--url URL] [--out rapport.json] [--examen <nom>]');
       process.exit(0);
     }
   }
-  return { dir: resolve(dir), models, url, out };
+  return { dir: resolve(dir), models, url, out, examName };
 }
 
 const options = parseArgs(process.argv.slice(2));
-const files = filesMod.trieurFileNames(options.dir);
+const files = filesMod.trieurFileNames(options.dir, options.examName || undefined);
 const extract = await import(new URL('../dist/trieur/extract.js', here).href);
 
 let examRaw = '';
@@ -76,6 +81,7 @@ if (!exam.length) {
 const validationMod = await import(new URL('../dist/trieur/validation.js', here).href);
 let liveExam = [];
 try {
+  if (options.examName) throw new Error('validées en direct : examen principal seulement');
   const validatedRaw = await readFile(files.validated, 'utf8');
   const validatedLines = validatedRaw
     .split(/\r?\n/)
@@ -89,6 +95,7 @@ try {
 
 const report = {
   at: new Date().toISOString(),
+  exam: options.examName || undefined,
   examLines: exam.length,
   liveExamLines: liveExam.length || undefined,
   models: [],
@@ -124,7 +131,8 @@ for (const modelName of options.models) {
 }
 
 const stamp = report.at.slice(0, 10);
-const outPath = options.out ?? join(process.cwd(), 'rapports', `${stamp}-trieur-banc.json`);
+const suffix = options.examName ? `-${options.examName}` : '';
+const outPath = options.out ?? join(process.cwd(), 'rapports', `${stamp}-trieur-banc${suffix}.json`);
 await mkdir(dirname(outPath), { recursive: true });
 await writeFile(outPath, `${JSON.stringify(report, null, 2)}\n`, 'utf8');
 const summaryPath = outPath.replace(/\.json$/i, '.txt');

@@ -4,7 +4,7 @@
  *
  *   npm run trieur:preparer --workspace @jarvis/core -- --dir C:\\dev\\jarvis-data\\trieur
  */
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
 const here = new URL('.', import.meta.url);
@@ -34,18 +34,21 @@ const files = filesMod.trieurFileNames(options.dir);
 const paths = prep.trieurPrepFiles(options.dir);
 
 let training = '';
-let examRaw = '';
+const examRaws = [];
 try {
   training = await readFile(files.training, 'utf8');
-  examRaw = await readFile(files.exam, 'utf8');
+  // Tous les examens (`examen.jsonl` et `examen-<nom>.jsonl`) : aucune phrase d'examen ne va dans l'entraînement.
+  const examFiles = filesMod.listExamFiles(options.dir, await readdir(options.dir));
+  if (!examFiles.includes(files.exam)) throw new Error('examen principal absent');
+  for (const examFile of examFiles) examRaws.push(await readFile(examFile, 'utf8'));
 } catch {
   console.error('Il faut entrainement.jsonl et examen.jsonl dans le dossier de données.');
   process.exit(1);
 }
 
 const extract = await import(new URL('../dist/trieur/extract.js', here).href);
-const exam = examRaw
-  .split(/\r?\n/)
+const exam = examRaws
+  .flatMap((raw) => raw.split(/\r?\n/))
   .filter((line) => line.trim())
   .map((line) => extract.parseExamLine(JSON.parse(line)))
   .filter(Boolean);
