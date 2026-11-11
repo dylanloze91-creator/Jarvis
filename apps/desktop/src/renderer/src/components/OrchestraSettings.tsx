@@ -29,6 +29,7 @@ interface OrchestraSettingsProps {
  */
 export function OrchestraSettingsSection({ baseUrl, chatModel, value, onChange, active = true }: OrchestraSettingsProps) {
   const [installed, setInstalled] = useState<string[]>([]);
+  const [score, setScore] = useState<{ line: string; advice: string } | null>(null);
 
   useEffect(() => {
     if (!active) return;
@@ -37,6 +38,22 @@ export function OrchestraSettingsSection({ baseUrl, chatModel, value, onChange, 
       .then((status) => setInstalled(status.models.map((model) => model.name)))
       .catch(() => setInstalled([]));
   }, [baseUrl, active]);
+
+  useEffect(() => {
+    if (!active) return;
+    let cancelled = false;
+    void window.jarvis.orchestra
+      .routerScore()
+      .then((next) => {
+        if (!cancelled) setScore(next);
+      })
+      .catch(() => {
+        if (!cancelled) setScore(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [active]);
 
   const suggestion = (): Orchestra => {
     const has = (model: string) => installed.length === 0 || installed.includes(model);
@@ -115,6 +132,11 @@ export function OrchestraSettingsSection({ baseUrl, chatModel, value, onChange, 
                 </option>
               ))}
             </Select>
+            {score ? (
+              <p className="mt-2 text-xs leading-snug text-slate-300">
+                {score.line} {score.advice}
+              </p>
+            ) : null}
             {current.router ? (
               <Select
                 className="mt-2"

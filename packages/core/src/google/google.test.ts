@@ -150,6 +150,13 @@ describe('intention Google', () => {
     }
   });
 
+  it('« cherche sur Google » reste une recherche, pas Gmail (synthetique-test)', () => {
+    expect(looksLikeGoogleIntent('cherche sur Google')).toBe(false);
+    expect(looksLikeGoogleIntent('cherche sur Google le cours de SPIE')).toBe(false);
+    expect(looksLikeGoogleIntent('Google')).toBe(false);
+    expect(looksLikeGoogleIntent('finance')).toBe(false);
+  });
+
   it('ne vole ni la recherche web, ni Chrome, ni la musique, ni les fichiers locaux', () => {
     for (const prompt of [
       'Cherche sur Google le prix du cuivre',

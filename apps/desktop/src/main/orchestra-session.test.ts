@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it, vi } from 'vitest';
+import { z } from 'zod';
 import type { ChatEvent } from '../shared/ipc.js';
 
 /**
@@ -51,7 +52,57 @@ function settingsWith(orchestra: unknown) {
   return core.parseSettings({ provider: 'ollama', model: 'qwen2.5:3b', orchestra });
 }
 
-async function turn(text: string, brainReply: string, orchestra: unknown = ORCHESTRA, routerReply?: string) {
+const spieFetch = vi.fn(async (input: URL | string) => {
+  const url = String(input);
+  if (url.includes('/v1/finance/search')) {
+    return new Response(
+      JSON.stringify({
+        quotes: [
+          {
+            symbol: 'SPIE.PA',
+            shortname: 'SPIE',
+            longname: 'SPIE SA',
+            quoteType: 'EQUITY',
+            exchange: 'PAR',
+            exchDisp: 'Paris',
+          },
+        ],
+      }),
+      { status: 200 },
+    );
+  }
+  if (url.includes('/v8/finance/chart/')) {
+    return new Response(
+      JSON.stringify({
+        chart: {
+          result: [
+            {
+              meta: {
+                symbol: 'SPIE.PA',
+                currency: 'EUR',
+                fullExchangeName: 'Euronext Paris',
+                regularMarketPrice: 34.12,
+                regularMarketChangePercent: 1.2,
+                chartPreviousClose: 33.71,
+                regularMarketTime: Date.parse('2026-11-11T16:35:00.000Z') / 1000,
+              },
+            },
+          ],
+        },
+      }),
+      { status: 200 },
+    );
+  }
+  throw new Error(`URL inattendue : ${url}`);
+});
+
+async function turn(
+  text: string,
+  brainReply: string,
+  orchestra: unknown = ORCHESTRA,
+  routerReply?: string,
+  withGoogle = false,
+) {
   const trieurReply = routerReply ?? brainReply;
   const settings = settingsWith(orchestra);
   const getSettings = () => settings;
@@ -84,17 +135,29 @@ async function turn(text: string, brainReply: string, orchestra: unknown = ORCHE
     isDestroyed: () => false,
     send: (_channel: string, event: ChatEvent) => events.push(event),
   } as unknown as Electron.WebContents;
+  const tools = createToolManager({
+    getSettings,
+    searchRegistry: core.createDefaultSearchRegistry(),
+    marketDataRegistry: core.createDefaultMarketDataRegistry(),
+    spotify: new SpotifyBridge(getSettings),
+    siteBlock: new SiteBlockBridge(getSettings),
+    personalization: new PersonalizationStore(),
+    knowledge: new KnowledgeStore({ getUserDataPath: () => userData }),
+  });
+  if (withGoogle) {
+    tools.register(
+      core.defineTool({
+        name: 'google_gmail_search',
+        description: 'Lire les mails. Outil de test.',
+        risk: 'safe',
+        schema: z.object({}),
+        execute: async () => ({ ok: true, content: 'aucun mail' }),
+      }),
+    );
+  }
   const session = new ChatSession({
     registry,
-    tools: createToolManager({
-      getSettings,
-      searchRegistry: core.createDefaultSearchRegistry(),
-      marketDataRegistry: core.createDefaultMarketDataRegistry(),
-      spotify: new SpotifyBridge(getSettings),
-      siteBlock: new SiteBlockBridge(getSettings),
-      personalization: new PersonalizationStore(),
-      knowledge: new KnowledgeStore({ getUserDataPath: () => userData }),
-    }),
+    tools,
     store: new core.InMemoryConversationStore(),
     auditLog: new core.InMemoryAuditLogStore(),
     getSettings,
@@ -110,6 +173,55 @@ async function turn(text: string, brainReply: string, orchestra: unknown = ORCHE
     .map((event) => event.text)
     .join('');
   return { requests, events, route, reply };
+}
+
+async function stockTurn(text: string) {
+  let modelCalls = 0;
+  const settings = settingsWith(ORCHESTRA);
+  const getSettings = () => settings;
+  const audit = new core.InMemoryAuditLogStore();
+  const registry = new core.ProviderRegistry().register({ ...core.ollamaDescriptor }, () => ({
+    id: 'ollama',
+    label: 'Ollama',
+    model: 'interdit',
+    requiresApiKey: false,
+    async *streamChat() {
+      modelCalls += 1;
+      throw new Error('le modèle ne doit pas être appelé');
+      yield { type: 'text' as const, delta: '' };
+    },
+  }));
+  const events: ChatEvent[] = [];
+  const sender = {
+    isDestroyed: () => false,
+    send: (_channel: string, event: ChatEvent) => events.push(event),
+  } as unknown as Electron.WebContents;
+  const session = new ChatSession({
+    registry,
+    tools: createToolManager({
+      getSettings,
+      searchRegistry: core.createDefaultSearchRegistry(),
+      marketDataRegistry: core.createDefaultMarketDataRegistry(),
+      spotify: new SpotifyBridge(getSettings),
+      siteBlock: new SiteBlockBridge(getSettings),
+      personalization: new PersonalizationStore(),
+      knowledge: new KnowledgeStore({ getUserDataPath: () => userData }),
+    }),
+    store: new core.InMemoryConversationStore(),
+    auditLog: audit,
+    getSettings,
+    voice: { hasApiKey: () => false } as never,
+    personalization: { get: async () => core.emptyPersonalization() } as never,
+    knowledge: { indexConversation: async () => 0 } as never,
+    localLearning: { recordTurn: async () => undefined } as never,
+  });
+  await session.send(sender, { conversationId: null, text });
+  const route = events.find((event) => event.type === 'route');
+  const reply = events
+    .filter((event): event is Extract<ChatEvent, { type: 'delta' }> => event.type === 'delta')
+    .map((event) => event.text)
+    .join('');
+  return { modelCalls, route, reply, audit };
 }
 
 describe('chef d’orchestre dans le chat (5.0.60)', () => {
@@ -215,6 +327,119 @@ describe('chef d’orchestre dans le chat (5.0.60)', () => {
       phrase: 'Mets Daft Punk sur Spotify',
     });
     expect(route?.validation?.teams.some((team) => team.id === 'musique')).toBe(true);
+  });
+
+  it('passe par Yahoo Finance → équipe web, sans demander au cerveau', async () => {
+    const { requests, route } = await turn('passe par Yahoo Finance', 'google');
+    expect(route).toMatchObject({ team: 'web', how: 'express' });
+    expect(requests.some((request) => (request.system ?? '').includes('chef d’orchestre'))).toBe(false);
+    expect(requests[0]?.system).toContain('ÉQUIPE INTERNET');
+  });
+
+  it('lis mes mails → équipe Google, sans demander au cerveau', async () => {
+    const { requests, route } = await turn('lis mes mails', 'web', ORCHESTRA, undefined, true);
+    expect(route).toMatchObject({ team: 'google', how: 'express', label: 'Google' });
+    expect(requests.some((request) => (request.system ?? '').includes('chef d’orchestre'))).toBe(false);
+    expect(requests[0]?.system).toContain('ÉQUIPE GOOGLE');
+  });
+
+  it('le cours de SPIE appelle l’outil, le faux modèle échoue s’il est appelé', async () => {
+    vi.stubGlobal('fetch', spieFetch);
+    try {
+      const { modelCalls, route, reply, audit } = await stockTurn('le cours de SPIE');
+      expect(modelCalls).toBe(0);
+      expect(route).toMatchObject({ type: 'route', team: 'bourse', label: 'Bourse', model: 'express', how: 'express' });
+      expect(reply).toBe("SPIE, Euronext Paris : 34,12 €, en hausse de 1,2 % aujourd'hui (17 h 35).");
+      const entries = await audit.list();
+      expect(entries.some((entry) => entry.toolName === 'get_stock_quote' && entry.status === 'ok')).toBe(true);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('cherche sur Google le cours de SPIE → bourse express, pas l’équipe Google', async () => {
+    vi.stubGlobal('fetch', spieFetch);
+    try {
+      const { modelCalls, route, reply } = await stockTurn('cherche sur Google le cours de SPIE');
+      expect(modelCalls).toBe(0);
+      expect(route).toMatchObject({ team: 'bourse', how: 'express', label: 'Bourse', model: 'express' });
+      expect(reply).toContain('SPIE, Euronext Paris');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('cours introuvable : aucune invention', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify({ quotes: [] }), { status: 200 })),
+    );
+    try {
+      const { modelCalls, reply } = await stockTurn('le cours de SPIE');
+      expect(modelCalls).toBe(0);
+      expect(reply).toBe("Je n'ai pas trouvé SPIE à la bourse. Tu peux me donner son symbole ?");
+      expect(reply).not.toMatch(/\d/);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('correction « non » : le cerveau apprend que l’équipe précédente n’a pas su', async () => {
+    const settings = settingsWith(ORCHESTRA);
+    const getSettings = () => settings;
+    const requests: Captured[] = [];
+    const registry = new core.ProviderRegistry().register({ ...core.ollamaDescriptor }, (config) => ({
+      id: 'ollama',
+      label: 'Ollama',
+      model: config.model,
+      requiresApiKey: false,
+      async *streamChat(request: { system?: string; messages: { content: string }[] }) {
+        requests.push({
+          model: config.model,
+          system: request.system,
+          tools: [],
+          lastUser: request.messages.at(-1)?.content ?? '',
+        });
+        const router = (request.system ?? '').includes('chef d’orchestre');
+        const user = request.messages.at(-1)?.content ?? '';
+        const delta = router ? (user.includes("n'a pas su") ? 'pc' : 'web') : 'Très bien.';
+        yield { type: 'text' as const, delta };
+        yield { type: 'done' as const, finishReason: 'stop' as const };
+      },
+    }));
+    const events: ChatEvent[] = [];
+    const sender = {
+      isDestroyed: () => false,
+      send: (_channel: string, event: ChatEvent) => events.push(event),
+    } as unknown as Electron.WebContents;
+    const session = new ChatSession({
+      registry,
+      tools: createToolManager({
+        getSettings,
+        searchRegistry: core.createDefaultSearchRegistry(),
+        marketDataRegistry: core.createDefaultMarketDataRegistry(),
+        spotify: new SpotifyBridge(getSettings),
+        siteBlock: new SiteBlockBridge(getSettings),
+        personalization: new PersonalizationStore(),
+        knowledge: new KnowledgeStore({ getUserDataPath: () => userData }),
+      }),
+      store: new core.InMemoryConversationStore(),
+      auditLog: new core.InMemoryAuditLogStore(),
+      getSettings,
+      voice: { hasApiKey: () => false } as never,
+      personalization: { get: async () => core.emptyPersonalization() } as never,
+      knowledge: { indexConversation: async () => 0 } as never,
+      localLearning: { recordTurn: async () => undefined } as never,
+    });
+    await session.send(sender, { conversationId: null, text: 'Ouvre le Bloc-notes' });
+    const done = events.find((event) => event.type === 'done');
+    expect(events.find((event) => event.type === 'route')).toMatchObject({ team: 'web', how: 'cerveau' });
+    const conversationId = done && done.type === 'done' ? done.conversationId : '';
+    requests.length = 0;
+    events.length = 0;
+    await session.send(sender, { conversationId, text: 'non' });
+    expect(requests[0]?.lastUser).toContain("l'équipe web n'a pas su répondre au tour précédent");
+    expect(events.find((event) => event.type === 'route')).toMatchObject({ team: 'pc', how: 'cerveau' });
   });
 
   it('validation en direct : absente sur calcul exact', async () => {
