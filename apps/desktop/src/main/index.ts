@@ -1219,6 +1219,14 @@ function registerIpc(): void {
       elevate: elevateScript,
     });
   });
+  ipcMain.handle(IpcChannel.speakerSignal, (_event, id: unknown) =>
+    typeof id === 'string' && id.length <= 100 ? speakers.signal(id) : speakers.status(),
+  );
+  ipcMain.handle(IpcChannel.speakerRename, (_event, payload: unknown) => {
+    const body = payload as { id?: unknown; name?: unknown } | null;
+    if (typeof body?.id !== 'string' || body.id.length > 100 || typeof body.name !== 'string') return speakers.status();
+    return speakers.rename(body.id, body.name.slice(0, 40));
+  });
   ipcMain.handle(IpcChannel.speakerMakePrivate, async (_event, index: unknown) => {
     if (process.platform !== 'win32') return { ok: false, sentence: 'Ce contrôle est prévu pour Windows.' };
     try {

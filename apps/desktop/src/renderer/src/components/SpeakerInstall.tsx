@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/field';
  * Le mot de passe reste dans cette fenêtre : il n'est pas écrit sur le disque.
  */
 export interface InstallScreenProps {
-  screen: 'branch' | 'wifi' | 'go' | 'error';
+  screen: 'branch' | 'wifi' | 'go' | 'error' | 'replace';
   sentence?: string;
   button?: string;
   checks?: Array<{ label: string; state: 'wait' | 'ok' | 'no' }>;
@@ -16,6 +16,9 @@ export interface InstallScreenProps {
   onRetry?: () => void;
   /** Réseaux vus par la carte, après la reconnaissance. */
   networks?: Array<{ ssid: string; rssi: number; secure: boolean }>;
+  replaceLabel?: string;
+  onReplace?: () => void;
+  onKeep?: () => void;
 }
 
 export function SpeakerInstallView({
@@ -27,6 +30,9 @@ export function SpeakerInstallView({
   onInstall,
   onRetry,
   networks = [],
+  replaceLabel,
+  onReplace,
+  onKeep,
 }: InstallScreenProps) {
   const [name, setName] = useState('Salon');
   const [ssid, setSsid] = useState('');
@@ -46,6 +52,22 @@ export function SpeakerInstallView({
         <Button variant="default" onClick={onNext}>
           Elle est branchée
         </Button>
+      </div>
+    );
+  }
+
+  if (screen === 'replace') {
+    return (
+      <div className="flex flex-col gap-3 rounded-lg border border-white/10 bg-white/[0.03] p-3">
+        <p className="text-sm text-slate-100">Cette carte est déjà reliée. Tu peux la remplacer, ou la laisser comme elle est.</p>
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" variant="default" onClick={onReplace}>
+            {replaceLabel ?? 'Remplacer l’enceinte'}
+          </Button>
+          <Button type="button" variant="ghost" onClick={onKeep}>
+            Garder l’ancienne
+          </Button>
+        </div>
       </div>
     );
   }

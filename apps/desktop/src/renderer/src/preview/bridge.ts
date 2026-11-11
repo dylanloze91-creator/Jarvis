@@ -468,6 +468,12 @@ export function installPreviewBridge(): void {
       }),
       repair: async () => ({ ok: false as const, sentence: "Windows n'a pas donné l'accord." }),
       makePrivate: async () => ({ ok: true as const }),
+      signal: async () => speakers,
+      rename: async (id: string, name: string) =>
+        (speakers = {
+          ...speakers,
+          speakers: speakers.speakers.map((item) => (item.id === id ? { ...item, rename: name } : item)),
+        }),
     },
     update: {
       getState: async () => ({

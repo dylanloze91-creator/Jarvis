@@ -24,6 +24,8 @@ extern jarvis_cfg_t jarvis_cfg;
 
 void cfg_init(void);
 bool cfg_save(const prov_config_t *in);
+/** Change seulement le Wi-Fi. La clé et le PC restent. */
+bool cfg_set_wifi(const char *ssid, const char *pass);
 void cfg_set_last_ok(const char *ip);
 void cfg_rename(const char *name);
 void cfg_forget(void);

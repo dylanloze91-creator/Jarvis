@@ -58,6 +58,8 @@ export interface SetupHooks {
   onView: (view: SetupView) => void;
   /** Après la reconnaissance (et le programme), avant les réglages. La liste vient du scan. */
   onNetworks?: (networks: WifiSeen[]) => Promise<void>;
+  /** Faux : on ne remplace pas l'enceinte déjà connue. */
+  confirmReplace?: (mac: string) => Promise<boolean>;
 }
 
 export type SetupResult =
@@ -151,6 +153,11 @@ export async function runSpeakerSetup(io: SetupIo, input: SetupInput, hooks?: Se
     }
     mac = hello.mac;
     fw = hello.fw;
+  }
+
+  if (mac && hooks?.confirmReplace) {
+    const accepted = await hooks.confirmReplace(mac);
+    if (!accepted) return fail({ sentence: 'Cette carte reste comme elle est.', button: 'Réessayer' }, false);
   }
 
   const networks = await io.scan();

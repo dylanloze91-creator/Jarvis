@@ -121,6 +121,23 @@ describe('déroulé d’installation', () => {
     expect(order).toEqual(['scan', 'liste:Maison', 'config']);
   });
 
+  it('n’écrit rien si on refuse de remplacer la carte connue', async () => {
+    let configured = false;
+    const result = await runSpeakerSetup(
+      io({
+        hello: async () => ({ fw: '5.0.75', mac: 'aa:bb:cc:dd:ee:ff', configured: true }),
+        sendConfig: async () => {
+          configured = true;
+          return { ok: true };
+        },
+      }),
+      { manifestVersion: '5.0.75' },
+      { onView: () => undefined, confirmReplace: async () => false },
+    );
+    expect(result.ok).toBe(false);
+    expect(configured).toBe(false);
+  });
+
   it('donne le diagnostic si le PC est introuvable', async () => {
     const result = await runSpeakerSetup(
       io({

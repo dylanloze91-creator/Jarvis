@@ -119,6 +119,18 @@ static void handle_line(char *line) {
         say("{\"ok\":true}");
         return;
     }
+    if (cmd.cmd == PROV_CMD_WIFI) {
+        if (cmd.error[0]) {
+            reply_error(cmd.error);
+            return;
+        }
+        if (!cfg_set_wifi(cmd.config.ssid, cmd.config.pass)) {
+            reply_error("config");
+            return;
+        }
+        say("{\"ok\":true}");
+        return;
+    }
     if (cmd.cmd == PROV_CMD_TEST) {
         if (!jarvis_cfg.configured) {
             reply_error("config");

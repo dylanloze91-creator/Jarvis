@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Copy, Loader2, Plus, RefreshCw, Speaker } from 'lucide-react';
 import type { Settings, SpeakerChronoView } from '@jarvis/core';
-import { opensDiagnostic, rssiToBars, speakerFreshness } from '@jarvis/core';
+import { opensDiagnostic, replacePrompt, rssiToBars, speakerFreshness } from '@jarvis/core';
 import { Button } from '@/components/ui/button';
 import { ConfirmButton } from '@/components/ui/confirmButton';
 import { Disclosure } from '@/components/ui/disclosure';
@@ -22,7 +22,12 @@ export function SpeakerSettingsSection() {
   const [loading, setLoading] = useState(false);
   const [name, setName] = useState('');
   const [added, setAdded] = useState<SpeakerAdded | null>(null);
-  const [installStep, setInstallStep] = useState<'closed' | 'branch' | 'wifi' | 'go' | 'error'>('closed');
+  const [installStep, setInstallStep] = useState<'closed' | 'branch' | 'wifi' | 'go' | 'error' | 'replace'>('closed');
+  const installMode = useRef<'install' | 'wifi'>('install');
+  const replaceChoice = useRef<((accepted: boolean) => void) | null>(null);
+  const [replaceLabel, setReplaceLabel] = useState('Remplacer l’enceinte');
+  const [renaming, setRenaming] = useState<string | null>(null);
+  const [draftName, setDraftName] = useState('');
   const [networks, setNetworks] = useState<Array<{ ssid: string; rssi: number; secure: boolean }>>([]);
   const wifiChoice = useRef<((input: { name: string; ssid: string; pass: string }) => void) | null>(null);
   const [checks, setChecks] = useState<Array<{ label: string; state: 'wait' | 'ok' | 'no' }>>([]);
@@ -295,7 +300,13 @@ export function SpeakerSettingsSection() {
             </p>
           </div>
 
-          <Button variant="default" onClick={() => setInstallStep('branch')}>
+          <Button
+            variant="default"
+            onClick={() => {
+              installMode.current = 'install';
+              setInstallStep('branch');
+            }}
+          >
             <Plus className="size-4" />
             Ajouter une enceinte
           </Button>
@@ -306,6 +317,19 @@ export function SpeakerSettingsSection() {
               button={failure.button}
               checks={checks}
               networks={networks}
+              replaceLabel={replaceLabel}
+              onReplace={() => {
+                setInstallStep('go');
+                const choose = replaceChoice.current;
+                replaceChoice.current = null;
+                choose?.(true);
+              }}
+              onKeep={() => {
+                const choose = replaceChoice.current;
+                replaceChoice.current = null;
+                choose?.(false);
+                setInstallStep('branch');
+              }}
               onNext={() => {
                 const serial = navigator.serial;
                 if (!serial) {
@@ -353,6 +377,18 @@ export function SpeakerSettingsSection() {
                       flasher: esptoolFlasher(() => active, bundle.files),
                       manifestVersion: bundle.version,
                       wifi: chosen,
+                      wifiOnly: installMode.current === 'wifi',
+                      confirmReplace: (mac) =>
+                        new Promise((resolve) => {
+                          const known = status.speakers.find((item) => item.mac?.toLowerCase() === mac.toLowerCase());
+                          if (!known || installMode.current === 'wifi') {
+                            resolve(true);
+                            return;
+                          }
+                          setReplaceLabel(replacePrompt(known.name));
+                          setInstallStep('replace');
+                          replaceChoice.current = resolve;
+                        }),
                       chooseWifi: (found) =>
                         new Promise((resolve) => {
                           setNetworks(found);
@@ -506,14 +542,63 @@ export function SpeakerSettingsSection() {
                   <div className="flex min-w-0 items-center gap-2.5">
                     <Speaker className="size-4 shrink-0 text-slate-400" />
                     <div className="min-w-0">
-                      <p className="truncate text-sm text-slate-200">{speaker.name}</p>
-                      <p className="text-[11px] text-slate-500">{lastTurnLabel(speaker.lastTurnAt, now)}</p>
+                      <p className="truncate text-sm text-slate-200">{speaker.rename ?? speaker.name}</p>
+                      <p className="text-[11px] text-slate-500">
+                        {speaker.rename ? `Sera « ${speaker.rename} » au prochain signe de vie. ` : ''}
+                        {lastTurnLabel(speaker.lastTurnAt, now)}
+                      </p>
+                      {renaming === speaker.id ? (
+                        <div className="mt-1 flex items-center gap-1">
+                          <Input
+                            value={draftName}
+                            maxLength={24}
+                            aria-label="Nouveau nom"
+                            onChange={(event) => setDraftName(event.target.value)}
+                          />
+                          <Button
+                            size="sm"
+                            variant="default"
+                            onClick={() => {
+                              const next = draftName.trim();
+                              setRenaming(null);
+                              if (next) run(() => window.jarvis.speaker.rename(speaker.id, next));
+                            }}
+                          >
+                            Enregistrer
+                          </Button>
+                        </div>
+                      ) : null}
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="text-[11px] text-slate-500" title="Signal Wi-Fi">
                       {typeof speaker.rssi === 'number' ? `${'▮'.repeat(rssiToBars(speaker.rssi))}${'▯'.repeat(4 - rssiToBars(speaker.rssi))}` : '—'}
                     </span>
+                    <div className="flex flex-wrap items-center gap-1">
+                      <Button size="sm" variant="ghost" onClick={() => run(() => window.jarvis.speaker.signal(speaker.id))}>
+                        Faire signe
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => {
+                          setRenaming(speaker.id);
+                          setDraftName(speaker.name);
+                        }}
+                      >
+                        Renommer
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => {
+                          installMode.current = 'wifi';
+                          setInstallStep('branch');
+                        }}
+                      >
+                        Changer le Wi-Fi
+                      </Button>
+                    </div>
                     <span className="text-[11px] text-slate-500">
                       {speaker.pending
                         ? 'Installation en cours'

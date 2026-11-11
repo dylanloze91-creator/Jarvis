@@ -178,4 +178,23 @@ describe('Installer programme la carte (faux port, esptool simulé)', () => {
     expect(source).toContain('pull(TEST_STEP_TIMEOUT_MS[index] ?? 20_000)');
     expect(source).toContain("command('scan', SCAN_TIMEOUT_MS)");
   });
+
+  it('change le Wi-Fi sans réécrire le programme ni la clé', async () => {
+    const link = new FakeSpeakerLink({
+      beforeFlash: { fw: '5.0.75', mac: 'aa:bb:cc:dd:ee:ff', configured: true },
+    });
+    const chip = flasher(link);
+    const { run, logs } = request(link, chip, {
+      wifiOnly: true,
+      chooseWifi: async () => ({ name: 'Salon', ssid: 'Nouveau', pass: PASS }),
+    });
+    const result = await run;
+    expect(result.ok).toBe(true);
+    expect(chip.calls).toEqual([]);
+    const line = link.sent.find((item) => item.startsWith('wifi ')) ?? '';
+    expect(line).toContain('Nouveau');
+    expect(line).toContain(PASS);
+    expect(logs.join('\n')).not.toContain(PASS);
+    expect(link.sent.some((item) => item.startsWith('config '))).toBe(false);
+  });
 });

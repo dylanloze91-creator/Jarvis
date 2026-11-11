@@ -39,7 +39,7 @@ export class FakeSpeakerLink implements SerialLink {
       this.enqueue({ networks: this.options.networks ?? [{ ssid: 'synthetique-test', rssi: -42, secure: true }] });
       return;
     }
-    if (command === 'config') {
+    if (command === 'wifi' || command === 'config') {
       this.enqueue(this.options.configError ? { ok: false, error: this.options.configError } : { ok: true });
       return;
     }

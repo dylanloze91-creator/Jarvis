@@ -171,6 +171,16 @@ export class SpeakerService {
     return this.status();
   }
 
+  async signal(id: string): Promise<SpeakerStatus> {
+    await this.deps.store.askIdentify(id);
+    return this.status();
+  }
+
+  async rename(id: string, name: string): Promise<SpeakerStatus> {
+    await this.deps.store.askRename(id, name);
+    return this.status();
+  }
+
   async remove(id: string): Promise<SpeakerStatus> {
     await this.deps.store.removeSpeaker(id);
     this.server.forget(id);

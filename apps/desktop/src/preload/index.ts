@@ -245,6 +245,8 @@ const api: JarvisApi = {
     netStatus: () => ipcRenderer.invoke(IpcChannel.speakerNetStatus),
     repair: () => ipcRenderer.invoke(IpcChannel.speakerRepair),
     makePrivate: (index: number) => ipcRenderer.invoke(IpcChannel.speakerMakePrivate, index),
+    signal: (id: string) => ipcRenderer.invoke(IpcChannel.speakerSignal, id),
+    rename: (id: string, name: string) => ipcRenderer.invoke(IpcChannel.speakerRename, { id, name }),
   },
   developer: createDeveloperApi(ipcRenderer),
   health: {

@@ -337,7 +337,7 @@ hello_result_t net_hello(void) {
             }
             result.version[i] = 0;
         }
-        result.identify = strstr(ctx.body, "\"identify\"") != NULL;
+        result.identify = strstr(ctx.body, "\"identify\":true") != NULL;
         const char *rename = strstr(ctx.body, "\"rename\":\"");
         if (rename) {
             rename += 10;

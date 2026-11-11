@@ -65,7 +65,7 @@ export interface SpeakerChat {
 }
 
 export interface SpeakerServerDeps {
-  store: Pick<SpeakerStore, 'verify' | 'noteHello'>;
+  store: Pick<SpeakerStore, 'verify' | 'noteHello' | 'takeHelloActions'>;
   /** Une session de chat par enceinte, créée à sa première phrase. */
   chatFor: (speaker: Speaker) => SpeakerChat;
   /** Transcription Whisper (dans la fenêtre) d'un PCM 16 kHz. */
@@ -339,11 +339,15 @@ export class SpeakerServer {
       if (signs.fw || signs.mac || typeof signs.rssi === 'number') {
         await this.deps.store.noteHello(speaker.id, signs, this.now());
       }
-      return sendJson(res, 200, {
-        name: speaker.name,
+      const actions = await this.deps.store.takeHelloActions(speaker.id);
+      const body: { name: string; version: string; followUpMs: number; identify?: true; rename?: string } = {
+        name: actions.rename ?? speaker.name,
         version: this.deps.version(),
         followUpMs: followUpWindowMs(this.deps.voiceSettings()),
-      });
+      };
+      if (actions.identify) body.identify = true;
+      if (actions.rename) body.rename = actions.rename;
+      return sendJson(res, 200, body);
     }
     if (path === '/api/speaker/greeting') {
       if (method !== 'GET') throw new HttpError(405, 'Méthode refusée.');

@@ -19,12 +19,16 @@ export interface Speaker {
   lastHelloAt?: number;
   rssi?: number;
   ip?: string;
+  /** Nom en attente du prochain hello. */
+  rename?: string;
 }
 
 interface StoredSpeaker extends Speaker {
   tokenHash: string;
   /** Nouvelle clé pendant un remplacement. L'ancienne marche encore tant qu'on n'a pas confirmé. */
   pendingTokenHash?: string;
+  /** Le prochain hello demande un signe, puis ce drapeau disparaît. */
+  identify?: boolean;
 }
 
 interface SpeakerFile {
@@ -76,6 +80,9 @@ function readFileState(raw: string): SpeakerFile {
         if (typeof speaker.pendingTokenHash === 'string' && /^[0-9a-f]{64}$/.test(speaker.pendingTokenHash)) {
           stored.pendingTokenHash = speaker.pendingTokenHash;
         }
+        const rename = optionalText(speaker.rename, 24);
+        if (rename) stored.rename = rename;
+        if (speaker.identify === true) stored.identify = true;
         return [stored];
       })
     : [];
@@ -125,7 +132,48 @@ export class SpeakerStore {
   }
 
   speakers(): Speaker[] {
-    return this.state.speakers.map(({ tokenHash: _tokenHash, pendingTokenHash: _pending, ...speaker }) => speaker);
+    return this.state.speakers.map(({ tokenHash: _tokenHash, pendingTokenHash: _pending, identify: _identify, ...speaker }) => speaker);
+  }
+
+  /** Le prochain hello de cette enceinte demandera un signe. */
+  async askIdentify(id: string): Promise<boolean> {
+    await this.load();
+    const speaker = this.state.speakers.find((item) => item.id === id);
+    if (!speaker || speaker.pending) return false;
+    speaker.identify = true;
+    await this.save();
+    return true;
+  }
+
+  /** Le prochain hello portera le nouveau nom, une seule fois. */
+  async askRename(id: string, name: string): Promise<boolean> {
+    await this.load();
+    const speaker = this.state.speakers.find((item) => item.id === id);
+    if (!speaker || speaker.pending) return false;
+    const cleaned = cleanSpeakerName(name).slice(0, 24);
+    if (!cleaned) return false;
+    speaker.rename = cleaned;
+    await this.save();
+    return true;
+  }
+
+  /**
+   * Consomme le signe et le renommage pour la réponse du hello.
+   * Le nom du PC change au moment où la carte est prévenue.
+   */
+  async takeHelloActions(id: string): Promise<{ identify: boolean; rename?: string }> {
+    await this.load();
+    const speaker = this.state.speakers.find((item) => item.id === id);
+    if (!speaker) return { identify: false };
+    const identify = speaker.identify === true;
+    const rename = speaker.rename;
+    if (identify) delete speaker.identify;
+    if (rename) {
+      speaker.name = rename;
+      delete speaker.rename;
+    }
+    if (identify || rename) await this.save();
+    return rename ? { identify, rename } : { identify };
   }
 
   findByMac(mac: string): Speaker | null {

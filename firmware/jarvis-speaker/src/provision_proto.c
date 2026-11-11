@@ -230,8 +230,9 @@ bool prov_parse_line(const char *line, prov_command_t *out) {
         out->cmd = PROV_CMD_REBOOT;
         return true;
     }
-    if (strcmp(word, "config") != 0) return false;
-    out->cmd = PROV_CMD_CONFIG;
+    const bool wifi_only = strcmp(word, "wifi") == 0;
+    if (!wifi_only && strcmp(word, "config") != 0) return false;
+    out->cmd = wifi_only ? PROV_CMD_WIFI : PROV_CMD_CONFIG;
     p = skip_ws(p);
     if (*p != '{') {
         snprintf(out->error, sizeof(out->error), "json");
@@ -247,6 +248,10 @@ bool prov_parse_line(const char *line, prov_command_t *out) {
     len = 0;
     if (!copy_json_string(p, "pass", cfg.pass, sizeof(cfg.pass), &len) || !valid_pass(cfg.pass, len)) {
         snprintf(out->error, sizeof(out->error), "pass");
+        return true;
+    }
+    if (wifi_only) {
+        out->config = cfg;
         return true;
     }
     if (!copy_json_string(p, "name", cfg.name, sizeof(cfg.name), NULL) || !valid_name(cfg.name)) {

@@ -162,6 +162,21 @@ bool cfg_save(const prov_config_t *in) {
     return ok;
 }
 
+bool cfg_set_wifi(const char *ssid, const char *pass) {
+    cfg_init();
+    if (!jarvis_cfg.configured || !ssid || !ssid[0]) return false;
+    nvs_handle_t handle;
+    if (nvs_open("jarvis", NVS_READWRITE, &handle) != ESP_OK) return false;
+    bool ok = nvs_set_str(handle, "ssid", ssid) == ESP_OK && nvs_set_str(handle, "pass", pass ? pass : "") == ESP_OK;
+    ok = ok && nvs_commit(handle) == ESP_OK;
+    nvs_close(handle);
+    if (!ok) return false;
+    copy_clip(jarvis_cfg.ssid, sizeof(jarvis_cfg.ssid), ssid);
+    copy_clip(jarvis_cfg.pass, sizeof(jarvis_cfg.pass), pass ? pass : "");
+    ESP_LOGI(SERIAL_TAG, "Wi-Fi mis à jour (pass=***)");
+    return true;
+}
+
 void cfg_set_last_ok(const char *ip) {
     if (!ip || !ip[0] || strcmp(ip, jarvis_cfg.last_ok) == 0) return;
     if (!looks_ipv4(ip)) return;

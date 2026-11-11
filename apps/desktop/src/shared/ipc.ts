@@ -192,6 +192,8 @@ export const IpcChannel = {
   speakerNetStatus: 'speaker:net-status',
   speakerRepair: 'speaker:repair',
   speakerMakePrivate: 'speaker:make-private',
+  speakerSignal: 'speaker:signal',
+  speakerRename: 'speaker:rename',
   healthCurrent: 'health:current',
   healthRefresh: 'health:refresh',
   healthEvent: 'health:event',
@@ -255,6 +257,8 @@ export interface SpeakerStatus {
     rssi?: number;
     ip?: string;
     lastHelloAt?: number;
+    mac?: string;
+    rename?: string;
   }>;
 }
 
@@ -965,6 +969,10 @@ export interface JarvisApi {
     repair(): Promise<{ ok: true } | { ok: false; sentence: string }>;
     /** Clic « Passer ce réseau en Privé » : seulement l'index de la maison. */
     makePrivate(index: number): Promise<{ ok: true } | { ok: false; sentence: string }>;
+    /** Le prochain hello demande à la carte de se signaler. */
+    signal(id: string): Promise<SpeakerStatus>;
+    /** Le prochain hello porte le nouveau nom. */
+    rename(id: string, name: string): Promise<SpeakerStatus>;
   };
   update: {
     getState(): Promise<UpdateState>;

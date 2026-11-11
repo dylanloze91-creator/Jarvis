@@ -49,6 +49,10 @@ export interface InstallRequest {
   wifi: { name: string; ssid: string; pass: string };
   /** Appelé après le scan, avant l'envoi des réglages. L'écran montre cette liste. */
   chooseWifi?: (networks: WifiSeen[]) => Promise<{ name: string; ssid: string; pass: string }>;
+  /** Carte déjà connue : l'écran demande avant de remplacer. */
+  confirmReplace?: (mac: string) => Promise<boolean>;
+  /** Chemin court : nouveau Wi-Fi, sans réécrire le programme ni la clé. */
+  wifiOnly?: boolean;
   pair: (mac: string) => Promise<InstallPairing>;
   commit: (speakerId: string, fw: string) => Promise<void>;
   abandon: (speakerId: string) => Promise<void>;
@@ -100,6 +104,8 @@ export async function installSpeaker(request: InstallRequest): Promise<SetupResu
     paired.current = await request.pair(mac || '00:00:00:00:00:00');
     return paired.current;
   };
+
+  if (request.wifiOnly) return changeWifiOnly(request, command, pull, note);
 
   const result = await runSpeakerSetup(
     {
@@ -179,9 +185,40 @@ export async function installSpeaker(request: InstallRequest): Promise<SetupResu
       onNetworks: async (networks) => {
         if (request.chooseWifi) wifi = await request.chooseWifi(networks);
       },
+      ...(request.confirmReplace ? { confirmReplace: request.confirmReplace } : {}),
     },
   );
 
   if (result.ok && paired.current) await request.commit(paired.current.speakerId, result.fw || fw);
   return result;
+}
+
+async function changeWifiOnly(
+  request: InstallRequest,
+  command: (line: string, timeoutMs: number) => Promise<Record<string, unknown> | null>,
+  pull: (timeoutMs: number) => Promise<Record<string, unknown> | null>,
+  note: (line: string) => void,
+): Promise<SetupResult> {
+  const hello = await command('hello', request.helloTimeoutMs ?? 1500);
+  if (!hello || typeof hello.fw !== 'string') {
+    return { ok: false, failure: { sentence: 'Je ne reconnais pas encore cette carte.', button: 'Réessayer' }, mac: null };
+  }
+  const scan = await command('scan', SCAN_TIMEOUT_MS);
+  const networks = scan ? readWifiScan(scan) : [];
+  let wifi = request.wifi;
+  if (request.chooseWifi) wifi = await request.chooseWifi(networks);
+  const line = `wifi ${JSON.stringify({ ssid: wifi.ssid, pass: wifi.pass })}`;
+  const json = await command(line, 2000);
+  if (json?.ok !== true) {
+    return { ok: false, failure: { sentence: 'Le Wi-Fi n’a pas été changé.', button: 'Réessayer' }, mac: null };
+  }
+  note('test');
+  await request.link.write('test\n');
+  for (let index = 0; index < 4; index += 1) {
+    const step = await pull(TEST_STEP_TIMEOUT_MS[index] ?? 20_000);
+    if (!step || step.ok !== true) {
+      return { ok: false, failure: { sentence: 'Le nouveau Wi-Fi ne répond pas.', button: 'Réessayer' }, mac: null };
+    }
+  }
+  return { ok: true, mac: typeof hello.mac === 'string' ? hello.mac : '', fw: hello.fw, skippedFlash: true };
 }

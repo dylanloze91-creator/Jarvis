@@ -98,6 +98,15 @@ static void test_wifi_and_name(void) {
     expect(strcmp(quoted, "\"Maison\"") == 0, "sans echappement");
     expect(prov_json_string(quoted, 4, "abcd") < 0, "tampon trop court");
     expect(prov_json_string(quoted, sizeof(quoted), "a\nb") < 0, "controle ecarte");
+    prov_command_t wifi;
+    expect(prov_parse_line("wifi {\"ssid\":\"Maison\",\"pass\":\"motdepasse\"}", &wifi) && wifi.cmd == PROV_CMD_WIFI, "wifi");
+    expect(strcmp(wifi.config.ssid, "Maison") == 0, "wifi ssid");
+    expect(strcmp(wifi.config.pass, "motdepasse") == 0, "wifi pass");
+    expect(wifi.config.token[0] == 0, "wifi sans cle");
+    char redacted[128];
+    snprintf(redacted, sizeof(redacted), "wifi {\"ssid\":\"Maison\",\"pass\":\"motdepasse\"}");
+    prov_redact(redacted);
+    expect(strstr(redacted, "motdepasse") == NULL, "wifi mot de passe masque");
 }
 
 int main(void) {

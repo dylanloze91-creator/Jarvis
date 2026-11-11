@@ -226,6 +226,27 @@ describe('pont des enceintes (5.0.64)', () => {
     expect(store.speakers()[0]).toMatchObject({ fw: '5.0.64', rssi: -60, ip: '192.168.1.30' });
   });
 
+  it('le hello porte le signe et le nouveau nom, une seule fois', async () => {
+    const { port, token, store, speaker } = await setup();
+    expect(await store.askIdentify(speaker.id)).toBe(true);
+    expect(await store.askRename(speaker.id, 'Cuisine')).toBe(true);
+    const first = JSON.parse((await call(port, '/api/speaker/hello', { token })).body.toString('utf8')) as {
+      name: string;
+      identify?: boolean;
+      rename?: string;
+    };
+    expect(first.name).toBe('Cuisine');
+    expect(first.identify).toBe(true);
+    expect(first.rename).toBe('Cuisine');
+    const second = JSON.parse((await call(port, '/api/speaker/hello', { token })).body.toString('utf8')) as {
+      identify?: boolean;
+      rename?: string;
+    };
+    expect(second.identify).toBeUndefined();
+    expect(second.rename).toBeUndefined();
+    expect(store.speakers()[0]?.name).toBe('Cuisine');
+  });
+
   it('refuse une adresse distante non privée, même avec le bon jeton', async () => {
     const { port, token } = await setup({ remote: '8.8.8.8' });
     expect((await call(port, '/api/speaker/hello', { token })).status).toBe(403);

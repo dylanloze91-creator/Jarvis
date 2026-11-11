@@ -29,6 +29,7 @@ typedef enum {
     PROV_CMD_HELLO,
     PROV_CMD_SCAN,
     PROV_CMD_CONFIG,
+    PROV_CMD_WIFI,
     PROV_CMD_TEST,
     PROV_CMD_FORGET,
     PROV_CMD_REBOOT,
