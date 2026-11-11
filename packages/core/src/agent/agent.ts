@@ -2,13 +2,33 @@ import type { LLMProvider } from '../providers/types.js';
 import type { ToolManager } from '../tools/manager.js';
 import type { ToolContext } from '../tools/types.js';
 import { extractKnowledgeIntent } from '../knowledge/intent.js';
-import { isGoogleToolName, looksLikeGoogleIntent, recentlyUsedGoogleTools } from '../google/intent.js';
+import {
+  isGoogleToolName,
+  looksLikeGoogleIntent,
+  recentlyUsedGoogleTools,
+} from '../google/intent.js';
 import { googleTurnPrompt } from '../google/prompt.js';
 import { isRoverToolName, looksLikeRoverIntent, recentlyUsedRoverTools } from '../rover/intent.js';
 import { imagesTurnPrompt, isImageToolName, looksLikeImageIntent, recentlyUsedImageTools } from '../images/intent.js';
 import { roverTurnPrompt } from '../rover/prompt.js';
 import { isCurrentTrackQuestion } from '../media/currentTrackIntent.js';
 import { extractSpotifyPlayQuery, isMusicIntent } from '../media/playIntent.js';
+import {
+  clearSpotifyDeviceAsk,
+  clearSpotifyDeviceAskSuppression,
+  clearSpotifyPlayDeviceHint,
+  extractSpotifyPlayDeviceHint,
+  extractSpotifyTransferTarget,
+  interpretSpotifyDeviceAnswer,
+  isSpotifyHaltPhrase,
+  noteSpotifyDeviceAskRetried,
+  peekSpotifyDeviceAsk,
+  SPOTIFY_DEVICE_FALLBACK_REPLY,
+  spotifyDeviceQuestion,
+  stashSpotifyPlayDeviceHint,
+  suppressNextSpotifyDeviceAsk,
+  type SpotifyPlayDeviceHint,
+} from '../media/spotifyDeviceVoice.js';
 import { extractYoutubeUrl } from '../youtube/url.js';
 import { localTimeZone } from '../search/dates.js';
 import type { CurrentSearchResult } from '../search/currentSearch.js';
@@ -88,6 +108,13 @@ export interface AgentOptions {
    * Les chemins forcés (Spotify, YouTube, actualité) restent ceux d'avant.
    */
   allowedTools?: (name: string) => boolean;
+  /**
+   * Question « Devialet ou PC ? ». Absent ou faux : lecture comme avant
+   * (appareil du réglage, sinon le PC). La recherche en attente est par session.
+   */
+  spotifyAskDevice?: boolean;
+  /** Fenêtre, téléphone ou enceinte : chacun garde sa question 60 secondes. */
+  spotifyVoiceSessionId?: string;
 }
 
 export const DEFAULT_SYSTEM_PROMPT = [
@@ -104,7 +131,7 @@ export const DEFAULT_SYSTEM_PROMPT = [
   "Si l'utilisateur demande de bloquer ou débloquer des sites, d'activer un mode travail ou concentration, ou de programmer un créneau, utilise les outils siteblock_*. Ne prétends jamais avoir modifié le blocage sans un résultat positif de l'outil.",
   "Certaines actions demandent l'accord de l'utilisateur ; s'il refuse, accepte-le sans insister.",
   "N'invente jamais le contenu d'un fichier, un résultat de recherche, une action effectuée, un chiffre financier ni l'état Spotify. Si l'outil ne l'a pas renvoyé, dis-le.",
-  "Tu peux enchaîner plusieurs outils dans un même tour (mémoire, documents, web, lecture de page) puis vérifier avant de répondre.",
+  'Tu peux enchaîner plusieurs outils dans un même tour (mémoire, documents, web, lecture de page) puis vérifier avant de répondre.',
   "Si l'utilisateur demande de garder une vidéo en mémoire, utilise remember_video. Ne transforme pas une opinion de la vidéo en fait.",
 ].join(' ');
 
@@ -163,6 +190,20 @@ export class Agent {
   ) {}
 
   async *run(history: ChatMessage[], context: ToolContext): AsyncGenerator<AgentEvent> {
+    clearSpotifyPlayDeviceHint();
+    clearSpotifyDeviceAskSuppression();
+    try {
+      yield* this.executeTurn(history, context);
+    } finally {
+      clearSpotifyPlayDeviceHint();
+      clearSpotifyDeviceAskSuppression();
+    }
+  }
+
+  private async *executeTurn(
+    history: ChatMessage[],
+    context: ToolContext,
+  ): AsyncGenerator<AgentEvent> {
     const conversation = [...history];
     const maxRounds = Math.min(
       this.options.maxToolRounds ?? HARD_TOOL_ROUND_CAP,
@@ -189,7 +230,8 @@ export class Agent {
         : this.resolveCurrentInfoTurn(conversation, lastUser, now);
     const locationAsk = currentInfoTurn === 'ask';
     const currentPlan = currentInfoTurn && currentInfoTurn !== 'ask' ? currentInfoTurn : null;
-    const webTurn = !youtubeTurn && !roverTurn && currentPlan === null && looksLikeWebResearchIntent(lastUser);
+    const webTurn =
+      !youtubeTurn && !roverTurn && currentPlan === null && looksLikeWebResearchIntent(lastUser);
     const allowed = this.options.allowedTools;
     let toolSchemas = (
       allowed
@@ -213,7 +255,8 @@ export class Agent {
     if (roverOffered) system = `${system} ${roverTurnPrompt()}`;
     if (imagesOffered) system = `${system} ${imagesTurnPrompt()}`;
     // Date et protocole seulement pour la recherche forcée : les autres tours gardent leur prompt.
-    if (currentPlan) system = `${system} ${currentDatePrompt(now, timeZone)} ${CURRENT_INFO_TURN_PROMPT}`;
+    if (currentPlan)
+      system = `${system} ${currentDatePrompt(now, timeZone)} ${CURRENT_INFO_TURN_PROMPT}`;
     let currentSearch: CurrentSearchResult | null = null;
     let learningRetried = false;
     let reviewSystem: string | null = null;
@@ -243,7 +286,40 @@ export class Agent {
         return;
       }
 
-      const forced = round === 0 && musicTurn ? this.forcedSpotify(conversation) : null;
+      const deviceFollowUp = round === 0 ? this.spotifyDeviceFollowUp(lastUser, now.getTime()) : null;
+      if (deviceFollowUp?.kind === 'retry') {
+        yield { type: 'assistant_delta', delta: deviceFollowUp.text };
+        const reply = createMessage('assistant', deviceFollowUp.text);
+        conversation.push(reply);
+        yield { type: 'assistant_message', message: reply };
+        yield { type: 'done' };
+        return;
+      }
+      if (deviceFollowUp?.kind === 'halt') {
+        const pause = this.forcedCall('spotify_pause', {});
+        if (pause) {
+          yield { type: 'assistant_message', message: pause.assistantMessage };
+          conversation.push(pause.assistantMessage);
+          yield { type: 'tool_start', call: pause.call };
+          const outcome = await this.tools.execute(pause.call, context);
+          const toolMessage = createMessage('tool', outcome.content, {
+            toolCallId: pause.call.id,
+            toolName: pause.call.name,
+            toolStatus: outcome.status,
+          });
+          conversation.push(toolMessage);
+          yield { type: 'tool_result', outcome, message: toolMessage };
+          yield { type: 'assistant_delta', delta: outcome.content };
+          const reply = createMessage('assistant', outcome.content);
+          conversation.push(reply);
+          yield { type: 'assistant_message', message: reply };
+          yield { type: 'done' };
+          return;
+        }
+      }
+      const answered =
+        deviceFollowUp?.kind === 'play' ? this.forcedPlayAnswer(deviceFollowUp) : null;
+      const forced = answered ?? (round === 0 && musicTurn ? this.forcedSpotify(conversation) : null);
       if (forced) {
         yield { type: 'assistant_message', message: forced.assistantMessage };
         conversation.push(forced.assistantMessage);
@@ -259,10 +335,14 @@ export class Agent {
         // Ne pas relancer le modèle : c'est lui qui inventait « introuvable »
         // sans appeler l'API, ou une commande wmic pour le morceau en cours.
         // Le texte de l'outil est la réponse.
-        const text =
+        const spoken =
           forced.call.name === 'spotify_current_track'
             ? currentTrackReply(outcome)
             : outcome.content;
+        const text =
+          deviceFollowUp?.kind === 'play' && deviceFollowUp.prefix
+            ? `${deviceFollowUp.prefix} ${spoken}`
+            : spoken;
         yield { type: 'assistant_delta', delta: text };
         const reply = createMessage('assistant', text);
         conversation.push(reply);
@@ -281,7 +361,12 @@ export class Agent {
       }
 
       if (round === 0 && currentPlan) {
-        const search = yield* this.forcedCurrentSearch(conversation, currentPlan, lastUser, context);
+        const search = yield* this.forcedCurrentSearch(
+          conversation,
+          currentPlan,
+          lastUser,
+          context,
+        );
         if (!search.result || search.result.sources.length === 0) {
           if (context.signal?.aborted) {
             yield { type: 'done' };
@@ -344,7 +429,8 @@ export class Agent {
 
       if (calls.length === 0 && currentSearch) {
         if (!text.trim()) {
-          const lead = 'Voici ce que la recherche a trouvé ; je n’ai pas réussi à rédiger la réponse moi-même.';
+          const lead =
+            'Voici ce que la recherche a trouvé ; je n’ai pas réussi à rédiger la réponse moi-même.';
           text = lead;
           yield { type: 'assistant_delta', delta: lead };
         }
@@ -364,7 +450,9 @@ export class Agent {
 
       if (calls.length === 0) {
         const reminder =
-          this.options.learningReview && !learningRetried ? this.options.learningReview(text) : null;
+          this.options.learningReview && !learningRetried
+            ? this.options.learningReview(text)
+            : null;
         if (reminder) {
           learningRetried = true;
           reviewSystem =
@@ -591,6 +679,65 @@ export class Agent {
   }
 
   /**
+   * Réponse à « Devialet ou PC ? » dans les 60 secondes de CETTE session.
+   * Express, sans modèle. « stop » / « pause » n'attendent pas la question.
+   */
+  private spotifyDeviceFollowUp(
+    prompt: string,
+    nowMs: number,
+  ):
+    | { kind: 'retry'; text: string }
+    | { kind: 'halt' }
+    | { kind: 'play'; query: string; hint: SpotifyPlayDeviceHint | null; prefix?: string }
+    | null {
+    if (this.options.spotifyAskDevice !== true) return null;
+    const sessionId = this.options.spotifyVoiceSessionId ?? 'default';
+    const pending = peekSpotifyDeviceAsk(sessionId, nowMs);
+    if (!pending) return null;
+    if (isSpotifyHaltPhrase(prompt)) {
+      clearSpotifyDeviceAsk(sessionId);
+      return { kind: 'halt' };
+    }
+    if (
+      extractSpotifyPlayQuery(prompt) ||
+      extractSpotifyTransferTarget(prompt) ||
+      isCurrentTrackQuestion(prompt)
+    ) {
+      clearSpotifyDeviceAsk(sessionId);
+      return null;
+    }
+    const answer = interpretSpotifyDeviceAnswer(prompt, pending.deviceNames);
+    if (answer.kind === 'unrelated') return null;
+    if (answer.kind === 'fuzzy') {
+      if (!pending.retried) {
+        noteSpotifyDeviceAskRetried(sessionId);
+        return { kind: 'retry', text: spotifyDeviceQuestion(pending.speakerNames, true) };
+      }
+      clearSpotifyDeviceAsk(sessionId);
+      return {
+        kind: 'play',
+        query: pending.query,
+        hint: null,
+        prefix: SPOTIFY_DEVICE_FALLBACK_REPLY,
+      };
+    }
+    clearSpotifyDeviceAsk(sessionId);
+    if (answer.kind === 'usual') return { kind: 'play', query: pending.query, hint: null };
+    if (answer.kind === 'speaker') return { kind: 'play', query: pending.query, hint: { kind: 'speaker' } };
+    if (answer.kind === 'pc') return { kind: 'play', query: pending.query, hint: { kind: 'pc' } };
+    return { kind: 'play', query: pending.query, hint: { kind: 'named', name: answer.name } };
+  }
+
+  private forcedPlayAnswer(answer: {
+    query: string;
+    hint: SpotifyPlayDeviceHint | null;
+  }): { call: ToolCall; assistantMessage: ChatMessage } | null {
+    if (!answer.hint) suppressNextSpotifyDeviceAsk();
+    stashSpotifyPlayDeviceHint(answer.hint);
+    return this.forcedCall('spotify_play', { query: answer.query });
+  }
+
+  /**
    * Si le dernier message utilisateur demande ce qui joue, on exécute
    * `spotify_current_track` avant le modèle ; si c'est une demande de
    * lecture, `spotify_play`. Un petit modèle local répondait sinon de
@@ -607,8 +754,15 @@ export class Agent {
     const prompt = conversation[lastUserIndex]?.content ?? '';
     if (isCurrentTrackQuestion(prompt)) return this.forcedCall('spotify_current_track', {});
 
+    const transfer = extractSpotifyTransferTarget(prompt);
+    if (transfer)
+      return this.forcedCall('spotify_transfer', {
+        target: transfer.kind === 'named' ? transfer.name : transfer.kind,
+      });
+
     const query = extractSpotifyPlayQuery(prompt);
     if (!query) return null;
+    stashSpotifyPlayDeviceHint(extractSpotifyPlayDeviceHint(prompt));
     return this.forcedCall('spotify_play', { query });
   }
 

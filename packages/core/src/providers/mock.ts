@@ -1,5 +1,11 @@
 import { randomId, type ChatMessage } from '../types.js';
 import { extractSpotifyPlayQuery, isMusicIntent } from '../media/playIntent.js';
+import {
+  extractSpotifyTransferTarget,
+  isSpotifyTransferPhrase,
+  stashSpotifyPlayDeviceHint,
+  extractSpotifyPlayDeviceHint,
+} from '../media/spotifyDeviceVoice.js';
 import { extractYoutubeUrl } from '../youtube/url.js';
 import { extractPersonalizationIntent } from '../personalization/intent.js';
 import { extractKnowledgeIntent } from '../knowledge/intent.js';
@@ -417,9 +423,22 @@ function planSpotifyToolCall(
     return { preamble: 'Je reprends la lecture Spotify.\n\n', tool: 'spotify_resume', args: {} };
   }
 
+  if (has('spotify_transfer') && isSpotifyTransferPhrase(prompt)) {
+    const target = extractSpotifyTransferTarget(prompt);
+    if (target) {
+      const arg = target.kind === 'named' ? target.name : target.kind;
+      return {
+        preamble: `Je transfère la musique vers ${arg}.\n\n`,
+        tool: 'spotify_transfer',
+        args: { target: arg },
+      };
+    }
+  }
+
   if (has('spotify_play')) {
     const query = extractSpotifyPlayQuery(prompt);
     if (query) {
+      stashSpotifyPlayDeviceHint(extractSpotifyPlayDeviceHint(prompt));
       return {
         preamble: `Je cherche « ${query} » sur Spotify.\n\n`,
         tool: 'spotify_play',

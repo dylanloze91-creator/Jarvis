@@ -108,6 +108,18 @@ export function pickLocalDesktopDevice(
   return namedSpotify ?? pool[0] ?? null;
 }
 
+/** Enceintes / lecteurs Connect hors PC, web et téléphone. */
+export function listConnectSpeakers(devices: ConnectDevice[], hostname = ''): ConnectDevice[] {
+  return devices.filter(
+    (device) =>
+      device.id &&
+      !device.is_restricted &&
+      !isWebPlayerDevice(device) &&
+      !isDesktopComputerDevice(device, hostname) &&
+      !/smartphone|tablet|phone/i.test(device.type),
+  );
+}
+
 export function describeOtherConnectDevices(devices: ConnectDevice[]): string {
   const others = devices
     .filter((device) => device.id && !device.is_restricted && !isDesktopComputerDevice(device))

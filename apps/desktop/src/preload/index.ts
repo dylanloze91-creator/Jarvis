@@ -8,6 +8,7 @@ import {
   type MachinePullProgress,
   type PhoneStatus,
   type SendChatInput,
+  type SpeakerShowConversation,
   type SpeakerStatus,
   type SpeakerTranscribeRequest,
   type SpeakerTranscribeResult,
@@ -218,6 +219,18 @@ const api: JarvisApi = {
       return () => ipcRenderer.removeListener(IpcChannel.speakerTranscribeRequest, handler);
     },
     reportTranscript: (payload: SpeakerTranscribeResult) => ipcRenderer.send(IpcChannel.speakerTranscribeResult, payload),
+    onShow: (listener) => {
+      const handler = (_event: Electron.IpcRendererEvent, payload: SpeakerShowConversation): void => listener(payload);
+      ipcRenderer.on(IpcChannel.speakerShowConversation, handler);
+      return () => ipcRenderer.removeListener(IpcChannel.speakerShowConversation, handler);
+    },
+    chrono: () => ipcRenderer.invoke(IpcChannel.speakerChrono),
+    resetChrono: () => ipcRenderer.invoke(IpcChannel.speakerChronoReset),
+    onHoldWhisper: (listener) => {
+      const handler = (): void => listener();
+      ipcRenderer.on(IpcChannel.speakerHoldWhisper, handler);
+      return () => ipcRenderer.removeListener(IpcChannel.speakerHoldWhisper, handler);
+    },
   },
   developer: createDeveloperApi(ipcRenderer),
   questionnaire: {

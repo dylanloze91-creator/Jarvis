@@ -6,14 +6,17 @@ import { afterAll, afterEach, describe, expect, it } from 'vitest';
 import {
   InMemoryConversationStore,
   SPEAKER_CONFIRMATION_REFUSAL,
+  SPEAKER_IMAGE_WAIT,
   SPEAKER_SAMPLE_RATE,
   SPEAKER_TRANSCRIBE_FAILED,
   createMessage,
   decodeWav,
   encodeWav,
   newConversation,
+  boundedWav,
   silenceWav,
   withMessages,
+  type SpeakerChrono,
 } from '@jarvis/core';
 import type { SendChatInput } from '../../shared/ipc.js';
 import { SpeakerServer, type SpeakerChat, type SpeakerSender } from './server.js';
@@ -38,7 +41,14 @@ interface Reply {
 function call(
   port: number,
   path: string,
-  options: { method?: string; token?: string; body?: Uint8Array; type?: string; followUp?: boolean } = {},
+  options: {
+    method?: string;
+    token?: string;
+    body?: Uint8Array;
+    type?: string;
+    followUp?: boolean;
+    headers?: Record<string, string>;
+  } = {},
 ): Promise<Reply> {
   return new Promise((resolve, reject) => {
     const req = request(
@@ -51,6 +61,7 @@ function call(
           ...(options.body ? { 'Content-Type': options.type ?? 'audio/wav', 'Content-Length': String(options.body.byteLength) } : {}),
           ...(options.token ? { Authorization: `Bearer ${options.token}` } : {}),
           ...(options.followUp ? { 'X-Jarvis-Follow-Up': '1' } : {}),
+          ...options.headers,
         },
       },
       (res) => {
@@ -129,6 +140,12 @@ interface SetupOptions {
   followUpSeconds?: number;
   now?: () => number;
   turnTimeoutMs?: number;
+  onShowOnPc?: (conversationId: string) => void;
+  chrono?: SpeakerChrono;
+  warmupEnabled?: () => boolean;
+  warm?: () => void;
+  rulesOnlyAddressee?: () => boolean;
+  headers?: Record<string, string>;
 }
 
 async function setup(options: SetupOptions = {}) {
@@ -153,8 +170,13 @@ async function setup(options: SetupOptions = {}) {
     conversations,
     onTurn: (speaker, at) => turns.push([speaker.name, at]),
     now: options.now,
+    ...(options.onShowOnPc ? { onShowOnPc: options.onShowOnPc } : {}),
     ...(options.turnTimeoutMs ? { turnTimeoutMs: options.turnTimeoutMs } : {}),
     ...(options.remote ? { remoteAddress: () => options.remote } : {}),
+    ...(options.chrono ? { chrono: options.chrono } : {}),
+    ...(options.warmupEnabled ? { warmupEnabled: options.warmupEnabled } : {}),
+    ...(options.warm ? { warm: options.warm } : {}),
+    ...(options.rulesOnlyAddressee ? { rulesOnlyAddressee: options.rulesOnlyAddressee } : {}),
   });
   await server.start(0);
   servers.push(server);
@@ -221,9 +243,12 @@ describe('pont des enceintes (5.0.64)', () => {
     expect(reply.headers['content-type']).toBe('audio/wav');
     expect(reply.headers['x-jarvis-continue']).toBe('1');
     expect(decodeURIComponent(String(reply.headers['x-jarvis-transcript']))).toBe('Jarvis, quelle heure est-il ?');
-    const wav = decodeWav(new Uint8Array(reply.body));
+    // Réponse en flux : pas de Content-Length, entête WAV sans taille, PCM à la suite.
+    expect(reply.headers['content-length']).toBeUndefined();
+    expect(reply.headers['transfer-encoding']).toBe('chunked');
+    const wav = decodeWav(boundedWav(new Uint8Array(reply.body)));
     expect(wav.sampleRate).toBe(SPEAKER_SAMPLE_RATE);
-    expect(Number(reply.headers['content-length'])).toBe(reply.body.byteLength);
+    expect(wav.samples.length).toBe(Math.round(((100 + 'Réponse à : quelle heure est-il'.length) / 1000) * SPEAKER_SAMPLE_RATE));
     // Le mot de réveil est retiré avant le chat ; source vocale, pas de suivi.
     expect(chat().inputs).toEqual([{ conversationId: null, text: 'quelle heure est-il', source: 'voice' }]);
     expect(synth.spoken).toEqual(['Réponse à : quelle heure est-il']);
@@ -233,6 +258,35 @@ describe('pont des enceintes (5.0.64)', () => {
     const list = await conversations.list();
     expect(list).toHaveLength(1);
     expect(list[0]!.title).toBe('Salon · quelle heure est-il');
+  });
+
+  it('réponse en flux : la première phrase est synthétisée et envoyée avant que le cerveau ait fini', async () => {
+    let firstSynth: () => void = () => undefined;
+    const firstSynthDone = new Promise<void>((resolve) => {
+      firstSynth = resolve;
+    });
+    const { port, token, synth, setTranscript } = await setup({
+      script: async (sender, input) => {
+        sender.send('', { type: 'started', conversationId: 'c1', message: createMessage('user', input.text) });
+        sender.send('', { type: 'delta', text: 'Première phrase. ' });
+        // Si le pont attendait la fin de la réponse, cette attente ne finirait jamais (délai de garde).
+        await Promise.race([firstSynthDone, new Promise<void>((_resolve, reject) => setTimeout(() => reject(new Error('la première phrase n’a pas été synthétisée pendant la réponse')), 5_000))]);
+        sender.send('', { type: 'delta', text: 'Seconde phrase.' });
+        sender.send('', { type: 'done', conversationId: 'c1', messages: [] });
+      },
+    });
+    const origin = synth.synthesize.bind(synth);
+    synth.synthesize = async (text: string) => {
+      const wav = await origin(text);
+      if (text === 'Première phrase.') firstSynth();
+      return wav;
+    };
+    setTranscript('Jarvis raconte');
+    const reply = await call(port, '/api/speaker/turn', { token, body: voiceWav() });
+    expect(reply.status).toBe(200);
+    expect(synth.spoken).toEqual(['Première phrase.', 'Seconde phrase.']);
+    const wav = decodeWav(boundedWav(new Uint8Array(reply.body)));
+    expect(wav.samples.length).toBe(Math.round(((100 + 16 + 100 + 15) / 1000) * SPEAKER_SAMPLE_RATE));
   });
 
   it('la discussion continue sur la même conversation, puis une nouvelle après 10 minutes', async () => {
@@ -345,8 +399,10 @@ describe('pont des enceintes (5.0.64)', () => {
     expect((await call(port, '/api/speaker/turn', { token, body: voiceWav() })).status).toBe(204);
   });
 
-  it('le texte dit est nettoyé : sources et code retirés', async () => {
+  it('le texte dit est nettoyé : sources et code retirés, le détail reste sur le PC', async () => {
+    const shown: string[] = [];
     const { port, token, synth, setTranscript } = await setup({
+      onShowOnPc: (id) => shown.push(id),
       script: (sender, input) => {
         sender.send('', { type: 'started', conversationId: 'c1', message: createMessage('user', input.text) });
         sender.send('', {
@@ -358,7 +414,10 @@ describe('pont des enceintes (5.0.64)', () => {
     });
     setTranscript('Jarvis quelle météo ?');
     await call(port, '/api/speaker/turn', { token, body: voiceWav() });
-    expect(synth.spoken).toEqual(['Il fait 22 degrés.']);
+    expect(synth.spoken).toEqual(['Il fait 22 degrés.', 'Le détail est sur le PC.']);
+    expect(synth.spoken.join(' ')).not.toContain('meteo.fr');
+    expect(synth.spoken.join(' ')).not.toContain('code');
+    expect(shown).toEqual(['c1']);
   });
 
   it('une seule phrase à la fois par enceinte : la seconde reçoit 429', async () => {
@@ -434,11 +493,165 @@ describe('pont des enceintes (5.0.64)', () => {
     expect((await call(port, '/api/speaker/turn', { token, body: voiceWav() })).status).toBe(504);
   });
 
+  it('une longue réponse est dite en deux ou trois phrases et s’affiche sur le PC', async () => {
+    const shown: string[] = [];
+    const text = 'Première phrase. Deuxième phrase. Troisième phrase. Quatrième phrase qui reste sur l’écran.';
+    const { port, token, synth } = await setup({
+      onShowOnPc: (id) => shown.push(id),
+      script: (sender) => {
+        sender.send('chat:event', {
+          type: 'started',
+          conversationId: 'conv-long',
+          message: createMessage('user', 'raconte'),
+        });
+        sender.send('chat:event', { type: 'delta', text });
+        sender.send('chat:event', {
+          type: 'done',
+          conversationId: 'conv-long',
+          messages: [createMessage('assistant', text)],
+        });
+      },
+    });
+    const reply = await call(port, '/api/speaker/turn', { token, body: voiceWav() });
+    expect(reply.status).toBe(200);
+    expect(synth.spoken).toEqual([
+      'Première phrase.',
+      'Deuxième phrase.',
+      'Troisième phrase.',
+      'Le détail est sur le PC.',
+    ]);
+    expect(synth.spoken.join(' ')).not.toContain('Quatrième');
+    expect(shown).toEqual(['conv-long']);
+  });
+
+  it('une demande d’image répond tout de suite et le calcul continue sur le PC', async () => {
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const shown: string[] = [];
+    const { port, token, synth, setTranscript } = await setup({
+      onShowOnPc: (id) => shown.push(id),
+      script: async (sender) => {
+        sender.send('chat:event', {
+          type: 'started',
+          conversationId: 'img-1',
+          message: createMessage('user', 'image'),
+        });
+        await gate;
+        const text = 'Image générée (1024×1024, projet perso) :\n- C:/img/chat.png — graine 1';
+        sender.send('chat:event', { type: 'delta', text });
+        sender.send('chat:event', {
+          type: 'done',
+          conversationId: 'img-1',
+          messages: [createMessage('assistant', text)],
+        });
+      },
+    });
+    setTranscript('Jarvis, génère une image d’un chat');
+    const reply = await call(port, '/api/speaker/turn', { token, body: voiceWav() });
+    expect(reply.status).toBe(200);
+    expect(reply.headers['x-jarvis-continue']).toBe('0');
+    expect(synth.spoken).toEqual([SPEAKER_IMAGE_WAIT]);
+    expect(shown).toContain('img-1');
+    release();
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(shown.filter((id) => id === 'img-1').length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('une phrase pendant une image ne l’annule pas, et le micro se ferme après l’attente', async () => {
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const shown: string[] = [];
+    const seen: Array<{ chat: FakeChat; input: SendChatInput }> = [];
+    const box: { store?: InMemoryConversationStore } = {};
+    const { port, token, synth, setTranscript, conversations } = await setup({
+      followUpSeconds: 8,
+      onShowOnPc: (id) => shown.push(id),
+      script: async (sender, input, chat) => {
+        seen.push({ chat, input });
+        if (input.text.includes('image')) {
+          sender.send('chat:event', {
+            type: 'started',
+            conversationId: 'img-1',
+            message: createMessage('user', input.text),
+          });
+          await gate;
+          const text = 'Image générée (1024×1024, projet perso) :\n- C:/img/chat.png — graine 1';
+          sender.send('chat:event', { type: 'delta', text });
+          sender.send('chat:event', {
+            type: 'done',
+            conversationId: 'img-1',
+            messages: [createMessage('assistant', text)],
+          });
+          return;
+        }
+        const store = box.store!;
+        const existing = input.conversationId ? await store.get(input.conversationId) : null;
+        const user = createMessage('user', input.text);
+        const conversation = existing ?? newConversation([user]);
+        const text = 'Lecture lancée.';
+        const updated = withMessages(conversation, [...conversation.messages, user, createMessage('assistant', text)]);
+        await store.save(updated);
+        sender.send('chat:event', { type: 'started', conversationId: updated.id, message: user });
+        sender.send('chat:event', { type: 'delta', text });
+        sender.send('chat:event', { type: 'done', conversationId: updated.id, messages: updated.messages });
+      },
+    });
+    box.store = conversations;
+    setTranscript('Jarvis, génère une image d’un chat');
+    const waiting = await call(port, '/api/speaker/turn', { token, body: voiceWav() });
+    expect(waiting.status).toBe(200);
+    expect(waiting.headers['x-jarvis-continue']).toBe('0');
+    expect(synth.spoken).toEqual([SPEAKER_IMAGE_WAIT]);
+
+    setTranscript('Jarvis, mets de la musique');
+    const music = await call(port, '/api/speaker/turn', { token, body: voiceWav() });
+    expect(music.status).toBe(200);
+    expect(synth.spoken[1]).toBe('Lecture lancée.');
+    expect(seen[0]!.chat).not.toBe(seen[1]!.chat);
+    expect(seen[0]!.chat.cancelled).toBe(0);
+    expect(seen[1]!.input.conversationId).toBeNull();
+    const titles = (await conversations.list()).map((item) => item.title);
+    expect(titles.some((title) => title.startsWith('Salon · ') && title.includes('musique'))).toBe(true);
+
+    release();
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(seen[0]!.chat.cancelled).toBe(0);
+    expect(shown).toContain('img-1');
+
+    setTranscript('Jarvis, merci');
+    await call(port, '/api/speaker/turn', { token, body: voiceWav() });
+    expect(seen[2]!.chat).toBe(seen[0]!.chat);
+    expect(seen[2]!.input.conversationId).toBe('img-1');
+    expect(seen[0]!.chat.cancelled).toBe(0);
+  });
+
   it('fenêtre de suivi à 0 : réponse jouée mais X-Jarvis-Continue 0', async () => {
     const { port, token } = await setup({ followUpSeconds: 0 });
     const reply = await call(port, '/api/speaker/turn', { token, body: voiceWav() });
     expect(reply.status).toBe(200);
     expect(reply.headers['x-jarvis-continue']).toBe('0');
+  });
+
+  it('une question Spotify garde le micro ouvert même si le suivi est à 0', async () => {
+    const { port, token, synth } = await setup({
+      followUpSeconds: 0,
+      script: (sender) => {
+        sender.send('chat:event', { type: 'delta', text: 'Sur la Devialet ou sur le PC ?' });
+        sender.send('chat:event', {
+          type: 'done',
+          conversationId: 'c1',
+          messages: [],
+        });
+      },
+    });
+    const reply = await call(port, '/api/speaker/turn', { token, body: voiceWav() });
+    expect(reply.status).toBe(200);
+    expect(reply.headers['x-jarvis-continue']).toBe('1');
+    expect(synth.spoken).toEqual(['Sur la Devialet ou sur le PC ?']);
   });
 
   it('enceinte retirée : son jeton ne marche plus et sa discussion est oubliée', async () => {
@@ -702,5 +915,229 @@ describe('synthèse de l’enceinte (5.0.64)', () => {
       platform: 'linux',
     });
     await expect(none.synthesize('x')).rejects.toThrow('Aucune voix disponible');
+  });
+});
+
+describe('enceinte réflexe', () => {
+  it('le chrono note les durées et jamais le texte', async () => {
+    const lines: string[] = [];
+    const chrono = new (await import('@jarvis/core')).SpeakerChrono({
+      append: (line) => lines.push(line),
+      clear: () => undefined,
+    });
+    const { port, token, setTranscript } = await setup({ chrono });
+    setTranscript('Jarvis, quelle heure est-il ?');
+    const reply = await call(port, '/api/speaker/turn', {
+      token,
+      body: voiceWav(),
+      headers: { 'X-Jarvis-Capture-Ms': '700' },
+    });
+    expect(reply.status).toBe(200);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).not.toContain('heure');
+    expect(lines[0]).not.toContain('Jarvis');
+    const parsed = JSON.parse(lines[0]!) as { captureMs: number; transcriptionMs: number; path: string };
+    expect(parsed.captureMs).toBe(700);
+    expect(parsed.transcriptionMs).toBeGreaterThanOrEqual(0);
+    expect(['reflexe', 'express', 'trieur', 'cerveau']).toContain(parsed.path);
+  });
+
+  it('répond dès trois phrases et laisse la suite s’écrire', async () => {
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { port, token, synth, conversations } = await setup({
+      script: async (sender) => {
+        sender.send('chat:event', {
+          type: 'started',
+          conversationId: 'conv-reflexe',
+          message: { id: 'u', role: 'user', content: 'raconte', createdAt: 1 },
+        });
+        sender.send('chat:event', { type: 'delta', text: 'Première phrase. ' });
+        sender.send('chat:event', { type: 'delta', text: 'Deuxième phrase. ' });
+        sender.send('chat:event', { type: 'delta', text: 'Troisième phrase. ' });
+        await gate;
+        sender.send('chat:event', { type: 'delta', text: 'Quatrième phrase secrète.' });
+        sender.send('chat:event', {
+          type: 'done',
+          conversationId: 'conv-reflexe',
+          messages: [
+            { id: 'u', role: 'user', content: 'raconte', createdAt: 1 },
+            {
+              id: 'a',
+              role: 'assistant',
+              content: 'Première phrase. Deuxième phrase. Troisième phrase. Quatrième phrase secrète.',
+              createdAt: 2,
+            },
+          ],
+        });
+      },
+    });
+    const pending = call(port, '/api/speaker/turn', { token, body: voiceWav() });
+    const reply = await pending;
+    expect(reply.status).toBe(200);
+    expect(synth.spoken).toEqual([
+      'Première phrase.',
+      'Deuxième phrase.',
+      'Troisième phrase.',
+      'Le détail est sur le PC.',
+    ]);
+    expect(synth.spoken.join(' ')).not.toContain('secrète');
+    release();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(conversations).toBeTruthy();
+  });
+
+  it('une réponse courte ne gagne pas la phrase de renvoi', async () => {
+    const { port, token, synth, setTranscript } = await setup({
+      script: async (sender, input) => {
+        sender.send('chat:event', {
+          type: 'started',
+          conversationId: 'c',
+          message: { id: 'u', role: 'user', content: input.text, createdAt: 1 },
+        });
+        sender.send('chat:event', { type: 'delta', text: 'Il est 14 h.' });
+        sender.send('chat:event', {
+          type: 'done',
+          conversationId: 'c',
+          messages: [
+            { id: 'u', role: 'user', content: input.text, createdAt: 1 },
+            { id: 'a', role: 'assistant', content: 'Il est 14 h.', createdAt: 2 },
+          ],
+        });
+      },
+    });
+    setTranscript('Jarvis, quelle heure est-il ?');
+    const reply = await call(port, '/api/speaker/turn', { token, body: voiceWav() });
+    expect(reply.status).toBe(200);
+    expect(synth.spoken).toEqual(['Il est 14 h.']);
+  });
+
+  it('réponse longue en flux : 2 ou 3 phrases envoyées une par une, puis « Le détail est sur le PC », la suite sur le PC', async () => {
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let suite = '';
+    const { port, token, synth, chat } = await setup({
+      script: async (sender) => {
+        sender.send('', { type: 'started', conversationId: 'long', message: createMessage('user', 'raconte') });
+        sender.send('', { type: 'delta', text: 'Première phrase. Deuxième phrase. Troisième phrase. ' });
+        await gate;
+        suite = 'Quatrième phrase qui reste écrite sur le PC.';
+        sender.send('', { type: 'delta', text: suite });
+        sender.send('', {
+          type: 'done',
+          conversationId: 'long',
+          messages: [createMessage('assistant', `Première phrase. Deuxième phrase. Troisième phrase. ${suite}`)],
+        });
+      },
+    });
+    const reply = await call(port, '/api/speaker/turn', { token, body: voiceWav() });
+    expect(reply.status).toBe(200);
+    expect(reply.headers['content-length']).toBeUndefined();
+    expect(synth.spoken).toEqual([
+      'Première phrase.',
+      'Deuxième phrase.',
+      'Troisième phrase.',
+      'Le détail est sur le PC.',
+    ]);
+    expect(suite).toBe('');
+    expect(chat().cancelled).toBe(0);
+    release();
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(suite).toContain('Quatrième');
+    expect(synth.spoken.join(' ')).not.toContain('Quatrième');
+  });
+
+  it('Spotify express dit une phrase courte', async () => {
+    const { port, token, synth } = await setup({
+      script: async (sender, input) => {
+        sender.send('chat:event', {
+          type: 'started',
+          conversationId: 'c',
+          message: { id: 'u', role: 'user', content: input.text, createdAt: 1 },
+        });
+        sender.send('chat:event', {
+          type: 'tool_result',
+          callId: '1',
+          toolName: 'spotify_play',
+          status: 'ok',
+          content: 'Lecture de Get Lucky — Daft Punk.',
+        });
+        sender.send('chat:event', { type: 'delta', text: 'Lecture de Get Lucky — Daft Punk.' });
+        sender.send('chat:event', {
+          type: 'done',
+          conversationId: 'c',
+          messages: [
+            { id: 'u', role: 'user', content: input.text, createdAt: 1 },
+            { id: 'a', role: 'assistant', content: 'Lecture de Get Lucky — Daft Punk.', createdAt: 2 },
+          ],
+        });
+      },
+    });
+    const reply = await call(port, '/api/speaker/turn', { token, body: voiceWav() });
+    expect(reply.status).toBe(200);
+    expect(synth.spoken[0]).toBe('C’est parti.');
+  });
+
+  it('un stop après la réponse anticipée n’attend pas la suite du modèle', async () => {
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { port, token, setTranscript, chat } = await setup({
+      script: async (sender) => {
+        sender.send('chat:event', {
+          type: 'started',
+          conversationId: 'c',
+          message: createMessage('user', 'long'),
+        });
+        sender.send('chat:event', { type: 'delta', text: 'Première phrase. Deuxième phrase. Troisième phrase. ' });
+        await gate;
+        sender.send('chat:event', { type: 'delta', text: 'Quatrième phrase.' });
+        sender.send('chat:event', { type: 'done', conversationId: 'c', messages: [] });
+      },
+    });
+    setTranscript('Jarvis, raconte');
+    const first = await call(port, '/api/speaker/turn', { token, body: voiceWav() });
+    expect(first.status).toBe(200);
+    setTranscript('stop');
+    const stop = await call(port, '/api/speaker/turn', { token, body: voiceWav(0.4) });
+    expect(stop.status).toBe(204);
+    expect(chat().cancelled).toBeGreaterThan(0);
+    release();
+  });
+
+  it('wake : jeton, adresse, 204, une fois par 10 s', async () => {
+    let now = 1_000;
+    const warmed: number[] = [];
+    const { port, token } = await setup({
+      now: () => now,
+      warmupEnabled: () => true,
+      warm: () => {
+        warmed.push(now);
+      },
+      remote: '127.0.0.1',
+    });
+    expect((await call(port, '/api/speaker/wake', { token, method: 'POST' })).status).toBe(204);
+    expect((await call(port, '/api/speaker/wake', { token, method: 'POST' })).status).toBe(204);
+    expect(warmed).toEqual([1_000]);
+    now = 12_000;
+    expect((await call(port, '/api/speaker/wake', { token, method: 'POST' })).status).toBe(204);
+    expect(warmed).toEqual([1_000, 12_000]);
+    expect((await call(port, '/api/speaker/wake', { method: 'POST' })).status).toBe(401);
+  });
+
+  it('wake refuse une adresse qui n’est pas celle de la maison', async () => {
+    const warmed: number[] = [];
+    const { port, token } = await setup({
+      remote: '8.8.8.8',
+      warmupEnabled: () => true,
+      warm: () => warmed.push(1),
+    });
+    expect((await call(port, '/api/speaker/wake', { token, method: 'POST' })).status).toBe(403);
+    expect(warmed).toEqual([]);
   });
 });

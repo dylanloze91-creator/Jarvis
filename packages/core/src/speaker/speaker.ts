@@ -179,6 +179,134 @@ export function speechTextForSpeaker(text: string, limit = SPEAKER_MAX_SPEECH_CH
   return (end > limit / 2 ? cut.slice(0, end + 1) : cut).trim();
 }
 
+/* ------------------------------------------------------------------ */
+/* Réponse en flux : phrase par phrase, pendant que le cerveau écrit  */
+/* ------------------------------------------------------------------ */
+
+/** Entête WAV (44 octets) dont les tailles sont inconnues : la carte joue jusqu'à la fin de la réponse (`wav_stream.c`, « unbounded »). */
+export function streamingWavHeader(sampleRate = SPEAKER_SAMPLE_RATE): Uint8Array {
+  const buffer = new ArrayBuffer(44);
+  const view = new DataView(buffer);
+  const ascii = (offset: number, text: string): void => {
+    for (let index = 0; index < text.length; index += 1) view.setUint8(offset + index, text.charCodeAt(index));
+  };
+  ascii(0, 'RIFF');
+  view.setUint32(4, 0xffffffff, true);
+  ascii(8, 'WAVE');
+  ascii(12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * 2, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  ascii(36, 'data');
+  view.setUint32(40, 0xffffffff, true);
+  return new Uint8Array(buffer);
+}
+
+/** Les octets PCM du bloc `data` d'un WAV (16 bits) ; tailles inconnues acceptées (jusqu'à la fin du fichier). */
+export function wavPcmBytes(wav: Uint8Array): Uint8Array {
+  const view = new DataView(wav.buffer, wav.byteOffset, wav.byteLength);
+  if (wav.byteLength < 12) return new Uint8Array(0);
+  let offset = 12;
+  while (offset + 8 <= wav.byteLength) {
+    const id = String.fromCharCode(view.getUint8(offset), view.getUint8(offset + 1), view.getUint8(offset + 2), view.getUint8(offset + 3));
+    const size = view.getUint32(offset + 4, true);
+    const start = offset + 8;
+    if (id === 'data') {
+      const end = size === 0 || size >= 0xfffffff0 ? wav.byteLength : Math.min(wav.byteLength, start + size);
+      return wav.subarray(start, end);
+    }
+    if (size >= 0xfffffff0) break;
+    offset = start + size + (size % 2);
+  }
+  return new Uint8Array(0);
+}
+
+/** Un WAV reçu en flux (tailles inconnues) rendu lisible par n'importe quel lecteur : tailles réécrites d'après la longueur réelle. */
+export function boundedWav(wav: Uint8Array): Uint8Array {
+  const out = new Uint8Array(wav);
+  if (out.byteLength < 44) return out;
+  const view = new DataView(out.buffer, out.byteOffset, out.byteLength);
+  const pcm = wavPcmBytes(out);
+  const dataOffset = pcm.byteOffset - out.byteOffset;
+  view.setUint32(4, out.byteLength - 8, true);
+  if (dataOffset >= 8) view.setUint32(dataOffset - 4, pcm.byteLength, true);
+  return out;
+}
+
+const SOURCES_FOOTER = /\n\s*Sources \(recherche web/u;
+
+/**
+ * Découpe la réponse du modèle en phrases au fur et à mesure (deltas), nettoyées pour l'oreille
+ * (`speechTextForSpeaker`), sans le bloc des sources ni les blocs de code, dans la limite de
+ * `SPEAKER_MAX_SPEECH_CHARS`. `push` rend les phrases finies ; `flush` ce qui reste.
+ */
+export class SentenceStreamer {
+  private pending = '';
+  private spokenChars = 0;
+  private closed = false;
+
+  constructor(private readonly limit = SPEAKER_MAX_SPEECH_CHARS) {}
+
+  push(delta: string): string[] {
+    if (this.closed) return [];
+    this.pending += delta;
+    const footer = SOURCES_FOOTER.exec(this.pending);
+    if (footer) {
+      const ready = this.pending.slice(0, footer.index);
+      this.pending = '';
+      this.closed = true;
+      return this.take(ready, true);
+    }
+    // Un bloc de code ouvert : ce qui le précède est prêt, lui attend sa fin (il sera retiré en entier).
+    const fenceOpen = (this.pending.match(/```/g) ?? []).length % 2 === 1;
+    const scan = fenceOpen ? this.pending.slice(0, this.pending.lastIndexOf("```")) : this.pending;
+    const boundary = this.lastBoundary(scan);
+    if (boundary < 0) return [];
+    const ready = this.pending.slice(0, boundary);
+    this.pending = this.pending.slice(boundary);
+    return this.take(ready, false);
+  }
+
+  flush(): string[] {
+    const rest = this.pending;
+    this.pending = '';
+    this.closed = true;
+    return this.take(rest, true);
+  }
+
+  /** Dernière fin de phrase suivie d'un blanc (ou d'un retour à la ligne) : tout ce qui précède est prêt. */
+  private lastBoundary(text: string): number {
+    const pattern = /[.!?…](?=\s)|\n(?=\s*\S)/gu;
+    let last = -1;
+    for (const match of text.matchAll(pattern)) last = match.index + match[0].length;
+    return last;
+  }
+
+  private take(text: string, final: boolean): string[] {
+    void final;
+    const cleaned = speechTextForSpeaker(text, Number.MAX_SAFE_INTEGER);
+    if (!cleaned) return [];
+    const out: string[] = [];
+    for (const sentence of cleaned.split(/\n+|(?<=[.!?…])\s+/u)) {
+      const trimmed = sentence.trim();
+      if (!trimmed) continue;
+      if (this.spokenChars >= this.limit) {
+        this.closed = true;
+        break;
+      }
+      const room = this.limit - this.spokenChars;
+      const piece = trimmed.length > room ? trimmed.slice(0, room).trim() : trimmed;
+      this.spokenChars += piece.length;
+      out.push(piece);
+    }
+    return out;
+  }
+}
+
 /** Nom d'enceinte affiché et envoyé à la carte : lettres, chiffres, espaces et ponctuation simple. */
 export function cleanSpeakerName(name: string | undefined): string {
   const cleaned = (name ?? '')

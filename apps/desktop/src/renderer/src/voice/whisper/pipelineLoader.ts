@@ -141,6 +141,16 @@ export function createWorkerWhisperBackend(
 }
 
 let backend: WhisperBackend | null = null;
+let whisperHeld = false;
+
+/** Les enceintes gardent Whisper : pas de déchargement tant que la fenêtre vit. */
+export function holdWhisper(): void {
+  whisperHeld = true;
+}
+
+export function isWhisperHeld(): boolean {
+  return whisperHeld;
+}
 
 function whisperLog(line: string): void {
   try {

@@ -18,6 +18,7 @@ import type {
   RiskLevel,
   SearchProviderDescriptor,
   Settings,
+  SpeakerChronoView,
   QuestionnaireState,
   GeocodingPlace,
   ToolCategory,
@@ -177,6 +178,10 @@ export const IpcChannel = {
   speakerEvent: 'speaker:event',
   speakerTranscribeRequest: 'speaker:transcribe-request',
   speakerTranscribeResult: 'speaker:transcribe-result',
+  speakerShowConversation: 'speaker:show-conversation',
+  speakerChrono: 'speaker:chrono',
+  speakerChronoReset: 'speaker:chrono-reset',
+  speakerHoldWhisper: 'speaker:hold-whisper',
 } as const;
 
 /** 5.0.64 — Enceinte Jarvis : état montré dans Réglages → Enceintes. */
@@ -207,6 +212,11 @@ export interface SpeakerAdded {
   speaker: { id: string; name: string };
   /** Bloc à coller dans `include/secrets.h` du programme de la carte. */
   secrets: string;
+}
+
+/** Main → renderer : afficher la discussion de l'enceinte sur l'écran du PC. */
+export interface SpeakerShowConversation {
+  conversationId: string;
 }
 
 /** Main → renderer : une phrase de l'enceinte à transcrire par le Whisper local. */
@@ -297,6 +307,11 @@ export interface SendChatInput {
    * d'abord qu'elle lui est adressée ; sinon `not_addressed` et rien n'est enregistré.
    */
   followUp?: boolean;
+  /**
+   * Enceinte seulement : la phrase de suivi est jugée par les règles
+   * (`followUpAddressee`), jamais par un modèle. La fenêtre ne le met pas.
+   */
+  rulesOnlyAddressee?: boolean;
   /** Module images : photos jointes (3 au plus, 20 Mo chacune), enregistrées par le processus principal. */
   attachments?: ChatAttachmentInput[];
 }
@@ -874,6 +889,12 @@ export interface JarvisApi {
     /** Le processus principal demande une transcription Whisper (la fenêtre a Whisper, pas lui). */
     onTranscribe(listener: (request: SpeakerTranscribeRequest) => void): () => void;
     reportTranscript(payload: SpeakerTranscribeResult): void;
+    /** La discussion de l'enceinte a quelque chose à montrer. */
+    onShow(listener: (event: SpeakerShowConversation) => void): () => void;
+    chrono(): Promise<SpeakerChronoView>;
+    resetChrono(): Promise<SpeakerChronoView>;
+    /** Whisper des enceintes : le charger et ne plus le lâcher. */
+    onHoldWhisper(listener: () => void): () => void;
   };
   update: {
     getState(): Promise<UpdateState>;

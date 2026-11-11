@@ -1,4 +1,4 @@
-# Jarvis 5.0.74 — contexte pour un autre développeur
+# Jarvis 5.0.73 — contexte pour un autre développeur
 
 Ce fichier est à la **racine du code**. Les chemins ci-dessous partent de ce dossier. Ce n’est pas un résumé marketing : c’est l’état réel de cet arbre. La voix a été refaite dans cet arbre (publiée en 0.4.11, section « Voix ») : la transcription restait « Chargement… 100 % » sur l’installateur Windows. La refonte du tableau de bord est dans cet arbre : fenêtre étroite = overlay, fenêtre large = tableau de bord.
 
@@ -63,7 +63,7 @@ Scripts utiles (racine) :
 
 Le script `setup:voice` remplit `apps/desktop/voice-assets/` (runtime ONNX, Whisper, openWakeWord, modèle Vosk français ; non commité, voir `.gitignore`). Premier `dev` / `build` : besoin de réseau.
 
-L’installateur publié est `Jarvis-Setup-5.0.74.exe` (release GitHub `v5.0.74`).
+L’installateur publié est `Jarvis-Setup-5.0.73.exe` (release GitHub `v5.0.73`).
 
 Données utilisateur (Electron `userData`, typiquement `%APPDATA%\Jarvis`) :
 
@@ -97,7 +97,7 @@ Données utilisateur (Electron `userData`, typiquement `%APPDATA%\Jarvis`) :
     src/media/                 intent Spotify
     src/update/                lecture latest.yml GitHub
     src/history/  src/audit/
-  apps/desktop/                Electron (version 5.0.74)
+  apps/desktop/                Electron (version 5.0.73)
     electron-builder.yml       NSIS, extraResources, publish GitHub
     electron.vite.config.ts    aliases onnxruntime-web (wasm, pas JSEP)
     scripts/setup-whisper.mjs
@@ -656,7 +656,7 @@ Cahier : `docs/specs/interface-simple.md` (branche `claude/specs-interface-simpl
 
 ## 5.0.69 — Spotify sur l'enceinte Connect choisie
 
-Branche `cursor/spotify-enceinte-cible`. Réglages facultatifs `spotifyDeviceName` et `spotifySpeakerMaxVolume` (sans défaut Zod : `parseSettings({})` ne gagne aucune clé ; absent = chaîne vide et plafond 70 en code dans `SpotifyBridge`). Réglages → Spotify : liste des appareils Connect, choix d'une enceinte (ex. Devialet) ou retour au PC. `SpotifyProvider` transfère la lecture sur l'appareil nommé (correspondance insensible à la casse et aux accents) ; les enceintes de type Speaker sont plafonnées à `spotifySpeakerMaxVolume` (défaut 70). La **description** de l'outil `spotify_play` dans le catalogue modèle reste celle de 0.4.22 (application de bureau) ; le **résultat** de l'outil annonce « Lecture sur « … » » quand une enceinte est choisie. `chat-unchanged.test.ts` et `ollama-unchanged.test.ts` verts sans régénération des `__golden__`.
+Branche `cursor/spotify-enceinte-cible`. Réglages facultatifs `spotifyDeviceName`, `spotifySpeakerMaxVolume` et `spotifyAskDevice` (sans défaut Zod : `parseSettings({})` ne gagne aucune clé ; absent = chaîne vide, plafond 70 en code dans `SpotifyBridge`, et pas de question d'appareil). `spotifyAskDevice` (Réglages → Services → Musique, « Me demander où jouer la musique ») : une lecture qui ne nomme pas d'appareil demande « Sur la Devialet ou sur le PC ? » si rien ne joue déjà ; la recherche reste 60 s dans la session (fenêtre, téléphone, chaque enceinte). « stop » et « pause » n'attendent pas cette question. Depuis l'enceinte, la question met `X-Jarvis-Continue: 1`. Réglages → Spotify : liste des appareils Connect, choix d'une enceinte (ex. Devialet) ou retour au PC. `SpotifyProvider` transfère la lecture sur l'appareil nommé (correspondance insensible à la casse et aux accents) ; les enceintes de type Speaker sont plafonnées à `spotifySpeakerMaxVolume` (défaut 70). La **description** de l'outil `spotify_play` dans le catalogue modèle reste celle de 0.4.22 (application de bureau) ; le **résultat** de l'outil annonce « Lecture sur « … » » quand une enceinte est choisie. `chat-unchanged.test.ts` et `ollama-unchanged.test.ts` verts sans régénération des `__golden__`.
 
 ## 5.0.67 — voix locale Piper
 
@@ -725,7 +725,7 @@ Demande de l'utilisateur : générer des images en local pour quatre usages (`ja
 
 ## Updater / GitHub
 
-Dernière publication : **5.0.74** (`https://github.com/dylanloze91-creator/Jarvis/releases/tag/v5.0.74`) — exe, `.blockmap` et `latest.yml` publiés : l’updater intégré la propose.
+Dernière publication : **5.0.73** (`https://github.com/dylanloze91-creator/Jarvis/releases/tag/v5.0.73`) — exe, `.blockmap` et `latest.yml` publiés : l’updater intégré la propose.
 
 - `apps/desktop/electron-builder.yml` : `publish.provider: github`, owner `dylanloze91-creator`, repo `Jarvis`, `releaseType: release`, artifact `Jarvis-Setup-${version}.exe`
 - `apps/desktop/src/main/updater.ts` : contrôle 15 s après le démarrage puis toutes les 4 h ; téléchargement auto ; **installation seulement si l’utilisateur clique**
@@ -819,6 +819,18 @@ Corrections de la revue complète (détail : `docs/audit-0410.md` du store du pr
 - **Voix** : `cancel()` de la synthèse (`interrupted` / `canceled`) n’est pas une erreur. Micro choisi débranché → micro par défaut ; erreurs `getUserMedia` en français.
 - **Statut** : le fournisseur de démo (`mock`, défaut d’une première installation) s’affiche « démonstration », jamais « en ligne » (`lib/runtimeStatus.ts`).
 
+## Jarvis Réflexe — enceinte plus rapide (côté PC, version inchangée)
+
+Branche `cursor/enceinte-reflexe`. Cahier `docs/specs/enceinte-reflexe.md` (branche `claude/specs-enceinte-reflexe`). Pas de fusion dans `main`, pas de publication, version inchangée. Le firmware (`firmware/jarvis-speaker/`) et le chantier images ne sont pas touchés. Rapport `rapports/2026-11-10-enceinte-reflexe.md`.
+
+- **Chrono** (`speaker/chrono.ts`, journal `userData/logs/enceinte-chrono.jsonl`) : durées et chemin (`reflexe`, `express`, `trieur`, `cerveau`) seulement, jamais le texte dit. En-tête facultatif `X-Jarvis-Capture-Ms`. Réglages → Enceintes → « Vitesse » : médianes des 20 dernières phrases. Le chrono ne change pas le comportement.
+- **Réponse dès que la partie dite est prête** (`earlySpeakerUtterance`, `decideSpeakerSpeech`) : 3 phrases terminées ou 300 caractères, puis « Le détail est sur le PC. » si la suite continue. Fermer la réponse HTTP n’annule pas le tour ; une phrase suivante non plus (même idée que l’image en fond). Une réponse courte reste celle d’aujourd’hui.
+- **Phrases réflexes** (`speaker/reflex.ts`) : un outil Spotify déjà réussi se dit court (« C’est parti. », « En pause. », « Volume à 40. »). Le détail reste écrit sur le PC. Aucune règle express nouvelle.
+- **Whisper** : préchargement après l’affichage de la fenêtre quand le réglage ou le mode rapide le demande ; le worker multi-thread (0.4.17) reste le chemin des enceintes. **Piper résident** (`main/piper/resident.ts`) : un processus par voix, `--json-input` et un WAV par ligne (sortie brute sans marque de fin entre deux phrases : non retenue). Processus mort → relancé une fois, puis l’ancien chemin. Arrêt à la fermeture de Jarvis.
+- **`POST /api/speaker/wake`** : même jeton, même réseau privé, `204` tout de suite. Au plus une fois toutes les 10 s si le préchauffage est activé : Whisper, modèles Ollama par prompt vide (`keep_alive`, aucune génération), Piper résident. « Garder Jarvis éveillé » : `keep_alive` négatif pour le modèle qui trie (la carte graphique reste occupée).
+- **Destinataire** : une suite venue d’une enceinte, si le réglage ou le mode rapide est actif, n’appelle pas de modèle (`followUpAddressee` ; doute = oui). La fenêtre ne change pas.
+- **Réglages facultatifs, sans défaut Zod** : `speakerFastMode`, `speakerVoice`, `speakerPreloadWhisper`, `speakerWarmup`, `speakerRulesAddressee`, `speakerKeepAwake`. `parseSettings({})` ne les gagne pas. L’interrupteur « Mode enceinte rapide » les active ensemble. Chaque élément reste dans « Réglages avancés ».
+
 ---
 
 ## Ce qu’il ne faut pas casser
@@ -861,6 +873,7 @@ Corrections de la revue complète (détail : `docs/audit-0410.md` du store du pr
 - **Robot** : outils `rover_*` absents sans adresse et hors des tours sans rapport ; mouvements toujours confirmés (sans catégorie), arrêts jamais ; un mouvement annulé ou sans réponse envoie `/api/stop` ; réseau local seulement ; `roverBaseUrl`/`roverToken` sans défaut Zod.
 - **Écoute (5.0.62)** : la discussion vocale se ferme seule après `followUpSeconds` sans parole (jamais d'écoute infinie) ; une mention de Jarvis n'envoie rien ; une phrase de suivi n'est écartée que sur un « non » clair, jamais sur une erreur ou un délai ; la vérification ne touche ni au texte tapé ni à la commande qui suit « Jarvis » ; l'avis franc reste dans les équipes du chef d'orchestre, le chat sans orchestre ne change pas.
 - **Enceintes (5.0.64)** : coupé par défaut, coupé = aucun port ; port 53131 ouvert sur le réseau local mais toute adresse distante non privée refusée (403) ; aucun appel `/api/speaker/*` sans jeton ; seule l'empreinte des jetons sur le PC ; **toute carte de confirmation venue d'une enceinte est refusée d'office** (aucun écran pour la lire), et le modèle n'est pas relancé ; une `ChatSession` par enceinte, jamais celle de la fenêtre ni du téléphone ; le texte du modèle n'entre jamais dans le script PowerShell de la voix (script constant, texte lu depuis un fichier temporaire, chemins en arguments) ; corps WAV ≤ 1,5 Mo, 16 kHz mono seulement ; l'état des enceintes reste hors de `settings.json`.
+- **Enceinte rapide** : les réglages `speakerFastMode`, `speakerVoice`, `speakerPreloadWhisper`, `speakerWarmup`, `speakerRulesAddressee`, `speakerKeepAwake` sont absents par défaut (`parseSettings({})` ne gagne aucune clé) ; le journal `enceinte-chrono.jsonl` ne contient que des durées et un chemin, jamais le texte dit ; une carte venue d'une enceinte reste refusée ; un « stop » ne lance pas de modèle ; la fenêtre, le téléphone et le chat tapé ne passent pas par les phrases réflexes ni par la vérification « règles seulement ».
 - **Téléphone (5.0.63)** : coupé par défaut, coupé = aucun port ; serveur sur 127.0.0.1 uniquement, publié par Tailscale que l'utilisateur configure lui-même ; aucun appel `/api/*` sans jeton (sauf le jumelage, borné par un code de 6 chiffres, 10 minutes, 5 essais) ; seule l'empreinte des jetons sur le PC ; les confirmations restent les mêmes sur le téléphone ; le texte du modèle n'est jamais injecté comme HTML ; l'état du téléphone reste hors de `settings.json`.
 - **Audit (5.0.64)** : un tour arrêté par l'utilisateur n'est ni un refus ni un échec ; « Fermé » / « fait » seulement après vérification ; « Enregistrer » n'envoie que les clés changées ; une commande vocale qui appelle Jarvis (« Attends Jarvis, … ») n'est jamais jetée comme mention ; les bulles d'outil restent en français ; sous Windows, à l'expiration du délai d'une commande, `taskkill /T /F` part avant tout signal (repli SIGTERM/SIGKILL seulement s'il échoue) ; `close_application` garde un seul délai partagé pour tous les processus et dit « accès refusé » au lieu d'échouer.
 - **Robot enceinte (5.0.66)** : la voix est `robot/voix/`, jamais le service de pilotage ; rien n'est envoyé au PC avant le mot de réveil ; le « stop » local reste actif pendant la requête et la lecture ; le micro de la discussion est coupé pendant la lecture et 300 ms après ; une action à confirmer dite depuis l'enceinte reste refusée par le pont du PC.

@@ -77,6 +77,22 @@ describe('parseSettings', () => {
     expect(next.apiKey).toBe('k');
   });
 
+  it('parseSettings({}) ne gagne pas spotifyAskDevice', () => {
+    expect(parseSettings({})).not.toHaveProperty('spotifyAskDevice');
+    expect(parseSettings({ spotifyAskDevice: true }).spotifyAskDevice).toBe(true);
+    expect(parseSettings({ spotifyAskDevice: false }).spotifyAskDevice).toBe(false);
+  });
+
+  it('parseSettings({}) ne gagne aucun réglage d’enceinte rapide', () => {
+    const parsed = parseSettings({});
+    expect(parsed).not.toHaveProperty('speakerVoice');
+    expect(parsed).not.toHaveProperty('speakerPreloadWhisper');
+    expect(parsed).not.toHaveProperty('speakerWarmup');
+    expect(parsed).not.toHaveProperty('speakerRulesAddressee');
+    expect(parsed).not.toHaveProperty('speakerKeepAwake');
+    expect(parsed).not.toHaveProperty('speakerFastMode');
+  });
+
   it('place l’URL et le jeton SiteBlock dans les réglages, pas dans l’environnement', () => {
     const defaults = parseSettings({});
     expect(defaults.siteBlockBaseUrl).toBe(DEFAULT_SITEBLOCK_BASE_URL);

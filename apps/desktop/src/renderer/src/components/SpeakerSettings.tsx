@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Copy, Loader2, Plus, RefreshCw, Speaker, Trash2 } from 'lucide-react';
+import type { Settings, SpeakerChronoView } from '@jarvis/core';
 import { Button } from '@/components/ui/button';
+import { Disclosure } from '@/components/ui/disclosure';
 import { Input, Toggle } from '@/components/ui/field';
 import type { SpeakerAdded, SpeakerStatus } from '../../../shared/ipc';
 
@@ -16,6 +18,9 @@ export function SpeakerSettingsSection() {
   const [added, setAdded] = useState<SpeakerAdded | null>(null);
   const [copied, setCopied] = useState(false);
   const [now, setNow] = useState(() => Date.now());
+  const [settings, setSettings] = useState<Settings | null>(null);
+  const [chrono, setChrono] = useState<SpeakerChronoView | null>(null);
+  const [piperReady, setPiperReady] = useState(false);
 
   const run = useCallback((action: () => Promise<SpeakerStatus>) => {
     setLoading(true);
@@ -29,6 +34,38 @@ export function SpeakerSettingsSection() {
     run(() => window.jarvis.speaker.status());
     return window.jarvis.speaker.onEvent(setStatus);
   }, [run]);
+
+  useEffect(() => {
+    void window.jarvis.settings.get().then((payload) => setSettings(payload.settings));
+    void window.jarvis.speaker.chrono().then(setChrono);
+    void window.jarvis.voice.piperStatus().then((piper) => setPiperReady(piper.ready)).catch(() => setPiperReady(false));
+  }, []);
+
+  const saveSpeaker = (patch: Partial<Settings>): void => {
+    void window.jarvis.settings.set(patch).then((payload) => setSettings(payload.settings));
+  };
+
+  const setFast = (on: boolean): void => {
+    if (on) {
+      saveSpeaker({
+        speakerFastMode: true,
+        speakerPreloadWhisper: true,
+        speakerWarmup: true,
+        speakerRulesAddressee: true,
+        speakerKeepAwake: true,
+        ...(piperReady ? { speakerVoice: 'local-piper' as const } : {}),
+      });
+      return;
+    }
+    saveSpeaker({
+      speakerFastMode: false,
+      speakerPreloadWhisper: false,
+      speakerWarmup: false,
+      speakerRulesAddressee: false,
+      speakerKeepAwake: false,
+      speakerVoice: null,
+    });
+  };
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 30_000);
@@ -71,8 +108,116 @@ export function SpeakerSettingsSection() {
 
   const address = status.addresses[0] ?? null;
 
+  const setPiece = (
+    key: 'speakerPreloadWhisper' | 'speakerWarmup' | 'speakerRulesAddressee' | 'speakerKeepAwake',
+    on: boolean,
+  ): void => {
+    if (!settings) return;
+    if (on) {
+      saveSpeaker({ [key]: true });
+      return;
+    }
+    if (settings.speakerFastMode) {
+      saveSpeaker({
+        speakerFastMode: false,
+        speakerPreloadWhisper: key === 'speakerPreloadWhisper' ? false : true,
+        speakerWarmup: key === 'speakerWarmup' ? false : true,
+        speakerRulesAddressee: key === 'speakerRulesAddressee' ? false : true,
+        speakerKeepAwake: key === 'speakerKeepAwake' ? false : true,
+      });
+      return;
+    }
+    saveSpeaker({ [key]: false });
+  };
+
+  const fast = settings?.speakerFastMode === true;
+  const slowest = chrono?.steps.reduce((best, step) => Math.max(best, step.medianMs), 0) ?? 0;
+
   return (
     <div className="flex flex-col gap-4">
+      <Toggle
+        label="Mode enceinte rapide"
+        hint="Piper si la voix est prête, Whisper déjà chargé, préchauffage dès « Jarvis », vérification sans attendre un modèle, et le modèle qui trie reste en mémoire. La carte graphique reste occupée par ce modèle."
+        checked={fast}
+        disabled={!settings}
+        onChange={setFast}
+      />
+
+      <Disclosure title="Réglages avancés" hint="Chaque morceau du mode rapide, séparément">
+        <Toggle
+          label="Voix Piper pour les enceintes"
+          hint={
+            piperReady
+              ? 'Plus rapide que la voix Windows, qui relance un programme à chaque phrase. Absent : la voix de Jarvis.'
+              : 'Piper n’est pas prêt sur ce PC. Les enceintes gardent la voix de Jarvis.'
+          }
+          checked={settings?.speakerVoice === 'local-piper'}
+          disabled={!settings || !piperReady}
+          onChange={(on) => saveSpeaker({ speakerVoice: on ? 'local-piper' : null, speakerFastMode: false })}
+        />
+        <Toggle
+          label="Whisper toujours prêt"
+          hint="Chargé après l’ouverture de la fenêtre, et gardé. Les enceintes passent par le worker, pas par la page."
+          checked={settings?.speakerPreloadWhisper === true || fast}
+          disabled={!settings}
+          onChange={(on) => setPiece('speakerPreloadWhisper', on)}
+        />
+        <Toggle
+          label="Préchauffage au mot Jarvis"
+          hint="Dès que l’enceinte entend « Jarvis », le PC charge les modèles et Piper, sans rien écrire."
+          checked={settings?.speakerWarmup === true || fast}
+          disabled={!settings}
+          onChange={(on) => setPiece('speakerWarmup', on)}
+        />
+        <Toggle
+          label="Vérification par règles"
+          hint="Une suite sans « Jarvis » est jugée par des règles, pas par un modèle. En cas de doute, Jarvis répond."
+          checked={settings?.speakerRulesAddressee === true || fast}
+          disabled={!settings}
+          onChange={(on) => setPiece('speakerRulesAddressee', on)}
+        />
+        <Toggle
+          label="Garder Jarvis éveillé"
+          hint="Le modèle qui trie reste chargé tant que les enceintes sont allumées. La carte graphique reste occupée."
+          checked={settings?.speakerKeepAwake === true || fast}
+          disabled={!settings}
+          onChange={(on) => setPiece('speakerKeepAwake', on)}
+        />
+      </Disclosure>
+
+      <div>
+        <p className="text-[11px] font-medium tracking-wide text-slate-400 uppercase">Vitesse</p>
+        <p className="mt-1 text-xs leading-snug text-slate-500">
+          {chrono?.sentence ?? 'Pas encore de phrase mesurée.'} Les durées seulement : le texte dit n’est pas gardé.
+        </p>
+        {chrono && chrono.steps.length > 0 ? (
+          <div className="mt-2 flex flex-col gap-1.5">
+            {chrono.steps.map((step) => (
+              <div key={step.id} className="grid grid-cols-[7.5rem_1fr_3rem] items-center gap-2 text-[11px]">
+                <span className={step.slowest ? 'text-amber-200' : 'text-slate-400'}>{step.label}</span>
+                <span className="h-1.5 overflow-hidden rounded-full bg-white/10">
+                  <span
+                    className={step.slowest ? 'block h-full rounded-full bg-amber-300/80' : 'block h-full rounded-full bg-cyan-300/70'}
+                    style={{ width: `${slowest > 0 ? Math.max(4, Math.round((step.medianMs / slowest) * 100)) : 0}%` }}
+                  />
+                </span>
+                <span className="text-right text-slate-500">{(step.medianMs / 1000).toFixed(1).replace('.', ',')} s</span>
+              </div>
+            ))}
+          </div>
+        ) : null}
+        <Button
+          size="sm"
+          variant="ghost"
+          className="mt-2"
+          onClick={() => {
+            void window.jarvis.speaker.resetChrono().then(setChrono);
+          }}
+        >
+          Remettre à zéro
+        </Button>
+      </div>
+
       <div>
         <p className="text-[11px] font-medium tracking-wide text-slate-400 uppercase">Enceintes Jarvis dans la maison</p>
         <p className="mt-1 text-xs leading-snug text-slate-500">

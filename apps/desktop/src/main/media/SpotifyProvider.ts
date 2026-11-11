@@ -10,10 +10,12 @@ import {
   type MediaProvider,
   type MediaTrack,
   type PlaybackState,
+  type SpotifyPlayDeviceHint,
 } from '@jarvis/core';
 import { launchSpotifyDesktop } from './launchSpotifyDesktop.js';
 import {
   formatPlaybackDiagnostic,
+  listConnectSpeakers,
   pickLocalDesktopDevice,
   pickNamedConnectDevice,
   type ConnectDevice,
@@ -248,12 +250,16 @@ export class SpotifyProvider implements MediaProvider {
 
   async play(
     trackUri?: string,
-    options: { contextUri?: string; artistUri?: string } = {},
+    options: {
+      contextUri?: string;
+      artistUri?: string;
+      deviceHint?: SpotifyPlayDeviceHint | null;
+    } = {},
   ): Promise<void> {
     // Le desktop Windows ignore souvent un PUT /play 204 sur un morceau
     // isolé. On active le Computer (sans relancer l'ancien titre), on envoie
     // device_id + URI, on retente, puis album / artiste / file d'attente.
-    const { device, devices } = await this.ensurePlaybackDevice();
+    const { device, devices } = await this.ensurePlaybackDevice(options.deviceHint);
     const diagnostic = (state: SpotifyPlayback | null): string =>
       formatPlaybackDiagnostic(devices, state, device);
 
@@ -373,12 +379,61 @@ export class SpotifyProvider implements MediaProvider {
   }
 
   /**
-   * Bureau Windows ou enceinte nommée dans les réglages (`spotifyDeviceName`).
+   * Transfère la lecture en cours vers un appareil (PUT /me/player, play: true)
+   * et vérifie que la lecture est bien sur cet appareil.
    */
-  private async ensurePlaybackDevice(): Promise<{
+  async transferPlayback(deviceHint: SpotifyPlayDeviceHint): Promise<{ deviceName: string }> {
+    const { device, devices } = await this.ensurePlaybackDevice(deviceHint);
+    const diagnostic = (): string => formatPlaybackDiagnostic(devices, null, device);
+    await this.transferToDevice(device, true);
+    await this.sleep(this.pollIntervalMs);
+    const state = await this.pollPlayback(device.id!, this.playbackVerifyMs);
+    if (!this.isAudibleOnDevice(state, device.id!)) {
+      throw new Error(
+        `La lecture n'est pas confirmée sur « ${device.name} » après le transfert. ${formatPlaybackDiagnostic(devices, state, device)}`,
+      );
+    }
+    await this.ensureAudibleVolume(state, device.id!);
+    const after = await this.fetchPlaybackSnapshot();
+    if (after?.device?.id !== device.id) {
+      throw new Error(
+        `La musique n'est pas sur « ${device.name} » après le transfert. ${diagnostic()}`,
+      );
+    }
+    return { deviceName: device.name };
+  }
+
+  /**
+   * Bureau Windows, enceinte des réglages, ou cible ponctuelle (voix).
+   */
+  private async ensurePlaybackDevice(
+    deviceHint?: SpotifyPlayDeviceHint | null,
+  ): Promise<{
     device: SpotifyDevice;
     devices: SpotifyDevice[];
   }> {
+    if (deviceHint) {
+      if (deviceHint.kind === 'pc') return this.ensureDesktopDevice();
+      if (deviceHint.kind === 'named') return this.ensureNamedDevice(deviceHint.name);
+      if (deviceHint.kind === 'speaker') {
+        if (this.targetDeviceName) return this.ensureNamedDevice(this.targetDeviceName);
+        const devices = await this.listAllDevices();
+        const speakers = listConnectSpeakers(devices, this.hostname);
+        if (speakers.length === 1) {
+          const device = devices.find((entry) => entry.id === speakers[0]!.id);
+          if (device?.id) return { device, devices };
+        }
+        if (speakers.length === 0) {
+          throw new Error(
+            "Je ne vois aucune enceinte Spotify Connect. Allume-en une ou choisis-la dans les réglages, section Musique.",
+          );
+        }
+        const names = speakers.map((speaker) => speaker.name).join(', ');
+        throw new Error(
+          `Plusieurs enceintes sont visibles (${names}). Dis laquelle tu veux, ou règle-en une par défaut dans Musique.`,
+        );
+      }
+    }
     if (this.targetDeviceName) {
       return this.ensureNamedDevice(this.targetDeviceName);
     }

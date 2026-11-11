@@ -25,6 +25,11 @@ describe('extractSpotifyPlayQuery', () => {
     expect(extractSpotifyPlayQuery('mets du Jul')).toBe('Jul');
   });
 
+  it('extrait « mets Daft Punk » et « mets autre chose » sans appareil', () => {
+    expect(extractSpotifyPlayQuery('mets Daft Punk')).toBe('Daft Punk');
+    expect(extractSpotifyPlayQuery('mets autre chose')).toBe('autre chose');
+  });
+
   it('laisse « Lance Spotify » à open_application', () => {
     expect(extractSpotifyPlayQuery('Lance Spotify')).toBeNull();
     expect(extractSpotifyPlayQuery('ouvre Spotify')).toBeNull();
@@ -84,6 +89,28 @@ describe('extractSpotifyPlayQuery', () => {
   it('garde « joue du Nekfeu » et « lance lomepal sur spotify » pour spotify_play', () => {
     expect(extractSpotifyPlayQuery('joue du Nekfeu')).toBe('du Nekfeu');
     expect(extractSpotifyPlayQuery('lance lomepal sur spotify')).toBe('lomepal');
+  });
+
+  it('retire enceinte et PC, et garde un nom d’appareil dans la requête', () => {
+    expect(extractSpotifyPlayQuery('mets Daft Punk sur l’enceinte')).toBe('Daft Punk');
+    expect(extractSpotifyPlayQuery('mets Daft Punk sur le PC')).toBe('Daft Punk');
+    expect(extractSpotifyPlayQuery('mets Daft Punk sur l’ordinateur')).toBe('Daft Punk');
+    expect(extractSpotifyPlayQuery('lance Get Lucky sur la Devialet')).toBe(
+      'Get Lucky sur la Devialet',
+    );
+    expect(extractSpotifyPlayQuery('mets Il pleut sur la ville')).toBe('Il pleut sur la ville');
+  });
+
+  it('garde un titre entier « Sur la route de Memphis »', () => {
+    expect(extractSpotifyPlayQuery('Sur la route de Memphis')).toBe('Sur la route de Memphis');
+    expect(extractSpotifyPlayQuery('mets Sur la route de Memphis sur l’enceinte')).toBe(
+      'Sur la route de Memphis',
+    );
+  });
+
+  it('ne confond pas transfert et lecture', () => {
+    expect(extractSpotifyPlayQuery('passe la musique sur l’enceinte')).toBeNull();
+    expect(isMusicIntent('passe la musique sur l’enceinte')).toBe(true);
   });
 
   it('une question générale sur la musique n’expose pas Spotify', () => {

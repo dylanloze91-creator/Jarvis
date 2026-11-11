@@ -43,6 +43,10 @@ export interface ToolContext {
   onProgress?: (message: string) => void;
   /** Journal technique. Même activé, les secrets sont retirés avant l'écriture. */
   debug?: boolean;
+  /** Session (fenêtre, téléphone, enceinte) qui garde une question Spotify 60 s. */
+  spotifyVoiceSessionId?: string;
+  /** Horloge du tour, pour l'échéance de la question Spotify. Défaut : l'heure du PC. */
+  spotifyNowMs?: number;
 }
 
 /**

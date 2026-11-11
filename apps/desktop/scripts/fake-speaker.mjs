@@ -12,6 +12,26 @@
  * ou 503 si Whisper n'est pas prêt — c'est déjà un bon test du port, du jeton et de la voix.
  */
 import { readFileSync, writeFileSync } from 'node:fs';
+
+/** Un WAV reçu en flux (tailles « inconnues ») rendu lisible par n'importe quel lecteur. */
+function boundedWav(wav) {
+  const out = new Uint8Array(wav);
+  if (out.byteLength < 44) return out;
+  const view = new DataView(out.buffer, out.byteOffset, out.byteLength);
+  let offset = 12;
+  while (offset + 8 <= out.byteLength) {
+    const id = String.fromCharCode(out[offset], out[offset + 1], out[offset + 2], out[offset + 3]);
+    const size = view.getUint32(offset + 4, true);
+    if (id === 'data') {
+      view.setUint32(offset + 4, out.byteLength - offset - 8, true);
+      break;
+    }
+    if (size >= 0xfffffff0) break;
+    offset += 8 + size + (size % 2);
+  }
+  view.setUint32(4, out.byteLength - 8, true);
+  return out;
+}
 import { request } from 'node:http';
 
 const args = process.argv.slice(2);
@@ -128,7 +148,7 @@ try {
   }
   const type = String(reply.headers['content-type'] ?? '');
   if (type.startsWith('audio/wav')) {
-    writeFileSync(outPath, reply.body);
+    writeFileSync(outPath, boundedWav(new Uint8Array(reply.body)));
     console.log(
       `${reply.status} en ${elapsed} s : ${wavSeconds(reply.body).toFixed(1)} s de voix enregistrées dans ${outPath}` +
         ` (suite sans mot de réveil : ${reply.headers['x-jarvis-continue'] === '1' ? 'oui' : 'non'})`,
