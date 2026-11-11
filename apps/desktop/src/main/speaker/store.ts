@@ -208,6 +208,18 @@ export class SpeakerStore {
   }
 
   /** Abandon : une enceinte neuve disparaît. Un remplacement garde l'ancienne clé. */
+  async noteHello(id: string, signs: { fw?: string; rssi?: number; ip?: string; mac?: string }, at = Date.now()): Promise<void> {
+    await this.load();
+    const speaker = this.state.speakers.find((item) => item.id === id);
+    if (!speaker) return;
+    speaker.lastHelloAt = at;
+    if (signs.fw) speaker.fw = signs.fw;
+    if (typeof signs.rssi === 'number') speaker.rssi = signs.rssi;
+    if (signs.ip) speaker.ip = signs.ip;
+    if (signs.mac) speaker.mac = signs.mac;
+    await this.save();
+  }
+
   async abandonInstall(id: string): Promise<boolean> {
     await this.load();
     const speaker = this.state.speakers.find((item) => item.id === id);

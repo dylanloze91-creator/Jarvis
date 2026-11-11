@@ -28,6 +28,7 @@ import {
   looksLikeImageIntent,
   isPrivateAddress,
   speakerGreeting,
+  readHelloHeaders,
   isWavContentType,
   readCaptureMs,
   type SpeakerChrono,
@@ -332,6 +333,12 @@ export class SpeakerServer {
 
     if (path === '/api/speaker/hello') {
       if (method !== 'GET') throw new HttpError(405, 'Méthode refusée.');
+      const flat: Record<string, string | undefined> = {};
+      for (const [key, value] of Object.entries(req.headers)) flat[key] = Array.isArray(value) ? value[0] : value;
+      const signs = readHelloHeaders(flat);
+      if (signs.fw || signs.mac || typeof signs.rssi === 'number') {
+        await this.deps.store.noteHello(speaker.id, signs, this.now());
+      }
       return sendJson(res, 200, {
         name: speaker.name,
         version: this.deps.version(),

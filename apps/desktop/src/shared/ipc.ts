@@ -246,6 +246,11 @@ export interface SpeakerStatus {
     createdAt: number;
     /** Dernière phrase reçue (en mémoire seulement ; `null` depuis le démarrage). */
     lastTurnAt: number | null;
+    pending?: boolean;
+    fw?: string;
+    rssi?: number;
+    ip?: string;
+    lastHelloAt?: number;
   }>;
 }
 

@@ -216,6 +216,16 @@ describe('pont des enceintes (5.0.64)', () => {
     expect((await call(port, '/api/speaker/greeting')).status).toBe(401);
   });
 
+  it('le signe de vie met à jour la version et le signal, sans changer la réponse', async () => {
+    const { port, token, store } = await setup();
+    const hello = await call(port, '/api/speaker/hello', {
+      token,
+      headers: { 'x-jarvis-fw': '5.0.64', 'x-jarvis-rssi': '-60', 'x-jarvis-ip': '192.168.1.30' },
+    });
+    expect(JSON.parse(hello.body.toString('utf8'))).toMatchObject({ name: 'Salon', version: '5.0.64' });
+    expect(store.speakers()[0]).toMatchObject({ fw: '5.0.64', rssi: -60, ip: '192.168.1.30' });
+  });
+
   it('refuse une adresse distante non privée, même avec le bon jeton', async () => {
     const { port, token } = await setup({ remote: '8.8.8.8' });
     expect((await call(port, '/api/speaker/hello', { token })).status).toBe(403);

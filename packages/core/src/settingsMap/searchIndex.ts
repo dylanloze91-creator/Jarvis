@@ -21,7 +21,7 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = [
   { category: 'services', subcategory: 'siteblock', label: 'Blocage de sites', keywords: ['siteblock', 'distraction'] },
   { category: 'services', subcategory: 'robot', label: 'Robot', keywords: ['rover', 'voiture'] },
   { category: 'services', subcategory: 'phone', label: 'Téléphone', keywords: ['tailscale', 'mobile'] },
-  { category: 'services', subcategory: 'speakers', label: 'Enceintes', keywords: ['esp32', 'enceinte', 'vitesse', 'piper', 'rapide'] },
+  { category: 'services', subcategory: 'speakers', label: 'Enceintes', keywords: ['esp32', 'enceinte', 'brancher', 'ajouter', 'usb', 'wi-fi', 'pare-feu', 'vitesse', 'piper', 'rapide'] },
   { category: 'services', subcategory: 'developer-general', label: 'Missions depuis la discussion', keywords: ['mission', 'code', 'discussion'] },
   { category: 'services', subcategory: 'developer-advanced', label: 'Développeur avancé', keywords: ['copie', 'modèle code', 'worktree'] },
   { category: 'brain', subcategory: 'provider', label: 'Fournisseur de modèle', keywords: ['ollama', 'openai', 'clé api'] },

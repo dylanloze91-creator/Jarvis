@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Copy, Loader2, Plus, RefreshCw, Speaker, Trash2 } from 'lucide-react';
+import { Copy, Loader2, Plus, RefreshCw, Speaker } from 'lucide-react';
 import type { Settings, SpeakerChronoView } from '@jarvis/core';
+import { rssiToBars, speakerFreshness } from '@jarvis/core';
 import { Button } from '@/components/ui/button';
+import { ConfirmButton } from '@/components/ui/confirmButton';
 import { Disclosure } from '@/components/ui/disclosure';
 import { SpeakerInstallView } from '@/components/SpeakerInstall';
 import { Input, Toggle } from '@/components/ui/field';
@@ -18,6 +20,7 @@ export function SpeakerSettingsSection() {
   const [name, setName] = useState('');
   const [added, setAdded] = useState<SpeakerAdded | null>(null);
   const [installStep, setInstallStep] = useState<'closed' | 'branch' | 'wifi' | 'go' | 'error'>('closed');
+  const [diagnose, setDiagnose] = useState(false);
   const scene = new URLSearchParams(window.location.search).get('scene');
   const [copied, setCopied] = useState(false);
   const [now, setNow] = useState(() => Date.now());
@@ -284,6 +287,18 @@ export function SpeakerSettingsSection() {
           {scene === 'speaker-install-error' ? (
             <SpeakerInstallView screen="error" sentence="Le mot de passe n’est pas le bon." button="Corriger" />
           ) : null}
+          {scene === 'speaker-list' ? <p className="text-sm text-slate-200">Tes enceintes, avec le signal et la version.</p> : null}
+          {scene === 'speaker-diagnose' ? (
+            <p className="text-sm text-slate-200">Ton réseau est en mode Public : c’est souvent pour ça que l’enceinte ne répond pas.</p>
+          ) : null}
+          <Button size="sm" variant="ghost" onClick={() => setDiagnose(true)}>
+            Mon enceinte ne répond pas
+          </Button>
+          {diagnose ? (
+            <p className="text-sm text-slate-200">
+              Si l’enceinte ne trouve pas le PC, le réseau est souvent en mode Public ou le pare-feu bloque. Sur Windows, « Réparer » demande ton accord.
+            </p>
+          ) : null}
 
           <Disclosure title="Avancé (développeurs)">
             <div className="flex flex-col gap-2">
@@ -343,10 +358,23 @@ export function SpeakerSettingsSection() {
                       <p className="text-[11px] text-slate-500">{lastTurnLabel(speaker.lastTurnAt, now)}</p>
                     </div>
                   </div>
-                  <Button size="sm" variant="danger" onClick={() => run(() => window.jarvis.speaker.remove(speaker.id))}>
-                    <Trash2 className="size-3.5" />
-                    Retirer
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] text-slate-500" title="Signal Wi-Fi">
+                      {typeof speaker.rssi === 'number' ? `${'▮'.repeat(rssiToBars(speaker.rssi))}${'▯'.repeat(4 - rssiToBars(speaker.rssi))}` : '—'}
+                    </span>
+                    <span className="text-[11px] text-slate-500">
+                      {speaker.pending
+                        ? 'Installation en cours'
+                        : !speaker.fw && !speaker.lastHelloAt
+                          ? 'Hors ligne'
+                          : !speaker.fw
+                            ? 'Ancienne version'
+                            : speakerFreshness(speaker.fw, '5.0.75') === 'current'
+                              ? 'À jour'
+                              : 'Mise à jour disponible'}
+                    </span>
+                    <ConfirmButton label="Retirer" confirmLabel="Retirer pour de bon" variant="danger" onConfirm={() => run(() => window.jarvis.speaker.remove(speaker.id))} />
+                  </div>
                 </div>
               ))}
             </div>
