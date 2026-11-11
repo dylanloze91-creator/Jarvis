@@ -1,0 +1,430 @@
+{
+  "at": "2026-11-11T14:49:19.073Z",
+  "exam": "jarvis",
+  "examLines": 108,
+  "models": [
+    {
+      "model": "qwen2.5:7b",
+      "skipped": null,
+      "total": 108,
+      "correct": 76,
+      "byTeam": {
+        "conversation": {
+          "total": 15,
+          "correct": 7
+        },
+        "images": {
+          "total": 19,
+          "correct": 19
+        },
+        "google": {
+          "total": 7,
+          "correct": 3
+        },
+        "code": {
+          "total": 10,
+          "correct": 7
+        },
+        "web": {
+          "total": 19,
+          "correct": 15
+        },
+        "musique": {
+          "total": 18,
+          "correct": 15
+        },
+        "pc": {
+          "total": 16,
+          "correct": 9
+        },
+        "concentration": {
+          "total": 1,
+          "correct": 0
+        },
+        "memoire": {
+          "total": 2,
+          "correct": 1
+        },
+        "fichiers": {
+          "total": 1,
+          "correct": 0
+        }
+      },
+      "confusion": {
+        "conversation": {
+          "fichiers": 2,
+          "conversation": 7,
+          "web": 2,
+          "images": 1,
+          "code": 2,
+          "pc": 1
+        },
+        "images": {
+          "images": 19
+        },
+        "google": {
+          "google": 3,
+          "conversation": 2,
+          "pc": 2
+        },
+        "code": {
+          "code": 7,
+          "conversation": 2,
+          "fichiers": 1
+        },
+        "web": {
+          "web": 15,
+          "memoire": 1,
+          "code": 2,
+          "images": 1
+        },
+        "musique": {
+          "conversation": 2,
+          "musique": 15,
+          "web": 1
+        },
+        "pc": {
+          "google": 1,
+          "pc": 9,
+          "fichiers": 6
+        },
+        "concentration": {
+          "memoire": 1
+        },
+        "memoire": {
+          "conversation": 1,
+          "memoire": 1
+        },
+        "fichiers": {
+          "pc": 1
+        }
+      },
+      "unreadable": 0,
+      "loadMs": 16405,
+      "meanPhraseMs": 419.60185185185185,
+      "gpuFraction": 0.7895310247682702
+    },
+    {
+      "model": "jarvis-trieur",
+      "skipped": null,
+      "total": 108,
+      "correct": 45,
+      "byTeam": {
+        "conversation": {
+          "total": 15,
+          "correct": 9
+        },
+        "images": {
+          "total": 19,
+          "correct": 10
+        },
+        "google": {
+          "total": 7,
+          "correct": 0
+        },
+        "code": {
+          "total": 10,
+          "correct": 7
+        },
+        "web": {
+          "total": 19,
+          "correct": 0
+        },
+        "musique": {
+          "total": 18,
+          "correct": 12
+        },
+        "pc": {
+          "total": 16,
+          "correct": 6
+        },
+        "concentration": {
+          "total": 1,
+          "correct": 0
+        },
+        "memoire": {
+          "total": 2,
+          "correct": 1
+        },
+        "fichiers": {
+          "total": 1,
+          "correct": 0
+        }
+      },
+      "confusion": {
+        "conversation": {
+          "conversation": 9,
+          "google": 1,
+          "images": 1,
+          "code": 2,
+          "pc": 2
+        },
+        "images": {
+          "pc": 3,
+          "conversation": 1,
+          "musique": 4,
+          "images": 10,
+          "code": 1
+        },
+        "google": {
+          "memoire": 5,
+          "conversation": 1,
+          "pc": 1
+        },
+        "code": {
+          "code": 7,
+          "pc": 3
+        },
+        "web": {
+          "google": 6,
+          "conversation": 6,
+          "pc": 5,
+          "code": 2
+        },
+        "musique": {
+          "musique": 12,
+          "conversation": 4,
+          "pc": 2
+        },
+        "pc": {
+          "conversation": 7,
+          "memoire": 1,
+          "pc": 6,
+          "fichiers": 2
+        },
+        "concentration": {
+          "code": 1
+        },
+        "memoire": {
+          "google": 1,
+          "memoire": 1
+        },
+        "fichiers": {
+          "pc": 1
+        }
+      },
+      "unreadable": 0,
+      "loadMs": 3328,
+      "meanPhraseMs": 81.01851851851852,
+      "gpuFraction": 1
+    },
+    {
+      "model": "qwen2.5:3b",
+      "skipped": null,
+      "total": 108,
+      "correct": 60,
+      "byTeam": {
+        "conversation": {
+          "total": 15,
+          "correct": 10
+        },
+        "images": {
+          "total": 19,
+          "correct": 15
+        },
+        "google": {
+          "total": 7,
+          "correct": 1
+        },
+        "code": {
+          "total": 10,
+          "correct": 5
+        },
+        "web": {
+          "total": 19,
+          "correct": 11
+        },
+        "musique": {
+          "total": 18,
+          "correct": 8
+        },
+        "pc": {
+          "total": 16,
+          "correct": 9
+        },
+        "concentration": {
+          "total": 1,
+          "correct": 0
+        },
+        "memoire": {
+          "total": 2,
+          "correct": 1
+        },
+        "fichiers": {
+          "total": 1,
+          "correct": 0
+        }
+      },
+      "confusion": {
+        "conversation": {
+          "conversation": 10,
+          "web": 2,
+          "images": 1,
+          "pc": 1,
+          "code": 1
+        },
+        "images": {
+          "web": 2,
+          "images": 15,
+          "(illisible)": 2
+        },
+        "google": {
+          "web": 2,
+          "(illisible)": 1,
+          "conversation": 3,
+          "google": 1
+        },
+        "code": {
+          "code": 5,
+          "conversation": 2,
+          "web": 2,
+          "pc": 1
+        },
+        "web": {
+          "web": 11,
+          "conversation": 3,
+          "google": 1,
+          "code": 2,
+          "pc": 1,
+          "(illisible)": 1
+        },
+        "musique": {
+          "web": 4,
+          "conversation": 5,
+          "musique": 8,
+          "(illisible)": 1
+        },
+        "pc": {
+          "pc": 9,
+          "fichiers": 5,
+          "conversation": 2
+        },
+        "concentration": {
+          "code": 1
+        },
+        "memoire": {
+          "conversation": 1,
+          "memoire": 1
+        },
+        "fichiers": {
+          "pc": 1
+        }
+      },
+      "unreadable": 5,
+      "loadMs": 2094,
+      "meanPhraseMs": 93.21296296296296,
+      "gpuFraction": 1
+    },
+    {
+      "model": "qwen2.5:1.5b",
+      "skipped": null,
+      "total": 108,
+      "correct": 38,
+      "byTeam": {
+        "conversation": {
+          "total": 15,
+          "correct": 9
+        },
+        "images": {
+          "total": 19,
+          "correct": 13
+        },
+        "google": {
+          "total": 7,
+          "correct": 0
+        },
+        "code": {
+          "total": 10,
+          "correct": 0
+        },
+        "web": {
+          "total": 19,
+          "correct": 6
+        },
+        "musique": {
+          "total": 18,
+          "correct": 4
+        },
+        "pc": {
+          "total": 16,
+          "correct": 4
+        },
+        "concentration": {
+          "total": 1,
+          "correct": 1
+        },
+        "memoire": {
+          "total": 2,
+          "correct": 1
+        },
+        "fichiers": {
+          "total": 1,
+          "correct": 0
+        }
+      },
+      "confusion": {
+        "conversation": {
+          "conversation": 9,
+          "(illisible)": 1,
+          "pc": 2,
+          "images": 1,
+          "code": 1,
+          "fichiers": 1
+        },
+        "images": {
+          "(illisible)": 3,
+          "conversation": 3,
+          "images": 13
+        },
+        "google": {
+          "conversation": 4,
+          "(illisible)": 2,
+          "pc": 1
+        },
+        "code": {
+          "conversation": 6,
+          "pc": 3,
+          "fichiers": 1
+        },
+        "web": {
+          "web": 6,
+          "conversation": 7,
+          "fichiers": 3,
+          "code": 1,
+          "pc": 1,
+          "(illisible)": 1
+        },
+        "musique": {
+          "pc": 1,
+          "conversation": 6,
+          "concentration": 1,
+          "fichiers": 1,
+          "musique": 4,
+          "(illisible)": 4,
+          "web": 1
+        },
+        "pc": {
+          "conversation": 4,
+          "fichiers": 4,
+          "(illisible)": 3,
+          "concentration": 1,
+          "pc": 4
+        },
+        "concentration": {
+          "concentration": 1
+        },
+        "memoire": {
+          "conversation": 1,
+          "memoire": 1
+        },
+        "fichiers": {
+          "pc": 1
+        }
+      },
+      "unreadable": 14,
+      "loadMs": 1732,
+      "meanPhraseMs": 66.08333333333333,
+      "gpuFraction": 1
+    }
+  ]
+}

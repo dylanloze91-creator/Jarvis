@@ -1,8 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { benchModel, benchSummaryText, type RouterModel } from './bench.js';
+import { ORCHESTRA_TEAMS } from '../agent/orchestraTeams.js';
+import { availableTeams } from '../agent/orchestra.js';
+import { BENCH_TOOLS, benchModel, benchSummaryText, type RouterModel } from './bench.js';
 import type { ExamLine } from './extract.js';
 
 describe('trieur bench', () => {
+  it('propose toutes les équipes du chef d’orchestre au modèle, Musique et Images comprises', () => {
+    const teams = availableTeams(BENCH_TOOLS);
+    expect(teams).toEqual([...ORCHESTRA_TEAMS]);
+  });
+
   it('compte confusions et illisibles avec un faux Ollama', async () => {
     const exam: ExamLine[] = [
       { phrase: 'Ouvre Chrome', context: 'Demande : Ouvre Chrome\nÉquipe :', team: 'pc' },

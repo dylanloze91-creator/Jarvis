@@ -46,17 +46,24 @@ export interface BenchReport {
 const ROUTER_MAX_TOKENS = 12;
 const ROUTER_TEMPERATURE = 0;
 
-/** Outil fictif : toutes les équipes sont « disponibles » pour le banc. */
-const ALL_TOOLS = [
+/**
+ * Outils fictifs : toutes les équipes du chef d'orchestre sont « disponibles » pour le banc.
+ * Un nom par équipe à outils, qui satisfait ses motifs (`spotify_*`, `generer_image`…).
+ * Jusqu'à la 5.0.75, `play_spotify` ne correspondait pas à `spotify_*` et `generer_image` manquait :
+ * Musique et Images n'étaient jamais proposées au modèle, leurs phrases étaient perdues d'avance.
+ */
+export const BENCH_TOOLS = [
   'get_system_info',
   'search_files',
   'web_search',
-  'play_spotify',
+  'spotify_play',
   'siteblock_set_blocking',
   'search_jarvis_memory',
   'google_gmail_list',
   'write_file',
+  'generer_image',
 ];
+const ALL_TOOLS = BENCH_TOOLS;
 
 export function filterExamForBench(lines: readonly ExamLine[]): ExamLine[] {
   return lines.filter((line) => ORCHESTRA_TEAMS.includes(line.team as OrchestraTeam));

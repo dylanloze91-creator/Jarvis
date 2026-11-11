@@ -1,0 +1,5 @@
+Examen du trieur · 108 phrase(s) triées à froid · 2026-11-11T14:49:19.073Z
+- trié à froid · qwen2.5:7b : 76/108 (70 %) · illisibles 0 · chargement 16405 ms · 420 ms/phrase · carte ~79 %
+- trié à froid · jarvis-trieur : 45/108 (42 %) · illisibles 0 · chargement 3328 ms · 81 ms/phrase · carte ~100 %
+- trié à froid · qwen2.5:3b : 60/108 (56 %) · illisibles 5 · chargement 2094 ms · 93 ms/phrase · carte ~100 %
+- trié à froid · qwen2.5:1.5b : 38/108 (35 %) · illisibles 14 · chargement 1732 ms · 66 ms/phrase · carte ~100 %
