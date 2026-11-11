@@ -56,6 +56,8 @@ extraResources:
     to: speaker-firewall.ps1
   - from: resources/speaker-private.ps1
     to: speaker-private.ps1
+  - from: resources/speaker-net-status.ps1
+    to: speaker-net-status.ps1
   - from: scripts/jarvis-qlora-train.py
     to: learning/jarvis-qlora-train.py
 afterPack: scripts/after-pack.cjs

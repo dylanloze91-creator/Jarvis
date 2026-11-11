@@ -38,6 +38,8 @@ import {
   speakerUsesPiper,
   speakerWarmupEnabled,
   speakerWhisperHeld,
+  homeInterface,
+  parseNetStatus,
   SPEAKER_PORT,
   type MarketDataProviderDescriptor,
   type ProviderDescriptor,
@@ -80,6 +82,7 @@ import { QuestionnaireStore } from './questionnaire/store.js';
 import { openAnnounce } from './speaker/announce.js';
 import { loadSpeakerFirmware } from './speaker/firmwareBundle.js';
 import { keptLanAddresses, lanInterfaces } from './speaker/lan.js';
+import { collectSpeakerNet, elevateScript, readStatusScript, repairFirewall, repairPrivate } from './speaker/repair.js';
 import { createMulticastSocket } from './speaker/mdnsSocket.js';
 import { SpeakerService, localHostName } from './speaker/service.js';
 import { SpeakerStore } from './speaker/store.js';
@@ -1191,6 +1194,44 @@ function registerIpc(): void {
   ipcMain.handle(IpcChannel.speakerRemove, (_event, id: unknown) =>
     typeof id === 'string' && id.length <= 100 ? speakers.remove(id) : speakers.status(),
   );
+  const speakerScript = (name: string): string =>
+    app.isPackaged ? join(process.resourcesPath, name) : join(app.getAppPath(), 'resources', name);
+  ipcMain.handle(IpcChannel.speakerNetStatus, async () => {
+    const status = await speakers.status();
+    const kept = await keptLanAddresses();
+    return collectSpeakerNet({
+      platform: process.platform,
+      read: () => readStatusScript(speakerScript('speaker-net-status.ps1')),
+      bridgeRunning: status.running,
+      kept,
+      speakers: status.speakers.map((speaker) => ({
+        name: speaker.name,
+        lastHelloAt: speaker.lastHelloAt ?? speaker.lastTurnAt,
+      })),
+      now: Date.now(),
+    });
+  });
+  ipcMain.handle(IpcChannel.speakerRepair, async () => {
+    if (process.platform !== 'win32') return { ok: false, sentence: 'Ce contrôle est prévu pour Windows.' };
+    const status = await speakers.status();
+    return repairFirewall(status.port, speakerScript('speaker-firewall.ps1'), {
+      readStatus: async () => '',
+      elevate: elevateScript,
+    });
+  });
+  ipcMain.handle(IpcChannel.speakerMakePrivate, async (_event, index: unknown) => {
+    if (process.platform !== 'win32') return { ok: false, sentence: 'Ce contrôle est prévu pour Windows.' };
+    try {
+      const parsed = parseNetStatus(await readStatusScript(speakerScript('speaker-net-status.ps1')));
+      const home = parsed ? homeInterface(parsed.profiles, await keptLanAddresses()) : null;
+      return await repairPrivate(index, home, speakerScript('speaker-private.ps1'), {
+        readStatus: async () => '',
+        elevate: elevateScript,
+      });
+    } catch {
+      return { ok: false, sentence: "Je n'arrive pas à lire le réseau." };
+    }
+  });
   ipcMain.handle(IpcChannel.phoneRevoke, (_event, id: unknown) =>
     typeof id === 'string' && id.length <= 100 ? phone.revoke(id) : phone.status(false),
   );

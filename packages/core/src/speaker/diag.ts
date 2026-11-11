@@ -25,6 +25,66 @@ function ago(at: number | null, now: number): string {
   return `il y a ${Math.round(minutes / 60)} h`;
 }
 
+/** Un échec `pc` ou `bridge` ouvre le diagnostic tout seul. */
+export function opensDiagnostic(step: string | undefined): boolean {
+  return step === 'pc' || step === 'bridge';
+}
+
+export interface NetProfile {
+  index: number;
+  name: string;
+  category: string;
+  addresses: string[];
+}
+
+export interface NetStatus {
+  tcp53131: boolean;
+  udp5353: boolean;
+  profiles: NetProfile[];
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+/** Lit le JSON figé du script de lecture. Rien d'autre n'est accepté. */
+export function parseNetStatus(text: string): NetStatus | null {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(text) as unknown;
+  } catch {
+    return null;
+  }
+  if (!isRecord(raw) || typeof raw.tcp53131 !== 'boolean' || typeof raw.udp5353 !== 'boolean') return null;
+  const list = Array.isArray(raw.profiles) ? raw.profiles : isRecord(raw.profiles) ? [raw.profiles] : null;
+  if (!list) return null;
+  const profiles: NetProfile[] = [];
+  for (const item of list) {
+    if (!isRecord(item) || !Number.isInteger(item.index) || typeof item.name !== 'string' || typeof item.category !== 'string') {
+      return null;
+    }
+    const index = item.index as number;
+    if (index < 1 || index > 4096) return null;
+    const addresses = Array.isArray(item.addresses) ? item.addresses.filter((address) => typeof address === 'string') : [];
+    if (!Array.isArray(item.addresses) || addresses.length !== item.addresses.length) return null;
+    profiles.push({ index, name: item.name, category: item.category, addresses });
+  }
+  return { tcp53131: raw.tcp53131, udp5353: raw.udp5353, profiles };
+}
+
+/** L'interface dont une adresse est gardée (la maison). Jamais une autre. */
+export function homeInterface(profiles: readonly NetProfile[], kept: readonly string[]): NetProfile | null {
+  const wanted = new Set(kept);
+  return profiles.find((profile) => profile.addresses.some((address) => wanted.has(address))) ?? null;
+}
+
+/** Index accepté seulement s'il est celui de la maison. */
+export function privateIndex(index: unknown, home: NetProfile | null): number | null {
+  if (!home || typeof index !== 'number' || !Number.isInteger(index)) return null;
+  if (index < 1 || index > 4096 || index !== home.index) return null;
+  return index;
+}
+
 export function diagnosticLines(input: DiagInput): DiagLine[] {
   const dropped = input.dropped.map((item) => `${item.address} (${item.reason})`).join(', ');
   return [

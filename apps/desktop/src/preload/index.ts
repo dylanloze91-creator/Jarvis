@@ -242,6 +242,9 @@ const api: JarvisApi = {
       ipcRenderer.on(IpcChannel.speakerHoldWhisper, handler);
       return () => ipcRenderer.removeListener(IpcChannel.speakerHoldWhisper, handler);
     },
+    netStatus: () => ipcRenderer.invoke(IpcChannel.speakerNetStatus),
+    repair: () => ipcRenderer.invoke(IpcChannel.speakerRepair),
+    makePrivate: (index: number) => ipcRenderer.invoke(IpcChannel.speakerMakePrivate, index),
   },
   developer: createDeveloperApi(ipcRenderer),
   health: {

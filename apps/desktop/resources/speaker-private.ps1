@@ -1,7 +1,11 @@
-# Jarvis — passe le réseau actif en profil Privé. Script constant, aucun argument.
-# À lancer seulement si c'est le réseau de la maison. Windows demande l'accord.
+# Jarvis — passe UNE interface en profil Privé. Script constant.
+# Le seul argument est l'index de l'interface de la maison, déjà vérifié (un nombre).
+# Windows affiche sa fenêtre d'accord avant de lancer ce fichier.
+param(
+  [Parameter(Mandatory = $true)]
+  [int]$InterfaceIndex
+)
 $ErrorActionPreference = 'Stop'
-Get-NetConnectionProfile | Where-Object { $_.IPv4Connectivity -eq 'Internet' -or $_.IPv4Connectivity -eq 'LocalNetwork' } | ForEach-Object {
-  Set-NetConnectionProfile -InterfaceIndex $_.InterfaceIndex -NetworkCategory Private
-}
+if ($InterfaceIndex -lt 1 -or $InterfaceIndex -gt 4096) { throw 'interface refusée' }
+Set-NetConnectionProfile -InterfaceIndex $InterfaceIndex -NetworkCategory Private
 Write-Output '{"ok":true}'

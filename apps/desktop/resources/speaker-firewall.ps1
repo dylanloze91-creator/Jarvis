@@ -9,12 +9,17 @@ $ErrorActionPreference = 'Stop'
 if ($Port -lt 1 -or $Port -gt 65535) { throw 'port refusé' }
 
 function Add-JarvisRule {
-  param([string]$Name, [string]$Protocol)
+  param([string]$Name, [string]$Protocol, [int]$LocalPort)
   $existing = Get-NetFirewallRule -DisplayName $Name -ErrorAction SilentlyContinue
-  if ($existing) { return }
-  New-NetFirewallRule -DisplayName $Name -Direction Inbound -Action Allow -Protocol $Protocol -LocalPort $Port -Profile Private | Out-Null
+  if ($existing) {
+    $filter = $existing | Get-NetFirewallPortFilter
+    $same = ("$($filter.Protocol)" -eq $Protocol) -and ("$($filter.LocalPort)" -eq "$LocalPort")
+    if ($same) { return }
+    Remove-NetFirewallRule -DisplayName $Name
+  }
+  New-NetFirewallRule -DisplayName $Name -Direction Inbound -Action Allow -Protocol $Protocol -LocalPort $LocalPort -Profile Private | Out-Null
 }
 
-Add-JarvisRule -Name 'Jarvis — enceintes (TCP 53131)' -Protocol TCP
-Add-JarvisRule -Name 'Jarvis — enceintes (mDNS)' -Protocol UDP
+Add-JarvisRule -Name 'Jarvis — enceintes (TCP 53131)' -Protocol TCP -LocalPort $Port
+Add-JarvisRule -Name 'Jarvis — enceintes (mDNS)' -Protocol UDP -LocalPort 5353
 Write-Output '{"ok":true}'

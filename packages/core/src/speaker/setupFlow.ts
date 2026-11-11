@@ -62,7 +62,7 @@ export interface SetupHooks {
 
 export type SetupResult =
   | { ok: true; mac: string; fw: string; skippedFlash: boolean }
-  | { ok: false; failure: FailureCopy; mac: string | null };
+  | { ok: false; failure: FailureCopy; mac: string | null; failedStep?: 'wifi' | 'pc' | 'bridge' | 'voice' };
 
 const LABELS: SetupCheck[] = [
   { id: 'card', label: 'Carte reconnue', state: 'wait' },
@@ -164,7 +164,10 @@ export async function runSpeakerSetup(io: SetupIo, input: SetupInput, hooks?: Se
     const id = step.step === 'wifi' ? 'wifi' : step.step === 'voice' ? 'voice' : 'pc';
     checks = mark(checks, id, step.ok ? 'ok' : 'no');
     show(view({ checks, skippedFlash }));
-    if (!step.ok) return fail(failureCopy(step.error), true);
+    if (!step.ok) {
+      const outcome = await fail(failureCopy(step.error), true);
+      return outcome.ok ? outcome : { ...outcome, failedStep: step.step };
+    }
   }
   if (!steps.some((step) => step.step === 'voice' && step.ok)) {
     return fail(failureCopy('timeout'), true);

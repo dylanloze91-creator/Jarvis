@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Copy, Loader2, Plus, RefreshCw, Speaker } from 'lucide-react';
 import type { Settings, SpeakerChronoView } from '@jarvis/core';
-import { rssiToBars, speakerFreshness } from '@jarvis/core';
+import { opensDiagnostic, rssiToBars, speakerFreshness } from '@jarvis/core';
 import { Button } from '@/components/ui/button';
 import { ConfirmButton } from '@/components/ui/confirmButton';
 import { Disclosure } from '@/components/ui/disclosure';
+import { SpeakerDiagnose } from '@/components/SpeakerDiagnose';
 import { SpeakerInstallView } from '@/components/SpeakerInstall';
 import { installSpeaker } from '@/speaker/installDriver';
 import { esptoolFlasher, findSerialPort, textLink } from '@/speaker/esptoolFlash';
@@ -27,6 +28,12 @@ export function SpeakerSettingsSection() {
   const [checks, setChecks] = useState<Array<{ label: string; state: 'wait' | 'ok' | 'no' }>>([]);
   const [failure, setFailure] = useState({ sentence: 'Branche la carte, puis réessaie.', button: 'Réessayer' });
   const [diagnose, setDiagnose] = useState(false);
+  const [net, setNet] = useState<{
+    lines: Array<{ id: string; ok: boolean; sentence: string }>;
+    homeIndex: number | null;
+    notice: string | null;
+  } | null>(null);
+  const [repairNotice, setRepairNotice] = useState<string | null>(null);
   const scene = new URLSearchParams(window.location.search).get('scene');
   const [copied, setCopied] = useState(false);
   const [now, setNow] = useState(() => Date.now());
@@ -83,6 +90,22 @@ export function SpeakerSettingsSection() {
     const timer = window.setInterval(() => setNow(Date.now()), 30_000);
     return () => window.clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    if (!diagnose) return;
+    let gone = false;
+    void window.jarvis.speaker
+      .netStatus()
+      .then((view) => {
+        if (!gone) setNet(view);
+      })
+      .catch(() => {
+        if (!gone) setRepairNotice("Je n'arrive pas à lire le réseau.");
+      });
+    return () => {
+      gone = true;
+    };
+  }, [diagnose]);
 
   if (!status) {
     return (
@@ -362,6 +385,7 @@ export function SpeakerSettingsSection() {
                     if (!result.ok) {
                       setFailure(result.failure);
                       setInstallStep('error');
+                      if (opensDiagnostic(result.failedStep)) setDiagnose(true);
                     }
                   } catch {
                     setFailure({ sentence: 'Je n’arrive pas à ouvrir la carte.', button: 'Réessayer' });
@@ -388,15 +412,44 @@ export function SpeakerSettingsSection() {
           ) : null}
           {scene === 'speaker-list' ? <p className="text-sm text-slate-200">Tes enceintes, avec le signal et la version.</p> : null}
           {scene === 'speaker-diagnose' ? (
-            <p className="text-sm text-slate-200">Ton réseau est en mode Public : c’est souvent pour ça que l’enceinte ne répond pas.</p>
+            <SpeakerDiagnose
+              lines={[
+                {
+                  id: 'private',
+                  ok: false,
+                  sentence: 'Ton réseau est en mode Public : c’est souvent pour ça que l’enceinte ne répond pas.',
+                },
+              ]}
+              canPrivate
+              onRepair={() => undefined}
+              onPrivate={() => undefined}
+            />
           ) : null}
           <Button size="sm" variant="ghost" onClick={() => setDiagnose(true)}>
             Mon enceinte ne répond pas
           </Button>
-          {diagnose ? (
-            <p className="text-sm text-slate-200">
-              Si l’enceinte ne trouve pas le PC, le réseau est souvent en mode Public ou le pare-feu bloque. Sur Windows, « Réparer » demande ton accord.
-            </p>
+          {diagnose && net ? (
+            <SpeakerDiagnose
+              lines={net.lines}
+              notice={repairNotice ?? net.notice}
+              canPrivate={net.homeIndex !== null}
+              onRepair={() => {
+                void window.jarvis.speaker.repair().then(async (outcome) => {
+                  setRepairNotice(outcome.ok ? null : outcome.sentence);
+                  setNet(await window.jarvis.speaker.netStatus());
+                });
+              }}
+              onPrivate={() => {
+                if (net.homeIndex === null) return;
+                const index = net.homeIndex;
+                void window.jarvis.speaker.makePrivate(index).then(async (outcome) => {
+                  setRepairNotice(outcome.ok ? null : outcome.sentence);
+                  setNet(await window.jarvis.speaker.netStatus());
+                });
+              }}
+            />
+          ) : diagnose ? (
+            <p className="text-xs text-slate-400">Lecture du réseau…</p>
           ) : null}
 
           <Disclosure title="Avancé (développeurs)">

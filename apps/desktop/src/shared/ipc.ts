@@ -189,6 +189,9 @@ export const IpcChannel = {
   speakerChrono: 'speaker:chrono',
   speakerChronoReset: 'speaker:chrono-reset',
   speakerHoldWhisper: 'speaker:hold-whisper',
+  speakerNetStatus: 'speaker:net-status',
+  speakerRepair: 'speaker:repair',
+  speakerMakePrivate: 'speaker:make-private',
   healthCurrent: 'health:current',
   healthRefresh: 'health:refresh',
   healthEvent: 'health:event',
@@ -951,6 +954,17 @@ export interface JarvisApi {
     resetChrono(): Promise<SpeakerChronoView>;
     /** Whisper des enceintes : le charger et ne plus le lâcher. */
     onHoldWhisper(listener: () => void): () => void;
+    /** Lecture seule : règles et profil du réseau de la maison. */
+    netStatus(): Promise<{
+      lines: Array<{ id: string; ok: boolean; sentence: string }>;
+      homeIndex: number | null;
+      homeName: string | null;
+      notice: string | null;
+    }>;
+    /** Clic « Réparer » : Windows demande l'accord. */
+    repair(): Promise<{ ok: true } | { ok: false; sentence: string }>;
+    /** Clic « Passer ce réseau en Privé » : seulement l'index de la maison. */
+    makePrivate(index: number): Promise<{ ok: true } | { ok: false; sentence: string }>;
   };
   update: {
     getState(): Promise<UpdateState>;

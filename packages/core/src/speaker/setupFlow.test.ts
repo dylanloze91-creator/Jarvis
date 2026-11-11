@@ -129,6 +129,9 @@ describe('déroulé d’installation', () => {
       }),
       { manifestVersion: '5.0.75' },
     );
-    if (!result.ok) expect(result.failure.button).toBe('Voir le diagnostic');
+    if (!result.ok) {
+      expect(result.failure.button).toBe('Voir le diagnostic');
+      expect(result.failedStep).toBe('pc');
+    }
   });
 });
