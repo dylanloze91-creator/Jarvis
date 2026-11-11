@@ -17,6 +17,12 @@ export interface SpeakerServiceDeps extends Omit<SpeakerServerDeps, 'store' | 'o
   hostName?: () => string;
   /** Pousse l'état à l'interface (phrase reçue pendant que les réglages sont ouverts). */
   broadcast?: (status: SpeakerStatus) => void;
+  /** Annonce mDNS. Absente si le pont est coupé : on n'appelle pas. */
+  openAnnounce?: () => Array<{ destroy(): void }> | Promise<Array<{ destroy(): void }>>;
+  /** Adresses de la maison (passerelle, pas Tailscale). */
+  keptAddresses?: () => string[] | Promise<string[]>;
+  /** Contrôle des interfaces. 60 s si absent. */
+  announceEveryMs?: number;
 }
 
 /** Adresses IPv4 non internes des interfaces réseau du PC. */
@@ -45,6 +51,9 @@ export class SpeakerService {
   readonly server: SpeakerServer;
   private error: string | null = null;
   private readonly lastTurn = new Map<string, number>();
+  private announced: Array<{ destroy(): void }> = [];
+  private announcedKey: string | null = null;
+  private watch: ReturnType<typeof setInterval> | null = null;
 
   constructor(private readonly deps: SpeakerServiceDeps) {
     this.server = new SpeakerServer({
@@ -83,6 +92,8 @@ export class SpeakerService {
     this.error = null;
     try {
       await this.server.start(this.port);
+      await this.refreshAnnounce();
+      this.armWatch();
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
       this.error =
@@ -98,6 +109,8 @@ export class SpeakerService {
     if (enabled) await this.startServer();
     else {
       this.error = null;
+      this.stopWatch();
+      this.closeAnnounce();
       await this.server.stop();
     }
     await this.announce();
@@ -138,6 +151,42 @@ export class SpeakerService {
     return { status, speaker: { id: speaker.id, name: speaker.name }, secrets };
   }
 
+  async beginInstall(name: string, mac: string): Promise<SpeakerStatus & { speakerId: string; token: string; replaced: boolean; pcId: string; hosts: string[] }> {
+    const begun = await this.deps.store.beginInstall(name, mac);
+    const status = await this.status();
+    const kept = this.deps.keptAddresses ? await this.deps.keptAddresses() : status.addresses;
+    this.deps.log?.(`[enceinte] installation de « ${begun.speaker.name} »${begun.replaced ? ' (remplacement)' : ''}`);
+    return {
+      ...status,
+      speakerId: begun.speaker.id,
+      token: begun.token,
+      replaced: begun.replaced,
+      pcId: this.deps.store.pcId,
+      hosts: kept.slice(0, 4),
+    };
+  }
+
+  async commitInstall(id: string, fw?: string): Promise<SpeakerStatus> {
+    await this.deps.store.commitInstall(id, fw);
+    return this.status();
+  }
+
+  async abandonInstall(id: string): Promise<SpeakerStatus> {
+    await this.deps.store.abandonInstall(id);
+    this.server.forget(id);
+    return this.status();
+  }
+
+  async signal(id: string): Promise<SpeakerStatus> {
+    await this.deps.store.askIdentify(id);
+    return this.status();
+  }
+
+  async rename(id: string, name: string): Promise<SpeakerStatus> {
+    await this.deps.store.askRename(id, name);
+    return this.status();
+  }
+
   async remove(id: string): Promise<SpeakerStatus> {
     await this.deps.store.removeSpeaker(id);
     this.server.forget(id);
@@ -146,6 +195,42 @@ export class SpeakerService {
   }
 
   stop(): Promise<void> {
+    this.stopWatch();
+    this.closeAnnounce();
     return this.server.stop();
+  }
+
+  private armWatch(): void {
+    if (this.watch || !this.deps.keptAddresses || !this.deps.openAnnounce) return;
+    this.watch = setInterval(() => {
+      void this.refreshAnnounce();
+    }, this.deps.announceEveryMs ?? 60_000);
+    this.watch.unref?.();
+  }
+
+  private stopWatch(): void {
+    if (this.watch) clearInterval(this.watch);
+    this.watch = null;
+    this.announcedKey = null;
+  }
+
+  /** Rouvre l'annonce seulement si la liste des adresses de la maison a changé. */
+  private async refreshAnnounce(): Promise<void> {
+    if (!this.server.running || !this.deps.openAnnounce) return;
+    try {
+      const kept = this.deps.keptAddresses ? await this.deps.keptAddresses() : [];
+      const key = [...kept].sort().join(',');
+      if (key === this.announcedKey) return;
+      this.closeAnnounce();
+      this.announced = await Promise.resolve(this.deps.openAnnounce());
+      this.announcedKey = key;
+    } catch (error) {
+      this.deps.log?.(`[enceinte] annonce : ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  private closeAnnounce(): void {
+    for (const socket of this.announced) socket.destroy();
+    this.announced = [];
   }
 }

@@ -15,7 +15,24 @@ typedef struct {
     int status;           // 200 = jeton accepté ; 401 = jeton refusé ; 0 = PC injoignable
     uint32_t follow_up_ms; // fenêtre de suivi réglée sur le PC (0 = « Jarvis » à chaque fois)
     char version[24];
+    bool identify;        // le PC demande un signe (bip, LED, phrase)
+    char rename[25];      // nouveau nom, vide si rien à changer
+    char via[8];          // last | mdns | hosts | host
 } hello_result_t;
+
+typedef struct {
+    bool ok;
+    char ip[16];
+    int rssi;
+    char error[24];
+} net_wifi_try_t;
+
+typedef struct {
+    bool ok;
+    char host[48];
+    char via[8];
+    char error[24];
+} net_pc_try_t;
 
 hello_result_t net_hello(void);
 
@@ -40,3 +57,26 @@ typedef struct {
  * au fil de l'eau sur le haut-parleur. `follow_up` = phrase dite dans la fenêtre de suivi.
  */
 turn_result_t net_turn(const int16_t *pcm, size_t samples, bool follow_up);
+
+/** Vrai pendant l'envoi d'une phrase : le signe de vie attend. */
+bool net_busy(void);
+
+/** Dernière raison Wi-Fi Espressif (0 si aucune). */
+int net_last_wifi_reason(void);
+
+/** Démarre la radio même sans réglages, pour que `scan` marche avant l'installation. */
+bool net_radio(void);
+
+/** Démarre ou redémarre le Wi-Fi avec les réglages courants. */
+bool net_ensure(uint32_t timeout_ms);
+
+net_wifi_try_t net_test_wifi(uint32_t timeout_ms);
+net_pc_try_t net_test_pc(void);
+/** 200, 401, 403, 404, ou 0. */
+int net_test_bridge(void);
+bool net_play_greeting(void);
+
+/** Adresse IP du Wi-Fi, ou une chaîne vide. */
+void net_ip(char *out, size_t size);
+int net_rssi(void);
+void net_mac(char *out, size_t size);

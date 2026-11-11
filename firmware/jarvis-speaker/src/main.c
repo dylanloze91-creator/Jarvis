@@ -14,14 +14,16 @@
 #include <string.h>
 
 #include "audio_io.h"
+#include "cfg.h"
 #include "config.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "led.h"
+#include "link.h"
 #include "net.h"
-#include "secrets.h"
 #include "wake.h"
 
 /** Seuil de parole réellement utilisé : SPEECH_RMS, ou 3 fois le bruit de fond suivi en veille s'il est plus haut (SPEECH_RMS_MAX au plus). */
@@ -59,6 +61,16 @@ static int16_t *pre_roll;      // les derniers PRE_ROLL_MS avant le réveil (ann
 static size_t pre_roll_pos;
 static bool pre_roll_full;
 static uint32_t follow_up_ms = DEFAULT_FOLLOW_UP_MS;
+static int64_t down_since;
+
+static void note_link(bool up) {
+    if (up) down_since = 0;
+    else if (!down_since) down_since = esp_timer_get_time();
+}
+
+static bool down_long(void) {
+    return down_since && esp_timer_get_time() - down_since > 5LL * 60 * 1000000;
+}
 
 static void pre_roll_push(const int16_t *pcm, size_t samples) {
     for (size_t i = 0; i < samples; i++) {
@@ -151,8 +163,16 @@ static void speak_error(void) {
 static void brain_task(void *arg) {
     (void)arg;
     for (;;) {
+        if (cfg_key_refused()) {
+            led_set(LED_KEY);
+            wake_mute(true);
+            vTaskDelay(pdMS_TO_TICKS(1000));
+            continue;
+        }
         // ---- veille : on attend « Jarvis » -----------------------------------------------------
-        led_set(LED_STANDBY);
+        if (net_connected()) note_link(true);
+        else note_link(false);
+        led_set(down_long() ? LED_ERROR : LED_STANDBY);
         wake_mute(false);
         wake_enable(true);
         wake_frame_t frame;
@@ -197,7 +217,7 @@ static void brain_task(void *arg) {
                 ESP_LOGW(SERIAL_TAG, "le PC n'a pas pu écouter (503)");
                 break;
             case TURN_REFUSED:
-                ESP_LOGE(SERIAL_TAG, "jeton refusé (%d) : retire et rajoute l'enceinte dans Réglages → Enceintes, recopie secrets.h",
+                ESP_LOGE(SERIAL_TAG, "jeton refusé (%d) : dans Jarvis, retire l'enceinte ou réinstalle-la par USB",
                          turn.status);
                 speak_error();
                 break;
@@ -252,10 +272,40 @@ static void probe_room_noise(void) {
     }
 }
 
+static void life_task(void *arg) {
+    (void)arg;
+    for (;;) {
+        vTaskDelay(pdMS_TO_TICKS(30000));
+        if (net_busy() || !jarvis_cfg.configured) continue;
+        hello_result_t hello = net_hello();
+        if (hello.ok) {
+            note_link(true);
+            if (hello.follow_up_ms) follow_up_ms = hello.follow_up_ms;
+            if (hello.rename[0]) cfg_rename(hello.rename);
+            if (hello.identify && !net_busy()) {
+                led_set(LED_IDENTIFY);
+                tone_wake();
+                net_play_greeting();
+                vTaskDelay(pdMS_TO_TICKS(3000));
+            }
+        } else if (hello.status == 0 || !net_connected()) {
+            note_link(false);
+        }
+    }
+}
+
 void app_main(void) {
+    cfg_init();
     led_init();
+    link_start();
+    if (!jarvis_cfg.configured) {
+        led_set(LED_SETUP);
+        audio_init();
+        ESP_LOGI(SERIAL_TAG, "Enceinte Jarvis %s — en attente d'installation (USB)", JARVIS_FW_VERSION);
+        for (;;) vTaskDelay(pdMS_TO_TICKS(1000));
+    }
     led_set(LED_BOOT);
-    ESP_LOGI(SERIAL_TAG, "Enceinte Jarvis « %s » — démarrage", SPEAKER_NAME);
+    ESP_LOGI(SERIAL_TAG, "Enceinte Jarvis « %s » %s — démarrage", jarvis_cfg.name, JARVIS_FW_VERSION);
 
     phrase = heap_caps_malloc(MAX_PHRASE_SAMPLES * sizeof(int16_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     pre_roll = heap_caps_malloc(PRE_ROLL_SAMPLES * sizeof(int16_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
@@ -279,12 +329,13 @@ void app_main(void) {
         follow_up_ms = hello.follow_up_ms;
         ESP_LOGI(SERIAL_TAG, "PC trouvé : Jarvis %s, suivi %lu ms", hello.version, (unsigned long)follow_up_ms);
     } else if (hello.status == 401) {
-        ESP_LOGE(SERIAL_TAG, "le PC refuse le jeton : recopie le bloc secrets.h depuis Réglages → Enceintes");
+        ESP_LOGE(SERIAL_TAG, "le PC refuse le jeton : réinstalle l'enceinte par USB dans Jarvis");
         speak_error();
     } else {
-        ESP_LOGW(SERIAL_TAG, "PC pas encore joignable (%s:%d) ; on réessaiera à la première phrase", JARVIS_HOST, JARVIS_PORT);
+        ESP_LOGW(SERIAL_TAG, "PC pas encore joignable (port %d) ; on réessaiera à la première phrase", jarvis_cfg.port);
     }
 
     ESP_LOGI(SERIAL_TAG, "prêt : dis « Jarvis »");
+    xTaskCreatePinnedToCore(life_task, "life", 6 * 1024, NULL, 3, NULL, 0);
     xTaskCreatePinnedToCore(brain_task, "brain", 8 * 1024, NULL, 5, NULL, 1);
 }

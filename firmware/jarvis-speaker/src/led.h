@@ -8,6 +8,9 @@ typedef enum {
     LED_SPEAKING,   // bleu fixe : il répond
     LED_ERROR,      // rouge : quelque chose ne va pas (Wi-Fi, PC, jeton)
     LED_BOOT,       // orange : démarrage, pas encore prêt
+    LED_SETUP,      // violet qui respire : en attente d'installation
+    LED_KEY,        // violet fixe : la clé a été refusée trois fois
+    LED_IDENTIFY,   // blanc : l'enceinte se fait reconnaître
 } led_state_t;
 
 void led_init(void);

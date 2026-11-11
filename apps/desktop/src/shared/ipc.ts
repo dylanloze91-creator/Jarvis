@@ -176,6 +176,12 @@ export const IpcChannel = {
   speakerSetEnabled: 'speaker:set-enabled',
   speakerAdd: 'speaker:add',
   speakerRemove: 'speaker:remove',
+  speakerBeginInstall: 'speaker:begin-install',
+  speakerCommitInstall: 'speaker:commit-install',
+  speakerAbandonInstall: 'speaker:abandon-install',
+  speakerPorts: 'speaker:ports',
+  speakerPickPort: 'speaker:pick-port',
+  speakerFirmware: 'speaker:firmware',
   speakerEvent: 'speaker:event',
   speakerTranscribeRequest: 'speaker:transcribe-request',
   speakerTranscribeResult: 'speaker:transcribe-result',
@@ -183,6 +189,11 @@ export const IpcChannel = {
   speakerChrono: 'speaker:chrono',
   speakerChronoReset: 'speaker:chrono-reset',
   speakerHoldWhisper: 'speaker:hold-whisper',
+  speakerNetStatus: 'speaker:net-status',
+  speakerRepair: 'speaker:repair',
+  speakerMakePrivate: 'speaker:make-private',
+  speakerSignal: 'speaker:signal',
+  speakerRename: 'speaker:rename',
   healthCurrent: 'health:current',
   healthRefresh: 'health:refresh',
   healthEvent: 'health:event',
@@ -241,6 +252,13 @@ export interface SpeakerStatus {
     createdAt: number;
     /** Dernière phrase reçue (en mémoire seulement ; `null` depuis le démarrage). */
     lastTurnAt: number | null;
+    pending?: boolean;
+    fw?: string;
+    rssi?: number;
+    ip?: string;
+    lastHelloAt?: number;
+    mac?: string;
+    rename?: string;
   }>;
 }
 
@@ -922,6 +940,13 @@ export interface JarvisApi {
     /** Crée une enceinte et rend, une seule fois, le bloc `secrets.h` avec son jeton. */
     add(name: string): Promise<SpeakerAdded>;
     remove(speakerId: string): Promise<SpeakerStatus>;
+    beginInstall(name: string, mac: string): Promise<SpeakerStatus & { speakerId: string; token: string; replaced: boolean; pcId: string; hosts: string[] }>;
+    commitInstall(id: string, fw?: string): Promise<SpeakerStatus>;
+    abandonInstall(id: string): Promise<SpeakerStatus>;
+    pickPort(portId: string): Promise<void>;
+    /** Programme à écrire, ou `null` s'il n'est pas dans cette version. */
+    firmware(): Promise<{ version: string; files: Array<{ name: string; address: number; md5: string; data: Uint8Array }> } | null>;
+    onPorts(listener: (ports: Array<{ portId: string; label: string }>) => void): () => void;
     /** Phrase reçue d'une enceinte pendant que les réglages sont ouverts. */
     onEvent(listener: (status: SpeakerStatus) => void): () => void;
     /** Le processus principal demande une transcription Whisper (la fenêtre a Whisper, pas lui). */
@@ -933,6 +958,21 @@ export interface JarvisApi {
     resetChrono(): Promise<SpeakerChronoView>;
     /** Whisper des enceintes : le charger et ne plus le lâcher. */
     onHoldWhisper(listener: () => void): () => void;
+    /** Lecture seule : règles et profil du réseau de la maison. */
+    netStatus(): Promise<{
+      lines: Array<{ id: string; ok: boolean; sentence: string }>;
+      homeIndex: number | null;
+      homeName: string | null;
+      notice: string | null;
+    }>;
+    /** Clic « Réparer » : Windows demande l'accord. */
+    repair(): Promise<{ ok: true } | { ok: false; sentence: string }>;
+    /** Clic « Passer ce réseau en Privé » : seulement l'index de la maison. */
+    makePrivate(index: number): Promise<{ ok: true } | { ok: false; sentence: string }>;
+    /** Le prochain hello demande à la carte de se signaler. */
+    signal(id: string): Promise<SpeakerStatus>;
+    /** Le prochain hello porte le nouveau nom. */
+    rename(id: string, name: string): Promise<SpeakerStatus>;
   };
   update: {
     getState(): Promise<UpdateState>;

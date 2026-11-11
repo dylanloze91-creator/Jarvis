@@ -2,7 +2,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'no
 import { request } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterAll, afterEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
 import {
   InMemoryConversationStore,
   SPEAKER_CONFIRMATION_REFUSAL,
@@ -210,6 +210,41 @@ describe('pont des enceintes (5.0.64)', () => {
     expect(JSON.parse(hello.body.toString('utf8'))).toEqual({ name: 'Salon', version: '5.0.64', followUpMs: 12_000 });
     expect((await call(port, '/api/speaker/hello', { token, method: 'POST' })).status).toBe(405);
     expect((await call(port, '/api/speaker/autre', { token })).status).toBe(404);
+    const greeting = await call(port, '/api/speaker/greeting', { token });
+    expect(greeting.status).toBe(200);
+    expect(greeting.headers['content-type']).toBe('audio/wav');
+    expect((await call(port, '/api/speaker/greeting')).status).toBe(401);
+  });
+
+  it('le signe de vie met à jour la version et le signal, sans changer la réponse', async () => {
+    const { port, token, store } = await setup();
+    const hello = await call(port, '/api/speaker/hello', {
+      token,
+      headers: { 'x-jarvis-fw': '5.0.64', 'x-jarvis-rssi': '-60', 'x-jarvis-ip': '192.168.1.30' },
+    });
+    expect(JSON.parse(hello.body.toString('utf8'))).toMatchObject({ name: 'Salon', version: '5.0.64' });
+    expect(store.speakers()[0]).toMatchObject({ fw: '5.0.64', rssi: -60, ip: '192.168.1.30' });
+  });
+
+  it('le hello porte le signe et le nouveau nom, une seule fois', async () => {
+    const { port, token, store, speaker } = await setup();
+    expect(await store.askIdentify(speaker.id)).toBe(true);
+    expect(await store.askRename(speaker.id, 'Cuisine')).toBe(true);
+    const first = JSON.parse((await call(port, '/api/speaker/hello', { token })).body.toString('utf8')) as {
+      name: string;
+      identify?: boolean;
+      rename?: string;
+    };
+    expect(first.name).toBe('Cuisine');
+    expect(first.identify).toBe(true);
+    expect(first.rename).toBe('Cuisine');
+    const second = JSON.parse((await call(port, '/api/speaker/hello', { token })).body.toString('utf8')) as {
+      identify?: boolean;
+      rename?: string;
+    };
+    expect(second.identify).toBeUndefined();
+    expect(second.rename).toBeUndefined();
+    expect(store.speakers()[0]?.name).toBe('Cuisine');
   });
 
   it('refuse une adresse distante non privée, même avec le bon jeton', async () => {
@@ -819,6 +854,35 @@ describe('réglages des enceintes (5.0.64)', () => {
     expect(service.server.running).toBe(false);
   });
 
+  it('pont coupé : aucune annonce mDNS, pont ouvert : une annonce', async () => {
+    const sockets: Array<{ dead: boolean; destroy: () => void }> = [];
+    let opened = 0;
+    const store = new SpeakerStore(() => join(dir, 'mdns.json'));
+    const service = new SpeakerService({
+      store,
+      port: 0,
+      chatFor: () => new FakeChat(() => undefined),
+      transcribe: async () => '',
+      synthesizer: new FakeSynth(),
+      voiceSettings: () => ({ wakeWord: 'jarvis', wakeWordVariants: [] }),
+      version: () => '5.0.64',
+      localAddresses: () => [],
+      openAnnounce: () => {
+        opened += 1;
+        const socket = { dead: false, destroy() { socket.dead = true; } };
+        sockets.push(socket);
+        return [socket];
+      },
+    });
+    expect(opened).toBe(0);
+    await service.setEnabled(true);
+    expect(opened).toBe(1);
+    expect(sockets[0]?.dead).toBe(false);
+    await service.setEnabled(false);
+    expect(sockets[0]?.dead).toBe(true);
+    await service.stop();
+  });
+
   it('nom .local du PC', () => {
     expect(localHostName('PC-de-Dylan')).toBe('pc-de-dylan.local');
     expect(localHostName('Bureau.local')).toBe('bureau.local');
@@ -1139,5 +1203,52 @@ describe('enceinte réflexe', () => {
     });
     expect((await call(port, '/api/speaker/wake', { token, method: 'POST' })).status).toBe(403);
     expect(warmed).toEqual([]);
+  });
+
+  it('rouvre l’annonce mDNS quand les adresses de la maison changent', async () => {
+    const store = new SpeakerStore(() => join(dir, 'annonce.json'));
+    let kept = ['192.168.1.20'];
+    let opened = 0;
+    let tick: (() => void) | undefined;
+    const original = global.setInterval;
+    const interval = vi.spyOn(global, 'setInterval').mockImplementation(((fn: TimerHandler, ms?: number, ...rest: never[]) => {
+      if (ms === 60_000) {
+        tick = fn as () => void;
+        return 0 as unknown as ReturnType<typeof setInterval>;
+      }
+      return original(fn, ms, ...rest);
+    }) as typeof setInterval);
+    const originalClear = global.clearInterval;
+    const clear = vi.spyOn(global, 'clearInterval').mockImplementation((handle) => {
+      if (handle) originalClear(handle);
+    });
+    const service = new SpeakerService({
+      store,
+      port: 0,
+      chatFor: () => new FakeChat(() => undefined),
+      transcribe: async () => 'Jarvis bonjour',
+      synthesizer: new FakeSynth(),
+      voiceSettings: () => ({ wakeWord: 'jarvis', wakeWordVariants: [] }),
+      version: () => '5.0.64',
+      keptAddresses: async () => kept,
+      openAnnounce: () => {
+        opened += 1;
+        return [];
+      },
+    });
+    try {
+      await service.setEnabled(true);
+      expect(opened).toBe(1);
+      expect(tick).toBeTypeOf('function');
+      await tick?.();
+      expect(opened).toBe(1);
+      kept = ['10.0.0.8'];
+      await tick?.();
+      expect(opened).toBe(2);
+    } finally {
+      await service.stop();
+      interval.mockRestore();
+      clear.mockRestore();
+    }
   });
 });

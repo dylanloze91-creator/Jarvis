@@ -164,6 +164,8 @@ export const SETTINGS_ACTION_MAP: Record<string, SettingsFieldLocation> = {
   'action.spotify.devices': { category: 'services', subcategory: 'spotify', highlight: 'spotify-devices' },
   'action.phone.pair': { category: 'services', subcategory: 'phone', highlight: 'phone-pair' },
   'action.speaker.add': { category: 'services', subcategory: 'speakers', highlight: 'speaker-add' },
+  'action.speaker.install': { category: 'services', subcategory: 'speakers', highlight: 'speaker-add' },
+  'action.speaker.diagnose': { category: 'services', subcategory: 'speakers', highlight: 'speaker-diagnose' },
   'action.machine.analyze': { category: 'application', subcategory: 'machine', highlight: 'machine-analyze' },
   'action.updates.check': { category: 'application', subcategory: 'updates', highlight: 'updates-check' },
   'action.personalization.edit': { category: 'moi', subcategory: 'personalization', highlight: 'personalization' },

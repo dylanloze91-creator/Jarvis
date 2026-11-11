@@ -579,6 +579,13 @@ export {
 export * from './google/index.js';
 export * from './phone/phone.js';
 export * from './speaker/speaker.js';
+export * from './speaker/manifest.js';
+export * from './speaker/provisioning.js';
+export * from './speaker/ports.js';
+export * from './speaker/setupFlow.js';
+export * from './speaker/interfaces.js';
+export * from './speaker/diag.js';
+export * from './speaker/signal.js';
 export * from './speaker/pcScreen.js';
 export * from './speaker/chrono.js';
 export * from './speaker/reflex.js';
