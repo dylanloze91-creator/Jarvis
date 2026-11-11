@@ -2,6 +2,8 @@
 
 Rédigé par Claude pour Cursor, le 11 novembre 2026. Demande de l'utilisateur : « raccorder une enceinte au réseau Jarvis, que ce soit facile. Ce n'est pas le cas actuellement. Simplifier vraiment ce raccordement. »
 
+**La carte de l'utilisateur** est une copie « XH-S3E » N16R8 (16 Mo de flash, 8 Mo de PSRAM) sur une platine à borniers. Ses broches sont dans `include/config.h` (5.0.75, branche `cursor/enceinte-materiel`) : pars de là, pas de la DevKitC-1. Le programme livré doit marcher sur cette carte ; la DevKitC-1 N8R8 reste prise en charge (même brochage si on la câble comme le guide), d'où le refus seulement sous 8 Mo de flash.
+
 À lire avant de commencer : `CLAUDE.md` (sections 5.0.64 « Enceinte Jarvis », 5.0.63 « Téléphone » pour le modèle du jumelage, 5.0.70 « Jarvis plus simple » pour la carte des réglages), `docs/specs/enceinte-jarvis.md`, `docs/specs/enceinte-reflexe.md`, `firmware/jarvis-speaker/README.md`.
 
 ## Constat : ce que l'utilisateur doit faire aujourd'hui
@@ -60,7 +62,7 @@ En plus :
 2. **esptool-js.** Relève :
    - la dernière version stable et sa licence ;
    - son API : `ESPLoader`, `Transport`, écriture compressée, vérification MD5, `hard_reset` ;
-   - son fonctionnement sur le **port USB natif** de l'ESP32-S3 (USB-Serial-JTAG, identifiant fabricant `0x303A`) et sur le port **UART** de la DevKitC-1 (pont CP210x ou CH343) ;
+   - son fonctionnement sur le **port USB natif** de l'ESP32-S3 (USB-Serial-JTAG, identifiant fabricant `0x303A`) et sur un port **UART** (pont CP210x ou CH343, DevKitC-1 et certaines copies). Regarde ce qu'a la carte XH-S3E (voir `config.h` et le guide) ;
    - ce qui se passe si la carte n'entre pas seule en mode programmation.
 
    Il doit être empaqueté par electron-vite (pas de CDN) et ne pas exiger `unsafe-eval`.
@@ -362,7 +364,7 @@ Ne la fais pas si elle complique le reste.
 
 ## Essais réels (Claude Code, avec la vraie carte, après la relecture de Claude)
 
-1. Installation complète depuis Jarvis sur Windows, par le port USB **et** par le port UART de la DevKitC-1. Chronométrer (cible : moins de 5 minutes).
+1. Installation complète depuis Jarvis sur Windows, sur la carte XH-S3E de l'utilisateur, par chacun de ses ports USB. Chronométrer (cible : moins de 5 minutes).
 2. Mauvais mot de passe ; réseau 5 GHz seul ; nom de réseau caché.
 3. Règle de pare-feu retirée, puis « Réparer » ; réseau passé en Public, puis diagnostic.
 4. Adresse du PC changée par la box (bail renouvelé) : l'enceinte retrouve le PC seule.
@@ -375,7 +377,7 @@ Ne la fais pas si elle complique le reste.
 ## Livraison
 
 - **Branche** `cursor/enceinte-raccordement`, inscrite dans `AGENTS-COORDINATION.md` (fichiers réservés : `firmware/jarvis-speaker/**`, `apps/desktop/src/main/speaker/**`, `packages/core/src/speaker/**`, `SpeakerSettings.tsx` et les nouveaux composants).
-- **Base** : la branche qui réunit `cursor/enceinte-reflexe` et `claude/enceinte-flux` si elle existe (voir `AGENTS-COORDINATION.md`). Sinon `origin/main`, en gardant tes changements de `server.ts` petits et isolés dans de nouveaux fichiers (`provisioning.ts`, `discovery.ts`, `diagnose.ts`), pour que la réunion soit facile. Dis lequel dans le rapport.
+- **Base** : `origin/main` (5.0.75, publiée le 11 novembre). Elle contient déjà Jarvis Réflexe, la réponse en flux et les réglages de la carte XH-S3E : pas de branche à réunir.
 - **Un commit par partie**, tests verts à chaque commit. Pousse souvent.
 - **Dans `CLAUDE.md`** : ajoute seulement ta section « Brancher une enceinte en cinq minutes » et ta ligne dans « Ce qu'il ne faut pas casser ».
 - **Avant de pousser** : `npm run typecheck`, `npm test`, `npm run lint` (seuls les échecs dotnet attendus sans SDK .NET).
