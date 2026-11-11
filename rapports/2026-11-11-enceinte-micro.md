@@ -55,6 +55,24 @@ Mesures après flash (même carte, même place, à côté du PC) :
 | Seuil de parole | 393 fixe | 1 092 (2 × 546) |
 | Phrase « Jarvis, quelle heure est-il ? » | 15 000 ms | **2 656 ms**, chemin réflexe, réponse « Il est 17 h 28 », total 14,7 s dont Whisper 13,8 s |
 
+## 4 bis. Enceinte remise dans la chambre (sur son chargeur)
+
+Sans câble USB, le bruit de fond du démarrage ne se lit pas (il n'est écrit que sur le port série). Mesure par le chrono du PC sur quatre phrases dites dans la chambre :
+
+| Phrase (transcription Whisper) | Durée captée | Chemin | Réponse |
+| --- | --- | --- | --- |
+| « Qu'en aurais-tu ? » (était « quelle heure est-il ») | 2 176 ms | cerveau | hors sujet |
+| « Je t'ai demandé quelle heure est-il ? » | 2 080 ms | trieur → modèle | **« Il est 15h30 »** (inventé, il était 17 h 52) |
+| « Quelle heure est-il ? » | 3 392 ms | trieur | — |
+| « Quel jour on est ? Quel jour on est ? » | 9 632 ms (dite deux fois) | trieur → modèle | **« C'est mardi »** (inventé, mercredi) |
+
+Le seuil adaptatif tient dans la chambre : plus aucune phrase de 15 s. Les réponses fausses viennent d'ailleurs : une amorce (« je t'ai demandé ») ou une répétition empêchaient la règle de l'horloge, la phrase partait au trieur (toujours actif dans les réglages) puis au modèle, qui invente l'heure. Deux corrections sur la branche :
+
+- `normalizeClockQuestion` : amorces (« je t'ai demandé », « tu peux me dire », « dis-moi », « s'il te plaît »), politesse finale et question répétée retirées avant les règles ; « quelle heure est le match » et « quelle heure est-il ? et demain ? » restent au modèle. 20 tests.
+- `clockLinePrompt` : les équipes du chef d'orchestre reçoivent la date et l'heure du PC dans leur consigne (`teamPrompt(team, caractère, horloge)`, `session.ts`) : si une transcription abîmée échappe aux règles, le modèle a l'heure vraie sous les yeux. Le chat sans orchestre et le cerveau ne changent pas (`chat-unchanged`, `orchestra-session`, `persona-session` verts).
+
+Ces corrections ne sont pas dans la 5.0.75 installée : elles prendront effet à la prochaine version.
+
 ## 5. Câblage
 
 Rien à vérifier : le signal est bien aligné et continu, les deux moitiés d'échantillons sont identiques, le décalage continu est nul. Pas besoin de photo.
@@ -63,7 +81,7 @@ Rien à vérifier : le signal est bien aligné et continu, les deux moitiés d'�
 
 - Whisper à 14 s par phrase sur ce PC (point 3).
 - Remettre l'enceinte à sa place (loin du PC, sur son chargeur) et relire le bruit de fond au démarrage : s'il tombe bien sous 393, le seuil reste 393.
-- Le trieur retiré des réglages par l'utilisateur (42 % sur ses phrases).
+- Le trieur est **encore** dans les réglages (`orchestra.router = jarvis-trieur`, chemin « trieur » dans le chrono) : à retirer dans Réglages → Le cerveau de Jarvis → Chef d'orchestre.
 - Effets de la séance : carte redémarrée une dizaine de fois, Jarvis fermé trois fois puis relancé, Spotify lancé puis mis en pause, deux fausses questions dans la discussion « chambre ».
 
 ## RAPPORT DE VÉRIFICATION

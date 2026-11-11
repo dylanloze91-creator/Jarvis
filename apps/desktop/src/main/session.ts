@@ -30,6 +30,7 @@ import {
   followUpAddressee,
   parseAddresseeReply,
   availableTeams,
+  clockLinePrompt,
   clockReply,
   expressTeam,
   orchestraBasePrompt,
@@ -409,7 +410,7 @@ export class ChatSession {
           ? this.deps.tools.compose(createProposerMissionTool(chatMissionHub))
           : this.deps.tools;
       const agent = new Agent(route.provider, turnTools, {
-        systemPrompt: `${turn.systemPrompt}\n\n${teamPrompt(team, character)}${missionPrompt}`,
+        systemPrompt: `${turn.systemPrompt}\n\n${teamPrompt(team, character, clockLinePrompt(new Date()))}${missionPrompt}`,
         temperature: settings.temperature,
         homeLocation: settings.homeLocation ?? null,
         allowedTools: (name) =>

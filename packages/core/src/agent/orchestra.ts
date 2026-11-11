@@ -186,9 +186,34 @@ const DATE_QUESTION = new RegExp(
   'iu',
 );
 
+// À l'enceinte, Whisper ajoute souvent une amorce (« Je t'ai demandé quelle heure est-il ? ») ou la question
+// est dite deux fois (« Quel jour on est ? Quel jour on est ? ») : on retire l'amorce et la répétition avant
+// les règles. Tout autre reste de phrase (« à Tokyo », « le match ») laisse la main au modèle.
+const CLOCK_LEAD =
+  /^(?:jarvis[,\s]+)?(?:(?:je t['’]ai demandé|je te demande|je voulais savoir|je veux savoir|tu peux me dire|peux[- ]tu me dire|dis[- ]moi|s['’]il te pla[iî]t)[,\s]+)+/iu;
+const CLOCK_TAIL = /(?:[,\s]+(?:s['’]il te pla[iî]t|merci|jarvis))+\s*[?!.]*$/iu;
+
+export function normalizeClockQuestion(text: string): string {
+  const parts = text
+    .split(/[?!.]+/u)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  const unique = new Set(parts.map((part) => part.toLowerCase()));
+  const single = parts.length > 1 && unique.size === 1 ? (parts[0] ?? '') : text.trim();
+  return single.replace(CLOCK_LEAD, '').replace(CLOCK_TAIL, '').trim();
+}
+
+/** Date et heure du PC pour les consignes des équipes du chef d'orchestre : le modèle ne les invente plus. */
+export function clockLinePrompt(now: Date, timeZone?: string): string {
+  const zone = timeZone ? { timeZone } : {};
+  const date = new Intl.DateTimeFormat('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', ...zone }).format(now);
+  const time = new Intl.DateTimeFormat('fr-FR', { hour: '2-digit', minute: '2-digit', ...zone }).format(now).replace(':', ' h ');
+  return `Date et heure du PC : ${firstOfMonth(date)}, ${time}. Pour l’heure ou la date, c’est cette ligne, jamais une estimation.`;
+}
+
 /** « Quelle heure est-il ? », « On est quel jour ? » : réponse exacte depuis l'horloge, sans modèle. */
 export function clockReply(text: string, now: Date, timeZone?: string): string | null {
-  const question = text.trim();
+  const question = normalizeClockQuestion(text);
   if (TIME_QUESTION.test(question)) {
     const time = new Intl.DateTimeFormat('fr-FR', { hour: '2-digit', minute: '2-digit', ...(timeZone ? { timeZone } : {}) })
       .format(now)
@@ -336,10 +361,12 @@ export function orchestraBasePrompt(settingsSystemPrompt: string): string {
   return custom && custom !== DEFAULT_SYSTEM_PROMPT.trim() ? custom : ORCHESTRA_BASE_PROMPT;
 }
 
-export function teamPrompt(team: OrchestraTeam, character?: string | null): string {
+export function teamPrompt(team: OrchestraTeam, character?: string | null, clock?: string | null): string {
   const base = `ÉQUIPE ${TEAM_SPECS[team].label.toUpperCase()} : ${TEAM_SPECS[team].prompt}`;
   // Caractère de Jarvis : ajouté ici seulement (jamais au chat sans orchestre ni au cerveau).
-  return character ? `${base}\n\n${character}` : base;
+  // Horloge (`clockLinePrompt`) : même règle, pour qu'une question d'heure que les règles n'ont pas
+  // reconnue (transcription abîmée) ne reçoive pas une heure inventée.
+  return [base, character, clock].filter(Boolean).join('\n\n');
 }
 
 /** Équipes utilisables : sans outil, ou avec au moins un outil enregistré. */
