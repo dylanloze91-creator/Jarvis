@@ -16,13 +16,27 @@ S'il ne trouve rien : « Je n'ai pas trouvé SPIE à la bourse. Tu peux me donne
 
 ## Tri
 
-Avant tout modèle : Yahoo, Yahoo Finance, « sur internet », « cherche », « sur le web », Wikipédia et « cherche sur Google » vont à l'équipe Internet. « cherche sur Google le cours de SPIE » reste le cours express. L'équipe Google ne prend que les mails, l'agenda, Drive, Docs et Sheets. « Google » seul et « finance » n'y mènent pas.
+Avant tout modèle : Yahoo, Yahoo Finance, « sur internet », « sur le web », Wikipédia et « cherche sur Google » vont à l'équipe Internet. « cherche » seul n'y va que s'il n'y a ni possessif ni fichier, dossier, document, photo, PC, ordinateur, disque ou mail. « cherche sur Google le cours de SPIE » reste le cours express. L'équipe Google ne prend que les mails, l'agenda, Drive, Docs et Sheets. « Google » seul et « finance » n'y mènent pas.
 
 Juste après un tour, « non », « je t'ai dit », « passe par » ou « pas Google » repassent par ces règles. Si aucune ne s'applique, le cerveau reçoit : « l'équipe X n'a pas su répondre au tour précédent ».
 
 Dans Réglages → Chef d'orchestre, à côté du trieur, le dernier score s'affiche s'il existe. Sur les phrases Jarvis déjà mesurées : « Trieur : 42 % de bonnes équipes sur tes phrases. Le cerveau : 70 %. Pour l'instant, garde le cerveau. » Rien n'est activé tout seul.
 
+« le cours de spi » sans indice ne part plus en express : le cerveau choisit. « le cours de spi en bourse » et « le cours de l'action spi » restent l'express.
+
+## Corrections après la revue
+
+Revue `docs/revues/2026-11-11-bourse-et-tri.md` (branche `claude/revues`). Deux points, deux commits.
+
+1. `detectStockRequest` ne prend plus un « cours de X » sans indice. Indices : en bourse, l'action, cotation, Yahoo, combien vaut / ça vaut, bourse, CAC, Euronext, Nasdaq. Sans indice, le nom doit avoir une majuscule (SPIE, LVMH, Spie, Airbus). « spi » et « eau » en minuscules passent par le cerveau. Jamais la bourse, même avec une majuscule : possessif, mot de temps ou d'agenda, « j'ai cours », « un cours de », « des cours de », complément « de jeudi » ou « sur l'agenda ». Les phrases du tableau de la revue sont en `null` dans `stockIntent.test.ts`. Les oui gardés : « le cours de SPIE », « Jarvis, quel est le cours de Spie ? », « la cotation de Nvidia », « combien vaut Airbus en bourse », « comment va l'action Schneider », « Apple et Nvidia en bourse », « le cours de l'action TotalEnergies ».
+
+2. « cherche » n'envoie vers Internet que s'il est suivi de « sur internet », « sur le web », « sur Google » ou « en ligne ». Sinon, seulement sans possessif et sans fichier, dossier, document, photo, PC, ordinateur, disque ou mail. « Cherche le fichier devis dans mes documents », « cherche mes photos de vacances » et « cherche le dossier Jarvis sur le PC » restent au cerveau (`orchestra.test.ts`).
+
+Inchangé : appel direct de `get_stock_quote`, phrases fixes, aucun cours inventé, `chooseListing`, « Tu voulais peut-être », `isTeamCorrection`, score du trieur. `__golden__` non régénérés. `parseSettings({})` sans nouvelle clé. Version inchangée.
+
 ## RAPPORT DE VÉRIFICATION
+
+Rejeu après les deux corrections.
 
 | Commande | Résultat |
 | --- | --- |

@@ -92,6 +92,12 @@ describe('chef d’orchestre — chemin express', () => {
     expect(express('Wikipédia Nvidia')).toBe('web');
     expect(express('cherche sur Google le prix du cuivre')).toBe('web');
     expect(looksLikeExpressWeb('cherche sur Google')).toBe(true);
+    expect(express('Cherche le fichier devis dans mes documents')).toBeNull();
+    expect(express('cherche mes photos de vacances')).toBeNull();
+    expect(express('cherche le dossier Jarvis sur le PC')).toBeNull();
+    expect(looksLikeExpressWeb('Cherche le fichier devis dans mes documents')).toBe(false);
+    expect(looksLikeExpressWeb('cherche mes photos de vacances')).toBe(false);
+    expect(looksLikeExpressWeb('cherche le dossier Jarvis sur le PC')).toBe(false);
   });
 
   it('« Google » seul et « finance » ne vont pas à l’équipe Google', () => {

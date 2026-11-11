@@ -281,8 +281,10 @@ export function expressTeam(input: ExpressInput): OrchestraTeam | null {
 
 /**
  * Mots qui envoient à l'équipe Internet sans modèle.
- * « Google » seul et « finance » seuls n'y sont pas : ils ne vont pas non plus
- * à l'équipe Google (`looksLikeGoogleIntent` ne les reconnaît pas).
+ * « cherche » seul ne suffit pas : suivi de « sur internet », « sur le web »,
+ * « sur Google » ou « en ligne », ou bien une recherche sans possessif ni
+ * fichier, dossier, document, photo, PC, ordinateur, disque ou mail.
+ * Sinon la règle ne dit rien. « Google » seul et « finance » ne vont pas à Google.
  */
 export function looksLikeExpressWeb(text: string): boolean {
   const folded = text
@@ -293,8 +295,19 @@ export function looksLikeExpressWeb(text: string): boolean {
   if (/\bsur internet\b/.test(folded)) return true;
   if (/\bsur le web\b/.test(folded)) return true;
   if (/\bwikipedia\b/.test(folded)) return true;
-  if (/\bcherche\b/.test(folded)) return true;
-  return false;
+  return chercheGoesToWeb(folded);
+}
+
+function chercheGoesToWeb(folded: string): boolean {
+  const at = folded.search(/\bcherche\b/);
+  if (at < 0) return false;
+  const after = folded.slice(at);
+  if (/\bsur internet\b/.test(after) || /\bsur le web\b/.test(after) || /\bsur google\b/.test(after) || /\ben ligne\b/.test(after)) {
+    return true;
+  }
+  if (/\b(?:mon|ma|mes|ton|ta|tes|notre|votre)\b/.test(folded)) return false;
+  if (/\b(?:fichiers?|dossiers?|documents?|photos?|pc|ordinateurs?|disques?|e-?mails?|mails?)\b/.test(folded)) return false;
+  return true;
 }
 
 /** « non », « je t'ai dit », « passe par », « pas Google » : la phrase repasse par les règles. */
