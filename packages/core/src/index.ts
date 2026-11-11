@@ -588,3 +588,7 @@ export * from './images/index.js';
 export * from './developer/index.js';
 export * from './onboarding/index.js';
 export * from './settingsMap/index.js';
+export * from './health/index.js';
+export * from './backup/index.js';
+export * from './vault/index.js';
+export * from './privacy/index.js';

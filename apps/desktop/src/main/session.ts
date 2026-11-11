@@ -47,6 +47,7 @@ import {
   CHAT_MISSION_DIRECT_INTRO,
   CODE_MISSION_TOOL_PROMPT,
   directMissionRequest,
+  looksLikeHealthIntent,
   looksLikeWrittenMissionProposal,
   missionFromUserPhrase,
   PROPOSER_MISSION_TOOL_NAME,
@@ -67,6 +68,7 @@ import {
   type Conversation,
   type ConversationStore,
   type ProviderRegistry,
+  type HealthReport,
   type Settings,
   type ToolCall,
   type ToolManager,
@@ -145,6 +147,8 @@ interface SessionDeps {
    * du message. Absent : les photos jointes sont refusées avec un message clair.
    */
   saveAttachment?: (input: { name: string; mime: string; data: Buffer }) => Promise<ChatAttachment>;
+  /** Bilan de santé, sans modèle. Absent : la phrase suit le chat habituel. */
+  healthReport?: () => Promise<HealthReport>;
 }
 
 /**
@@ -299,8 +303,9 @@ export class ChatSession {
     }
 
     const source = input.source ?? 'text';
+    const healthIntent = looksLikeHealthIntent(input.text);
     const orchestra = activeOrchestra(settings);
-    const route = orchestra
+    const route = !healthIntent && orchestra
       ? await this.routeTurn(settings, orchestra, input.text, messages, controller.signal)
       : null;
 
@@ -346,7 +351,18 @@ export class ChatSession {
 
     let run: AsyncGenerator<AgentEvent>;
     let appendMissionProposal: (() => void) | null = null;
-    if (directMissionBlocked && chatMissionHub) {
+    if (healthIntent) {
+      let reply = "Je n'ai pas pu faire le bilan.";
+      if (this.deps.healthReport) {
+        try {
+          const report = await this.deps.healthReport();
+          reply = source === 'voice' ? report.voice : report.text;
+        } catch {
+          reply = "Je n'ai pas pu faire le bilan.";
+        }
+      }
+      run = fixedReply(reply);
+    } else if (directMissionBlocked && chatMissionHub) {
       run = fixedReply(
         'Une mission est déjà en cours. Termine-la ou annule-la avant d’en lancer une autre.',
       );

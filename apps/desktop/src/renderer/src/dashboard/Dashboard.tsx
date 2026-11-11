@@ -27,7 +27,9 @@ import { UnifiedJarvisChat } from '@/components/UnifiedJarvisChat';
 import { DeveloperSimpleView } from '@/components/developer/DeveloperSimpleView';
 import { ImagerDirectPanel } from '@/components/ImagerDirectPanel';
 import { SetupGuideView } from '@/components/SetupGuideView';
-import { SettingsPanel, openSettingsOnTab } from '@/components/SettingsPanel';
+import { HealthBanner } from '@/components/HealthBanner';
+import { SettingsPanel, openSettingsAt, openSettingsOnTab } from '@/components/SettingsPanel';
+import { SETTINGS_SPECIAL_LINKS } from '@/components/settings/settingsDeepLinks';
 import type { SettingsTabId } from '@/components/SettingsTabs';
 import { filterQuickActionsForQuestionnaire } from '@/dashboard/quickActions';
 import { formatBytes, formatModelTemperature, formatPercent } from '@/dashboard/format';
@@ -365,6 +367,12 @@ export function Dashboard({
 
         {view === 'chat' ? (
           <>
+            <HealthBanner
+              onOpen={() => {
+                openSettingsAt(SETTINGS_SPECIAL_LINKS.health);
+                navigate('settings');
+              }}
+            />
             <section className="dash-stage" aria-label="Assistant">
               <JarvisOrb listening={voice.state === 'listening'} level={voice.level} />
               <div className="temp-readout">

@@ -61,6 +61,10 @@ export class SpeakerService {
     return this.deps.port ?? SPEAKER_PORT;
   }
 
+  isEnabled(): boolean {
+    return this.deps.store.enabled;
+  }
+
   async init(): Promise<void> {
     await this.deps.store.load();
     if (this.deps.store.enabled) {

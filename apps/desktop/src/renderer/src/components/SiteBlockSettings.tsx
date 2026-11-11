@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { CheckCircle2, CircleSlash, Loader2 } from 'lucide-react';
 import { DEFAULT_SITEBLOCK_BASE_URL } from '@jarvis/core';
+import { SecretInput } from '@/components/SecretInput';
 import { Button } from '@/components/ui/button';
 import { Field, Input } from '@/components/ui/field';
 import type { SiteBlockStatus } from '../../../shared/ipc';
@@ -63,11 +64,10 @@ export function SiteBlockSettingsSection({
         label="Jeton d'accès"
         hint="Secret local, collé ici — jamais une variable d'environnement. Tu le copies depuis SiteBlock, ou tu laisses vide : Jarvis le lit alors dans api.json si SiteBlock tourne."
       >
-        <Input
-          type="password"
+        <SecretInput
           value={token}
           placeholder="Jeton Bearer SiteBlock…"
-          onChange={(event) => onChange({ siteBlockToken: event.target.value })}
+          onChange={(siteBlockToken) => onChange({ siteBlockToken })}
         />
       </Field>
 

@@ -77,6 +77,9 @@ export function installPreviewBridge(): void {
       googleClientSecret: 'GOCSPX-apercu',
     };
   }
+  if (search.get('scene') === 'backup') {
+    settings = { ...settings, backup: { directory: 'Disque de sauvegarde', frequency: 'weekly', keep: 4 } };
+  }
   if (search.get('scene')?.startsWith('developer')) {
     const codeModel = search.get('scene')?.startsWith('developer-task') ? 'qwen3.6:35b-a3b-coding' : '';
     settings = {
@@ -453,6 +456,45 @@ export function installPreviewBridge(): void {
       onEvent: () => () => undefined,
     },
     developer: createPreviewDeveloperApi(search.get('scene'), () => settings.developer.enabled),
+    health: {
+      current: async () => previewHealth(search.get('scene')),
+      refresh: async () => previewHealth(search.get('scene')),
+      onReport: () => () => undefined,
+    },
+    backup: {
+      state: async () => ({ lastAt: Date.parse('2026-11-07T10:00:00Z'), ok: true, file: 'jarvis-sauvegarde-20261107T100000Z.zip', error: '' }),
+      now: async () => ({ ok: true, file: 'jarvis-sauvegarde-20261108T100000Z.zip', error: '' }),
+      list: async () => [
+        {
+          name: 'jarvis-sauvegarde-20261107T100000Z.zip',
+          createdAt: '2026-11-07T10:00:00.000Z',
+          note: 'Après une restauration, reconnecte Spotify, Google et les clés.',
+          entries: ['settings.json', 'conversations/une.json', 'personalization.json'],
+          restorable: true,
+        },
+      ],
+      pickDirectory: async () => 'Disque de sauvegarde',
+      restore: async () => ({ ok: true, file: 'jarvis-sauvegarde-20261107T100000Z.zip', error: '' }),
+    },
+    know: {
+      summary: async () => [
+        { id: 'personalization', label: 'Personnalisation', hint: 'Prénom et règles', count: 2, included: true },
+        { id: 'memories', label: 'Souvenirs', hint: 'Mémoire', count: 3, included: true },
+        { id: 'learning', label: 'Corrections et préférences', hint: 'Ce que tu as corrigé', count: 1, included: true },
+        { id: 'conversations', label: 'Conversations', hint: 'Une par une, ou toutes', count: 4, included: true },
+        { id: 'documents', label: 'Documents indexés', hint: 'Textes rangés', count: 2, included: true },
+        { id: 'sorter', label: 'Phrases du trieur', hint: 'À trier, examen, validées', count: 0, included: false },
+        { id: 'questionnaire', label: 'Questionnaire', hint: 'Tes réponses', count: 6, included: true },
+        { id: 'wake', label: 'Apprentissage du réveil', hint: 'Extraits', count: 12, included: true },
+      ],
+      view: async () => [
+        { id: 'prenom', text: 'prenom : Camarade' },
+        { id: 'regle', text: 'Phrases courtes' },
+      ],
+      exportAll: async () => ({ ok: true }),
+      erase: async () => [],
+      eraseAll: async () => [],
+    },
     questionnaire: {
       get: async () => emptyQuestionnaireState(),
       set: async (patch) => ({ ...emptyQuestionnaireState(), ...patch }),
@@ -478,6 +520,21 @@ export function installPreviewBridge(): void {
   };
 
   window.jarvis = api;
+}
+
+function previewHealth(scene: string | null) {
+  const base = {
+    at: Date.parse('2026-11-08T10:00:00Z'),
+    items: [
+      { id: 'ollama' as const, level: 'red' as const, sentence: 'Ollama ne répond pas : les modèles de ce PC sont injoignables.', short: 'Ollama', open: 'model' },
+      { id: 'disk' as const, level: 'orange' as const, sentence: 'Il reste moins de 10 Go sur le disque.', short: 'le disque', open: 'machine.profile' },
+      { id: 'vault' as const, level: 'green' as const, sentence: 'Les clés sont dans le coffre.', short: 'le coffre', open: 'apiKey' },
+    ],
+  };
+  if (scene === 'health-ok') {
+    return { ...base, items: base.items.map((item) => ({ ...item, level: 'green' as const, sentence: 'Tout va bien.' })), issues: 0, banner: null, text: 'Tout va bien.', voice: 'Tout va bien.' };
+  }
+  return { ...base, issues: 2, banner: '2 choses à régler', text: base.items.map((item) => item.sentence).join('\n'), voice: 'Deux soucis : Ollama, le disque.' };
 }
 
 const previewWakeLearningStatus: WakeLearningStatus = {

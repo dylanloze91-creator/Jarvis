@@ -67,6 +67,7 @@ Statuts possibles : `en cours`, `en pause`, `bloqué`, `terminé`.
 | Cursor | `cursor/spotify-voix-appareil` | Enceinte, partie 2 : Spotify « Devialet ou PC ? ». Partie 1 sur `cursor/enceinte-ecran-pc`. Rapport `rapports/2026-11-10-enceinte-oreilles-bouche.md`. Pas de fusion, pas de publication. | — | 2026-11-10 | terminé |
 | Cursor | `cursor/enceinte-reflexe` | Jarvis Réflexe : enceinte plus rapide côté PC. Rapport `rapports/2026-11-10-enceinte-reflexe.md`. Pas de fusion dans main, pas de publication. Non testé avec la vraie enceinte. | — | 2026-11-10 | terminé |
 | Cursor | `cursor/enceinte-ecran-pc` | Enceinte, partie 1 : écran du PC. Correction : une phrase pendant une image ne l'annule pas (autre session, micro refermé). Rapport `rapports/2026-11-10-enceinte-oreilles-bouche.md`. Pas de fusion, pas de publication. | — | 2026-11-10 | terminé |
+| Cursor | `cursor/lot-a-fiabilite` | Lot A — Fiabilité : bilan de santé, sauvegarde, « ce que Jarvis sait de moi », coffre des clés. Rapport `rapports/2026-11-08-lot-a-fiabilite.md`. Pas de fusion, pas de publication. | — | 2026-11-08 | terminé |
 
 ## Ressource GPU / Ollama
 

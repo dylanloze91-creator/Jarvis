@@ -30,4 +30,7 @@ export const SETTINGS_SPECIAL_LINKS = {
   orchestra: { category: 'brain', subcategory: 'orchestra' } satisfies SettingsNavigationTarget,
   audit: { category: 'security', subcategory: 'audit' } satisfies SettingsNavigationTarget,
   questionnaire: { category: 'application', subcategory: 'questionnaire' } satisfies SettingsNavigationTarget,
+  health: { category: 'application', subcategory: 'health' } satisfies SettingsNavigationTarget,
+  backup: { category: 'application', subcategory: 'backup' } satisfies SettingsNavigationTarget,
+  know: { category: 'moi', subcategory: 'know' } satisfies SettingsNavigationTarget,
 } as const;

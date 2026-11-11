@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { CheckCircle2, CircleSlash, Loader2 } from 'lucide-react';
 import { checkRoverBaseUrl, DEFAULT_ROVER_BASE_URL } from '@jarvis/core';
+import { SecretInput } from '@/components/SecretInput';
 import { Button } from '@/components/ui/button';
 import { Field, Input } from '@/components/ui/field';
 import type { RoverConnectionStatus } from '../../../shared/ipc';
@@ -66,11 +67,10 @@ export function RoverSettingsSection({ baseUrl, token, onChange }: RoverSettings
         label="Jeton du robot"
         hint="Affiché à la fin de l’installation sur le Pi (ou par « python -m jarvis_rover --afficher-jeton »). Secret local, jamais une variable d’environnement."
       >
-        <Input
-          type="password"
+        <SecretInput
           value={token}
           placeholder="Jeton du robot…"
-          onChange={(event) => onChange({ roverToken: event.target.value })}
+          onChange={(roverToken) => onChange({ roverToken })}
         />
       </Field>
 
