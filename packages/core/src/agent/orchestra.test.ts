@@ -7,6 +7,7 @@ import {
   activeRouter,
   arithmeticExpression,
   availableTeams,
+  clockLinePrompt,
   clockReply,
   evaluateArithmetic,
   expressTeam,
@@ -16,6 +17,7 @@ import {
   orchestraProviderConfig,
   parseRouterReply,
   routerSystemPrompt,
+  teamPrompt,
   routerUserPrompt,
   solveArithmetic,
   SUGGESTED_ORCHESTRA,
@@ -213,7 +215,58 @@ describe('chef d’orchestre — heure et date sans modèle', () => {
     expect(clockReply('Jarvis, il est quelle heure', now, 'Europe/Paris')).toBe('Il est 08 h 05.');
     expect(clockReply('On est quel jour ?', now, 'Europe/Paris')).toBe('Nous sommes le vendredi 30 octobre 2026.');
   });
+  it('donne la date et l’heure du PC aux équipes, sans changer la consigne sans horloge', () => {
+    const line = clockLinePrompt(now, 'Europe/Paris');
+    expect(line).toBe(
+      'Date et heure du PC : vendredi 30 octobre 2026, 08 h 05. Pour l’heure ou la date, c’est cette ligne, jamais une estimation.',
+    );
+    expect(teamPrompt('conversation')).not.toContain('Date et heure');
+    expect(teamPrompt('conversation', null, line)).toBe(`${teamPrompt('conversation')}\n\n${line}`);
+    expect(teamPrompt('pc', 'CARACTÈRE', line)).toBe(`${teamPrompt('pc')}\n\nCARACTÈRE\n\n${line}`);
+  });
+
   it('laisse passer toute autre phrase', () => {
+    // Fautes habituelles de Whisper : toujours l'horloge, jamais le modèle (qui invente l'heure).
+    for (const q of [
+      'Quel heure est-il?',
+      "Qu'elle heure est-il ?",
+      'Quelle heure est il',
+      'Quelle heure est-t-il ?',
+      'Quel heure il est',
+      'Jarvis, il est quel heure ?',
+      "T'as l'heure ?",
+      'As-tu l’heure ?',
+    ]) {
+      expect(clockReply(q, now, 'Europe/Paris'), q).toBe('Il est 08 h 05.');
+    }
+    for (const q of [
+      'Quel jour on est ?',
+      'Quel jour on est aujourd’hui',
+      'Quelle jour on est ?',
+      'On est le combien ?',
+      'Nous sommes quel jour ?',
+      "C'est quel jour aujourd'hui ?",
+      'Quel jour c’est ?',
+      'Quelle date aujourd’hui ?',
+      'Quel est la date ?',
+    ]) {
+      expect(clockReply(q, now, 'Europe/Paris'), q).toBe('Nous sommes le vendredi 30 octobre 2026.');
+    }
+    // Amorce ajoutée par Whisper, question répétée, politesse : toujours l'horloge.
+    for (const q of [
+      "Je t'ai demandé quelle heure est-il ?",
+      'Tu peux me dire quelle heure il est ?',
+      'Jarvis, s’il te plaît, quelle heure est-il ?',
+      'Quelle heure est-il, s’il te plaît ?',
+      'Quel heure est-il ? Quel heure est-il ?',
+    ]) {
+      expect(clockReply(q, now, 'Europe/Paris'), q).toBe('Il est 08 h 05.');
+    }
+    expect(clockReply('Quel jour on est? Quel jour on est?', now, 'Europe/Paris')).toBe('Nous sommes le vendredi 30 octobre 2026.');
+    expect(clockReply("Je t'ai demandé quelle heure est le match ?", now)).toBeNull();
+    expect(clockReply('Quelle heure est-il ? Et demain ?', now)).toBeNull();
+    expect(clockReply('Quel heure est-il à Tokyo ?', now)).toBeNull();
+    expect(clockReply('Quel jour on est parti ?', now)).toBeNull();
     expect(clockReply('Quelle heure est-il à Tokyo ?', now)).toBeNull();
     expect(clockReply('Rappelle-moi l’heure du rendez-vous', now)).toBeNull();
     expect(clockReply('Quel jour est le match ?', now)).toBeNull();

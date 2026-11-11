@@ -437,6 +437,20 @@ export function installPreviewBridge(): void {
         };
       },
       remove: async (id: string) => (speakers = { ...speakers, speakers: speakers.speakers.filter((item) => item.id !== id) }),
+      beginInstall: async (name: string) => ({
+        ...speakers,
+        speakerId: 'spk-nouveau',
+        token: 'ab'.repeat(32),
+        replaced: false,
+        pcId: 'ab12cd34',
+        hosts: ['192.168.1.20'],
+        speakerName: name,
+      }),
+      commitInstall: async () => speakers,
+      abandonInstall: async () => speakers,
+      pickPort: async () => undefined,
+      firmware: async () => null,
+      onPorts: () => () => undefined,
       onEvent: () => () => undefined,
       onTranscribe: () => () => undefined,
       reportTranscript: () => undefined,
@@ -444,6 +458,22 @@ export function installPreviewBridge(): void {
       chrono: async () => ({ sentence: 'Pas encore de phrase mesurée.', steps: [] }),
       resetChrono: async () => ({ sentence: 'Pas encore de phrase mesurée.', steps: [] }),
       onHoldWhisper: () => () => undefined,
+      netStatus: async () => ({
+        lines: [
+          { id: 'private', ok: false, sentence: 'Ton réseau est en mode Public : c’est souvent pour ça que l’enceinte ne répond pas.' },
+        ],
+        homeIndex: 12,
+        homeName: 'Wi-Fi',
+        notice: null,
+      }),
+      repair: async () => ({ ok: false as const, sentence: "Windows n'a pas donné l'accord." }),
+      makePrivate: async () => ({ ok: true as const }),
+      signal: async () => speakers,
+      rename: async (id: string, name: string) =>
+        (speakers = {
+          ...speakers,
+          speakers: speakers.speakers.map((item) => (item.id === id ? { ...item, rename: name } : item)),
+        }),
     },
     update: {
       getState: async () => ({

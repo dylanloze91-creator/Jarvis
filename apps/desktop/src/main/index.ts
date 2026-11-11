@@ -38,6 +38,9 @@ import {
   speakerUsesPiper,
   speakerWarmupEnabled,
   speakerWhisperHeld,
+  homeInterface,
+  parseNetStatus,
+  SPEAKER_PORT,
   type MarketDataProviderDescriptor,
   type ProviderDescriptor,
   type SearchProviderDescriptor,
@@ -76,7 +79,12 @@ import { PhoneStore } from './phone/store.js';
 import { gatherRepoFacts } from './developer/repo.js';
 import { runProcess } from './developer/runner.js';
 import { QuestionnaireStore } from './questionnaire/store.js';
-import { SpeakerService } from './speaker/service.js';
+import { openAnnounce } from './speaker/announce.js';
+import { loadSpeakerFirmware } from './speaker/firmwareBundle.js';
+import { keptLanAddresses, lanInterfaces } from './speaker/lan.js';
+import { collectSpeakerNet, elevateScript, readStatusScript, repairFirewall, repairPrivate } from './speaker/repair.js';
+import { createMulticastSocket } from './speaker/mdnsSocket.js';
+import { SpeakerService, localHostName } from './speaker/service.js';
 import { SpeakerStore } from './speaker/store.js';
 import { createSpeakerSynthesizer } from './speaker/synth.js';
 import { transcribeViaRenderer } from './speaker/transcribe.js';
@@ -104,13 +112,13 @@ import { PiperService, phoneVoiceMode } from './piper/service.js';
 import { SpeakerChronoFile } from './speaker/chronoFile.js';
 import { warmOllamaModels } from './speaker/warmupRun.js';
 import { presentWindow } from './startup.js';
-import { allowPermissionCheck, allowPermissionRequest, originForLog } from './mediaPermissions.js';
+import { allowPermissionCheck, allowPermissionRequest, isAppDocumentUrl, originForLog } from './mediaPermissions.js';
 import { VoiceCaptureLog } from './voiceCaptureLog.js';
 import { WakeLearningStore } from './wakeLearningStore.js';
 import { LocalLearningStore } from './learning/store.js';
 import { LocalLearningController } from './learning/controller.js';
 import { ListeningIndicatorWindow } from './listeningIndicator.js';
-import { createOverlayWindow, type OverlayWindow } from './window.js';
+import { createOverlayWindow, pickSpeakerPort, type OverlayWindow } from './window.js';
 import {
   currentVoiceAssetsRoot,
   inspectVoiceAssets,
@@ -382,8 +390,27 @@ async function warmSpeakerSide(): Promise<void> {
 // 5.0.64 — enceintes : une session de chat **par enceinte** (une phrase au salon n'annule ni la
 // fenêtre, ni le téléphone, ni la cuisine), mêmes outils, même historique. Une carte de
 // confirmation y est refusée d'office (`server.ts`) : l'enceinte n'a pas d'écran.
+const speakerStore = SpeakerStore.inUserData(() => app.getPath('userData'));
 const speakers = new SpeakerService({
-  store: SpeakerStore.inUserData(() => app.getPath('userData')),
+  store: speakerStore,
+  keptAddresses: () => keptLanAddresses(),
+  openAnnounce: async () => {
+    try {
+      const ifaces = await lanInterfaces();
+      return openAnnounce(
+        ifaces,
+        { pcId: speakerStore.pcId, port: SPEAKER_PORT, hostname: localHostName() },
+        (address) => {
+          const socket = createMulticastSocket(address);
+          if (!socket) throw new Error('annonce impossible');
+          return socket;
+        },
+      );
+    } catch (error) {
+      console.info(`[enceinte] pas d'annonce mDNS : ${error instanceof Error ? error.message : String(error)}`);
+      return [];
+    }
+  },
   chatFor: () => {
     const speakerSession = new ChatSession({
       registry,
@@ -592,19 +619,18 @@ async function bootstrap(): Promise<void> {
       callback(allowed);
     },
   );
-  electronSession.defaultSession.setPermissionCheckHandler(
-    (_webContents, permission, _origin, details) => {
-      const mediaType = (details as { mediaType?: string }).mediaType;
+  // Le gestionnaire unique (micro + port série) est posé dans createOverlayWindow.
+  // En développement, garder la fenêtre visible quand le focus part (devtools, éditeur).
+  overlay = createOverlayWindow(!settings.stayVisibleOnBlur && !isDev, () => quitting, {
+    allowCheck: (permission, mediaType) => {
       const allowed = allowPermissionCheck(permission, mediaType);
       if (!allowed && permission === 'media') {
         voiceCaptureLog.append(`[autorisation] vérification media (${mediaType ?? '?'}) → refusée`);
       }
       return allowed;
     },
-  );
-
-  // En développement, garder la fenêtre visible quand le focus part (devtools, éditeur).
-  overlay = createOverlayWindow(!settings.stayVisibleOnBlur && !isDev, () => quitting);
+    isJarvisOrigin: (origin) => isAppDocumentUrl(origin, devServer),
+  });
   overlay.browserWindow.webContents.on('did-finish-load', () => {
     if (speakerWhisperHeld(settings)) {
       overlay?.browserWindow.webContents.send(IpcChannel.speakerHoldWhisper);
@@ -1145,9 +1171,75 @@ function registerIpc(): void {
     return speakerChrono.view();
   });
   ipcMain.handle(IpcChannel.speakerAdd, (_event, name: unknown) => speakers.add(typeof name === 'string' ? name : ''));
+  ipcMain.handle(IpcChannel.speakerBeginInstall, (_event, payload: unknown) => {
+    const body = payload as { name?: unknown; mac?: unknown } | null;
+    const mac = typeof body?.mac === 'string' ? body.mac : '';
+    return speakers.beginInstall(typeof body?.name === 'string' ? body.name : '', mac);
+  });
+  ipcMain.handle(IpcChannel.speakerCommitInstall, (_event, payload: unknown) => {
+    const body = payload as { id?: unknown; fw?: unknown } | null;
+    if (typeof body?.id !== 'string') return speakers.status();
+    return speakers.commitInstall(body.id, typeof body.fw === 'string' ? body.fw : undefined);
+  });
+  ipcMain.handle(IpcChannel.speakerAbandonInstall, (_event, id: unknown) =>
+    typeof id === 'string' ? speakers.abandonInstall(id) : speakers.status(),
+  );
+  ipcMain.handle(IpcChannel.speakerPickPort, (_event, portId: unknown) => {
+    if (typeof portId === 'string' && portId.length < 200) pickSpeakerPort(portId);
+  });
+  ipcMain.handle(IpcChannel.speakerFirmware, () => {
+    const dir = app.isPackaged ? join(process.resourcesPath, 'speaker-firmware') : join(app.getAppPath(), 'speaker-firmware');
+    return loadSpeakerFirmware(dir);
+  });
   ipcMain.handle(IpcChannel.speakerRemove, (_event, id: unknown) =>
     typeof id === 'string' && id.length <= 100 ? speakers.remove(id) : speakers.status(),
   );
+  const speakerScript = (name: string): string =>
+    app.isPackaged ? join(process.resourcesPath, name) : join(app.getAppPath(), 'resources', name);
+  ipcMain.handle(IpcChannel.speakerNetStatus, async () => {
+    const status = await speakers.status();
+    const kept = await keptLanAddresses();
+    return collectSpeakerNet({
+      platform: process.platform,
+      read: () => readStatusScript(speakerScript('speaker-net-status.ps1')),
+      bridgeRunning: status.running,
+      kept,
+      speakers: status.speakers.map((speaker) => ({
+        name: speaker.name,
+        lastHelloAt: speaker.lastHelloAt ?? speaker.lastTurnAt,
+      })),
+      now: Date.now(),
+    });
+  });
+  ipcMain.handle(IpcChannel.speakerRepair, async () => {
+    if (process.platform !== 'win32') return { ok: false, sentence: 'Ce contrôle est prévu pour Windows.' };
+    const status = await speakers.status();
+    return repairFirewall(status.port, speakerScript('speaker-firewall.ps1'), {
+      readStatus: async () => '',
+      elevate: elevateScript,
+    });
+  });
+  ipcMain.handle(IpcChannel.speakerSignal, (_event, id: unknown) =>
+    typeof id === 'string' && id.length <= 100 ? speakers.signal(id) : speakers.status(),
+  );
+  ipcMain.handle(IpcChannel.speakerRename, (_event, payload: unknown) => {
+    const body = payload as { id?: unknown; name?: unknown } | null;
+    if (typeof body?.id !== 'string' || body.id.length > 100 || typeof body.name !== 'string') return speakers.status();
+    return speakers.rename(body.id, body.name.slice(0, 40));
+  });
+  ipcMain.handle(IpcChannel.speakerMakePrivate, async (_event, index: unknown) => {
+    if (process.platform !== 'win32') return { ok: false, sentence: 'Ce contrôle est prévu pour Windows.' };
+    try {
+      const parsed = parseNetStatus(await readStatusScript(speakerScript('speaker-net-status.ps1')));
+      const home = parsed ? homeInterface(parsed.profiles, await keptLanAddresses()) : null;
+      return await repairPrivate(index, home, speakerScript('speaker-private.ps1'), {
+        readStatus: async () => '',
+        elevate: elevateScript,
+      });
+    } catch {
+      return { ok: false, sentence: "Je n'arrive pas à lire le réseau." };
+    }
+  });
   ipcMain.handle(IpcChannel.phoneRevoke, (_event, id: unknown) =>
     typeof id === 'string' && id.length <= 100 ? phone.revoke(id) : phone.status(false),
   );

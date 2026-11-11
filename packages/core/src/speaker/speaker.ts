@@ -308,6 +308,12 @@ export class SentenceStreamer {
 }
 
 /** Nom d'enceinte affiché et envoyé à la carte : lettres, chiffres, espaces et ponctuation simple. */
+/** Phrase dite à la fin de l'installation. */
+export function speakerGreeting(name: string): string {
+  const room = cleanSpeakerName(name);
+  return `Bonjour, je suis l'enceinte du ${room}. Dis « Jarvis » quand tu veux me parler.`;
+}
+
 export function cleanSpeakerName(name: string | undefined): string {
   const cleaned = (name ?? '')
     .replace(/[^\p{L}\p{N} '’._-]/gu, '')

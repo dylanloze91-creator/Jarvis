@@ -7,4 +7,8 @@ out="${TMPDIR:-/tmp}/jarvis-speaker-host-tests"
 mkdir -p "$out"
 ${CC:-gcc} -std=c99 -Wall -Wextra -Werror -Wconversion -O1 -fsanitize=address,undefined -I src -I include \
   host-tests/wav_stream_test.c src/wav_stream.c -o "$out/wav_stream_test"
+${CC:-gcc} -std=c99 -Wall -Wextra -Werror -Wconversion -O1 -fsanitize=address,undefined -I src -I include   host-tests/mic_filter_test.c -lm -o "$out/mic_filter_test"
+"$out/mic_filter_test"
 "$out/wav_stream_test"
+${CC:-gcc} -std=c99 -Wall -Wextra -Werror -Wconversion -O1 -fsanitize=address,undefined -I src -I include   host-tests/mic_filter_test.c -lm -o "$out/mic_filter_test"
+"$out/mic_filter_test"

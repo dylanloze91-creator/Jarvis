@@ -30,6 +30,7 @@ const threads = whisperThreadCount(typeof SharedArrayBuffer !== 'undefined', nav
 const loader = createWhisperLoader({
   importTransformers: () => import('@huggingface/transformers'),
   configureRuntime: () => configureOnnxRuntime(fetch, threads),
+  numThreads: threads,
   runExclusive: serial,
   now: () => performance.now(),
   loadTimeoutMs: WHISPER_LOAD_TIMEOUT_MS,

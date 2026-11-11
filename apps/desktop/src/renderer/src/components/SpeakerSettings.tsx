@@ -1,8 +1,14 @@
-import { useCallback, useEffect, useState } from 'react';
-import { Copy, Loader2, Plus, RefreshCw, Speaker, Trash2 } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Copy, Loader2, Plus, RefreshCw, Speaker } from 'lucide-react';
 import type { Settings, SpeakerChronoView } from '@jarvis/core';
+import { opensDiagnostic, replacePrompt, rssiToBars, speakerFreshness } from '@jarvis/core';
 import { Button } from '@/components/ui/button';
+import { ConfirmButton } from '@/components/ui/confirmButton';
 import { Disclosure } from '@/components/ui/disclosure';
+import { SpeakerDiagnose } from '@/components/SpeakerDiagnose';
+import { SpeakerInstallView } from '@/components/SpeakerInstall';
+import { installSpeaker } from '@/speaker/installDriver';
+import { esptoolFlasher, findSerialPort, textLink } from '@/speaker/esptoolFlash';
 import { Input, Toggle } from '@/components/ui/field';
 import type { SpeakerAdded, SpeakerStatus } from '../../../shared/ipc';
 
@@ -16,6 +22,24 @@ export function SpeakerSettingsSection() {
   const [loading, setLoading] = useState(false);
   const [name, setName] = useState('');
   const [added, setAdded] = useState<SpeakerAdded | null>(null);
+  const [installStep, setInstallStep] = useState<'closed' | 'branch' | 'wifi' | 'go' | 'error' | 'replace'>('closed');
+  const installMode = useRef<'install' | 'wifi'>('install');
+  const replaceChoice = useRef<((accepted: boolean) => void) | null>(null);
+  const [replaceLabel, setReplaceLabel] = useState('Remplacer l’enceinte');
+  const [renaming, setRenaming] = useState<string | null>(null);
+  const [draftName, setDraftName] = useState('');
+  const [networks, setNetworks] = useState<Array<{ ssid: string; rssi: number; secure: boolean }>>([]);
+  const wifiChoice = useRef<((input: { name: string; ssid: string; pass: string }) => void) | null>(null);
+  const [checks, setChecks] = useState<Array<{ label: string; state: 'wait' | 'ok' | 'no' }>>([]);
+  const [failure, setFailure] = useState({ sentence: 'Branche la carte, puis réessaie.', button: 'Réessayer' });
+  const [diagnose, setDiagnose] = useState(false);
+  const [net, setNet] = useState<{
+    lines: Array<{ id: string; ok: boolean; sentence: string }>;
+    homeIndex: number | null;
+    notice: string | null;
+  } | null>(null);
+  const [repairNotice, setRepairNotice] = useState<string | null>(null);
+  const scene = new URLSearchParams(window.location.search).get('scene');
   const [copied, setCopied] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const [settings, setSettings] = useState<Settings | null>(null);
@@ -71,6 +95,22 @@ export function SpeakerSettingsSection() {
     const timer = window.setInterval(() => setNow(Date.now()), 30_000);
     return () => window.clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    if (!diagnose) return;
+    let gone = false;
+    void window.jarvis.speaker
+      .netStatus()
+      .then((view) => {
+        if (!gone) setNet(view);
+      })
+      .catch(() => {
+        if (!gone) setRepairNotice("Je n'arrive pas à lire le réseau.");
+      });
+    return () => {
+      gone = true;
+    };
+  }, [diagnose]);
 
   if (!status) {
     return (
@@ -260,24 +300,212 @@ export function SpeakerSettingsSection() {
             </p>
           </div>
 
-          <div className="flex flex-col gap-1.5">
-            <p className="text-[11px] font-medium tracking-wide text-slate-400 uppercase">Ajouter une enceinte</p>
-            <div className="flex items-center gap-2">
-              <Input
-                value={name}
-                placeholder="Nom de la pièce (Salon, Cuisine…)"
-                maxLength={40}
-                onChange={(event) => setName(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') addSpeaker();
-                }}
-              />
-              <Button variant="default" disabled={!name.trim() || loading} onClick={addSpeaker}>
-                <Plus className="size-4" />
-                Ajouter
-              </Button>
+          <Button
+            variant="default"
+            onClick={() => {
+              installMode.current = 'install';
+              setInstallStep('branch');
+            }}
+          >
+            <Plus className="size-4" />
+            Ajouter une enceinte
+          </Button>
+          {installStep !== 'closed' ? (
+            <SpeakerInstallView
+              screen={installStep}
+              sentence={failure.sentence}
+              button={failure.button}
+              checks={checks}
+              networks={networks}
+              replaceLabel={replaceLabel}
+              onReplace={() => {
+                setInstallStep('go');
+                const choose = replaceChoice.current;
+                replaceChoice.current = null;
+                choose?.(true);
+              }}
+              onKeep={() => {
+                const choose = replaceChoice.current;
+                replaceChoice.current = null;
+                choose?.(false);
+                setInstallStep('branch');
+              }}
+              onNext={() => {
+                const serial = navigator.serial;
+                if (!serial) {
+                  setFailure({ sentence: 'Ce Jarvis ne peut pas ouvrir le câble USB.', button: 'Réessayer' });
+                  setInstallStep('error');
+                  return;
+                }
+                const portPromise = serial.requestPort();
+                setInstallStep('go');
+                const chosen = { name: '', ssid: '', pass: '' };
+                void (async () => {
+                  try {
+                    const [port, bundle] = await Promise.all([portPromise, window.jarvis.speaker.firmware()]);
+                    if (!bundle) {
+                      setFailure({
+                        sentence: 'Le programme de l’enceinte n’est pas inclus dans cette version de Jarvis.',
+                        button: 'Réessayer',
+                      });
+                      setInstallStep('error');
+                      try {
+                        await port.close();
+                      } catch {
+                        // le port n'était pas ouvert
+                      }
+                      return;
+                    }
+                    await port.open({ baudRate: 115200 });
+                    let active = port;
+                    const link = textLink(port);
+                    const result = await installSpeaker({
+                      link,
+                      closePort: async () => {
+                        try {
+                          await active.close();
+                        } catch {
+                          // déjà fermé
+                        }
+                      },
+                      findPort: async () => {
+                        const found = await findSerialPort(active);
+                        if (!found) return;
+                        active = found;
+                        await link.attach(found);
+                      },
+                      flasher: esptoolFlasher(() => active, bundle.files),
+                      manifestVersion: bundle.version,
+                      wifi: chosen,
+                      wifiOnly: installMode.current === 'wifi',
+                      confirmReplace: (mac) =>
+                        new Promise((resolve) => {
+                          const known = status.speakers.find((item) => item.mac?.toLowerCase() === mac.toLowerCase());
+                          if (!known || installMode.current === 'wifi') {
+                            resolve(true);
+                            return;
+                          }
+                          setReplaceLabel(replacePrompt(known.name));
+                          setInstallStep('replace');
+                          replaceChoice.current = resolve;
+                        }),
+                      chooseWifi: (found) =>
+                        new Promise((resolve) => {
+                          setNetworks(found);
+                          setInstallStep('wifi');
+                          wifiChoice.current = (input) => {
+                            chosen.name = input.name;
+                            chosen.ssid = input.ssid;
+                            chosen.pass = input.pass;
+                            resolve(input);
+                          };
+                        }),
+                      pair: async (mac) => {
+                        const paired = await window.jarvis.speaker.beginInstall(chosen.name, mac);
+                        return {
+                          speakerId: paired.speakerId,
+                          token: paired.token,
+                          pcId: paired.pcId,
+                          port: paired.port,
+                          hosts: paired.hosts,
+                        };
+                      },
+                      commit: async (id, fw) => {
+                        await window.jarvis.speaker.commitInstall(id, fw);
+                      },
+                      abandon: async (id) => {
+                        await window.jarvis.speaker.abandonInstall(id);
+                      },
+                      onView: (view) => setChecks(view.checks),
+                    });
+                    if (!result.ok) {
+                      setFailure(result.failure);
+                      setInstallStep('error');
+                      if (opensDiagnostic(result.failedStep)) setDiagnose(true);
+                    }
+                  } catch {
+                    setFailure({ sentence: 'Je n’arrive pas à ouvrir la carte.', button: 'Réessayer' });
+                    setInstallStep('error');
+                  } finally {
+                    chosen.pass = '';
+                    wifiChoice.current = null;
+                  }
+                })();
+              }}
+              onRetry={() => setInstallStep('branch')}
+              onInstall={(input) => {
+                setName(input.name);
+                setInstallStep('go');
+                const choose = wifiChoice.current;
+                wifiChoice.current = null;
+                choose?.(input);
+              }}
+            />
+          ) : null}
+          {scene === 'speaker-install' ? <SpeakerInstallView screen="branch" /> : null}
+          {scene === 'speaker-install-error' ? (
+            <SpeakerInstallView screen="error" sentence="Le mot de passe n’est pas le bon." button="Corriger" />
+          ) : null}
+          {scene === 'speaker-list' ? <p className="text-sm text-slate-200">Tes enceintes, avec le signal et la version.</p> : null}
+          {scene === 'speaker-diagnose' ? (
+            <SpeakerDiagnose
+              lines={[
+                {
+                  id: 'private',
+                  ok: false,
+                  sentence: 'Ton réseau est en mode Public : c’est souvent pour ça que l’enceinte ne répond pas.',
+                },
+              ]}
+              canPrivate
+              onRepair={() => undefined}
+              onPrivate={() => undefined}
+            />
+          ) : null}
+          <Button size="sm" variant="ghost" onClick={() => setDiagnose(true)}>
+            Mon enceinte ne répond pas
+          </Button>
+          {diagnose && net ? (
+            <SpeakerDiagnose
+              lines={net.lines}
+              notice={repairNotice ?? net.notice}
+              canPrivate={net.homeIndex !== null}
+              onRepair={() => {
+                void window.jarvis.speaker.repair().then(async (outcome) => {
+                  setRepairNotice(outcome.ok ? null : outcome.sentence);
+                  setNet(await window.jarvis.speaker.netStatus());
+                });
+              }}
+              onPrivate={() => {
+                if (net.homeIndex === null) return;
+                const index = net.homeIndex;
+                void window.jarvis.speaker.makePrivate(index).then(async (outcome) => {
+                  setRepairNotice(outcome.ok ? null : outcome.sentence);
+                  setNet(await window.jarvis.speaker.netStatus());
+                });
+              }}
+            />
+          ) : diagnose ? (
+            <p className="text-xs text-slate-400">Lecture du réseau…</p>
+          ) : null}
+
+          <Disclosure title="Avancé (développeurs)">
+            <div className="flex flex-col gap-2">
+              <p className="text-xs text-slate-400">
+                Le chemin simple est le bouton au-dessus. Ici, tu peux encore créer un bloc <code>secrets.h</code> pour PlatformIO.
+              </p>
+              <div className="flex items-center gap-2">
+                <Input
+                  value={name}
+                  placeholder="Nom de la pièce"
+                  maxLength={40}
+                  onChange={(event) => setName(event.target.value)}
+                />
+                <Button variant="subtle" disabled={!name.trim() || loading} onClick={addSpeaker}>
+                  Créer le bloc
+                </Button>
+              </div>
             </div>
-          </div>
+          </Disclosure>
 
           {added ? (
             <div className="flex flex-col gap-2 rounded-lg border border-accent/30 bg-accent/5 p-3">
@@ -314,14 +542,76 @@ export function SpeakerSettingsSection() {
                   <div className="flex min-w-0 items-center gap-2.5">
                     <Speaker className="size-4 shrink-0 text-slate-400" />
                     <div className="min-w-0">
-                      <p className="truncate text-sm text-slate-200">{speaker.name}</p>
-                      <p className="text-[11px] text-slate-500">{lastTurnLabel(speaker.lastTurnAt, now)}</p>
+                      <p className="truncate text-sm text-slate-200">{speaker.rename ?? speaker.name}</p>
+                      <p className="text-[11px] text-slate-500">
+                        {speaker.rename ? `Sera « ${speaker.rename} » au prochain signe de vie. ` : ''}
+                        {lastTurnLabel(speaker.lastTurnAt, now)}
+                      </p>
+                      {renaming === speaker.id ? (
+                        <div className="mt-1 flex items-center gap-1">
+                          <Input
+                            value={draftName}
+                            maxLength={24}
+                            aria-label="Nouveau nom"
+                            onChange={(event) => setDraftName(event.target.value)}
+                          />
+                          <Button
+                            size="sm"
+                            variant="default"
+                            onClick={() => {
+                              const next = draftName.trim();
+                              setRenaming(null);
+                              if (next) run(() => window.jarvis.speaker.rename(speaker.id, next));
+                            }}
+                          >
+                            Enregistrer
+                          </Button>
+                        </div>
+                      ) : null}
                     </div>
                   </div>
-                  <Button size="sm" variant="danger" onClick={() => run(() => window.jarvis.speaker.remove(speaker.id))}>
-                    <Trash2 className="size-3.5" />
-                    Retirer
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] text-slate-500" title="Signal Wi-Fi">
+                      {typeof speaker.rssi === 'number' ? `${'▮'.repeat(rssiToBars(speaker.rssi))}${'▯'.repeat(4 - rssiToBars(speaker.rssi))}` : '—'}
+                    </span>
+                    <div className="flex flex-wrap items-center gap-1">
+                      <Button size="sm" variant="ghost" onClick={() => run(() => window.jarvis.speaker.signal(speaker.id))}>
+                        Faire signe
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => {
+                          setRenaming(speaker.id);
+                          setDraftName(speaker.name);
+                        }}
+                      >
+                        Renommer
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => {
+                          installMode.current = 'wifi';
+                          setInstallStep('branch');
+                        }}
+                      >
+                        Changer le Wi-Fi
+                      </Button>
+                    </div>
+                    <span className="text-[11px] text-slate-500">
+                      {speaker.pending
+                        ? 'Installation en cours'
+                        : !speaker.fw && !speaker.lastHelloAt
+                          ? 'Hors ligne'
+                          : !speaker.fw
+                            ? 'Ancienne version'
+                            : speakerFreshness(speaker.fw, '5.0.75') === 'current'
+                              ? 'À jour'
+                              : 'Mise à jour disponible'}
+                    </span>
+                    <ConfirmButton label="Retirer" confirmLabel="Retirer pour de bon" variant="danger" onConfirm={() => run(() => window.jarvis.speaker.remove(speaker.id))} />
+                  </div>
                 </div>
               ))}
             </div>

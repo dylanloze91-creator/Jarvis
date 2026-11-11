@@ -12,8 +12,13 @@
 #define MIC_PIN_WS    5    // WS  (horloge gauche/droite)
 #define MIC_PIN_SD    6    // SD  (données du micro)
 // Le micro donne 24 bits dans un mot de 32 : on garde les bits hauts. 16 = volume brut,
-// 13 = ×8 (plus sensible). Si Jarvis t'entend mal de loin, baisse à 12 ; si ça sature, monte à 14.
+// 13 = ×8 (plus sensible). Si Jarvis t'entend mal de loin, baisse à 13 ; si ça sature, monte à 15.
+// 13 (×8) : c'est le réglage avec lequel le mot de réveil se détectait bien ; la dérive lente du micro
+// est retirée à part par mic_filter.h (ne pas remonter à 14 pour « moins de bruit » : le réveil y perd).
 #define MIC_SHIFT     13
+// Diagnostic : écrit au démarrage une demi-seconde de micro brut en hexadécimal sur le port série
+// (journal). 0 en usage normal.
+#define MIC_DUMP_AT_BOOT 0
 
 // ---------------------------------------------------------------------------------------------
 // Ampli MAX98357A (I2S, sortie). SD de l'ampli laissé en l'air ou au + : sortie mono (L+R)/2.
@@ -49,14 +54,22 @@
 #define MAX_PHRASE_SECONDS    15
 // Niveau sonore (RMS, sur 32768) en dessous duquel c'est du silence. 0.012 × 32768 ≈ 393.
 #define SPEECH_RMS            393
+// Plafond du seuil quand le bruit de la pièce (suivi en veille) est élevé (3 × le bruit, jamais plus) :
+// au-dessus, une voix normale à deux mètres ne serait plus comptée comme de la parole.
+#define SPEECH_RMS_MAX        2500
 // Audio gardé juste avant la détection (ms) : le début de la phrase collée à « Jarvis ».
 #define PRE_ROLL_MS           256
 // Petit bip au réveil (1 = oui). Il est très court et le micro reste ouvert pendant qu'il joue : le
 // début de la phrase n'est jamais perdu. 0 = la LED verte seule signale l'écoute.
 #define WAKE_BEEP             1
+// Après le réveil, le bip et son écho dans la pièce ne comptent ni comme parole ni comme silence pendant
+// ce temps (ms). 0 si WAKE_BEEP vaut 0.
+#define WAKE_BEEP_GUARD_MS    400
 // Si le PC ne répond pas dans ce délai (ms), on abandonne. Le PC, lui, s'arrête à 100 s
 // (SPEAKER_TURN_TIMEOUT_MS) et répond une erreur : garder ici une valeur plus grande que la sienne.
 #define HTTP_TIMEOUT_MS       120000
 
 #define SAMPLE_RATE           16000
 #define SERIAL_TAG            "jarvis"
+/** Version du programme, la même que Jarvis quand ce programme est livré avec. */
+#define JARVIS_FW_VERSION     "5.0.75"

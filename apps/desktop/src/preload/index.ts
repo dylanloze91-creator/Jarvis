@@ -209,6 +209,16 @@ const api: JarvisApi = {
     setEnabled: (enabled: boolean) => ipcRenderer.invoke(IpcChannel.speakerSetEnabled, enabled),
     add: (name: string) => ipcRenderer.invoke(IpcChannel.speakerAdd, name),
     remove: (speakerId: string) => ipcRenderer.invoke(IpcChannel.speakerRemove, speakerId),
+    beginInstall: (name: string, mac: string) => ipcRenderer.invoke(IpcChannel.speakerBeginInstall, { name, mac }),
+    commitInstall: (id: string, fw?: string) => ipcRenderer.invoke(IpcChannel.speakerCommitInstall, { id, fw }),
+    abandonInstall: (id: string) => ipcRenderer.invoke(IpcChannel.speakerAbandonInstall, id),
+    pickPort: (portId: string) => ipcRenderer.invoke(IpcChannel.speakerPickPort, portId),
+    firmware: () => ipcRenderer.invoke(IpcChannel.speakerFirmware),
+    onPorts: (listener: (ports: Array<{ portId: string; label: string }>) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, ports: Array<{ portId: string; label: string }>): void => listener(ports);
+      ipcRenderer.on(IpcChannel.speakerPorts, handler);
+      return () => ipcRenderer.removeListener(IpcChannel.speakerPorts, handler);
+    },
     onEvent: (listener) => {
       const handler = (_event: Electron.IpcRendererEvent, payload: SpeakerStatus): void => listener(payload);
       ipcRenderer.on(IpcChannel.speakerEvent, handler);
@@ -232,6 +242,11 @@ const api: JarvisApi = {
       ipcRenderer.on(IpcChannel.speakerHoldWhisper, handler);
       return () => ipcRenderer.removeListener(IpcChannel.speakerHoldWhisper, handler);
     },
+    netStatus: () => ipcRenderer.invoke(IpcChannel.speakerNetStatus),
+    repair: () => ipcRenderer.invoke(IpcChannel.speakerRepair),
+    makePrivate: (index: number) => ipcRenderer.invoke(IpcChannel.speakerMakePrivate, index),
+    signal: (id: string) => ipcRenderer.invoke(IpcChannel.speakerSignal, id),
+    rename: (id: string, name: string) => ipcRenderer.invoke(IpcChannel.speakerRename, { id, name }),
   },
   developer: createDeveloperApi(ipcRenderer),
   health: {

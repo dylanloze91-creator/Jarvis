@@ -11,6 +11,11 @@ de chez toi. Le PC doit rester allumé avec Jarvis ouvert.
 Il faut compter une après-midi la première fois, sans rien souder : tout se branche avec des petits
 fils. Aucune connaissance en programmation n'est nécessaire, il suffit de suivre les étapes dans l'ordre.
 
+Le programme livré avec Jarvis n'a **aucun** Wi-Fi ni aucune clé dedans : tu le poses sur la carte
+depuis Jarvis (« Ajouter une enceinte »). Le chemin PlatformIO avec `secrets.h`, plus bas, est réservé
+aux développeurs. Les deux partent du même code : s'il existe un `include/secrets.h` **et** que la
+mémoire de la carte est vide, ce fichier sert encore.
+
 > Pas encore le matériel ? Tu peux déjà vérifier que le PC est prêt avec la « fausse enceinte »
 > (voir tout en bas, « Essayer sans matériel »).
 
@@ -93,6 +98,25 @@ Les numéros de broches sont dans `include/config.h` (section « Micro » et « 
 changer un branchement, change le numéro en face, c'est tout.
 
 ---
+
+## Brancher au PC et cliquer dans Jarvis
+
+C'est le chemin normal. Tu n'installes rien.
+
+1. Branche la carte au PC (prise **UART** ou **COM**, câble de données).
+2. Jarvis → **Parler à Jarvis** → **Enceintes** → **Ajouter une enceinte**.
+3. Choisis la pièce et le Wi-Fi (celui en 2,4 GHz), puis **Installer**.
+4. L'enceinte dit « Bonjour, je suis l'enceinte du Salon ». Débranche-la et pose-la dans la pièce.
+
+Si une étape bloque, Jarvis montre **une phrase et un bouton**. « Mon enceinte ne répond pas » dit si le pare-feu ou le mode Public du réseau est en cause.
+
+Le geste si la carte n'entre pas toute seule en installation : maintiens **BOOT**, appuie sur **RESET**, relâche **BOOT**, puis **Réessayer**.
+
+---
+
+## Pour les développeurs
+
+Les sections qui suivent (PlatformIO, `secrets.h`) servent à compiler soi-même. Le programme livré avec Jarvis n'a pas de `secrets.h` : les réglages sont envoyés par le câble et gardés dans la carte.
 
 ## 3. Installer l'outil qui envoie le programme sur la carte (Windows)
 
@@ -208,13 +232,15 @@ répond : « Pour ça, il me faut ton accord : demande-le-moi sur le PC ou le t�
 
 | LED | Ça veut dire |
 | --- | --- |
+| **violet** qui respire | elle attend l'installation par le câble |
 | **orange** fixe | démarrage en cours (quelques secondes) |
 | **éteinte** | veille : elle attend « Jarvis » |
 | **verte** | elle écoute ta phrase |
 | **bleue qui clignote** | la phrase est partie au PC, elle attend la réponse |
 | **bleue** fixe | elle parle |
-| **rouge** (+ deux notes qui descendent) | problème : regarde le journal (point suivant) |
-| **rouge** fixe dès le démarrage | le modèle ou la mémoire manque : voir plus bas |
+| **violet** fixe | la clé a été refusée : réinstalle-la dans Jarvis |
+| **blanc** | elle se fait reconnaître, ou le bouton BOOT est tenu |
+| **rouge** | Wi-Fi ou PC perdu depuis plusieurs minutes, ou une erreur au démarrage |
 
 Si la LED ne s'allume **jamais**, même pas en orange au démarrage, elle est sur l'autre broche : dans
 `include/config.h`, mets `#define LED_PIN 38` (au lieu de 48, la valeur des copies), renvoie le
@@ -225,7 +251,7 @@ programme. Tout le reste marche quand même sans LED.
 | Message | Quoi faire |
 | --- | --- |
 | `connexion au Wi-Fi…` puis `Wi-Fi perdu, nouvel essai` en boucle | Nom ou mot de passe Wi-Fi faux dans `secrets.h`, ou Wi-Fi en 5 GHz seulement. Corrige, renvoie le programme. |
-| `PC pas encore joignable` ou `PC injoignable` | Jarvis n'est pas ouvert, ou l'interrupteur « Enceintes » est coupé, ou **le pare-feu Windows bloque**. Dans Windows : *Paramètres → Réseau et Internet → Pare-feu → Autoriser une application*, coche « Jarvis » dans la colonne **Privé**. Vérifie aussi que le réseau Wi-Fi du PC est en mode « Privé » (Paramètres → Réseau → propriétés du Wi-Fi). Et que `JARVIS_HOST` est bien l'adresse affichée dans Réglages → Enceintes (elle peut changer si la box a redémarré : fixe-la dans la box, ou utilise le nom en `.local` affiché à côté). |
+| `PC pas encore joignable` ou `PC injoignable` | Dans Jarvis, Enceintes, bouton **Mon enceinte ne répond pas**. Il dit si le pont est arrêté, si le pare-feu bloque, ou si le réseau est en Public. |
 | `le PC refuse le jeton` (401) | La clé n'est pas la bonne. Dans Réglages → Enceintes, **Retire** l'enceinte, **Ajoute**-la à nouveau, recopie le bloc dans `secrets.h` (garde ton Wi-Fi), renvoie le programme. |
 | `réponse 403` | Le PC refuse une adresse hors de la maison. Carte et PC doivent être sur le même Wi-Fi (pas le Wi-Fi « invités »). |
 | `le PC n'a pas pu écouter (503)` et Jarvis le dit | Sur le PC, la reconnaissance vocale (Whisper) n'est pas prête : ouvre Réglages → Voix et vérifie que la voix est installée ; attends quelques secondes après le démarrage de Jarvis. |

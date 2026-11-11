@@ -71,6 +71,18 @@ describe('configureTransformersEnv', () => {
       useFS: false,
     });
   });
+
+  it('règle les threads du runtime ONNX embarqué par transformers.js (le worker), sinon ne le touche pas', () => {
+    const env = { backends: { onnx: { wasm: { numThreads: 1, proxy: true } } } };
+    configureTransformersEnv(env as never, { numThreads: 4 });
+    expect(env.backends.onnx.wasm).toEqual({ numThreads: 4, proxy: false });
+
+    const untouched = { backends: { onnx: { wasm: { numThreads: 1, proxy: true } } } };
+    configureTransformersEnv(untouched as never);
+    expect(untouched.backends.onnx.wasm).toEqual({ numThreads: 1, proxy: true });
+
+    expect(() => configureTransformersEnv({} as never, { numThreads: 4 })).not.toThrow();
+  });
 });
 
 describe('chargement de Whisper', () => {

@@ -21,12 +21,15 @@ import {
   streamingWavHeader,
   wavPcmBytes,
   classifySpokenTurn,
+  collapseRepeatedSentences,
   speakerReplyForEars,
   speakerReflexPhrase,
   followUpWindowMs,
   isSpotifyDeviceQuestion,
   looksLikeImageIntent,
   isPrivateAddress,
+  speakerGreeting,
+  readHelloHeaders,
   isWavContentType,
   readCaptureMs,
   type SpeakerChrono,
@@ -63,7 +66,7 @@ export interface SpeakerChat {
 }
 
 export interface SpeakerServerDeps {
-  store: Pick<SpeakerStore, 'verify'>;
+  store: Pick<SpeakerStore, 'verify' | 'noteHello' | 'takeHelloActions'>;
   /** Une session de chat par enceinte, créée à sa première phrase. */
   chatFor: (speaker: Speaker) => SpeakerChat;
   /** Transcription Whisper (dans la fenêtre) d'un PCM 16 kHz. */
@@ -331,11 +334,31 @@ export class SpeakerServer {
 
     if (path === '/api/speaker/hello') {
       if (method !== 'GET') throw new HttpError(405, 'Méthode refusée.');
-      return sendJson(res, 200, {
-        name: speaker.name,
+      const flat: Record<string, string | undefined> = {};
+      for (const [key, value] of Object.entries(req.headers)) flat[key] = Array.isArray(value) ? value[0] : value;
+      const signs = readHelloHeaders(flat);
+      if (signs.fw || signs.mac || typeof signs.rssi === 'number') {
+        await this.deps.store.noteHello(speaker.id, signs, this.now());
+      }
+      const actions = await this.deps.store.takeHelloActions(speaker.id);
+      const body: { name: string; version: string; followUpMs: number; identify?: true; rename?: string } = {
+        name: actions.rename ?? speaker.name,
         version: this.deps.version(),
         followUpMs: followUpWindowMs(this.deps.voiceSettings()),
+      };
+      if (actions.identify) body.identify = true;
+      if (actions.rename) body.rename = actions.rename;
+      return sendJson(res, 200, body);
+    }
+    if (path === '/api/speaker/greeting') {
+      if (method !== 'GET') throw new HttpError(405, 'Méthode refusée.');
+      const wav = await this.deps.synthesizer.synthesize(speakerGreeting(speaker.name));
+      res.writeHead(200, {
+        'Content-Type': 'audio/wav',
+        'Content-Length': String(wav.byteLength),
       });
+      res.end(Buffer.from(wav.buffer, wav.byteOffset, wav.byteLength));
+      return;
     }
     if (path === '/api/speaker/turn') {
       if (method !== 'POST') throw new HttpError(405, 'Méthode refusée.');
@@ -403,7 +426,7 @@ export class SpeakerServer {
     const transcribeStarted = this.now();
     let transcript: string;
     try {
-      transcript = (await this.deps.transcribe(check.pcm)).trim();
+      transcript = collapseRepeatedSentences((await this.deps.transcribe(check.pcm)).trim());
     } catch (error) {
       mark.transcriptionMs = Math.max(0, this.now() - transcribeStarted);
       note();

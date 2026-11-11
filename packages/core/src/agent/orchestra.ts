@@ -167,12 +167,53 @@ export function solveArithmetic(text: string): ArithmeticAnswer | null {
 /* 1 bis. Heure et date, lues sur l'horloge du PC                      */
 /* ------------------------------------------------------------------ */
 
-const TIME_QUESTION = /^(?:jarvis[,\s]+)?(?:(?:dis[- ]moi\s+)?quelle heure (?:est[- ]il|il est)|il est quelle heure|tu as l['’]heure|l['’]heure(?: s['’]il te pla[iî]t)?)\s*[?!.]*$/iu;
-const DATE_QUESTION = /^(?:jarvis[,\s]+)?(?:(?:dis[- ]moi\s+)?(?:quel jour (?:on est|sommes[- ]nous|est[- ]on|est[- ]ce)(?: aujourd['’]hui)?|on est quel jour(?: aujourd['’]hui)?|quelle est la date(?: d['’]aujourd['’]hui)?|c['’]est quoi la date(?: d['’]aujourd['’]hui)?))\s*[?!.]*$/iu;
+// Whisper écrit souvent « quel heure », « qu'elle heure », « est-t-il », « est il », « quel jour on est »… :
+// les règles tolèrent ces fautes (observé le 2026-11-11 : « Quel heure est-il? » dit à l'enceinte était parti
+// au modèle, qui avait inventé l'heure). Le reste de la phrase doit rester vide : « à Tokyo » va au modèle.
+const JARVIS_PREFIX = "^(?:jarvis[,\\s]+)?(?:dis[- ]moi\\s+)?";
+const END = "\\s*[?!.]*$";
+const Q_HEURE = "(?:quelle?|qu['’]elle|quels?) heure";
+const EST_IL = "(?:est[- ]?t?[- ]?il|il est|est[- ]ce qu['’]il est)";
+const TIME_QUESTION = new RegExp(
+  `${JARVIS_PREFIX}(?:${Q_HEURE} ${EST_IL}|il est ${Q_HEURE}|(?:tu as|t['’]as|as[- ]tu|vous avez|avez[- ]vous) l['’]heure|l['’]heure(?: s['’]il te pla[iî]t)?)${END}`,
+  'iu',
+);
+const Q_JOUR = "(?:quel|quelle|quels|qu['’]elle) jour";
+const AUJ = "(?: aujourd['’]hui)?";
+const AUJ_DATE = "(?: d['’]aujourd['’]hui| aujourd['’]hui)?";
+const DATE_QUESTION = new RegExp(
+  `${JARVIS_PREFIX}(?:${Q_JOUR} (?:on est|sommes[- ]nous|est[- ]on|est[- ]ce|c['’]est)${AUJ}|(?:on est|nous sommes|c['’]est) ${Q_JOUR}${AUJ}|on est le combien${AUJ}|(?:quel(?:le)?|qu['’]elle) (?:est la )?date${AUJ_DATE}|c['’]est quoi la date${AUJ_DATE})${END}`,
+  'iu',
+);
+
+// À l'enceinte, Whisper ajoute souvent une amorce (« Je t'ai demandé quelle heure est-il ? ») ou la question
+// est dite deux fois (« Quel jour on est ? Quel jour on est ? ») : on retire l'amorce et la répétition avant
+// les règles. Tout autre reste de phrase (« à Tokyo », « le match ») laisse la main au modèle.
+const CLOCK_LEAD =
+  /^(?:jarvis[,\s]+)?(?:(?:je t['’]ai demandé|je te demande|je voulais savoir|je veux savoir|tu peux me dire|peux[- ]tu me dire|dis[- ]moi|s['’]il te pla[iî]t)[,\s]+)+/iu;
+const CLOCK_TAIL = /(?:[,\s]+(?:s['’]il te pla[iî]t|merci|jarvis))+\s*[?!.]*$/iu;
+
+export function normalizeClockQuestion(text: string): string {
+  const parts = text
+    .split(/[?!.]+/u)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  const unique = new Set(parts.map((part) => part.toLowerCase()));
+  const single = parts.length > 1 && unique.size === 1 ? (parts[0] ?? '') : text.trim();
+  return single.replace(CLOCK_LEAD, '').replace(CLOCK_TAIL, '').trim();
+}
+
+/** Date et heure du PC pour les consignes des équipes du chef d'orchestre : le modèle ne les invente plus. */
+export function clockLinePrompt(now: Date, timeZone?: string): string {
+  const zone = timeZone ? { timeZone } : {};
+  const date = new Intl.DateTimeFormat('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', ...zone }).format(now);
+  const time = new Intl.DateTimeFormat('fr-FR', { hour: '2-digit', minute: '2-digit', ...zone }).format(now).replace(':', ' h ');
+  return `Date et heure du PC : ${firstOfMonth(date)}, ${time}. Pour l’heure ou la date, c’est cette ligne, jamais une estimation.`;
+}
 
 /** « Quelle heure est-il ? », « On est quel jour ? » : réponse exacte depuis l'horloge, sans modèle. */
 export function clockReply(text: string, now: Date, timeZone?: string): string | null {
-  const question = text.trim();
+  const question = normalizeClockQuestion(text);
   if (TIME_QUESTION.test(question)) {
     const time = new Intl.DateTimeFormat('fr-FR', { hour: '2-digit', minute: '2-digit', ...(timeZone ? { timeZone } : {}) })
       .format(now)
@@ -320,10 +361,12 @@ export function orchestraBasePrompt(settingsSystemPrompt: string): string {
   return custom && custom !== DEFAULT_SYSTEM_PROMPT.trim() ? custom : ORCHESTRA_BASE_PROMPT;
 }
 
-export function teamPrompt(team: OrchestraTeam, character?: string | null): string {
+export function teamPrompt(team: OrchestraTeam, character?: string | null, clock?: string | null): string {
   const base = `ÉQUIPE ${TEAM_SPECS[team].label.toUpperCase()} : ${TEAM_SPECS[team].prompt}`;
   // Caractère de Jarvis : ajouté ici seulement (jamais au chat sans orchestre ni au cerveau).
-  return character ? `${base}\n\n${character}` : base;
+  // Horloge (`clockLinePrompt`) : même règle, pour qu'une question d'heure que les règles n'ont pas
+  // reconnue (transcription abîmée) ne reçoive pas une heure inventée.
+  return [base, character, clock].filter(Boolean).join('\n\n');
 }
 
 /** Équipes utilisables : sans outil, ou avec au moins un outil enregistré. */
