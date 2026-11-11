@@ -54,3 +54,9 @@ const char *prov_wifi_code(int reason);
 
 /** `Salon` → `enceinte-salon` (minuscules, sans accent). */
 void prov_hostname(const char *room, char *out, size_t size);
+
+/**
+ * Écrit `in` comme chaîne JSON (guillemets compris). `"` et `\` sont échappés.
+ * Un caractère de contrôle, ou un tampon trop court, renvoie -1 : le nom est écarté.
+ */
+int prov_json_string(char *out, size_t size, const char *in);

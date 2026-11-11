@@ -201,6 +201,7 @@ export function textLink(initial: UsbPort): TextLink {
           resolve('');
         }, timeoutMs);
         waiting.push(finish);
+        flush();
       });
     },
     release,

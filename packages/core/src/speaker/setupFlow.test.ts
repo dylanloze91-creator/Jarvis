@@ -95,6 +95,32 @@ describe('déroulé d’installation', () => {
     expect(forgotten).toBe(1);
   });
 
+  it('montre la liste Wi-Fi après la reconnaissance, avant les réglages', async () => {
+    const order: string[] = [];
+    const result = await runSpeakerSetup(
+      io({
+        hello: async () => ({ fw: '5.0.75', mac: 'aa:bb:cc:dd:ee:ff', configured: true }),
+        scan: async () => {
+          order.push('scan');
+          return [{ ssid: 'Maison', rssi: -30, secure: true }];
+        },
+        sendConfig: async () => {
+          order.push('config');
+          return { ok: true };
+        },
+      }),
+      { manifestVersion: '5.0.75' },
+      {
+        onView: () => undefined,
+        onNetworks: async (networks) => {
+          order.push(`liste:${networks.map((item) => item.ssid).join(',')}`);
+        },
+      },
+    );
+    expect(result.ok).toBe(true);
+    expect(order).toEqual(['scan', 'liste:Maison', 'config']);
+  });
+
   it('donne le diagnostic si le PC est introuvable', async () => {
     const result = await runSpeakerSetup(
       io({

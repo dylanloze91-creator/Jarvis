@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Copy, Loader2, Plus, RefreshCw, Speaker } from 'lucide-react';
 import type { Settings, SpeakerChronoView } from '@jarvis/core';
 import { rssiToBars, speakerFreshness } from '@jarvis/core';
@@ -22,6 +22,8 @@ export function SpeakerSettingsSection() {
   const [name, setName] = useState('');
   const [added, setAdded] = useState<SpeakerAdded | null>(null);
   const [installStep, setInstallStep] = useState<'closed' | 'branch' | 'wifi' | 'go' | 'error'>('closed');
+  const [networks, setNetworks] = useState<Array<{ ssid: string; rssi: number; secure: boolean }>>([]);
+  const wifiChoice = useRef<((input: { name: string; ssid: string; pass: string }) => void) | null>(null);
   const [checks, setChecks] = useState<Array<{ label: string; state: 'wait' | 'ok' | 'no' }>>([]);
   const [failure, setFailure] = useState({ sentence: 'Branche la carte, puis réessaie.', button: 'Réessayer' });
   const [diagnose, setDiagnose] = useState(false);
@@ -280,11 +282,8 @@ export function SpeakerSettingsSection() {
               sentence={failure.sentence}
               button={failure.button}
               checks={checks}
-              onNext={() => setInstallStep('wifi')}
-              onRetry={() => setInstallStep('branch')}
-              onInstall={(input) => {
-                setName(input.name);
-                setInstallStep('go');
+              networks={networks}
+              onNext={() => {
                 const serial = navigator.serial;
                 if (!serial) {
                   setFailure({ sentence: 'Ce Jarvis ne peut pas ouvrir le câble USB.', button: 'Réessayer' });
@@ -292,6 +291,8 @@ export function SpeakerSettingsSection() {
                   return;
                 }
                 const portPromise = serial.requestPort();
+                setInstallStep('go');
+                const chosen = { name: '', ssid: '', pass: '' };
                 void (async () => {
                   try {
                     const [port, bundle] = await Promise.all([portPromise, window.jarvis.speaker.firmware()]);
@@ -328,9 +329,20 @@ export function SpeakerSettingsSection() {
                       },
                       flasher: esptoolFlasher(() => active, bundle.files),
                       manifestVersion: bundle.version,
-                      wifi: { name: input.name, ssid: input.ssid, pass: input.pass },
+                      wifi: chosen,
+                      chooseWifi: (found) =>
+                        new Promise((resolve) => {
+                          setNetworks(found);
+                          setInstallStep('wifi');
+                          wifiChoice.current = (input) => {
+                            chosen.name = input.name;
+                            chosen.ssid = input.ssid;
+                            chosen.pass = input.pass;
+                            resolve(input);
+                          };
+                        }),
                       pair: async (mac) => {
-                        const paired = await window.jarvis.speaker.beginInstall(input.name, mac);
+                        const paired = await window.jarvis.speaker.beginInstall(chosen.name, mac);
                         return {
                           speakerId: paired.speakerId,
                           token: paired.token,
@@ -355,9 +367,18 @@ export function SpeakerSettingsSection() {
                     setFailure({ sentence: 'Je n’arrive pas à ouvrir la carte.', button: 'Réessayer' });
                     setInstallStep('error');
                   } finally {
-                    input.pass = '';
+                    chosen.pass = '';
+                    wifiChoice.current = null;
                   }
                 })();
+              }}
+              onRetry={() => setInstallStep('branch')}
+              onInstall={(input) => {
+                setName(input.name);
+                setInstallStep('go');
+                const choose = wifiChoice.current;
+                wifiChoice.current = null;
+                choose?.(input);
               }}
             />
           ) : null}

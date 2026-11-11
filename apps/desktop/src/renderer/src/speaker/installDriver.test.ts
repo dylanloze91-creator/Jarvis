@@ -1,6 +1,7 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { ChipFlasher } from './installDriver.js';
-import { installSpeaker } from './installDriver.js';
+import { SCAN_TIMEOUT_MS, TEST_STEP_TIMEOUT_MS, installSpeaker } from './installDriver.js';
 import { FakeSpeakerLink } from './fakeSerial.testkit.js';
 
 const TOKEN = 'ab'.repeat(32);
@@ -148,5 +149,33 @@ describe('Installer programme la carte (faux port, esptool simulé)', () => {
     expect(lostResult.ok).toBe(false);
     if (!lostResult.ok) expect(lostResult.failure.button).toBe('Voir le diagnostic');
     expect(lost.forgotten).toBe(1);
+  });
+
+  it('attend les délais de la carte et choisit le Wi-Fi dans la liste du scan', async () => {
+    const link = new FakeSpeakerLink({
+      beforeFlash: { fw: '5.0.75', mac: 'aa:bb:cc:dd:ee:ff', configured: true },
+      networks: [
+        { ssid: 'Maison', rssi: -30, secure: true },
+        { ssid: 'Invite', rssi: -70, secure: false },
+      ],
+    });
+    const seen: string[] = [];
+    const { run } = request(link, flasher(link), {
+      chooseWifi: async (networks) => {
+        seen.push(...networks.map((item) => item.ssid));
+        return { name: 'Cuisine', ssid: 'Invite', pass: PASS };
+      },
+    });
+    const result = await run;
+    expect(result.ok).toBe(true);
+    expect(seen).toEqual(['Maison', 'Invite']);
+    const config = link.sent.find((line) => line.startsWith('config ')) ?? '';
+    expect(config).toContain('Invite');
+    expect(config).not.toContain('synthetique-test');
+    expect(TEST_STEP_TIMEOUT_MS).toEqual([25_000, 12_000, 8_000, 20_000]);
+    expect(SCAN_TIMEOUT_MS).toBe(5_000);
+    const source = readFileSync(new URL('./installDriver.ts', import.meta.url), 'utf8');
+    expect(source).toContain('pull(TEST_STEP_TIMEOUT_MS[index] ?? 20_000)');
+    expect(source).toContain("command('scan', SCAN_TIMEOUT_MS)");
   });
 });

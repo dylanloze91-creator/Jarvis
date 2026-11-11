@@ -95,12 +95,9 @@ static void handle_line(char *line) {
                 if (strcmp((char *)found[j].ssid, (char *)found[i].ssid) == 0) dup = true;
             }
             if (dup) continue;
-            char name[33];
-            snprintf(name, sizeof(name), "%s", (char *)found[i].ssid);
-            for (char *p = name; *p; p++) {
-                if (*p == '"' || *p == '\\') *p = ' ';
-            }
-            n = snprintf(json + used, sizeof(json) - used, "%s{\"ssid\":\"%s\",\"rssi\":%d,\"secure\":%s}",
+            char name[80];
+            if (prov_json_string(name, sizeof(name), (const char *)found[i].ssid) < 0) continue;
+            n = snprintf(json + used, sizeof(json) - used, "%s{\"ssid\":%s,\"rssi\":%d,\"secure\":%s}",
                          written ? "," : "", name, found[i].rssi, found[i].authmode == WIFI_AUTH_OPEN ? "false" : "true");
             if (n < 0 || (size_t)n >= sizeof(json) - used) break;
             used += (size_t)n;

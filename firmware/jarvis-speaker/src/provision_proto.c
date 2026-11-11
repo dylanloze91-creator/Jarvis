@@ -377,3 +377,24 @@ void prov_hostname(const char *room, char *out, size_t size) {
     }
     out[n] = 0;
 }
+
+int prov_json_string(char *out, size_t size, const char *in) {
+    if (!out || !in || size < 3) return -1;
+    size_t n = 0;
+    out[n++] = '"';
+    for (const unsigned char *p = (const unsigned char *)in; *p; p++) {
+        if (*p < 0x20) return -1;
+        if (*p == '"' || *p == '\\') {
+            if (n + 3 >= size) return -1;
+            out[n++] = '\\';
+            out[n++] = (char)*p;
+            continue;
+        }
+        if (n + 2 >= size) return -1;
+        out[n++] = (char)*p;
+    }
+    if (n + 1 >= size) return -1;
+    out[n++] = '"';
+    out[n] = 0;
+    return (int)n;
+}

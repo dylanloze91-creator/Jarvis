@@ -56,6 +56,8 @@ export interface SetupInput {
 
 export interface SetupHooks {
   onView: (view: SetupView) => void;
+  /** Après la reconnaissance (et le programme), avant les réglages. La liste vient du scan. */
+  onNetworks?: (networks: WifiSeen[]) => Promise<void>;
 }
 
 export type SetupResult =
@@ -151,7 +153,8 @@ export async function runSpeakerSetup(io: SetupIo, input: SetupInput, hooks?: Se
     fw = hello.fw;
   }
 
-  await io.scan();
+  const networks = await io.scan();
+  await hooks?.onNetworks?.(networks);
   const sent = await io.sendConfig();
   if (!sent.ok) {
     return fail(failureCopy(sent.error), true);

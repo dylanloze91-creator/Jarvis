@@ -12,7 +12,12 @@ import {
   type HelloCard,
   type SetupResult,
   type SetupView,
+  type WifiSeen,
 } from '@jarvis/core';
+
+/** Délais du test, alignés sur la carte, avec une marge. */
+export const TEST_STEP_TIMEOUT_MS = [25_000, 12_000, 8_000, 20_000] as const;
+export const SCAN_TIMEOUT_MS = 5_000;
 
 export interface SerialLink {
   write(text: string): Promise<void>;
@@ -42,6 +47,8 @@ export interface InstallRequest {
   flasher: ChipFlasher;
   manifestVersion: string;
   wifi: { name: string; ssid: string; pass: string };
+  /** Appelé après le scan, avant l'envoi des réglages. L'écran montre cette liste. */
+  chooseWifi?: (networks: WifiSeen[]) => Promise<{ name: string; ssid: string; pass: string }>;
   pair: (mac: string) => Promise<InstallPairing>;
   commit: (speakerId: string, fw: string) => Promise<void>;
   abandon: (speakerId: string) => Promise<void>;
@@ -59,6 +66,7 @@ export interface InstallRequest {
 export async function installSpeaker(request: InstallRequest): Promise<SetupResult> {
   const buffer = { text: '', seen: 0 };
   const paired: { current: InstallPairing | null } = { current: null };
+  let wifi = request.wifi;
   let mac = '';
   let fw = request.manifestVersion;
 
@@ -116,16 +124,16 @@ export async function installSpeaker(request: InstallRequest): Promise<SetupResu
         await request.findPort?.();
       },
       scan: async () => {
-        const json = await command('scan', 2000);
+        const json = await command('scan', SCAN_TIMEOUT_MS);
         return json ? readWifiScan(json) : [];
       },
       sendConfig: async () => {
         const paired = await ensurePair();
         if (!paired) return { ok: false, error: 'config' };
         const config = {
-          ssid: request.wifi.ssid,
-          pass: request.wifi.pass,
-          name: request.wifi.name,
+          ssid: wifi.ssid,
+          pass: wifi.pass,
+          name: wifi.name,
           token: paired.token,
           pcId: paired.pcId,
           port: paired.port,
@@ -142,7 +150,7 @@ export async function installSpeaker(request: InstallRequest): Promise<SetupResu
         await request.link.write('test\n');
         const steps: Array<{ step: 'wifi' | 'pc' | 'bridge' | 'voice'; ok: boolean; error?: string }> = [];
         for (let index = 0; index < 4; index += 1) {
-          const json = await pull(2000);
+          const json = await pull(TEST_STEP_TIMEOUT_MS[index] ?? 20_000);
           if (!json || typeof json.step !== 'string') break;
           const step = json.step;
           if (step !== 'wifi' && step !== 'pc' && step !== 'bridge' && step !== 'voice') break;
@@ -166,7 +174,12 @@ export async function installSpeaker(request: InstallRequest): Promise<SetupResu
       ...(request.helloTimeoutMs !== undefined ? { helloTimeoutMs: request.helloTimeoutMs } : {}),
       ...(request.helloAfterFlashMs !== undefined ? { helloAfterFlashMs: request.helloAfterFlashMs } : {}),
     },
-    { onView: (view) => request.onView?.(view) },
+    {
+      onView: (view) => request.onView?.(view),
+      onNetworks: async (networks) => {
+        if (request.chooseWifi) wifi = await request.chooseWifi(networks);
+      },
+    },
   );
 
   if (result.ok && paired.current) await request.commit(paired.current.speakerId, result.fw || fw);

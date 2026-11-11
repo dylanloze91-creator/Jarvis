@@ -91,6 +91,13 @@ static void test_wifi_and_name(void) {
     char reply[64];
     expect(prov_reply(reply, sizeof(reply), "{\"ok\":true}") > 0, "reponse");
     expect(strcmp(reply, "JARVIS> {\"ok\":true}\n") == 0, "ligne JARVIS");
+    char quoted[64];
+    expect(prov_json_string(quoted, sizeof(quoted), "a\"b\\c") > 0, "echappe");
+    expect(strcmp(quoted, "\"a\\\"b\\\\c\"") == 0, "guillemets et barre");
+    expect(prov_json_string(quoted, sizeof(quoted), "Maison") > 0, "nom simple");
+    expect(strcmp(quoted, "\"Maison\"") == 0, "sans echappement");
+    expect(prov_json_string(quoted, 4, "abcd") < 0, "tampon trop court");
+    expect(prov_json_string(quoted, sizeof(quoted), "a\nb") < 0, "controle ecarte");
 }
 
 int main(void) {
