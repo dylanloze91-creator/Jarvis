@@ -21,6 +21,12 @@ apps/desktop/test-fixtures/*.wav
 apps/desktop/voice-assets/*
 !apps/desktop/voice-assets/README.md
 
+# Programme d'enceinte compilé (setup:speaker-firmware). Jamais de .bin dans git.
+apps/desktop/speaker-firmware/*
+!apps/desktop/speaker-firmware/LISEZMOI.md
+!apps/desktop/speaker-firmware/LICENCES.md
+!apps/desktop/speaker-firmware/.gitkeep
+
 # Entraînement de l'élève (5.0.65) : environnement Python, llama.cpp, runs et exports
 # (plusieurs Go, et les runs contiennent des copies des exemples) — rien de tout cela en dépôt.
 training/.venv/

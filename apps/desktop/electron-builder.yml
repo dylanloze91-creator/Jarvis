@@ -48,6 +48,10 @@ extraResources:
       - '**/*'
       - '!cache/**'
       - '!bin/linux-x64/**'
+  # Programme de l'enceinte. Le dossier peut ne contenir que les textes :
+  # la construction ne doit pas échouer pour autant. Les .bin, s'ils sont là, partent avec.
+  - from: speaker-firmware
+    to: speaker-firmware
   - from: scripts/jarvis-qlora-train.py
     to: learning/jarvis-qlora-train.py
 afterPack: scripts/after-pack.cjs
