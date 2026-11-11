@@ -73,6 +73,7 @@ Statuts possibles : `en cours`, `en pause`, `bloqué`, `terminé`.
 | Cursor | `cursor/enceinte-materiel` | Relier l'enceinte au Jarvis de ce PC | — | 2026-11-10 | terminé : branche entièrement dans `main` (5.0.75), aucun commit restant ; la ligne était restée « en cours » après la publication |
 | Cursor | `cursor/enceinte-raccordement` | Reprise après la revue du 11 novembre : micro, port USB, liste Wi-Fi, diagnostic, liste des enceintes. Pas de fusion, pas de publication, version inchangée. | — | 2026-11-11 | terminé : les 5 points bloquants sont branchés jusqu'à l'écran ; rapport `rapports/2026-11-11-enceinte-raccordement.md` ; pas essayé sur la carte |
 | Claude Code | `claude/enceinte-micro-diagnostic` (publication) | Publication 5.0.76 : horloge tolérante, Whisper multi-thread, boucles de transcription, firmware enceinte (micro, seuil, bip), raccordement des enceintes (Cursor) ; version, CLAUDE.md, rapport `rapports/2026-11-11-publication-5076.md`, fusion dans main et `release.sh` sur feu vert de l'utilisateur | — | 2026-11-11 | terminé : main = 1b786af, release v5.0.76 publiée (exe, blockmap, latest.yml) |
+| Claude Code | `claude/banc-equipe-dev` | Banc pour l'équipe de développeurs : vérification des licences et GGUF de Seed-Coder-8B-Instruct et Ornith-1.0-9B, `lab:compare` (catalogue d'évaluation, 3 passages) sur qwen2.5-coder:7b, jarvis-coder et les candidats retenus ; proposition de base pour jarvis-coder v2 et de modèle par rôle ; rapport chiffré ; pas de fusion, pas de publication, rien de remplacé | — | 2026-11-12 | en cours |
 | Claude Code | `claude/integration-5075` | Publication 5.0.75 : intégration de `claude/trieur-examen-reel`, `cursor/enceinte-reflexe` (avec écran PC, Spotify Devialet/PC, flux), `cursor/lot-a-fiabilite`, `cursor/enceinte-materiel` ; version, CLAUDE.md, rapport `rapports/2026-11-11-publication-5075.md`, fusion dans main, `release.sh` | — | 2026-11-11 | terminé : main = f2ff303, release v5.0.75 publiée (exe, blockmap, latest.yml) |
 
 ## Ressource GPU / Ollama
@@ -81,6 +82,6 @@ Une seule carte (RTX 2060 6 Go) : un seul agent à la fois lance le banc (`npm r
 
 | État | Par qui | Pour quoi | Depuis |
 | --- | --- | --- | --- |
-| libre | — | — | — |
+| occupée | Claude Code (`claude/banc-equipe-dev`) | banc `lab:compare` (catalogue d'évaluation, 3 passages) sur 2 à 4 modèles Ollama | 2026-11-12 |
 
 Pour réserver : passer l'état à `occupée`, remplir les colonnes, commiter et pousser **avant** de lancer. Pour libérer : remettre `libre` et `—`, commiter et pousser.
