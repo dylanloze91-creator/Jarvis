@@ -17,6 +17,8 @@ export interface SpeakerServiceDeps extends Omit<SpeakerServerDeps, 'store' | 'o
   hostName?: () => string;
   /** Pousse l'état à l'interface (phrase reçue pendant que les réglages sont ouverts). */
   broadcast?: (status: SpeakerStatus) => void;
+  /** Annonce mDNS. Absente si le pont est coupé : on n'appelle pas. */
+  openAnnounce?: () => Array<{ destroy(): void }>;
 }
 
 /** Adresses IPv4 non internes des interfaces réseau du PC. */
@@ -45,6 +47,7 @@ export class SpeakerService {
   readonly server: SpeakerServer;
   private error: string | null = null;
   private readonly lastTurn = new Map<string, number>();
+  private announced: Array<{ destroy(): void }> = [];
 
   constructor(private readonly deps: SpeakerServiceDeps) {
     this.server = new SpeakerServer({
@@ -83,6 +86,7 @@ export class SpeakerService {
     this.error = null;
     try {
       await this.server.start(this.port);
+      this.announced = this.deps.openAnnounce?.() ?? [];
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
       this.error =
@@ -98,6 +102,7 @@ export class SpeakerService {
     if (enabled) await this.startServer();
     else {
       this.error = null;
+      this.closeAnnounce();
       await this.server.stop();
     }
     await this.announce();
@@ -171,6 +176,12 @@ export class SpeakerService {
   }
 
   stop(): Promise<void> {
+    this.closeAnnounce();
     return this.server.stop();
+  }
+
+  private closeAnnounce(): void {
+    for (const socket of this.announced) socket.destroy();
+    this.announced = [];
   }
 }

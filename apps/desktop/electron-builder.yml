@@ -52,6 +52,10 @@ extraResources:
   # la construction ne doit pas échouer pour autant. Les .bin, s'ils sont là, partent avec.
   - from: speaker-firmware
     to: speaker-firmware
+  - from: resources/speaker-firewall.ps1
+    to: speaker-firewall.ps1
+  - from: resources/speaker-private.ps1
+    to: speaker-private.ps1
   - from: scripts/jarvis-qlora-train.py
     to: learning/jarvis-qlora-train.py
 afterPack: scripts/after-pack.cjs

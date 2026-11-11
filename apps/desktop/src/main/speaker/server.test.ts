@@ -823,6 +823,35 @@ describe('réglages des enceintes (5.0.64)', () => {
     expect(service.server.running).toBe(false);
   });
 
+  it('pont coupé : aucune annonce mDNS, pont ouvert : une annonce', async () => {
+    const sockets: Array<{ dead: boolean; destroy: () => void }> = [];
+    let opened = 0;
+    const store = new SpeakerStore(() => join(dir, 'mdns.json'));
+    const service = new SpeakerService({
+      store,
+      port: 0,
+      chatFor: () => new FakeChat(() => undefined),
+      transcribe: async () => '',
+      synthesizer: new FakeSynth(),
+      voiceSettings: () => ({ wakeWord: 'jarvis', wakeWordVariants: [] }),
+      version: () => '5.0.64',
+      localAddresses: () => [],
+      openAnnounce: () => {
+        opened += 1;
+        const socket = { dead: false, destroy() { socket.dead = true; } };
+        sockets.push(socket);
+        return [socket];
+      },
+    });
+    expect(opened).toBe(0);
+    await service.setEnabled(true);
+    expect(opened).toBe(1);
+    expect(sockets[0]?.dead).toBe(false);
+    await service.setEnabled(false);
+    expect(sockets[0]?.dead).toBe(true);
+    await service.stop();
+  });
+
   it('nom .local du PC', () => {
     expect(localHostName('PC-de-Dylan')).toBe('pc-de-dylan.local');
     expect(localHostName('Bureau.local')).toBe('bureau.local');
