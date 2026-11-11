@@ -407,6 +407,7 @@ export {
 } from './speech/wakeWordFromTranscript.js';
 export { WHISPER_WAKE_WORD_LANGUAGE, WHISPER_DICTATION_LANGUAGE } from './speech/whisperModels.js';
 export { refineFrenchDictation } from './speech/dictationPhoneticFix.js';
+export { collapseRepeatedSentences } from './speech/transcriptCleanup.js';
 export { highpassDictationPcm, preprocessDictationPcm } from './speech/dictationAudio.js';
 export {
   VOICE_ASSETS_PROTOCOL,

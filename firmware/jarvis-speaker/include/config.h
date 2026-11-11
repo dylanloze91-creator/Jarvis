@@ -54,7 +54,7 @@
 #define MAX_PHRASE_SECONDS    15
 // Niveau sonore (RMS, sur 32768) en dessous duquel c'est du silence. 0.012 × 32768 ≈ 393.
 #define SPEECH_RMS            393
-// Plafond du seuil quand le bruit de fond mesuré au démarrage est élevé (2 × le bruit, jamais plus) :
+// Plafond du seuil quand le bruit de la pièce (suivi en veille) est élevé (3 × le bruit, jamais plus) :
 // au-dessus, une voix normale à deux mètres ne serait plus comptée comme de la parole.
 #define SPEECH_RMS_MAX        2500
 // Audio gardé juste avant la détection (ms) : le début de la phrase collée à « Jarvis ».

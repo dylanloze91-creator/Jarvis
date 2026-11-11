@@ -24,8 +24,27 @@
 #include "secrets.h"
 #include "wake.h"
 
-/** Seuil de parole réellement utilisé : SPEECH_RMS, ou 2 fois le bruit de fond mesuré au démarrage s'il est plus haut (SPEECH_RMS_MAX au plus). */
+/** Seuil de parole réellement utilisé : SPEECH_RMS, ou 3 fois le bruit de fond suivi en veille s'il est plus haut (SPEECH_RMS_MAX au plus). */
 static int32_t speech_rms_threshold = SPEECH_RMS;
+/**
+ * Bruit de fond suivi en veille, sur les trames de l'AFE (le même signal que celui comparé au seuil) :
+ * descend tout de suite, remonte lentement. Mesuré une fois au démarrage, le seuil restait celui de la
+ * pièce du démarrage (à côté du PC : 1 574 ; dans la chambre la voix de loin passait dessous, phrases
+ * coupées, Whisper inventait).
+ */
+static int32_t noise_floor = -1;
+
+static void noise_floor_track(int32_t rms) {
+    if (noise_floor < 0 || rms < noise_floor) noise_floor = rms;
+    else noise_floor += noise_floor / 256 + 1;
+}
+
+static void speech_threshold_update(void) {
+    int32_t wanted = noise_floor > 0 ? noise_floor * 3 : SPEECH_RMS;
+    if (wanted < SPEECH_RMS) wanted = SPEECH_RMS;
+    if (wanted > SPEECH_RMS_MAX) wanted = SPEECH_RMS_MAX;
+    speech_rms_threshold = wanted;
+}
 
 
 #define MAX_PHRASE_SAMPLES ((size_t)SAMPLE_RATE * MAX_PHRASE_SECONDS)
@@ -76,7 +95,14 @@ static phrase_result_t record_and_send(uint32_t wait_ms, bool follow_up, turn_re
         if (!wake_fetch(&frame, 2000)) return PHRASE_MIC_LOST;
         size_t room = MAX_PHRASE_SAMPLES - length;
         size_t take = frame.samples < room ? frame.samples : room;
-        memcpy(phrase + length, frame.pcm, take * sizeof(int16_t));
+        bool guarded = !follow_up && total_ms < WAKE_BEEP_GUARD_MS;
+        if (guarded) {
+            // Le bip de réveil est bien plus fort que la voix dans l'enregistrement (crêtes à 32 767) :
+            // atténué ×8 dans la phrase envoyée, Whisper n'en fait plus une hallucination.
+            for (size_t i = 0; i < take; i++) phrase[length + i] = (int16_t)(frame.pcm[i] / 8);
+        } else {
+            memcpy(phrase + length, frame.pcm, take * sizeof(int16_t));
+        }
         length += take;
         total_ms += frame_ms;
 
@@ -84,7 +110,6 @@ static phrase_result_t record_and_send(uint32_t wait_ms, bool follow_up, turn_re
         // garde, il comptait comme « la parole a commencé » et un silence de 650 ms juste après « Jarvis »
         // envoyait 1 s de bip au PC (observé le 2026-11-11 : LED bleue puis rien). Pendant la garde, une
         // trame n'est ni parole ni silence.
-        bool guarded = !follow_up && total_ms <= WAKE_BEEP_GUARD_MS;
         bool loud = !guarded && pcm_rms(frame.pcm, frame.samples) >= speech_rms_threshold;
         if (guarded) {
             // on garde l'audio, on n'en tire rien
@@ -134,10 +159,13 @@ static void brain_task(void *arg) {
         bool woke = false;
         while (!woke) {
             if (!wake_fetch(&frame, 5000)) continue;
+            noise_floor_track(pcm_rms(frame.pcm, frame.samples));
             pre_roll_push(frame.pcm, frame.samples);
             woke = frame.wake_detected;
         }
-        ESP_LOGI(SERIAL_TAG, "« Jarvis » entendu");
+        speech_threshold_update();
+        ESP_LOGI(SERIAL_TAG, "« Jarvis » entendu (bruit de la pièce %ld, seuil de parole %ld)", (long)noise_floor,
+                 (long)speech_rms_threshold);
         wake_enable(false);
         if (!net_connected()) {
             ESP_LOGW(SERIAL_TAG, "pas de Wi-Fi : on ne peut pas joindre le PC");
@@ -220,9 +248,7 @@ static void probe_room_noise(void) {
         // Pièce ou alimentation bruyante : le seuil suit le bruit (sinon le silence n'arrive jamais et
         // chaque phrase dure MAX_PHRASE_SECONDS), borné pour que la voix reste au-dessus. Mesuré le
         // 2026-11-11 à côté du PC : 497 au repos, 2 164 ventilateurs à fond (sifflement 450 et 890 Hz).
-        speech_rms_threshold = noise * 2 > SPEECH_RMS_MAX ? SPEECH_RMS_MAX : noise * 2;
-        ESP_LOGW(SERIAL_TAG, "bruit au-dessus du réglage : seuil de parole relevé à %ld (2 × le bruit, %d au plus)",
-                 (long)speech_rms_threshold, SPEECH_RMS_MAX);
+        ESP_LOGW(SERIAL_TAG, "bruit au-dessus du réglage au démarrage : le seuil suivra le bruit de la pièce en veille");
     }
 }
 

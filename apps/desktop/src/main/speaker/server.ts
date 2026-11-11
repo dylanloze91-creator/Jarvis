@@ -21,6 +21,7 @@ import {
   streamingWavHeader,
   wavPcmBytes,
   classifySpokenTurn,
+  collapseRepeatedSentences,
   speakerReplyForEars,
   speakerReflexPhrase,
   followUpWindowMs,
@@ -403,7 +404,7 @@ export class SpeakerServer {
     const transcribeStarted = this.now();
     let transcript: string;
     try {
-      transcript = (await this.deps.transcribe(check.pcm)).trim();
+      transcript = collapseRepeatedSentences((await this.deps.transcribe(check.pcm)).trim());
     } catch (error) {
       mark.transcriptionMs = Math.max(0, this.now() - transcribeStarted);
       note();
