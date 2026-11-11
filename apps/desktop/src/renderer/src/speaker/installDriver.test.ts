@@ -197,4 +197,14 @@ describe('Installer programme la carte (faux port, esptool simulé)', () => {
     expect(logs.join('\n')).not.toContain(PASS);
     expect(link.sent.some((item) => item.startsWith('config '))).toBe(false);
   });
+
+  it('refuse une carte sans adresse MAC au lieu d’inventer 00:00:00:00:00:00', async () => {
+    const link = new FakeSpeakerLink({
+      beforeFlash: { fw: '5.0.75', mac: '', configured: true },
+    });
+    const { run, paired } = request(link, flasher(link));
+    const result = await run;
+    expect(result.ok).toBe(false);
+    expect(paired).toEqual([]);
+  });
 });

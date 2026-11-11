@@ -101,7 +101,8 @@ export async function installSpeaker(request: InstallRequest): Promise<SetupResu
 
   const ensurePair = async (): Promise<InstallPairing | null> => {
     if (paired.current) return paired.current;
-    paired.current = await request.pair(mac || '00:00:00:00:00:00');
+    if (!mac || mac === '00:00:00:00:00:00') return null;
+    paired.current = await request.pair(mac);
     return paired.current;
   };
 

@@ -21,6 +21,8 @@ export interface SpeakerServiceDeps extends Omit<SpeakerServerDeps, 'store' | 'o
   openAnnounce?: () => Array<{ destroy(): void }> | Promise<Array<{ destroy(): void }>>;
   /** Adresses de la maison (passerelle, pas Tailscale). */
   keptAddresses?: () => string[] | Promise<string[]>;
+  /** Contrôle des interfaces. 60 s si absent. */
+  announceEveryMs?: number;
 }
 
 /** Adresses IPv4 non internes des interfaces réseau du PC. */
@@ -50,6 +52,8 @@ export class SpeakerService {
   private error: string | null = null;
   private readonly lastTurn = new Map<string, number>();
   private announced: Array<{ destroy(): void }> = [];
+  private announcedKey: string | null = null;
+  private watch: ReturnType<typeof setInterval> | null = null;
 
   constructor(private readonly deps: SpeakerServiceDeps) {
     this.server = new SpeakerServer({
@@ -88,7 +92,8 @@ export class SpeakerService {
     this.error = null;
     try {
       await this.server.start(this.port);
-      this.announced = await Promise.resolve(this.deps.openAnnounce?.() ?? []);
+      await this.refreshAnnounce();
+      this.armWatch();
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
       this.error =
@@ -104,6 +109,7 @@ export class SpeakerService {
     if (enabled) await this.startServer();
     else {
       this.error = null;
+      this.stopWatch();
       this.closeAnnounce();
       await this.server.stop();
     }
@@ -189,8 +195,38 @@ export class SpeakerService {
   }
 
   stop(): Promise<void> {
+    this.stopWatch();
     this.closeAnnounce();
     return this.server.stop();
+  }
+
+  private armWatch(): void {
+    if (this.watch || !this.deps.keptAddresses || !this.deps.openAnnounce) return;
+    this.watch = setInterval(() => {
+      void this.refreshAnnounce();
+    }, this.deps.announceEveryMs ?? 60_000);
+    this.watch.unref?.();
+  }
+
+  private stopWatch(): void {
+    if (this.watch) clearInterval(this.watch);
+    this.watch = null;
+    this.announcedKey = null;
+  }
+
+  /** Rouvre l'annonce seulement si la liste des adresses de la maison a changé. */
+  private async refreshAnnounce(): Promise<void> {
+    if (!this.server.running || !this.deps.openAnnounce) return;
+    try {
+      const kept = this.deps.keptAddresses ? await this.deps.keptAddresses() : [];
+      const key = [...kept].sort().join(',');
+      if (key === this.announcedKey) return;
+      this.closeAnnounce();
+      this.announced = await Promise.resolve(this.deps.openAnnounce());
+      this.announcedKey = key;
+    } catch (error) {
+      this.deps.log?.(`[enceinte] annonce : ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   private closeAnnounce(): void {
