@@ -13,9 +13,11 @@
 #define MIC_PIN_SD    6    // SD  (données du micro)
 // Le micro donne 24 bits dans un mot de 32 : on garde les bits hauts. 16 = volume brut,
 // 13 = ×8 (plus sensible). Si Jarvis t'entend mal de loin, baisse à 13 ; si ça sature, monte à 15.
-// 13 (×8) : c'est le réglage avec lequel le mot de réveil se détectait bien ; la dérive lente du micro
-// est retirée à part par mic_filter.h (ne pas remonter à 14 pour « moins de bruit » : le réveil y perd).
-#define MIC_SHIFT     13
+// 14 (×4) depuis le 2026-11-11 au soir : à ×8, les phrases dites près de la carte saturaient (jusqu'à 3,4 %
+// d'échantillons écrêtés) et Whisper les ratait, quel que soit le modèle. Le mot de réveil s'appuie sur
+// l'AGC de l'AFE et sur le passe-haut 60 Hz de mic_filter.h ; c'est le passe-haut à 100 Hz, pas le gain,
+// qui l'avait gêné plus tôt dans la journée. Si Jarvis t'entend mal de loin, reviens à 13.
+#define MIC_SHIFT     14
 // Diagnostic : écrit au démarrage une demi-seconde de micro brut en hexadécimal sur le port série
 // (journal). 0 en usage normal.
 #define MIC_DUMP_AT_BOOT 0
