@@ -17,6 +17,10 @@ import {
 export interface SerialLink {
   write(text: string): Promise<void>;
   read(timeoutMs: number): Promise<string>;
+  /** Relâche lecteur et écrivain. Le lecteur n'est annulé qu'ici. */
+  release?(): Promise<void>;
+  /** Après une remise à zéro USB, la liaison repart sur le port retrouvé. */
+  attach?(port: { readable: ReadableStream<Uint8Array> | null; writable: WritableStream<Uint8Array> | null; open(options: { baudRate: number }): Promise<void> }): Promise<void>;
 }
 
 export interface ChipFlasher {
@@ -46,6 +50,10 @@ export interface InstallRequest {
   log?: (line: string) => void;
   helloTimeoutMs?: number;
   helloAfterFlashMs?: number;
+  /** Ferme le port avant qu'esptool l'ouvre. */
+  closePort?: () => Promise<void>;
+  /** UART : le même port. USB natif : un nouvel objet, même VID/PID. */
+  findPort?: () => Promise<void>;
 }
 
 export async function installSpeaker(request: InstallRequest): Promise<SetupResult> {
@@ -96,12 +104,17 @@ export async function installSpeaker(request: InstallRequest): Promise<SetupResu
         return card;
       },
       identifyChip: async () => {
+        await request.link.release?.();
+        await request.closePort?.();
         const found = await request.flasher.identify();
         if (!found.ok) return found;
         return { ok: true as const, chip: { name: found.name, flashBytes: found.flashBytes } };
       },
       flash: (onProgress) => request.flasher.flash(onProgress),
-      reboot: () => request.flasher.reboot(),
+      reboot: async () => {
+        await request.flasher.reboot();
+        await request.findPort?.();
+      },
       scan: async () => {
         const json = await command('scan', 2000);
         return json ? readWifiScan(json) : [];

@@ -7,7 +7,7 @@ import { ConfirmButton } from '@/components/ui/confirmButton';
 import { Disclosure } from '@/components/ui/disclosure';
 import { SpeakerInstallView } from '@/components/SpeakerInstall';
 import { installSpeaker } from '@/speaker/installDriver';
-import { esptoolFlasher, webSerialLink } from '@/speaker/esptoolFlash';
+import { esptoolFlasher, findSerialPort, textLink } from '@/speaker/esptoolFlash';
 import { Input, Toggle } from '@/components/ui/field';
 import type { SpeakerAdded, SpeakerStatus } from '../../../shared/ipc';
 
@@ -309,9 +309,24 @@ export function SpeakerSettingsSection() {
                       return;
                     }
                     await port.open({ baudRate: 115200 });
+                    let active = port;
+                    const link = textLink(port);
                     const result = await installSpeaker({
-                      link: webSerialLink(port),
-                      flasher: esptoolFlasher(port, bundle.files),
+                      link,
+                      closePort: async () => {
+                        try {
+                          await active.close();
+                        } catch {
+                          // déjà fermé
+                        }
+                      },
+                      findPort: async () => {
+                        const found = await findSerialPort(active);
+                        if (!found) return;
+                        active = found;
+                        await link.attach(found);
+                      },
+                      flasher: esptoolFlasher(() => active, bundle.files),
                       manifestVersion: bundle.version,
                       wifi: { name: input.name, ssid: input.ssid, pass: input.pass },
                       pair: async (mac) => {

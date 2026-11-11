@@ -1,21 +1,25 @@
 /**
- * Branchement d'esptool-js sur le port USB. Les tests n'utilisent pas ce fichier :
- * ils passent un faux programmeur à `installSpeaker`.
+ * Un seul propriétaire du port à la fois.
+ * La liaison texte a un lecteur permanent. Avant esptool, elle relâche ses verrous
+ * et le port est fermé : c'est `Transport.connect` qui l'ouvre. Après la remise à zéro,
+ * on retrouve le port (la prise USB native change d'objet).
  */
 import { ESPLoader, Transport, type FlashOptions } from 'esptool-js';
 import type { ChipFlasher, SerialLink } from './installDriver.js';
 
-interface UsbPort {
+export interface UsbPort {
   readable: ReadableStream<Uint8Array> | null;
   writable: WritableStream<Uint8Array> | null;
   open(options: { baudRate: number }): Promise<void>;
   close(): Promise<void>;
+  getInfo?(): { usbVendorId?: number; usbProductId?: number };
 }
 
 declare global {
   interface Navigator {
     serial?: {
       requestPort(): Promise<UsbPort>;
+      getPorts?(): Promise<UsbPort[]>;
     };
   }
 }
@@ -24,13 +28,6 @@ export interface FlashImage {
   data: Uint8Array;
   address: number;
   md5: string;
-}
-
-interface OpenablePort {
-  readable: ReadableStream<Uint8Array> | null;
-  writable: WritableStream<Uint8Array> | null;
-  open(options: { baudRate: number }): Promise<void>;
-  close(): Promise<void>;
 }
 
 function flashBytes(label: string | undefined): number {
@@ -46,15 +43,15 @@ function chipName(described: string): string {
   return described.split(' ')[0] || described;
 }
 
-/** esptool-js 0.7.1 : écriture compressée, MD5, puis hard_reset. */
-export function esptoolFlasher(port: UsbPort, images: readonly FlashImage[]): ChipFlasher {
+/** esptool-js 0.7.1 ouvre lui-même un port fermé. */
+export function esptoolFlasher(getPort: () => UsbPort, images: readonly FlashImage[]): ChipFlasher {
   let loader: ESPLoader | null = null;
   const hashes = new WeakMap<Uint8Array, string>();
   for (const image of images) hashes.set(image.data, image.md5);
   return {
     async identify() {
       try {
-        await reopen(port);
+        const port = getPort();
         loader = new ESPLoader({ transport: new Transport(port as never, false), baudrate: 115200 });
         const described = await loader.main('default_reset');
         const detected = await loader.detectFlashSize();
@@ -91,72 +88,130 @@ export function esptoolFlasher(port: UsbPort, images: readonly FlashImage[]): Ch
       try {
         await loader?.transport.disconnect();
       } catch {
-        // Le port est rouvert pour les lignes de texte.
+        // Le port est retrouvé ensuite.
       }
-      await reopen(port);
     },
   };
 }
 
-async function reopen(port: OpenablePort): Promise<void> {
-  if (port.readable && port.writable) return;
-  try {
-    await port.close();
-  } catch {
-    // déjà fermé
-  }
-  await port.open({ baudRate: 115200 });
+/** Même objet (UART) ou nouvel objet de même identifiant (USB natif). */
+export async function findSerialPort(previous: UsbPort): Promise<UsbPort | null> {
+  const ports = (await navigator.serial?.getPorts?.()) ?? [];
+  if (ports.includes(previous)) return previous;
+  const info = previous.getInfo?.() ?? {};
+  if (info.usbVendorId === undefined) return null;
+  return (
+    ports.find((port) => {
+      const next = port.getInfo?.() ?? {};
+      return next.usbVendorId === info.usbVendorId && next.usbProductId === info.usbProductId;
+    }) ?? null
+  );
 }
 
-/** Lignes de texte sur le port USB, relâchées entre deux lectures pour laisser esptool-js. */
-export function webSerialLink(port: UsbPort): SerialLink {
-  const encoder = new TextEncoder();
+/**
+ * Lecteur unique, écrivain relâché après chaque ligne.
+ * `release` annule le lecteur seulement à l'arrêt, pour ne pas jeter les `JARVIS>`.
+ */
+export interface TextLink extends SerialLink {
+  release(): Promise<void>;
+  attach(port: UsbPort): Promise<void>;
+}
+
+export function textLink(initial: UsbPort): TextLink {
+  let current = initial;
+  let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
+  let buffer = '';
+  let generation = 0;
   const decoder = new TextDecoder();
-  let writer: WritableStreamDefaultWriter<Uint8Array> | null = null;
+  const encoder = new TextEncoder();
+  const waiting: Array<(text: string) => void> = [];
+
+  const flush = (): void => {
+    if (!buffer || waiting.length === 0) return;
+    const text = buffer;
+    buffer = '';
+    for (const waiter of waiting.splice(0)) waiter(text);
+  };
+
+  const pump = async (active: ReadableStreamDefaultReader<Uint8Array>, gen: number): Promise<void> => {
+    try {
+      while (generation === gen && reader === active) {
+        const { done, value } = await active.read();
+        if (done || !value || generation !== gen) break;
+        buffer += decoder.decode(value, { stream: true });
+        flush();
+      }
+    } catch {
+      // Le lecteur a été annulé : les octets encore en file sont jetés.
+    }
+  };
+
+  const start = (): void => {
+    if (reader || !current.readable || current.readable.locked) return;
+    const gen = generation;
+    const next = current.readable.getReader();
+    reader = next;
+    void pump(next, gen);
+  };
+
+  const release = async (): Promise<void> => {
+    generation += 1;
+    const active = reader;
+    reader = null;
+    buffer = '';
+    for (const waiter of waiting.splice(0)) waiter('');
+    if (!active) return;
+    try {
+      await active.cancel();
+    } catch {
+      // déjà annulé
+    }
+    try {
+      active.releaseLock();
+    } catch {
+      // déjà rendu
+    }
+  };
+
   return {
     async write(text) {
-      await reopen(port);
-      const current = writer && port.writable ? writer : port.writable?.getWriter() ?? null;
-      if (!current) return;
-      writer = current;
+      if (!current.writable || current.writable.locked) throw new Error('Le port est occupé.');
+      const writer = current.writable.getWriter();
       try {
-        await current.write(encoder.encode(text));
-      } catch {
-        writer = null;
-        await reopen(port);
-        const again = port.writable?.getWriter() ?? null;
-        if (!again) return;
-        writer = again;
-        await again.write(encoder.encode(text));
+        await writer.write(encoder.encode(text));
+      } finally {
+        writer.releaseLock();
       }
     },
     async read(timeoutMs) {
-      await reopen(port);
-      if (!port.readable) return '';
-      const reader = port.readable.getReader();
-      let timer: ReturnType<typeof setTimeout> | undefined;
-      try {
-        const chunk = await Promise.race([
-          reader.read(),
-          new Promise<{ done: true; value?: undefined }>((resolve) => {
-            timer = setTimeout(() => resolve({ done: true }), timeoutMs);
-          }),
-        ]);
-        if (chunk.done || !chunk.value) return '';
-        return decoder.decode(chunk.value, { stream: true });
-      } finally {
-        if (timer) clearTimeout(timer);
-        try {
-          await reader.cancel();
-        } catch {
-          // lecture déjà terminée
-        }
-        try {
-          reader.releaseLock();
-        } catch {
-          // verrou déjà rendu
-        }
+      start();
+      if (buffer) {
+        const text = buffer;
+        buffer = '';
+        return text;
       }
+      return new Promise((resolve) => {
+        const finish = (text: string): void => {
+          clearTimeout(timer);
+          resolve(text);
+        };
+        const timer = setTimeout(() => {
+          const index = waiting.indexOf(finish);
+          if (index >= 0) waiting.splice(index, 1);
+          resolve('');
+        }, timeoutMs);
+        waiting.push(finish);
+      });
+    },
+    release,
+    async attach(port: UsbPort) {
+      await release();
+      current = port;
+      if (!port.readable || !port.writable) await port.open({ baudRate: 115200 });
+      start();
     },
   };
 }
+
+/** Ancien nom : la liaison texte correcte. */
+export const webSerialLink = textLink;
