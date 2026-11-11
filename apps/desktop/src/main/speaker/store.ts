@@ -13,14 +13,23 @@ export interface Speaker {
   id: string;
   name: string;
   createdAt: number;
+  mac?: string;
+  pending?: boolean;
+  fw?: string;
+  lastHelloAt?: number;
+  rssi?: number;
+  ip?: string;
 }
 
 interface StoredSpeaker extends Speaker {
   tokenHash: string;
+  /** Nouvelle clé pendant un remplacement. L'ancienne marche encore tant qu'on n'a pas confirmé. */
+  pendingTokenHash?: string;
 }
 
 interface SpeakerFile {
   enabled: boolean;
+  pcId: string;
   speakers: StoredSpeaker[];
 }
 
@@ -28,24 +37,54 @@ function hashToken(token: string): string {
   return createHash('sha256').update(token, 'utf8').digest('hex');
 }
 
+function optionalText(value: unknown, max: number): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.length > max) return undefined;
+  return trimmed;
+}
+
 function readFileState(raw: string): SpeakerFile {
   const data = JSON.parse(raw) as Partial<SpeakerFile>;
   const speakers = Array.isArray(data.speakers)
-    ? data.speakers.filter(
-        (speaker): speaker is StoredSpeaker =>
-          !!speaker &&
-          typeof speaker.id === 'string' &&
-          typeof speaker.name === 'string' &&
-          typeof speaker.createdAt === 'number' &&
-          typeof speaker.tokenHash === 'string' &&
-          /^[0-9a-f]{64}$/.test(speaker.tokenHash),
-      )
+    ? data.speakers.flatMap((speaker): StoredSpeaker[] => {
+        if (
+          !speaker ||
+          typeof speaker.id !== 'string' ||
+          typeof speaker.name !== 'string' ||
+          typeof speaker.createdAt !== 'number' ||
+          typeof speaker.tokenHash !== 'string' ||
+          !/^[0-9a-f]{64}$/.test(speaker.tokenHash)
+        ) {
+          return [];
+        }
+        const stored: StoredSpeaker = {
+          id: speaker.id,
+          name: speaker.name,
+          createdAt: speaker.createdAt,
+          tokenHash: speaker.tokenHash,
+        };
+        const mac = optionalText(speaker.mac, 20);
+        if (mac) stored.mac = mac.toLowerCase();
+        if (speaker.pending === true) stored.pending = true;
+        const fw = optionalText(speaker.fw, 24);
+        if (fw) stored.fw = fw;
+        if (typeof speaker.lastHelloAt === 'number') stored.lastHelloAt = speaker.lastHelloAt;
+        if (typeof speaker.rssi === 'number') stored.rssi = speaker.rssi;
+        const ip = optionalText(speaker.ip, 40);
+        if (ip) stored.ip = ip;
+        if (typeof speaker.pendingTokenHash === 'string' && /^[0-9a-f]{64}$/.test(speaker.pendingTokenHash)) {
+          stored.pendingTokenHash = speaker.pendingTokenHash;
+        }
+        return [stored];
+      })
     : [];
-  return { enabled: data.enabled === true, speakers };
+  const pcId = typeof data.pcId === 'string' && /^[0-9a-f]{8}$/.test(data.pcId) ? data.pcId : randomBytes(4).toString('hex');
+  return { enabled: data.enabled === true, pcId, speakers };
 }
 
 export class SpeakerStore {
-  private state: SpeakerFile = { enabled: false, speakers: [] };
+  private state: SpeakerFile = { enabled: false, pcId: '', speakers: [] };
   private loaded = false;
   private writing: Promise<void> = Promise.resolve();
 
@@ -64,7 +103,7 @@ export class SpeakerStore {
     } catch {
       raw = null; // pas encore de fichier : état vide, rien à garder
     }
-    this.state = { enabled: false, speakers: [] };
+    this.state = { enabled: false, pcId: randomBytes(4).toString('hex'), speakers: [] };
     if (raw !== null) {
       try {
         this.state = readFileState(raw);
@@ -81,8 +120,18 @@ export class SpeakerStore {
     return this.state.enabled;
   }
 
+  get pcId(): string {
+    return this.state.pcId;
+  }
+
   speakers(): Speaker[] {
-    return this.state.speakers.map(({ id, name, createdAt }) => ({ id, name, createdAt }));
+    return this.state.speakers.map(({ tokenHash: _tokenHash, pendingTokenHash: _pending, ...speaker }) => speaker);
+  }
+
+  findByMac(mac: string): Speaker | null {
+    const wanted = mac.trim().toLowerCase();
+    const found = this.state.speakers.find((speaker) => speaker.mac === wanted && !speaker.pending);
+    return found ? this.speakers().find((speaker) => speaker.id === found.id) ?? null : null;
   }
 
   async setEnabled(enabled: boolean): Promise<void> {
@@ -115,16 +164,79 @@ export class SpeakerStore {
     return true;
   }
 
+  /**
+   * Nouvelle enceinte encore en attente, ou remplacement d'une carte déjà connue (même MAC).
+   * Le jeton en clair n'est rendu qu'ici. Il n'est pas écrit dans le fichier.
+   */
+  async beginInstall(name: string | undefined, mac: string, now = Date.now()): Promise<{ speaker: Speaker; token: string; replaced: boolean }> {
+    await this.load();
+    const token = randomBytes(32).toString('hex');
+    const hash = hashToken(token);
+    const wanted = mac.trim().toLowerCase();
+    const existing = this.state.speakers.find((speaker) => speaker.mac === wanted && !speaker.pending);
+    if (existing) {
+      existing.pendingTokenHash = hash;
+      await this.save();
+      const speaker = this.speakers().find((item) => item.id === existing.id)!;
+      return { speaker, token, replaced: true };
+    }
+    const speaker: StoredSpeaker = {
+      id: randomUUID(),
+      name: cleanSpeakerName(name),
+      createdAt: now,
+      tokenHash: hash,
+      mac: wanted,
+      pending: true,
+    };
+    this.state = { ...this.state, speakers: [...this.state.speakers, speaker] };
+    await this.save();
+    return { speaker: this.speakers().find((item) => item.id === speaker.id)!, token, replaced: false };
+  }
+
+  async commitInstall(id: string, fw?: string): Promise<boolean> {
+    await this.load();
+    const speaker = this.state.speakers.find((item) => item.id === id);
+    if (!speaker) return false;
+    if (speaker.pendingTokenHash) {
+      speaker.tokenHash = speaker.pendingTokenHash;
+      delete speaker.pendingTokenHash;
+    }
+    speaker.pending = false;
+    if (fw) speaker.fw = fw;
+    await this.save();
+    return true;
+  }
+
+  /** Abandon : une enceinte neuve disparaît. Un remplacement garde l'ancienne clé. */
+  async abandonInstall(id: string): Promise<boolean> {
+    await this.load();
+    const speaker = this.state.speakers.find((item) => item.id === id);
+    if (!speaker) return false;
+    if (speaker.pending) {
+      this.state = { ...this.state, speakers: this.state.speakers.filter((item) => item.id !== id) };
+    } else if (speaker.pendingTokenHash) {
+      delete speaker.pendingTokenHash;
+    } else {
+      return false;
+    }
+    await this.save();
+    return true;
+  }
+
   /** Enceinte du jeton, comparé en temps constant ; `null` si inconnu ou retiré. */
   verify(token: string | null | undefined): Speaker | null {
     if (!token || token.length > 200) return null;
     const candidate = Buffer.from(hashToken(token), 'hex');
     let found: StoredSpeaker | null = null;
     for (const speaker of this.state.speakers) {
-      const stored = Buffer.from(speaker.tokenHash, 'hex');
-      if (stored.length === candidate.length && timingSafeEqual(stored, candidate)) found = speaker;
+      for (const hash of [speaker.tokenHash, speaker.pendingTokenHash]) {
+        if (!hash) continue;
+        const stored = Buffer.from(hash, 'hex');
+        if (stored.length === candidate.length && timingSafeEqual(stored, candidate)) found = speaker;
+      }
     }
-    return found ? { id: found.id, name: found.name, createdAt: found.createdAt } : null;
+    if (!found) return null;
+    return this.speakers().find((speaker) => speaker.id === found.id) ?? null;
   }
 
   private save(): Promise<void> {

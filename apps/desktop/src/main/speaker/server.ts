@@ -27,6 +27,7 @@ import {
   isSpotifyDeviceQuestion,
   looksLikeImageIntent,
   isPrivateAddress,
+  speakerGreeting,
   isWavContentType,
   readCaptureMs,
   type SpeakerChrono,
@@ -336,6 +337,16 @@ export class SpeakerServer {
         version: this.deps.version(),
         followUpMs: followUpWindowMs(this.deps.voiceSettings()),
       });
+    }
+    if (path === '/api/speaker/greeting') {
+      if (method !== 'GET') throw new HttpError(405, 'Méthode refusée.');
+      const wav = await this.deps.synthesizer.synthesize(speakerGreeting(speaker.name));
+      res.writeHead(200, {
+        'Content-Type': 'audio/wav',
+        'Content-Length': String(wav.byteLength),
+      });
+      res.end(Buffer.from(wav.buffer, wav.byteOffset, wav.byteLength));
+      return;
     }
     if (path === '/api/speaker/turn') {
       if (method !== 'POST') throw new HttpError(405, 'Méthode refusée.');

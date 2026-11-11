@@ -209,6 +209,15 @@ const api: JarvisApi = {
     setEnabled: (enabled: boolean) => ipcRenderer.invoke(IpcChannel.speakerSetEnabled, enabled),
     add: (name: string) => ipcRenderer.invoke(IpcChannel.speakerAdd, name),
     remove: (speakerId: string) => ipcRenderer.invoke(IpcChannel.speakerRemove, speakerId),
+    beginInstall: (name: string, mac: string) => ipcRenderer.invoke(IpcChannel.speakerBeginInstall, { name, mac }),
+    commitInstall: (id: string, fw?: string) => ipcRenderer.invoke(IpcChannel.speakerCommitInstall, { id, fw }),
+    abandonInstall: (id: string) => ipcRenderer.invoke(IpcChannel.speakerAbandonInstall, id),
+    pickPort: (portId: string) => ipcRenderer.invoke(IpcChannel.speakerPickPort, portId),
+    onPorts: (listener: (ports: Array<{ portId: string; label: string }>) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, ports: Array<{ portId: string; label: string }>): void => listener(ports);
+      ipcRenderer.on(IpcChannel.speakerPorts, handler);
+      return () => ipcRenderer.removeListener(IpcChannel.speakerPorts, handler);
+    },
     onEvent: (listener) => {
       const handler = (_event: Electron.IpcRendererEvent, payload: SpeakerStatus): void => listener(payload);
       ipcRenderer.on(IpcChannel.speakerEvent, handler);

@@ -210,6 +210,10 @@ describe('pont des enceintes (5.0.64)', () => {
     expect(JSON.parse(hello.body.toString('utf8'))).toEqual({ name: 'Salon', version: '5.0.64', followUpMs: 12_000 });
     expect((await call(port, '/api/speaker/hello', { token, method: 'POST' })).status).toBe(405);
     expect((await call(port, '/api/speaker/autre', { token })).status).toBe(404);
+    const greeting = await call(port, '/api/speaker/greeting', { token });
+    expect(greeting.status).toBe(200);
+    expect(greeting.headers['content-type']).toBe('audio/wav');
+    expect((await call(port, '/api/speaker/greeting')).status).toBe(401);
   });
 
   it('refuse une adresse distante non privée, même avec le bon jeton', async () => {

@@ -3,6 +3,7 @@ import { Copy, Loader2, Plus, RefreshCw, Speaker, Trash2 } from 'lucide-react';
 import type { Settings, SpeakerChronoView } from '@jarvis/core';
 import { Button } from '@/components/ui/button';
 import { Disclosure } from '@/components/ui/disclosure';
+import { SpeakerInstallView } from '@/components/SpeakerInstall';
 import { Input, Toggle } from '@/components/ui/field';
 import type { SpeakerAdded, SpeakerStatus } from '../../../shared/ipc';
 
@@ -16,6 +17,8 @@ export function SpeakerSettingsSection() {
   const [loading, setLoading] = useState(false);
   const [name, setName] = useState('');
   const [added, setAdded] = useState<SpeakerAdded | null>(null);
+  const [installStep, setInstallStep] = useState<'closed' | 'branch' | 'wifi' | 'go' | 'error'>('closed');
+  const scene = new URLSearchParams(window.location.search).get('scene');
   const [copied, setCopied] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const [settings, setSettings] = useState<Settings | null>(null);
@@ -260,24 +263,46 @@ export function SpeakerSettingsSection() {
             </p>
           </div>
 
-          <div className="flex flex-col gap-1.5">
-            <p className="text-[11px] font-medium tracking-wide text-slate-400 uppercase">Ajouter une enceinte</p>
-            <div className="flex items-center gap-2">
-              <Input
-                value={name}
-                placeholder="Nom de la pièce (Salon, Cuisine…)"
-                maxLength={40}
-                onChange={(event) => setName(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') addSpeaker();
-                }}
-              />
-              <Button variant="default" disabled={!name.trim() || loading} onClick={addSpeaker}>
-                <Plus className="size-4" />
-                Ajouter
-              </Button>
+          <Button variant="default" onClick={() => setInstallStep('branch')}>
+            <Plus className="size-4" />
+            Ajouter une enceinte
+          </Button>
+          {installStep !== 'closed' ? (
+            <SpeakerInstallView
+              screen={installStep}
+              sentence="Branche la carte, puis réessaie."
+              button="Réessayer"
+              onNext={() => setInstallStep('wifi')}
+              onRetry={() => setInstallStep('branch')}
+              onInstall={(input) => {
+                setName(input.name);
+                setInstallStep('go');
+              }}
+            />
+          ) : null}
+          {scene === 'speaker-install' ? <SpeakerInstallView screen="branch" /> : null}
+          {scene === 'speaker-install-error' ? (
+            <SpeakerInstallView screen="error" sentence="Le mot de passe n’est pas le bon." button="Corriger" />
+          ) : null}
+
+          <Disclosure title="Avancé (développeurs)">
+            <div className="flex flex-col gap-2">
+              <p className="text-xs text-slate-400">
+                Le chemin simple est le bouton au-dessus. Ici, tu peux encore créer un bloc <code>secrets.h</code> pour PlatformIO.
+              </p>
+              <div className="flex items-center gap-2">
+                <Input
+                  value={name}
+                  placeholder="Nom de la pièce"
+                  maxLength={40}
+                  onChange={(event) => setName(event.target.value)}
+                />
+                <Button variant="subtle" disabled={!name.trim() || loading} onClick={addSpeaker}>
+                  Créer le bloc
+                </Button>
+              </div>
             </div>
-          </div>
+          </Disclosure>
 
           {added ? (
             <div className="flex flex-col gap-2 rounded-lg border border-accent/30 bg-accent/5 p-3">

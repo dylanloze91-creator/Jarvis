@@ -1,6 +1,7 @@
 import { join } from 'node:path';
 import { BrowserWindow, screen, shell } from 'electron';
 import { IpcChannel } from '../shared/ipc.js';
+import { bindSerialAccess, type SerialSessionLike } from './speaker/serialAccess.js';
 
 const WIDTH = 720;
 const DEFAULT_HEIGHT = 520;
@@ -15,6 +16,9 @@ const NATIVE_WIN_CAPTION = process.platform === 'win32';
 const TITLE_BAR_OVERLAY_HEIGHT = 36;
 
 export type WindowChrome = 'compact' | 'dashboard';
+
+/** Choix d'un port quand plusieurs cartes sont branchées. */
+export let pickSpeakerPort: (portId: string) => void = () => undefined;
 
 export interface WorkArea {
   x: number;
@@ -123,6 +127,15 @@ export function createOverlayWindow(
       backgroundThrottling: false,
     },
   });
+
+  const serial = bindSerialAccess(
+    browserWindow.webContents.session as unknown as SerialSessionLike,
+    (contents) => contents === browserWindow.webContents,
+    (ports) => {
+      if (!browserWindow.isDestroyed()) browserWindow.webContents.send(IpcChannel.speakerPorts, ports);
+    },
+  );
+  pickSpeakerPort = serial.pick;
 
   if (!NATIVE_WIN_CAPTION) {
     browserWindow.setAlwaysOnTop(true, 'screen-saver');

@@ -110,7 +110,7 @@ import { WakeLearningStore } from './wakeLearningStore.js';
 import { LocalLearningStore } from './learning/store.js';
 import { LocalLearningController } from './learning/controller.js';
 import { ListeningIndicatorWindow } from './listeningIndicator.js';
-import { createOverlayWindow, type OverlayWindow } from './window.js';
+import { createOverlayWindow, pickSpeakerPort, type OverlayWindow } from './window.js';
 import {
   currentVoiceAssetsRoot,
   inspectVoiceAssets,
@@ -1145,6 +1145,22 @@ function registerIpc(): void {
     return speakerChrono.view();
   });
   ipcMain.handle(IpcChannel.speakerAdd, (_event, name: unknown) => speakers.add(typeof name === 'string' ? name : ''));
+  ipcMain.handle(IpcChannel.speakerBeginInstall, (_event, payload: unknown) => {
+    const body = payload as { name?: unknown; mac?: unknown } | null;
+    const mac = typeof body?.mac === 'string' ? body.mac : '';
+    return speakers.beginInstall(typeof body?.name === 'string' ? body.name : '', mac);
+  });
+  ipcMain.handle(IpcChannel.speakerCommitInstall, (_event, payload: unknown) => {
+    const body = payload as { id?: unknown; fw?: unknown } | null;
+    if (typeof body?.id !== 'string') return speakers.status();
+    return speakers.commitInstall(body.id, typeof body.fw === 'string' ? body.fw : undefined);
+  });
+  ipcMain.handle(IpcChannel.speakerAbandonInstall, (_event, id: unknown) =>
+    typeof id === 'string' ? speakers.abandonInstall(id) : speakers.status(),
+  );
+  ipcMain.handle(IpcChannel.speakerPickPort, (_event, portId: unknown) => {
+    if (typeof portId === 'string' && portId.length < 200) pickSpeakerPort(portId);
+  });
   ipcMain.handle(IpcChannel.speakerRemove, (_event, id: unknown) =>
     typeof id === 'string' && id.length <= 100 ? speakers.remove(id) : speakers.status(),
   );

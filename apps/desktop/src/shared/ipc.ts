@@ -176,6 +176,11 @@ export const IpcChannel = {
   speakerSetEnabled: 'speaker:set-enabled',
   speakerAdd: 'speaker:add',
   speakerRemove: 'speaker:remove',
+  speakerBeginInstall: 'speaker:begin-install',
+  speakerCommitInstall: 'speaker:commit-install',
+  speakerAbandonInstall: 'speaker:abandon-install',
+  speakerPorts: 'speaker:ports',
+  speakerPickPort: 'speaker:pick-port',
   speakerEvent: 'speaker:event',
   speakerTranscribeRequest: 'speaker:transcribe-request',
   speakerTranscribeResult: 'speaker:transcribe-result',
@@ -922,6 +927,11 @@ export interface JarvisApi {
     /** Crée une enceinte et rend, une seule fois, le bloc `secrets.h` avec son jeton. */
     add(name: string): Promise<SpeakerAdded>;
     remove(speakerId: string): Promise<SpeakerStatus>;
+    beginInstall(name: string, mac: string): Promise<SpeakerStatus & { speakerId: string; token: string; replaced: boolean; pcId: string; hosts: string[] }>;
+    commitInstall(id: string, fw?: string): Promise<SpeakerStatus>;
+    abandonInstall(id: string): Promise<SpeakerStatus>;
+    pickPort(portId: string): Promise<void>;
+    onPorts(listener: (ports: Array<{ portId: string; label: string }>) => void): () => void;
     /** Phrase reçue d'une enceinte pendant que les réglages sont ouverts. */
     onEvent(listener: (status: SpeakerStatus) => void): () => void;
     /** Le processus principal demande une transcription Whisper (la fenêtre a Whisper, pas lui). */

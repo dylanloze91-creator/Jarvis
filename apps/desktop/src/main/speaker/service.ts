@@ -138,6 +138,31 @@ export class SpeakerService {
     return { status, speaker: { id: speaker.id, name: speaker.name }, secrets };
   }
 
+  async beginInstall(name: string, mac: string): Promise<SpeakerStatus & { speakerId: string; token: string; replaced: boolean; pcId: string; hosts: string[] }> {
+    const begun = await this.deps.store.beginInstall(name, mac);
+    const status = await this.status();
+    this.deps.log?.(`[enceinte] installation de « ${begun.speaker.name} »${begun.replaced ? ' (remplacement)' : ''}`);
+    return {
+      ...status,
+      speakerId: begun.speaker.id,
+      token: begun.token,
+      replaced: begun.replaced,
+      pcId: this.deps.store.pcId,
+      hosts: status.addresses.slice(0, 4),
+    };
+  }
+
+  async commitInstall(id: string, fw?: string): Promise<SpeakerStatus> {
+    await this.deps.store.commitInstall(id, fw);
+    return this.status();
+  }
+
+  async abandonInstall(id: string): Promise<SpeakerStatus> {
+    await this.deps.store.abandonInstall(id);
+    this.server.forget(id);
+    return this.status();
+  }
+
   async remove(id: string): Promise<SpeakerStatus> {
     await this.deps.store.removeSpeaker(id);
     this.server.forget(id);
