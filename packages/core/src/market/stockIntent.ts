@@ -1,7 +1,8 @@
 /**
  * Demande de cours d'action, décidée sans modèle.
- * L'or, l'euro, le bitcoin, un cours de maths et « en cours » / « au cours de »
- * ne sont pas des actions : la fonction renvoie `null` et le chemin d'avant reste.
+ * « cours de X » seul ne suffit pas : il faut un indice (bourse, action, cotation,
+ * Yahoo, combien vaut…) ou un nom qui ressemble à une entreprise (majuscule, SPIE, LVMH).
+ * Un mot en minuscules sans indice, un possessif, un horaire ou un agenda restent au cerveau.
  */
 
 export interface StockRequest {
@@ -107,7 +108,50 @@ function normalizeSpaces(text: string): string {
 }
 
 function fold(text: string): string {
-  return text.toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
+  return text
+    .replace(/[’`]/g, "'")
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '');
+}
+
+/** Même avec une majuscule, ces phrases ne sont pas une demande de bourse. */
+function blockedStock(folded: string): boolean {
+  if (/\b(?:mon|ma|mes|ton|ta|tes|notre|votre)\b/.test(folded)) return true;
+  if (/\b(?:demain|aujourd'hui|hier|ce matin|ce soir|ce midi|lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche)\b/.test(folded)) {
+    return true;
+  }
+  if (/\b\d{1,2}\s?h\b/.test(folded)) return true;
+  if (/\b(?:agenda|calendrier|rappelle|rendez-vous)\b/.test(folded)) return true;
+  if (/\ba quelle heure\b/.test(folded) || /\brate\b/.test(folded)) return true;
+  if (/\bj'ai cours\b/.test(folded) || /\bun cours de\b/.test(folded) || /\bdes cours de\b/.test(folded)) return true;
+  return false;
+}
+
+/** Indice qui permet un nom en minuscules (« spi en bourse », « l'action spi »). */
+function hasStrongClue(folded: string): boolean {
+  return (
+    /\ben bourse\b/.test(folded) ||
+    /\bl'action\b/.test(folded) ||
+    /\bcotation\b/.test(folded) ||
+    /\byahoo\b/.test(folded) ||
+    /\b(?:combien|ca) vaut\b/.test(folded) ||
+    /\bbourse\b/.test(folded) ||
+    /\bcac\b/.test(folded) ||
+    /\beuronext\b/.test(folded) ||
+    /\bnasdaq\b/.test(folded)
+  );
+}
+
+function hasCapital(name: string): boolean {
+  return /\p{Lu}/u.test(name);
+}
+
+/** « la Seine », « l'eau », « la vie » : pas un nom d'entreprise. « L'Oréal » si. */
+function isCommonCourse(raw: string): boolean {
+  const text = raw.trim();
+  if (/^(?:la |le |les |du |des |une |un )/i.test(text)) return true;
+  return /^l'(?=\p{Ll})/u.test(text);
 }
 
 function stripAddress(text: string): string {
@@ -122,21 +166,6 @@ function stripAddress(text: string): string {
     current = next;
   }
   return current;
-}
-
-function hasStockCue(folded: string): boolean {
-  if (/\bcomment va l'action\b/.test(folded)) return true;
-  if (/\bcotation\b/.test(folded)) return true;
-  if (/\ben bourse\b/.test(folded)) return true;
-  if (/\byahoo\b/.test(folded) && /\b(?:cours|cotation|action|bourse)\b/.test(folded)) return true;
-  const marker = /cours d(?:e |')/g;
-  let match: RegExpExecArray | null;
-  while ((match = marker.exec(folded))) {
-    const before = folded.slice(Math.max(0, match.index - 4), match.index);
-    if (/(?:^|\s)(?:au|en)\s$/.test(before)) continue;
-    return true;
-  }
-  return false;
 }
 
 function preferParis(folded: string): 'paris' | null {
@@ -175,11 +204,12 @@ function isCompany(name: string): boolean {
   return true;
 }
 
-function splitNames(span: string): string[] {
+function splitNames(span: string, strong: boolean): string[] {
   return cutTail(span)
     .split(/\s*,\s*|\s+et\s+(?:de\s+|d')?/i)
+    .filter((part) => (strong ? true : !isCommonCourse(part)))
     .map((part) => cleanOne(part))
-    .filter((part) => isCompany(part))
+    .filter((part) => isCompany(part) && (strong || hasCapital(part)))
     .slice(0, 5);
 }
 
@@ -192,22 +222,19 @@ const NAME_PATTERNS: RegExp[] = [
   /([^\s,]+(?:\s+[^\s,]+){0,3})\s+en bourse\b/i,
 ];
 
-/** `null` : ce n'est pas une demande de cours d'action. */
+/** `null` : ce n'est pas une demande de cours d'action. Le cerveau choisit. */
 export function detectStockRequest(text: string): StockRequest | null {
   const spoken = stripAddress(text);
   if (!spoken) return null;
-  const folded = fold(spoken);
-  if (!hasStockCue(folded)) return null;
-  if (/\bau cours de\b/.test(folded) && !/\b(?:en bourse|cotation|yahoo|l'action)\b/.test(folded)) {
-    const onlyLesson = !/cours d(?:e |')/.test(folded.replace(/au cours de/g, ' '));
-    if (onlyLesson) return null;
-  }
+  const folded = fold(text);
+  if (blockedStock(folded)) return null;
+  const strong = hasStrongClue(folded);
 
   for (const pattern of NAME_PATTERNS) {
     const match = pattern.exec(spoken);
     const span = match?.[1];
     if (!span) continue;
-    const names = splitNames(span);
+    const names = splitNames(span, strong);
     if (!names.length) continue;
     return { names, prefer: preferParis(folded) };
   }
