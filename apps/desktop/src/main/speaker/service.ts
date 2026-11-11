@@ -18,7 +18,9 @@ export interface SpeakerServiceDeps extends Omit<SpeakerServerDeps, 'store' | 'o
   /** Pousse l'état à l'interface (phrase reçue pendant que les réglages sont ouverts). */
   broadcast?: (status: SpeakerStatus) => void;
   /** Annonce mDNS. Absente si le pont est coupé : on n'appelle pas. */
-  openAnnounce?: () => Array<{ destroy(): void }>;
+  openAnnounce?: () => Array<{ destroy(): void }> | Promise<Array<{ destroy(): void }>>;
+  /** Adresses de la maison (passerelle, pas Tailscale). */
+  keptAddresses?: () => string[] | Promise<string[]>;
 }
 
 /** Adresses IPv4 non internes des interfaces réseau du PC. */
@@ -86,7 +88,7 @@ export class SpeakerService {
     this.error = null;
     try {
       await this.server.start(this.port);
-      this.announced = this.deps.openAnnounce?.() ?? [];
+      this.announced = await Promise.resolve(this.deps.openAnnounce?.() ?? []);
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
       this.error =
@@ -146,6 +148,7 @@ export class SpeakerService {
   async beginInstall(name: string, mac: string): Promise<SpeakerStatus & { speakerId: string; token: string; replaced: boolean; pcId: string; hosts: string[] }> {
     const begun = await this.deps.store.beginInstall(name, mac);
     const status = await this.status();
+    const kept = this.deps.keptAddresses ? await this.deps.keptAddresses() : status.addresses;
     this.deps.log?.(`[enceinte] installation de « ${begun.speaker.name} »${begun.replaced ? ' (remplacement)' : ''}`);
     return {
       ...status,
@@ -153,7 +156,7 @@ export class SpeakerService {
       token: begun.token,
       replaced: begun.replaced,
       pcId: this.deps.store.pcId,
-      hosts: status.addresses.slice(0, 4),
+      hosts: kept.slice(0, 4),
     };
   }
 

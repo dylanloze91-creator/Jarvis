@@ -6,6 +6,8 @@ import { Button } from '@/components/ui/button';
 import { ConfirmButton } from '@/components/ui/confirmButton';
 import { Disclosure } from '@/components/ui/disclosure';
 import { SpeakerInstallView } from '@/components/SpeakerInstall';
+import { installSpeaker } from '@/speaker/installDriver';
+import { esptoolFlasher, webSerialLink } from '@/speaker/esptoolFlash';
 import { Input, Toggle } from '@/components/ui/field';
 import type { SpeakerAdded, SpeakerStatus } from '../../../shared/ipc';
 
@@ -20,6 +22,8 @@ export function SpeakerSettingsSection() {
   const [name, setName] = useState('');
   const [added, setAdded] = useState<SpeakerAdded | null>(null);
   const [installStep, setInstallStep] = useState<'closed' | 'branch' | 'wifi' | 'go' | 'error'>('closed');
+  const [checks, setChecks] = useState<Array<{ label: string; state: 'wait' | 'ok' | 'no' }>>([]);
+  const [failure, setFailure] = useState({ sentence: 'Branche la carte, puis réessaie.', button: 'Réessayer' });
   const [diagnose, setDiagnose] = useState(false);
   const scene = new URLSearchParams(window.location.search).get('scene');
   const [copied, setCopied] = useState(false);
@@ -273,13 +277,72 @@ export function SpeakerSettingsSection() {
           {installStep !== 'closed' ? (
             <SpeakerInstallView
               screen={installStep}
-              sentence="Branche la carte, puis réessaie."
-              button="Réessayer"
+              sentence={failure.sentence}
+              button={failure.button}
+              checks={checks}
               onNext={() => setInstallStep('wifi')}
               onRetry={() => setInstallStep('branch')}
               onInstall={(input) => {
                 setName(input.name);
                 setInstallStep('go');
+                const serial = navigator.serial;
+                if (!serial) {
+                  setFailure({ sentence: 'Ce Jarvis ne peut pas ouvrir le câble USB.', button: 'Réessayer' });
+                  setInstallStep('error');
+                  return;
+                }
+                const portPromise = serial.requestPort();
+                void (async () => {
+                  try {
+                    const [port, bundle] = await Promise.all([portPromise, window.jarvis.speaker.firmware()]);
+                    if (!bundle) {
+                      setFailure({
+                        sentence: 'Le programme de l’enceinte n’est pas inclus dans cette version de Jarvis.',
+                        button: 'Réessayer',
+                      });
+                      setInstallStep('error');
+                      try {
+                        await port.close();
+                      } catch {
+                        // le port n'était pas ouvert
+                      }
+                      return;
+                    }
+                    await port.open({ baudRate: 115200 });
+                    const result = await installSpeaker({
+                      link: webSerialLink(port),
+                      flasher: esptoolFlasher(port, bundle.files),
+                      manifestVersion: bundle.version,
+                      wifi: { name: input.name, ssid: input.ssid, pass: input.pass },
+                      pair: async (mac) => {
+                        const paired = await window.jarvis.speaker.beginInstall(input.name, mac);
+                        return {
+                          speakerId: paired.speakerId,
+                          token: paired.token,
+                          pcId: paired.pcId,
+                          port: paired.port,
+                          hosts: paired.hosts,
+                        };
+                      },
+                      commit: async (id, fw) => {
+                        await window.jarvis.speaker.commitInstall(id, fw);
+                      },
+                      abandon: async (id) => {
+                        await window.jarvis.speaker.abandonInstall(id);
+                      },
+                      onView: (view) => setChecks(view.checks),
+                    });
+                    if (!result.ok) {
+                      setFailure(result.failure);
+                      setInstallStep('error');
+                    }
+                  } catch {
+                    setFailure({ sentence: 'Je n’arrive pas à ouvrir la carte.', button: 'Réessayer' });
+                    setInstallStep('error');
+                  } finally {
+                    input.pass = '';
+                  }
+                })();
               }}
             />
           ) : null}

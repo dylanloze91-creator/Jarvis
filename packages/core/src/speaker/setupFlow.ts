@@ -49,6 +49,9 @@ export interface SetupIo {
 
 export interface SetupInput {
   manifestVersion: string;
+  /** Délais du `hello`. Les valeurs par défaut conviennent à la carte ; les tests les raccourcissent. */
+  helloTimeoutMs?: number;
+  helloAfterFlashMs?: number;
 }
 
 export interface SetupHooks {
@@ -105,7 +108,7 @@ export async function runSpeakerSetup(io: SetupIo, input: SetupInput, hooks?: Se
   };
 
   show(view({ checks }));
-  const already = await io.hello(1500);
+  const already = await io.hello(input.helloTimeoutMs ?? 1500);
   if (already && sameFirmware(already.fw, input.manifestVersion)) {
     mac = already.mac;
     fw = already.fw;
@@ -140,7 +143,7 @@ export async function runSpeakerSetup(io: SetupIo, input: SetupInput, hooks?: Se
     checks = mark(checks, 'program', 'ok');
     show(view({ checks, progress: 100 }));
     await io.reboot();
-    const hello = await io.hello(8000);
+    const hello = await io.hello(input.helloAfterFlashMs ?? 8000);
     if (!hello) {
       return fail({ sentence: 'La carte ne répond pas après l’installation.', button: 'Réessayer' }, false);
     }

@@ -213,6 +213,7 @@ const api: JarvisApi = {
     commitInstall: (id: string, fw?: string) => ipcRenderer.invoke(IpcChannel.speakerCommitInstall, { id, fw }),
     abandonInstall: (id: string) => ipcRenderer.invoke(IpcChannel.speakerAbandonInstall, id),
     pickPort: (portId: string) => ipcRenderer.invoke(IpcChannel.speakerPickPort, portId),
+    firmware: () => ipcRenderer.invoke(IpcChannel.speakerFirmware),
     onPorts: (listener: (ports: Array<{ portId: string; label: string }>) => void) => {
       const handler = (_event: Electron.IpcRendererEvent, ports: Array<{ portId: string; label: string }>): void => listener(ports);
       ipcRenderer.on(IpcChannel.speakerPorts, handler);

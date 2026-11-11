@@ -11,10 +11,10 @@ La réservation `cursor/enceinte-materiel` sur `firmware/jarvis-speaker/` était
 | 0 Reconnaissance | Fait | `rapports/2026-11-11-enceinte-raccordement-choix.md` |
 | 1 Programme de la carte | Fait dans le code, pas compilé ici | Protocole C testé sur le PC (`npm run test:firmware --workspace @jarvis/desktop`). PlatformIO n'a pas été lancé : pas de `pio`. |
 | 2 Programme livré | Fait, sans `.bin` | Script `setup:speaker-firmware`, manifeste vérifié, dossier ignoré par git sauf les textes. |
-| 3 Installation USB | Fait pour la logique et l'écran, pas le dernier branchement esptool | Machine à états testée (chaque échec). L'écran a les trois étapes. Le clic « Installer » ne lance pas encore esptool-js : ce branchement n'est pas dans la fenêtre. |
-| 4 mDNS et diagnostic | Fait pour le filtre, les réponses et les scripts | Annonce testée avec une fausse socket. Le pont coupé n'ouvre rien. Les scripts PowerShell ne sont pas lancés ici (pas Windows). |
+| 3 Installation USB | Fait dans le clic et dans les tests | « Installer » appelle `installSpeaker` puis `esptoolFlasher` (esptool-js 0.7.1). Les tests utilisent un faux port et un faux programmeur : succès, même version, mauvaise puce, flash trop petite, geste BOOT, écriture arrêtée, mauvais mot de passe, PC introuvable. La vraie carte n'a pas été programmée. |
+| 4 mDNS et diagnostic | Fait | `multicast-dns` 7.2.5 est dans les dépendances et ouvert quand le pont démarre (`createMulticastSocket`). Le pont coupé n'ouvre rien. Les scripts PowerShell ne sont pas lancés ici. |
 | 5 Liste | Fait | Signal, ancienne version, recherche des réglages, scènes. |
-| 6 Mise à jour sans fil | Pas fait | Aucune taille réelle de `firmware.bin` ni de `srmodels.bin`. La partition actuelle fait 3 Mo, l'exemple à deux emplacements n'en laisse que 2,81. Sans mesure, on ne l'écrit pas. La mise à jour reste par USB. |
+| 6 Mise à jour sans fil | Pas fait | Taille mesurée : **aucune**. Il n'y a pas de `firmware.bin` ni de `srmodels.bin` sur cette machine, et `pio` n'est pas installé. On ne peut donc pas dire si deux emplacements tiennent à côté du modèle. La mise à jour reste par USB. |
 | 7 Secours sans câble | Pas fait | Le reste n'est pas essayé sur la carte, et ce point compliquerait le programme. |
 | 8 Guides | Fait | `docs/enceinte-brancher.md` et le README du programme. |
 
@@ -26,7 +26,7 @@ Détail et liens : `rapports/2026-11-11-enceinte-raccordement-choix.md`.
 
 - Electron **44.4.5**, Web Serial, geste obligatoire pour `requestPort()`.
 - esptool-js **0.7.1** (Apache-2.0), sans `eval`.
-- mDNS : **multicast-dns 7.2.5** (MIT), une socket par interface, `reuseAddr` vrai. Le paquet n'est pas encore dans `package.json` : les réponses sont pures et testées avec une fausse socket.
+- mDNS : **multicast-dns 7.2.5** (MIT), installé, une socket par interface, `reuseAddr` vrai.
 - ESP-IDF **5.5.0** via `espressif32 @ 6.12.0`, composant `espressif/mdns` **1.14.1**.
 
 ## Essais réels pour Claude Code
@@ -40,7 +40,7 @@ Détail et liens : `rapports/2026-11-11-enceinte-raccordement-choix.md`.
 7. L'enceinte déjà en 5.0.64 répond encore, puis « Remplacer » change la clé.
 8. Mise à jour sans fil : **ne pas la faire** (partie 6 non écrite).
 9. Une phrase normale après l'installation : la vitesse de Jarvis Réflexe n'a pas changé.
-10. Brancher le driver esptool-js dans la fenêtre (il n'est pas encore appelé au clic) avant l'essai 1, ou le constater et le dire.
+10. Le clic « Installer » est branché. Sur la vraie carte, vérifier qu'esptool-js entre en programmation (sinon le geste BOOT) et que la phrase d'accueil est dite. Ce n'est pas fait ici.
 
 ## Étape à ajouter à `release.sh`
 
@@ -64,14 +64,14 @@ npm run test:firmware --workspace @jarvis/desktop
 
 ```
 RAPPORT DE VÉRIFICATION
-Lancement : OK (npm run build, code 0, une fois les fichiers voix déjà présents et conformes à l'empreinte épinglée)
+Lancement : OK (npm run build, code 0, fichiers voix déjà présents et conformes à l'empreinte épinglée)
 Types     : OK (0 erreur)
 Style     : OK (0 avertissement)
-Tests     : OK côté cœur (2384/2384). Bureau : 759 réussis, 6 ignorés, 1 échec.
-Secrets   : OK (0 vrai secret ajouté ; les sk- des tests existants sont factices)
-Fichiers modifiés : enceinte (firmware, cœur speaker, fenêtre Enceintes, guides, coordination, ce rapport)
+Tests     : cœur 2385/2385. Bureau : 767 réussis, 6 ignorés, 1 échec déjà présent sur origin/main
+Secrets   : OK (0 vrai secret ajouté)
+Fichiers modifiés : clic Installer (esptool-js), annonce multicast-dns, rapport
 Prêt à fusionner : NON
-À corriger : le clic Installer ne programme pas encore la carte ; multicast-dns n'est pas installé dans package.json ; l'échec bureau « Construire manuel : la carte reste obligatoire » existe déjà sur origin/main (même message) ; un téléchargement voix tout neuf échoue car le fichier Siwis sur Hugging Face n'a plus l'empreinte épinglée (641d1ab0…)
+À corriger : essai sur la vraie carte ; partie 6 sans binaire mesuré ; l'échec bureau « Construire manuel : la carte reste obligatoire » existe déjà sur origin/main ; un téléchargement voix tout neuf échoue car Siwis sur Hugging Face n'a plus l'empreinte épinglée
 Testé en vrai (sur la carte) : PAS FAIT
 ```
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { announceInterfaces, firewallPort, mdnsAnswers } from './interfaces.js';
+import { announceInterfaces, firewallPort, gatewaysFromProcRoute, gatewaysFromWindowsRoute, mdnsAnswers } from './interfaces.js';
 
 describe('adresses annoncées', () => {
   it('garde la carte de la maison et écarte Tailscale, Radmin et les virtuelles', () => {
@@ -32,6 +32,15 @@ describe('réponses mDNS', () => {
     expect(answers.map((item) => item.type)).toEqual(['PTR', 'SRV', 'TXT', 'A']);
     expect(answers.find((item) => item.type === 'TXT')?.data).toEqual(['pc=ab12cd34', 'v=1']);
     expect(mdnsAnswers([{ name: '_http._tcp.local', type: 'PTR' }], ctx)).toEqual([]);
+  });
+});
+
+describe('passerelles', () => {
+  it('lit la route par défaut Linux et Windows', () => {
+    const linux = ['Iface Destination Gateway Flags', 'wlan0 00000000 0101A8C0 0003', 'eth0 00010203 0201A8C0 0003'].join('\n');
+    expect(gatewaysFromProcRoute(linux)).toEqual({ wlan0: '192.168.1.1' });
+    const windows = '0.0.0.0  0.0.0.0  192.168.1.1  192.168.1.20  25';
+    expect(gatewaysFromWindowsRoute(windows)).toEqual({ '192.168.1.20': '192.168.1.1' });
   });
 });
 

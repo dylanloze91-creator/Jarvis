@@ -845,7 +845,7 @@ Branche `cursor/enceinte-reflexe`. Cahier `docs/specs/enceinte-reflexe.md` (bran
 
 Branche `cursor/enceinte-raccordement`. Cahier `docs/specs/enceinte-raccordement-facile.md` (branche `claude/specs-enceinte-raccordement`). Guide `docs/enceinte-brancher.md`. Rapport `rapports/2026-11-11-enceinte-raccordement.md`. Pas de fusion, pas de publication, version inchangée (5.0.75). **Pas essayé sur la carte.**
 
-- **Chemin** : USB → « Ajouter une enceinte » → pièce et Wi-Fi → « Installer ». Aucun fichier à éditer. Le programme livré n'a pas de secret. Les réglages (Wi-Fi, nom, clé) vont dans la NVS `jarvis` par des lignes `JARVIS>`. `secrets.h` reste le chemin développeur si la NVS est vide.
+- **Chemin** : USB → « Ajouter une enceinte » → pièce et Wi-Fi → « Installer ». Le clic ouvre le port (Web Serial) et écrit la flash avec **esptool-js 0.7.1** (compressé, MD5, `hard_reset`), puis envoie le Wi-Fi et la clé par le câble. Le mot de passe ne va pas sur le disque. Le PC s'annonce avec **multicast-dns 7.2.5** tant que le pont est ouvert.
 - **Cœur** : `setupFlow`, `provisioning`, `manifest`, `interfaces`, `diag`, `signal`. Electron et la carte ne font que brancher. Le mot de passe Wi-Fi n'est pas écrit sur le disque, ni dans un journal.
 - **Carte** : LED violette « à installer », violet fixe si la clé est refusée trois fois, BOOT 10 s pour oublier. Signe de vie toutes les 30 s (`X-Jarvis-Fw`, RSSI, IP, MAC). Le PC s'annonce en mDNS `_jarvis-speaker._tcp` seulement si le pont est ouvert, et seulement sur les interfaces privées réelles avec passerelle.
 - **Pas de mise à jour sans fil** : la taille réelle de `firmware.bin` n'a pas été mesurée. La mise à jour se fait par USB.

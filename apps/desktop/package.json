@@ -21,7 +21,9 @@
   },
   "dependencies": {
     "@jarvis/core": "*",
-    "electron-updater": "^6.8.9"
+    "electron-updater": "^6.8.9",
+    "esptool-js": "0.7.1",
+    "multicast-dns": "7.2.5"
   },
   "devDependencies": {
     "@huggingface/transformers": "^4.3.0",

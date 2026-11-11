@@ -449,6 +449,7 @@ export function installPreviewBridge(): void {
       commitInstall: async () => speakers,
       abandonInstall: async () => speakers,
       pickPort: async () => undefined,
+      firmware: async () => null,
       onPorts: () => () => undefined,
       onEvent: () => () => undefined,
       onTranscribe: () => () => undefined,

@@ -38,6 +38,7 @@ import {
   speakerUsesPiper,
   speakerWarmupEnabled,
   speakerWhisperHeld,
+  SPEAKER_PORT,
   type MarketDataProviderDescriptor,
   type ProviderDescriptor,
   type SearchProviderDescriptor,
@@ -76,7 +77,11 @@ import { PhoneStore } from './phone/store.js';
 import { gatherRepoFacts } from './developer/repo.js';
 import { runProcess } from './developer/runner.js';
 import { QuestionnaireStore } from './questionnaire/store.js';
-import { SpeakerService } from './speaker/service.js';
+import { openAnnounce } from './speaker/announce.js';
+import { loadSpeakerFirmware } from './speaker/firmwareBundle.js';
+import { keptLanAddresses, lanInterfaces } from './speaker/lan.js';
+import { createMulticastSocket } from './speaker/mdnsSocket.js';
+import { SpeakerService, localHostName } from './speaker/service.js';
 import { SpeakerStore } from './speaker/store.js';
 import { createSpeakerSynthesizer } from './speaker/synth.js';
 import { transcribeViaRenderer } from './speaker/transcribe.js';
@@ -382,8 +387,27 @@ async function warmSpeakerSide(): Promise<void> {
 // 5.0.64 — enceintes : une session de chat **par enceinte** (une phrase au salon n'annule ni la
 // fenêtre, ni le téléphone, ni la cuisine), mêmes outils, même historique. Une carte de
 // confirmation y est refusée d'office (`server.ts`) : l'enceinte n'a pas d'écran.
+const speakerStore = SpeakerStore.inUserData(() => app.getPath('userData'));
 const speakers = new SpeakerService({
-  store: SpeakerStore.inUserData(() => app.getPath('userData')),
+  store: speakerStore,
+  keptAddresses: () => keptLanAddresses(),
+  openAnnounce: async () => {
+    try {
+      const ifaces = await lanInterfaces();
+      return openAnnounce(
+        ifaces,
+        { pcId: speakerStore.pcId, port: SPEAKER_PORT, hostname: localHostName() },
+        (address) => {
+          const socket = createMulticastSocket(address);
+          if (!socket) throw new Error('annonce impossible');
+          return socket;
+        },
+      );
+    } catch (error) {
+      console.info(`[enceinte] pas d'annonce mDNS : ${error instanceof Error ? error.message : String(error)}`);
+      return [];
+    }
+  },
   chatFor: () => {
     const speakerSession = new ChatSession({
       registry,
@@ -1160,6 +1184,10 @@ function registerIpc(): void {
   );
   ipcMain.handle(IpcChannel.speakerPickPort, (_event, portId: unknown) => {
     if (typeof portId === 'string' && portId.length < 200) pickSpeakerPort(portId);
+  });
+  ipcMain.handle(IpcChannel.speakerFirmware, () => {
+    const dir = app.isPackaged ? join(process.resourcesPath, 'speaker-firmware') : join(app.getAppPath(), 'speaker-firmware');
+    return loadSpeakerFirmware(dir);
   });
   ipcMain.handle(IpcChannel.speakerRemove, (_event, id: unknown) =>
     typeof id === 'string' && id.length <= 100 ? speakers.remove(id) : speakers.status(),

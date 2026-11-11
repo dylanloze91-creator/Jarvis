@@ -181,6 +181,7 @@ export const IpcChannel = {
   speakerAbandonInstall: 'speaker:abandon-install',
   speakerPorts: 'speaker:ports',
   speakerPickPort: 'speaker:pick-port',
+  speakerFirmware: 'speaker:firmware',
   speakerEvent: 'speaker:event',
   speakerTranscribeRequest: 'speaker:transcribe-request',
   speakerTranscribeResult: 'speaker:transcribe-result',
@@ -936,6 +937,8 @@ export interface JarvisApi {
     commitInstall(id: string, fw?: string): Promise<SpeakerStatus>;
     abandonInstall(id: string): Promise<SpeakerStatus>;
     pickPort(portId: string): Promise<void>;
+    /** Programme à écrire, ou `null` s'il n'est pas dans cette version. */
+    firmware(): Promise<{ version: string; files: Array<{ name: string; address: number; md5: string; data: Uint8Array }> } | null>;
     onPorts(listener: (ports: Array<{ portId: string; label: string }>) => void): () => void;
     /** Phrase reçue d'une enceinte pendant que les réglages sont ouverts. */
     onEvent(listener: (status: SpeakerStatus) => void): () => void;
