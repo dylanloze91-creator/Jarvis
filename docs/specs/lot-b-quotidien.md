@@ -1,5 +1,21 @@
 # Lot B — Au quotidien : briefing du matin, notes de chantier, routines (équipe « Tâches »), imprimante 3D
 
+## Mise à jour du 11 novembre 2026 (à lire avant tout le reste)
+
+Jarvis est en **5.0.76**. Depuis l'écriture de ce lot, beaucoup a changé.
+
+- **Base.** Pars de `origin/main` **après** la fusion de `cursor/bourse-et-tri` : cette branche ajoute des règles express dans le même chemin (`session.ts`, `orchestra.ts`). Si elle n'est pas encore dans `main`, pars d'elle (`origin/cursor/bourse-et-tri`) et dis-le dans le rapport. Ne touche pas à `speaker/`, `firmware/` ni `training/cloud/` : d'autres chantiers y travaillent.
+- **B2 devient « Notes et liste », sans le mot chantier.** L'utilisateur ne veut pas du chantier pour l'instant. Les notes restent utiles pour tout : courses, rappels, matériel, idées. Mêmes outils, renommés `note_ajouter`, `notes_lister`, `note_cocher`, `note_effacer`, et fichier `userData/notes.json`. « Note : 3 paquets de liteaux pour lundi » marche toujours ; c'est une note comme une autre.
+- **Briefing dit à l'enceinte.** « Jarvis, bonjour » dit à une enceinte donne la version courte, à voix haute, par le chemin Jarvis Réflexe (5.0.75) : phrases courtes, réponse en flux. Rien ne s'affiche sur le PC, sauf le détail si l'utilisateur le demande (« le détail est sur le PC », 5.0.75).
+- **« Cette nuit ».** Le briefing dit ce qui a tourné cette nuit quand une source existe :
+  - la génération sur le PC (`exercices.jsonl` : lignes ajoutées depuis hier) ;
+  - plus tard, la flotte de location (`training/cloud/flotte`, si elle est fusionnée : `flotte etat`).
+  Chiffres seulement.
+- **Routines et musique.** Une étape « mets ma playlist X » suit les réglages Spotify actuels (appareil choisi, ou « Devialet ou PC ? » à la voix). Dans une routine, l'appareil peut être fixé par l'étape, pour ne pas reposer la question à chaque lancement.
+- **Imprimante 3D (B4).** Plus tard, un spécialiste Impression 3D (G-code, Klipper) s'appuiera sur ce client Moonraker. Garde-le propre et réutilisable : client dans `packages/core` sans Electron, faux Moonraker dans un testkit.
+- **Règles express.** Elles passent après l'horloge, le calcul et la bourse, et avant le cerveau. « Bonjour » tout seul, en milieu de journée, après le premier réveil, reste une salutation : c'est l'équipe Conversation qui répond, pas le briefing.
+
+
 Lire d'abord `docs/specs/regles-communes-lots.md`. Branche `cursor/lot-b-quotidien`. Réutiliser : météo Open-Meteo et lieu « Chez moi » (`currentSearch`, `homePlace`), agenda Google (`google_calendar_list`), caractère de Jarvis, bilan de santé (lot A, s'il est fusionné ; sinon brancher plus tard).
 
 ## B1. Briefing du matin
