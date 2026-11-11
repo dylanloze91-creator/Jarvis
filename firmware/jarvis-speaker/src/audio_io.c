@@ -16,6 +16,8 @@ static uint32_t tx_rate = SAMPLE_RATE;
 // Le micro envoie 32 bits par échantillon : on lit par blocs de ce format puis on réduit en 16 bits.
 #define MIC_BLOCK 512
 static int32_t mic_block[MIC_BLOCK];
+// Moyenne glissante du micro (×256), pour retirer son décalage continu.
+static int32_t mic_dc_q8 = 0;
 
 void audio_init(void) {
     // Micro : I2S0, maître, 32 bits, un seul canal (gauche).
@@ -72,7 +74,11 @@ size_t mic_read(int16_t *out, size_t samples) {
         if (i2s_channel_read(rx_chan, mic_block, want * sizeof(int32_t), &bytes, pdMS_TO_TICKS(1000)) != ESP_OK) break;
         size_t got = bytes / sizeof(int32_t);
         for (size_t i = 0; i < got; i++) {
-            int32_t v = mic_block[i] >> MIC_SHIFT;
+            // Retire le décalage continu du micro (passe-haut d'environ 2,5 Hz) : sans lui, un
+            // micro un peu décalé paraît « jamais silencieux » et chaque phrase dure 15 s.
+            int32_t raw = mic_block[i] >> MIC_SHIFT;
+            mic_dc_q8 += ((raw * 256) - mic_dc_q8) / 1024;
+            int32_t v = raw - (mic_dc_q8 / 256);
             if (v > 32767) v = 32767;
             if (v < -32768) v = -32768;
             out[done + i] = (int16_t)v;
