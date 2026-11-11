@@ -39,6 +39,19 @@ Verdict : **vrai son, câblage bon** (SCK/WS, alignement, L/R), mais une dérive
 
 Le worker Whisper est bien chargé (« 4 threads »). La lenteur vient de Whisper sur ce PC, pas des 15 s de bruit. Non résolu ici ; à mesurer avec l'écoute de la fenêtre, l'apprentissage du réveil et Ollama coupés (0.4.17 donnait 2,3 s sur une VM).
 
+## 3 bis. Pourquoi Whisper prenait 14 s, et correctif
+
+Mesures sur le PC (i7 10e génération, 8 cœurs logiques), modèle réel de Jarvis = **`Xenova/whisper-small` q8** depuis la 5.0.9 (CLAUDE.md disait encore `whisper-base`) :
+
+| Où | Threads | Transcription du WAV de 1,95 s |
+| --- | --- | --- |
+| Jarvis 5.0.75 installé, par la fausse enceinte | annoncés 4, **1 seul au travail** (un thread du processus fenêtre a fait 13,3 s de calcul sur un tour de 14,9 s) | 14,2 à 16,2 s |
+| Electron 44 nu, transformers.js 4.3 + ORT wasm, même drapeau `SharedArrayBuffer` | 1 | 13,2 à 14,1 s |
+| idem | 4 (page, Worker, Worker + sandbox + CSP de Jarvis, chargement « à la Jarvis » en blob + `wasmBinary`) | 4,3 à 5,4 s |
+| **Jarvis de développement avec le correctif**, fausse enceinte | 4 | **4,7 s puis 4,3 s** (tour complet 4,5 s, chemin réflexe) |
+
+Cause : le paquet produit contient trois copies d'onnxruntime-web (`ort.wasm.min-*.js`, configurée par `configureOnnxRuntime` avec 4 threads, et une copie **embarquée dans chaque chunk `transformers.web-*.js`**, jamais configurée : l'alias Vite ne réécrit pas l'intérieur d'un bundle précompilé). Whisper tourne sur la copie embarquée, qui prend son défaut : page non isolée (`crossOriginIsolated` faux) → **1 thread**. Correctif (`loaderCore.ts`) : `configureTransformersEnv(env, { numThreads })` règle `env.backends.onnx.wasm.numThreads` de transformers.js ; le worker passe ses 4 threads, la page ne passe rien (1 thread, comme avant). Test dans `pipelineLoader.test.ts`. Hors d'une isolation cross-origin, 4 threads suffisent avec le drapeau Electron (vérifié : `postMessage` d'un `SharedArrayBuffer` passe). Piste suivante, non faite : revenir à `whisper-base` (3 fois plus petit) pour viser 1 à 2 s, au prix de l'exactitude.
+
 ## 4. Firmware de test, flashé sur COM9
 
 - `include/mic_filter.h` (nouveau, sans matériel) : retrait de l'offset puis passe-haut du premier ordre à ~100 Hz, en entiers. Test `host-tests/mic_filter_test.c` ajouté à `run.sh` : dérive ±15 000 à 2 Hz → 132 RMS ; ton 400 Hz gardé à 95 % ; 150 Hz à 82 % ; bornes 16 bits tenues. **Pas de gcc sur ce PC** : syntaxe vérifiée avec le compilateur ESP (`-fsyntax-only`), les cinq contrôles rejoués à l'identique en Python (entiers).
@@ -79,7 +92,7 @@ Rien à vérifier : le signal est bien aligné et continu, les deux moitiés d'�
 
 ## Reste à faire
 
-- Whisper à 14 s par phrase sur ce PC (point 3).
+- Whisper : 4,5 s avec le correctif (point 3 bis), pas encore dans la version installée ; `whisper-base` à essayer pour descendre encore.
 - Remettre l'enceinte à sa place (loin du PC, sur son chargeur) et relire le bruit de fond au démarrage : s'il tombe bien sous 393, le seuil reste 393.
 - Le trieur est **encore** dans les réglages (`orchestra.router = jarvis-trieur`, chemin « trieur » dans le chrono) : à retirer dans Réglages → Le cerveau de Jarvis → Chef d'orchestre.
 - Effets de la séance : carte redémarrée une dizaine de fois, Jarvis fermé trois fois puis relancé, Spotify lancé puis mis en pause, deux fausses questions dans la discussion « chambre ».
@@ -95,6 +108,6 @@ Tests     : OK (orchestra.test.ts 19/19 dont les fautes Whisper ; mic_filter_tes
 Secrets   : OK (jeton de l'enceinte lu dans secrets.h hors dépôt, jamais affiché ; WAV de l'utilisateur hors dépôt)
 Fichiers modifiés : packages/core/src/agent/orchestra.ts, orchestra.test.ts ; firmware/jarvis-speaker/include/{mic_filter.h,config.h}, src/{audio_io.c,main.c,led.c}, host-tests/{mic_filter_test.c,run.sh} ; ce rapport ; AGENTS-COORDINATION.md ; CLAUDE.md
 Prêt à fusionner : PAS FAIT (demande de l'utilisateur : pas de fusion ; firmware à essayer à sa place habituelle)
-À corriger : Whisper 14 s par phrase ; bruit tonal à côté du PC
-Testé en vrai (à la voix, sur le PC) : FAIT (l'utilisateur a parlé à l'enceinte : phrase de 2,66 s, réponse juste)
+À corriger : bruit tonal à côté du PC ; whisper-base à essayer
+Testé en vrai (à la voix, sur le PC) : FAIT (phrases dans la chambre 2 à 3 s ; Whisper 4,3 s mesuré sur la version de développement par la fausse enceinte)
 ```

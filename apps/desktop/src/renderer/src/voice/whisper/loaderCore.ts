@@ -79,6 +79,8 @@ type LoadedPipeline = AutomaticSpeechRecognitionPipeline & {
 export interface WhisperLoaderDeps {
   importTransformers: () => Promise<Transformers>;
   configureRuntime: () => Promise<unknown>;
+  /** Threads du runtime ONNX embarqué par transformers.js (worker : plusieurs ; page : absent = 1). */
+  numThreads?: number;
   /** Sérialise les appels au runtime ONNX partagé avec openWakeWord. */
   runExclusive: <T>(task: () => Promise<T>) => Promise<T>;
   now: () => number;
@@ -141,13 +143,24 @@ export const YOUTUBE_MAX_NEW_TOKENS = 224;
  * `preprocessor_config.json` passaient pour absents, d'où les erreurs
  * `feature_extractor` (0.4.9) puis `tokenizer_class` (0.4.10).
  */
-export function configureTransformersEnv(env: Transformers['env']): void {
+export function configureTransformersEnv(env: Transformers['env'], options: { numThreads?: number } = {}): void {
   env.allowLocalModels = true;
   env.localModelPath = WHISPER_LOCAL_MODEL_ROOT;
   env.allowRemoteModels = false;
   env.useBrowserCache = false;
   env.useWasmCache = false;
   env.useFS = false;
+  // transformers.js (`transformers.web.js`) embarque sa propre copie d'onnxruntime-web : l'alias Vite et
+  // `configureOnnxRuntime` (4 threads, .wasm en `wasmBinary`) ne la touchent pas. Sans réglage ici, cette
+  // copie prend son défaut : page non isolée (`crossOriginIsolated` faux) → 1 thread. Mesuré le 2026-11-11
+  // sur le PC de l'utilisateur : whisper-small 13 à 14 s par phrase sur 1 thread, 4,5 s sur 4.
+  if (options.numThreads !== undefined) {
+    const onnx = (env as { backends?: { onnx?: { wasm?: { numThreads?: number; proxy?: boolean } } } }).backends?.onnx;
+    if (onnx?.wasm) {
+      onnx.wasm.numThreads = options.numThreads;
+      onnx.wasm.proxy = false;
+    }
+  }
 }
 
 export function createWhisperLoader(deps: WhisperLoaderDeps) {
@@ -174,7 +187,7 @@ export function createWhisperLoader(deps: WhisperLoaderDeps) {
       setStage('runtime');
       await deps.configureRuntime();
       const transformers = await deps.importTransformers();
-      configureTransformersEnv(transformers.env);
+      configureTransformersEnv(transformers.env, { numThreads: deps.numThreads });
       setStage('files', 0);
       const progress_callback = (info: ProgressInfo) => {
         if (timedOut || info.status !== 'progress_total') return;
