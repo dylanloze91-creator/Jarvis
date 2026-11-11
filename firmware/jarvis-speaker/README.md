@@ -11,6 +11,11 @@ de chez toi. Le PC doit rester allumé avec Jarvis ouvert.
 Il faut compter une après-midi la première fois, sans rien souder : tout se branche avec des petits
 fils. Aucune connaissance en programmation n'est nécessaire, il suffit de suivre les étapes dans l'ordre.
 
+Le programme livré avec Jarvis n'a **aucun** Wi-Fi ni aucune clé dedans : tu le poses sur la carte
+depuis Jarvis (« Ajouter une enceinte »). Le chemin PlatformIO avec `secrets.h`, plus bas, est réservé
+aux développeurs. Les deux partent du même code : s'il existe un `include/secrets.h` **et** que la
+mémoire de la carte est vide, ce fichier sert encore.
+
 > Pas encore le matériel ? Tu peux déjà vérifier que le PC est prêt avec la « fausse enceinte »
 > (voir tout en bas, « Essayer sans matériel »).
 

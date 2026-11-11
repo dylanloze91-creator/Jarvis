@@ -16,6 +16,7 @@
     "typecheck": "npm run build --workspace @jarvis/core && npm run typecheck --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
     "lint": "eslint .",
+    "test:firmware": "sh firmware/jarvis-speaker/test/run.sh",
     "format": "prettier --write \"**/*.{ts,tsx,json,md,css}\""
   },
   "devDependencies": {

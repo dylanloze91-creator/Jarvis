@@ -13,7 +13,7 @@ static led_strip_handle_t strip;
 
 static volatile led_state_t current = LED_BOOT;
 
-static void paint(led_state_t state, bool on) {
+static void paint(led_state_t state, bool on, uint8_t breath) {
     uint8_t r = 0, g = 0, b = 0;
     switch (state) {
     case LED_STANDBY: break;
@@ -22,6 +22,9 @@ static void paint(led_state_t state, bool on) {
     case LED_SPEAKING: b = LED_BRIGHTNESS; break;
     case LED_ERROR: r = LED_BRIGHTNESS; break;
     case LED_BOOT: r = LED_BRIGHTNESS; g = LED_BRIGHTNESS / 3; break;
+    case LED_SETUP: r = breath; b = breath; break;
+    case LED_KEY: r = LED_BRIGHTNESS; b = LED_BRIGHTNESS; break;
+    case LED_IDENTIFY: r = LED_BRIGHTNESS; g = LED_BRIGHTNESS; b = LED_BRIGHTNESS; break;
     }
 #if LED_IS_RGB
     if (!strip) return;
@@ -35,11 +38,21 @@ static void paint(led_state_t state, bool on) {
 static void blink_task(void *arg) {
     (void)arg;
     bool on = false;
+    int breath = 0;
+    int step = 4;
     for (;;) {
         led_state_t state = current;
         on = (state == LED_THINKING) ? !on : true;
-        paint(state, on);
-        vTaskDelay(pdMS_TO_TICKS(state == LED_THINKING ? 250 : 100));
+        breath += step;
+        if (breath >= LED_BRIGHTNESS) {
+            breath = LED_BRIGHTNESS;
+            step = -4;
+        } else if (breath <= 2) {
+            breath = 2;
+            step = 4;
+        }
+        paint(state, on, (uint8_t)breath);
+        vTaskDelay(pdMS_TO_TICKS(state == LED_THINKING ? 250 : 80));
     }
 }
 
@@ -73,5 +86,5 @@ void led_init(void) {
 
 void led_set(led_state_t state) {
     current = state;
-    paint(state, true);
+    paint(state, true, LED_BRIGHTNESS);
 }
