@@ -15,7 +15,8 @@
 #   COUNT=400          exercices acceptés visés (la durée l'emporte).
 #   MODELE=qwen3-coder:30b
 #
-# Le script refuse de travailler si la machine ne peut pas s'arrêter seule.
+# Le script refuse de travailler si la machine ne peut pas s'arrêter seule,
+# sauf avec SANS_GARDE_FOU=1 (choix de l'utilisateur : la machine tourne jusqu'à ce qu'il la supprime).
 
 set -euo pipefail
 
@@ -46,19 +47,24 @@ arreter_machine() {
 if [[ "${1:-}" != "--fond" ]]; then
   echo "== Contrôles"
   if [[ -z "${RUNPOD_POD_ID:-}" ]]; then echo "ARRÊT : ce script se lance dans une machine RunPod."; exit 2; fi
-  if [[ -z "${JARVIS_RUNPOD_KEY:-}" ]]; then
-    echo "ARRÊT : la variable JARVIS_RUNPOD_KEY est vide. La machine ne pourrait pas s'arrêter seule."
-    echo "Ajoute-la dans la configuration de la machine (valeur : {{ RUNPOD_SECRET_jarvis_cle }}), puis relance."
-    exit 2
+  if [[ "${SANS_GARDE_FOU:-0}" == "1" ]]; then
+    echo "SANS GARDE-FOU (choix de l'utilisateur) : la machine ne s'arrêtera PAS seule."
+    echo "Pense à la supprimer le matin (Terminate). Le crédit du compte reste la seule limite."
+  else
+    if [[ -z "${JARVIS_RUNPOD_KEY:-}" ]]; then
+      echo "ARRÊT : la variable JARVIS_RUNPOD_KEY est vide. La machine ne pourrait pas s'arrêter seule."
+      echo "Ajoute-la dans la configuration de la machine (valeur : {{ RUNPOD_SECRET_jarvis_cle }}), puis relance."
+      exit 2
+    fi
+    export RUNPOD_API_KEY="$JARVIS_RUNPOD_KEY"
+    command -v runpodctl >/dev/null || { echo "ARRÊT : runpodctl absent de cette image."; exit 2; }
+    runpodctl update >/dev/null 2>&1 || true
+    if ! { runpodctl pod get "$RUNPOD_POD_ID" >/dev/null 2>&1 || runpodctl get pod "$RUNPOD_POD_ID" >/dev/null 2>&1; }; then
+      echo "ARRÊT : la clé ne permet pas de lire cette machine, donc pas de l'arrêter. Vérifie le secret et ses droits."
+      exit 2
+    fi
+    echo "Garde-fou : OK (la clé permet d'arrêter la machine)."
   fi
-  export RUNPOD_API_KEY="$JARVIS_RUNPOD_KEY"
-  command -v runpodctl >/dev/null || { echo "ARRÊT : runpodctl absent de cette image."; exit 2; }
-  runpodctl update >/dev/null 2>&1 || true
-  if ! { runpodctl pod get "$RUNPOD_POD_ID" >/dev/null 2>&1 || runpodctl get pod "$RUNPOD_POD_ID" >/dev/null 2>&1; }; then
-    echo "ARRÊT : la clé ne permet pas de lire cette machine, donc pas de l'arrêter. Vérifie le secret et ses droits."
-    exit 2
-  fi
-  echo "Garde-fou : OK (la clé permet d'arrêter la machine)."
   if [[ ! -s "$DATA/exercices.jsonl" ]]; then
     echo "ARRÊT : envoie d'abord exercices.jsonl et entrainement.jsonl du PC dans $DATA/ (bouton « Upload » de Jupyter)."
     echo "Sans eux, le professeur referait des exercices que tu as déjà."
@@ -72,16 +78,19 @@ if [[ "${1:-}" != "--fond" ]]; then
 fi
 
 # ---------------------------------------------------------------- 2. en arrière-plan
-export RUNPOD_API_KEY="$JARVIS_RUNPOD_KEY"
 DEPART=$(compter)
-notifier "Machine louée : préparation (déjà $DEPART exercices). Arrêt forcé dans $GARDE_HEURES h."
-
-# Filet : arrêt de la machine quoi qu'il arrive (le disque /workspace est gardé).
-(
-  sleep $((GARDE_HEURES * 3600))
-  notifier "Arrêt forcé ($GARDE_HEURES h). Fichiers gardés sur /workspace."
-  arreter_machine
-) &
+if [[ "${SANS_GARDE_FOU:-0}" == "1" ]]; then
+  notifier "Machine louée : préparation (déjà $DEPART exercices). SANS arrêt automatique : supprime-la le matin."
+else
+  export RUNPOD_API_KEY="$JARVIS_RUNPOD_KEY"
+  notifier "Machine louée : préparation (déjà $DEPART exercices). Arrêt forcé dans $GARDE_HEURES h."
+  # Filet : arrêt de la machine quoi qu'il arrive (le disque /workspace est gardé).
+  (
+    sleep $((GARDE_HEURES * 3600))
+    notifier "Arrêt forcé ($GARDE_HEURES h). Fichiers gardés sur /workspace."
+    arreter_machine
+  ) &
+fi
 
 echo "== Node 22"
 if ! command -v node >/dev/null || [[ "$(node -v | cut -c2- | cut -d. -f1)" -lt 22 ]]; then
