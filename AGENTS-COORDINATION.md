@@ -60,6 +60,8 @@ Statuts possibles : `en cours`, `en pause`, `bloqué`, `terminé`.
 | Claude Code | `claude/imager-mode-direct` | Mode direct de Jarvis Imager (zip du 2026-11-10) : panneau « Imager direct », `/image`, repérage par règles avant le cerveau, prompt complété par Imager sans le 7B (traduction locale par dictionnaire), `generer_image` qui reçoit la demande mot pour mot, bouton « Envoyer à Imager », Forge gardé chargé panneau ouvert, option sans .txt pour perso. Reprend la branche `imager-mode-direct` ouverte par Cursor (décision de l'utilisateur, 16 h 50) : ses deux brouillons (`config/imager_direct_rules.txt`, `localEnglish.ts`) sont gardés ; sa branche ne doit plus être poursuivie. | — | 2026-11-10 | terminé : rapport `rapports/2026-11-10-imager-mode-direct.md`, fusionné dans main, publié en 5.0.74 ; chantier images clos à la demande de l'utilisateur |
 | Claude Code | `claude/imager-enceinte-spotify` | Correctif après l'essai de la 5.0.71 installée : une demande d'image dite à l'enceinte lançait Spotify (`playIntent.ts`, `images/intent.ts`) ; une seule étiquette de cadrage dans la consigne reformulée (`refine.ts`) | — | 2026-11-10 | terminé |
 | Claude Code | `claude/publication-5071` | Publication 5.0.71 : version, CLAUDE.md, rapport `rapports/2026-11-10-publication-5071.md`, fusion dans main, `release.sh` (installateur + release GitHub `v5.0.71`) | — | 2026-11-10 | terminé : main = 85bfd44, release v5.0.71 publiée (exe, blockmap, latest.yml) ; trois tests du bureau rendus fiables sous Windows |
+| Claude Code | `claude/trieur-entrainement-1` | Entraînement du trieur (TRIEUR.md étapes 6 à 8) : essai 20 pas, entraînement complet QLoRA sur Qwen2.5-1.5B-Instruct, export `jarvis-trieur`, banc contre `qwen2.5:7b` ; rapport dans `rapports/` ; pas de fusion dans main, pas de publication | — | 2026-11-11 | terminé : `jarvis-trieur` créé dans Ollama (Qwen2.5-1.5B-Instruct, Apache-2.0, 59 min, validation 0,0645), banc 36/140 contre 53/140 pour `qwen2.5:7b` : trieur **non activé**, aucun réglage changé ; rapport `rapports/2026-11-11-trieur-entrainement-1.md` |
+| Claude Code | `claude/trieur-examen-reel` | Examen du trieur avec les vraies phrases Jarvis : extraction (conversations Jarvis seulement), tri à la main, banc sur `qwen2.5:7b`, `jarvis-trieur`, `qwen2.5:3b`, `qwen2.5:1.5b` ; option du banc pour un autre fichier d'examen ; rapport chiffres seulement ; pas de fusion, pas de publication, trieur non activé | `packages/core/src/trieur/`, `packages/core/scripts/trieur-*.mjs` | 2026-11-11 | en cours |
 
 ## Ressource GPU / Ollama
 
@@ -67,6 +69,6 @@ Une seule carte (RTX 2060 6 Go) : un seul agent à la fois lance le banc (`npm r
 
 | État | Par qui | Pour quoi | Depuis |
 | --- | --- | --- | --- |
-| libre | — | — | — |
+| occupée | Claude Code (`claude/trieur-examen-reel`) | banc du trieur (`trieur:banc`) sur 4 modèles Ollama, examen Jarvis | 2026-11-11 |
 
 Pour réserver : passer l'état à `occupée`, remplir les colonnes, commiter et pousser **avant** de lancer. Pour libérer : remettre `libre` et `—`, commiter et pousser.

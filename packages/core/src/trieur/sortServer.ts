@@ -23,6 +23,8 @@ export interface SortServerOptions {
   examPath: string;
   progressPath: string;
   host?: string;
+  /** Port fixe (0 ou absent = port libre). Un port fixe sert à `tailscale serve --bg <port>`. */
+  port?: number;
   log?: (line: string) => void;
 }
 
@@ -39,7 +41,13 @@ const PAGE_POLICY = [
 export function allowedSortHost(host: string | undefined): boolean {
   if (!host) return false;
   const name = host.trim().toLowerCase().replace(/:\d+$/, '');
-  return name === '127.0.0.1' || name === 'localhost' || name === '[::1]';
+  // Même règle que la page du téléphone : boucle locale, ou le nom Tailscale du PC (`tailscale serve`).
+  return (
+    name === '127.0.0.1' ||
+    name === 'localhost' ||
+    name === '[::1]' ||
+    /^[a-z0-9-]+(\.[a-z0-9-]+)*\.ts\.net$/.test(name)
+  );
 }
 
 async function readLines(path: string): Promise<unknown[]> {
@@ -126,11 +134,10 @@ button:focus{outline:2px solid #38bdf8}
 #status{font-size:0.9rem;color:#94a3b8;margin-top:1rem}`;
 
 /** JavaScript servi séparément ; le texte utilisateur passe uniquement par textContent. */
-export const SORT_APP_JS = String.raw`const teams=[
-['conversation','1 Conversation'],['pc','2 PC'],['fichiers','3 Fichiers'],['web','4 Internet'],
-['musique','5 Musique'],['concentration','6 Concentration'],['memoire','7 Mémoire'],
-['google','8 Google'],['code','9 Code']];
-const grid=document.getElementById('teams');
+export const SORT_APP_JS = `const teams=${JSON.stringify(
+  teamButtonLabels().map(({ id, label, key }) => [id, `${key === 10 ? 0 : key} ${label}`]),
+)};
+`+ String.raw`const grid=document.getElementById('teams');
 const statusEl=document.getElementById('status');
 const ctxEl=document.getElementById('context');
 const phraseEl=document.getElementById('phrase');
@@ -168,9 +175,11 @@ document.body.addEventListener('click',e=>{
 });
 document.addEventListener('keydown',e=>{
   const n=Number(e.key);
-  if(n>=1&&n<=9){
+  if(n>=1&&n<=9&&teams[n-1]){
     const id=teams[n-1][0];
     void choose(id);
+  }else if(e.key==='0'&&teams[9]){
+    void choose(teams[9][0]);
   }
 });
 void load();`;
@@ -194,7 +203,7 @@ export class TrieurSortServer {
         });
       });
       this.server.on('error', reject);
-      this.server.listen(0, host, () => resolve());
+      this.server.listen(this.options.port ?? 0, host, () => resolve());
     });
     const addr = this.server!.address();
     const port = typeof addr === 'object' && addr ? addr.port : 0;

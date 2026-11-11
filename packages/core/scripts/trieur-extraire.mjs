@@ -4,6 +4,8 @@
  *
  *   npm run trieur:extraire --workspace @jarvis/core -- --conversations <dossier> --dir C:\\dev\\jarvis-data\\trieur
  *   npm run trieur:extraire --workspace @jarvis/core -- --export-claude <dossier ou zip claude.ai> --dir C:\\dev\\jarvis-data\\trieur
+ *
+ * `--examen <nom>` écrit `a-trier-<nom>.jsonl` (examen à part, ex. phrases dites à Jarvis) sans toucher à `a-trier.jsonl`.
  */
 import { spawnSync } from 'node:child_process';
 import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
@@ -26,6 +28,7 @@ function parseArgs(argv) {
   let conversations = '';
   let exportClaude = '';
   let dir = 'C:\\dev\\jarvis-data\\trieur';
+  let examName = '';
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     const next = () => {
@@ -37,9 +40,10 @@ function parseArgs(argv) {
     if (arg === '--conversations') conversations = next();
     else if (arg === '--export-claude') exportClaude = next();
     else if (arg === '--dir') dir = next();
+    else if (arg === '--examen') examName = next();
     else if (arg === '--help' || arg === '-h') {
       console.log(
-        'Usage : trieur:extraire -- --conversations <dossier Jarvis> | --export-claude <dossier ou .zip claude.ai> [--dir <données>]',
+        'Usage : trieur:extraire -- --conversations <dossier Jarvis> | --export-claude <dossier ou .zip claude.ai> [--dir <données>] [--examen <nom>]',
       );
       process.exit(0);
     }
@@ -51,6 +55,7 @@ function parseArgs(argv) {
     conversations: conversations ? resolve(conversations) : '',
     exportClaude: exportClaude ? resolve(exportClaude) : '',
     dir: resolve(dir),
+    examName,
   };
 }
 
@@ -104,7 +109,7 @@ async function loadClaudeExport(exportPath) {
 }
 
 const options = parseArgs(process.argv.slice(2));
-const files = (await import(new URL('../dist/trieur/files.js', here).href)).trieurFileNames(options.dir);
+const files = (await import(new URL('../dist/trieur/files.js', here).href)).trieurFileNames(options.dir, options.examName || undefined);
 await mkdir(options.dir, { recursive: true });
 
 const groups = [];

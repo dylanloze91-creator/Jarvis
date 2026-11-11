@@ -2,7 +2,10 @@
 /**
  * Page locale de tri de l'examen du trieur (127.0.0.1, port libre).
  *
- *   npm run trieur:trier --workspace @jarvis/core -- --dir C:\\dev\\jarvis-data\\trieur
+ *   npm run trieur:trier --workspace @jarvis/core -- --dir C:\\dev\\jarvis-data\\trieur [--examen <nom>]
+ *
+ * `--examen <nom>` trie `a-trier-<nom>.jsonl` vers `examen-<nom>.jsonl` (progression `tri-progress-<nom>.json`).
+ * `--port N` fixe le port (toujours 127.0.0.1) : `tailscale serve --bg N` publie alors la page sur le nom Tailscale du PC.
  */
 import { resolve } from 'node:path';
 
@@ -18,6 +21,8 @@ try {
 
 function parseArgs(argv) {
   let dir = 'C:\\dev\\jarvis-data\\trieur';
+  let examName = '';
+  let port = 0;
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     const next = () => {
@@ -27,21 +32,24 @@ function parseArgs(argv) {
       return v;
     };
     if (arg === '--dir') dir = next();
+    else if (arg === '--examen') examName = next();
+    else if (arg === '--port') port = Math.max(0, Number(next()) || 0);
     else if (arg === '--help' || arg === '-h') {
-      console.log('Usage : trieur:trier -- [--dir <données>]');
+      console.log('Usage : trieur:trier -- [--dir <données>] [--examen <nom>] [--port N]');
       process.exit(0);
     }
   }
-  return { dir: resolve(dir) };
+  return { dir: resolve(dir), examName, port };
 }
 
 const options = parseArgs(process.argv.slice(2));
-const files = (await import(new URL('../dist/trieur/files.js', here).href)).trieurFileNames(options.dir);
+const files = (await import(new URL('../dist/trieur/files.js', here).href)).trieurFileNames(options.dir, options.examName || undefined);
 
 const server = new SortServer({
   toSortPath: files.toSort,
   examPath: files.exam,
   progressPath: files.sortProgress,
+  port: options.port,
   log: (line) => console.log(line),
 });
 

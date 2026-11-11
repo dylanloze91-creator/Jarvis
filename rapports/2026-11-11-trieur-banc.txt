@@ -1,0 +1,5 @@
+Examen du trieur · 140 phrase(s) triées à froid · 10 validée(s) en direct · 2026-11-11T00:40:29.829Z
+- trié à froid · qwen2.5:7b : 53/140 (38 %) · illisibles 0 · chargement 18514 ms · 333 ms/phrase · carte ~79 %
+- trié à froid · jarvis-trieur : 36/140 (26 %) · illisibles 1 · chargement 3199 ms · 63 ms/phrase · carte ~100 %
+- validé en direct · qwen2.5:7b : 10/10 (100 %) · illisibles 0 · 237 ms/phrase · carte ~79 %
+- validé en direct · jarvis-trieur : 7/10 (70 %) · illisibles 0 · 56 ms/phrase · carte ~100 %

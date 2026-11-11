@@ -4,7 +4,7 @@
  *
  *   npm run trieur:generer --workspace @jarvis/core -- --model qwen2.5:7b --count 2000 --dir C:\\dev\\jarvis-data\\trieur
  */
-import { appendFile, mkdir, readFile } from 'node:fs/promises';
+import { appendFile, mkdir, readFile, readdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
 const here = new URL('.', import.meta.url);
@@ -55,12 +55,20 @@ await mkdir(options.dir, { recursive: true });
 const extract = await import(new URL('../dist/trieur/extract.js', here).href);
 let exam = [];
 try {
-  const raw = await readFile(files.exam, 'utf8');
-  exam = raw
-    .split(/\r?\n/)
-    .filter((line) => line.trim())
-    .map((line) => extract.parseExamLine(JSON.parse(line)))
-    .filter(Boolean);
+  // Tous les examens (`examen.jsonl` et `examen-<nom>.jsonl`) : aucune phrase d'examen ne va dans le cahier.
+  const examFiles = filesMod.listExamFiles(options.dir, await readdir(options.dir));
+  if (!examFiles.includes(files.exam)) throw new Error('examen principal absent');
+  for (const examFile of examFiles) {
+    const raw = await readFile(examFile, 'utf8');
+    exam.push(
+      ...raw
+        .split(/\r?\n/)
+        .filter((line) => line.trim())
+        .map((line) => extract.parseExamLine(JSON.parse(line)))
+        .filter(Boolean),
+    );
+  }
+  console.log(`${exam.length} phrase(s) d'examen protégées (${examFiles.length} fichier(s)).`);
 } catch {
   console.error(`Examen absent (${files.exam}) : génération refusée pour éviter une fuite.`);
   process.exit(1);

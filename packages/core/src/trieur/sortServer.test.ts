@@ -4,11 +4,20 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { allowedSortHost, SORT_APP_JS, TrieurSortServer } from './sortServer.js';
 import { trieurFileNames } from './files.js';
+import { ORCHESTRA_TEAMS } from '../agent/orchestraTeams.js';
 
 describe('trieur sort server', () => {
   it('refuse un hôte autre que 127.0.0.1', () => {
     expect(allowedSortHost('127.0.0.1:1234')).toBe(true);
     expect(allowedSortHost('evil.example:1234')).toBe(false);
+  });
+
+  it('accepte le nom Tailscale du PC (tailscale serve), rien d’autre', () => {
+    expect(allowedSortHost('mon-pc.tail1234.ts.net')).toBe(true);
+    expect(allowedSortHost('mon-pc.tail1234.ts.net:443')).toBe(true);
+    expect(allowedSortHost('example.com')).toBe(false);
+    expect(allowedSortHost('ts.net')).toBe(false);
+    expect(allowedSortHost('mon-pc.ts.net.evil.com')).toBe(false);
   });
 
   it('sert la feuille de style à /app.css sans style inline', async () => {
@@ -132,5 +141,11 @@ describe('trieur sort server', () => {
     expect(SORT_APP_JS).toContain('textContent');
     expect(SORT_APP_JS).not.toMatch(/innerHTML\s*=/);
     expect(SORT_APP_JS).toMatch(/n>=1&&n<=9/);
+  });
+
+  it('propose toutes les équipes du chef d’orchestre, Images comprise (touche 0)', () => {
+    for (const team of ORCHESTRA_TEAMS) expect(SORT_APP_JS).toContain(`["${team}",`);
+    expect(SORT_APP_JS).toContain('["images","0 Images"]');
+    expect(SORT_APP_JS).toContain("e.key==='0'");
   });
 });

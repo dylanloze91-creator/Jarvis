@@ -1,0 +1,240 @@
+{
+  "at": "2026-11-11T00:40:29.829Z",
+  "examLines": 140,
+  "liveExamLines": 10,
+  "models": [
+    {
+      "model": "qwen2.5:7b",
+      "skipped": null,
+      "total": 140,
+      "correct": 53,
+      "byTeam": {
+        "conversation": {
+          "total": 62,
+          "correct": 41
+        },
+        "pc": {
+          "total": 2,
+          "correct": 2
+        },
+        "fichiers": {
+          "total": 5,
+          "correct": 0
+        },
+        "web": {
+          "total": 44,
+          "correct": 5
+        },
+        "memoire": {
+          "total": 11,
+          "correct": 0
+        },
+        "code": {
+          "total": 16,
+          "correct": 5
+        }
+      },
+      "confusion": {
+        "conversation": {
+          "code": 10,
+          "conversation": 41,
+          "pc": 8,
+          "fichiers": 1,
+          "web": 1,
+          "memoire": 1
+        },
+        "pc": {
+          "pc": 2
+        },
+        "fichiers": {
+          "code": 1,
+          "memoire": 1,
+          "conversation": 1,
+          "pc": 2
+        },
+        "web": {
+          "code": 7,
+          "web": 5,
+          "memoire": 1,
+          "google": 1,
+          "conversation": 22,
+          "pc": 8
+        },
+        "memoire": {
+          "conversation": 3,
+          "code": 3,
+          "google": 1,
+          "pc": 4
+        },
+        "code": {
+          "conversation": 7,
+          "code": 5,
+          "fichiers": 2,
+          "pc": 1,
+          "memoire": 1
+        }
+      },
+      "unreadable": 0,
+      "loadMs": 18514,
+      "meanPhraseMs": 333.3642857142857,
+      "gpuFraction": 0.7895310247682702
+    },
+    {
+      "model": "jarvis-trieur",
+      "skipped": null,
+      "total": 140,
+      "correct": 36,
+      "byTeam": {
+        "conversation": {
+          "total": 62,
+          "correct": 25
+        },
+        "pc": {
+          "total": 2,
+          "correct": 1
+        },
+        "fichiers": {
+          "total": 5,
+          "correct": 0
+        },
+        "web": {
+          "total": 44,
+          "correct": 0
+        },
+        "memoire": {
+          "total": 11,
+          "correct": 0
+        },
+        "code": {
+          "total": 16,
+          "correct": 10
+        }
+      },
+      "confusion": {
+        "conversation": {
+          "code": 19,
+          "conversation": 25,
+          "pc": 16,
+          "memoire": 2
+        },
+        "pc": {
+          "pc": 1,
+          "code": 1
+        },
+        "fichiers": {
+          "code": 2,
+          "memoire": 1,
+          "pc": 1,
+          "conversation": 1
+        },
+        "web": {
+          "pc": 17,
+          "google": 3,
+          "code": 14,
+          "conversation": 10
+        },
+        "memoire": {
+          "conversation": 5,
+          "code": 4,
+          "pc": 2
+        },
+        "code": {
+          "code": 10,
+          "conversation": 4,
+          "(illisible)": 1,
+          "pc": 1
+        }
+      },
+      "unreadable": 1,
+      "loadMs": 3199,
+      "meanPhraseMs": 63.4,
+      "gpuFraction": 1
+    }
+  ],
+  "liveModels": [
+    {
+      "model": "qwen2.5:7b",
+      "skipped": null,
+      "total": 10,
+      "correct": 10,
+      "byTeam": {
+        "google": {
+          "total": 1,
+          "correct": 1
+        },
+        "pc": {
+          "total": 1,
+          "correct": 1
+        },
+        "code": {
+          "total": 7,
+          "correct": 7
+        },
+        "web": {
+          "total": 1,
+          "correct": 1
+        }
+      },
+      "confusion": {
+        "google": {
+          "google": 1
+        },
+        "pc": {
+          "pc": 1
+        },
+        "code": {
+          "code": 7
+        },
+        "web": {
+          "web": 1
+        }
+      },
+      "unreadable": 0,
+      "loadMs": null,
+      "meanPhraseMs": 237.3,
+      "gpuFraction": 0.7895310247682702
+    },
+    {
+      "model": "jarvis-trieur",
+      "skipped": null,
+      "total": 10,
+      "correct": 7,
+      "byTeam": {
+        "google": {
+          "total": 1,
+          "correct": 0
+        },
+        "pc": {
+          "total": 1,
+          "correct": 0
+        },
+        "code": {
+          "total": 7,
+          "correct": 7
+        },
+        "web": {
+          "total": 1,
+          "correct": 0
+        }
+      },
+      "confusion": {
+        "google": {
+          "conversation": 1
+        },
+        "pc": {
+          "conversation": 1
+        },
+        "code": {
+          "code": 7
+        },
+        "web": {
+          "pc": 1
+        }
+      },
+      "unreadable": 0,
+      "loadMs": null,
+      "meanPhraseMs": 56,
+      "gpuFraction": 1
+    }
+  ]
+}
