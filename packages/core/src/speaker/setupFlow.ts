@@ -96,7 +96,6 @@ export async function runSpeakerSetup(io: SetupIo, input: SetupInput, hooks?: Se
   let skippedFlash = false;
   let mac: string | null = null;
   let fw = '';
-  let wrote = false;
   const show = (next: SetupView): void => hooks?.onView(next);
 
   const fail = async (failure: FailureCopy, forgetCard: boolean): Promise<SetupResult> => {
@@ -151,7 +150,6 @@ export async function runSpeakerSetup(io: SetupIo, input: SetupInput, hooks?: Se
 
   await io.scan();
   const sent = await io.sendConfig();
-  wrote = true;
   if (!sent.ok) {
     return fail(failureCopy(sent.error), true);
   }

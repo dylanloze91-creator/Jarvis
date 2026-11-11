@@ -14,6 +14,7 @@
     "test": "vitest run",
     "setup:voice": "node scripts/setup-voice-assets.mjs",
     "setup:speaker-firmware": "node scripts/setup-speaker-firmware.mjs",
+    "test:firmware": "sh ../../firmware/jarvis-speaker/test/run.sh",
     "package:win": "npm run build && node scripts/setup-piper.mjs --target win-x64 && node scripts/verify-piper-windows-bundle.mjs && electron-builder --win --publish never",
     "package:win:publish": "npm run build && electron-builder --win --publish always",
     "package:dir": "npm run build && electron-builder --dir --publish never"

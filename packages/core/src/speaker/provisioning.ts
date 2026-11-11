@@ -30,7 +30,8 @@ function charCount(value: string): number {
 
 export function validateProvision(config: ProvisionConfig): { ok: true } | { ok: false; error: ProvisionError } {
   const ssidBytes = utf8Bytes(config.ssid);
-  if (ssidBytes < 1 || ssidBytes > 32 || /[\u0000-\u001f]/.test(config.ssid)) return { ok: false, error: 'ssid' };
+  const control = [...config.ssid].some((char) => char.charCodeAt(0) < 32);
+  if (ssidBytes < 1 || ssidBytes > 32 || control) return { ok: false, error: 'ssid' };
   if (config.pass.length !== 0 && (config.pass.length < 8 || config.pass.length > 63 || /[^\u0020-\u007e]/.test(config.pass))) {
     return { ok: false, error: 'pass' };
   }

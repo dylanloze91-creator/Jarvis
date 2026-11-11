@@ -5,8 +5,8 @@ class FakeSocket implements AnnounceSocket {
   queries: Array<(packet: { questions?: Array<{ name: string; type: string }> }) => void> = [];
   sent: unknown[][] = [];
   closed = false;
-  on(event: 'query' | 'error', listener: (packet: { questions?: Array<{ name: string; type: string }> }) => void): void {
-    if (event === 'query') this.queries.push(listener);
+  on(event: 'query' | 'error', listener: (packet: { questions?: Array<{ name: string; type: string }> } | Error) => void): void {
+    if (event === 'query') this.queries.push(listener as (packet: { questions?: Array<{ name: string; type: string }> }) => void);
   }
   respond(answers: unknown[]): void {
     this.sent.push(answers);

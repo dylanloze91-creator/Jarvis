@@ -5,8 +5,7 @@
 import { announceInterfaces, mdnsAnswers, type MdnsQuestion, type NetIface } from '@jarvis/core';
 
 export interface AnnounceSocket {
-  on(event: 'query', listener: (packet: { questions?: MdnsQuestion[] }) => void): void;
-  on(event: 'error', listener: (error: Error) => void): void;
+  on(event: 'query' | 'error', listener: (value: { questions?: MdnsQuestion[] } | Error) => void): void;
   respond(answers: unknown[]): void;
   destroy(): void;
 }
@@ -32,7 +31,8 @@ export function openAnnounce(
       continue;
     }
     socket.on('error', () => undefined);
-    socket.on('query', (packet) => {
+    socket.on('query', (value) => {
+      const packet = value as { questions?: MdnsQuestion[] };
       const answers = mdnsAnswers(packet.questions ?? [], { ...ctx, addresses: kept });
       if (answers.length > 0) socket.respond(answers);
     });

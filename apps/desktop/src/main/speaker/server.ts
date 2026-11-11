@@ -65,7 +65,7 @@ export interface SpeakerChat {
 }
 
 export interface SpeakerServerDeps {
-  store: Pick<SpeakerStore, 'verify'>;
+  store: Pick<SpeakerStore, 'verify' | 'noteHello'>;
   /** Une session de chat par enceinte, créée à sa première phrase. */
   chatFor: (speaker: Speaker) => SpeakerChat;
   /** Transcription Whisper (dans la fenêtre) d'un PCM 16 kHz. */
