@@ -41,10 +41,10 @@ RAPPORT DE VÉRIFICATION
 Lancement : OK (3 passages de transcription dans Electron nu, 24 fichiers chacun, 0 erreur)
 Types     : OK (aucun code de Jarvis modifié par cette comparaison)
 Style     : OK
-Tests     : sans objet (mesure) ; firmware MIC_SHIFT 14 construit, à flasher
+Tests     : sans objet (mesure) ; firmware MIC_SHIFT 14 flashé sur la carte « chambre »
 Secrets   : OK (enregistrements, transcriptions et liste lue hors dépôt ; aucune phrase de l'utilisateur dans ce rapport)
 Fichiers modifiés : ce rapport, CLAUDE.md, firmware/jarvis-speaker/include/config.h (MIC_SHIFT 14)
 Prêt à fusionner : PAS FAIT (demande : pas de fusion)
-À corriger : saturation du micro de l'enceinte (gain ×4 à essayer) ; réglage rapide/précise si l'utilisateur le veut
-Testé en vrai (à la voix, sur le PC) : FAIT pour la mesure (phrases dites par l'utilisateur) ; PAS FAIT pour le gain ×4
+À corriger : réglage rapide/précise si l'utilisateur le veut
+Testé en vrai (à la voix, sur le PC) : FAIT (mesure sur les phrases de l'utilisateur ; gain ×4 : réveil de loin 3/3, phrase de près et de loin comprises, dans la chambre)
 ```
