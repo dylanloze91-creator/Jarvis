@@ -90,6 +90,11 @@ export function createOverlayWindow(
   hideOnBlur: boolean,
   /** Vrai dès `before-quit` : la fenêtre se ferme pour de bon au lieu de se masquer. */
   isQuitting: () => boolean = () => false,
+  permissions?: {
+    /** Règle déjà en place (micro). La liaison série s'y ajoute, elle ne la remplace pas. */
+    allowCheck: (permission: string, mediaType?: string) => boolean;
+    isJarvisOrigin: (origin: string) => boolean;
+  },
 ): OverlayWindow {
   const browserWindow = new BrowserWindow({
     width: WIDTH,
@@ -131,6 +136,8 @@ export function createOverlayWindow(
   const serial = bindSerialAccess(
     browserWindow.webContents.session as unknown as SerialSessionLike,
     (contents) => contents === browserWindow.webContents,
+    permissions?.allowCheck ?? (() => false),
+    permissions?.isJarvisOrigin ?? (() => false),
     (ports) => {
       if (!browserWindow.isDestroyed()) browserWindow.webContents.send(IpcChannel.speakerPorts, ports);
     },

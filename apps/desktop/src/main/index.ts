@@ -109,7 +109,7 @@ import { PiperService, phoneVoiceMode } from './piper/service.js';
 import { SpeakerChronoFile } from './speaker/chronoFile.js';
 import { warmOllamaModels } from './speaker/warmupRun.js';
 import { presentWindow } from './startup.js';
-import { allowPermissionCheck, allowPermissionRequest, originForLog } from './mediaPermissions.js';
+import { allowPermissionCheck, allowPermissionRequest, isAppDocumentUrl, originForLog } from './mediaPermissions.js';
 import { VoiceCaptureLog } from './voiceCaptureLog.js';
 import { WakeLearningStore } from './wakeLearningStore.js';
 import { LocalLearningStore } from './learning/store.js';
@@ -616,19 +616,18 @@ async function bootstrap(): Promise<void> {
       callback(allowed);
     },
   );
-  electronSession.defaultSession.setPermissionCheckHandler(
-    (_webContents, permission, _origin, details) => {
-      const mediaType = (details as { mediaType?: string }).mediaType;
+  // Le gestionnaire unique (micro + port série) est posé dans createOverlayWindow.
+  // En développement, garder la fenêtre visible quand le focus part (devtools, éditeur).
+  overlay = createOverlayWindow(!settings.stayVisibleOnBlur && !isDev, () => quitting, {
+    allowCheck: (permission, mediaType) => {
       const allowed = allowPermissionCheck(permission, mediaType);
       if (!allowed && permission === 'media') {
         voiceCaptureLog.append(`[autorisation] vérification media (${mediaType ?? '?'}) → refusée`);
       }
       return allowed;
     },
-  );
-
-  // En développement, garder la fenêtre visible quand le focus part (devtools, éditeur).
-  overlay = createOverlayWindow(!settings.stayVisibleOnBlur && !isDev, () => quitting);
+    isJarvisOrigin: (origin) => isAppDocumentUrl(origin, devServer),
+  });
   overlay.browserWindow.webContents.on('did-finish-load', () => {
     if (speakerWhisperHeld(settings)) {
       overlay?.browserWindow.webContents.send(IpcChannel.speakerHoldWhisper);

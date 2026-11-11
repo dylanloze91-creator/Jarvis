@@ -5,18 +5,41 @@ import { autoEspressif, rankSerialPorts, type RankedPort, type SerialCandidate }
 
 export interface SerialSessionLike {
   on(event: 'select-serial-port', listener: (event: { preventDefault(): void }, ports: SerialCandidate[], webContents: unknown, callback: (portId: string) => void) => void): void;
-  setPermissionCheckHandler(handler: (webContents: unknown, permission: string) => boolean): void;
-  setDevicePermissionHandler(handler: (details: { deviceType: string }) => boolean): void;
+  setPermissionCheckHandler(handler: (webContents: unknown, permission: string, mediaType?: string) => boolean): void;
+  setDevicePermissionHandler(handler: (details: { deviceType: string; origin?: string }) => boolean): void;
+}
+
+/**
+ * Un seul gestionnaire. Le micro garde `allowOther` (souvent `allowPermissionCheck`).
+ * Le port série n'est accordé qu'à la fenêtre de Jarvis.
+ */
+export function combinePermissionCheck(
+  permission: string,
+  mediaType: string | undefined,
+  isJarvisWindow: boolean,
+  allowOther: (permission: string, mediaType?: string) => boolean,
+): boolean {
+  if (permission === 'serial') return isJarvisWindow;
+  return allowOther(permission, mediaType);
+}
+
+/** Appareil série seulement, et seulement si l'origine est celle de Jarvis. */
+export function allowSerialDevice(deviceType: string, origin: string | undefined, isJarvisOrigin: (origin: string) => boolean): boolean {
+  return deviceType === 'serial' && isJarvisOrigin(origin ?? '');
 }
 
 export function bindSerialAccess(
   session: SerialSessionLike,
   isJarvisWindow: (webContents: unknown) => boolean,
+  allowOther: (permission: string, mediaType?: string) => boolean,
+  isJarvisOrigin: (origin: string) => boolean,
   onList?: (ports: RankedPort[]) => void,
 ): { pick(portId: string): void } {
   let waiting: ((portId: string) => void) | null = null;
-  session.setPermissionCheckHandler((webContents, permission) => permission === 'serial' && isJarvisWindow(webContents));
-  session.setDevicePermissionHandler((details) => details.deviceType === 'serial');
+  session.setPermissionCheckHandler((webContents, permission, mediaType) =>
+    combinePermissionCheck(permission, mediaType, isJarvisWindow(webContents), allowOther),
+  );
+  session.setDevicePermissionHandler((details) => allowSerialDevice(details.deviceType, details.origin, isJarvisOrigin));
   session.on('select-serial-port', (event, ports, webContents, callback) => {
     event.preventDefault();
     if (!isJarvisWindow(webContents)) {
