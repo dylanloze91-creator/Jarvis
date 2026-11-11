@@ -1,8 +1,8 @@
-# Jarvis 5.0.73 — contexte pour un autre développeur
+# Jarvis 5.0.75 — contexte pour un autre développeur
 
 Ce fichier est à la **racine du code**. Les chemins ci-dessous partent de ce dossier. Ce n’est pas un résumé marketing : c’est l’état réel de cet arbre. La voix a été refaite dans cet arbre (publiée en 0.4.11, section « Voix ») : la transcription restait « Chargement… 100 % » sur l’installateur Windows. La refonte du tableau de bord est dans cet arbre : fenêtre étroite = overlay, fenêtre large = tableau de bord.
 
-**Version confirmée :** `apps/desktop/package.json` → `"version": "5.0.74"` (décision D1 : jamais de suffixe `-beta`). La 5.0.74 (mode direct de Jarvis Imager : panneau « Imager direct », `/image`, règles avant le cerveau, prompt complété sans modèle, `generer_image` mot pour mot ; rapport `rapports/2026-11-10-publication-5074.md`) est publiée après les contrôles (release `v5.0.74`, voir « Updater / GitHub »). La 5.0.73 (correctif après l'essai de la 5.0.71 : une demande d'image dite à l'enceinte lançait Spotify ; une seule étiquette de cadrage ; rapport `rapports/2026-11-10-publication-5073.md`) reste la release précédente. La 5.0.71 (module images Forge + SDXL et Jarvis Imager : RealVisXL, Animagine pour l'anime, ADetailer, règles, photos jointes ; rapport `rapports/2026-11-10-publication-5071.md`) reste la release précédente. La 5.0.70 (interface simple, questionnaire « Faisons connaissance » ; rapport `rapports/2026-11-07-publication-5070.md`) reste la release précédente. La 5.0.69 (mission directe depuis la discussion, Spotify sur enceinte Connect choisie ; rapport `rapports/2026-11-05-publication-5069.md`) reste la release précédente. La 5.0.68 (chat unifié phase 1, garde double-lancement ; rapport `rapports/2026-11-04-publication-5068.md`) reste la release précédente. La 5.0.67 (caractère de Jarvis, validation d’équipe en direct, correctif contexte export claude.ai ; rapport `rapports/2026-11-04-publication-5067.md`) reste la release antérieure. La 5.0.66 (correctif Piper Windows, sources courtes, lieu domicile, correctifs Claude ; rapport `rapports/2026-11-03-publication-5066.md`) reste la release antérieure. Le `package.json` racine est aligné sur la même version depuis 0.5.0 (il était resté à `0.3.0`), mais il n’est lu par rien : la version qui compte pour l’exe, l’updater et GitHub est celle de `@jarvis/desktop`. `@jarvis/core` reste à `0.1.0`. Le modèle par défaut reste `qwen2.5:3b`. `qwen3.5:4b` est le modèle recommandé documenté ; le repli est réglable (`fallbackModel`, défaut `qwen2.5:3b`).
+**Version confirmée :** `apps/desktop/package.json` → `"version": "5.0.75"` (décision D1 : jamais de suffixe `-beta`). La 5.0.75 (intégration des chantiers Cursor et Claude Code du 7 au 11 novembre : Jarvis Réflexe pour l’enceinte avec la réponse en flux, Spotify « Devialet ou PC ? », l’écran du PC pour ce qui se regarde, le lot A fiabilité : bilan de santé, sauvegarde, « ce que Jarvis sait de moi », coffre des clés ; réglages de la carte XH-S3E de l’enceinte ; trieur : entraînement de `jarvis-trieur`, examen avec les vraies phrases Jarvis et option `--examen`, trieur **non activé** ; rapport `rapports/2026-11-11-publication-5075.md`) est préparée sur `claude/integration-5075` puis publiée après les contrôles (release `v5.0.75`, voir « Updater / GitHub »). La 5.0.74 (mode direct de Jarvis Imager : panneau « Imager direct », `/image`, règles avant le cerveau, prompt complété sans modèle, `generer_image` mot pour mot ; rapport `rapports/2026-11-10-publication-5074.md`) reste la release précédente. La 5.0.73 (correctif après l'essai de la 5.0.71 : une demande d'image dite à l'enceinte lançait Spotify ; une seule étiquette de cadrage ; rapport `rapports/2026-11-10-publication-5073.md`) reste la release précédente. La 5.0.71 (module images Forge + SDXL et Jarvis Imager : RealVisXL, Animagine pour l'anime, ADetailer, règles, photos jointes ; rapport `rapports/2026-11-10-publication-5071.md`) reste la release précédente. La 5.0.70 (interface simple, questionnaire « Faisons connaissance » ; rapport `rapports/2026-11-07-publication-5070.md`) reste la release précédente. La 5.0.69 (mission directe depuis la discussion, Spotify sur enceinte Connect choisie ; rapport `rapports/2026-11-05-publication-5069.md`) reste la release précédente. La 5.0.68 (chat unifié phase 1, garde double-lancement ; rapport `rapports/2026-11-04-publication-5068.md`) reste la release précédente. La 5.0.67 (caractère de Jarvis, validation d’équipe en direct, correctif contexte export claude.ai ; rapport `rapports/2026-11-04-publication-5067.md`) reste la release antérieure. La 5.0.66 (correctif Piper Windows, sources courtes, lieu domicile, correctifs Claude ; rapport `rapports/2026-11-03-publication-5066.md`) reste la release antérieure. Le `package.json` racine est aligné sur la même version depuis 0.5.0 (il était resté à `0.3.0`), mais il n’est lu par rien : la version qui compte pour l’exe, l’updater et GitHub est celle de `@jarvis/desktop`. `@jarvis/core` reste à `0.1.0`. Le modèle par défaut reste `qwen2.5:3b`. `qwen3.5:4b` est le modèle recommandé documenté ; le repli est réglable (`fallbackModel`, défaut `qwen2.5:3b`).
 
 Lis ce fichier avant de modifier le code.
 
@@ -63,7 +63,7 @@ Scripts utiles (racine) :
 
 Le script `setup:voice` remplit `apps/desktop/voice-assets/` (runtime ONNX, Whisper, openWakeWord, modèle Vosk français ; non commité, voir `.gitignore`). Premier `dev` / `build` : besoin de réseau.
 
-L’installateur publié est `Jarvis-Setup-5.0.73.exe` (release GitHub `v5.0.73`).
+L’installateur publié est `Jarvis-Setup-5.0.75.exe` (release GitHub `v5.0.75`).
 
 Données utilisateur (Electron `userData`, typiquement `%APPDATA%\Jarvis`) :
 
@@ -97,7 +97,7 @@ Données utilisateur (Electron `userData`, typiquement `%APPDATA%\Jarvis`) :
     src/media/                 intent Spotify
     src/update/                lecture latest.yml GitHub
     src/history/  src/audit/
-  apps/desktop/                Electron (version 5.0.73)
+  apps/desktop/                Electron (version 5.0.75)
     electron-builder.yml       NSIS, extraResources, publish GitHub
     electron.vite.config.ts    aliases onnxruntime-web (wasm, pas JSEP)
     scripts/setup-whisper.mjs
@@ -604,6 +604,7 @@ Mission Cursor `cursor/trieur-5068` (cahier `docs/specs/specialiste-trieur.md`) 
 
 - **Scripts** (`npm run trieur:* --workspace @jarvis/core`) : `trieur:extraire` (conversations Jarvis et/ou export claude.ai `--export-claude` → `a-trier.jsonl`, source `claude.ai` pour l’export), `trieur:trier` (page locale 127.0.0.1), `trieur:banc` (examen sur modèles Ollama, rapport dans `rapports/`), `trieur:generer` (professeur Ollama → `entrainement.jsonl`), `trieur:preparer` (train/validation dans `preparation/`).
 - **Entraînement** : `training/train_lora.py --task trieur` (classification, perte sur le nom d'équipe) ; export `export_ollama.py --name jarvis-trieur`. Guide `training/TRIEUR.md`.
+- **Examens à part (5.0.75)** : `--examen <nom>` sur `trieur:extraire`, `trieur:trier` et `trieur:banc` lit et écrit `a-trier-<nom>.jsonl`, `examen-<nom>.jsonl`, `tri-progress-<nom>.json` (rapport `<date>-trieur-banc-<nom>.json`) ; `trieur:generer` et `trieur:preparer` lisent **tous** les `examen*.jsonl` du dossier (`listExamFiles`) : aucune phrase d'examen n'entre dans le cahier. Page de tri : toutes les équipes du chef d'orchestre (Images, touche 0), `--port N` fixe le port (toujours 127.0.0.1) et le nom Tailscale du PC est accepté comme hôte pour `tailscale serve --bg N` (tri depuis le téléphone). Premier entraînement réel (`rapports/2026-11-11-trieur-entrainement-1.md`) : `jarvis-trieur` (Qwen2.5-1.5B-Instruct, Apache-2.0) 5 fois plus rapide mais 36/140 contre 53/140 pour `qwen2.5:7b` sur l'examen claude.ai : **non activé**.
 - **Réglage** : `settings.orchestra.router` facultatif (`{ model, place }`) ; absent = le **cerveau** trie comme en 5.0.60. Pastille « choisi par le trieur » si `how: trieur`.
 - **Licences vérifiées le 2026-11-02** (liens dans `rapports/2026-11-02-trieur-5068.md`) : modèles de base Qwen2.5 (Apache-2.0 sur Hugging Face) ; professeur recommandé `qwen2.5:7b` (même licence) ; Jarvis / dépendances npm inchangées.
 
@@ -734,7 +735,7 @@ Demande de l'utilisateur : générer des images en local pour quatre usages (`ja
 
 ## Updater / GitHub
 
-Dernière publication : **5.0.73** (`https://github.com/dylanloze91-creator/Jarvis/releases/tag/v5.0.73`) — exe, `.blockmap` et `latest.yml` publiés : l’updater intégré la propose.
+Dernière publication : **5.0.75** (`https://github.com/dylanloze91-creator/Jarvis/releases/tag/v5.0.75`) — exe, `.blockmap` et `latest.yml` publiés : l’updater intégré la propose.
 
 - `apps/desktop/electron-builder.yml` : `publish.provider: github`, owner `dylanloze91-creator`, repo `Jarvis`, `releaseType: release`, artifact `Jarvis-Setup-${version}.exe`
 - `apps/desktop/src/main/updater.ts` : contrôle 15 s après le démarrage puis toutes les 4 h ; téléchargement auto ; **installation seulement si l’utilisateur clique**
