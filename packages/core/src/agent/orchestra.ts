@@ -167,8 +167,24 @@ export function solveArithmetic(text: string): ArithmeticAnswer | null {
 /* 1 bis. Heure et date, lues sur l'horloge du PC                      */
 /* ------------------------------------------------------------------ */
 
-const TIME_QUESTION = /^(?:jarvis[,\s]+)?(?:(?:dis[- ]moi\s+)?quelle heure (?:est[- ]il|il est)|il est quelle heure|tu as l['’]heure|l['’]heure(?: s['’]il te pla[iî]t)?)\s*[?!.]*$/iu;
-const DATE_QUESTION = /^(?:jarvis[,\s]+)?(?:(?:dis[- ]moi\s+)?(?:quel jour (?:on est|sommes[- ]nous|est[- ]on|est[- ]ce)(?: aujourd['’]hui)?|on est quel jour(?: aujourd['’]hui)?|quelle est la date(?: d['’]aujourd['’]hui)?|c['’]est quoi la date(?: d['’]aujourd['’]hui)?))\s*[?!.]*$/iu;
+// Whisper écrit souvent « quel heure », « qu'elle heure », « est-t-il », « est il », « quel jour on est »… :
+// les règles tolèrent ces fautes (observé le 2026-11-11 : « Quel heure est-il? » dit à l'enceinte était parti
+// au modèle, qui avait inventé l'heure). Le reste de la phrase doit rester vide : « à Tokyo » va au modèle.
+const JARVIS_PREFIX = "^(?:jarvis[,\\s]+)?(?:dis[- ]moi\\s+)?";
+const END = "\\s*[?!.]*$";
+const Q_HEURE = "(?:quelle?|qu['’]elle|quels?) heure";
+const EST_IL = "(?:est[- ]?t?[- ]?il|il est|est[- ]ce qu['’]il est)";
+const TIME_QUESTION = new RegExp(
+  `${JARVIS_PREFIX}(?:${Q_HEURE} ${EST_IL}|il est ${Q_HEURE}|(?:tu as|t['’]as|as[- ]tu|vous avez|avez[- ]vous) l['’]heure|l['’]heure(?: s['’]il te pla[iî]t)?)${END}`,
+  'iu',
+);
+const Q_JOUR = "(?:quel|quelle|quels|qu['’]elle) jour";
+const AUJ = "(?: aujourd['’]hui)?";
+const AUJ_DATE = "(?: d['’]aujourd['’]hui| aujourd['’]hui)?";
+const DATE_QUESTION = new RegExp(
+  `${JARVIS_PREFIX}(?:${Q_JOUR} (?:on est|sommes[- ]nous|est[- ]on|est[- ]ce|c['’]est)${AUJ}|(?:on est|nous sommes|c['’]est) ${Q_JOUR}${AUJ}|on est le combien${AUJ}|(?:quel(?:le)?|qu['’]elle) (?:est la )?date${AUJ_DATE}|c['’]est quoi la date${AUJ_DATE})${END}`,
+  'iu',
+);
 
 /** « Quelle heure est-il ? », « On est quel jour ? » : réponse exacte depuis l'horloge, sans modèle. */
 export function clockReply(text: string, now: Date, timeZone?: string): string | null {

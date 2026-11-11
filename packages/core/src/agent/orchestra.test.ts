@@ -214,6 +214,34 @@ describe('chef d’orchestre — heure et date sans modèle', () => {
     expect(clockReply('On est quel jour ?', now, 'Europe/Paris')).toBe('Nous sommes le vendredi 30 octobre 2026.');
   });
   it('laisse passer toute autre phrase', () => {
+    // Fautes habituelles de Whisper : toujours l'horloge, jamais le modèle (qui invente l'heure).
+    for (const q of [
+      'Quel heure est-il?',
+      "Qu'elle heure est-il ?",
+      'Quelle heure est il',
+      'Quelle heure est-t-il ?',
+      'Quel heure il est',
+      'Jarvis, il est quel heure ?',
+      "T'as l'heure ?",
+      'As-tu l’heure ?',
+    ]) {
+      expect(clockReply(q, now, 'Europe/Paris'), q).toBe('Il est 08 h 05.');
+    }
+    for (const q of [
+      'Quel jour on est ?',
+      'Quel jour on est aujourd’hui',
+      'Quelle jour on est ?',
+      'On est le combien ?',
+      'Nous sommes quel jour ?',
+      "C'est quel jour aujourd'hui ?",
+      'Quel jour c’est ?',
+      'Quelle date aujourd’hui ?',
+      'Quel est la date ?',
+    ]) {
+      expect(clockReply(q, now, 'Europe/Paris'), q).toBe('Nous sommes le vendredi 30 octobre 2026.');
+    }
+    expect(clockReply('Quel heure est-il à Tokyo ?', now)).toBeNull();
+    expect(clockReply('Quel jour on est parti ?', now)).toBeNull();
     expect(clockReply('Quelle heure est-il à Tokyo ?', now)).toBeNull();
     expect(clockReply('Rappelle-moi l’heure du rendez-vous', now)).toBeNull();
     expect(clockReply('Quel jour est le match ?', now)).toBeNull();
