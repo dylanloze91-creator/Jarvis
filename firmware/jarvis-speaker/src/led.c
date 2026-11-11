@@ -68,7 +68,9 @@ void led_init(void) {
     };
     gpio_config(&io);
 #endif
-    xTaskCreate(blink_task, "led", 2048, NULL, 1, NULL);
+    // 4096 : avec 2048, le journal d'erreur du pilote RMT (« RMT transaction is busy ») faisait déborder
+    // la pile de cette tâche au démarrage, par moments (11 plantages sur 12 démarrages le 2026-11-11).
+    xTaskCreate(blink_task, "led", 4096, NULL, 1, NULL);
 }
 
 void led_set(led_state_t state) {

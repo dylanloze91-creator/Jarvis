@@ -12,8 +12,13 @@
 #define MIC_PIN_WS    5    // WS  (horloge gauche/droite)
 #define MIC_PIN_SD    6    // SD  (données du micro)
 // Le micro donne 24 bits dans un mot de 32 : on garde les bits hauts. 16 = volume brut,
-// 13 = ×8 (plus sensible). Si Jarvis t'entend mal de loin, baisse à 12 ; si ça sature, monte à 14.
-#define MIC_SHIFT     13
+// 13 = ×8 (plus sensible). Si Jarvis t'entend mal de loin, baisse à 13 ; si ça sature, monte à 15.
+// 14 (×4) depuis le 2026-11-11 : à 13, la voix de près saturait (crêtes à 32 767 dans la phrase
+// enregistrée) ; la dérive lente du micro est retirée à part par mic_filter.h.
+#define MIC_SHIFT     14
+// Diagnostic : écrit au démarrage une demi-seconde de micro brut en hexadécimal sur le port série
+// (journal). 0 en usage normal.
+#define MIC_DUMP_AT_BOOT 0
 
 // ---------------------------------------------------------------------------------------------
 // Ampli MAX98357A (I2S, sortie). SD de l'ampli laissé en l'air ou au + : sortie mono (L+R)/2.
@@ -49,6 +54,9 @@
 #define MAX_PHRASE_SECONDS    15
 // Niveau sonore (RMS, sur 32768) en dessous duquel c'est du silence. 0.012 × 32768 ≈ 393.
 #define SPEECH_RMS            393
+// Plafond du seuil quand le bruit de fond mesuré au démarrage est élevé (2 × le bruit, jamais plus) :
+// au-dessus, une voix normale à deux mètres ne serait plus comptée comme de la parole.
+#define SPEECH_RMS_MAX        2500
 // Audio gardé juste avant la détection (ms) : le début de la phrase collée à « Jarvis ».
 #define PRE_ROLL_MS           256
 // Petit bip au réveil (1 = oui). Il est très court et le micro reste ouvert pendant qu'il joue : le

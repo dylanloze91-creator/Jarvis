@@ -24,6 +24,10 @@
 #include "secrets.h"
 #include "wake.h"
 
+/** Seuil de parole réellement utilisé : SPEECH_RMS, ou 2 fois le bruit de fond mesuré au démarrage s'il est plus haut (SPEECH_RMS_MAX au plus). */
+static int32_t speech_rms_threshold = SPEECH_RMS;
+
+
 #define MAX_PHRASE_SAMPLES ((size_t)SAMPLE_RATE * MAX_PHRASE_SECONDS)
 #define PRE_ROLL_SAMPLES ((size_t)SAMPLE_RATE * PRE_ROLL_MS / 1000)
 /** Parole minimale (ms) pour dire que la phrase a commencé (COMMAND_STARTED_SPEECH_MS sur le PC). */
@@ -76,7 +80,7 @@ static phrase_result_t record_and_send(uint32_t wait_ms, bool follow_up, turn_re
         length += take;
         total_ms += frame_ms;
 
-        bool loud = pcm_rms(frame.pcm, frame.samples) >= SPEECH_RMS;
+        bool loud = pcm_rms(frame.pcm, frame.samples) >= speech_rms_threshold;
         if (loud) {
             speech_ms += frame_ms;
             silence_ms = 0;
@@ -191,11 +195,27 @@ static void probe_room_noise(void) {
     size_t got = mic_read(phrase, SAMPLE_RATE / 2);
     int32_t noise = pcm_rms(phrase, got);
     ESP_LOGI(SERIAL_TAG, "micro : bruit de fond %ld (seuil de parole SPEECH_RMS = %d)", (long)noise, SPEECH_RMS);
+#if MIC_DUMP_AT_BOOT
+    // Diagnostic (config.h) : la demi-seconde mesurée, en hexadécimal, pour l'analyser sur le PC
+    // (spectre : bruit de pièce ou bruit électrique). 64 échantillons par ligne.
+    printf("MICDUMP %u\n", (unsigned)got);
+    for (size_t i = 0; i < got; i += 64) {
+        char line[64 * 4 + 1];
+        size_t n = 0;
+        for (size_t j = i; j < got && j < i + 64; j++) n += (size_t)snprintf(line + n, sizeof(line) - n, "%04x", (unsigned)(uint16_t)phrase[j]);
+        printf("%s\n", line);
+    }
+    printf("MICEND\n");
+#endif
     if (got == 0 || noise < 2) {
         ESP_LOGW(SERIAL_TAG, "micro muet : vérifie VDD sur 3V3, L/R sur GND et les fils SCK/WS/SD (config.h)");
-    } else if (noise * 10 >= SPEECH_RMS * 7) {
-        ESP_LOGW(SERIAL_TAG, "pièce bruyante pour ce réglage : monte SPEECH_RMS (≈ %ld) ou MIC_SHIFT à 14",
-                 (long)(noise * 2));
+    } else if (noise * 2 > SPEECH_RMS) {
+        // Pièce ou alimentation bruyante : le seuil suit le bruit (sinon le silence n'arrive jamais et
+        // chaque phrase dure MAX_PHRASE_SECONDS), borné pour que la voix reste au-dessus. Mesuré le
+        // 2026-11-11 à côté du PC : 497 au repos, 2 164 ventilateurs à fond (sifflement 450 et 890 Hz).
+        speech_rms_threshold = noise * 2 > SPEECH_RMS_MAX ? SPEECH_RMS_MAX : noise * 2;
+        ESP_LOGW(SERIAL_TAG, "bruit au-dessus du réglage : seuil de parole relevé à %ld (2 × le bruit, %d au plus)",
+                 (long)speech_rms_threshold, SPEECH_RMS_MAX);
     }
 }
 
