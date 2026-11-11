@@ -1,3 +1,4 @@
+import { spawn } from 'node:child_process';
 import { chmod, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -7,6 +8,10 @@ import { ProcessPiperRunner, type PiperRunRequest } from './runner.js';
 import { ResidentPiper } from './resident.js';
 
 const voice = PIPER_VOICES[0]!;
+
+/** Le faux Piper est un script Node : il se lance par `node <script>` sur tous les systèmes (Windows n'exécute pas un `.mjs` seul). */
+const spawnFakePiper: typeof spawn = ((command: string, args: readonly string[], options: object) =>
+  spawn(process.execPath, [command, ...args], options)) as typeof spawn;
 const clip = encodeWav(new Float32Array([0, 0.2, -0.2, 0.1]), 22_050);
 
 const FAKE = `#!/usr/bin/env node
@@ -65,7 +70,10 @@ async function rig(crashResidentLaunches: number) {
     voice,
     text,
   });
-  const resident = new ResidentPiper({ fallback: new ProcessPiperRunner() });
+  const resident = new ResidentPiper({
+    fallback: new ProcessPiperRunner({ spawnProcess: spawnFakePiper }),
+    spawnProcess: spawnFakePiper,
+  });
   return {
     dir,
     statePath,

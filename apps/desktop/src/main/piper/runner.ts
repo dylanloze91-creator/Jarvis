@@ -60,6 +60,13 @@ function writeStdinSafely(
 
 /** Lance le binaire Piper précompilé : texte sur l'entrée standard, jamais en argument. */
 export class ProcessPiperRunner implements PiperRunner {
+  private readonly spawnProcess: typeof spawn;
+
+  /** `spawnProcess` : seam de test (un faux Piper écrit en Node) ; absent = `spawn` de Node. */
+  constructor(deps: { spawnProcess?: typeof spawn } = {}) {
+    this.spawnProcess = deps.spawnProcess ?? spawn;
+  }
+
   async synthesize(request: PiperRunRequest): Promise<Uint8Array> {
     const stamp = randomBytes(6).toString('hex');
     const outputPath = join(tmpdir(), `jarvis-piper-${stamp}.wav`);
@@ -86,7 +93,7 @@ export class ProcessPiperRunner implements PiperRunner {
       '--quiet',
     ];
     return new Promise((resolve, reject) => {
-      const child = spawn(request.binaryPath, args, {
+      const child = this.spawnProcess(request.binaryPath, args, {
         cwd: join(request.binaryPath, '..'),
         stdio: ['pipe', 'ignore', 'pipe'],
         windowsHide: true,
