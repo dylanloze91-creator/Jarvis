@@ -61,3 +61,17 @@ Manquent : « Faire signe » (aucun `identify` dans la réponse du `hello`, ni c
 ## Fusion avec `claude/enceinte-micro-diagnostic`
 
 Essai de fusion fait (`git merge-tree`) : seul `AGENTS-COORDINATION.md` est en conflit ; `main.c`, `config.h` et `led.c` se fusionnent seuls. Garde quand même en tête que cette branche (filtre du micro, `MIC_SHIFT 14`, pile LED 4096) passera dans `main` avant toi.
+
+---
+
+## Deuxième relecture (11 novembre, soir) — `3e55eed`
+
+Les cinq points sont corrigés et branchés jusqu'à l'écran : un seul propriétaire du port (lecteur permanent, port fermé avant esptool, port retrouvé après la remise à zéro), délais par étape, liste Wi-Fi vue par la carte, diagnostic et boutons, Faire signe, Renommer, Changer le Wi-Fi, Remplacer. Bon travail.
+
+Trois retouches restent avant ou pendant l'essai sur la carte, à faire sous Windows (Claude Code) :
+
+1. **Politique d'exécution PowerShell** (`main/speaker/repair.ts`). `readStatusScript` et `elevateScript` lancent `powershell.exe -File …ps1` **sans** `-ExecutionPolicy Bypass`. Sur un Windows réglé par défaut (Restricted), les trois scripts sont refusés : le diagnostic dira « Je n'arrive pas à lire le réseau » et « Réparer » échouera. Ajoute `-ExecutionPolicy Bypass` à la lecture et dans la liste d'arguments élevée, comme `synth.ts` le fait déjà.
+2. **Permission du micro** (`serialAccess.ts`). Electron appelle le gestionnaire avec `(webContents, permission, requestingOrigin, details)`. Le troisième argument est l'**origine**, pas `mediaType`, et `details.mediaType` n'est plus lu. Le micro marche encore par chance (`origine !== 'video'`), mais une vérification de la caméra passe maintenant. Lis `details.mediaType` comme avant, et corrige le faux de session du test pour qu'il suive la vraie signature.
+3. **Diagnostic trop strict** (`speaker-net-status.ps1`). Il ne reconnaît que les règles nommées « Jarvis — enceintes … ». Une règle faite à la main (le cas de l'utilisateur) ou la règle par programme que Windows crée pour Jarvis.exe passe pour absente. Le diagnostic doit dire « ouvert » s'il existe **n'importe quelle** règle entrante active qui autorise TCP 53131 (ou Jarvis.exe) sur le profil du réseau de la maison, et de même pour UDP 5353.
+
+Petit point : `psQuote` refuse les lettres accentuées (`\w` sans le drapeau `u`). Un chemin d'installation sous un nom d'utilisateur accentué ferait échouer « Réparer ». Utilise `[\p{L}\p{N}_.\\: ()\-/]` avec le drapeau `u`.
