@@ -50,7 +50,7 @@ Ce fichier ne contient ni secret, ni donnée personnelle, ni nom de réseau : le
 | 3 | **Jarvis Test** : fusionner `cursor/deux-jarvis`, puis `cursor/carnet-des-rates` (une fois corrigée), dans une branche `dev` à jour avec `main`. Essais : installer Test à côté de Live. Première publication `5.1.0-test.1` avec `release-test.sh`. | attend la 5.0.78 |
 | 4 | Ajouter la nuit de génération du 11 novembre au cahier (`lab:clean`) | à faire |
 | 5 | Essai du raccordement d'enceinte par USB, avec l'utilisateur et la carte | à faire |
-| 6 | Carte de l'utilisation réelle (`claude/carte-utilisation`) : chiffres seulement dans `rapports/` | à faire |
+| 6 | Carte de l'utilisation réelle : **passée à Cursor** (mission 5, décision du 12 novembre au soir). Claude Code la lance seulement sur le PC, une fois relue | confiée à Cursor |
 
 ### Cursor (une mission à la fois)
 
@@ -58,8 +58,9 @@ Ce fichier ne contient ni secret, ni donnée personnelle, ni nom de réseau : le
 | --- | --- | --- |
 | 1 | Bourse et tri | terminée, dans `claude/live-5077` |
 | 2 | Deux Jarvis : Live et Test (`cursor/deux-jarvis`) | terminée et relue ; attend la tâche 3 de Claude Code |
-| 3 | Carnet des ratés (`cursor/carnet-des-rates`) | correction de la revue en cours |
-| 4 | Lot B, le quotidien (`docs/specs/lot-b-quotidien.md`, branche `claude/specs-feuille-de-route`), pour Jarvis Test, sur la base du carnet | enchaîné juste après la correction du carnet |
+| 3 | Carnet des ratés (`cursor/carnet-des-rates`) | terminée et relue ; attend Jarvis Test |
+| 4 | Lot B, le quotidien (`cursor/lot-b-quotidien`), pour Jarvis Test, sur la base du carnet | terminée et relue (correction de l'imprimante faite) ; attend Jarvis Test |
+| 5 | Carte de l'utilisation réelle (`docs/specs/carte-utilisation.md`, branche `cursor/carte-utilisation`) : script du cœur, sans modèle ; chiffres seulement | en cours |
 
 ### Essais de modèles
 
