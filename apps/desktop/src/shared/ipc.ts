@@ -80,6 +80,7 @@ export const IpcChannel = {
   chatMissionOpenFolder: 'chat:mission-open-folder',
   chatMissionReload: 'chat:mission-reload',
   orchestraValidateTeam: 'orchestra:validate-team',
+  orchestraRouterScore: 'orchestra:router-score',
   settingsGet: 'settings:get',
   settingsSet: 'settings:set',
   settingsProviders: 'settings:providers',
@@ -790,6 +791,8 @@ export interface JarvisApi {
   };
   orchestra: {
     validateTeam(input: TeamValidationInput): Promise<{ ok: true } | { ok: false; error: string }>;
+    /** Dernier score mesuré du trieur, s'il existe. N'active rien. */
+    routerScore(): Promise<{ line: string; advice: string } | null>;
   };
   images: {
     /** Ouvre dans la visionneuse une image ou un fichier du dossier des images de Jarvis (rien d'autre). */

@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { mkdir, rename, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import {
@@ -34,8 +35,15 @@ export class ProjectStore {
       await mkdir(dirname(path), { recursive: true });
       this.written += 1;
       const temporary = `${path}.${this.written}.tmp`;
-      await writeFile(temporary, body);
-      await rename(temporary, path);
+      try {
+        await writeFile(temporary, body);
+        await rename(temporary, path);
+      } catch (error) {
+        // 5.0.77 : dossier du projet retiré pendant l'écriture (projet retiré, nettoyage d'un test) :
+        // rien à garder, et surtout pas un rejet non traité (vu dans la suite du bureau, ENOENT au rename).
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT' && !existsSync(dirname(path))) return;
+        throw error;
+      }
     });
     this.queue = next.catch(() => undefined);
     return next;

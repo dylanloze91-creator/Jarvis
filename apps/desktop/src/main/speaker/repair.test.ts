@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { collectSpeakerNet, readOnlyStatus, repairFirewall, repairPrivate } from './repair.js';
+import { collectSpeakerNet, elevateCommand, psQuote, readOnlyStatus, repairFirewall, repairPrivate, statusArgs } from './repair.js';
 
 const FROZEN = JSON.stringify({
   tcp53131: false,
@@ -71,5 +71,30 @@ describe('réparation des enceintes', () => {
     };
     const result = await repairFirewall(53131, 'speaker-firewall.ps1', deps);
     expect(result).toEqual({ ok: false, sentence: "Windows n'a pas donné l'accord." });
+  });
+
+  it('lance ses scripts malgré une politique d’exécution Windows restrictive', () => {
+    const script = 'C:\\Program Files\\Jarvis\\resources\\speaker-net-status.ps1';
+    const read = statusArgs(script);
+    expect(read).toEqual(['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script]);
+    const command = elevateCommand('C:\\Jarvis\\resources\\speaker-firewall.ps1', ['-Port', '53131']);
+    expect(command).toBe(
+      "try { $p = Start-Process -FilePath powershell.exe -Verb RunAs -Wait -PassThru -ErrorAction Stop -ArgumentList '-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File','C:\\Jarvis\\resources\\speaker-firewall.ps1','-Port','53131'; exit $p.ExitCode } catch { Write-Error $_; exit 1 }",
+    );
+    // -ExecutionPolicy doit précéder -File : après, PowerShell le passerait au script.
+    expect(command.indexOf("'-ExecutionPolicy','Bypass'")).toBeLessThan(command.indexOf("'-File'"));
+  });
+
+  it('accepte un chemin d’installation avec des lettres accentuées, et rien de dangereux', () => {
+    const script = 'C:\\Users\\Zoé Lefèvre\\AppData\\Local\\Programs\\Jarvis\\resources\\speaker-firewall.ps1';
+    expect(psQuote(script)).toBe(`'${script}'`);
+    expect(psQuote('C:\\Users\\Jérôme_Ñandú (x86)\\Jarvis-5.0\\a.ps1')).toContain('Jérôme_Ñandú');
+    // Chemin avec un espace (« Program Files », « Nouveau dossier ») : entre guillemets doubles dans
+    // l'élément, sinon Start-Process le coupe en deux et le script ne part jamais (12 novembre 2026).
+    expect(elevateCommand(script, ['-Port', '53131'])).toContain(`'-File','"${script}"','-Port','53131'`);
+    expect(elevateCommand('C:\\Jarvis\\a.ps1', ['-InterfaceIndex', '7'])).toContain(`'-File','C:\\Jarvis\\a.ps1','-InterfaceIndex','7'`);
+    for (const bad of ["C:\\a'b.ps1", 'C:\\a"b.ps1', 'C:\\$(calc).ps1', 'C:\\a`b.ps1', 'C:\\a;b.ps1', 'a|b', 'a&b', 'a\nb', '']) {
+      expect(() => psQuote(bad)).toThrow('argument refusé');
+    }
   });
 });

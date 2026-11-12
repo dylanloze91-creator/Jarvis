@@ -1,4 +1,5 @@
 import { describeError } from '../../search/shared.js';
+import { chooseListing, type ListingCandidate } from '../chooseListing.js';
 import {
   MarketDataError,
   type MarketDataProvider,
@@ -18,6 +19,8 @@ interface YahooSearchQuote {
   shortname?: string;
   longname?: string;
   quoteType?: string;
+  exchange?: string;
+  exchDisp?: string;
 }
 
 interface YahooSearchResponse {
@@ -58,34 +61,39 @@ export class YahooFinanceMarketDataProvider implements MarketDataProvider {
 
   async getQuote(query: MarketDataQuery): Promise<StockQuote> {
     const resolved = await this.resolveSymbol(query);
-    return this.fetchQuote(resolved, query);
+    const quote = await this.fetchQuote(resolved, query);
+    return resolved.clarification ? { ...quote, clarification: resolved.clarification } : quote;
   }
 
-  private async resolveSymbol(query: MarketDataQuery): Promise<{ symbol: string; name: string }> {
+  private async resolveSymbol(
+    query: MarketDataQuery,
+  ): Promise<{ symbol: string; name: string; clarification?: string }> {
     const url = new URL('https://query2.finance.yahoo.com/v1/finance/search');
     url.searchParams.set('q', query.query);
-    url.searchParams.set('quotesCount', '5');
+    url.searchParams.set('quotesCount', '10');
     url.searchParams.set('newsCount', '0');
 
     const response = await safeFetch(url, query.signal, 'Recherche du symbole');
     const payload = (await response.json().catch(() => null)) as YahooSearchResponse | null;
-    const candidates = (payload?.quotes ?? []).filter(
-      (candidate): candidate is YahooSearchQuote & { symbol: string } =>
-        typeof candidate.symbol === 'string' && candidate.symbol.length > 0,
-    );
+    const candidates: ListingCandidate[] = (payload?.quotes ?? []).flatMap((candidate) => {
+      if (typeof candidate.symbol !== 'string' || candidate.symbol.length === 0) return [];
+      return [
+        {
+          symbol: candidate.symbol,
+          name: candidate.longname ?? candidate.shortname ?? candidate.symbol,
+          ...(candidate.shortname ? { shortname: candidate.shortname } : {}),
+          ...(candidate.quoteType ? { quoteType: candidate.quoteType } : {}),
+          ...(candidate.exchange ? { exchange: candidate.exchange } : {}),
+          ...(candidate.exchDisp ? { exchDisp: candidate.exchDisp } : {}),
+        },
+      ];
+    });
 
-    const best =
-      candidates.find((candidate) => candidate.quoteType === 'EQUITY') ??
-      candidates.find(
-        (candidate) => candidate.quoteType === 'ETF' || candidate.quoteType === 'INDEX',
-      ) ??
-      candidates[0];
-
-    if (!best) {
+    const choice = chooseListing(candidates, query.query, query.prefer ?? null);
+    if (!choice) {
       throw new MarketDataError(`Aucune valeur boursière trouvée pour « ${query.query} ».`);
     }
-
-    return { symbol: best.symbol, name: best.longname ?? best.shortname ?? best.symbol };
+    return choice;
   }
 
   private async fetchQuote(

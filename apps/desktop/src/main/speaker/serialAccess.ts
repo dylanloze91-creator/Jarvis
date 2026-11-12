@@ -3,9 +3,17 @@
  */
 import { autoEspressif, rankSerialPorts, type RankedPort, type SerialCandidate } from '@jarvis/core';
 
+export type PermissionCheckHandler = (
+  webContents: unknown,
+  permission: string,
+  requestingOrigin: string,
+  details?: { mediaType?: string },
+) => boolean;
+
 export interface SerialSessionLike {
   on(event: 'select-serial-port', listener: (event: { preventDefault(): void }, ports: SerialCandidate[], webContents: unknown, callback: (portId: string) => void) => void): void;
-  setPermissionCheckHandler(handler: (webContents: unknown, permission: string, mediaType?: string) => boolean): void;
+  /** Signature d'Electron : (webContents, permission, requestingOrigin, details). `mediaType` est dans `details`. */
+  setPermissionCheckHandler(handler: PermissionCheckHandler): void;
   setDevicePermissionHandler(handler: (details: { deviceType: string; origin?: string }) => boolean): void;
 }
 
@@ -36,8 +44,9 @@ export function bindSerialAccess(
   onList?: (ports: RankedPort[]) => void,
 ): { pick(portId: string): void } {
   let waiting: ((portId: string) => void) | null = null;
-  session.setPermissionCheckHandler((webContents, permission, mediaType) =>
-    combinePermissionCheck(permission, mediaType, isJarvisWindow(webContents), allowOther),
+  // Le troisième argument est l'origine, jamais le type de média : il n'est pas lu.
+  session.setPermissionCheckHandler((webContents, permission, _requestingOrigin, details) =>
+    combinePermissionCheck(permission, details?.mediaType, isJarvisWindow(webContents), allowOther),
   );
   session.setDevicePermissionHandler((details) => allowSerialDevice(details.deviceType, details.origin, isJarvisOrigin));
   session.on('select-serial-port', (event, ports, webContents, callback) => {
