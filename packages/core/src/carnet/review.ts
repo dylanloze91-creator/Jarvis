@@ -6,6 +6,7 @@ import { wordOverlap } from './text.js';
 import {
   CARNET_FORMAT_VERSION,
   DEFAULT_REPETITION_OVERLAP,
+  RATE_CATEGORY_LABELS,
   type FalseAlarmLedger,
   type RateCategory,
   type RateEntry,
@@ -144,4 +145,28 @@ export function sundayNotice(
     speak: false,
     day,
   };
+}
+
+/** Texte à donner soi-même. Jarvis ne l'envoie nulle part. */
+export function weekMarkdown(groups: readonly CarnetGroup[], now: Date): string {
+  const lines = [
+    `# Carnet des ratés — semaine du ${localDay(now)}`,
+    '',
+    'À donner toi-même si tu le veux. Jarvis ne l’envoie pas.',
+    '',
+  ];
+  if (!groups.length) {
+    lines.push('Aucun raté cette semaine.', '');
+    return lines.join('\n');
+  }
+  for (const group of groups) {
+    lines.push(`## ${group.count} · ${group.type}`, '');
+    lines.push(`- Phrase : ${group.userText}`);
+    if (group.replyStart) lines.push(`- Réponse : ${group.replyStart}`);
+    lines.push(`- Règle : ${group.rule}`);
+    if (group.category) lines.push(`- Catégorie : ${RATE_CATEGORY_LABELS[group.category]}`);
+    if (group.expected) lines.push(`- Attendu : ${group.expected}`);
+    lines.push('');
+  }
+  return `${lines.join('\n')}\n`;
 }

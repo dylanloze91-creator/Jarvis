@@ -179,6 +179,7 @@ export const IpcChannel = {
   carnetAnnotate: 'carnet:annotate',
   carnetSundaySeen: 'carnet:sunday-seen',
   carnetThumb: 'carnet:thumb',
+  carnetPrepare: 'carnet:prepare',
   phoneStatus: 'phone:status',
   phoneSetEnabled: 'phone:set-enabled',
   phoneStartPairing: 'phone:start-pairing',
@@ -1073,6 +1074,7 @@ export interface JarvisApi {
     annotate(ids: string[], patch: { expected?: string; category?: RateCategory }): Promise<CarnetView>;
     sundaySeen(day: string): Promise<void>;
     thumb(input: { conversationId: string; userText: string; replyText: string }): Promise<void>;
+    prepare(): Promise<string>;
   };
   backup: {
     state(): Promise<{ lastAt: number | null; ok: boolean; file: string; error: string }>;

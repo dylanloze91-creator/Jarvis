@@ -10,6 +10,7 @@ import {
   pageGroups,
   ratesThisWeek,
   sundayNotice,
+  weekMarkdown,
 } from './review.js';
 import type { RateEntry } from './types.js';
 
@@ -119,5 +120,30 @@ describe('carnet — revue (synthetique-test)', () => {
     expect(sundayNotice(sunday, null, 1)?.text).toBe(
       "Cette semaine, j'ai noté 1 raté. Tu veux les voir ?",
     );
+  });
+
+  it('synthetique-test préparer pour Claude écrit les groupes, sans rien envoyer', () => {
+    const text = weekMarkdown(
+      [
+        {
+          id: 'g',
+          type: 'correction',
+          rule: 'correction-classify',
+          count: 2,
+          userText: 'Non, c’est faux',
+          replyStart: 'Il est 3 heures.',
+          ids: ['a', 'b'],
+          category: 'bogue',
+          expected: 'dire 14 h',
+        },
+      ],
+      new Date(2026, 10, 12, 12, 0, 0),
+    );
+    expect(text).toContain('semaine du 2026-11-12');
+    expect(text).toContain('2 · correction');
+    expect(text).toContain('Non, c’est faux');
+    expect(text).toContain('Un bogue');
+    expect(text).toContain('dire 14 h');
+    expect(text).toContain('envoie pas');
   });
 });

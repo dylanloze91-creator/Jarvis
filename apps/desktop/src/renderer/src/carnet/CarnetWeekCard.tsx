@@ -92,6 +92,9 @@ export function CarnetWeekCard() {
           Tout voir ({rest} de plus)
         </button>
       ) : null}
+      <button type="button" className="quick-btn mt-2 text-xs" onClick={() => void window.jarvis.carnet.prepare()}>
+        Préparer pour Claude
+      </button>
     </section>
   );
 }
@@ -155,6 +158,10 @@ export function CarnetSettingsSection() {
           }}
         />
       </label>
+      <button type="button" className="quick-btn text-xs" onClick={() => void window.jarvis.carnet.prepare()}>
+        Préparer pour Claude
+      </button>
+      <p className="text-xs text-slate-500">Écrit carnet-semaine.md dans tes documents et l&apos;ouvre. Rien n&apos;est envoyé tout seul.</p>
     </div>
   );
 }

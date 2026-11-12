@@ -3,6 +3,8 @@
  * Il répond « C'est noté. » avant tout modèle, et il écrit les ratés dans son fichier.
  * Il ne change pas les autres réponses, ni ce qui part au modèle.
  */
+import { writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import {
   DEFAULT_INTERRUPTION_WINDOW_MS,
   annotateRates,
@@ -18,6 +20,7 @@ import {
   previousFromHistory,
   ratesThisWeek,
   sundayNotice,
+  weekMarkdown,
   type CarnetEdition,
   type CarnetGroup,
   type CarnetHow,
@@ -292,6 +295,15 @@ export class CarnetHub {
     for (const detection of found) {
       this.persist(Date.now(), input.conversationId, { kind: 'fenetre' }, detection);
     }
+  }
+
+  /** Écrit `carnet-semaine.md` et l'ouvre. N'envoie rien. */
+  async prepare(directory: string, open: (path: string) => void, now = new Date()): Promise<string> {
+    const view = await this.view(now);
+    const path = join(directory, 'carnet-semaine.md');
+    await writeFile(path, weekMarkdown(view.groups, now), 'utf8');
+    open(path);
+    return path;
   }
 
   private rates(turn: ObservedTurn): RateDetection[] {

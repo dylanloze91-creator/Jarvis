@@ -68,6 +68,22 @@ describe('carnet — revue sur le PC (synthetique-test)', () => {
     };
     expect(saved.enabled).toBe(true);
 
+    const opened: string[] = [];
+    const original = globalThis.fetch;
+    globalThis.fetch = (() => {
+      throw new Error('envoi interdit');
+    }) as typeof fetch;
+    try {
+      const path = await test.prepare(dir, (file) => opened.push(file), sunday);
+      expect(path.replaceAll('\\', '/')).toMatch(/carnet-semaine\.md$/);
+      expect(opened).toEqual([path]);
+      const markdown = readFileSync(path, 'utf8');
+      expect(markdown).toContain('3 heures');
+      expect(markdown).toContain('envoie pas');
+    } finally {
+      globalThis.fetch = original;
+    }
+
     await test.dismiss(['rate-1']);
     const after = await test.view(sunday);
     expect(after.groups).toEqual([]);

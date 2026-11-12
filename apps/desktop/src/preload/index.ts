@@ -304,6 +304,7 @@ const api: JarvisApi = {
     annotate: (ids: string[], patch) => ipcRenderer.invoke(IpcChannel.carnetAnnotate, ids, patch),
     sundaySeen: (day: string) => ipcRenderer.invoke(IpcChannel.carnetSundaySeen, day),
     thumb: (input) => ipcRenderer.invoke(IpcChannel.carnetThumb, input),
+    prepare: () => ipcRenderer.invoke(IpcChannel.carnetPrepare),
   },
   machine: {
     status: () => ipcRenderer.invoke(IpcChannel.machineStatus),

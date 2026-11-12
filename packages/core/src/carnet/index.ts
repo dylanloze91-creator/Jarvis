@@ -41,6 +41,7 @@ export {
   pageGroups,
   ratesThisWeek,
   sundayNotice,
+  weekMarkdown,
   type CarnetGroup,
 } from './review.js';
 export { defaultCarnetSettings, parseCarnetSettings } from './settings.js';

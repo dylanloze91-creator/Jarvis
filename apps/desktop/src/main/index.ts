@@ -861,6 +861,11 @@ function registerIpc(): void {
       replyText: record.replyText,
     });
   });
+  ipcMain.handle(IpcChannel.carnetPrepare, () =>
+    carnet.prepare(app.getPath('documents'), (path) => {
+      void shell.showItemInFolder(path);
+    }),
+  );
   ipcMain.handle(IpcChannel.localLearningSnapshot, () => localLearning.snapshot());
   ipcMain.handle(IpcChannel.localLearningTrain, () => localLearning.trainNow().then(() => localLearning.status()));
   ipcMain.handle(IpcChannel.localLearningRollback, () => localLearning.rollback());
