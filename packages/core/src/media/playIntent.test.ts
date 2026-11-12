@@ -68,6 +68,10 @@ describe('extractSpotifyPlayQuery', () => {
   it('reconnaît pause / volume / suivant comme de la musique, pas une recherche', () => {
     expect(extractSpotifyPlayQuery('pause')).toBeNull();
     expect(isMusicIntent('pause')).toBe(true);
+    expect(isMusicIntent('Stop la musique.')).toBe(true);
+    expect(isMusicIntent('coupe la musique')).toBe(true);
+    expect(isMusicIntent('éteins Spotify')).toBe(true);
+    expect(isMusicIntent('stop')).toBe(false);
     expect(extractSpotifyPlayQuery('Mets le volume Spotify à 50 %')).toBeNull();
     expect(isMusicIntent('Mets le volume Spotify à 50 %')).toBe(true);
     expect(isMusicIntent('quelle heure est-il ?')).toBe(false);

@@ -59,9 +59,12 @@ export function isMusicIntent(prompt: string): boolean {
   if (/\bshuffle\b|mode al[ée]atoire/.test(normalized)) return true;
   if (/\bvolume\b/.test(normalized)) return true;
   if (/^(?:jarvis[,:]?\s*)?pause\b/iu.test(trimmed) && !NOT_A_TRACK.test(trimmed)) return true;
+  // 5.0.77 : « stop la musique », « coupe la musique », « éteins la musique » (dits à l'enceinte)
+  // partaient au cerveau au lieu de l'équipe Musique.
   if (
     MUSIC_CONTROL.test(normalized) &&
-    /\b(pause|reprend|reprendre|arr[êe]te)\b/.test(normalized)
+    // Pas de \b : en JavaScript il ne connaît pas « é », « éteins » ne serait jamais vu.
+    /(?:^|[\s,])(pause|reprend|reprendre|arr[êe]te|stop|stoppe|coupe|[ée]teins)(?=$|[\s,.!?])/.test(normalized)
   ) {
     return true;
   }
