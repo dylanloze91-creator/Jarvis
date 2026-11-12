@@ -22,6 +22,7 @@ import type {
   HealthReport,
   QuestionnaireState,
   GeocodingPlace,
+  CarnetPlace,
   ToolCategory,
   UpdateFailureKind,
   WakeSampleSource,
@@ -374,6 +375,11 @@ export interface SendChatInput {
   rulesOnlyAddressee?: boolean;
   /** Module images : photos jointes (3 au plus, 20 Mo chacune), enregistrées par le processus principal. */
   attachments?: ChatAttachmentInput[];
+  /**
+   * D'où vient la phrase, pour le carnet des ratés. Absent = la fenêtre.
+   * N'est jamais transmis au modèle.
+   */
+  place?: CarnetPlace;
 }
 
 /** Photo jointe telle que l'interface l'envoie (octets en base64, sans préfixe `data:`). */

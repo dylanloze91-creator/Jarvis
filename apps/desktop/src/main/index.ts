@@ -83,6 +83,7 @@ import { createGoogleRuntime } from './google/runtime.js';
 import { PersonalizationStore } from './personalization.js';
 import { KnowledgeStore } from './knowledge.js';
 import { ChatSession } from './session.js';
+import { CarnetHub } from './carnet/hub.js';
 import { appendTeamValidation, type TeamValidationPayload } from './orchestra/teamValidation.js';
 import { PhoneService } from './phone/service.js';
 import { PhoneStore } from './phone/store.js';
@@ -314,6 +315,9 @@ function settingsForWindow(): Settings {
   return maskSecrets(settings, vault.secretsNow());
 }
 
+/** Actif dans Test, coupé dans Live, tant que l'interrupteur n'a pas été touché. */
+const carnet = new CarnetHub(edition().id);
+
 const session = new ChatSession({
   registry,
   get tools() {
@@ -335,6 +339,7 @@ const session = new ChatSession({
   // Module images : une photo jointe est enregistrée dans le dossier des images (sous _references).
   saveAttachment: (input) => images.saveReference(input),
   healthReport: () => healthMonitor?.run() ?? Promise.reject(new Error('bilan indisponible')),
+  carnet,
 });
 
 // 5.0.63 — téléphone : une session de chat à part (un tour sur le téléphone n'annule pas celui de
@@ -358,6 +363,7 @@ const phoneSession = new ChatSession({
     currentTurn.value = turn;
   },
   healthReport: () => healthMonitor?.run() ?? Promise.reject(new Error('bilan indisponible')),
+  carnet,
 });
 const questionnaire = QuestionnaireStore.inUserData(() => app.getPath('userData'));
 const phone = new PhoneService({
@@ -449,6 +455,7 @@ const speakers = new SpeakerService({
         currentTurn.value = turn;
       },
       healthReport: () => healthMonitor?.run() ?? Promise.reject(new Error('bilan indisponible')),
+      carnet,
     });
     return {
       send: async (sender, input) => {

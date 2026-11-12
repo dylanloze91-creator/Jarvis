@@ -29,6 +29,7 @@ export type {
 } from './types.js';
 
 export { classifyToolLine, detectRates, type DetectOptions } from './detect.js';
+export { previousFromHistory } from './history.js';
 export {
   contentWords,
   fold,

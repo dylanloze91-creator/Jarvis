@@ -82,6 +82,7 @@ import {
   looksLikeImageIntent,
   isImageToolName,
   type ImageProject,
+  type CarnetPlace,
 } from '@jarvis/core';
 import { describeDirectResult, type ImagesService } from './images/ImagesService.js';
 import type { ChatEvent, RuntimeStatus, SendChatInput } from '../shared/ipc.js';
@@ -150,6 +151,20 @@ interface SessionDeps {
   saveAttachment?: (input: { name: string; mime: string; data: Buffer }) => Promise<ChatAttachment>;
   /** Bilan de santé, sans modèle. Absent : la phrase suit le chat habituel. */
   healthReport?: () => Promise<HealthReport>;
+  /**
+   * Carnet des ratés. Absent ou coupé : le tour est celui d'avant.
+   * La règle express répond avant tout modèle ; le reste observe seulement.
+   */
+  carnet?: {
+    expressReply(text: string): string | null;
+    noteExpress(ctx: {
+      text: string;
+      conversationId: string;
+      before: readonly ChatMessage[];
+      place: CarnetPlace;
+      at: number;
+    }): void;
+  };
 }
 
 /**
@@ -258,6 +273,13 @@ export class ChatSession {
     // 5.0.62 — une phrase dite sans « Jarvis » pendant la discussion : lui est-elle adressée ?
     // Vérifié avant d'annuler quoi que ce soit : une conversation dans la pièce ne coupe rien.
     const seq = (this.sendSeq += 1);
+    // « Ça n'a pas marché » : avant le modèle du destinataire, avant le cerveau, avant la réponse.
+    const noted = this.deps.carnet?.expressReply(input.text) ?? null;
+    if (noted) {
+      this.cancel();
+      await this.notedFailure(sender, emit, input, seq, noted);
+      return;
+    }
     if (input.source === 'voice' && input.followUp) {
       const checkSettings = this.deps.getSettings();
       if (addresseeCheckEnabled(checkSettings.voice)) {
@@ -635,6 +657,62 @@ export class ChatSession {
         message: "Le message n'a pas pu être envoyé. Réessaie dans un instant.",
       });
       emit({ type: 'done', conversationId, messages: [] });
+    }
+  }
+
+  /**
+   * Règle express du carnet. Aucun fournisseur n'est créé : le faux modèle des tests
+   * échoue s'il est appelé. La réponse est exactement le texte rendu par le carnet.
+   */
+  private async notedFailure(
+    sender: WebContents,
+    emit: (event: ChatEvent) => void,
+    input: SendChatInput,
+    seq: number,
+    replyText: string,
+  ): Promise<void> {
+    const controller = new AbortController();
+    this.controller = controller;
+    let conversationId = input.conversationId ?? '';
+    try {
+      const conversation = await this.loadConversation(input.conversationId);
+      if (seq !== this.sendSeq || this.controller !== controller) return;
+      conversationId = conversation.id;
+      const userMessage = createMessage('user', input.text);
+      const reply = createMessage('assistant', replyText);
+      const messages = [...conversation.messages, userMessage, reply];
+      emit({ type: 'started', conversationId, message: userMessage });
+      emit({ type: 'delta', text: replyText });
+      const updated = withMessages(conversation, messages);
+      try {
+        await this.deps.store.save(updated);
+      } catch (error) {
+        emit({
+          type: 'error',
+          message: `Conversation non enregistrée dans l'historique : ${error instanceof Error ? error.message : String(error)}`,
+        });
+      }
+      try {
+        this.deps.carnet?.noteExpress({
+          text: input.text,
+          conversationId: updated.id,
+          before: conversation.messages,
+          place: input.place ?? { kind: 'fenetre' },
+          at: userMessage.createdAt,
+        });
+      } catch (error) {
+        console.error('[jarvis] carnet non noté :', error);
+      }
+      emit({ type: 'done', conversationId: updated.id, messages: updated.messages });
+    } catch {
+      if (seq !== this.sendSeq) return;
+      emit({
+        type: 'error',
+        message: "Le message n'a pas pu être envoyé. Réessaie dans un instant.",
+      });
+      emit({ type: 'done', conversationId, messages: [] });
+    } finally {
+      if (this.controller === controller) this.controller = null;
     }
   }
 
