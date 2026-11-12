@@ -9,6 +9,7 @@ import { SpeakerDiagnose } from '@/components/SpeakerDiagnose';
 import { SpeakerInstallView } from '@/components/SpeakerInstall';
 import { installSpeaker } from '@/speaker/installDriver';
 import { esptoolFlasher, findSerialPort, textLink } from '@/speaker/esptoolFlash';
+import { ReservedGate } from '@/components/ReservedGate';
 import { Input, Toggle } from '@/components/ui/field';
 import type { SpeakerAdded, SpeakerStatus } from '../../../shared/ipc';
 
@@ -268,13 +269,15 @@ export function SpeakerSettingsSection() {
         </p>
       </div>
 
-      <Toggle
-        label="Enceintes"
-        hint={`Coupé : le port ${status.port} reste fermé, aucune enceinte ne peut parler à Jarvis.`}
-        checked={status.enabled}
-        disabled={loading}
-        onChange={(enabled) => run(() => window.jarvis.speaker.setEnabled(enabled))}
-      />
+      <ReservedGate name="speaker">
+        <Toggle
+          label="Enceintes"
+          hint={`Coupé : le port ${status.port} reste fermé, aucune enceinte ne peut parler à Jarvis.`}
+          checked={status.enabled}
+          disabled={loading}
+          onChange={(enabled) => run(() => window.jarvis.speaker.setEnabled(enabled))}
+        />
+      </ReservedGate>
 
       {status.error ? <p className="text-xs text-rose-300">{status.error}</p> : null}
 

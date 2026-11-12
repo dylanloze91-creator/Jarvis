@@ -147,3 +147,48 @@ export function applyEditionPaths(current: Edition, host: EditionPathHost): void
   host.setPath('userData', dir);
   host.setPath('sessionData', dir);
 }
+
+/** Accords « activer quand même », hors de settings.json. */
+export interface Reservations {
+  wakeWord?: boolean;
+  speaker?: boolean;
+  phone?: boolean;
+  shortcut?: boolean;
+}
+
+/** Live : jamais retenu. Test : retenu tant que l'utilisateur n'a pas activé. */
+export function reservedHeld(current: Edition, file: Reservations, fn: ReservedFunction): boolean {
+  return current.reservedOffByDefault && file[fn] !== true;
+}
+
+export function reservedAllows(current: Edition, file: Reservations, fn: ReservedFunction): boolean {
+  return !reservedHeld(current, file, fn);
+}
+
+export function grantReservation(file: Reservations, fn: ReservedFunction): Reservations {
+  return { ...file, [fn]: true };
+}
+
+/**
+ * Raccourci à enregistrer. `null` : ne rien enregistrer.
+ * Test ne reprend pas Ctrl+Espace, même si les réglages copiés le contiennent.
+ */
+export function hotkeyToRegister(current: Edition, saved: string, allows: boolean): string | null {
+  if (!allows) return null;
+  if (current.reservedOffByDefault && saved === LIVE_EDITION.shortcut) return current.shortcut;
+  return saved;
+}
+
+/** Repli seulement pour Live, et jamais vers le raccourci qu'on vient d'essayer. */
+export function hotkeyFallback(current: Edition, attempted: string): string | null {
+  if (!current.shortcutFallback || attempted === current.shortcutFallback) return null;
+  return current.shortcutFallback;
+}
+
+export function portTakenSentence(port: number): string {
+  return `Le port ${port} est déjà pris. Jarvis Test ne le prend pas.`;
+}
+
+export function shortcutTakenSentence(): string {
+  return 'Ce raccourci est déjà pris. Jarvis Test ne le prend pas.';
+}

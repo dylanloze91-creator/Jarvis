@@ -9,6 +9,7 @@ import {
 import { VOICE_WAKE_TEST_INTRO } from '@/components/voiceSettingsCopy';
 import type { VoiceDescriptor, VoiceSettings } from '@jarvis/core';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { ReservedGate } from '@/components/ReservedGate';
 import { Field, Input, Range, Select, Textarea, Toggle } from '@/components/ui/field';
 import { SecretInput } from '@/components/SecretInput';
 import { Button } from '@/components/ui/button';
@@ -189,12 +190,14 @@ export function VoiceSettingsSection({
 
   return (
     <div className="flex flex-col gap-4">
-      <Toggle
-        label="Écoute permanente"
-        hint="Jarvis écoute en continu et n'envoie rien avant d'avoir détecté le mot de réveil, localement."
-        checked={voice.enabled}
-        onChange={(enabled) => onChange({ enabled })}
-      />
+      <ReservedGate name="wakeWord">
+        <Toggle
+          label="Écoute permanente"
+          hint="Jarvis écoute en continu et n'envoie rien avant d'avoir détecté le mot de réveil, localement."
+          checked={voice.enabled}
+          onChange={(enabled) => onChange({ enabled })}
+        />
+      </ReservedGate>
 
       <MicrophonePanel
         voiceEnabled={voice.enabled}

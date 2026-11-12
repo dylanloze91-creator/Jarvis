@@ -95,6 +95,11 @@ export default function App() {
     initialOnboardingAnswers(),
   );
   const mainPaneRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    return window.jarvis.edition?.onClaimed((result) => {
+      if (result.settings) setSettings(result.settings);
+    });
+  }, []);
   const seeded = useRef(false);
 
   const voiceRef = useRef<ReturnType<typeof useVoice> | null>(null);
@@ -476,6 +481,8 @@ export default function App() {
         </div>
       </header>
 
+      <EditionMark />
+
       {view !== 'chat' ? (
         <div className="relative z-10 border-b border-white/[0.06] px-5 py-3">
           <span className="section-kicker">{viewLabel}</span>
@@ -621,6 +628,27 @@ function BootStage({ label }: { label: string }) {
     <div className="boot-stage">
       <JarvisOrb />
       <p className="relative z-10 text-[13px] text-slate-400">{label}</p>
+    </div>
+  );
+}
+
+function EditionMark() {
+  const [badge, setBadge] = useState<{ label: string; color: string } | null>(null);
+  useEffect(() => {
+    const api = window.jarvis.edition;
+    if (!api) return;
+    void api.state().then((state) => {
+      document.title = state.productName;
+      setBadge(state.badge);
+    });
+  }, []);
+  if (!badge) return null;
+  return (
+    <div
+      className="relative z-10 px-5 py-1 text-center text-[11px] font-semibold tracking-wide text-slate-950"
+      style={{ background: badge.color }}
+    >
+      {badge.label}
     </div>
   );
 }

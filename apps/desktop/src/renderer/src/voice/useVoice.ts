@@ -544,9 +544,27 @@ export function useVoice({
   // Écoute permanente : un bail sur le micro partagé, et le moteur du mot de
   // réveil démarré une fois la fenêtre affichée. Une reprise du micro
   // (débranché, changé, pilote relancé) ne redémarre pas le moteur.
+  const [wakeHeld, setWakeHeld] = useState(false);
+  useEffect(() => {
+    const api = window.jarvis.edition;
+    if (!api) return;
+    let stop = false;
+    const read = (): void => {
+      void api.state().then((state) => {
+        if (!stop) setWakeHeld(state.held.wakeWord);
+      });
+    };
+    read();
+    const unsubscribe = api.onClaimed(() => read());
+    return () => {
+      stop = true;
+      unsubscribe();
+    };
+  }, []);
+
   useEffect(() => {
     if (!settings) return;
-    if (!settings.voice.enabled) {
+    if (!settings.voice.enabled || wakeHeld) {
       stopEngines();
       setVoiceState('idle');
       return;
@@ -569,7 +587,8 @@ export function useVoice({
     };
     // Volontairement limité à l'activation : le micro et la configuration
     // du mot de réveil sont appliqués par les autres effets.
-  }, [settings?.voice.enabled]);
+    // wakeHeld : Test ne démarre pas l'écoute tant que la fonction est réservée.
+  }, [settings?.voice.enabled, wakeHeld]);
 
   useEffect(() => {
     if (!settings?.voice.enabled || !settings.voice.wakeLearning) return;

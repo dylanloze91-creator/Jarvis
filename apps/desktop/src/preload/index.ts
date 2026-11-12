@@ -14,6 +14,8 @@ import {
   type SpeakerTranscribeRequest,
   type SpeakerTranscribeResult,
   type TeamValidationInput,
+  type EditionClaimResult,
+  type ReservedName,
   type UpdateState,
   type VoiceSpeakInput,
   type VoicePiperSpeakInput,
@@ -31,6 +33,8 @@ import { createDeveloperApi } from './developer.js';
  * Seule surface exposée au renderer. Elle est volontairement étroite : pas
  * d'accès à `ipcRenderer` brut, pas de Node, uniquement ces appels typés.
  */
+const claimListeners = new Set<(result: EditionClaimResult) => void>();
+
 const api: JarvisApi = {
   chat: {
     send: (input: SendChatInput) => ipcRenderer.invoke(IpcChannel.chatSend, input),
@@ -277,6 +281,18 @@ const api: JarvisApi = {
     set: (patch) => ipcRenderer.invoke(IpcChannel.questionnaireSet, patch),
     apply: () => ipcRenderer.invoke(IpcChannel.questionnaireApply),
     restore: () => ipcRenderer.invoke(IpcChannel.questionnaireRestore),
+  },
+  edition: {
+    state: () => ipcRenderer.invoke(IpcChannel.editionState),
+    claim: async (name: ReservedName) => {
+      const result = (await ipcRenderer.invoke(IpcChannel.editionClaim, name)) as EditionClaimResult;
+      for (const listener of claimListeners) listener(result);
+      return result;
+    },
+    onClaimed: (listener: (result: EditionClaimResult) => void) => {
+      claimListeners.add(listener);
+      return () => claimListeners.delete(listener);
+    },
   },
   machine: {
     status: () => ipcRenderer.invoke(IpcChannel.machineStatus),

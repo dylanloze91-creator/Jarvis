@@ -9,6 +9,11 @@ import {
   applyEditionPaths,
   edition,
   editionUserDataDir,
+  grantReservation,
+  hotkeyFallback,
+  hotkeyToRegister,
+  reservedAllows,
+  reservedHeld,
   type EditionPathHost,
 } from './edition.js';
 
@@ -75,6 +80,28 @@ describe('édition Test', () => {
     const dir = join(appData, 'Jarvis Test');
     expect(dir).not.toBe(join(appData, 'Jarvis'));
     expect(host.calls).toEqual([`dir:${dir}`, `userData:${dir}`, `sessionData:${dir}`]);
+  });
+});
+
+describe('fonctions réservées', () => {
+  it('Live les laisse au réglage, Test les coupe tant qu’on ne les active pas', () => {
+    for (const name of ['wakeWord', 'speaker', 'phone', 'shortcut'] as const) {
+      expect(reservedHeld(LIVE_EDITION, {}, name)).toBe(false);
+      expect(reservedAllows(LIVE_EDITION, {}, name)).toBe(true);
+      expect(reservedHeld(TEST_EDITION, {}, name)).toBe(true);
+      expect(reservedAllows(TEST_EDITION, grantReservation({}, name), name)).toBe(true);
+    }
+  });
+
+  it('le raccourci de Test n’est pas Ctrl+Espace, et Live garde son repli', () => {
+    expect(hotkeyToRegister(LIVE_EDITION, 'Control+Space', true)).toBe('Control+Space');
+    expect(hotkeyToRegister(LIVE_EDITION, 'Alt+J', true)).toBe('Alt+J');
+    expect(hotkeyToRegister(TEST_EDITION, 'Control+Space', false)).toBeNull();
+    expect(hotkeyToRegister(TEST_EDITION, 'Control+Space', true)).toBe('Control+Alt+Space');
+    expect(hotkeyToRegister(TEST_EDITION, 'Alt+J', true)).toBe('Alt+J');
+    expect(hotkeyFallback(LIVE_EDITION, 'Alt+J')).toBe('Control+Space');
+    expect(hotkeyFallback(LIVE_EDITION, 'Control+Space')).toBeNull();
+    expect(hotkeyFallback(TEST_EDITION, 'Control+Alt+Space')).toBeNull();
   });
 });
 

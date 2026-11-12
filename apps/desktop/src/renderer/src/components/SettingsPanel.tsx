@@ -15,6 +15,7 @@ import {
 } from '@jarvis/core';
 import { Lock } from 'lucide-react';
 import { AuditPanel } from '@/components/AuditPanel';
+import { ReservedGate } from '@/components/ReservedGate';
 import { Button } from '@/components/ui/button';
 import { Field, Input, Select, Textarea, Toggle } from '@/components/ui/field';
 import { OllamaSettingsSection } from '@/components/OllamaSettings';
@@ -656,9 +657,11 @@ export function SettingsPanel({
           'Fenêtre et raccourci',
           'Affichage et démarrage Windows',
           <>
-            <Field label="Raccourci global" hint="Exemples : Control+Space, Alt+J, Super+K.">
-              <Input value={draft.hotkey} onChange={(event) => patch({ hotkey: event.target.value })} />
-            </Field>
+            <ReservedGate name="shortcut">
+              <Field label="Raccourci global" hint="Exemples : Control+Space, Alt+J, Super+K.">
+                <Input value={draft.hotkey} onChange={(event) => patch({ hotkey: event.target.value })} />
+              </Field>
+            </ReservedGate>
             <Toggle
               label="Rester ouverte"
               hint="Visible si tu cliques ailleurs (masquage : raccourci, Échap, fermer)."

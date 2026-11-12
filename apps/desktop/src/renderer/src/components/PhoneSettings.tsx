@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { CheckCircle2, CircleDashed, Copy, Loader2, RefreshCw, Smartphone, Trash2 } from 'lucide-react';
 import { encodeQr, qrSvgPath } from '@jarvis/core';
+import { ReservedGate } from '@/components/ReservedGate';
 import { Button } from '@/components/ui/button';
 import { Toggle } from '@/components/ui/field';
 import type { PhoneStatus } from '../../../shared/ipc';
@@ -71,12 +72,14 @@ export function PhoneSettingsSection() {
         </p>
       </div>
 
-      <Toggle
-        label="Accès depuis le téléphone"
-        hint="Coupé : aucun accès possible, même pour un téléphone déjà relié."
-        checked={status.enabled}
-        onChange={(enabled) => run(() => window.jarvis.phone.setEnabled(enabled))}
-      />
+      <ReservedGate name="phone">
+        <Toggle
+          label="Accès depuis le téléphone"
+          hint="Coupé : aucun accès possible, même pour un téléphone déjà relié."
+          checked={status.enabled}
+          onChange={(enabled) => run(() => window.jarvis.phone.setEnabled(enabled))}
+        />
+      </ReservedGate>
 
       {status.error ? <p className="text-xs text-rose-300">{status.error}</p> : null}
 

@@ -6,10 +6,11 @@
  * Le serveur, les jetons et la synthèse vivent dans `apps/desktop/src/main/speaker/`.
  */
 import { stripSourcesFooter } from '../agent/citations.js';
+import { LIVE_EDITION } from '../edition.js';
 import { decodeWav, encodeWav } from '../speech/wav.js';
 
-/** Port fixe du pont (toutes les interfaces, adresses privées seulement). */
-export const SPEAKER_PORT = 53131;
+/** Port du pont pour Live. L'application en cours utilise `edition().ports.speaker`. */
+export const SPEAKER_PORT = LIVE_EDITION.ports.speaker;
 /** Audio attendu de l'enceinte et renvoyé à l'enceinte : PCM 16 bits, mono, 16 kHz. */
 export const SPEAKER_SAMPLE_RATE = 16_000;
 /** Corps d'une phrase au plus (environ 45 s à 16 kHz 16 bits). */
