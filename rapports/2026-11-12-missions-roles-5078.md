@@ -29,7 +29,33 @@ Mission d'essai du 12 novembre 2026 dans le Jarvis installé, après avoir régl
 
 Avec ces corrections, la même mission aurait tourné avec Ornith comme Codeur (à la place de `qwen3.5:4b`), la revue aurait eu sa réponse JSON en quelques secondes (et, d'après l'essai à part, aurait signalé « bloquant : la variable `paused` n'est jamais lue par la boucle du jeu », renvoyant la mission en correction) ; et si la revue avait encore échoué, le verdict aurait été « Tests verts, revue non faite : à vérifier toi-même » au lieu de « Réussie ».
 
-Non refait en vrai : la mission d'essai n'a pas été relancée avec cette branche (le Jarvis installé est la 5.0.76).
+## Mission d'essai relancée en dev (12 novembre, 17 h 03, branche `claude/missions-roles-5078`)
+
+Jarvis lancé depuis le code de la branche (`electron-vite dev` avec le port de débogage, mêmes réglages que le Jarvis installé : le mode dev et l'installateur partagent le même dossier de données), Jarvis installé fermé pendant l'essai puis relancé. Même mission « modify » sur `pong-benchmark`, demande reformulée (« Ajoute au Pong un bouton « Pause » … ») pour ne pas retomber sur le nom de branche de l'essai du matin. Plan et cartes validés par le script de suivi à la place de l'utilisateur ; aucune carte destructive.
+
+| Étape | Modèle | Durée | Résultat |
+| --- | --- | --- | --- |
+| Raisonnement | qwen3-coder:30b | 88 s | objectif et 5 critères |
+| Conception | qwen3-coder:30b | 169 s | 4 tours, 5 fichiers lus |
+| Plan | **Ornith-1.0-9B** | 219 s | 4 fichiers (index.html, game.ts, main.ts, game.test.ts) |
+| Tests de référence | — | 5 s | typecheck OK, 10 tests verts |
+| Modification | **Ornith-1.0-9B** | 532 s (13 tours, 6,4 jetons/s) | 4 fichiers modifiés |
+| Tests | — | 5 s | 1 échec sur 11 (le nouveau test de pause) |
+| Diagnostic | Ornith-1.0-9B | 142 s | « update ne gère pas paused » |
+| Correction | Ornith-1.0-9B | 236 s (16 tours) | 5 fichiers (src/rules.ts hors plan) |
+| Tests | — | 4 s | même échec : **arrêt net** (5.0.1) |
+
+**Verdict de Jarvis : « Échec »**, en 23 min 31 s, mission `failed`, preuve `failed`. Rapport de la tâche : « Échec : des tests échouent encore après les corrections. Arrêt net : la correction 1 reproduit exactement le même échec … le modèle tourne en rond. » La copie de l'utilisateur n'a pas été touchée ; la copie isolée est `pong-benchmark-taches/2026-11-12-ajoute-au-pong-un-bouton-pause-un-bouton` (branche `jarvis-dev/…`), gardée.
+
+Ce que l'essai montre :
+
+1. **Correction 1 vue en vrai.** Ligne de la mission : « Codeur : « hf.co/deepreinforce-ai/Ornith-1.0-9B-GGUF:Q4_K_M » choisi dans Modèle par rôle, gardé bien qu'il dépasse un peu 6 Go (une partie des couches tourne sur le processeur) ». Plan, modification, diagnostic et correction ont tourné sur Ornith (le matin : `qwen3.5:4b`). Coût : 6,4 jetons/s contre 64 pour le 4B, soit 532 s de modification contre 50 s, et 23 min 31 s de mission contre 7 min 52 s.
+2. **Correction 2 non mesurable ici** : la revue n'a pas été atteinte (tests jamais verts), donc pas de comparaison avec les 177 s « sans JSON » du matin. Aucune étape n'a rendu de « réponse sans JSON » ; les durées d'Ornith viennent de sa lenteur (couches sur le processeur), pas d'une réflexion.
+3. **Correction 3 non atteinte** : pas de revue, donc pas de cas « revue non faite ». Le verdict « Échec » est juste : le test écrit par Ornith (`update(start, keys(), 1/60)` doit rendre `paused: true` sans qu'aucune touche ne soit enfoncée) est faux, et `game.ts` ne fait que sortir de la pause, jamais y entrer ; `main.ts` arrête l'animation au clic (ça marche dans le navigateur) mais l'état du jeu ne le sait pas. Le matin, le même genre de bouton non branché était passé en « Réussie » ; cette fois la boucle s'est arrêtée dès la correction répétée.
+
+Observation à part (comportement d'avant, pas de cette branche) : en mission lancée en mode direct (`hooks.directRun`), un fichier hors plan et non protégé (`src/rules.ts`) est écrit sans carte, avec la mention « Validé par le plan » au journal alors que le plan ne le listait pas ; le rapport le marque bien « hors plan ». À regarder, hors de cette branche.
+
+Reste à voir en vrai, une fois la branche dans une version installée : l'étape Revue avec Ornith (durée, JSON), et le verdict « Tests verts, revue non faite : à vérifier toi-même » en faisant échouer la revue exprès.
 
 ## Tests
 
@@ -50,11 +76,11 @@ Secrets   : OK (0 trouvé ; seules valeurs factices des tests)
 Fichiers modifiés : packages/core/src/developer/engine/roleModelRouting.ts (+test), packages/core/src/developer/codeProvider.ts (+test), packages/core/src/developer/evidence.ts (+test), packages/core/src/developer/engine/missionPrompts.ts, packages/core/src/developer/index.ts, apps/desktop/src/main/developer/mission/missionWorkflow.ts, apps/desktop/src/main/developer/task/report.ts, apps/desktop/src/main/developer/controller.ts, apps/desktop/src/shared/developerIpc.ts, apps/desktop/src/main/developer/mission/fallbackMission.test.ts, CLAUDE.md, AGENTS-COORDINATION.md, ce rapport
 Prêt à fusionner : NON (prévu pour la 5.0.78, pas maintenant ; et le test windowsDesktopMissionPath reste à réparer, hors de cette branche)
 À corriger : windowsDesktopMissionPath.test.ts « Construire manuel » (déjà listé, décision de l'utilisateur)
-Testé en vrai (à la voix, sur le PC) : PAS FAIT
+Testé en vrai (à la voix, sur le PC) : FAIT EN PARTIE (mission relancée en dev le 12 novembre à 17 h 03 : Codeur par rôle vu en vrai ; revue jamais atteinte, donc réflexion coupée et « revue non faite » restent à voir)
 ```
 
 À tester toi-même, une fois la branche dans une version installée :
 
-1. Jarvis Développeur → Modèle par rôle : CODER = Ornith ; mission « Modifier » sur le Pong (« ajoute un bouton Pause »). Attendu : la ligne Codeur affiche Ornith, et la discussion dit « choisi dans Modèle par rôle, gardé bien qu'il dépasse un peu 6 Go ».
+1. ~~Jarvis Développeur → Modèle par rôle : CODER = Ornith ; mission « Modifier » sur le Pong.~~ Vu en dev le 12 novembre : la ligne Codeur affiche Ornith et la mission dit « choisi dans Modèle par rôle, gardé bien qu'il dépasse un peu 6 Go ».
 2. Même mission : l'étape Revue doit finir en moins d'une minute avec un verdict (plus de « réponse sans JSON »).
 3. Si une revue échoue quand même (par exemple en arrêtant Ollama pendant la revue) : le rapport doit afficher « Tests verts, revue non faite : à vérifier toi-même », pas « Réussie ».
