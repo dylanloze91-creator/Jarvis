@@ -577,6 +577,7 @@ export {
   type SpokenTurnDecision,
 } from './speech/conversationSession.js';
 export * from './google/index.js';
+export * from './edition.js';
 export * from './phone/phone.js';
 export * from './speaker/speaker.js';
 export * from './speaker/manifest.js';

@@ -1,3 +1,5 @@
+// Premier import : dossier de Jarvis Test avant tout getPath. Live n'appelle pas setPath.
+import './editionBoot.js';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
@@ -118,6 +120,7 @@ import { WakeLearningStore } from './wakeLearningStore.js';
 import { LocalLearningStore } from './learning/store.js';
 import { LocalLearningController } from './learning/controller.js';
 import { ListeningIndicatorWindow } from './listeningIndicator.js';
+import { edition } from './edition.js';
 import { createOverlayWindow, pickSpeakerPort, type OverlayWindow } from './window.js';
 import {
   currentVoiceAssetsRoot,
@@ -575,7 +578,7 @@ if (!app.requestSingleInstanceLock()) {
 }
 
 async function bootstrap(): Promise<void> {
-  app.setName('Jarvis');
+  app.setName(edition().productName);
   settingsFileExisted = await settingsFileExists();
   const [loaded] = await Promise.all([
     settingsFileExisted ? readSettings() : Promise.resolve(parseSettings({})),
@@ -599,10 +602,10 @@ async function bootstrap(): Promise<void> {
   void speakerChronoFile.readLast().then((samples) => speakerChrono.replace(samples));
   registerVoiceAssetsProtocol();
   voiceCaptureLog.append(
-    `[démarrage] Jarvis ${app.getVersion()} · Electron ${process.versions.electron} · Chromium ${process.versions.chrome} · ${process.platform} ${process.arch} · écoute ${settings.voice.enabled ? 'activée' : 'coupée'}`,
+    `[démarrage] ${edition().productName} ${app.getVersion()} · Electron ${process.versions.electron} · Chromium ${process.versions.chrome} · ${process.platform} ${process.arch} · écoute ${settings.voice.enabled ? 'activée' : 'coupée'}`,
   );
 
-  app.setAppUserModelId('com.thedexios.jarvis');
+  app.setAppUserModelId(edition().appId);
   if (process.platform === 'darwin') app.dock?.hide();
 
   // Micro seul, depuis l'interface ; chaque décision va dans le journal de capture.
@@ -631,6 +634,7 @@ async function bootstrap(): Promise<void> {
     },
     isJarvisOrigin: (origin) => isAppDocumentUrl(origin, devServer),
   });
+  overlay.browserWindow.setTitle(edition().productName);
   overlay.browserWindow.webContents.on('did-finish-load', () => {
     if (speakerWhisperHeld(settings)) {
       overlay?.browserWindow.webContents.send(IpcChannel.speakerHoldWhisper);
@@ -699,10 +703,10 @@ function registerHotkey(accelerator: string): boolean {
 function createTray(): void {
   const icon = nativeImage.createFromPath(join(__dirname, '../../resources/tray.png'));
   tray = new Tray(icon.isEmpty() ? nativeImage.createEmpty() : icon);
-  tray.setToolTip('Jarvis');
+  tray.setToolTip(edition().productName);
   tray.setContextMenu(
     Menu.buildFromTemplate([
-      { label: 'Ouvrir Jarvis', click: () => overlay?.show() },
+      { label: `Ouvrir ${edition().productName}`, click: () => overlay?.show() },
       { type: 'separator' },
       { label: 'Quitter', click: () => app.quit() },
     ]),
