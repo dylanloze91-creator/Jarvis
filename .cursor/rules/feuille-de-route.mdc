@@ -1,0 +1,13 @@
+---
+description: Lire la feuille de route du projet avant chaque tâche
+alwaysApply: true
+---
+
+# Feuille de route
+
+Avant chaque tâche, après `git fetch` : lis `FEUILLE-DE-ROUTE.md` sur `origin/main`.
+
+- Ne commence une mission que si elle est la prochaine de ta file, ou si l'utilisateur te la donne explicitement.
+- Ne commence jamais une mission marquée « en pause ».
+- Avant de construire un outil, lis la section « Ce qui dépend de quoi ». Prévois les outils qui viendront s'y brancher, et ne bloque pas ceux qui sont déjà prévus.
+- Si ton travail rend une ligne de la feuille fausse, dis-le dans ton rapport. Ne modifie pas la feuille toi-même : c'est Claude (le chat) qui la tient.
