@@ -1,4 +1,4 @@
-# Jarvis — lecture seule du pare-feu et du profil réseau. Script constant, aucun argument.
+﻿# Jarvis — lecture seule du pare-feu et du profil réseau. Script constant, aucun argument.
 # Pas d'élévation : ce fichier ne change rien.
 $ErrorActionPreference = 'Stop'
 

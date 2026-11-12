@@ -127,4 +127,20 @@ describe('diagnostic', () => {
     expect(status).not.toMatch(/\b(Set|New|Remove|Enable|Disable)-Net/);
     expect(status).not.toMatch(/^param\(/m);
   });
+
+  it('les scripts PowerShell portent la marque UTF-8 (sinon Windows PowerShell 5.1 abîme « — » dans le nom des règles)', () => {
+    const root = new URL('../../../../apps/desktop/resources/', import.meta.url);
+    for (const name of ['speaker-firewall.ps1', 'speaker-net-status.ps1', 'speaker-private.ps1']) {
+      const bytes = readFileSync(new URL(name, root));
+      expect([bytes[0], bytes[1], bytes[2]], name).toEqual([0xef, 0xbb, 0xbf]);
+      // Une seule marque, et le script commence toujours par son commentaire.
+      expect(bytes.subarray(3, 11).toString('utf8'), name).toBe('# Jarvis');
+    }
+    const firewall = readFileSync(new URL('speaker-firewall.ps1', root), 'utf8');
+    const status = readFileSync(new URL('speaker-net-status.ps1', root), 'utf8');
+    for (const rule of ["'Jarvis — enceintes (TCP 53131)'", "'Jarvis — enceintes (mDNS)'"]) {
+      expect(firewall).toContain(rule);
+      expect(status).toContain(rule);
+    }
+  });
 });

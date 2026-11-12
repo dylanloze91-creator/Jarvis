@@ -1,4 +1,4 @@
-# Jarvis — règles de pare-feu pour les enceintes. Script constant.
+﻿# Jarvis — règles de pare-feu pour les enceintes. Script constant.
 # Le seul argument est le port, déjà vérifié par Jarvis (un nombre).
 # Windows affiche sa fenêtre d'accord avant de lancer ce fichier.
 param(
