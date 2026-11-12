@@ -56,6 +56,7 @@ export {
 export {
   contentWords,
   fold,
+  isEmbeddedFailureSignal,
   isFailureReport,
   isJarvisSilence,
   isNewRequestDespiteNon,

@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it, vi } from 'vitest';
@@ -27,6 +27,7 @@ const { SiteBlockBridge } = await import('../siteblock/SiteBlockBridge.js');
 const { PersonalizationStore } = await import('../personalization.js');
 const { KnowledgeStore } = await import('../knowledge.js');
 const { CarnetHub } = await import('./hub.js');
+const { CarnetFile } = await import('./file.js');
 
 afterAll(() => rmSync(userData, { recursive: true, force: true, maxRetries: 5 }));
 
@@ -204,4 +205,74 @@ describe('carnet — ça n’a pas marché (synthetique-test)', () => {
     }
     expect(await once(true)).toEqual(await once(false));
   });
+
+  it('synthetique-test revue : phrase longue, le modèle répond et le signal est noté', async () => {
+    const phrases = [
+      "Tu t'es trompé, il est 17 h, pas 15 h",
+      "Le script, ça n'a pas marché, regarde l'erreur",
+      "L'impression d'hier, ça n'a pas marché, tu peux la relancer ?",
+    ];
+    for (const text of phrases) {
+      const requests: Captured[] = [];
+      const made = registry(requests, 'reply');
+      const dir = mkdtempSync(join(userData, 'long-'));
+      const carnet = new CarnetHub('test', new CarnetFile(() => dir));
+      const { store, id } = await seededStore();
+      const events: ChatEvent[] = [];
+      await sessionFor(made.registry, store, carnet).send(senderOf(events), {
+        conversationId: id,
+        text,
+      });
+      await carnet.flush();
+      expect(made.built(), text).toBeGreaterThan(0);
+      expect(events.some((event) => event.type === 'delta' && event.text === "C'est noté."), text).toBe(
+        false,
+      );
+      expect(events.some((event) => event.type === 'delta' && event.text === 'Très bien.'), text).toBe(
+        true,
+      );
+      const raw = readFileSync(join(dir, 'carnet', 'rates.jsonl'), 'utf8');
+      expect(raw, text).toContain('signale-phrase');
+      expect(raw, text).toContain('Quelle heure est-il ?');
+    }
+  });
+
+  it("synthetique-test revue : le film d'hier soir n'est pas un raté", async () => {
+    const requests: Captured[] = [];
+    const made = registry(requests, 'reply');
+    const dir = mkdtempSync(join(userData, 'film-'));
+    const carnet = new CarnetHub('test', new CarnetFile(() => dir));
+    const { store, id } = await seededStore();
+    const events: ChatEvent[] = [];
+    await sessionFor(made.registry, store, carnet).send(senderOf(events), {
+      conversationId: id,
+      text: "Le film d'hier soir, c'était nul",
+    });
+    await carnet.flush();
+    expect(made.built()).toBeGreaterThan(0);
+    expect(events.some((event) => event.type === 'delta' && event.text === "C'est noté.")).toBe(
+      false,
+    );
+    expect(() => readFileSync(join(dir, 'carnet', 'rates.jsonl'), 'utf8')).toThrow();
+  });
+
+  it.each(["ça n'a pas marché, Jarvis", 'Jarvis, tu t\'es planté', 'vraiment ça a pas marché hein'])(
+    'synthetique-test revue : « %s » seul, C’est noté, sans modèle',
+    async (text) => {
+      const requests: Captured[] = [];
+      const made = registry(requests, 'throw');
+      const carnet = new CarnetHub('test');
+      const { store, id } = await seededStore();
+      const events: ChatEvent[] = [];
+      await sessionFor(made.registry, store, carnet).send(senderOf(events), {
+        conversationId: id,
+        text,
+      });
+      expect(made.built()).toBe(0);
+      expect(events.some((event) => event.type === 'delta' && event.text === "C'est noté.")).toBe(
+        true,
+      );
+      expect(carnet.noted).toHaveLength(1);
+    },
+  );
 });

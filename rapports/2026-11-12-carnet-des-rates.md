@@ -60,3 +60,29 @@ Testé en vrai (à la voix, sur le PC) : PAS FAIT
 1. « Quelle heure est-il ? », puis « Non, c’est faux ». Attendu : Jarvis répond à la correction, et la carte « Les ratés de la semaine » montre cette correction.
 2. « Jarvis, ça n’a pas marché ». Attendu : Jarvis dit tout de suite « C'est noté. », sans réfléchir longtemps, et la carte reprend la question d’avant.
 3. « Encore une blague ». Attendu : Jarvis raconte (ou essaie), et la carte ne compte pas ça comme un raté.
+
+## Correction après la revue
+
+La règle express ne prend plus une phrase qui contient seulement « ça n'a pas marché » quelque part. On retire d'abord le mot « Jarvis » (en tête ou en fin), la ponctuation, et les petits mots là, encore, vraiment, franchement, bon, eh, bah, ben, ok, hein. Il doit alors rester exactement : « ça n'a pas marché », « ça marche pas », « ça a pas marché », « c'était nul », « tu t'es trompé » ou « tu t'es planté ». Jarvis répond « C'est noté. » et le tour s'arrête.
+
+Si la phrase est plus longue, Jarvis répond normalement. S'il y a déjà une réponse et que la phrase dit « ça n'a pas marché » ou « tu t'es trompé » (ou « tu t'es planté »), le carnet note seulement un signal. « Le film d'hier soir, c'était nul » n'est pas un raté.
+
+Le carnet ne change rien d'autre de ce qui part au modèle. L'échec « Construire manuel » n'a pas été touché.
+
+## RAPPORT DE VÉRIFICATION
+
+Lancement : OK
+Types     : OK (0 erreur)
+Style     : OK (0 avertissement)
+Tests     : ÉCHEC (cœur 2436/2436 ; bureau 796/803 réussis, 6 ignorés, 1 échec connu)
+Secrets   : OK (0 vraie valeur ; les `sk-` des tests sont des leurres)
+Fichiers modifiés : `packages/core/src/carnet/text.ts`, `packages/core/src/carnet/detect.ts`, `packages/core/src/carnet/detect.test.ts`, `packages/core/src/carnet/FORMAT.md`, `packages/core/src/carnet/index.ts`, `apps/desktop/src/main/carnet/express.test.ts`, ce rapport
+Prêt à fusionner : NON
+À corriger : rien sur le carnet. L'échec « Construire manuel » de `windowsDesktopMissionPath.test.ts` est connu (corrigé ailleurs, dans `claude/live-5077`). Il n'a pas été affaibli.
+Testé en vrai (à la voix, sur le PC) : PAS FAIT
+
+À dire dans Jarvis Test :
+
+1. « Tu t'es trompé, il est 17 h, pas 15 h ». Attendu : Jarvis corrige l'heure, il ne répond pas seulement « C'est noté. ». La carte note quand même le tour d'avant.
+2. « Le film d'hier soir, c'était nul ». Attendu : Jarvis parle du film. La carte ne note rien.
+3. « Jarvis, ça n'a pas marché ». Attendu : « C'est noté. », tout de suite.

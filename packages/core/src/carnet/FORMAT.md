@@ -66,7 +66,7 @@ Absent : actif si l'édition est Test, coupé si l'édition est Live. Seuils : 1
 | `lenteur-enceinte`          | Premier son après le seuil                                                     |
 | `chemin-illisible`          | Cerveau illisible, chemin d'avant                                              |
 | `chemin-sans-outil`         | Équipe choisie sans l'outil qu'il fallait                                      |
-| `signale-phrase`            | « ça n'a pas marché », « c'était nul », « tu t'es trompé » — le tour précédent |
+| `signale-phrase`            | Phrase seule (« ça n'a pas marché », « ça marche pas », « ça a pas marché », « c'était nul », « tu t'es trompé », « tu t'es planté ») : « C'est noté. ». Plus longue avec « ça n'a pas marché » ou « tu t'es trompé » : signal sans remplacer la réponse. « Le film, c'était nul » n'est pas un signal. |
 | `signale-pouce`             | 👎 sous une réponse                                                            |
 
 Ne sont pas des ratés : « non, mais… » (nouvelle demande), « stop » adressé à Spotify, « encore une blague » (répétition voulue), lenteur pendant un téléchargement demandé, refus explicite de l'utilisateur sur une carte.

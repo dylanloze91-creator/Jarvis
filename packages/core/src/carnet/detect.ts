@@ -24,6 +24,7 @@ import {
   type ToolLine,
 } from './types.js';
 import {
+  isEmbeddedFailureSignal,
   isFailureReport,
   isJarvisSilence,
   isNewRequestDespiteNon,
@@ -175,10 +176,11 @@ function interruptionRule(turn: ObservedTurn, windowMs: number): string | null {
 
 /**
  * Ratés de ce tour. Tableau vide si rien de sûr.
- * « Ça n'a pas marché » note le tour précédent et s'arrête : la phrase elle-même n'est pas un autre raté.
+ * Phrase seule (« ça n'a pas marché ») : signal du tour précédent, rien d'autre.
+ * Phrase plus longue qui contient la forme : signal seulement, le modèle répond à part.
  */
 export function detectRates(turn: ObservedTurn, options: DetectOptions = {}): RateDetection[] {
-  if (isFailureReport(turn.userText)) {
+  if (isFailureReport(turn.userText) || isEmbeddedFailureSignal(turn.userText)) {
     if (!turn.previous?.replyText.trim()) return [];
     return [fromPrevious(turn.previous, 'signale-phrase', 'signale')];
   }

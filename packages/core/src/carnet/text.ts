@@ -88,17 +88,88 @@ export function isToldYouCorrection(text: string): boolean {
   return /\bje t ai dit\b/.test(n) || /\bje te l ai dit\b/.test(n);
 }
 
+const WAKE_WORDS = new Set(['jarvis']);
+/** Petits mots qu'on peut enlever autour d'une phrase seule, pas au milieu d'une demande. */
+const EDGE_FILLERS = new Set([
+  'la',
+  'encore',
+  'vraiment',
+  'franchement',
+  'bon',
+  'eh',
+  'bah',
+  'ben',
+  'ok',
+  'hein',
+]);
+
+/** Formes exactes, après retrait du mot de réveil, de la ponctuation et des petits mots. */
+const ALONE_FORMS = new Set([
+  'ca n a pas marche',
+  'ca marche pas',
+  'ca a pas marche',
+  'c etait nul',
+  'c etait nulle',
+  'tu t es trompe',
+  'tu t es trompee',
+  'tu t es plante',
+  'tu t es plantee',
+]);
+
 /**
- * « ça n'a pas marché », « c'était nul », « tu t'es trompé ».
- * La phrase peut commencer par « Jarvis ». Au-delà de 180 caractères, ce n'est plus un signal.
+ * Formes qui signalent un raté même dans une phrase plus longue.
+ * « c'était nul » n'y est pas : « le film d'hier soir, c'était nul » parle du film.
+ */
+const EMBEDDED_FORMS = [
+  'ca n a pas marche',
+  'ca marche pas',
+  'ca a pas marche',
+  'tu t es trompe',
+  'tu t es plante',
+];
+
+function containsForm(folded: string, form: string): boolean {
+  return ` ${folded} `.includes(` ${form} `);
+}
+
+/** Retire le mot de réveil et les petits mots en tête et en fin, jusqu'à stabilité. */
+function bareFailure(text: string): string {
+  const words = fold(text).split(/\s+/).filter(Boolean);
+  let changed = true;
+  while (changed && words.length > 0) {
+    changed = false;
+    const first = words[0];
+    if (first && (WAKE_WORDS.has(first) || EDGE_FILLERS.has(first))) {
+      words.shift();
+      changed = true;
+    }
+    const last = words.at(-1);
+    if (last && (WAKE_WORDS.has(last) || EDGE_FILLERS.has(last))) {
+      words.pop();
+      changed = true;
+    }
+  }
+  return words.join(' ');
+}
+
+/**
+ * Règle express : la phrase, seule, est un signal.
+ * « Jarvis, vraiment, ça n'a pas marché, hein » oui.
+ * « Tu t'es trompé, il est 17 h » non : le tour va au modèle.
  */
 export function isFailureReport(text: string): boolean {
-  const n = fold(text);
-  if (!n || n.length > 180) return false;
-  if (/\bca n a pas marche\b/.test(n)) return true;
-  if (/\bc etait null?e?\b/.test(n) || /\bcetait null?e?\b/.test(n)) return true;
-  if (/\btu t es trompe/.test(n) || /\btu tes trompe/.test(n)) return true;
-  return false;
+  return ALONE_FORMS.has(bareFailure(text));
+}
+
+/**
+ * La phrase est plus longue, mais elle dit quand même que ça n'a pas marché
+ * ou que Jarvis s'est trompé. Le modèle répond. Le carnet note un signal
+ * seulement s'il y a déjà une réponse de Jarvis.
+ */
+export function isEmbeddedFailureSignal(text: string): boolean {
+  if (isFailureReport(text)) return false;
+  const folded = fold(text);
+  return EMBEDDED_FORMS.some((form) => containsForm(folded, form));
 }
 
 /** « stop » / « tais-toi » adressé à Spotify ou à la musique, pas à Jarvis. */

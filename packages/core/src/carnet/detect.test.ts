@@ -297,6 +297,51 @@ describe('carnet — détection par règles (synthetique-test)', () => {
     ).toEqual([]);
   });
 
+  it('synthetique-test revue : une phrase plus longue va au modèle, le film n’est pas un signal', () => {
+    const before = previous({ userText: 'Quelle heure est-il ?', replyText: 'Il est 15 h.' });
+    for (const userText of [
+      "Tu t'es trompé, il est 17 h, pas 15 h",
+      "Le script, ça n'a pas marché, regarde l'erreur",
+      "L'impression d'hier, ça n'a pas marché, tu peux la relancer ?",
+    ]) {
+      const found = detectRates(turn({ userText, previous: before }));
+      expect(found, userText).toEqual([
+        expect.objectContaining({
+          type: 'signale',
+          rule: 'signale-phrase',
+          userText: 'Quelle heure est-il ?',
+          replyText: 'Il est 15 h.',
+        }),
+      ]);
+    }
+    expect(
+      detectRates(
+        turn({ userText: "Le film d'hier soir, c'était nul", previous: before }),
+      ),
+    ).toEqual([]);
+  });
+
+  it('synthetique-test revue : phrase seule, Jarvis devant ou derrière', () => {
+    const before = previous();
+    for (const userText of [
+      "ça n'a pas marché",
+      'ça marche pas',
+      'ça a pas marché',
+      "c'était nul",
+      "tu t'es trompé",
+      "tu t'es planté",
+      "Jarvis, ça n'a pas marché",
+      "ça n'a pas marché, Jarvis",
+      'Jarvis vraiment ça marche pas hein',
+      "bon, tu t'es planté, Jarvis",
+    ]) {
+      const found = detectRates(turn({ userText, previous: before }));
+      expect(found, userText).toEqual([
+        expect.objectContaining({ type: 'signale', rule: 'signale-phrase' }),
+      ]);
+    }
+  });
+
   it('synthetique-test signale : ça n’a pas marché, c’était nul, tu t’es trompé notent le tour précédent', () => {
     const before = previous({ userText: 'Quelle heure est-il ?', replyText: 'Il est 3 heures.' });
     for (const userText of ["ça n'a pas marché", 'Jarvis, c’était nul', "tu t'es trompé"]) {
