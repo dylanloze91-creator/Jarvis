@@ -108,3 +108,4 @@ Ils sont arrêtés depuis le 12 novembre. Ornith-1.0-9B fait 84/87 au banc, mais
 - La flotte de location (plusieurs machines louées en parallèle).
 - Les images de Driver's Ink et les textures.
 - La voix de Jarvis.
+- **Atelier 3D à la voix** (idée du 12 novembre, vue dans une vidéo) : « Jarvis, imprime-moi une petite voiture ». Jarvis pose une ou deux questions, modélise dans Blender (script Python `bpy`, formes simples), découpe le modèle avec un trancheur en ligne de commande, l'envoie à Mainsail (Moonraker), **demande l'accord** puis lance l'impression et annonce la durée. Il se place **après le lot B** : le client Moonraker de B4 en est la base. Il s'appuie aussi sur le futur spécialiste impression 3D. Vérifiable sans imprimante : modèle fermé et imprimable, dimensions, G-code accepté par Klipper en mode simulation. Jamais de lancement depuis une enceinte sans la carte de confirmation sur le PC ou le téléphone.
