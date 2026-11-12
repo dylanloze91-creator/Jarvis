@@ -59,6 +59,10 @@ import {
   type ChatAttachment,
   type Reservations,
   type ReservedFunction,
+  NotesBook,
+  expressNoteReply,
+  noteIntent,
+  notesFilePath,
 } from '@jarvis/core';
 import {
   IpcChannel,
@@ -262,6 +266,17 @@ function openPlayProject(projectId: string | null): void {
   void controller.playProject(projectId);
 }
 
+const notesBook = new NotesBook(() => notesFilePath(app.getPath('userData')));
+
+async function notesReply(input: {
+  text: string;
+  place: 'fenetre' | 'telephone' | 'enceinte';
+}): Promise<string | null> {
+  const intent = noteIntent(input.text);
+  if (!intent) return null;
+  return expressNoteReply(notesBook, intent, input.place);
+}
+
 function buildTools() {
   return createToolManager({
     getSettings: () => settings,
@@ -277,6 +292,7 @@ function buildTools() {
     openImagePath: (path) => shell.openPath(path),
     currentTurn: () => currentTurn.value,
     spotifyConnected: () => spotify.connectedNow(),
+    notes: notesBook,
     summarizeYoutube: (url, onProgress, signal) =>
       summarizeYoutubeLink({
         url,
@@ -325,6 +341,7 @@ const morningBriefing = createMorningBriefing(() => app.getPath('userData'), () 
     const events = (result.data as { events?: { title?: string; when?: string }[] } | undefined)?.events ?? [];
     return events.map((event) => `${event.when ?? ''} ${event.title ?? ''}`.trim()).filter(Boolean);
   },
+  pendingNotes: async () => (settings.notes?.enabled === true ? notesBook.pendingLabels() : []),
 });
 
 const session = new ChatSession({
@@ -350,6 +367,7 @@ const session = new ChatSession({
   healthReport: () => healthMonitor?.run() ?? Promise.reject(new Error('bilan indisponible')),
   carnet,
   briefing: morningBriefing,
+  notes: notesReply,
 });
 
 // 5.0.63 — téléphone : une session de chat à part (un tour sur le téléphone n'annule pas celui de
@@ -375,6 +393,7 @@ const phoneSession = new ChatSession({
   healthReport: () => healthMonitor?.run() ?? Promise.reject(new Error('bilan indisponible')),
   carnet,
   briefing: morningBriefing,
+  notes: notesReply,
 });
 const questionnaire = QuestionnaireStore.inUserData(() => app.getPath('userData'));
 const phone = new PhoneService({
@@ -469,6 +488,7 @@ const speakers = new SpeakerService({
       healthReport: () => healthMonitor?.run() ?? Promise.reject(new Error('bilan indisponible')),
       carnet,
       briefing: morningBriefing,
+      notes: notesReply,
     });
     return {
       send: async (sender, input) => {
@@ -831,6 +851,9 @@ function createTray(): void {
 
 function registerIpc(): void {
   localLearning.registerIpc(ipcMain);
+  ipcMain.handle(IpcChannel.notesList, () => notesBook.list());
+  ipcMain.handle(IpcChannel.notesCheck, (_event, query: unknown) => notesBook.check(typeof query === 'string' ? query : ''));
+  ipcMain.handle(IpcChannel.notesErase, (_event, query: unknown) => notesBook.erase(typeof query === 'string' ? query : ''));
   ipcMain.handle(IpcChannel.carnetGet, () => carnet.view());
   ipcMain.handle(IpcChannel.carnetSet, (_event, patch: unknown) => {
     const record = patch && typeof patch === 'object' ? (patch as Record<string, unknown>) : {};

@@ -23,6 +23,7 @@ import type {
   QuestionnaireState,
   GeocodingPlace,
   CarnetPlace,
+  NoteItem,
   CarnetSettingsFile,
   RateCategory,
   ToolCategory,
@@ -180,6 +181,9 @@ export const IpcChannel = {
   carnetSundaySeen: 'carnet:sunday-seen',
   carnetThumb: 'carnet:thumb',
   carnetPrepare: 'carnet:prepare',
+  notesList: 'notes:list',
+  notesCheck: 'notes:check',
+  notesErase: 'notes:erase',
   phoneStatus: 'phone:status',
   phoneSetEnabled: 'phone:set-enabled',
   phoneStartPairing: 'phone:start-pairing',
@@ -1066,6 +1070,11 @@ export interface JarvisApi {
     current(): Promise<HealthReport | null>;
     refresh(): Promise<HealthReport>;
     onReport(listener: (report: HealthReport) => void): () => void;
+  };
+  notes: {
+    list(): Promise<NoteItem[]>;
+    check(query: string): Promise<NoteItem | null>;
+    erase(query: string): Promise<NoteItem | null>;
   };
   carnet: {
     get(): Promise<CarnetView>;

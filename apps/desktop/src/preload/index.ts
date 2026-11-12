@@ -297,6 +297,11 @@ const api: JarvisApi = {
     copyOffer: () => ipcRenderer.invoke(IpcChannel.editionCopyOffer),
     copy: (choice: 'yes' | 'empty') => ipcRenderer.invoke(IpcChannel.editionCopy, choice) as Promise<LiveCopyResult>,
   },
+  notes: {
+    list: () => ipcRenderer.invoke(IpcChannel.notesList),
+    check: (query: string) => ipcRenderer.invoke(IpcChannel.notesCheck, query),
+    erase: (query: string) => ipcRenderer.invoke(IpcChannel.notesErase, query),
+  },
   carnet: {
     get: () => ipcRenderer.invoke(IpcChannel.carnetGet),
     set: (patch) => ipcRenderer.invoke(IpcChannel.carnetSet, patch),

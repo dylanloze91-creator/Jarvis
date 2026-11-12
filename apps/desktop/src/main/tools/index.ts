@@ -3,6 +3,7 @@ import {
   ToolManager,
   type MarketDataProviderRegistry,
   type SearchProviderRegistry,
+  type NotesBook,
   type Settings,
 } from '@jarvis/core';
 import { getSystemInfoTool } from './system.js';
@@ -39,6 +40,7 @@ import type { RoverClient } from '../rover/RoverClient.js';
 import { createRoverTools } from './rover.js';
 import type { ImagesService } from '../images/ImagesService.js';
 import { createImagesTools } from './images.js';
+import { createNotesTools } from './notes.js';
 
 export interface YoutubeSummarize {
   (
@@ -73,6 +75,8 @@ export interface ToolManagerDeps {
    * tant que le compte n’est pas connecté. Ignoré sur les autres profils.
    */
   spotifyConnected?: () => boolean;
+  /** Notes. Absentes du catalogue tant que `notes.enabled` n'est pas vrai. */
+  notes?: NotesBook;
 }
 
 /**
@@ -130,6 +134,7 @@ function createFullToolManager(deps: ToolManagerDeps): ToolManager {
     ...(deps.rover ? createRoverTools(deps.rover) : []),
     // Images — absents du catalogue tant que le module n'est pas activé
     ...imagesToolsIfEnabled(deps),
+    ...notesToolsIfEnabled(deps),
   ]);
 }
 
@@ -161,5 +166,10 @@ function createModestToolManager(deps: ToolManagerDeps): ToolManager {
     ...(deps.google ? createGoogleTools(deps.google) : []),
     ...(deps.rover ? createRoverTools(deps.rover) : []),
     ...imagesToolsIfEnabled(deps),
+    ...notesToolsIfEnabled(deps),
   ]);
+}
+
+function notesToolsIfEnabled(deps: ToolManagerDeps) {
+  return deps.notes ? createNotesTools(deps.notes, () => deps.getSettings().notes?.enabled === true) : [];
 }

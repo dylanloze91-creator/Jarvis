@@ -42,6 +42,7 @@ import type { RuntimeStatus, ToolInfo } from '../../../shared/ipc';
 import type { ChatItem, PendingConfirmation } from '@/hooks/useChat';
 import { JarvisOrb } from '@/components/JarvisOrb';
 import { CarnetSundayLine, CarnetWeekCard } from '@/carnet/CarnetWeekCard';
+import { NotesHome } from '@/components/NotesHome';
 import './dashboard.css';
 
 type View = 'chat' | 'developer' | 'imager' | 'history' | 'settings' | 'audit' | 'setup-guide';
@@ -398,6 +399,7 @@ export function Dashboard({
 
             <div className="fn-row">
               <CarnetWeekCard />
+              {settings?.notes?.enabled === true ? <NotesHome /> : null}
               {questionnairePrompt ? (
                 <div className="mb-3 w-full rounded-xl border border-cyan-400/20 bg-cyan-400/10 px-4 py-3 text-sm text-slate-100">
                   <p className="font-medium">Nouveau : adapte Jarvis à toi en 2 minutes</p>

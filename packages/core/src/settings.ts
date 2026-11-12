@@ -317,6 +317,12 @@ export const settingsSchema = z.object({
       gustKmh: z.number().min(0).max(300).optional(),
     })
     .optional(),
+  /** Notes et liste. Absent : pas d'outils, pas de phrase express. */
+  notes: z
+    .object({
+      enabled: z.boolean().optional(),
+    })
+    .optional(),
   /**
    * Garder la fenêtre visible quand une autre application prend le focus.
    * Masquage uniquement via Ctrl+Espace, Échap, ou le bouton fermer.

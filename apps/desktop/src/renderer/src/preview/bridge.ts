@@ -499,6 +499,11 @@ export function installPreviewBridge(): void {
       refresh: async () => previewHealth(search.get('scene')),
       onReport: () => () => undefined,
     },
+    notes: {
+      list: async () => [],
+      check: async () => null,
+      erase: async () => null,
+    },
     carnet: {
       get: async () => previewCarnet,
       set: async (patch) => ({

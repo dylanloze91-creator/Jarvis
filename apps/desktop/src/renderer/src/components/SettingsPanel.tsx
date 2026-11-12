@@ -16,6 +16,7 @@ import {
 import { Lock } from 'lucide-react';
 import { CarnetSettingsSection } from '@/carnet/CarnetWeekCard';
 import { BriefingSettingsSection } from '@/components/BriefingSettingsSection';
+import { NotesSettingsSection } from '@/components/NotesSettingsSection';
 import { AuditPanel } from '@/components/AuditPanel';
 import { ReservedGate } from '@/components/ReservedGate';
 import { Button } from '@/components/ui/button';
@@ -317,6 +318,12 @@ export function SettingsPanel({
           'Briefing du matin',
           'Date, météo, agenda, notes',
           <BriefingSettingsSection value={draft.briefing} onChange={(briefing) => patch({ briefing })} />,
+        )}
+        {accordion(
+          'notes',
+          'Notes et liste',
+          'Courses, rappels, idées',
+          <NotesSettingsSection value={draft.notes} onChange={(notes) => patch({ notes })} />,
         )}
         {accordion('know', 'Ce que Jarvis sait de moi', 'Voir, exporter ou effacer', <KnowSettingsSection />)}
         {accordion(

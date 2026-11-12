@@ -160,6 +160,11 @@ interface SessionDeps {
    */
   briefing?: (input: { text: string; voice: boolean }) => Promise<string | null>;
   /**
+   * Notes et liste, règles seulement. Absent ou réglage coupé : le tour suit
+   * le chemin d'avant. `null` : la phrase n'est pas une note express.
+   */
+  notes?: (input: { text: string; place: 'fenetre' | 'telephone' | 'enceinte' }) => Promise<string | null>;
+  /**
    * Carnet des ratés. Absent ou coupé : le tour est celui d'avant.
    * La règle express répond avant tout modèle ; le reste observe seulement.
    */
@@ -366,10 +371,15 @@ export class ChatSession {
       settings.briefing?.enabled === true && this.deps.briefing
         ? await this.deps.briefing({ text: input.text, voice: input.place?.kind === 'enceinte' }).catch(() => null)
         : null;
-    const healthIntent = !briefingText && looksLikeHealthIntent(input.text);
+    const notePlace = input.place?.kind ?? 'fenetre';
+    const notesText =
+      !briefingText && settings.notes?.enabled === true && this.deps.notes
+        ? await this.deps.notes({ text: input.text, place: notePlace }).catch(() => null)
+        : null;
+    const healthIntent = !briefingText && !notesText && looksLikeHealthIntent(input.text);
     const orchestra = activeOrchestra(settings);
     const routeGap: { kind: 'illisible' | 'silence' | null } = { kind: null };
-    const route = !briefingText && !healthIntent && orchestra
+    const route = !briefingText && !notesText && !healthIntent && orchestra
       ? await this.routeTurn(settings, orchestra, input.text, messages, controller.signal, routeGap)
       : null;
 
@@ -417,6 +427,8 @@ export class ChatSession {
     let appendMissionProposal: (() => void) | null = null;
     if (briefingText) {
       run = fixedReply(briefingText);
+    } else if (notesText) {
+      run = fixedReply(notesText);
     } else if (healthIntent) {
       let reply = "Je n'ai pas pu faire le bilan.";
       if (this.deps.healthReport) {
@@ -490,6 +502,7 @@ export class ChatSession {
         policies: settings.toolPolicies,
         debug: settings.debugLogging,
         spotifyVoiceSessionId: this.spotifyVoiceSessionId,
+        fromSpeaker: input.place?.kind === 'enceinte',
         requestConfirmation: (request) => this.askUser(sender, emit, request, controller.signal),
       });
     } else {
@@ -512,6 +525,7 @@ export class ChatSession {
         policies: settings.toolPolicies,
         debug: settings.debugLogging,
         spotifyVoiceSessionId: this.spotifyVoiceSessionId,
+        fromSpeaker: input.place?.kind === 'enceinte',
         requestConfirmation: (request) => this.askUser(sender, emit, request, controller.signal),
       });
     }

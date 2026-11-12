@@ -45,6 +45,8 @@ export interface ToolContext {
   debug?: boolean;
   /** Session (fenêtre, téléphone, enceinte) qui garde une question Spotify 60 s. */
   spotifyVoiceSessionId?: string;
+  /** Vrai quand le tour vient d'une enceinte. Un lancement ou un effacement peut être refusé. */
+  fromSpeaker?: boolean;
   /** Horloge du tour, pour l'échéance de la question Spotify. Défaut : l'heure du PC. */
   spotifyNowMs?: number;
 }

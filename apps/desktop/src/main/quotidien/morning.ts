@@ -20,7 +20,11 @@ import {
 export function createMorningBriefing(
   userData: () => string,
   getSettings: () => Settings,
-  extras?: { appointments?: () => Promise<string[] | null>; night?: () => Promise<string[]> },
+  extras?: {
+    appointments?: () => Promise<string[] | null>;
+    night?: () => Promise<string[]>;
+    pendingNotes?: () => Promise<string[]>;
+  },
 ) {
   return async (input: { text: string; voice: boolean }): Promise<string | null> => {
     const settings = getSettings();
@@ -56,11 +60,12 @@ export function createMorningBriefing(
     }
     const appointments = extras?.appointments ? await extras.appointments().catch(() => null) : null;
     const night = extras?.night ? await extras.night().catch(() => []) : [];
+    const pendingNotes = extras?.pendingNotes ? await extras.pendingNotes().catch(() => []) : [];
     const reply = composeBriefing({
       now,
       weather,
       appointments,
-      pendingNotes: [],
+      pendingNotes,
       night,
       rainMmPerHour: window.rainMmPerHour ?? BRIEFING_RAIN_MM_PER_HOUR,
       gustKmh: window.gustKmh ?? BRIEFING_GUST_KMH,
