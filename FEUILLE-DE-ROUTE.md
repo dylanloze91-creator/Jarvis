@@ -15,6 +15,16 @@ Ce fichier ne contient ni secret, ni donnée personnelle, ni nom de réseau : le
 - **Le but à long terme** : une IA faite de plusieurs **petits modèles locaux** spécialisés (sur la RTX 2060 de l'utilisateur), qui approchent le niveau d'un gros modèle **sur ses usages à lui**. Un chef d'orchestre envoie chaque demande à la bonne équipe.
 - **On n'entraîne un modèle que là où l'usage réel montre qu'il échoue.** Les ratés de tous les jours (carnet des ratés) et la carte de l'utilisation réelle décident des entraînements. Les exercices génériques ne servent que de base.
 
+## 1 bis. On suit cette feuille, quoi qu'il arrive (accord du 12 novembre)
+
+- **Une nouvelle idée ne change pas la file.** Elle va dans « Idées en attente » (section 6). Claude dit où elle pourrait se placer, et on la reprend quand la file y arrive.
+- **Deux exceptions seulement :**
+  - un bogue qui empêche d'utiliser Jarvis Live ;
+  - un problème de sécurité ou d'argent (clé exposée, machine louée qui tourne pour rien).
+
+  Ce sont des corrections de Live : elles passent devant.
+- **Changer la feuille est possible**, mais seulement par une décision claire de l'utilisateur (« on change la feuille de route »). Claude la met alors à jour, et ce fichier fait foi.
+
 ## 2. Règles qui ne changent pas
 
 - **Une seule mission à la fois** pour Cursor, une seule pour Claude Code, dans l'ordre de la section 3.
@@ -82,3 +92,11 @@ Ce fichier ne contient ni secret, ni donnée personnelle, ni nom de réseau : le
 - Cahiers des charges : `docs/specs/` (sur `main` et sur les branches `claude/specs-…`).
 - Revues de Claude : `docs/revues/` (branche `claude/revues` et branches de cahiers).
 - Méthode des spécialistes : `docs/specs/specialistes.md` (branche `claude/specs-specialistes`).
+
+## 6. Idées en attente (ne pas commencer)
+
+- Le spécialiste impression 3D (Klipper).
+- jarvis-coder v2, réécrit d'après l'usage réel.
+- La flotte de location (plusieurs machines louées en parallèle).
+- Les images de Driver's Ink et les textures.
+- La voix de Jarvis.
