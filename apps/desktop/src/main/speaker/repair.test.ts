@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { collectSpeakerNet, readOnlyStatus, repairFirewall, repairPrivate } from './repair.js';
+import { collectSpeakerNet, elevateCommand, readOnlyStatus, repairFirewall, repairPrivate, statusArgs } from './repair.js';
 
 const FROZEN = JSON.stringify({
   tcp53131: false,
@@ -71,5 +71,17 @@ describe('réparation des enceintes', () => {
     };
     const result = await repairFirewall(53131, 'speaker-firewall.ps1', deps);
     expect(result).toEqual({ ok: false, sentence: "Windows n'a pas donné l'accord." });
+  });
+
+  it('lance ses scripts malgré une politique d’exécution Windows restrictive', () => {
+    const script = 'C:\\Program Files\\Jarvis\\resources\\speaker-net-status.ps1';
+    const read = statusArgs(script);
+    expect(read).toEqual(['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script]);
+    const command = elevateCommand('C:\\Jarvis\\resources\\speaker-firewall.ps1', ['-Port', '53131']);
+    expect(command).toBe(
+      "Start-Process -FilePath powershell.exe -Verb RunAs -Wait -ArgumentList '-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File','C:\\Jarvis\\resources\\speaker-firewall.ps1','-Port','53131'",
+    );
+    // -ExecutionPolicy doit précéder -File : après, PowerShell le passerait au script.
+    expect(command.indexOf("'-ExecutionPolicy','Bypass'")).toBeLessThan(command.indexOf("'-File'"));
   });
 });

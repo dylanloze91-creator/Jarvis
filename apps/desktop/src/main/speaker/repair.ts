@@ -108,15 +108,31 @@ function psQuote(value: string): string {
   return `'${value.replace(/'/g, "''")}'`;
 }
 
+/**
+ * Un Windows réglé par défaut (politique « Restricted ») refuse tout fichier .ps1.
+ * Les trois scripts de Jarvis sont constants et livrés avec lui : `Bypass` pour ce seul lancement,
+ * comme la voix des enceintes (`synth.ts`). La politique de la machine n'est pas modifiée.
+ */
+const SCRIPT_FLAGS = ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass'] as const;
+
+/** Arguments de la lecture seule (sans élévation). */
+export function statusArgs(script: string): string[] {
+  return [...SCRIPT_FLAGS, '-File', script];
+}
+
+/** Commande qui demande l'accord de Windows puis lance le script, avec les seuls arguments donnés. */
+export function elevateCommand(script: string, args: readonly string[]): string {
+  const list = [...SCRIPT_FLAGS, '-File', script, ...args].map(psQuote).join(',');
+  return `Start-Process -FilePath powershell.exe -Verb RunAs -Wait -ArgumentList ${list}`;
+}
+
 /** Vrai lancement. Les tests passent un faux `elevate` et n'appellent pas ceci. */
 export async function elevateScript(script: string, args: string[]): Promise<void> {
-  const list = ['-NoProfile', '-NonInteractive', '-File', script, ...args].map(psQuote).join(',');
-  const command = `Start-Process -FilePath powershell.exe -Verb RunAs -Wait -ArgumentList ${list}`;
-  await runPowerShell(['-NoProfile', '-NonInteractive', '-Command', command]);
+  await runPowerShell(['-NoProfile', '-NonInteractive', '-Command', elevateCommand(script, args)]);
 }
 
 export function readStatusScript(script: string): Promise<string> {
-  return runPowerShell(['-NoProfile', '-NonInteractive', '-File', script]);
+  return runPowerShell(statusArgs(script));
 }
 
 function runPowerShell(args: string[]): Promise<string> {
