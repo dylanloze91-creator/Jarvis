@@ -139,10 +139,12 @@ function elevateArgument(value: string): string {
 /**
  * Commande qui demande l'accord de Windows puis lance le script, avec les seuls arguments donnés.
  * Le code de sortie du script élevé est rendu (-PassThru) : un script qui échoue n'est plus « réparé ».
+ * -ErrorAction Stop : un refus de la fenêtre d'accord (Start-Process en erreur « annulée par l'utilisateur »)
+ * arrête la commande avec un code non nul, sinon $p est vide et le refus passerait pour un succès.
  */
 export function elevateCommand(script: string, args: readonly string[]): string {
   const list = [...SCRIPT_FLAGS, '-File', script, ...args].map(elevateArgument).join(',');
-  return `$p = Start-Process -FilePath powershell.exe -Verb RunAs -Wait -PassThru -ArgumentList ${list}; exit $p.ExitCode`;
+  return `$p = Start-Process -FilePath powershell.exe -Verb RunAs -Wait -PassThru -ErrorAction Stop -ArgumentList ${list}; exit $p.ExitCode`;
 }
 
 /** Vrai lancement. Les tests passent un faux `elevate` et n'appellent pas ceci. */

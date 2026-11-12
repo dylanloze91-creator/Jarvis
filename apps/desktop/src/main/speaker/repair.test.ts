@@ -79,7 +79,7 @@ describe('réparation des enceintes', () => {
     expect(read).toEqual(['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script]);
     const command = elevateCommand('C:\\Jarvis\\resources\\speaker-firewall.ps1', ['-Port', '53131']);
     expect(command).toBe(
-      "$p = Start-Process -FilePath powershell.exe -Verb RunAs -Wait -PassThru -ArgumentList '-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File','C:\\Jarvis\\resources\\speaker-firewall.ps1','-Port','53131'; exit $p.ExitCode",
+      "$p = Start-Process -FilePath powershell.exe -Verb RunAs -Wait -PassThru -ErrorAction Stop -ArgumentList '-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File','C:\\Jarvis\\resources\\speaker-firewall.ps1','-Port','53131'; exit $p.ExitCode",
     );
     // -ExecutionPolicy doit précéder -File : après, PowerShell le passerait au script.
     expect(command.indexOf("'-ExecutionPolicy','Bypass'")).toBeLessThan(command.indexOf("'-File'"));
