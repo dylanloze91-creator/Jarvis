@@ -36,10 +36,15 @@ export const LIVE_COPY_FILES = [
 
 export const LIVE_COPY_DIRS = ['memory', 'developer/projects'] as const;
 
-export const RECONNECT_GUIDE =
-  'Les clés de Jarvis Live restent chiffrées pour lui. Ici, reconnecte seulement ce dont tu as besoin : Spotify, Google, et les clés API dans Réglages.';
+/** Toujours : une autorisation Spotify ou Google n’est pas une clé, on ne la recopie pas. */
+export const ACCOUNT_GUIDE =
+  'Spotify et Google ne sont pas recopiés. Reconnecte-les dans Jarvis Test, avec le même identifiant client : chacun a sa propre autorisation.';
 
-const SECRET_FILES = ['coffre.bin', 'google-token.bin'] as const;
+/** Seulement si coffre.bin est là mais illisible. */
+export const RECONNECT_GUIDE =
+  'Les clés API de Jarvis Live n’ont pas pu être lues : entre-les à nouveau dans Réglages. Spotify et Google ne sont pas recopiés : reconnecte-les ici, avec le même identifiant client.';
+
+const VAULT_FILE = 'coffre.bin';
 
 export interface CopyHost {
   readFile(path: string): Promise<Uint8Array>;
@@ -190,25 +195,17 @@ export async function copyLiveIntoTest(input: {
   }
 
   const reconnect: string[] = [];
-  for (const name of SECRET_FILES) {
-    const bytes = await readOptional(host, child(liveRoot, name));
-    if (!bytes) continue;
-    const plain = input.cipher?.tryDecrypt(bytes) ?? null;
+  const vault = await readOptional(host, child(liveRoot, VAULT_FILE));
+  if (vault) {
+    const plain = input.cipher?.tryDecrypt(vault) ?? null;
     if (plain == null) {
-      reconnect.push(name);
-      log(`illisible : ${name}`);
-      continue;
+      reconnect.push(VAULT_FILE);
+      log(`illisible : ${VAULT_FILE}`);
+    } else {
+      await writeTest(liveRoot, testRoot, host, VAULT_FILE, vault);
+      copied.push(VAULT_FILE);
+      log('coffre recopié (toujours chiffré) : coffre.bin');
     }
-    await writeTest(liveRoot, testRoot, host, name, bytes);
-    copied.push(name);
-    log(`coffre recopié (toujours chiffré) : ${name}`);
-  }
-
-  const spotify = await readOptional(host, child(liveRoot, 'spotify-token.json'));
-  if (spotify) {
-    await writeTest(liveRoot, testRoot, host, 'spotify-token.json', spotify);
-    copied.push('spotify-token.json');
-    log('copié : spotify-token.json');
   }
 
   return {
@@ -216,6 +213,6 @@ export async function copyLiveIntoTest(input: {
     missing,
     secrets: reconnect.length > 0 ? 'reconnect' : 'imported',
     reconnect,
-    guide: reconnect.length > 0 ? RECONNECT_GUIDE : null,
+    guide: reconnect.length > 0 ? RECONNECT_GUIDE : ACCOUNT_GUIDE,
   };
 }

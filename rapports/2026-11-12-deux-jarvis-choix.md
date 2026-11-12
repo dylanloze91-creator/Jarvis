@@ -64,13 +64,13 @@ Documentation Electron, Windows : les clés viennent de **DPAPI**. Seul le même
 - macOS : trousseau **par application** (signature). Test ne lit pas le coffre de Live.
 - Linux : trousseau du bureau, souvent lié au nom de l'application. Sans trousseau, `basic_text` (mot de passe fixe, peu protecteur).
 
-Le PC de l'utilisateur est Windows. **Le coffre Live y est lisible par Test**, sans contourner le chiffrement : on essaie `decryptString` sur `coffre.bin` et `google-token.bin`. Si ça réussit, on recopie les octets **encore chiffrés** dans le dossier de Test. Le clair ne va ni dans un journal, ni dans `settings.json`. Si le déchiffrement échoue (autre système, coffre illisible), on ne copie pas ces fichiers et Test demande de reconnecter, avec un guide court.
+Le PC de l'utilisateur est Windows. **Seul `coffre.bin` (les clés API) peut être recopié**, et seulement si `decryptString` réussit. On recopie alors les octets **encore chiffrés**. Le clair ne va ni dans un journal, ni dans `settings.json`. Si le déchiffrement échoue, on ne copie pas le coffre et Test demande de ressaisir les clés.
 
-Le jeton Spotify (`spotify-token.json`) n'est **pas** dans `safeStorage` : c'est un JSON en clair, mode `0600` (PKCE, déjà le cas). Le copier n'est pas un contournement de chiffrement. On le copie en lecture seule avec les autres secrets seulement quand le fichier est lisible. S'il manque, le guide dit de reconnecter Spotify.
+`spotify-token.json` et `google-token.bin` ne sont **jamais** recopiés, même s'ils sont lisibles. Ce sont des autorisations données à une installation, pas des clés : les partager peut déconnecter Live (rafraîchissement Spotify, révocation Google). Dans Test, Spotify et Google se reconnectent normalement, avec le même identifiant client.
 
 On ne réimplémente pas DPAPI, on n'écrit pas les clés en clair, on ne « répare » pas un coffre illisible.
 
-Guide si le coffre n'est pas lisible : « Les clés de Jarvis Live restent chiffrées pour lui. Ici, reconnecte seulement ce dont tu as besoin : Spotify, Google, et les clés API dans Réglages. »
+Phrase après la copie : « Spotify et Google ne sont pas recopiés. Reconnecte-les dans Jarvis Test, avec le même identifiant client : chacun a sa propre autorisation. » Si le coffre est illisible, on ajoute : « Les clés API de Jarvis Live n’ont pas pu être lues : entre-les à nouveau dans Réglages. »
 
 ## 3. Mises à jour — le cahier et electron-updater 6.8.9
 
@@ -165,9 +165,10 @@ Jamais :
 - `audit-log.json`
 - `learning/`, `wake-learning/`, `developer/knowledge/learned`
 - `phone.json`, `speakers.json` (ça rallumerait téléphone et enceintes)
+- `spotify-token.json` et `google-token.bin` (autorisations de Live, jamais, même lisibles)
 - le dossier de Live, en écriture, dans tous les cas
 
-Secrets : voir la section 2. Premier écran de Test seulement : « Copier mes réglages de Jarvis Live ? » Oui / Partir de zéro. Ensuite, Réglages → Application → « Recopier depuis Live », confirmation en deux temps (le bouton déjà utilisé pour les actions lourdes).
+Seul `coffre.bin` peut suivre, s'il se déchiffre. Premier écran de Test seulement : « Copier mes réglages de Jarvis Live ? » Oui / Partir de zéro. Ensuite, Réglages → Application → « Recopier depuis Live », confirmation en deux temps (le bouton déjà utilisé pour les actions lourdes).
 
 `parseSettings({})` ne gagne aucune clé. L'accord « activer quand même » est un fichier à part dans le dossier de Test (`edition.json`), comme `phone.json`, pas un champ de réglage.
 

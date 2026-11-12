@@ -80,10 +80,10 @@ describe('copie depuis Jarvis Live', () => {
       log: (line) => lines.push(line),
     });
     expect(refused.secrets).toBe('reconnect');
-    expect(refused.guide).toMatch(/reconnecte/);
+    expect(refused.guide).toMatch(/clés API/);
     expect(fs.has(join(test, 'coffre.bin'))).toBe(false);
     expect(fs.has(join(test, 'google-token.bin'))).toBe(false);
-    expect(fs.has(join(test, 'spotify-token.json'))).toBe(true);
+    expect(fs.has(join(test, 'spotify-token.json'))).toBe(false);
     expect(lines.join('\n')).not.toContain('chiffre');
 
     const ok = await copyLiveIntoTest({
@@ -95,7 +95,39 @@ describe('copie depuis Jarvis Live', () => {
     });
     expect(ok.secrets).toBe('imported');
     expect(fs.text(join('test-coffre-ok', 'coffre.bin'))).toBe('chiffre');
+    expect(fs.has(join('test-coffre-ok', 'google-token.bin'))).toBe(false);
+    expect(fs.has(join('test-coffre-ok', 'spotify-token.json'))).toBe(false);
     expect(lines.join('\n')).not.toContain('clair secret');
+  });
+
+  it('ne recopie jamais les jetons Spotify ni Google, même s’ils sont lisibles', async () => {
+    const live = join('live-jetons');
+    const test = join('test-jetons');
+    const fs = memoryFs();
+    fs.put(join(live, 'coffre.bin'), 'chiffre-coffre');
+    fs.put(join(live, 'google-token.bin'), 'jeton-google-lisible');
+    fs.put(join(live, 'spotify-token.json'), '{"refresh":"jeton-spotify-lisible"}\n');
+    const lines: string[] = [];
+    const report = await copyLiveIntoTest({
+      liveRoot: live,
+      testRoot: test,
+      host: fs.host,
+      cipher: { tryDecrypt: () => 'clair-du-coffre' },
+      log: (line) => lines.push(line),
+    });
+    expect(report.copied).toContain('coffre.bin');
+    expect(report.copied).not.toContain('google-token.bin');
+    expect(report.copied).not.toContain('spotify-token.json');
+    expect(fs.text(join(test, 'coffre.bin'))).toBe('chiffre-coffre');
+    expect(fs.has(join(test, 'google-token.bin'))).toBe(false);
+    expect(fs.has(join(test, 'spotify-token.json'))).toBe(false);
+    expect(fs.text(join(live, 'google-token.bin'))).toBe('jeton-google-lisible');
+    expect(fs.text(join(live, 'spotify-token.json'))).toContain('jeton-spotify-lisible');
+    const journal = lines.join('\n');
+    expect(journal).not.toContain('jeton-google-lisible');
+    expect(journal).not.toContain('jeton-spotify-lisible');
+    expect(journal).not.toContain('clair-du-coffre');
+    expect(report.guide).toMatch(/Reconnecte-les dans Jarvis Test/);
   });
 
   it('refuse d’écrire si la destination est le dossier de Live', async () => {

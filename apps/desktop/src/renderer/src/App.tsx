@@ -633,8 +633,8 @@ export default function App() {
             <h2 className="text-base font-semibold text-white">Copier mes réglages de Jarvis Live ?</h2>
             <p className="mt-2 text-sm leading-relaxed text-slate-300">
               Réglages, personnalisation, questionnaire, mémoire et projets du mode Développeur. Pas
-              l’historique des discussions, pas le journal, pas l’apprentissage. Jarvis Live n’est pas
-              modifié.
+              l’historique, pas le journal, pas l’apprentissage, pas les connexions Spotify ni Google :
+              on les reconnecte dans Test. Jarvis Live n’est pas modifié.
             </p>
             {copySentence ? <p className="mt-3 text-sm text-orange-100">{copySentence}</p> : null}
             {copyGuide ? <p className="mt-2 text-sm text-slate-300">{copyGuide}</p> : null}

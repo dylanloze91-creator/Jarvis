@@ -31,8 +31,8 @@ function CopyFromLive() {
     <div className="mt-3 flex flex-col gap-2 rounded-lg border border-white/10 px-3 py-2.5">
       <p className="text-sm text-slate-200">Recopier depuis Jarvis Live</p>
       <p className="text-xs leading-relaxed text-slate-400">
-        Remplace les réglages de Test par ceux de Live. L’historique de Test reste ici. Live n’est pas
-        modifié. Jarvis Test redémarre ensuite.
+        Remplace les réglages de Test par ceux de Live. L’historique reste ici. Spotify et Google
+        se reconnectent dans Test. Live n’est pas modifié. Jarvis Test redémarre ensuite.
       </p>
       {sentence ? <p className="text-xs text-orange-100">{sentence}</p> : null}
       {guide ? <p className="text-xs text-slate-300">{guide}</p> : null}

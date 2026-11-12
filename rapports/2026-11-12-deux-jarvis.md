@@ -15,7 +15,7 @@ Même application, même `appId` (`com.thedexios.jarvis`), même dossier de rég
 - Spotify et Google gardent 53124 et 53125 (adresses déjà enregistrées).
 - Mot de réveil, enceintes, téléphone et raccourci sont coupés, avec « Réservé à Jarvis Live » et un bouton qui vérifie d’abord que la place est libre.
 - Raccourci Ctrl+Alt+Espace, sans repli vers Ctrl+Espace.
-- Premier lancement : « Copier mes réglages de Jarvis Live ? ». Lecture seule. Pas d’historique, pas de journal d’audit, pas d’apprentissage. Le coffre n’est recopié que s’il se déchiffre (Windows, même compte) ; sinon un guide pour reconnecter.
+- Premier lancement : « Copier mes réglages de Jarvis Live ? ». Lecture seule. Pas d’historique, pas de journal d’audit, pas d’apprentissage. Pas les connexions Spotify ni Google : on les reconnecte dans Test. Seul le coffre des clés peut suivre, s’il se déchiffre.
 - Mises à jour : canal `test`, versions prévues `5.1.N-test.M`, fichier `test.yml`, préversion. Le brouillon `release-test.sh` refuse toute autre version.
 - Commande : `npm run package:win:test --workspace @jarvis/desktop` (les scripts à la racine sont figés par `profiles/jarvis.test.ts`, donc le script n’y a pas été ajouté).
 
@@ -45,3 +45,31 @@ Testé en vrai (à la voix, sur le PC) : PAS FAIT
 Pas testé sur le PC Windows. À faire : les cinq essais ci-dessus.
 
 Le cœur (`@jarvis/core`) est vert, y compris `chat` figé via les suites déjà en place, `ollama-unchanged`, `profiles/jarvis`. `parseSettings({})` n’a pas gagné de clé. Aucune dépendance native. Les cinq échecs « dotnet introuvable » ne se sont pas produits : ces tests simulent le SDK. Le seul échec est le test fragile déjà exclu de la publication.
+
+## Correction après la revue
+
+Revue `docs/revues/2026-11-12-deux-jarvis.md` (branche `claude/revues`). Point bloquant : fait.
+
+`spotify-token.json` et `google-token.bin` ne sont plus recopiés de Live vers Test, même quand ils sont lisibles. Seul `coffre.bin` peut l’être, et seulement s’il se déchiffre. Le test `ne recopie jamais les jetons Spotify ni Google, même s’ils sont lisibles` le prouve : les deux fichiers restent chez Live, absents de Test, et leur contenu n’entre pas dans le journal.
+
+Dans Test, Spotify et Google se reconnectent normalement, avec le même identifiant client. Phrase : « Spotify et Google ne sont pas recopiés. Reconnecte-les dans Jarvis Test, avec le même identifiant client : chacun a sa propre autorisation. » Si le coffre est illisible : « Les clés API de Jarvis Live n’ont pas pu être lues : entre-les à nouveau dans Réglages. »
+
+Liste revue :
+
+- copié : réglages, personnalisation, questionnaire, mémoire, projets Développeur, et `coffre.bin` seulement s’il se déchiffre ;
+- jamais : historique, journal d’audit, apprentissage, `spotify-token.json`, `google-token.bin`.
+
+Le reste n’a pas bougé (table d’édition, Live sans `setPath`, ports, raccourci, `release-test.sh`). Pas de fusion, pas de publication. La fusion avec la 5.0.77 et les essais sur le PC reviennent à Claude Code.
+
+```
+RAPPORT DE VÉRIFICATION
+Lancement : non relancé (la commande demandée était typecheck, test, lint ; l’échec Piper Siwis de la passe précédente n’est pas retouché)
+Types     : OK
+Style     : OK
+Tests     : ÉCHEC (bureau : 784 réussis, 1 échec, 6 ignorés ; cœur : vert ; le test des jetons est vert)
+Secrets   : OK (0 vraie valeur)
+Fichiers modifiés : recopie (coffre seulement), phrases, rapports
+Prêt à fusionner : NON
+À corriger : l’échec déjà connu « Construire manuel » (windowsDesktopMissionPath.test.ts), exclu de release.sh depuis la 5.0.73, corrigé dans claude/live-5077 ; l’empreinte Piper au téléchargement
+Testé en vrai (à la voix, sur le PC) : PAS FAIT
+```
