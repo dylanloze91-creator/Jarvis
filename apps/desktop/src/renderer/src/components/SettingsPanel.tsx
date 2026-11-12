@@ -15,6 +15,7 @@ import {
 } from '@jarvis/core';
 import { Lock } from 'lucide-react';
 import { CarnetSettingsSection } from '@/carnet/CarnetWeekCard';
+import { BriefingSettingsSection } from '@/components/BriefingSettingsSection';
 import { AuditPanel } from '@/components/AuditPanel';
 import { ReservedGate } from '@/components/ReservedGate';
 import { Button } from '@/components/ui/button';
@@ -311,6 +312,12 @@ export function SettingsPanel({
 
       <CategoryPanel id="moi" active={category}>
         {accordion('personalization', 'Personnalisation', 'Ce que Jarvis retient de toi', <PersonalizationSettingsSection />)}
+        {accordion(
+          'briefing',
+          'Briefing du matin',
+          'Date, météo, agenda, notes',
+          <BriefingSettingsSection value={draft.briefing} onChange={(briefing) => patch({ briefing })} />,
+        )}
         {accordion('know', 'Ce que Jarvis sait de moi', 'Voir, exporter ou effacer', <KnowSettingsSection />)}
         {accordion(
           'persona',

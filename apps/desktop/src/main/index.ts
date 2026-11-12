@@ -84,6 +84,7 @@ import { PersonalizationStore } from './personalization.js';
 import { KnowledgeStore } from './knowledge.js';
 import { ChatSession } from './session.js';
 import { CarnetHub } from './carnet/hub.js';
+import { createMorningBriefing } from './quotidien/morning.js';
 import { CarnetFile } from './carnet/file.js';
 import { appendTeamValidation, type TeamValidationPayload } from './orchestra/teamValidation.js';
 import { PhoneService } from './phone/service.js';
@@ -318,6 +319,13 @@ function settingsForWindow(): Settings {
 
 /** Actif dans Test, coupé dans Live, tant que l'interrupteur n'a pas été touché. */
 const carnet = new CarnetHub(edition().id, new CarnetFile(() => app.getPath('userData')));
+const morningBriefing = createMorningBriefing(() => app.getPath('userData'), () => settings, {
+  appointments: async () => {
+    const result = await google.calendar.list({ period: 'today', maxResults: 8 });
+    const events = (result.data as { events?: { title?: string; when?: string }[] } | undefined)?.events ?? [];
+    return events.map((event) => `${event.when ?? ''} ${event.title ?? ''}`.trim()).filter(Boolean);
+  },
+});
 
 const session = new ChatSession({
   registry,
@@ -341,6 +349,7 @@ const session = new ChatSession({
   saveAttachment: (input) => images.saveReference(input),
   healthReport: () => healthMonitor?.run() ?? Promise.reject(new Error('bilan indisponible')),
   carnet,
+  briefing: morningBriefing,
 });
 
 // 5.0.63 — téléphone : une session de chat à part (un tour sur le téléphone n'annule pas celui de
@@ -365,6 +374,7 @@ const phoneSession = new ChatSession({
   },
   healthReport: () => healthMonitor?.run() ?? Promise.reject(new Error('bilan indisponible')),
   carnet,
+  briefing: morningBriefing,
 });
 const questionnaire = QuestionnaireStore.inUserData(() => app.getPath('userData'));
 const phone = new PhoneService({
@@ -458,6 +468,7 @@ const speakers = new SpeakerService({
       },
       healthReport: () => healthMonitor?.run() ?? Promise.reject(new Error('bilan indisponible')),
       carnet,
+      briefing: morningBriefing,
     });
     return {
       send: async (sender, input) => {

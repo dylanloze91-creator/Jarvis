@@ -155,6 +155,11 @@ interface SessionDeps {
   /** Bilan de santé, sans modèle. Absent : la phrase suit le chat habituel. */
   healthReport?: () => Promise<HealthReport>;
   /**
+   * Briefing du matin, gabarits seulement. Absent, ou réglage coupé : le tour
+   * suit le chemin d'avant. Ne renvoie un texte que pour une phrase de briefing.
+   */
+  briefing?: (input: { text: string; voice: boolean }) => Promise<string | null>;
+  /**
    * Carnet des ratés. Absent ou coupé : le tour est celui d'avant.
    * La règle express répond avant tout modèle ; le reste observe seulement.
    */
@@ -357,10 +362,14 @@ export class ChatSession {
     }
 
     const source = input.source ?? 'text';
-    const healthIntent = looksLikeHealthIntent(input.text);
+    const briefingText =
+      settings.briefing?.enabled === true && this.deps.briefing
+        ? await this.deps.briefing({ text: input.text, voice: input.place?.kind === 'enceinte' }).catch(() => null)
+        : null;
+    const healthIntent = !briefingText && looksLikeHealthIntent(input.text);
     const orchestra = activeOrchestra(settings);
     const routeGap: { kind: 'illisible' | 'silence' | null } = { kind: null };
-    const route = !healthIntent && orchestra
+    const route = !briefingText && !healthIntent && orchestra
       ? await this.routeTurn(settings, orchestra, input.text, messages, controller.signal, routeGap)
       : null;
 
@@ -406,7 +415,9 @@ export class ChatSession {
 
     let run: AsyncGenerator<AgentEvent>;
     let appendMissionProposal: (() => void) | null = null;
-    if (healthIntent) {
+    if (briefingText) {
+      run = fixedReply(briefingText);
+    } else if (healthIntent) {
       let reply = "Je n'ai pas pu faire le bilan.";
       if (this.deps.healthReport) {
         try {

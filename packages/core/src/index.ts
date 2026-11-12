@@ -607,3 +607,4 @@ export * from './backup/index.js';
 export * from './vault/index.js';
 export * from './privacy/index.js';
 export * from './carnet/index.js';
+export * from './quotidien/briefing.js';
