@@ -60,6 +60,21 @@ import {
   type ChatAttachment,
   type Reservations,
   type ReservedFunction,
+  NotesBook,
+  RoutineBook,
+  expressNoteReply,
+  handleRoutinePhrase,
+  noteIntent,
+  notesFilePath,
+  routinesFilePath,
+  type RoutineStep,
+  type ToolManager,
+  MoonrakerClient,
+  checkRoverBaseUrl,
+  createMessage,
+  formatPrintStatus,
+  startPrintWatch,
+  withMessages,
 } from '@jarvis/core';
 import {
   IpcChannel,
@@ -84,6 +99,10 @@ import { createGoogleRuntime } from './google/runtime.js';
 import { PersonalizationStore } from './personalization.js';
 import { KnowledgeStore } from './knowledge.js';
 import { ChatSession } from './session.js';
+import { CarnetHub } from './carnet/hub.js';
+import { createMorningBriefing } from './quotidien/morning.js';
+import { runPrinterReply } from './quotidien/printerReply.js';
+import { CarnetFile } from './carnet/file.js';
 import { appendTeamValidation, type TeamValidationPayload } from './orchestra/teamValidation.js';
 import { PhoneService } from './phone/service.js';
 import { PhoneStore } from './phone/store.js';
@@ -260,7 +279,90 @@ function openPlayProject(projectId: string | null): void {
   void controller.playProject(projectId);
 }
 
-function buildTools() {
+const notesBook = new NotesBook(() => notesFilePath(app.getPath('userData')));
+const routineBook = new RoutineBook(() => routinesFilePath(app.getPath('userData')));
+let routineCount = 0;
+
+async function refreshRoutineCount(): Promise<void> {
+  routineCount = (await routineBook.list()).length;
+}
+
+async function runRoutineStep(
+  step: RoutineStep,
+  execute: (name: string, args: Record<string, string | number>) => Promise<{ ok: boolean; content: string }>,
+  voice: boolean,
+): Promise<{ ok: boolean; content: string }> {
+  if (step.tool === 'briefing') {
+    if (settings.briefing?.enabled !== true) return { ok: false, content: "Le briefing n'est pas activé." };
+    const text = await morningBriefing({ text: 'mon briefing', voice });
+    return text ? { ok: true, content: text } : { ok: false, content: "Le briefing n'a rien dit." };
+  }
+  return execute(step.tool, step.args);
+}
+
+async function notesReply(input: {
+  text: string;
+  place: 'fenetre' | 'telephone' | 'enceinte';
+}): Promise<string | null> {
+  const intent = noteIntent(input.text);
+  if (!intent) return null;
+  return expressNoteReply(notesBook, intent, input.place);
+}
+
+async function routineReply(input: {
+  text: string;
+  voice: boolean;
+  confirm: (summary: string) => Promise<boolean>;
+  execute: (name: string, args: Record<string, string | number>) => Promise<{ ok: boolean; content: string }>;
+}): Promise<string | null> {
+  const reply = await handleRoutinePhrase(routineBook, input.text, {
+    confirm: input.confirm,
+    run: (step) => runRoutineStep(step, input.execute, input.voice),
+  });
+  await refreshRoutineCount();
+  return reply;
+}
+
+async function printerReply(input: {
+  text: string;
+  place: 'fenetre' | 'telephone' | 'enceinte';
+  confirm: (summary: string) => Promise<boolean>;
+}): Promise<string | null> {
+  return runPrinterReply(input, () => new MoonrakerClient(settings.printer?.baseUrl ?? '', settings.printer?.apiKey ?? ''));
+}
+
+let printWatch: { stop(): void } | null = null;
+
+function syncPrintWatch(): void {
+  printWatch?.stop();
+  printWatch = null;
+  const printer = settings.printer;
+  if (printer?.enabled !== true || !printer.baseUrl || !checkRoverBaseUrl(printer.baseUrl).ok) return;
+  const baseUrl = printer.baseUrl;
+  const apiKey = printer.apiKey ?? '';
+  printWatch = startPrintWatch({
+    intervalMs: 60_000,
+    read: async () => {
+      try {
+        return await new MoonrakerClient(baseUrl, apiKey).status();
+      } catch {
+        return null;
+      }
+    },
+    onDone: (message) => {
+      void announcePrint(message);
+    },
+  });
+}
+
+async function announcePrint(message: string): Promise<void> {
+  const summaries = await store.list();
+  const current = summaries[0] ? await store.get(summaries[0].id) : null;
+  if (current) await store.save(withMessages(current, [...current.messages, createMessage('assistant', message)]));
+  overlay?.browserWindow.webContents.send(IpcChannel.chatEvent, { type: 'notice', text: message });
+}
+
+function buildTools(): ToolManager {
   return createToolManager({
     getSettings: () => settings,
     searchRegistry,
@@ -275,6 +377,20 @@ function buildTools() {
     openImagePath: (path) => shell.openPath(path),
     currentTurn: () => currentTurn.value,
     spotifyConnected: () => spotify.connectedNow(),
+    notes: notesBook,
+    routines: {
+      book: routineBook,
+      isAvailable: () => settings.routines?.enabled === true && routineCount > 0,
+      tools: () => tools,
+      extra: (step) => runRoutineStep(step, async () => ({ ok: false, content: '' }), false).then((result) => (step.tool === 'briefing' ? result : null)),
+    },
+    printer: {
+      isAvailable: () => {
+        const printer = settings.printer;
+        return printer?.enabled === true && !!printer.baseUrl && checkRoverBaseUrl(printer.baseUrl).ok;
+      },
+      client: () => new MoonrakerClient(settings.printer?.baseUrl ?? '', settings.printer?.apiKey ?? ''),
+    },
     summarizeYoutube: (url, onProgress, signal) =>
       summarizeYoutubeLink({
         url,
@@ -286,7 +402,7 @@ function buildTools() {
   });
 }
 
-let tools = buildTools();
+let tools: ToolManager = buildTools();
 
 function startGoogleIfAllowed(): void {
   if (googleStarted) return;
@@ -315,6 +431,17 @@ function settingsForWindow(): Settings {
   return maskSecrets(settings, vault.secretsNow());
 }
 
+/** Actif dans Test, coupé dans Live, tant que l'interrupteur n'a pas été touché. */
+const carnet = new CarnetHub(edition().id, new CarnetFile(() => app.getPath('userData')));
+const morningBriefing = createMorningBriefing(() => app.getPath('userData'), () => settings, {
+  appointments: async () => {
+    const result = await google.calendar.list({ period: 'today', maxResults: 8 });
+    const events = (result.data as { events?: { title?: string; when?: string }[] } | undefined)?.events ?? [];
+    return events.map((event) => `${event.when ?? ''} ${event.title ?? ''}`.trim()).filter(Boolean);
+  },
+  pendingNotes: async () => (settings.notes?.enabled === true ? notesBook.pendingLabels() : []),
+});
+
 const session = new ChatSession({
   registry,
   get tools() {
@@ -336,6 +463,11 @@ const session = new ChatSession({
   // Module images : une photo jointe est enregistrée dans le dossier des images (sous _references).
   saveAttachment: (input) => images.saveReference(input),
   healthReport: () => healthMonitor?.run() ?? Promise.reject(new Error('bilan indisponible')),
+  carnet,
+  briefing: morningBriefing,
+  notes: notesReply,
+  routines: routineReply,
+  printer: printerReply,
 });
 
 // 5.0.63 — téléphone : une session de chat à part (un tour sur le téléphone n'annule pas celui de
@@ -359,6 +491,11 @@ const phoneSession = new ChatSession({
     currentTurn.value = turn;
   },
   healthReport: () => healthMonitor?.run() ?? Promise.reject(new Error('bilan indisponible')),
+  carnet,
+  briefing: morningBriefing,
+  notes: notesReply,
+  routines: routineReply,
+  printer: printerReply,
 });
 const questionnaire = QuestionnaireStore.inUserData(() => app.getPath('userData'));
 const phone = new PhoneService({
@@ -411,6 +548,7 @@ async function warmSpeakerSide(): Promise<void> {
 const speakerStore = SpeakerStore.inUserData(() => app.getPath('userData'));
 const speakers = new SpeakerService({
   store: speakerStore,
+  onSpeakerSound: (name, elapsedMs) => carnet.noteFirstSound(name, elapsedMs),
   port: edition().ports.speaker,
   mayRun: () => reservedAllows(edition(), reservations, 'speaker'),
   keptAddresses: () => keptLanAddresses(),
@@ -450,6 +588,11 @@ const speakers = new SpeakerService({
         currentTurn.value = turn;
       },
       healthReport: () => healthMonitor?.run() ?? Promise.reject(new Error('bilan indisponible')),
+      carnet,
+      briefing: morningBriefing,
+      notes: notesReply,
+      routines: routineReply,
+      printer: printerReply,
     });
     return {
       send: async (sender, input) => {
@@ -606,6 +749,8 @@ async function bootstrap(): Promise<void> {
   setSettingsDiskStripsSecrets(vault.encryptionAvailable());
   if (migrated.changed) await writeSettings(migrated.disk);
   tools = buildTools();
+  await refreshRoutineCount();
+  syncPrintWatch();
   if (settings.machine?.profile === 'modest' && settings.spotifyClientId.trim()) {
     void spotify.status();
   }
@@ -617,6 +762,7 @@ async function bootstrap(): Promise<void> {
   void phone.init().catch((error: unknown) => console.error(error));
   // Coupé par défaut aussi : sans « Enceintes », le port 53131 reste fermé.
   void speakers.init().catch((error: unknown) => console.error(error));
+  void carnet.load().catch((error: unknown) => console.error(error));
   void speakerChronoFile.readLast().then((samples) => speakerChrono.replace(samples));
   registerVoiceAssetsProtocol();
   voiceCaptureLog.append(
@@ -811,6 +957,71 @@ function createTray(): void {
 
 function registerIpc(): void {
   localLearning.registerIpc(ipcMain);
+  ipcMain.handle(IpcChannel.printerTest, async () => {
+    try {
+      const printer = new MoonrakerClient(settings.printer?.baseUrl ?? '', settings.printer?.apiKey ?? '');
+      return { ok: true, text: formatPrintStatus(await printer.status()) };
+    } catch (error) {
+      return { ok: false, text: error instanceof Error ? error.message : 'Imprimante injoignable.' };
+    }
+  });
+  ipcMain.handle(IpcChannel.routinesList, () => routineBook.list());
+  ipcMain.handle(IpcChannel.routinesSave, async (_event, raw: unknown) => {
+    const routine = raw && typeof raw === 'object' ? (raw as { name?: unknown; steps?: unknown }) : {};
+    if (typeof routine.name !== 'string' || !Array.isArray(routine.steps)) return routineBook.list();
+    await routineBook.save({ name: routine.name, steps: routine.steps as RoutineStep[] });
+    await refreshRoutineCount();
+    return routineBook.list();
+  });
+  ipcMain.handle(IpcChannel.notesList, () => notesBook.list());
+  ipcMain.handle(IpcChannel.notesCheck, (_event, query: unknown) => notesBook.check(typeof query === 'string' ? query : ''));
+  ipcMain.handle(IpcChannel.notesErase, (_event, query: unknown) => notesBook.erase(typeof query === 'string' ? query : ''));
+  ipcMain.handle(IpcChannel.carnetGet, () => carnet.view());
+  ipcMain.handle(IpcChannel.carnetSet, (_event, patch: unknown) => {
+    const record = patch && typeof patch === 'object' ? (patch as Record<string, unknown>) : {};
+    return carnet
+      .updateSettings({
+        ...(typeof record.enabled === 'boolean' ? { enabled: record.enabled } : {}),
+        ...(typeof record.fenetrePremierMotMs === 'number' ? { fenetrePremierMotMs: record.fenetrePremierMotMs } : {}),
+        ...(typeof record.enceintePremierSonMs === 'number' ? { enceintePremierSonMs: record.enceintePremierSonMs } : {}),
+      })
+      .then(() => carnet.view());
+  });
+  ipcMain.handle(IpcChannel.carnetDismiss, (_event, ids: unknown) => {
+    const list = Array.isArray(ids) ? ids.filter((id): id is string => typeof id === 'string') : [];
+    return carnet.dismiss(list).then(() => carnet.view());
+  });
+  ipcMain.handle(IpcChannel.carnetAnnotate, (_event, ids: unknown, patch: unknown) => {
+    const list = Array.isArray(ids) ? ids.filter((id): id is string => typeof id === 'string') : [];
+    const record = patch && typeof patch === 'object' ? (patch as Record<string, unknown>) : {};
+    const category = record.category;
+    return carnet
+      .annotate(list, {
+        ...(typeof record.expected === 'string' ? { expected: record.expected } : {}),
+        ...(category === 'regle' || category === 'bogue' || category === 'modele' || category === 'materiel' || category === 'pas-grave'
+          ? { category }
+          : {}),
+      })
+      .then(() => carnet.view());
+  });
+  ipcMain.handle(IpcChannel.carnetSundaySeen, (_event, day: unknown) => {
+    if (typeof day !== 'string') return;
+    return carnet.acknowledgeSunday(day);
+  });
+  ipcMain.handle(IpcChannel.carnetThumb, (_event, input: unknown) => {
+    const record = input && typeof input === 'object' ? (input as Record<string, unknown>) : {};
+    if (typeof record.conversationId !== 'string' || typeof record.replyText !== 'string') return;
+    return carnet.thumb({
+      conversationId: record.conversationId,
+      userText: typeof record.userText === 'string' ? record.userText : '',
+      replyText: record.replyText,
+    });
+  });
+  ipcMain.handle(IpcChannel.carnetPrepare, () =>
+    carnet.prepare(app.getPath('documents'), (path) => {
+      void shell.showItemInFolder(path);
+    }),
+  );
   ipcMain.handle(IpcChannel.localLearningSnapshot, () => localLearning.snapshot());
   ipcMain.handle(IpcChannel.localLearningTrain, () => localLearning.trainNow().then(() => localLearning.status()));
   ipcMain.handle(IpcChannel.localLearningRollback, () => localLearning.rollback());
@@ -1015,6 +1226,7 @@ function registerIpc(): void {
       app.setLoginItemSettings({ openAtLogin: settings.launchAtLogin });
     }
 
+    syncPrintWatch();
     if (speakerWhisperHeld(settings)) overlay?.browserWindow.webContents.send(IpcChannel.speakerHoldWhisper);
     if (speakerStaysAwake(settings) || speakerWarmupEnabled(settings)) void warmSpeakerSide();
     return { settings: settingsForWindow(), status: session.status() };
@@ -1029,6 +1241,7 @@ function registerIpc(): void {
     if (app.isPackaged) {
       app.setLoginItemSettings({ openAtLogin: settings.launchAtLogin });
     }
+    syncPrintWatch();
     return { settings: settingsForWindow(), status: session.status() };
   };
 

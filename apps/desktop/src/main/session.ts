@@ -88,6 +88,9 @@ import {
   looksLikeImageIntent,
   isImageToolName,
   type ImageProject,
+  type CarnetHow,
+  type CarnetPlace,
+  type ToolLine,
 } from '@jarvis/core';
 import { describeDirectResult, type ImagesService } from './images/ImagesService.js';
 import type { ChatEvent, RuntimeStatus, SendChatInput } from '../shared/ipc.js';
@@ -99,6 +102,7 @@ import type { VoiceBridge } from './voice.js';
 import type { LocalLearningController } from './learning/controller.js';
 import type { ChatMissionHub } from './chatMission/hub.js';
 import { createProposerMissionTool } from './chatMission/proposerMissionTool.js';
+import { createTurnWatch } from './carnet/watch.js';
 
 /** Délai du cerveau pour choisir une équipe, chargement compris. */
 const BRAIN_DEADLINE_MS = 90_000;
@@ -156,6 +160,71 @@ interface SessionDeps {
   saveAttachment?: (input: { name: string; mime: string; data: Buffer }) => Promise<ChatAttachment>;
   /** Bilan de santé, sans modèle. Absent : la phrase suit le chat habituel. */
   healthReport?: () => Promise<HealthReport>;
+  /**
+   * Briefing du matin, gabarits seulement. Absent, ou réglage coupé : le tour
+   * suit le chemin d'avant. Ne renvoie un texte que pour une phrase de briefing.
+   */
+  briefing?: (input: { text: string; voice: boolean }) => Promise<string | null>;
+  /**
+   * Notes et liste, règles seulement. Absent ou réglage coupé : le tour suit
+   * le chemin d'avant. `null` : la phrase n'est pas une note express.
+   */
+  notes?: (input: { text: string; place: 'fenetre' | 'telephone' | 'enceinte' }) => Promise<string | null>;
+  /**
+   * Routines. Absent ou réglage coupé : le tour suit le chemin d'avant.
+   * La carte de résumé passe par `confirm`. Chaque étape passe par `execute`.
+   */
+  routines?: (input: {
+    text: string;
+    voice: boolean;
+    confirm: (summary: string) => Promise<boolean>;
+    execute: (name: string, args: Record<string, string | number>) => Promise<{ ok: boolean; content: string }>;
+  }) => Promise<string | null>;
+  /** Imprimante. Absent ou coupée : le tour suit le chemin d'avant. */
+  printer?: (input: {
+    text: string;
+    place: 'fenetre' | 'telephone' | 'enceinte';
+    confirm: (summary: string) => Promise<boolean>;
+  }) => Promise<string | null>;
+  /**
+   * Carnet des ratés. Absent ou coupé : le tour est celui d'avant.
+   * La règle express répond avant tout modèle ; le reste observe seulement.
+   */
+  carnet?: {
+    enabled(): boolean;
+    expressReply(text: string): string | null;
+    noteExpress(ctx: {
+      text: string;
+      conversationId: string;
+      before: readonly ChatMessage[];
+      place: CarnetPlace;
+      at: number;
+    }): void;
+    observeTurn(input: {
+      at: number;
+      conversationId: string;
+      before: readonly ChatMessage[];
+      userText: string;
+      replyText: string;
+      place: CarnetPlace;
+      team: string | null;
+      model: string | null;
+      how: CarnetHow | null;
+      brainUnreadable: boolean;
+      tools: ToolLine[];
+      firstWordMs: number | null;
+      speakerFirstSoundMs: number | null;
+      cut: { afterMs: number; button?: boolean; speech?: boolean; text?: string } | null;
+    }): void;
+    takeSpeakerSound(name: string): number | null;
+    markReply(conversationId: string, at: number | null): void;
+    speechCut(input: {
+      conversationId: string;
+      at: number;
+      source?: 'voice' | 'text';
+      text: string;
+    }): { afterMs: number; button?: boolean; speech?: boolean; text?: string } | null;
+  };
 }
 
 /**
@@ -259,13 +328,23 @@ export class ChatSession {
   }
 
   async send(sender: WebContents, input: SendChatInput): Promise<void> {
+    const turnStartedAt = Date.now();
+    const watch = this.deps.carnet?.enabled() ? createTurnWatch(turnStartedAt) : null;
     const emit = (event: ChatEvent): void => {
+      watch?.see(event, Date.now());
       if (!sender.isDestroyed()) sender.send(IpcChannel.chatEvent, event);
     };
 
     // 5.0.62 — une phrase dite sans « Jarvis » pendant la discussion : lui est-elle adressée ?
     // Vérifié avant d'annuler quoi que ce soit : une conversation dans la pièce ne coupe rien.
     const seq = (this.sendSeq += 1);
+    // « Ça n'a pas marché » : avant le modèle du destinataire, avant le cerveau, avant la réponse.
+    const noted = this.deps.carnet?.expressReply(input.text) ?? null;
+    if (noted) {
+      this.cancel();
+      await this.notedFailure(sender, emit, input, seq, noted);
+      return;
+    }
     if (input.source === 'voice' && input.followUp) {
       const checkSettings = this.deps.getSettings();
       if (addresseeCheckEnabled(checkSettings.voice)) {
@@ -312,9 +391,58 @@ export class ChatSession {
     }
 
     const source = input.source ?? 'text';
-    const healthIntent = looksLikeHealthIntent(input.text);
+    const briefingText =
+      settings.briefing?.enabled === true && this.deps.briefing
+        ? await this.deps.briefing({ text: input.text, voice: input.place?.kind === 'enceinte' }).catch(() => null)
+        : null;
+    const notePlace = input.place?.kind ?? 'fenetre';
+    const notesText =
+      !briefingText && settings.notes?.enabled === true && this.deps.notes
+        ? await this.deps.notes({ text: input.text, place: notePlace }).catch(() => null)
+        : null;
+    const routineText =
+      !briefingText && !notesText && settings.routines?.enabled === true && this.deps.routines
+        ? await this.deps.routines({
+            text: input.text,
+            voice: input.place?.kind === 'enceinte',
+            confirm: (summary) =>
+              this.askUser(
+                sender,
+                emit,
+                { callId: randomId(), toolName: 'routine', title: 'Routine', details: summary },
+                controller.signal,
+              ),
+            execute: async (name, args) => {
+              const outcome = await this.deps.tools.execute(
+                { id: randomId(), name, arguments: args },
+                {
+                  requestConfirmation: (request) => this.askUser(sender, emit, request, controller.signal),
+                  fromSpeaker: input.place?.kind === 'enceinte',
+                  signal: controller.signal,
+                },
+              );
+              return { ok: outcome.status === 'ok', content: outcome.content };
+            },
+          }).catch(() => null)
+        : null;
+    const printerText =
+      !briefingText && !notesText && !routineText && settings.printer?.enabled === true && this.deps.printer
+        ? await this.deps.printer({
+            text: input.text,
+            place: input.place?.kind ?? 'fenetre',
+            confirm: (summary) =>
+              this.askUser(
+                sender,
+                emit,
+                { callId: randomId(), toolName: 'imprimante', title: 'Imprimante', details: summary, forced: true },
+                controller.signal,
+              ),
+          }).catch(() => null)
+        : null;
+    const healthIntent = !briefingText && !notesText && !routineText && !printerText && looksLikeHealthIntent(input.text);
     const orchestra = activeOrchestra(settings);
-    const route = !healthIntent && orchestra
+    const routeGap: { kind: 'illisible' | 'silence' | null } = { kind: null };
+    const route = !briefingText && !notesText && !routineText && !printerText && !healthIntent && orchestra
       ? await this.routeTurn(
           settings,
           orchestra,
@@ -322,6 +450,7 @@ export class ChatSession {
           messages,
           controller.signal,
           this.lastTeamByConversation.get(conversation.id) ?? null,
+          routeGap,
         )
       : null;
     if (route) this.lastTeamByConversation.set(conversation.id, route.team);
@@ -368,7 +497,15 @@ export class ChatSession {
 
     let run: AsyncGenerator<AgentEvent>;
     let appendMissionProposal: (() => void) | null = null;
-    if (healthIntent) {
+    if (briefingText) {
+      run = fixedReply(briefingText);
+    } else if (notesText) {
+      run = fixedReply(notesText);
+    } else if (routineText) {
+      run = fixedReply(routineText);
+    } else if (printerText) {
+      run = fixedReply(printerText);
+    } else if (healthIntent) {
       let reply = "Je n'ai pas pu faire le bilan.";
       if (this.deps.healthReport) {
         try {
@@ -441,6 +578,7 @@ export class ChatSession {
         policies: settings.toolPolicies,
         debug: settings.debugLogging,
         spotifyVoiceSessionId: this.spotifyVoiceSessionId,
+        fromSpeaker: input.place?.kind === 'enceinte',
         requestConfirmation: (request) => this.askUser(sender, emit, request, controller.signal),
       });
     } else {
@@ -463,6 +601,7 @@ export class ChatSession {
         policies: settings.toolPolicies,
         debug: settings.debugLogging,
         spotifyVoiceSessionId: this.spotifyVoiceSessionId,
+        fromSpeaker: input.place?.kind === 'enceinte',
         requestConfirmation: (request) => this.askUser(sender, emit, request, controller.signal),
       });
     }
@@ -642,6 +781,38 @@ export class ChatSession {
         message: 'Je n’ai pas pu répondre. Réessaie dans un instant.',
       });
     }
+    if (watch && !superseded()) {
+      try {
+        const place = input.place ?? { kind: 'fenetre' as const };
+        const sound = place.kind === 'enceinte' ? this.deps.carnet?.takeSpeakerSound(place.name) ?? null : null;
+        this.deps.carnet?.observeTurn({
+          at: turnStartedAt,
+          conversationId: updated.id,
+          before: conversation.messages,
+          userText: input.text,
+          replyText: watch.reply(),
+          place,
+          team: watch.team(),
+          model: watch.model(),
+          how: watch.how(),
+          brainUnreadable: routeGap.kind === 'illisible',
+          tools: watch.tools(),
+          firstWordMs: watch.firstWordMs(),
+          speakerFirstSoundMs: sound,
+          cut: controller.signal.aborted
+            ? watch.buttonCut(Date.now())
+            : (this.deps.carnet?.speechCut({
+                conversationId: updated.id,
+                at: turnStartedAt,
+                source: input.source,
+                text: input.text,
+              }) ?? null),
+        });
+        this.deps.carnet?.markReply(updated.id, watch.responseStartedAt());
+      } catch (error) {
+        console.error('[jarvis] carnet non noté :', error);
+      }
+    }
     emit({ type: 'done', conversationId: updated.id, messages: updated.messages });
     } catch {
       if (this.controller === controller) this.controller = null;
@@ -651,6 +822,62 @@ export class ChatSession {
         message: "Le message n'a pas pu être envoyé. Réessaie dans un instant.",
       });
       emit({ type: 'done', conversationId, messages: [] });
+    }
+  }
+
+  /**
+   * Règle express du carnet. Aucun fournisseur n'est créé : le faux modèle des tests
+   * échoue s'il est appelé. La réponse est exactement le texte rendu par le carnet.
+   */
+  private async notedFailure(
+    sender: WebContents,
+    emit: (event: ChatEvent) => void,
+    input: SendChatInput,
+    seq: number,
+    replyText: string,
+  ): Promise<void> {
+    const controller = new AbortController();
+    this.controller = controller;
+    let conversationId = input.conversationId ?? '';
+    try {
+      const conversation = await this.loadConversation(input.conversationId);
+      if (seq !== this.sendSeq || this.controller !== controller) return;
+      conversationId = conversation.id;
+      const userMessage = createMessage('user', input.text);
+      const reply = createMessage('assistant', replyText);
+      const messages = [...conversation.messages, userMessage, reply];
+      emit({ type: 'started', conversationId, message: userMessage });
+      emit({ type: 'delta', text: replyText });
+      const updated = withMessages(conversation, messages);
+      try {
+        await this.deps.store.save(updated);
+      } catch (error) {
+        emit({
+          type: 'error',
+          message: `Conversation non enregistrée dans l'historique : ${error instanceof Error ? error.message : String(error)}`,
+        });
+      }
+      try {
+        this.deps.carnet?.noteExpress({
+          text: input.text,
+          conversationId: updated.id,
+          before: conversation.messages,
+          place: input.place ?? { kind: 'fenetre' },
+          at: userMessage.createdAt,
+        });
+      } catch (error) {
+        console.error('[jarvis] carnet non noté :', error);
+      }
+      emit({ type: 'done', conversationId: updated.id, messages: updated.messages });
+    } catch {
+      if (seq !== this.sendSeq) return;
+      emit({
+        type: 'error',
+        message: "Le message n'a pas pu être envoyé. Réessaie dans un instant.",
+      });
+      emit({ type: 'done', conversationId, messages: [] });
+    } finally {
+      if (this.controller === controller) this.controller = null;
     }
   }
 
@@ -818,6 +1045,7 @@ export class ChatSession {
     messages: ChatMessage[],
     signal: AbortSignal,
     previousTeam: string | null,
+    gap?: { kind: 'illisible' | 'silence' | null },
   ): Promise<TurnRoute | null> {
     const calc = solveArithmetic(text);
     if (calc) {
@@ -841,20 +1069,28 @@ export class ChatSession {
     let how: TurnRoute['how'] = team ? 'express' : 'cerveau';
     const notice =
       !team && previousTeam && isTeamCorrection(text) ? teamMissedNotice(previousTeam) : undefined;
+    let brainText = '';
     if (!team) {
       const router = activeRouter(settings);
       if (router) {
-        team = await this.askRouter(settings, router, teams, text, messages.slice(0, -1), signal, notice);
+        const routed = await this.askRouter(settings, router, teams, text, messages.slice(0, -1), signal, notice);
+        team = routed.team;
         if (team) how = 'trieur';
         else {
-          team = await this.askBrain(settings, orchestra, teams, text, messages.slice(0, -1), signal, notice);
+          const brained = await this.askBrain(settings, orchestra, teams, text, messages.slice(0, -1), signal, notice);
+          team = brained.team;
+          brainText = brained.text;
           if (team) how = 'cerveau';
         }
       } else {
-        team = await this.askBrain(settings, orchestra, teams, text, messages.slice(0, -1), signal, notice);
+        const brained = await this.askBrain(settings, orchestra, teams, text, messages.slice(0, -1), signal, notice);
+        team = brained.team;
+        brainText = brained.text;
+        if (team) how = 'cerveau';
       }
     }
     if (!team) {
+      if (gap) gap.kind = brainText.trim() ? 'illisible' : 'silence';
       if (settings.debugLogging) debugLog(true, 'orchestre', 'le cerveau n’a pas choisi d’équipe : chemin habituel');
       return null;
     }
@@ -906,7 +1142,7 @@ export class ChatSession {
     history: ChatMessage[],
     signal: AbortSignal,
     notice?: string,
-  ): Promise<OrchestraTeam | null> {
+  ): Promise<{ team: OrchestraTeam | null; text: string }> {
     const { provider } = this.deps.registry.createOrFallback(
       orchestraProviderConfig(settings, router.model, router.place, true),
     );
@@ -927,12 +1163,12 @@ export class ChatSession {
         if (event.type === 'error') break;
       }
     } catch {
-      return null;
+      return { team: null, text: reply };
     } finally {
       clearTimeout(timer);
       signal.removeEventListener('abort', onAbort);
     }
-    return parseRouterReply(reply, teams);
+    return { team: parseRouterReply(reply, teams), text: reply };
   }
 
   private async askBrain(
@@ -943,7 +1179,7 @@ export class ChatSession {
     history: ChatMessage[],
     signal: AbortSignal,
     notice?: string,
-  ): Promise<OrchestraTeam | null> {
+  ): Promise<{ team: OrchestraTeam | null; text: string }> {
     const { provider } = this.deps.registry.createOrFallback(
       orchestraProviderConfig(settings, orchestra.brain, 'carte', true),
     );
@@ -965,12 +1201,12 @@ export class ChatSession {
         if (event.type === 'error') break;
       }
     } catch {
-      return null;
+      return { team: null, text: reply };
     } finally {
       clearTimeout(timer);
       signal.removeEventListener('abort', onAbort);
     }
-    return parseRouterReply(reply, teams);
+    return { team: parseRouterReply(reply, teams), text: reply };
   }
 
   private askUser(

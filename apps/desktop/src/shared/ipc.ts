@@ -22,6 +22,11 @@ import type {
   HealthReport,
   QuestionnaireState,
   GeocodingPlace,
+  CarnetPlace,
+  NoteItem,
+  Routine,
+  CarnetSettingsFile,
+  RateCategory,
   ToolCategory,
   UpdateFailureKind,
   WakeSampleSource,
@@ -171,6 +176,19 @@ export const IpcChannel = {
   editionClaim: 'edition:claim',
   editionCopyOffer: 'edition:copy-offer',
   editionCopy: 'edition:copy',
+  carnetGet: 'carnet:get',
+  carnetSet: 'carnet:set',
+  carnetDismiss: 'carnet:dismiss',
+  carnetAnnotate: 'carnet:annotate',
+  carnetSundaySeen: 'carnet:sunday-seen',
+  carnetThumb: 'carnet:thumb',
+  carnetPrepare: 'carnet:prepare',
+  notesList: 'notes:list',
+  notesCheck: 'notes:check',
+  notesErase: 'notes:erase',
+  routinesList: 'routines:list',
+  routinesSave: 'routines:save',
+  printerTest: 'printer:test',
   phoneStatus: 'phone:status',
   phoneSetEnabled: 'phone:set-enabled',
   phoneStartPairing: 'phone:start-pairing',
@@ -375,6 +393,38 @@ export interface SendChatInput {
   rulesOnlyAddressee?: boolean;
   /** Module images : photos jointes (3 au plus, 20 Mo chacune), enregistrées par le processus principal. */
   attachments?: ChatAttachmentInput[];
+  /**
+   * D'où vient la phrase, pour le carnet des ratés. Absent = la fenêtre.
+   * N'est jamais transmis au modèle.
+   */
+  place?: CarnetPlace;
+}
+
+export interface CarnetGroupView {
+  id: string;
+  type: string;
+  rule: string;
+  count: number;
+  userText: string;
+  replyStart: string;
+  ids: string[];
+  expected?: string;
+  category?: RateCategory;
+}
+
+/** Phrase du dimanche. `speak` est faux : elle n'est jamais lue à voix haute. */
+export interface CarnetSunday {
+  text: string;
+  speak: false;
+  day: string;
+}
+
+export interface CarnetView {
+  settings: CarnetSettingsFile;
+  edition: 'live' | 'test';
+  groups: CarnetGroupView[];
+  sunday: CarnetSunday | null;
+  falseAlarms: Record<string, number>;
 }
 
 /** Photo jointe telle que l'interface l'envoie (octets en base64, sans préfixe `data:`). */
@@ -561,6 +611,7 @@ export interface ToolInfo {
 export type ChatEvent =
   | { type: 'started'; conversationId: string; message: ChatMessage }
   | { type: 'delta'; text: string }
+  | { type: 'notice'; text: string }
   | {
       type: 'confirm';
       requestId: string;
@@ -1027,6 +1078,27 @@ export interface JarvisApi {
     current(): Promise<HealthReport | null>;
     refresh(): Promise<HealthReport>;
     onReport(listener: (report: HealthReport) => void): () => void;
+  };
+  notes: {
+    list(): Promise<NoteItem[]>;
+    check(query: string): Promise<NoteItem | null>;
+    erase(query: string): Promise<NoteItem | null>;
+  };
+  routines: {
+    list(): Promise<Routine[]>;
+    save(routine: Routine): Promise<Routine[]>;
+  };
+  printer: {
+    test(): Promise<{ ok: boolean; text: string }>;
+  };
+  carnet: {
+    get(): Promise<CarnetView>;
+    set(patch: Partial<Pick<CarnetSettingsFile, 'enabled' | 'fenetrePremierMotMs' | 'enceintePremierSonMs'>>): Promise<CarnetView>;
+    dismiss(ids: string[]): Promise<CarnetView>;
+    annotate(ids: string[], patch: { expected?: string; category?: RateCategory }): Promise<CarnetView>;
+    sundaySeen(day: string): Promise<void>;
+    thumb(input: { conversationId: string; userText: string; replyText: string }): Promise<void>;
+    prepare(): Promise<string>;
   };
   backup: {
     state(): Promise<{ lastAt: number | null; ok: boolean; file: string; error: string }>;

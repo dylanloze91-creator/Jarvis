@@ -3,6 +3,7 @@ import {
   ToolManager,
   type MarketDataProviderRegistry,
   type SearchProviderRegistry,
+  type NotesBook,
   type Settings,
 } from '@jarvis/core';
 import { getSystemInfoTool } from './system.js';
@@ -39,6 +40,9 @@ import type { RoverClient } from '../rover/RoverClient.js';
 import { createRoverTools } from './rover.js';
 import type { ImagesService } from '../images/ImagesService.js';
 import { createImagesTools } from './images.js';
+import { createNotesTools } from './notes.js';
+import { createRoutineTools, type RoutineToolDeps } from './routines.js';
+import { createPrinterTools, type PrinterToolDeps } from './printer.js';
 
 export interface YoutubeSummarize {
   (
@@ -73,6 +77,12 @@ export interface ToolManagerDeps {
    * tant que le compte n’est pas connecté. Ignoré sur les autres profils.
    */
   spotifyConnected?: () => boolean;
+  /** Notes. Absentes du catalogue tant que `notes.enabled` n'est pas vrai. */
+  notes?: NotesBook;
+  /** Routine. Absente du catalogue tant qu'aucune routine n'est enregistrée. */
+  routines?: RoutineToolDeps;
+  /** Imprimante. Absente du catalogue tant que l'adresse locale n'est pas activée. */
+  printer?: PrinterToolDeps;
 }
 
 /**
@@ -130,6 +140,9 @@ function createFullToolManager(deps: ToolManagerDeps): ToolManager {
     ...(deps.rover ? createRoverTools(deps.rover) : []),
     // Images — absents du catalogue tant que le module n'est pas activé
     ...imagesToolsIfEnabled(deps),
+    ...notesToolsIfEnabled(deps),
+    ...routineToolsIfEnabled(deps),
+    ...printerToolsIfEnabled(deps),
   ]);
 }
 
@@ -161,5 +174,20 @@ function createModestToolManager(deps: ToolManagerDeps): ToolManager {
     ...(deps.google ? createGoogleTools(deps.google) : []),
     ...(deps.rover ? createRoverTools(deps.rover) : []),
     ...imagesToolsIfEnabled(deps),
+    ...notesToolsIfEnabled(deps),
+    ...routineToolsIfEnabled(deps),
+    ...printerToolsIfEnabled(deps),
   ]);
+}
+
+function notesToolsIfEnabled(deps: ToolManagerDeps) {
+  return deps.notes ? createNotesTools(deps.notes, () => deps.getSettings().notes?.enabled === true) : [];
+}
+
+function routineToolsIfEnabled(deps: ToolManagerDeps) {
+  return deps.routines ? createRoutineTools(deps.routines) : [];
+}
+
+function printerToolsIfEnabled(deps: ToolManagerDeps) {
+  return deps.printer ? createPrinterTools(deps.printer) : [];
 }

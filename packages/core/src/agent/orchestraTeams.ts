@@ -18,6 +18,8 @@ export const ORCHESTRA_TEAMS = [
   'google',
   'code',
   'images',
+  'taches',
+  'impression',
 ] as const;
 
 export type OrchestraTeam = (typeof ORCHESTRA_TEAMS)[number];
@@ -163,6 +165,22 @@ export const TEAM_SPECS: Record<OrchestraTeam, TeamSpec> = {
     tools: ['generer_image', 'images_etat'],
     prompt:
       'Pour toute image, tu passes par Jarvis Imager : appelle generer_image tout de suite, sans phrase d’introduction ni annonce (l’outil prévient lui-même l’utilisateur et met une à trois minutes). Tu n’écris pas la consigne Stable Diffusion toi-même : transmets dans « demande » les mots de l’utilisateur (français accepté), le projet (jarvis, vx pour la vidéo, drivers-ink pour un sticker vinyle, perso ; perso si rien ne l’indique), le « type » (personne, objet, paysage, logo-sticker, scene si plusieurs personnes dans un décor, autre), « nombrePersonnes » si la demande en parle, et « rendu » : anime si l’utilisateur parle d’anime, de manga, de dessin animé ou d’un personnage de série (Naruto, One Piece…), realiste s’il veut une photo, rien sinon ; Imager écrit la consigne, choisit le modèle (un modèle anime pour le rendu anime), la taille et les retouches. Ne passe que les options demandées (format, nombre d’images, graine, LoRA, agrandir). Si le message porte une « Photo jointe », passe son chemin dans photoDeBase (et fidelite entre 0 et 1 si l’utilisateur dit à quel point rester proche de la photo). Ta réponse finale, après le résultat de l’outil, reprend les chemins des fichiers renvoyés, tels quels, sans décrire une image que l’outil n’a pas produite. Ne dis jamais « je vais générer » sans appeler l’outil.',
+  },
+  taches: {
+    id: 'taches',
+    label: 'Tâches',
+    description: 'lancer ou préparer une routine déjà enregistrée (une suite d’actions)',
+    tools: ['lancer_routine'],
+    prompt:
+      'Tu lances une routine déjà enregistrée avec lancer_routine. Tu ne crées pas de commande libre et tu ne contournes aucune confirmation.',
+  },
+  impression: {
+    id: 'impression',
+    label: 'Impression',
+    description: 'imprimante 3D, fichier gcode, lancer, pause ou annuler une impression',
+    tools: ['imprimante_*'],
+    prompt:
+      "Tu passes par les outils imprimante_*. Lancer ou reprendre demande confirmation. Annuler n'attend pas. Tu ne lances rien depuis une enceinte.",
   },
 };
 

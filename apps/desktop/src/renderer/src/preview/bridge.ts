@@ -126,6 +126,14 @@ export function installPreviewBridge(): void {
     { name: 'run_command', description: 'Commande', risk: 'confirm', category: 'shell', forceConfirm: true },
   ];
 
+  const previewCarnet = {
+    settings: { version: 1 as const, enabled: true, fenetrePremierMotMs: 10_000, enceintePremierSonMs: 6_000 },
+    edition: 'test' as const,
+    groups: [],
+    sunday: null,
+    falseAlarms: {},
+  };
+
   const api: JarvisApi = {
     chat: {
       send: async (input) => {
@@ -491,6 +499,30 @@ export function installPreviewBridge(): void {
       current: async () => previewHealth(search.get('scene')),
       refresh: async () => previewHealth(search.get('scene')),
       onReport: () => () => undefined,
+    },
+    printer: {
+      test: async () => ({ ok: false, text: 'Pas d’imprimante dans l’aperçu.' }),
+    },
+    routines: {
+      list: async () => [],
+      save: async () => [],
+    },
+    notes: {
+      list: async () => [],
+      check: async () => null,
+      erase: async () => null,
+    },
+    carnet: {
+      get: async () => previewCarnet,
+      set: async (patch) => ({
+        ...previewCarnet,
+        settings: { ...previewCarnet.settings, ...patch },
+      }),
+      dismiss: async () => previewCarnet,
+      annotate: async () => previewCarnet,
+      sundaySeen: async () => undefined,
+      thumb: async () => undefined,
+      prepare: async () => 'carnet-semaine.md',
     },
     backup: {
       state: async () => ({ lastAt: Date.parse('2026-11-07T10:00:00Z'), ok: true, file: 'jarvis-sauvegarde-20261107T100000Z.zip', error: '' }),

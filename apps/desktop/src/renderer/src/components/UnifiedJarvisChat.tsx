@@ -37,6 +37,7 @@ export function UnifiedJarvisChat({
     send: (text: string, source?: 'voice' | 'text', extra?: { attachments?: ChatAttachmentInput[] }) => void;
     cancel: () => void;
     respond: (requestId: string, approved: boolean) => void;
+    conversationId?: string | null;
   };
   compact?: boolean;
   booting: boolean;
@@ -143,7 +144,29 @@ export function UnifiedJarvisChat({
               </p>
             </div>
           ) : (
-            <Messages items={chat.items} scrollParentRef={scrollRef} onSend={(text) => submit(text, 'text')} />
+            <Messages
+              items={chat.items}
+              scrollParentRef={scrollRef}
+              onSend={(text) => submit(text, 'text')}
+              onDislike={(reply) => {
+                const conversationId = chat.conversationId;
+                if (!conversationId) return;
+                let userText = '';
+                for (let index = chat.items.length - 1; index >= 0; index -= 1) {
+                  const item = chat.items[index];
+                  if (item?.kind !== 'assistant' || item.text !== reply) continue;
+                  for (let previous = index - 1; previous >= 0; previous -= 1) {
+                    const before = chat.items[previous];
+                    if (before?.kind === 'user') {
+                      userText = before.text;
+                      break;
+                    }
+                  }
+                  break;
+                }
+                void window.jarvis.carnet.thumb({ conversationId, userText, replyText: reply });
+              }}
+            />
           )}
         </div>
       </div>

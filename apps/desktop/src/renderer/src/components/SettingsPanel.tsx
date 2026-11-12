@@ -14,6 +14,11 @@ import {
   userFirstName,
 } from '@jarvis/core';
 import { Lock } from 'lucide-react';
+import { CarnetSettingsSection } from '@/carnet/CarnetWeekCard';
+import { BriefingSettingsSection } from '@/components/BriefingSettingsSection';
+import { NotesSettingsSection } from '@/components/NotesSettingsSection';
+import { RoutinesSettingsSection } from '@/components/RoutinesSettingsSection';
+import { PrinterSettingsSection } from '@/components/PrinterSettingsSection';
 import { AuditPanel } from '@/components/AuditPanel';
 import { ReservedGate } from '@/components/ReservedGate';
 import { Button } from '@/components/ui/button';
@@ -310,6 +315,18 @@ export function SettingsPanel({
 
       <CategoryPanel id="moi" active={category}>
         {accordion('personalization', 'Personnalisation', 'Ce que Jarvis retient de toi', <PersonalizationSettingsSection />)}
+        {accordion(
+          'briefing',
+          'Briefing du matin',
+          'Date, météo, agenda, notes',
+          <BriefingSettingsSection value={draft.briefing} onChange={(briefing) => patch({ briefing })} />,
+        )}
+        {accordion(
+          'notes',
+          'Notes et liste',
+          'Courses, rappels, idées',
+          <NotesSettingsSection value={draft.notes} onChange={(notes) => patch({ notes })} />,
+        )}
         {accordion('know', 'Ce que Jarvis sait de moi', 'Voir, exporter ou effacer', <KnowSettingsSection />)}
         {accordion(
           'persona',
@@ -654,6 +671,18 @@ export function SettingsPanel({
           </>,
         )}
         {accordion(
+          'printer',
+          'Imprimante 3D',
+          'Moonraker, réseau local',
+          <PrinterSettingsSection value={draft.printer} onChange={(printer) => patch({ printer })} />,
+        )}
+        {accordion(
+          'routines',
+          'Routines',
+          'Suites d’actions, sans commande libre',
+          <RoutinesSettingsSection value={draft.routines} onChange={(routines) => patch({ routines })} />,
+        )}
+        {accordion(
           'siteblock-intro',
           'Blocage de sites (rappel)',
           'Outils siteblock_*',
@@ -715,6 +744,7 @@ export function SettingsPanel({
           'Copie de tes données Jarvis',
           <BackupSettingsSection draft={draft} onChange={patch} />,
         )}
+        {accordion('carnet', 'Carnet des ratés', 'Noter sans rien changer à la réponse', <CarnetSettingsSection />)}
         {accordion('updates', 'Mises à jour', 'Version et installation', <UpdateSettingsSection />)}
         {accordion(
           'questionnaire',

@@ -85,6 +85,11 @@ export function useChat(options: UseChatOptions = {}) {
           ]);
           break;
         }
+        case 'notice': {
+          setItems((current) => [...current, { kind: 'assistant', id: nextId(), text: event.text, streaming: false }]);
+          onAssistantFinal.current?.(event.text);
+          break;
+        }
         case 'delta': {
           const id = nextId();
           setItems((current) => appendDelta(current, id, event.text));

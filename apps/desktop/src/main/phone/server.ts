@@ -369,6 +369,7 @@ export class PhoneServer {
         conversationId: input.conversationId ?? null,
         text: input.text,
         source: input.source ?? 'text',
+        place: { kind: 'telephone' },
       });
     } catch (error) {
       sender.send('', { type: 'error', message: error instanceof Error ? error.message : String(error) });

@@ -298,6 +298,27 @@ const api: JarvisApi = {
     copyOffer: () => ipcRenderer.invoke(IpcChannel.editionCopyOffer),
     copy: (choice: 'yes' | 'empty') => ipcRenderer.invoke(IpcChannel.editionCopy, choice) as Promise<LiveCopyResult>,
   },
+  printer: {
+    test: () => ipcRenderer.invoke(IpcChannel.printerTest),
+  },
+  routines: {
+    list: () => ipcRenderer.invoke(IpcChannel.routinesList),
+    save: (routine) => ipcRenderer.invoke(IpcChannel.routinesSave, routine),
+  },
+  notes: {
+    list: () => ipcRenderer.invoke(IpcChannel.notesList),
+    check: (query: string) => ipcRenderer.invoke(IpcChannel.notesCheck, query),
+    erase: (query: string) => ipcRenderer.invoke(IpcChannel.notesErase, query),
+  },
+  carnet: {
+    get: () => ipcRenderer.invoke(IpcChannel.carnetGet),
+    set: (patch) => ipcRenderer.invoke(IpcChannel.carnetSet, patch),
+    dismiss: (ids: string[]) => ipcRenderer.invoke(IpcChannel.carnetDismiss, ids),
+    annotate: (ids: string[], patch) => ipcRenderer.invoke(IpcChannel.carnetAnnotate, ids, patch),
+    sundaySeen: (day: string) => ipcRenderer.invoke(IpcChannel.carnetSundaySeen, day),
+    thumb: (input) => ipcRenderer.invoke(IpcChannel.carnetThumb, input),
+    prepare: () => ipcRenderer.invoke(IpcChannel.carnetPrepare),
+  },
   machine: {
     status: () => ipcRenderer.invoke(IpcChannel.machineStatus),
     analyze: () => ipcRenderer.invoke(IpcChannel.machineAnalyze),
