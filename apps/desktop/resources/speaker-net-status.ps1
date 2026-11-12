@@ -6,6 +6,10 @@
 #   2. si Windows les refuse sans élévation (« Accès refusé », vu sur le PC de l'utilisateur le
 #      12 novembre 2026 : le diagnostic disait « bloqué » alors que ses règles existaient), l'API COM
 #      du pare-feu (HNetCfg.FwPolicy2), lisible par tout utilisateur et indépendante de la langue.
+#
+# Une règle n'est rapportée que si elle vaut pour tout le trafic qu'elle décrit : une règle limitée
+# à une appli du Store (paquet), à un service, à une adresse, à une interface ou à un type
+# d'interface (Tailscale, Radmin, Cura, le Store…) n'ouvre pas le port de Jarvis et n'est pas rapportée.
 $ErrorActionPreference = 'Stop'
 
 function Test-JarvisPort {
@@ -17,6 +21,11 @@ function Test-JarvisPort {
   return ("$($filter.Protocol)" -eq $Protocol) -and ("$($filter.LocalPort)" -eq $Port)
 }
 
+function Select-NearPorts {
+  param([string[]]$Ports)
+  return @($Ports | Where-Object { $_ -eq 'Any' -or $_ -eq '53131' -or $_ -eq '5353' -or $_ -like '*-*' })
+}
+
 # Toute autre règle entrante, active, qui autorise : faite à la main, ou créée par Windows pour Jarvis.exe.
 # Ce fichier les rapporte seulement ; Jarvis décide (firewallOpens) si le port est ouvert sur le profil Privé.
 function Read-RulesByCmdlet {
@@ -25,17 +34,33 @@ function Read-RulesByCmdlet {
   Get-NetFirewallPortFilter -All | ForEach-Object { $portFilters[$_.InstanceID] = $_ }
   $appFilters = @{}
   Get-NetFirewallApplicationFilter -All | ForEach-Object { $appFilters[$_.InstanceID] = $_ }
+  $addressFilters = @{}
+  Get-NetFirewallAddressFilter -All | ForEach-Object { $addressFilters[$_.InstanceID] = $_ }
+  $serviceFilters = @{}
+  Get-NetFirewallServiceFilter -All | ForEach-Object { $serviceFilters[$_.InstanceID] = $_ }
+  $interfaceFilters = @{}
+  Get-NetFirewallInterfaceFilter -All | ForEach-Object { $interfaceFilters[$_.InstanceID] = $_ }
+  $interfaceTypeFilters = @{}
+  Get-NetFirewallInterfaceTypeFilter -All | ForEach-Object { $interfaceTypeFilters[$_.InstanceID] = $_ }
   Get-NetFirewallRule -Direction Inbound -Enabled True -Action Allow | ForEach-Object {
     $rule = $_
     $pf = $portFilters[$rule.InstanceID]
     if (-not $pf) { return }
     $protocol = "$($pf.Protocol)"
     if (@('TCP', 'UDP', 'Any', '6', '17') -notcontains $protocol) { return }
-    $ports = @($pf.LocalPort | ForEach-Object { "$_" })
-    $near = @($ports | Where-Object { $_ -eq 'Any' -or $_ -eq '53131' -or $_ -eq '5353' -or $_ -like '*-*' })
+    $near = Select-NearPorts -Ports @($pf.LocalPort | ForEach-Object { "$_" })
     if ($near.Count -eq 0) { return }
     $af = $appFilters[$rule.InstanceID]
-    $program = if ($af -and $af.Program) { "$($af.Program)" } else { 'Any' }
+    if ($af -and $af.Package) { return }
+    $adf = $addressFilters[$rule.InstanceID]
+    if ($adf -and (("$($adf.LocalAddress)" -ne 'Any') -or ("$($adf.RemoteAddress)" -ne 'Any'))) { return }
+    $sf = $serviceFilters[$rule.InstanceID]
+    if ($sf -and "$($sf.Service)" -ne 'Any') { return }
+    $if = $interfaceFilters[$rule.InstanceID]
+    if ($if -and "$($if.InterfaceAlias)" -ne 'Any') { return }
+    $itf = $interfaceTypeFilters[$rule.InstanceID]
+    if ($itf -and "$($itf.InterfaceType)" -ne 'Any') { return }
+    $program = if ($af -and $af.Program -and "$($af.Program)" -ne 'Any') { "$($af.Program)" } else { 'Any' }
     $found += [PSCustomObject]@{
       profile = "$($rule.Profile)"
       protocol = $protocol
@@ -47,7 +72,8 @@ function Read-RulesByCmdlet {
 }
 
 # Même lecture par l'API COM du pare-feu : Direction 1 = entrante, Action 1 = autoriser,
-# Protocol 6 = TCP, 17 = UDP, 256 = tous ; LocalPorts « * » = tous ; Profiles = masque (2 = Privé).
+# Protocol 6 = TCP, 17 = UDP, 256 = tous ; LocalPorts « * » = tous ; Profiles = masque (2 = Privé) ;
+# LocalAppPackageId = appli du Store ; LocalAddresses / RemoteAddresses « * » = toutes.
 function Read-RulesByCom {
   $fw = New-Object -ComObject HNetCfg.FwPolicy2
   $found = @()
@@ -60,8 +86,16 @@ function Read-RulesByCom {
     if ($raw -eq '' -or $raw -eq '*') { $ports = @('Any') } else { $ports = @($raw -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne '' }) }
     if ($rule.Name -eq 'Jarvis — enceintes (TCP 53131)' -and $protocol -eq '6' -and $ports -contains '53131') { $named.tcp = $true }
     if ($rule.Name -eq 'Jarvis — enceintes (mDNS)' -and $protocol -eq '17' -and $ports -contains '5353') { $named.udp = $true }
-    $near = @($ports | Where-Object { $_ -eq 'Any' -or $_ -eq '53131' -or $_ -eq '5353' -or $_ -like '*-*' })
+    $near = Select-NearPorts -Ports $ports
     if ($near.Count -eq 0) { continue }
+    $package = ''
+    try { $package = "$($rule.LocalAppPackageId)" } catch { $package = '' }
+    if ($package -ne '') { continue }
+    $service = "$($rule.ServiceName)"
+    if ($service -ne '' -and $service -ne '*') { continue }
+    if ("$($rule.LocalAddresses)" -ne '*' -or "$($rule.RemoteAddresses)" -ne '*') { continue }
+    if (@($rule.Interfaces).Count -gt 0) { continue }
+    if ("$($rule.InterfaceTypes)" -ne 'All') { continue }
     $program = if ($rule.ApplicationName) { "$($rule.ApplicationName)" } else { 'Any' }
     $found += [PSCustomObject]@{
       profile = "$([int]$rule.Profiles)"

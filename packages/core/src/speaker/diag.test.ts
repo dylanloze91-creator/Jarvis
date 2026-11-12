@@ -132,6 +132,23 @@ describe('diagnostic', () => {
     expect(status).toContain('Read-RulesByCom');
     expect(status).toContain('-ErrorAction Stop');
     expect(status).not.toMatch(/\.(Add|Remove)\(/);
+    // Une règle limitée à une appli du Store, un service, une adresse, une interface ou un type
+    // d'interface n'ouvre pas le port de Jarvis : elle n'est pas rapportée (vu le 12 novembre 2026 :
+    // 26 règles « tout » du Store ou de Tailscale faisaient dire « ouvert » un port fermé).
+    for (const filter of [
+      'Get-NetFirewallAddressFilter -All',
+      'Get-NetFirewallServiceFilter -All',
+      'Get-NetFirewallInterfaceFilter -All',
+      'Get-NetFirewallInterfaceTypeFilter -All',
+    ]) {
+      expect(status).toContain(filter);
+    }
+    expect(status).toContain('$af.Package');
+    expect(status).toContain('LocalAppPackageId');
+    expect(status).toContain('$rule.ServiceName');
+    expect(status).toContain('$rule.LocalAddresses');
+    expect(status).toContain('$rule.Interfaces');
+    expect(status).toContain('$rule.InterfaceTypes');
   });
 
   it('les scripts PowerShell portent la marque UTF-8 (sinon Windows PowerShell 5.1 abîme « — » dans le nom des règles)', () => {
