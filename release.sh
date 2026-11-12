@@ -47,11 +47,11 @@ npm test -w @jarvis/desktop -- \
 if command -v dotnet >/dev/null 2>&1; then
   echo "== SDK .NET présent : dotnetProject.test.ts tourne seul, sans charge"
   npm test -w @jarvis/desktop -- src/main/developer/project/dotnetProject.test.ts
-  # windowsDesktopMissionPath.test.ts : exclu depuis la 5.0.73 à la demande de l'utilisateur
-  # (« Construire manuel » échoue 8 fois sur 8 depuis le 2026-11-10 après-midi, mission .exe simulée :
-  # gabarit choisi par règles rapides, fichier du faux modèle introuvable ; voir
-  # rapports/2026-11-10-publication-5073.md). À remettre ici une fois le test réparé.
-  echo "== windowsDesktopMissionPath.test.ts exclu (test fragile, voir rapports/2026-11-10-publication-5073.md)"
+  # windowsDesktopMissionPath.test.ts : réparé dans la 5.0.77 (le nom du projet vient de la
+  # demande) et remis ici le 12 novembre 2026 après 3 passages 6/6 seul sur le PC Windows ;
+  # dans la suite complète il échoue encore sous charge (« Journal verrouillé »), donc à part.
+  echo "== windowsDesktopMissionPath.test.ts tourne seul, sans charge"
+  npm test -w @jarvis/desktop -- src/main/developer/project/windowsDesktopMissionPath.test.ts
 else
   echo "== SDK .NET absent (dotnet introuvable) : les 2 fichiers de tests qui lancent dotnet sont ignorés"
   echo "   - src/main/developer/project/dotnetProject.test.ts"
