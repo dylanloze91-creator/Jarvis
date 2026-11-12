@@ -39,23 +39,31 @@ Ce fichier ne contient ni secret, ni donnée personnelle, ni nom de réseau : le
 
 ## 3. Les files de travail
 
+État au 12 novembre 2026, 19 h 30.
+
 ### Claude Code (PC Windows de l'utilisateur, avec le matériel)
 
 | # | Tâche | État |
 | --- | --- | --- |
-| 1 | **Live 5.0.77** (`claude/live-5077`) : fusion de `cursor/bourse-et-tri` (relue, validée) et de `claude/enceinte-micro-diagnostic`, 3 retouches Windows du raccordement d'enceinte, liste des « non testé » depuis la 5.0.70, essais avec l'utilisateur, puis publication | en cours |
-| 2 | Ajouter la nuit de génération du 11 novembre au cahier (`lab:clean`) | à faire |
-| 3 | Essai du raccordement d'enceinte par USB, avec l'utilisateur et la carte | à faire |
-| 4 | Carte de l'utilisation réelle (`claude/carte-utilisation`) : chiffres seulement dans `rapports/` | à faire |
+| 1 | **Essais de la Live 5.0.77 avec l'utilisateur, puis publication** (`claude/live-5077`, liste dans `rapports/2026-11-12-live-5077-a-verifier.md`). Sans les essais USB (12 à 18) ni les essais 34 à 36. | **prochaine tâche** |
+| 2 | **Live 5.0.78** (`claude/missions-roles-5078`) : Codeur par rôle respecté, réflexion coupée, « revue non faite » dite telle quelle, correctif de sécurité du mode direct. Fusion dans `main` après la 5.0.77, essais, publication. | prête, attend la 5.0.77 |
+| 3 | **Jarvis Test** : fusionner `cursor/deux-jarvis`, puis `cursor/carnet-des-rates` (une fois corrigée), dans une branche `dev` à jour avec `main`. Essais : installer Test à côté de Live. Première publication `5.1.0-test.1` avec `release-test.sh`. | attend la 5.0.78 |
+| 4 | Ajouter la nuit de génération du 11 novembre au cahier (`lab:clean`) | à faire |
+| 5 | Essai du raccordement d'enceinte par USB, avec l'utilisateur et la carte | à faire |
+| 6 | Carte de l'utilisation réelle (`claude/carte-utilisation`) : chiffres seulement dans `rapports/` | à faire |
 
 ### Cursor (une mission à la fois)
 
 | # | Mission | État |
 | --- | --- | --- |
-| 1 | Bourse et tri (`cursor/bourse-et-tri`) | **terminée et relue**, à intégrer dans la Live 5.0.77 |
-| 2 | **Deux Jarvis : Live et Test** sur le même PC (`docs/specs/deux-jarvis.md`, branche `claude/specs-deux-jarvis`) | en cours (`cursor/deux-jarvis`) |
-| 3 | **Carnet des ratés**, dans Jarvis Test d'abord | cahier à écrire par Claude |
-| 4 | **Lot B, le quotidien** : briefing du matin, notes, routines, imprimante 3D (`docs/specs/lot-b-quotidien.md`, branche `claude/specs-feuille-de-route`), dans Jarvis Test | cahier prêt |
+| 1 | Bourse et tri | terminée, dans `claude/live-5077` |
+| 2 | Deux Jarvis : Live et Test (`cursor/deux-jarvis`) | terminée et relue ; attend la tâche 3 de Claude Code |
+| 3 | Carnet des ratés (`cursor/carnet-des-rates`) | correction de la revue en cours |
+| 4 | Lot B, le quotidien (`docs/specs/lot-b-quotidien.md`, branche `claude/specs-feuille-de-route`), pour Jarvis Test, sur la base du carnet | enchaîné juste après la correction du carnet |
+
+### Essais de modèles
+
+Ils sont arrêtés depuis le 12 novembre. Ornith-1.0-9B fait 84/87 au banc, mais il a raté une vraie mission, à 6,4 jetons/s sur la RTX 2060. Le choix des modèles se fera avec l'examen tiré de l'usage réel (tâche 6 de Claude Code), pas avant.
 
 ### En pause (ne pas commencer sans que cette feuille le dise)
 
