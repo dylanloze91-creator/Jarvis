@@ -39,18 +39,18 @@ Ce fichier ne contient ni secret, ni donnée personnelle, ni nom de réseau : le
 
 ## 3. Les files de travail
 
-État au 12 novembre 2026, 19 h 30.
+État au 13 novembre 2026, nuit (mis à jour par Claude).
 
 ### Claude Code (PC Windows de l'utilisateur, avec le matériel)
 
 | # | Tâche | État |
 | --- | --- | --- |
-| 1 | **Essais de la Live 5.0.77 avec l'utilisateur, puis publication** (`claude/live-5077`, liste dans `rapports/2026-11-12-live-5077-a-verifier.md`). Sans les essais USB (12 à 18) ni les essais 34 à 36. | **prochaine tâche** |
+| 1 | **Essais de la Live 5.0.77 avec l'utilisateur, puis publication** (`claude/live-5077`, liste dans `rapports/2026-11-12-live-5077-a-verifier.md`). Sans les essais USB (12 à 18) ni les essais 34 à 36. | **en cours** : E1 à E6 bons, E7 et la suite à finir |
 | 2 | **Live 5.0.78** (`claude/missions-roles-5078`) : Codeur par rôle respecté, réflexion coupée, « revue non faite » dite telle quelle, correctif de sécurité du mode direct. Fusion dans `main` après la 5.0.77, essais, publication. | prête, attend la 5.0.77 |
-| 3 | **Jarvis Test** : fusionner `cursor/deux-jarvis`, puis `cursor/carnet-des-rates` (une fois corrigée), dans une branche `dev` à jour avec `main`. Essais : installer Test à côté de Live. Première publication `5.1.0-test.1` avec `release-test.sh`. | attend la 5.0.78 |
+| 3 | **Jarvis Test** : branche `dev` = Live à jour + `cursor/deux-jarvis` + `cursor/lot-b-quotidien` (qui contient le carnet corrigé). Un brouillon existe : `claude/test-preparation` (fusions faites, conflit de `session.ts` résolu à la main, **rien de testé** : voir `rapports/2026-11-13-preparation-jarvis-test.md`). Typecheck, tests, lint, puis installer Test à côté de Live. Première publication `5.1.0-test.1` avec `release-test.sh`. | attend la 5.0.78 |
 | 4 | Ajouter la nuit de génération du 11 novembre au cahier (`lab:clean`) | à faire |
 | 5 | Essai du raccordement d'enceinte par USB, avec l'utilisateur et la carte | à faire |
-| 6 | Carte de l'utilisation réelle : **passée à Cursor** (mission 5, décision du 12 novembre au soir). Claude Code la lance seulement sur le PC, une fois relue | confiée à Cursor |
+| 6 | Carte de l'utilisation réelle : écrite par Cursor (`cursor/carte-utilisation`), corrigée par Claude (`claude/carte-correction` : seuls les messages vraiment tapés comptent). Claude Code lance `npm test --workspace @jarvis/core` sur `claude/carte-correction`, puis `scripts\carte-utilisation.ps1`, et l'utilisateur envoie **seulement** `carte.md` à Claude | à lancer sur le PC |
 
 ### Cursor (une mission à la fois)
 
@@ -58,9 +58,11 @@ Ce fichier ne contient ni secret, ni donnée personnelle, ni nom de réseau : le
 | --- | --- | --- |
 | 1 | Bourse et tri | terminée, dans `claude/live-5077` |
 | 2 | Deux Jarvis : Live et Test (`cursor/deux-jarvis`) | terminée et relue ; attend la tâche 3 de Claude Code |
-| 3 | Carnet des ratés (`cursor/carnet-des-rates`) | terminée et relue ; attend Jarvis Test |
+| 3 | Carnet des ratés (`cursor/carnet-des-rates`) | terminée et relue ; dans le lot B ; attend Jarvis Test |
 | 4 | Lot B, le quotidien (`cursor/lot-b-quotidien`), pour Jarvis Test, sur la base du carnet | terminée et relue (correction de l'imprimante faite) ; attend Jarvis Test |
-| 5 | Carte de l'utilisation réelle (`docs/specs/carte-utilisation.md`, branche `cursor/carte-utilisation`) : script du cœur, sans modèle ; chiffres seulement | en cours |
+| 5 | Carte de l'utilisation réelle (`docs/specs/carte-utilisation.md`, branche `cursor/carte-utilisation`) : script du cœur, sans modèle ; chiffres seulement | terminée, relue ; correction faite par Claude (`claude/carte-correction`) |
+
+Après la mission 5, la file de Cursor est vide jusqu'à Jarvis Test : il recevra les corrections qui en sortiront. Une autre mission demande une décision de l'utilisateur.
 
 ### Essais de modèles
 
@@ -109,4 +111,5 @@ Ils sont arrêtés depuis le 12 novembre. Ornith-1.0-9B fait 84/87 au banc, mais
 - La flotte de location (plusieurs machines louées en parallèle).
 - Les images de Driver's Ink et les textures.
 - La voix de Jarvis.
+- **Écran sur l'enceinte** (idée du 12 novembre) : OLED 1,3 pouce I2C (SH1106, 4 broches : GND, 3V3, SDA, SCL) en façade, pour l'heure, « J'écoute… », le volume et le titre de la musique. Le boîtier V2 lui laisse sa place (`claude/boitier-enceinte-v2`, brouillon, cotes à mesurer). Le programme de l'écran se fera quand son tour viendra.
 - **Atelier 3D à la voix** (idée du 12 novembre, vue dans une vidéo) : « Jarvis, imprime-moi une petite voiture ». Jarvis pose une ou deux questions, modélise dans Blender (script Python `bpy`, formes simples), découpe le modèle avec un trancheur en ligne de commande, l'envoie à Mainsail (Moonraker), **demande l'accord** puis lance l'impression et annonce la durée. Il se place **après le lot B** : le client Moonraker de B4 en est la base. Il s'appuie aussi sur le futur spécialiste impression 3D. Vérifiable sans imprimante : modèle fermé et imprimable, dimensions, G-code accepté par Klipper en mode simulation. Jamais de lancement depuis une enceinte sans la carte de confirmation sur le PC ou le téléphone.
