@@ -71,3 +71,19 @@ Secrets. Les recherches de la routine ne trouvent que des noms de variables, de 
 3. Si un dossier manque, le script le dit et continue. Attendu : pas d'erreur pour une source absente.
 
 Ce que ça change pour toi : tu peux voir, en chiffres, ce que tu demandes vraiment à Jarvis, à Claude et à Claude Code, et où ça rate. L'application ne change pas. Rien n'est fusionné.
+
+## Correction de la revue (Claude, nuit du 12 au 13 novembre)
+
+Branche `claude/carte-correction`, partie de `cursor/carte-utilisation`. Revue : `docs/revues/2026-11-12-carte-utilisation.md` (branche `claude/revues`).
+
+Dans les sessions Claude Code, une ligne de type `user` n'est plus prise pour une demande de l'utilisateur quand :
+
+- elle vient d'un sous-agent (`isSidechain`, ou fichier dans un dossier `subagents`) ;
+- c'est un résumé de reprise (`isCompactSummary`, ou « This session is being continued… ») ;
+- c'est un bloc ajouté par l'outil (`<system-reminder>`, `<command-name>`, `<local-command-stdout>`, `<task-notification>`, « Caveat: … », etc.). Un rappel glissé dans un vrai message est retiré, le reste est gardé.
+
+« [Request interrupted by user] » n'est plus une demande : la demande d'avant compte comme un raté. Le journal et `carte.md` disent combien de lignes ont été écartées.
+
+Vérifié sur une vraie session Claude Code (dans le cloud, sans rien recopier) : 6 fichiers, 139 lignes écartées, 11 demandes gardées. Les 11 sont bien des messages tapés.
+
+Tests : `src/carte/claudeCode.test.ts` (8 tests). Lancés hors du dépôt : 45 tests de la carte réussis. Le seul raté est un chemin vers le `.ps1`, propre à l'endroit du lancement. **À relancer sur le PC** avec `npm test --workspace @jarvis/core`, car les dépendances ne s'installent pas dans le cloud cette nuit.

@@ -163,10 +163,16 @@ export function demandesJarvis(conversation: ConversationLue): Demande[] {
 export function demandesTextes(input: {
   source: 'claude.ai' | 'claude-code';
   conversationId: string;
-  messages: readonly { id: string; at: number | null; texte: string }[];
+  messages: readonly { id: string; at: number | null; texte: string; interruption?: boolean }[];
 }): Demande[] {
   const demandes: Demande[] = [];
   for (const message of input.messages) {
+    if (message.interruption) {
+      // L'utilisateur a coupé Claude : la demande d'avant compte comme un raté.
+      const avant = demandes[demandes.length - 1];
+      if (avant) avant.rate = true;
+      continue;
+    }
     if (!message.texte.trim()) continue;
     const classement = classerDemande(message.texte);
     demandes.push({

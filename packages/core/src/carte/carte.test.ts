@@ -319,6 +319,7 @@ describe('carte (synthetique-test)', () => {
       exportClaudeDemande: false,
       claudeCodeFichiers: 0,
       claudeCodeLignesIgnorees: 0,
+      claudeCodeLignesEcartees: 0,
       claudeCodeAbsent: false,
       claudeCodeDemande: false,
     });

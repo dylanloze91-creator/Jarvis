@@ -19,6 +19,8 @@ export interface LecturesCarte {
   exportClaudeDemande: boolean;
   claudeCodeFichiers: number;
   claudeCodeLignesIgnorees: number;
+  /** Lignes `user` écrites par Claude ou l'outil, écartées. */
+  claudeCodeLignesEcartees: number;
   claudeCodeAbsent: boolean;
   claudeCodeDemande: boolean;
 }
