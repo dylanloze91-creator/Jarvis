@@ -124,10 +124,25 @@ export function statusArgs(script: string): string[] {
   return [...SCRIPT_FLAGS, '-File', script];
 }
 
-/** Commande qui demande l'accord de Windows puis lance le script, avec les seuls arguments donnés. */
+/**
+ * Un argument qui contient un espace (le chemin du script dans « Program Files », ou un dossier
+ * « Nouveau dossier ») est mis entre guillemets doubles à l'intérieur de l'élément : Start-Process
+ * recolle ses arguments avec des espaces, sans les protéger. Sans ces guillemets, « Réparer » ouvrait
+ * la fenêtre d'accord de Windows puis ne faisait rien (vu le 12 novembre 2026 sur le PC de l'utilisateur).
+ * psQuote refuse déjà les guillemets, donc l'argument ne peut pas en sortir.
+ */
+function elevateArgument(value: string): string {
+  const quoted = psQuote(value);
+  return /\s/.test(value) ? `'"${value}"'` : quoted;
+}
+
+/**
+ * Commande qui demande l'accord de Windows puis lance le script, avec les seuls arguments donnés.
+ * Le code de sortie du script élevé est rendu (-PassThru) : un script qui échoue n'est plus « réparé ».
+ */
 export function elevateCommand(script: string, args: readonly string[]): string {
-  const list = [...SCRIPT_FLAGS, '-File', script, ...args].map(psQuote).join(',');
-  return `Start-Process -FilePath powershell.exe -Verb RunAs -Wait -ArgumentList ${list}`;
+  const list = [...SCRIPT_FLAGS, '-File', script, ...args].map(elevateArgument).join(',');
+  return `$p = Start-Process -FilePath powershell.exe -Verb RunAs -Wait -PassThru -ArgumentList ${list}; exit $p.ExitCode`;
 }
 
 /** Vrai lancement. Les tests passent un faux `elevate` et n'appellent pas ceci. */

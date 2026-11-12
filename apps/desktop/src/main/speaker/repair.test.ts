@@ -79,7 +79,7 @@ describe('réparation des enceintes', () => {
     expect(read).toEqual(['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script]);
     const command = elevateCommand('C:\\Jarvis\\resources\\speaker-firewall.ps1', ['-Port', '53131']);
     expect(command).toBe(
-      "Start-Process -FilePath powershell.exe -Verb RunAs -Wait -ArgumentList '-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File','C:\\Jarvis\\resources\\speaker-firewall.ps1','-Port','53131'",
+      "$p = Start-Process -FilePath powershell.exe -Verb RunAs -Wait -PassThru -ArgumentList '-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File','C:\\Jarvis\\resources\\speaker-firewall.ps1','-Port','53131'; exit $p.ExitCode",
     );
     // -ExecutionPolicy doit précéder -File : après, PowerShell le passerait au script.
     expect(command.indexOf("'-ExecutionPolicy','Bypass'")).toBeLessThan(command.indexOf("'-File'"));
@@ -89,7 +89,10 @@ describe('réparation des enceintes', () => {
     const script = 'C:\\Users\\Zoé Lefèvre\\AppData\\Local\\Programs\\Jarvis\\resources\\speaker-firewall.ps1';
     expect(psQuote(script)).toBe(`'${script}'`);
     expect(psQuote('C:\\Users\\Jérôme_Ñandú (x86)\\Jarvis-5.0\\a.ps1')).toContain('Jérôme_Ñandú');
-    expect(elevateCommand(script, ['-Port', '53131'])).toContain(`'-File','${script}','-Port','53131'`);
+    // Chemin avec un espace (« Program Files », « Nouveau dossier ») : entre guillemets doubles dans
+    // l'élément, sinon Start-Process le coupe en deux et le script ne part jamais (12 novembre 2026).
+    expect(elevateCommand(script, ['-Port', '53131'])).toContain(`'-File','"${script}"','-Port','53131'`);
+    expect(elevateCommand('C:\\Jarvis\\a.ps1', ['-InterfaceIndex', '7'])).toContain(`'-File','C:\\Jarvis\\a.ps1','-InterfaceIndex','7'`);
     for (const bad of ["C:\\a'b.ps1", 'C:\\a"b.ps1', 'C:\\$(calc).ps1', 'C:\\a`b.ps1', 'C:\\a;b.ps1', 'a|b', 'a&b', 'a\nb', '']) {
       expect(() => psQuote(bad)).toThrow('argument refusé');
     }
