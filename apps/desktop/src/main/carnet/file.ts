@@ -17,6 +17,23 @@ export class CarnetFile {
     return join(this.directory(), 'rates.jsonl');
   }
 
+  async readJson(name: string): Promise<unknown | null> {
+    try {
+      return JSON.parse(await readFile(join(this.directory(), name), 'utf8')) as unknown;
+    } catch {
+      return null;
+    }
+  }
+
+  async writeJson(name: string, value: unknown): Promise<void> {
+    const dir = this.directory();
+    await mkdir(dir, { recursive: true });
+    const path = join(dir, name);
+    const tmp = `${path}.tmp`;
+    await writeFile(tmp, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
+    await rename(tmp, path);
+  }
+
   async read(): Promise<RateEntry[]> {
     try {
       return parseRates(await readFile(this.ratesFile(), 'utf8'));

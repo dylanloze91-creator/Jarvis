@@ -41,6 +41,7 @@ import type { UseVoiceResult } from '@/voice/useVoice';
 import type { RuntimeStatus, ToolInfo } from '../../../shared/ipc';
 import type { ChatItem, PendingConfirmation } from '@/hooks/useChat';
 import { JarvisOrb } from '@/components/JarvisOrb';
+import { CarnetSundayLine, CarnetWeekCard } from '@/carnet/CarnetWeekCard';
 import './dashboard.css';
 
 type View = 'chat' | 'developer' | 'imager' | 'history' | 'settings' | 'audit' | 'setup-guide';
@@ -396,6 +397,7 @@ export function Dashboard({
             </section>
 
             <div className="fn-row">
+              <CarnetWeekCard />
               {questionnairePrompt ? (
                 <div className="mb-3 w-full rounded-xl border border-cyan-400/20 bg-cyan-400/10 px-4 py-3 text-sm text-slate-100">
                   <p className="font-medium">Nouveau : adapte Jarvis à toi en 2 minutes</p>
@@ -447,6 +449,7 @@ export function Dashboard({
                 Nouvelle conversation
               </button>
             </div>
+            <CarnetSundayLine />
             <UnifiedJarvisChat
               settings={settings}
               voice={voice}

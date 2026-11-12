@@ -31,6 +31,20 @@ export type {
 export { classifyToolLine, detectRates, type DetectOptions } from './detect.js';
 export { previousFromHistory } from './history.js';
 export {
+  GROUP_LIMIT,
+  WEEK_MS,
+  annotateRates,
+  dismissRates,
+  emptyLedger,
+  groupRates,
+  localDay,
+  pageGroups,
+  ratesThisWeek,
+  sundayNotice,
+  type CarnetGroup,
+} from './review.js';
+export { defaultCarnetSettings, parseCarnetSettings } from './settings.js';
+export {
   appendRate,
   entryFromDetection,
   parseRates,

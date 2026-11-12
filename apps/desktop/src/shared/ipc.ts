@@ -23,6 +23,8 @@ import type {
   QuestionnaireState,
   GeocodingPlace,
   CarnetPlace,
+  CarnetSettingsFile,
+  RateCategory,
   ToolCategory,
   UpdateFailureKind,
   WakeSampleSource,
@@ -171,6 +173,12 @@ export const IpcChannel = {
   editionClaim: 'edition:claim',
   editionCopyOffer: 'edition:copy-offer',
   editionCopy: 'edition:copy',
+  carnetGet: 'carnet:get',
+  carnetSet: 'carnet:set',
+  carnetDismiss: 'carnet:dismiss',
+  carnetAnnotate: 'carnet:annotate',
+  carnetSundaySeen: 'carnet:sunday-seen',
+  carnetThumb: 'carnet:thumb',
   phoneStatus: 'phone:status',
   phoneSetEnabled: 'phone:set-enabled',
   phoneStartPairing: 'phone:start-pairing',
@@ -380,6 +388,33 @@ export interface SendChatInput {
    * N'est jamais transmis au modèle.
    */
   place?: CarnetPlace;
+}
+
+export interface CarnetGroupView {
+  id: string;
+  type: string;
+  rule: string;
+  count: number;
+  userText: string;
+  replyStart: string;
+  ids: string[];
+  expected?: string;
+  category?: RateCategory;
+}
+
+/** Phrase du dimanche. `speak` est faux : elle n'est jamais lue à voix haute. */
+export interface CarnetSunday {
+  text: string;
+  speak: false;
+  day: string;
+}
+
+export interface CarnetView {
+  settings: CarnetSettingsFile;
+  edition: 'live' | 'test';
+  groups: CarnetGroupView[];
+  sunday: CarnetSunday | null;
+  falseAlarms: Record<string, number>;
 }
 
 /** Photo jointe telle que l'interface l'envoie (octets en base64, sans préfixe `data:`). */
@@ -1030,6 +1065,14 @@ export interface JarvisApi {
     current(): Promise<HealthReport | null>;
     refresh(): Promise<HealthReport>;
     onReport(listener: (report: HealthReport) => void): () => void;
+  };
+  carnet: {
+    get(): Promise<CarnetView>;
+    set(patch: Partial<Pick<CarnetSettingsFile, 'enabled' | 'fenetrePremierMotMs' | 'enceintePremierSonMs'>>): Promise<CarnetView>;
+    dismiss(ids: string[]): Promise<CarnetView>;
+    annotate(ids: string[], patch: { expected?: string; category?: RateCategory }): Promise<CarnetView>;
+    sundaySeen(day: string): Promise<void>;
+    thumb(input: { conversationId: string; userText: string; replyText: string }): Promise<void>;
   };
   backup: {
     state(): Promise<{ lastAt: number | null; ok: boolean; file: string; error: string }>;

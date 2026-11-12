@@ -14,6 +14,7 @@ import {
   userFirstName,
 } from '@jarvis/core';
 import { Lock } from 'lucide-react';
+import { CarnetSettingsSection } from '@/carnet/CarnetWeekCard';
 import { AuditPanel } from '@/components/AuditPanel';
 import { ReservedGate } from '@/components/ReservedGate';
 import { Button } from '@/components/ui/button';
@@ -715,6 +716,7 @@ export function SettingsPanel({
           'Copie de tes données Jarvis',
           <BackupSettingsSection draft={draft} onChange={patch} />,
         )}
+        {accordion('carnet', 'Carnet des ratés', 'Noter sans rien changer à la réponse', <CarnetSettingsSection />)}
         {accordion('updates', 'Mises à jour', 'Version et installation', <UpdateSettingsSection />)}
         {accordion(
           'questionnaire',

@@ -625,6 +625,7 @@ async function bootstrap(): Promise<void> {
   void phone.init().catch((error: unknown) => console.error(error));
   // Coupé par défaut aussi : sans « Enceintes », le port 53131 reste fermé.
   void speakers.init().catch((error: unknown) => console.error(error));
+  void carnet.load().catch((error: unknown) => console.error(error));
   void speakerChronoFile.readLast().then((samples) => speakerChrono.replace(samples));
   registerVoiceAssetsProtocol();
   voiceCaptureLog.append(
@@ -819,6 +820,47 @@ function createTray(): void {
 
 function registerIpc(): void {
   localLearning.registerIpc(ipcMain);
+  ipcMain.handle(IpcChannel.carnetGet, () => carnet.view());
+  ipcMain.handle(IpcChannel.carnetSet, (_event, patch: unknown) => {
+    const record = patch && typeof patch === 'object' ? (patch as Record<string, unknown>) : {};
+    return carnet
+      .updateSettings({
+        ...(typeof record.enabled === 'boolean' ? { enabled: record.enabled } : {}),
+        ...(typeof record.fenetrePremierMotMs === 'number' ? { fenetrePremierMotMs: record.fenetrePremierMotMs } : {}),
+        ...(typeof record.enceintePremierSonMs === 'number' ? { enceintePremierSonMs: record.enceintePremierSonMs } : {}),
+      })
+      .then(() => carnet.view());
+  });
+  ipcMain.handle(IpcChannel.carnetDismiss, (_event, ids: unknown) => {
+    const list = Array.isArray(ids) ? ids.filter((id): id is string => typeof id === 'string') : [];
+    return carnet.dismiss(list).then(() => carnet.view());
+  });
+  ipcMain.handle(IpcChannel.carnetAnnotate, (_event, ids: unknown, patch: unknown) => {
+    const list = Array.isArray(ids) ? ids.filter((id): id is string => typeof id === 'string') : [];
+    const record = patch && typeof patch === 'object' ? (patch as Record<string, unknown>) : {};
+    const category = record.category;
+    return carnet
+      .annotate(list, {
+        ...(typeof record.expected === 'string' ? { expected: record.expected } : {}),
+        ...(category === 'regle' || category === 'bogue' || category === 'modele' || category === 'materiel' || category === 'pas-grave'
+          ? { category }
+          : {}),
+      })
+      .then(() => carnet.view());
+  });
+  ipcMain.handle(IpcChannel.carnetSundaySeen, (_event, day: unknown) => {
+    if (typeof day !== 'string') return;
+    return carnet.acknowledgeSunday(day);
+  });
+  ipcMain.handle(IpcChannel.carnetThumb, (_event, input: unknown) => {
+    const record = input && typeof input === 'object' ? (input as Record<string, unknown>) : {};
+    if (typeof record.conversationId !== 'string' || typeof record.replyText !== 'string') return;
+    return carnet.thumb({
+      conversationId: record.conversationId,
+      userText: typeof record.userText === 'string' ? record.userText : '',
+      replyText: record.replyText,
+    });
+  });
   ipcMain.handle(IpcChannel.localLearningSnapshot, () => localLearning.snapshot());
   ipcMain.handle(IpcChannel.localLearningTrain, () => localLearning.trainNow().then(() => localLearning.status()));
   ipcMain.handle(IpcChannel.localLearningRollback, () => localLearning.rollback());
