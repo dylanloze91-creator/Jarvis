@@ -1,5 +1,24 @@
-import { isAbsolute, join, relative, resolve } from 'node:path';
 import { TEST_EDITION } from './edition.js';
+
+/** Chemins relatifs seulement, sans `node:path` (ce module est tiré par la fenêtre). */
+function joinPath(...parts: string[]): string {
+  const segments: string[] = [];
+  for (const part of parts) {
+    for (const bit of part.split(/[\\/]/)) {
+      if (!bit || bit === '.') continue;
+      if (bit === '..') segments.pop();
+      else segments.push(bit);
+    }
+  }
+  return segments.join('/');
+}
+
+function pathIsInside(root: string, target: string): boolean {
+  const left = root.split(/[\\/]/).filter(Boolean);
+  const right = target.split(/[\\/]/).filter(Boolean);
+  if (right.length < left.length) return false;
+  return left.every((segment, index) => segment === right[index]);
+}
 
 /**
  * Recopie du dossier de Jarvis Live vers Jarvis Test.
@@ -44,19 +63,12 @@ export interface CopyReport {
   guide: string | null;
 }
 
-export function pathIsInside(root: string, target: string): boolean {
-  const rel = relative(resolve(root), resolve(target));
-  if (rel === '') return true;
-  if (isAbsolute(rel)) return false;
-  return !rel.startsWith('..');
-}
-
 function child(root: string, rel: string): string {
   const parts = rel.split(/[\\/]/).filter((part) => part.length > 0);
   if (parts.some((part) => part === '.' || part === '..')) {
     throw new Error('chemin refusé');
   }
-  const target = join(root, ...parts);
+  const target = joinPath(root, ...parts);
   if (!pathIsInside(root, target)) throw new Error('chemin refusé');
   return target;
 }

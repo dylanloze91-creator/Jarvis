@@ -1,4 +1,12 @@
-import { join } from 'node:path';
+/**
+ * Joint un dossier et un nom sans `node:path` : ce module est aussi chargé
+ * par la fenêtre (le worker Whisper n'a pas `node:path`).
+ */
+function joinPath(root: string, name: string): string {
+  const sep = root.includes('\\') ? '\\' : '/';
+  const base = root.endsWith('/') || root.endsWith('\\') ? root.slice(0, -1) : root;
+  return `${base}${sep}${name}`;
+}
 
 /**
  * Ce qui change entre Jarvis Live et Jarvis Test. Une seule table :
@@ -132,7 +140,7 @@ export interface EditionPathHost {
 /** Dossier à imposer, ou `null` quand il faut laisser Electron décider (Live). */
 export function editionUserDataDir(current: Edition, appData: string): string | null {
   if (!current.pinUserData || !current.userDataDirName) return null;
-  return join(appData, current.userDataDirName);
+  return joinPath(appData, current.userDataDirName);
 }
 
 /**
