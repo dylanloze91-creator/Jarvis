@@ -126,6 +126,12 @@ describe('diagnostic', () => {
     expect(status).toContain('rules = @($rules)');
     expect(status).not.toMatch(/\b(Set|New|Remove|Enable|Disable)-Net/);
     expect(status).not.toMatch(/^param\(/m);
+    // 5.0.77 : sur un PC où NetSecurity est refusé sans élévation (« Accès refusé », PC de l'utilisateur,
+    // 12 novembre 2026), le script relit les mêmes règles par l'API COM du pare-feu, toujours en lecture seule.
+    expect(status).toContain('New-Object -ComObject HNetCfg.FwPolicy2');
+    expect(status).toContain('Read-RulesByCom');
+    expect(status).toContain('-ErrorAction Stop');
+    expect(status).not.toMatch(/\.(Add|Remove)\(/);
   });
 
   it('les scripts PowerShell portent la marque UTF-8 (sinon Windows PowerShell 5.1 abîme « — » dans le nom des règles)', () => {
