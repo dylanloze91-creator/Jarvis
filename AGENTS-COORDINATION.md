@@ -75,7 +75,7 @@ Statuts possibles : `en cours`, `en pause`, `bloqué`, `terminé`.
 | Claude Code | `claude/enceinte-micro-diagnostic` (publication) | Publication 5.0.76 : horloge tolérante, Whisper multi-thread, boucles de transcription, firmware enceinte (micro, seuil, bip), raccordement des enceintes (Cursor) ; version, CLAUDE.md, rapport `rapports/2026-11-11-publication-5076.md`, fusion dans main et `release.sh` sur feu vert de l'utilisateur | — | 2026-11-11 | terminé : main = 1b786af, release v5.0.76 publiée (exe, blockmap, latest.yml) |
 | Claude Code | `claude/integration-5075` | Publication 5.0.75 : intégration de `claude/trieur-examen-reel`, `cursor/enceinte-reflexe` (avec écran PC, Spotify Devialet/PC, flux), `cursor/lot-a-fiabilite`, `cursor/enceinte-materiel` ; version, CLAUDE.md, rapport `rapports/2026-11-11-publication-5075.md`, fusion dans main, `release.sh` | — | 2026-11-11 | terminé : main = f2ff303, release v5.0.75 publiée (exe, blockmap, latest.yml) |
 
-| Cursor | `cursor/carte-utilisation` | Carte de l'utilisation réelle : script du cœur, classement par règles, script PowerShell. Pas de fusion, pas de publication. Rapport `rapports/2026-11-12-carte-utilisation.md`. | — | 2026-11-12 | terminé |
+| Cursor | `cursor/carte-utilisation` | Carte de l'utilisation réelle, puis correction de la revue : les lignes Claude Code qui ne sont pas tapées par l'utilisateur sont écartées. Pas de fusion, pas de publication. Rapport `rapports/2026-11-12-carte-utilisation.md`. | — | 2026-11-12 | terminé |
 
 ## Ressource GPU / Ollama
 

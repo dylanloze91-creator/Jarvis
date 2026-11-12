@@ -97,7 +97,7 @@ export function rendreCarte(stats: CarteStats): string {
       ? `Export claude.ai : ${lectures.exportClaudeConversations} conversation(s)${lectures.exportClaudeAbsent ? ', source absente' : ''}${lectures.exportClaudeSaute ? ', fichier illisible' : ''}.`
       : 'Export claude.ai : non demandé.',
     lectures.claudeCodeDemande
-      ? `Claude Code : ${lectures.claudeCodeFichiers} fichier(s), ${lectures.claudeCodeLignesIgnorees} ligne(s) illisible(s)${lectures.claudeCodeAbsent ? ', dossier absent' : ''}.`
+      ? `Claude Code : ${lectures.claudeCodeFichiers} fichier(s), ${lectures.claudeCodeLignesIgnorees} ligne(s) illisible(s)${lectures.claudeCodeAbsent ? ', dossier absent' : ''}. ${lectures.claudeCodeEcartees} ligne(s) écrite(s) par Claude ou l'outil, écartée(s). ${lectures.claudeCodeInterruptions} interruption(s).`
       : 'Claude Code : non demandé.',
     '',
     'Les équipes, les outils, les lieux et les missions ne concernent que Jarvis (conversations et carnet).',

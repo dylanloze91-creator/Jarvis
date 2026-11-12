@@ -19,6 +19,8 @@ export interface LecturesCarte {
   exportClaudeDemande: boolean;
   claudeCodeFichiers: number;
   claudeCodeLignesIgnorees: number;
+  claudeCodeEcartees: number;
+  claudeCodeInterruptions: number;
   claudeCodeAbsent: boolean;
   claudeCodeDemande: boolean;
 }

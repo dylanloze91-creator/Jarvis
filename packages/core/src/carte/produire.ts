@@ -70,6 +70,8 @@ export async function produireCarte(options: OptionsCarte = {}): Promise<Resulta
     exportClaudeDemande: Boolean(options.exportClaude),
     claudeCodeFichiers: 0,
     claudeCodeLignesIgnorees: 0,
+    claudeCodeEcartees: 0,
+    claudeCodeInterruptions: 0,
     claudeCodeAbsent: false,
     claudeCodeDemande: Boolean(options.claudeCode),
   };
@@ -114,6 +116,8 @@ export async function produireCarte(options: OptionsCarte = {}): Promise<Resulta
     lectures.claudeCodeAbsent = lu.absente;
     lectures.claudeCodeFichiers = lu.fichiers;
     lectures.claudeCodeLignesIgnorees = lu.ignorees;
+    lectures.claudeCodeEcartees = lu.ecartees;
+    lectures.claudeCodeInterruptions = lu.interruptions;
     for (const session of lu.sessions) {
       demandes.push(
         ...demandesTextes({ source: 'claude-code', conversationId: session.id, messages: session.messages }),
@@ -138,7 +142,7 @@ export async function produireCarte(options: OptionsCarte = {}): Promise<Resulta
       ? `claude.ai : ${lectures.exportClaudeConversations} conversation(s)${lectures.exportClaudeAbsent ? ', absent' : ''}${lectures.exportClaudeSaute ? ', illisible' : ''}.`
       : 'claude.ai : non demandé.',
     lectures.claudeCodeDemande
-      ? `Claude Code : ${lectures.claudeCodeFichiers} fichier(s), ${lectures.claudeCodeLignesIgnorees} ligne(s) illisible(s)${lectures.claudeCodeAbsent ? ', absent' : ''}.`
+      ? `Claude Code : ${lectures.claudeCodeFichiers} fichier(s), ${lectures.claudeCodeLignesIgnorees} ligne(s) illisible(s), ${lectures.claudeCodeEcartees} ligne(s) écrite(s) par Claude ou l'outil, écartée(s), ${lectures.claudeCodeInterruptions} interruption(s)${lectures.claudeCodeAbsent ? ', absent' : ''}.`
       : 'Claude Code : non demandé.',
     `Demandes : ${toutes.length}. Ratés : ${toutes.filter((demande) => demande.rate).length}.`,
   ];

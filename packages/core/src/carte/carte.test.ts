@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { agreger } from './aggregate.js';
 import { demandesJarvis, serialiserReferences, versReference, type ConversationLue, type MessageLu } from './demandes.js';
-import { parseConversation } from './lire.js';
+import { parseConversation, texteClaudeCode } from './lire.js';
 import { produireCarte } from './produire.js';
 
 const PHRASE_JARVIS = 'zalph zbrav zchar zdelt bug dans widget.ts';
@@ -62,6 +62,42 @@ function message(partiel: Partial<MessageLu> & Pick<MessageLu, 'id' | 'role' | '
     chatMissionKind: null,
     ...partiel,
   };
+}
+
+function ligneClaude(texte: string, extra: Record<string, unknown> = {}): string {
+  return JSON.stringify({
+    type: 'user',
+    uuid: 'id-synthetique-cc',
+    sessionId: 'id-synthetique-session',
+    timestamp: '2026-11-12T10:00:00.000Z',
+    message: { role: 'user', content: texte },
+    ...extra,
+  });
+}
+
+async function lireSessionClaude(fichiers: Record<string, string>) {
+  const racine = await mkdtemp(join(tmpdir(), 'jarvis-carte-cc-'));
+  const projects = join(racine, 'projects');
+  const sortie = join(racine, 'sortie');
+  for (const [relatif, corps] of Object.entries(fichiers)) {
+    const chemin = join(projects, relatif);
+    await mkdir(join(chemin, '..'), { recursive: true });
+    await writeFile(chemin, corps, 'utf8');
+  }
+  const resultat = await produireCarte({
+    claudeCode: projects,
+    dir: sortie,
+    ecrire: true,
+    maintenant: Date.parse('2026-11-12T12:00:00.000Z'),
+  });
+  const blobs = [
+    await readFile(join(sortie, 'carte', 'carte.json'), 'utf8'),
+    await readFile(join(sortie, 'carte', 'carte.md'), 'utf8'),
+    await readFile(join(sortie, 'carte', 'references.jsonl'), 'utf8'),
+    resultat.markdown,
+    resultat.journaux.join('\n'),
+  ].join('\n');
+  return { resultat, blobs };
 }
 
 describe('carte (synthetique-test)', () => {
@@ -319,6 +355,8 @@ describe('carte (synthetique-test)', () => {
       exportClaudeDemande: false,
       claudeCodeFichiers: 0,
       claudeCodeLignesIgnorees: 0,
+      claudeCodeEcartees: 0,
+      claudeCodeInterruptions: 0,
       claudeCodeAbsent: false,
       claudeCodeDemande: false,
     });
@@ -353,6 +391,98 @@ describe('carte (synthetique-test)', () => {
     expect(resultat.stats.ensemble.demandes).toBe(0);
     expect(resultat.journaux.join('\n')).toMatch(/absent/);
     expect(await readdir(join(sortie, 'carte'))).toEqual(['carte.json', 'carte.md', 'references.jsonl']);
+  });
+
+  it('synthetique-test ecarte les sous-agents et isSidechain', async () => {
+    const side = 'qside qbrav qchar qdelt consigne inventee';
+    const sous = 'qsubq qbrav qchar qdelt fichier invente';
+    const { resultat, blobs } = await lireSessionClaude({
+      'session.jsonl': `${ligneClaude(side, { isSidechain: true })}\n`,
+      'projet/subagents/agent.jsonl': `${ligneClaude(sous)}\n`,
+    });
+    expect(resultat.stats.lectures.claudeCodeEcartees).toBe(2);
+    expect(resultat.stats.sources.find((source) => source.source === 'Claude Code')?.demandes).toBe(0);
+    expect(blobs).not.toContain('qside');
+    expect(blobs).not.toContain('qsubq');
+    expect(resultat.journaux.join('\n')).toContain("2 ligne(s) écrite(s) par Claude ou l'outil, écartée(s)");
+  });
+
+  it('synthetique-test ecarte les resumes de reprise', async () => {
+    const compact = 'qcomp qbrav qchar qdelt resume invente';
+    const reprise = `This session is being continued from a previous conversation. qrepq qbrav qchar qdelt suite inventee`;
+    const { resultat, blobs } = await lireSessionClaude({
+      'session.jsonl': `${ligneClaude(compact, { isCompactSummary: true })}\n${ligneClaude(reprise)}\n`,
+    });
+    expect(texteClaudeCode({ type: 'user', isCompactSummary: true, message: { content: compact } })).toEqual({
+      issue: 'ecarte',
+    });
+    expect(resultat.stats.lectures.claudeCodeEcartees).toBe(2);
+    expect(resultat.stats.sources.find((source) => source.source === 'Claude Code')?.demandes).toBe(0);
+    expect(blobs).not.toContain('qcomp');
+    expect(blobs).not.toContain('qrepq');
+    expect(blobs).not.toContain('previous conversation');
+  });
+
+  it('synthetique-test ecarte les blocs d outil et retire un rappel interne', async () => {
+    const garde = 'qgard qbrav qchar qdelt bug dans widget.ts';
+    const rappel = 'qrapq qbrav qchar qdelt rappel interne';
+    const gardeMessage = texteClaudeCode({
+      type: 'user',
+      message: { content: `${garde}\n<system-reminder>\n${rappel}\n</system-reminder>` },
+    });
+    expect(gardeMessage?.issue).toBe('demande');
+    if (gardeMessage?.issue === 'demande') {
+      expect(gardeMessage.texte).toContain('widget.ts');
+      expect(gardeMessage.texte).not.toContain('system-reminder');
+      expect(gardeMessage.texte).not.toContain('qrapq');
+    }
+    const debuts = [
+      '<system-reminder>',
+      '<command-name>',
+      '<command-message>',
+      '<local-command-stdout>',
+      '<local-command-stderr>',
+      '<task-notification>',
+      'Caveat: The messages below were generated by the user while running local commands',
+    ];
+    for (const debut of debuts) {
+      expect(texteClaudeCode({ type: 'user', message: { content: `${debut}\n${rappel}` } })).toEqual({
+        issue: 'ecarte',
+      });
+    }
+    const { resultat, blobs } = await lireSessionClaude({
+      'session.jsonl': `${ligneClaude(`${garde}\n<system-reminder>\n${rappel}\n</system-reminder>`)}\n${ligneClaude(`<local-command-stdout>\n${rappel}`)}\n`,
+    });
+    expect(resultat.stats.lectures.claudeCodeEcartees).toBe(1);
+    expect(resultat.stats.sources.find((source) => source.source === 'Claude Code')?.demandes).toBe(1);
+    expect(blobs).not.toContain('qrapq');
+    expect(blobs).not.toContain('qgard');
+    expect(blobs).not.toContain('local-command-stdout');
+  });
+
+  it('synthetique-test une interruption n est pas une demande', async () => {
+    const demande = 'qintd qbrav qchar qdelt bug dans main.py';
+    const { resultat, blobs } = await lireSessionClaude({
+      'session.jsonl': [
+        ligneClaude(demande),
+        ligneClaude('[Request interrupted by user]'),
+        ligneClaude('[Request interrupted by user for tool use]'),
+      ].join('\n'),
+    });
+    expect(texteClaudeCode({ type: 'user', message: { content: '[Request interrupted by user]' } })).toEqual({
+      issue: 'interruption',
+    });
+    expect(
+      texteClaudeCode({ type: 'user', message: { content: '[Request interrupted by user for tool use]' } }),
+    ).toEqual({ issue: 'interruption' });
+    expect(resultat.stats.lectures.claudeCodeInterruptions).toBe(2);
+    expect(resultat.stats.sources.find((source) => source.source === 'Claude Code')?.demandes).toBe(1);
+    expect(resultat.stats.sources.find((source) => source.source === 'Claude Code')?.langages[0]?.langage).toBe(
+      'Python',
+    );
+    expect(blobs).not.toContain('Request interrupted');
+    expect(blobs).not.toContain('qintd');
+    expect(resultat.journaux.join('\n')).toContain('2 interruption(s)');
   });
 
   it('le script PowerShell est en UTF-8 avec BOM et cherche les dossiers tout seul', async () => {
