@@ -127,6 +127,13 @@ describe('mission avec un petit modèle bavard (5.0.1)', () => {
     expect(task.report?.markdown).toContain('plan de secours');
     expect(task.review?.summary).toMatch(/^revue non faite/);
     expect(task.review?.blocking).toEqual([]);
+    // 5.0.78 : tests verts sans revue : la mission n'est pas « réussie », c'est dit partout.
+    expect(task.review?.skipped).toBe(true);
+    expect(mission.verdict).toBeNull();
+    expect(mission.evidence?.status).toBe('unverified');
+    expect(mission.summary).toMatch(/^Tests verts, revue non faite : à vérifier toi-même/);
+    expect(task.report?.markdown).toContain('**Verdict :** Tests verts, revue non faite : à vérifier toi-même');
+    expect(task.report?.markdown).toContain('### Revue non faite');
     const after = Object.fromEntries(mission.steps.map((s) => [s.id, s]));
     expect(after['goal']!.error).toBeUndefined();
     expect(after['design']!.error).toBeUndefined();

@@ -98,6 +98,9 @@ export interface CodeTaskState {
     separateCall: true;
     sameModelAsCoder: boolean;
     independenceNote: string;
+    /** 5.0.78 : revue non faite (erreur, délai, réponse illisible) et sa raison. */
+    skipped?: boolean;
+    skipReason?: string;
     findings: Array<{
       bucket: 'bloquant' | 'important' | 'mineur' | 'suggestion';
       message: string;

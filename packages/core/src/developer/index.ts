@@ -67,6 +67,7 @@ export * from './missionLifecycle.js';
 export {
   EVIDENCE_STATUSES,
   EVIDENCE_STATUS_LABELS,
+  REVIEW_SKIPPED_VERDICT,
   testsCounted,
   testsLookWeakened,
   judgeMissionEvidence,
