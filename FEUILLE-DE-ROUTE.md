@@ -43,7 +43,7 @@ Ce fichier ne contient ni secret, ni donnée personnelle, ni nom de réseau : le
 | # | Mission | État |
 | --- | --- | --- |
 | 1 | Bourse et tri (`cursor/bourse-et-tri`) | **terminée et relue**, à intégrer dans la Live 5.0.77 |
-| 2 | **Deux Jarvis : Live et Test** sur le même PC (voir section 4) | cahier à écrire par Claude |
+| 2 | **Deux Jarvis : Live et Test** sur le même PC (`docs/specs/deux-jarvis.md`, branche `claude/specs-deux-jarvis`) | en cours (`cursor/deux-jarvis`) |
 | 3 | **Carnet des ratés**, dans Jarvis Test d'abord | cahier à écrire par Claude |
 | 4 | **Lot B, le quotidien** : briefing du matin, notes, routines, imprimante 3D (`docs/specs/lot-b-quotidien.md`, branche `claude/specs-feuille-de-route`), dans Jarvis Test | cahier prêt |
 
