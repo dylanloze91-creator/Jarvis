@@ -174,6 +174,12 @@ interface SessionDeps {
     confirm: (summary: string) => Promise<boolean>;
     execute: (name: string, args: Record<string, string | number>) => Promise<{ ok: boolean; content: string }>;
   }) => Promise<string | null>;
+  /** Imprimante. Absent ou coupée : le tour suit le chemin d'avant. */
+  printer?: (input: {
+    text: string;
+    place: 'fenetre' | 'telephone' | 'enceinte';
+    confirm: (summary: string) => Promise<boolean>;
+  }) => Promise<string | null>;
   /**
    * Carnet des ratés. Absent ou coupé : le tour est celui d'avant.
    * La règle express répond avant tout modèle ; le reste observe seulement.
@@ -411,10 +417,24 @@ export class ChatSession {
             },
           }).catch(() => null)
         : null;
-    const healthIntent = !briefingText && !notesText && !routineText && looksLikeHealthIntent(input.text);
+    const printerText =
+      !briefingText && !notesText && !routineText && settings.printer?.enabled === true && this.deps.printer
+        ? await this.deps.printer({
+            text: input.text,
+            place: input.place?.kind ?? 'fenetre',
+            confirm: (summary) =>
+              this.askUser(
+                sender,
+                emit,
+                { callId: randomId(), toolName: 'imprimante', title: 'Imprimante', details: summary, forced: true },
+                controller.signal,
+              ),
+          }).catch(() => null)
+        : null;
+    const healthIntent = !briefingText && !notesText && !routineText && !printerText && looksLikeHealthIntent(input.text);
     const orchestra = activeOrchestra(settings);
     const routeGap: { kind: 'illisible' | 'silence' | null } = { kind: null };
-    const route = !briefingText && !notesText && !routineText && !healthIntent && orchestra
+    const route = !briefingText && !notesText && !routineText && !printerText && !healthIntent && orchestra
       ? await this.routeTurn(settings, orchestra, input.text, messages, controller.signal, routeGap)
       : null;
 
@@ -466,6 +486,8 @@ export class ChatSession {
       run = fixedReply(notesText);
     } else if (routineText) {
       run = fixedReply(routineText);
+    } else if (printerText) {
+      run = fixedReply(printerText);
     } else if (healthIntent) {
       let reply = "Je n'ai pas pu faire le bilan.";
       if (this.deps.healthReport) {

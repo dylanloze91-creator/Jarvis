@@ -42,6 +42,7 @@ import type { ImagesService } from '../images/ImagesService.js';
 import { createImagesTools } from './images.js';
 import { createNotesTools } from './notes.js';
 import { createRoutineTools, type RoutineToolDeps } from './routines.js';
+import { createPrinterTools, type PrinterToolDeps } from './printer.js';
 
 export interface YoutubeSummarize {
   (
@@ -80,6 +81,8 @@ export interface ToolManagerDeps {
   notes?: NotesBook;
   /** Routine. Absente du catalogue tant qu'aucune routine n'est enregistrée. */
   routines?: RoutineToolDeps;
+  /** Imprimante. Absente du catalogue tant que l'adresse locale n'est pas activée. */
+  printer?: PrinterToolDeps;
 }
 
 /**
@@ -139,6 +142,7 @@ function createFullToolManager(deps: ToolManagerDeps): ToolManager {
     ...imagesToolsIfEnabled(deps),
     ...notesToolsIfEnabled(deps),
     ...routineToolsIfEnabled(deps),
+    ...printerToolsIfEnabled(deps),
   ]);
 }
 
@@ -172,6 +176,7 @@ function createModestToolManager(deps: ToolManagerDeps): ToolManager {
     ...imagesToolsIfEnabled(deps),
     ...notesToolsIfEnabled(deps),
     ...routineToolsIfEnabled(deps),
+    ...printerToolsIfEnabled(deps),
   ]);
 }
 
@@ -181,4 +186,8 @@ function notesToolsIfEnabled(deps: ToolManagerDeps) {
 
 function routineToolsIfEnabled(deps: ToolManagerDeps) {
   return deps.routines ? createRoutineTools(deps.routines) : [];
+}
+
+function printerToolsIfEnabled(deps: ToolManagerDeps) {
+  return deps.printer ? createPrinterTools(deps.printer) : [];
 }

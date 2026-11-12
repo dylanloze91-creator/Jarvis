@@ -187,6 +187,7 @@ export const IpcChannel = {
   notesErase: 'notes:erase',
   routinesList: 'routines:list',
   routinesSave: 'routines:save',
+  printerTest: 'printer:test',
   phoneStatus: 'phone:status',
   phoneSetEnabled: 'phone:set-enabled',
   phoneStartPairing: 'phone:start-pairing',
@@ -609,6 +610,7 @@ export interface ToolInfo {
 export type ChatEvent =
   | { type: 'started'; conversationId: string; message: ChatMessage }
   | { type: 'delta'; text: string }
+  | { type: 'notice'; text: string }
   | {
       type: 'confirm';
       requestId: string;
@@ -1082,6 +1084,9 @@ export interface JarvisApi {
   routines: {
     list(): Promise<Routine[]>;
     save(routine: Routine): Promise<Routine[]>;
+  };
+  printer: {
+    test(): Promise<{ ok: boolean; text: string }>;
   };
   carnet: {
     get(): Promise<CarnetView>;

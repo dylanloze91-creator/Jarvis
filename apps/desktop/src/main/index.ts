@@ -68,6 +68,15 @@ import {
   routinesFilePath,
   type RoutineStep,
   type ToolManager,
+  MoonrakerClient,
+  checkRoverBaseUrl,
+  createMessage,
+  formatPrintStatus,
+  printerIntent,
+  SPEAKER_CANNOT_START,
+  startConfirmText,
+  startPrintWatch,
+  withMessages,
 } from '@jarvis/core';
 import {
   IpcChannel,
@@ -315,6 +324,72 @@ async function routineReply(input: {
   return reply;
 }
 
+async function printerReply(input: {
+  text: string;
+  place: 'fenetre' | 'telephone' | 'enceinte';
+  confirm: (summary: string) => Promise<boolean>;
+}): Promise<string | null> {
+  const intent = printerIntent(input.text);
+  if (!intent) return null;
+  if ((intent.kind === 'start' || intent.kind === 'resume') && input.place === 'enceinte') return SPEAKER_CANNOT_START;
+  let printer: MoonrakerClient;
+  try {
+    printer = new MoonrakerClient(settings.printer?.baseUrl ?? '', settings.printer?.apiKey ?? '');
+  } catch (error) {
+    return error instanceof Error ? error.message : 'Imprimante injoignable.';
+  }
+  if (intent.kind === 'status') return formatPrintStatus(await printer.status());
+  if (intent.kind === 'cancel') {
+    const status = await printer.cancel();
+    return status.state === 'cancelled' || status.state === 'standby' ? 'Impression annulée.' : `Pas annulée : ${status.state}.`;
+  }
+  if (intent.kind === 'pause') {
+    if (!(await input.confirm("Mettre l'impression en pause."))) return "Rien n'a été mis en pause.";
+    const status = await printer.pause();
+    return status.state === 'paused' ? 'Impression en pause.' : `Pas en pause : ${status.state}.`;
+  }
+  if (intent.kind === 'resume') {
+    if (!(await input.confirm("Reprendre l'impression."))) return "Rien n'a été repris.";
+    const status = await printer.resume();
+    return status.state === 'printing' ? 'Impression reprise.' : `Pas reprise : ${status.state}.`;
+  }
+  if (!intent.filename) return 'Quel fichier .gcode ?';
+  if (!(await input.confirm(startConfirmText(intent.filename)))) return "Rien n'a été lancé.";
+  const status = await printer.start(intent.filename);
+  return status.state === 'printing' ? `Impression lancée : ${intent.filename}.` : `Pas lancée : ${status.state}.`;
+}
+
+let printWatch: { stop(): void } | null = null;
+
+function syncPrintWatch(): void {
+  printWatch?.stop();
+  printWatch = null;
+  const printer = settings.printer;
+  if (printer?.enabled !== true || !printer.baseUrl || !checkRoverBaseUrl(printer.baseUrl).ok) return;
+  const baseUrl = printer.baseUrl;
+  const apiKey = printer.apiKey ?? '';
+  printWatch = startPrintWatch({
+    intervalMs: 60_000,
+    read: async () => {
+      try {
+        return await new MoonrakerClient(baseUrl, apiKey).status();
+      } catch {
+        return null;
+      }
+    },
+    onDone: (message) => {
+      void announcePrint(message);
+    },
+  });
+}
+
+async function announcePrint(message: string): Promise<void> {
+  const summaries = await store.list();
+  const current = summaries[0] ? await store.get(summaries[0].id) : null;
+  if (current) await store.save(withMessages(current, [...current.messages, createMessage('assistant', message)]));
+  overlay?.browserWindow.webContents.send(IpcChannel.chatEvent, { type: 'notice', text: message });
+}
+
 function buildTools(): ToolManager {
   return createToolManager({
     getSettings: () => settings,
@@ -336,6 +411,13 @@ function buildTools(): ToolManager {
       isAvailable: () => settings.routines?.enabled === true && routineCount > 0,
       tools: () => tools,
       extra: (step) => runRoutineStep(step, async () => ({ ok: false, content: '' }), false).then((result) => (step.tool === 'briefing' ? result : null)),
+    },
+    printer: {
+      isAvailable: () => {
+        const printer = settings.printer;
+        return printer?.enabled === true && !!printer.baseUrl && checkRoverBaseUrl(printer.baseUrl).ok;
+      },
+      client: () => new MoonrakerClient(settings.printer?.baseUrl ?? '', settings.printer?.apiKey ?? ''),
     },
     summarizeYoutube: (url, onProgress, signal) =>
       summarizeYoutubeLink({
@@ -413,6 +495,7 @@ const session = new ChatSession({
   briefing: morningBriefing,
   notes: notesReply,
   routines: routineReply,
+  printer: printerReply,
 });
 
 // 5.0.63 — téléphone : une session de chat à part (un tour sur le téléphone n'annule pas celui de
@@ -440,6 +523,7 @@ const phoneSession = new ChatSession({
   briefing: morningBriefing,
   notes: notesReply,
   routines: routineReply,
+  printer: printerReply,
 });
 const questionnaire = QuestionnaireStore.inUserData(() => app.getPath('userData'));
 const phone = new PhoneService({
@@ -536,6 +620,7 @@ const speakers = new SpeakerService({
       briefing: morningBriefing,
       notes: notesReply,
       routines: routineReply,
+      printer: printerReply,
     });
     return {
       send: async (sender, input) => {
@@ -693,6 +778,7 @@ async function bootstrap(): Promise<void> {
   if (migrated.changed) await writeSettings(migrated.disk);
   tools = buildTools();
   await refreshRoutineCount();
+  syncPrintWatch();
   if (settings.machine?.profile === 'modest' && settings.spotifyClientId.trim()) {
     void spotify.status();
   }
@@ -899,6 +985,14 @@ function createTray(): void {
 
 function registerIpc(): void {
   localLearning.registerIpc(ipcMain);
+  ipcMain.handle(IpcChannel.printerTest, async () => {
+    try {
+      const printer = new MoonrakerClient(settings.printer?.baseUrl ?? '', settings.printer?.apiKey ?? '');
+      return { ok: true, text: formatPrintStatus(await printer.status()) };
+    } catch (error) {
+      return { ok: false, text: error instanceof Error ? error.message : 'Imprimante injoignable.' };
+    }
+  });
   ipcMain.handle(IpcChannel.routinesList, () => routineBook.list());
   ipcMain.handle(IpcChannel.routinesSave, async (_event, raw: unknown) => {
     const routine = raw && typeof raw === 'object' ? (raw as { name?: unknown; steps?: unknown }) : {};
@@ -1141,6 +1235,7 @@ function registerIpc(): void {
       app.setLoginItemSettings({ openAtLogin: settings.launchAtLogin });
     }
 
+    syncPrintWatch();
     if (speakerWhisperHeld(settings)) overlay?.browserWindow.webContents.send(IpcChannel.speakerHoldWhisper);
     if (speakerStaysAwake(settings) || speakerWarmupEnabled(settings)) void warmSpeakerSide();
     return { settings: settingsForWindow(), status: session.status() };
@@ -1155,6 +1250,7 @@ function registerIpc(): void {
     if (app.isPackaged) {
       app.setLoginItemSettings({ openAtLogin: settings.launchAtLogin });
     }
+    syncPrintWatch();
     return { settings: settingsForWindow(), status: session.status() };
   };
 

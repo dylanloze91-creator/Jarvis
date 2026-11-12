@@ -63,6 +63,7 @@ export const BENCH_TOOLS = [
   'write_file',
   'generer_image',
   'lancer_routine',
+  'imprimante_etat',
 ];
 const ALL_TOOLS = BENCH_TOOLS;
 

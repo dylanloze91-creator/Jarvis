@@ -499,6 +499,9 @@ export function installPreviewBridge(): void {
       refresh: async () => previewHealth(search.get('scene')),
       onReport: () => () => undefined,
     },
+    printer: {
+      test: async () => ({ ok: false, text: 'Pas d’imprimante dans l’aperçu.' }),
+    },
     routines: {
       list: async () => [],
       save: async () => [],

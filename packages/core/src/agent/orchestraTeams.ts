@@ -19,6 +19,7 @@ export const ORCHESTRA_TEAMS = [
   'code',
   'images',
   'taches',
+  'impression',
 ] as const;
 
 export type OrchestraTeam = (typeof ORCHESTRA_TEAMS)[number];
@@ -172,6 +173,14 @@ export const TEAM_SPECS: Record<OrchestraTeam, TeamSpec> = {
     tools: ['lancer_routine'],
     prompt:
       'Tu lances une routine déjà enregistrée avec lancer_routine. Tu ne crées pas de commande libre et tu ne contournes aucune confirmation.',
+  },
+  impression: {
+    id: 'impression',
+    label: 'Impression',
+    description: 'imprimante 3D, fichier gcode, lancer, pause ou annuler une impression',
+    tools: ['imprimante_*'],
+    prompt:
+      "Tu passes par les outils imprimante_*. Lancer ou reprendre demande confirmation. Annuler n'attend pas. Tu ne lances rien depuis une enceinte.",
   },
 };
 

@@ -18,6 +18,7 @@ import { CarnetSettingsSection } from '@/carnet/CarnetWeekCard';
 import { BriefingSettingsSection } from '@/components/BriefingSettingsSection';
 import { NotesSettingsSection } from '@/components/NotesSettingsSection';
 import { RoutinesSettingsSection } from '@/components/RoutinesSettingsSection';
+import { PrinterSettingsSection } from '@/components/PrinterSettingsSection';
 import { AuditPanel } from '@/components/AuditPanel';
 import { ReservedGate } from '@/components/ReservedGate';
 import { Button } from '@/components/ui/button';
@@ -668,6 +669,12 @@ export function SettingsPanel({
               </p>
             </div>
           </>,
+        )}
+        {accordion(
+          'printer',
+          'Imprimante 3D',
+          'Moonraker, réseau local',
+          <PrinterSettingsSection value={draft.printer} onChange={(printer) => patch({ printer })} />,
         )}
         {accordion(
           'routines',

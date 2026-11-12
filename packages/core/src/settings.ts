@@ -330,6 +330,17 @@ export const settingsSchema = z.object({
     })
     .optional(),
   /**
+   * Imprimante 3D (Moonraker, réseau local). Absent : aucun outil, aucune phrase.
+   * `apiKey` est un secret : le coffre le retire du fichier de réglages.
+   */
+  printer: z
+    .object({
+      enabled: z.boolean().optional(),
+      baseUrl: z.string().max(300).optional(),
+      apiKey: z.string().max(200).optional(),
+    })
+    .optional(),
+  /**
    * Garder la fenêtre visible quand une autre application prend le focus.
    * Masquage uniquement via Ctrl+Espace, Échap, ou le bouton fermer.
    * Remplace l'ancien `hideOnBlur` (défaut true) : la clé historique est
