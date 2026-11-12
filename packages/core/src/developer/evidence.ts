@@ -75,7 +75,15 @@ export interface EvidenceDraft {
   afterSource?: string;
   audit?: string[];
   seenFingerprints?: readonly string[];
+  /**
+   * 5.0.78 : la revue du diff n'a pas pu se faire (erreur, délai, réponse illisible).
+   * Des tests verts sans revue ne sont pas un succès vérifié : « à vérifier toi-même ».
+   */
+  reviewSkipped?: string;
 }
+
+/** Phrase du verdict quand les tests sont verts mais que la revue n'a pas eu lieu (5.0.78). */
+export const REVIEW_SKIPPED_VERDICT = 'Tests verts, revue non faite : à vérifier toi-même';
 
 export interface DatasetStaging {
   validationStatus: 'candidate' | 'accepted' | 'rejected';
@@ -229,6 +237,9 @@ function judge(draft: EvidenceDraft, checks: EvidenceCheck[]): { status: Evidenc
       [...listed].some((path) => !diffPaths.has(path)) ||
       [...diffPaths].some((path) => !listed.has(path));
     if (mismatch) return { status: 'unverified', reason: 'Le diff ne correspond pas aux fichiers livrés.' };
+  }
+  if (draft.reviewSkipped) {
+    return { status: 'unverified', reason: `${REVIEW_SKIPPED_VERDICT} (${draft.reviewSkipped}).` };
   }
   const optionalRed = checks.filter((check) => !check.required && check.ran && check.passed === false);
   if (optionalRed.length) {
@@ -428,6 +439,8 @@ export interface TaskEvidenceInput {
   audit?: string[];
   /** Faux : la dernière série ne satisfait pas ses critères, même si une commande a un code. */
   lastSeriesOk?: boolean;
+  /** Revue non faite (raison) : la preuve reste « non vérifiée » (5.0.78). */
+  reviewSkipped?: string;
 }
 
 function suiteKind(suite: string): EvidenceCheckKind {
@@ -528,6 +541,7 @@ export function evidenceFromTask(input: TaskEvidenceInput): MissionEvidence {
     beforeSource: input.beforeSource,
     afterSource: input.afterSource,
     seenFingerprints: input.seenFingerprints,
+    reviewSkipped: input.reviewSkipped,
     audit: [
       ...(input.audit ?? []),
       ...input.runs.map((run) => `série « ${run.label} » : indicateur ok=${run.ok}`),

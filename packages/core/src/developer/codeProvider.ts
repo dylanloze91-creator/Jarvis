@@ -108,7 +108,10 @@ export function createCodeAIProvider(
     model: config.model,
     baseUrl,
     // 5.0.54 : un appel d'outil écrit en texte est relu au lieu d'arrêter l'étape.
-    ollama: { ...(config.options ?? {}), recoverToolCalls: true },
+    // 5.0.78 : la « réflexion » est coupée par défaut (`think: false`) : un modèle qui
+    // l'a (Qwen3.5, Ornith…) épuisait le plafond de jetons de l'étape avant d'écrire
+    // son JSON (revue vide). Un réglage explicite du catalogue garde la main.
+    ollama: { think: false, ...(config.options ?? {}), recoverToolCalls: true },
     ...(config.fetch ? { fetch: config.fetch } : {}),
   });
 

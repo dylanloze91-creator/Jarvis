@@ -1,4 +1,4 @@
-import { SCAN_LABELS } from '@jarvis/core';
+import { REVIEW_SKIPPED_VERDICT, SCAN_LABELS } from '@jarvis/core';
 import type { CodeTaskState } from '../../../shared/developerIpc.js';
 
 const VERDICT: Record<NonNullable<CodeTaskState['report']>['verdict'], string> = {
@@ -26,7 +26,13 @@ export function buildTaskReport(
     if (lines.length) blocks.push(lines.join('\n'));
   };
   add(`## Tâche : ${state.request}`);
-  add(`**Verdict :** ${VERDICT[verdict]}${reason ? ` ${reason}` : ''}`);
+  // 5.0.78 : tests verts mais revue non faite (erreur, délai, réponse illisible) : pas « Réussie ».
+  const reviewSkipped = verdict === 'success' && state.review?.skipped;
+  add(
+    reviewSkipped
+      ? `**Verdict :** ${REVIEW_SKIPPED_VERDICT}. Aucun nouvel échec par rapport à la référence, mais le relecteur n’a pas pu relire le diff (${state.review?.skipReason ?? 'revue non faite'}). Relis-le toi-même avant d’appliquer.${reason ? ` ${reason}` : ''}`
+      : `**Verdict :** ${VERDICT[verdict]}${reason ? ` ${reason}` : ''}`,
+  );
   add(
     `Branche \`${state.branch}\` · copie isolée \`${state.worktreePath || '—'}\` · modèle \`${state.model}\`${state.finishedAt ? ` · ${seconds(state.finishedAt - state.startedAt)}` : ''}`,
   );
@@ -61,7 +67,12 @@ export function buildTaskReport(
     if (last?.fixed.length) add(`Échecs d’avant corrigés au passage : ${last.fixed.length}.`);
   } else add('Pas lancés.');
   add(`Corrections : ${state.attempts} sur ${state.maxAttempts} au plus.`);
-  if (state.review) {
+  if (state.review?.skipped) {
+    add('### Revue non faite');
+    add(
+      `Le relecteur (\`${state.review.model}\`) n’a pas pu relire le diff : ${state.review.skipReason ?? 'revue non faite'}. **À vérifier toi-même** : relis les fichiers modifiés avant d’appliquer.`,
+    );
+  } else if (state.review) {
     add('### Revue (REVIEWER, appel séparé)');
     if (state.review.independenceNote) add(state.review.independenceNote);
     add(`Modèle \`${state.review.model}\` : ${state.review.summary}`);
