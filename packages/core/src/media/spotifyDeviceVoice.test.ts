@@ -64,7 +64,10 @@ describe('spotifyDeviceVoice', () => {
     expect(interpretSpotifyDeviceAnswer("comme d'habitude", names)).toEqual({ kind: 'usual' });
     expect(interpretSpotifyDeviceAnswer('euh ailleurs', names)).toEqual({ kind: 'fuzzy' });
     // 5.0.77 : réponse écrite par Whisper comme il l'entend, ou début du nom seulement.
-    const heard = ['Phantom 98 dB', 'Chambre dylanloze 2'];
+    // Même liste que spotify_play la construit : enceintes citées, puis tous les appareils (doublons).
+    const heard = ['Phantom 98 dB', 'Chambre dylanloze 2', 'DESKTOP-HAH329D', 'Phantom 98 dB', 'Chambre dylanloze 2'];
+    expect(interpretSpotifyDeviceAnswer('sur la fantôme 98 dB.', heard)).toEqual({ kind: 'named', name: 'Phantom 98 dB' });
+    expect(interpretSpotifyDeviceAnswer('Phantom 98db', heard)).toEqual({ kind: 'named', name: 'Phantom 98 dB' });
     expect(interpretSpotifyDeviceAnswer('fantôme', heard)).toEqual({ kind: 'named', name: 'Phantom 98 dB' });
     expect(interpretSpotifyDeviceAnswer('Fantôme.', heard)).toEqual({ kind: 'named', name: 'Phantom 98 dB' });
     expect(interpretSpotifyDeviceAnswer('la phantom', heard)).toEqual({ kind: 'named', name: 'Phantom 98 dB' });

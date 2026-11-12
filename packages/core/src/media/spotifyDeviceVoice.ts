@@ -237,7 +237,9 @@ function soundKeys(text: string): string[] {
 function deviceHeardAs(answer: string, deviceNames: readonly string[]): string | null {
   const heard = soundKeys(answer);
   if (heard.length === 0) return null;
-  const matches = deviceNames.filter((name) => {
+  // La liste cite souvent le même appareil deux fois (enceinte à citer, puis tous les appareils) :
+  // on compte les noms distincts, sinon « Phantom » serait ambigu avec lui-même.
+  const matches = [...new Set(deviceNames.map((name) => name.trim()).filter(Boolean))].filter((name) => {
     const keys = soundKeys(name);
     return keys.length >= heard.length && heard.every((key, index) => keys[index] === key);
   });
