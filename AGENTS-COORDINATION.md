@@ -76,6 +76,7 @@ Statuts possibles : `en cours`, `en pause`, `bloqué`, `terminé`.
 | Claude Code | `claude/integration-5075` | Publication 5.0.75 : intégration de `claude/trieur-examen-reel`, `cursor/enceinte-reflexe` (avec écran PC, Spotify Devialet/PC, flux), `cursor/lot-a-fiabilite`, `cursor/enceinte-materiel` ; version, CLAUDE.md, rapport `rapports/2026-11-11-publication-5075.md`, fusion dans main, `release.sh` | — | 2026-11-11 | terminé : main = f2ff303, release v5.0.75 publiée (exe, blockmap, latest.yml) |
 | Cursor | `cursor/deux-jarvis` | Deux Jarvis sur le même PC (Live et Test), parties 0 à 4. Pas de fusion dans main, pas de publication, version inchangée. Rapport `rapports/2026-11-12-deux-jarvis.md`. | — | 2026-11-12 | terminé |
 | Cursor | `cursor/carnet-des-rates` | Carnet des ratés (détection, règle express, fichier local, revue, préparation pour Claude). Base `origin/cursor/deux-jarvis` (pas fusionnée dans main). Pas de fusion, pas de publication, version inchangée. Rapport `rapports/2026-11-12-carnet-des-rates.md`. | — | 2026-11-12 | terminé |
+| Cursor | `cursor/lot-b-quotidien` | Lot B, le quotidien : briefing, notes, routines, imprimante 3D. Base `origin/cursor/carnet-des-rates` (main est encore en 5.0.76, pas de fusion de la bourse). Pas de fusion dans main, pas de publication, version inchangée. | `packages/core/src/quotidien/`, `apps/desktop/src/main/quotidien/`, réglages facultatifs, `CLAUDE.md`, `rapports/2026-11-12-lot-b-quotidien.md` | 2026-11-12 | en cours |
 
 ## Ressource GPU / Ollama
 
