@@ -33,7 +33,8 @@
     "trieur:trier": "tsc -p tsconfig.json && node scripts/trieur-trier.mjs",
     "trieur:banc": "tsc -p tsconfig.json && node scripts/trieur-banc.mjs",
     "trieur:generer": "tsc -p tsconfig.json && node scripts/trieur-generer.mjs",
-    "trieur:preparer": "tsc -p tsconfig.json && node scripts/trieur-preparer.mjs"
+    "trieur:preparer": "tsc -p tsconfig.json && node scripts/trieur-preparer.mjs",
+    "carte:utilisation": "tsc -p tsconfig.json && node scripts/carte-utilisation.mjs"
   },
   "dependencies": {
     "zod": "^4.6.5"

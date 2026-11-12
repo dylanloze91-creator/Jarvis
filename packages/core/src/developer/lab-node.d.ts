@@ -13,6 +13,7 @@ declare module 'node:child_process' {
       cwd?: string;
       encoding: 'utf8';
       timeout?: number;
+      maxBuffer?: number;
       env?: { PATH?: string };
     },
   ): LabSpawnResult;

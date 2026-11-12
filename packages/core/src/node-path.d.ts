@@ -21,6 +21,7 @@ declare module 'node:path' {
   }
   export const posix: PosixPath;
   export const win32: PosixPath;
+  export function dirname(path: string): string;
   export function resolve(...paths: string[]): string;
   export function relative(from: string, to: string): string;
   export function isAbsolute(path: string): boolean;
