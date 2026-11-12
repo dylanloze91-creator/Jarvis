@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { collectSpeakerNet, elevateCommand, readOnlyStatus, repairFirewall, repairPrivate, statusArgs } from './repair.js';
+import { collectSpeakerNet, elevateCommand, psQuote, readOnlyStatus, repairFirewall, repairPrivate, statusArgs } from './repair.js';
 
 const FROZEN = JSON.stringify({
   tcp53131: false,
@@ -83,5 +83,15 @@ describe('réparation des enceintes', () => {
     );
     // -ExecutionPolicy doit précéder -File : après, PowerShell le passerait au script.
     expect(command.indexOf("'-ExecutionPolicy','Bypass'")).toBeLessThan(command.indexOf("'-File'"));
+  });
+
+  it('accepte un chemin d’installation avec des lettres accentuées, et rien de dangereux', () => {
+    const script = 'C:\\Users\\Zoé Lefèvre\\AppData\\Local\\Programs\\Jarvis\\resources\\speaker-firewall.ps1';
+    expect(psQuote(script)).toBe(`'${script}'`);
+    expect(psQuote('C:\\Users\\Jérôme_Ñandú (x86)\\Jarvis-5.0\\a.ps1')).toContain('Jérôme_Ñandú');
+    expect(elevateCommand(script, ['-Port', '53131'])).toContain(`'-File','${script}','-Port','53131'`);
+    for (const bad of ["C:\\a'b.ps1", 'C:\\a"b.ps1', 'C:\\$(calc).ps1', 'C:\\a`b.ps1', 'C:\\a;b.ps1', 'a|b', 'a&b', 'a\nb', '']) {
+      expect(() => psQuote(bad)).toThrow('argument refusé');
+    }
   });
 });

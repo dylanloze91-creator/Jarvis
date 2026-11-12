@@ -103,8 +103,12 @@ async function elevate(script: string, args: string[], deps: RepairDeps): Promis
   }
 }
 
-function psQuote(value: string): string {
-  if (!/^[\w.\\: ()\-/]+$/.test(value)) throw new Error('argument refusé');
+/**
+ * Lettres (accentuées comprises : un dossier d'utilisateur « Zoé », « Jérôme »), chiffres et la
+ * ponctuation d'un chemin Windows. Ni apostrophe, ni guillemet, ni `$`, ni backtick, ni point-virgule.
+ */
+export function psQuote(value: string): string {
+  if (!/^[\p{L}\p{N}_.\\: ()\-/]+$/u.test(value)) throw new Error('argument refusé');
   return `'${value.replace(/'/g, "''")}'`;
 }
 
