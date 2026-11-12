@@ -947,3 +947,18 @@ Chemin d’une nouveauté :
 7. Jarvis Live (`npm run package:win`, inchangé).
 
 Une correction de Live va dans `main`, puis est reportée dans `dev`. Le brouillon `release-test.sh` est à côté de `release.sh` et ne le modifie pas. Il refuse de publier tant que la version n’est pas `5.1.N-test.M`.
+
+## Carnet des ratés (branche `cursor/carnet-des-rates`, version inchangée)
+
+Pas de fusion dans `main`, pas de publication. Rapport : `rapports/2026-11-12-carnet-des-rates.md`. Base : `origin/cursor/deux-jarvis` (pas encore dans `main`).
+
+Le carnet **observe**. Il ne change ni ce que Jarvis envoie au modèle, ni les réponses, sauf la règle express « ça n'a pas marché » / « c'était nul » / « tu t'es trompé » : avant tout modèle, Jarvis répond « C'est noté. » et note le tour précédent. Ça vaut pour la fenêtre, l'enceinte et le téléphone.
+
+- Détection par règles seulement (`packages/core/src/carnet/`) : correction, répétition, interruption, outil en échec, lenteur, chemin, signal. Aucun modèle ne décide qu'un tour est raté.
+- Fichier `userData/carnet/rates.jsonl` (format version 1, `FORMAT.md`). Secrets masqués (`redactSecrets`). 5 000 lignes au plus : les plus anciennes déjà revues partent en premier. Jamais dans le dépôt.
+- Réglages dans `userData/carnet/reglages.json`, pas dans `parseSettings`. Actif par défaut dans Test, coupé dans Live, avec un interrupteur (Réglages → Application → Carnet des ratés).
+- Carte « Les ratés de la semaine » sur le tableau de bord. Le dimanche, une phrase dans la discussion, jamais dite à voix haute.
+- « Préparer pour Claude » écrit `carnet-semaine.md` dans les documents de l'utilisateur et l'ouvre. Jarvis ne l'envoie pas.
+- `chat-unchanged`, `ollama-unchanged`, `orchestra-session`, `profiles/jarvis` restent verts sans régénérer les `__golden__`. `parseSettings({})` ne gagne aucune clé.
+
+À ne pas casser : le carnet ne s'ajoute pas au prompt ni au catalogue ; une phrase normale envoie la même requête au modèle, carnet actif ou non.

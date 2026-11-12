@@ -108,8 +108,8 @@ async function seededStore() {
 
 function sessionFor(
   reg: ReturnType<typeof registry>['registry'],
-  store: core.ConversationStore,
-  carnet: CarnetHub | undefined,
+  store: Awaited<ReturnType<typeof seededStore>>['store'],
+  carnet?: InstanceType<typeof CarnetHub>,
 ) {
   return new ChatSession({
     registry: reg,
