@@ -96,8 +96,56 @@ fi
 # ---------------------------------------------------------------------------
 # 4. Installateur
 # ---------------------------------------------------------------------------
+# Un modèle Whisper en trop dans voice-assets part dans l'installateur (5.0.76 : whisper-base, +47 Mo).
+WHISPER_REPO="$(node -e "import('./packages/core/dist/index.js').then((m) => console.log(m.WHISPER_MODEL_REPO))")"
+WHISPER_OWNER_DIR="$ROOT/apps/desktop/voice-assets/whisper/$(dirname "$WHISPER_REPO")"
+if [[ -d "$WHISPER_OWNER_DIR" ]]; then
+  for dir in "$WHISPER_OWNER_DIR"/*/; do
+    [[ -d "$dir" ]] || continue
+    if [[ "$(basename "$dir")" != "$(basename "$WHISPER_REPO")" ]]; then
+      echo "ERREUR : modèle Whisper en trop dans voice-assets : ${dir}" >&2
+      echo "         Seul ${WHISPER_REPO} est utilisé. Déplacer ce dossier hors de voice-assets, puis relancer." >&2
+      exit 1
+    fi
+  done
+fi
+
+# Programme de l'enceinte (hors git) : sans lui, « Installer » une enceinte depuis Jarvis ne peut rien écrire.
+SPEAKER_FW_DIR="$ROOT/apps/desktop/speaker-firmware"
+if [[ -z "${PIO:-}" ]]; then
+  if command -v pio >/dev/null 2>&1; then
+    PIO="pio"
+  elif [[ -x "$HOME/.platformio/penv/Scripts/pio.exe" ]]; then
+    PIO="$HOME/.platformio/penv/Scripts/pio.exe"
+  elif [[ -x "$HOME/.platformio/penv/bin/pio" ]]; then
+    PIO="$HOME/.platformio/penv/bin/pio"
+  fi
+fi
 if [[ ! -f "$EXE" || ! -f "$MAP" || ! -f "$YML" ]]; then
+  if [[ -n "${PIO:-}" ]]; then
+    echo "== PlatformIO présent : compilation du programme de l'enceinte"
+    PIO="$PIO" npm run setup:speaker-firmware --workspace @jarvis/desktop
+  elif [[ -f "$SPEAKER_FW_DIR/manifest.json" ]]; then
+    echo "== PlatformIO absent : le programme de l'enceinte déjà présent dans speaker-firmware/ est livré tel quel"
+  else
+    echo "ATTENTION : PlatformIO (pio) introuvable et speaker-firmware/ sans programme." >&2
+    echo "            L'installateur sera construit SANS le programme de l'enceinte :" >&2
+    echo "            « Installer » une enceinte depuis Jarvis dira qu'il manque." >&2
+    if [[ "${JARVIS_REQUIRE_SPEAKER_FIRMWARE:-0}" == "1" ]]; then
+      echo "ERREUR : JARVIS_REQUIRE_SPEAKER_FIRMWARE=1 : publication arrêtée." >&2
+      exit 1
+    fi
+  fi
   npm run package:win
+fi
+
+SPEAKER_FW_UNPACKED="$ROOT/apps/desktop/release/win-unpacked/resources/speaker-firmware"
+if [[ -f "$SPEAKER_FW_DIR/manifest.json" && -d "$ROOT/apps/desktop/release/win-unpacked" ]]; then
+  if [[ ! -f "$SPEAKER_FW_UNPACKED/manifest.json" || ! -f "$SPEAKER_FW_UNPACKED/firmware.bin" ]]; then
+    echo "ERREUR : l'installateur empaqueté ne contient pas le programme de l'enceinte (speaker-firmware)." >&2
+    exit 1
+  fi
+  echo "== Programme de l'enceinte présent dans l'installateur."
 fi
 
 PIPER_VOICE_ASSETS="$ROOT/apps/desktop/voice-assets/piper"
