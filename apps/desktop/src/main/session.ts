@@ -82,7 +82,9 @@ import {
   looksLikeImageIntent,
   isImageToolName,
   type ImageProject,
+  type CarnetHow,
   type CarnetPlace,
+  type ToolLine,
 } from '@jarvis/core';
 import { describeDirectResult, type ImagesService } from './images/ImagesService.js';
 import type { ChatEvent, RuntimeStatus, SendChatInput } from '../shared/ipc.js';
@@ -94,6 +96,7 @@ import type { VoiceBridge } from './voice.js';
 import type { LocalLearningController } from './learning/controller.js';
 import type { ChatMissionHub } from './chatMission/hub.js';
 import { createProposerMissionTool } from './chatMission/proposerMissionTool.js';
+import { createTurnWatch } from './carnet/watch.js';
 
 /** Délai du cerveau pour choisir une équipe, chargement compris. */
 const BRAIN_DEADLINE_MS = 90_000;
@@ -156,6 +159,7 @@ interface SessionDeps {
    * La règle express répond avant tout modèle ; le reste observe seulement.
    */
   carnet?: {
+    enabled(): boolean;
     expressReply(text: string): string | null;
     noteExpress(ctx: {
       text: string;
@@ -164,6 +168,30 @@ interface SessionDeps {
       place: CarnetPlace;
       at: number;
     }): void;
+    observeTurn(input: {
+      at: number;
+      conversationId: string;
+      before: readonly ChatMessage[];
+      userText: string;
+      replyText: string;
+      place: CarnetPlace;
+      team: string | null;
+      model: string | null;
+      how: CarnetHow | null;
+      brainUnreadable: boolean;
+      tools: ToolLine[];
+      firstWordMs: number | null;
+      speakerFirstSoundMs: number | null;
+      cut: { afterMs: number; button?: boolean; speech?: boolean; text?: string } | null;
+    }): void;
+    takeSpeakerSound(name: string): number | null;
+    markReply(conversationId: string, at: number | null): void;
+    speechCut(input: {
+      conversationId: string;
+      at: number;
+      source?: 'voice' | 'text';
+      text: string;
+    }): { afterMs: number; button?: boolean; speech?: boolean; text?: string } | null;
   };
 }
 
@@ -266,7 +294,10 @@ export class ChatSession {
   }
 
   async send(sender: WebContents, input: SendChatInput): Promise<void> {
+    const turnStartedAt = Date.now();
+    const watch = this.deps.carnet?.enabled() ? createTurnWatch(turnStartedAt) : null;
     const emit = (event: ChatEvent): void => {
+      watch?.see(event, Date.now());
       if (!sender.isDestroyed()) sender.send(IpcChannel.chatEvent, event);
     };
 
@@ -328,8 +359,9 @@ export class ChatSession {
     const source = input.source ?? 'text';
     const healthIntent = looksLikeHealthIntent(input.text);
     const orchestra = activeOrchestra(settings);
+    const routeGap: { kind: 'illisible' | 'silence' | null } = { kind: null };
     const route = !healthIntent && orchestra
-      ? await this.routeTurn(settings, orchestra, input.text, messages, controller.signal)
+      ? await this.routeTurn(settings, orchestra, input.text, messages, controller.signal, routeGap)
       : null;
 
     const chatMissionHub = this.deps.getChatMissionHub?.() ?? null;
@@ -648,6 +680,38 @@ export class ChatSession {
         message: 'Je n’ai pas pu répondre. Réessaie dans un instant.',
       });
     }
+    if (watch && !superseded()) {
+      try {
+        const place = input.place ?? { kind: 'fenetre' as const };
+        const sound = place.kind === 'enceinte' ? this.deps.carnet?.takeSpeakerSound(place.name) ?? null : null;
+        this.deps.carnet?.observeTurn({
+          at: turnStartedAt,
+          conversationId: updated.id,
+          before: conversation.messages,
+          userText: input.text,
+          replyText: watch.reply(),
+          place,
+          team: watch.team(),
+          model: watch.model(),
+          how: watch.how(),
+          brainUnreadable: routeGap.kind === 'illisible',
+          tools: watch.tools(),
+          firstWordMs: watch.firstWordMs(),
+          speakerFirstSoundMs: sound,
+          cut: controller.signal.aborted
+            ? watch.buttonCut(Date.now())
+            : (this.deps.carnet?.speechCut({
+                conversationId: updated.id,
+                at: turnStartedAt,
+                source: input.source,
+                text: input.text,
+              }) ?? null),
+        });
+        this.deps.carnet?.markReply(updated.id, watch.responseStartedAt());
+      } catch (error) {
+        console.error('[jarvis] carnet non noté :', error);
+      }
+    }
     emit({ type: 'done', conversationId: updated.id, messages: updated.messages });
     } catch {
       if (this.controller === controller) this.controller = null;
@@ -879,6 +943,7 @@ export class ChatSession {
     text: string,
     messages: ChatMessage[],
     signal: AbortSignal,
+    gap?: { kind: 'illisible' | 'silence' | null },
   ): Promise<TurnRoute | null> {
     const calc = solveArithmetic(text);
     if (calc) {
@@ -895,20 +960,28 @@ export class ChatSession {
       hasImageAttachment: lastUserHasImageAttachment(messages),
     });
     let how: TurnRoute['how'] = team ? 'express' : 'cerveau';
+    let brainText = '';
     if (!team) {
       const router = activeRouter(settings);
       if (router) {
-        team = await this.askRouter(settings, router, teams, text, messages.slice(0, -1), signal);
+        const routed = await this.askRouter(settings, router, teams, text, messages.slice(0, -1), signal);
+        team = routed.team;
         if (team) how = 'trieur';
         else {
-          team = await this.askBrain(settings, orchestra, teams, text, messages.slice(0, -1), signal);
+          const brained = await this.askBrain(settings, orchestra, teams, text, messages.slice(0, -1), signal);
+          team = brained.team;
+          brainText = brained.text;
           if (team) how = 'cerveau';
         }
       } else {
-        team = await this.askBrain(settings, orchestra, teams, text, messages.slice(0, -1), signal);
+        const brained = await this.askBrain(settings, orchestra, teams, text, messages.slice(0, -1), signal);
+        team = brained.team;
+        brainText = brained.text;
+        if (team) how = 'cerveau';
       }
     }
     if (!team) {
+      if (gap) gap.kind = brainText.trim() ? 'illisible' : 'silence';
       if (settings.debugLogging) debugLog(true, 'orchestre', 'le cerveau n’a pas choisi d’équipe : chemin habituel');
       return null;
     }
@@ -930,7 +1003,7 @@ export class ChatSession {
     text: string,
     history: ChatMessage[],
     signal: AbortSignal,
-  ): Promise<OrchestraTeam | null> {
+  ): Promise<{ team: OrchestraTeam | null; text: string }> {
     const { provider } = this.deps.registry.createOrFallback(
       orchestraProviderConfig(settings, router.model, router.place, true),
     );
@@ -951,12 +1024,12 @@ export class ChatSession {
         if (event.type === 'error') break;
       }
     } catch {
-      return null;
+      return { team: null, text: reply };
     } finally {
       clearTimeout(timer);
       signal.removeEventListener('abort', onAbort);
     }
-    return parseRouterReply(reply, teams);
+    return { team: parseRouterReply(reply, teams), text: reply };
   }
 
   private async askBrain(
@@ -966,7 +1039,7 @@ export class ChatSession {
     text: string,
     history: ChatMessage[],
     signal: AbortSignal,
-  ): Promise<OrchestraTeam | null> {
+  ): Promise<{ team: OrchestraTeam | null; text: string }> {
     const { provider } = this.deps.registry.createOrFallback(
       orchestraProviderConfig(settings, orchestra.brain, 'carte', true),
     );
@@ -988,12 +1061,12 @@ export class ChatSession {
         if (event.type === 'error') break;
       }
     } catch {
-      return null;
+      return { team: null, text: reply };
     } finally {
       clearTimeout(timer);
       signal.removeEventListener('abort', onAbort);
     }
-    return parseRouterReply(reply, teams);
+    return { team: parseRouterReply(reply, teams), text: reply };
   }
 
   private askUser(

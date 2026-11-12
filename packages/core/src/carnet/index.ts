@@ -31,6 +31,14 @@ export type {
 export { classifyToolLine, detectRates, type DetectOptions } from './detect.js';
 export { previousFromHistory } from './history.js';
 export {
+  appendRate,
+  entryFromDetection,
+  parseRates,
+  replyStartOf,
+  serializeRates,
+  trimRates,
+} from './store.js';
+export {
   contentWords,
   fold,
   isFailureReport,

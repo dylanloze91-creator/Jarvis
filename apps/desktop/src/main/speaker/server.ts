@@ -88,6 +88,8 @@ export interface SpeakerServerDeps {
   remoteAddress?: (req: IncomingMessage) => string | undefined;
   /** Durées des phrases (jamais le texte). */
   chrono?: SpeakerChrono;
+  /** Premier son réellement écrit, pour le carnet (durée seule). */
+  onSpeakerSound?: (name: string, elapsedMs: number) => void;
   /** Suivi d'enceinte jugé par les règles seulement. */
   rulesOnlyAddressee?: () => boolean;
   /** Le préchauffage au mot « Jarvis » est activé. */
@@ -489,7 +491,10 @@ export class SpeakerServer {
           [SPEAKER_HEADER_TRANSCRIPT]: encodeURIComponent(transcript),
         }),
         () => {
-          if (mark.firstSoundMs === null) mark.firstSoundMs = Math.max(0, this.now() - started);
+          if (mark.firstSoundMs === null) {
+            mark.firstSoundMs = Math.max(0, this.now() - started);
+            this.deps.onSpeakerSound?.(speaker.name, mark.firstSoundMs);
+          }
         },
         (synthMs) => {
           mark.synthesisMs = (mark.synthesisMs ?? 0) + synthMs;

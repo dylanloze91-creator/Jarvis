@@ -84,6 +84,7 @@ import { PersonalizationStore } from './personalization.js';
 import { KnowledgeStore } from './knowledge.js';
 import { ChatSession } from './session.js';
 import { CarnetHub } from './carnet/hub.js';
+import { CarnetFile } from './carnet/file.js';
 import { appendTeamValidation, type TeamValidationPayload } from './orchestra/teamValidation.js';
 import { PhoneService } from './phone/service.js';
 import { PhoneStore } from './phone/store.js';
@@ -316,7 +317,7 @@ function settingsForWindow(): Settings {
 }
 
 /** Actif dans Test, coupé dans Live, tant que l'interrupteur n'a pas été touché. */
-const carnet = new CarnetHub(edition().id);
+const carnet = new CarnetHub(edition().id, new CarnetFile(() => app.getPath('userData')));
 
 const session = new ChatSession({
   registry,
@@ -416,6 +417,7 @@ async function warmSpeakerSide(): Promise<void> {
 const speakerStore = SpeakerStore.inUserData(() => app.getPath('userData'));
 const speakers = new SpeakerService({
   store: speakerStore,
+  onSpeakerSound: (name, elapsedMs) => carnet.noteFirstSound(name, elapsedMs),
   port: edition().ports.speaker,
   mayRun: () => reservedAllows(edition(), reservations, 'speaker'),
   keptAddresses: () => keptLanAddresses(),
