@@ -14,7 +14,7 @@ const resources = join(here, '..', 'resources');
 
 const ACCENT = [86, 200, 240];
 
-function renderIcon(size, { opaque }) {
+function renderIcon(size, { opaque, badge = false }) {
   const pixels = Buffer.alloc(size * size * 4);
   const center = (size - 1) / 2;
   const outer = size * 0.42;
@@ -53,7 +53,25 @@ function renderIcon(size, { opaque }) {
     }
   }
 
+  if (badge) paintBadge(pixels, size);
   return encodePng(size, size, pixels);
+}
+
+/** Pastille orange : l'icône de Jarvis Test, sans changer celle de Live. */
+function paintBadge(pixels, size) {
+  const radius = size * 0.16;
+  const cx = size * 0.78;
+  const cy = size * 0.22;
+  for (let y = 0; y < size; y += 1) {
+    for (let x = 0; x < size; x += 1) {
+      if (Math.hypot(x - cx, y - cy) > radius) continue;
+      const offset = (y * size + x) * 4;
+      pixels.writeUInt8(224, offset);
+      pixels.writeUInt8(122, offset + 1);
+      pixels.writeUInt8(31, offset + 2);
+      pixels.writeUInt8(255, offset + 3);
+    }
+  }
 }
 
 /** 0 sur l'anneau [from, to], 1 en dehors, avec un bord adouci. */
@@ -110,7 +128,15 @@ function crc32(buffer) {
   return crc ^ 0xffffffff;
 }
 
-mkdirSync(resources, { recursive: true });
-writeFileSync(join(resources, 'icon.png'), renderIcon(256, { opaque: true }));
-writeFileSync(join(resources, 'tray.png'), renderIcon(32, { opaque: false }));
-console.log('Icônes générées dans apps/desktop/resources');
+if (process.argv.includes('--test')) {
+  const out = join(here, '..', 'build-test');
+  mkdirSync(out, { recursive: true });
+  writeFileSync(join(out, 'icon.png'), renderIcon(256, { opaque: true, badge: true }));
+  writeFileSync(join(out, 'tray.png'), renderIcon(32, { opaque: false, badge: true }));
+  console.log('Icône de Jarvis Test générée dans apps/desktop/build-test');
+} else {
+  mkdirSync(resources, { recursive: true });
+  writeFileSync(join(resources, 'icon.png'), renderIcon(256, { opaque: true }));
+  writeFileSync(join(resources, 'tray.png'), renderIcon(32, { opaque: false }));
+  console.log('Icônes générées dans apps/desktop/resources');
+}

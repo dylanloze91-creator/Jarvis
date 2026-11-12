@@ -15,6 +15,49 @@ export function githubLatestYmlUrl(
   return `https://github.com/${owner}/${repo}/releases/latest/download/latest.yml`;
 }
 
+/** Fichier `test.yml` d'une préversion `5.1.N-test.M`. Live ne l'utilise pas. */
+export function githubTestYmlUrl(
+  tag: string,
+  owner: string = GITHUB_UPDATES_OWNER,
+  repo: string = GITHUB_UPDATES_REPO,
+): string {
+  const name = tag.startsWith('v') ? tag : `v${tag}`;
+  return `https://github.com/${owner}/${repo}/releases/download/${name}/test.yml`;
+}
+
+const TEST_VERSION = /^v?(\d+\.\d+\.\d+-test\.\d+)$/;
+
+/** Tags du flux Atom qui sont des préversions Test. */
+export function testTagsFromAtom(xml: string): string[] {
+  const found = new Set<string>();
+  for (const match of xml.matchAll(/\/tag\/(v?[^/"<\s]+)/g)) {
+    const raw = match[1] ?? '';
+    const version = TEST_VERSION.exec(raw);
+    if (version?.[1]) found.add(version[1]);
+  }
+  return [...found];
+}
+
+/** Compare aussi le numéro après `-test.`. `compareSemver` ne change pas. */
+export function compareTestVersion(a: string, b: string): number {
+  const core = compareSemver(a, b);
+  if (core !== 0) return core;
+  const left = Number(/-test\.(\d+)/.exec(a)?.[1] ?? 0);
+  const right = Number(/-test\.(\d+)/.exec(b)?.[1] ?? 0);
+  if (left === right) return 0;
+  return left > right ? 1 : -1;
+}
+
+export function highestTestTag(tags: readonly string[]): string | null {
+  let best: string | null = null;
+  for (const tag of tags) {
+    if (!TEST_VERSION.test(tag) && !TEST_VERSION.test(`v${tag}`)) continue;
+    const version = tag.replace(/^v/, '');
+    if (!best || compareTestVersion(version, best) > 0) best = version;
+  }
+  return best;
+}
+
 /** Compare deux versions `x.y.z` (pré-release ignorée). >0 si `a` est plus récente. */
 export function compareSemver(a: string, b: string): number {
   const left = parseSemver(a);

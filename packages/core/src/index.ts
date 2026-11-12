@@ -330,9 +330,13 @@ export {
 export { classifyUpdateError } from './update/errorClassifier.js';
 export {
   compareSemver,
+  compareTestVersion,
   githubLatestYmlUrl,
+  githubTestYmlUrl,
+  highestTestTag,
   interpretLatestYmlResponse,
   parseLatestYmlVersion,
+  testTagsFromAtom,
   GITHUB_UPDATES_OWNER,
   GITHUB_UPDATES_REPO,
   type UpdateFeedInterpretation,

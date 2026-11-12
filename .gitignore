@@ -2,6 +2,8 @@ node_modules/
 dist/
 out/
 release/
+release-test/
+apps/desktop/build-test/
 *.log
 .DS_Store
 .env

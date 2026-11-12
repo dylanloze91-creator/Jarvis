@@ -931,3 +931,19 @@ Travaux **hors scope** de cet arbre (ne pas les reprendre ici) : publication Git
 - Autorisations : `setPermissionRequestHandler` (micro seul, depuis l’interface) **et** `setPermissionCheckHandler` (audio accordé, caméra refusée), décisions journalisées (`main/mediaPermissions.ts`).
 - `backgroundThrottling: false` : la fenêtre masquée écoute toujours.
 - Whisper ne tourne qu’après un réveil (ou en repli si Vosk manque). Depuis 0.4.17 il tourne dans un worker (voir « 0.4.17 ») ; s’il retombe dans la page, chaque inférence y bloque l’interface. Avec le déclencheur Whisper de 0.4.15, un son continu dans l’entrée retardait `getUserMedia` de 18 à 65 s (mesuré sur la VM).
+
+## Deux Jarvis — Live et Test (branche `cursor/deux-jarvis`, version inchangée)
+
+Pas de fusion dans `main`, pas de publication. Rapport des choix : `rapports/2026-11-12-deux-jarvis-choix.md`. Live reste l’application d’aujourd’hui (même `appId`, même dossier, mêmes ports, même raccourci, canal `latest` sans préversion).
+
+Chemin d’une nouveauté :
+
+1. une branche ;
+2. relue par Claude ;
+3. fusion dans une branche `dev` ;
+4. Jarvis Test (`npm run package:win:test --workspace @jarvis/desktop`, canal `5.1.N-test.M`, fichier `test.yml`, préversion). Le script n’est pas à la racine : `profiles/jarvis.test.ts` fige les scripts racine ; `package:win` racine ne change pas ;
+5. essayée par l’utilisateur ;
+6. fusion dans `main` ;
+7. Jarvis Live (`npm run package:win`, inchangé).
+
+Une correction de Live va dans `main`, puis est reportée dans `dev`. Le brouillon `release-test.sh` est à côté de `release.sh` et ne le modifie pas. Il refuse de publier tant que la version n’est pas `5.1.N-test.M`.
