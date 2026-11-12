@@ -75,3 +75,20 @@ L'échec déjà connu « Construire manuel : la carte reste obligatoire » (`win
 - **Testé en vrai** : PAS FAIT. Non testé sur le PC.
 
 Branches : `cursor/carnet-des-rates` (correction du carnet, déjà poussée), `cursor/lot-b-quotidien` (ce lot). Version 5.0.76. Non testé sur le PC.
+
+## Correction de la revue
+
+Quand l'imprimante est éteinte ou ne répond pas, la règle express dit « L'imprimante ne répond pas. » et le tour ne va pas au modèle. Si c'est « annule l'impression » qui échoue, elle ajoute « Coupe-la à la main si besoin. »
+
+## RAPPORT DE VÉRIFICATION
+
+- **Lancement** : pas de nouvel écran. Le typecheck desktop (node et web) couvre `printerReply`.
+- **Types** : `npm run typecheck` passe.
+- **Style** : `npm run lint` passe.
+- **Tests** : `npm test`. Cœur vert. Bureau : 801 tests passés, 6 ignorés, 1 échec connu (« Construire manuel », non modifié). Le faux Moonraker arrêté : la phrase est dite, aucun modèle n'est appelé.
+- **Secrets** : aucun. Pas de chemin personnel, pas de ville réelle.
+- **Fichiers** : `apps/desktop/src/main/index.ts`, `apps/desktop/src/main/quotidien/printerReply.ts`, le faux serveur, le rapport.
+- **Prêt à fusionner** : NON.
+- **Testé en vrai** : PAS FAIT. Non testé sur le PC.
+
+Version 5.0.76. Branche `cursor/lot-b-quotidien`. Non testé sur le PC.

@@ -72,9 +72,6 @@ import {
   checkRoverBaseUrl,
   createMessage,
   formatPrintStatus,
-  printerIntent,
-  SPEAKER_CANNOT_START,
-  startConfirmText,
   startPrintWatch,
   withMessages,
 } from '@jarvis/core';
@@ -103,6 +100,7 @@ import { KnowledgeStore } from './knowledge.js';
 import { ChatSession } from './session.js';
 import { CarnetHub } from './carnet/hub.js';
 import { createMorningBriefing } from './quotidien/morning.js';
+import { runPrinterReply } from './quotidien/printerReply.js';
 import { CarnetFile } from './carnet/file.js';
 import { appendTeamValidation, type TeamValidationPayload } from './orchestra/teamValidation.js';
 import { PhoneService } from './phone/service.js';
@@ -329,34 +327,7 @@ async function printerReply(input: {
   place: 'fenetre' | 'telephone' | 'enceinte';
   confirm: (summary: string) => Promise<boolean>;
 }): Promise<string | null> {
-  const intent = printerIntent(input.text);
-  if (!intent) return null;
-  if ((intent.kind === 'start' || intent.kind === 'resume') && input.place === 'enceinte') return SPEAKER_CANNOT_START;
-  let printer: MoonrakerClient;
-  try {
-    printer = new MoonrakerClient(settings.printer?.baseUrl ?? '', settings.printer?.apiKey ?? '');
-  } catch (error) {
-    return error instanceof Error ? error.message : 'Imprimante injoignable.';
-  }
-  if (intent.kind === 'status') return formatPrintStatus(await printer.status());
-  if (intent.kind === 'cancel') {
-    const status = await printer.cancel();
-    return status.state === 'cancelled' || status.state === 'standby' ? 'Impression annulée.' : `Pas annulée : ${status.state}.`;
-  }
-  if (intent.kind === 'pause') {
-    if (!(await input.confirm("Mettre l'impression en pause."))) return "Rien n'a été mis en pause.";
-    const status = await printer.pause();
-    return status.state === 'paused' ? 'Impression en pause.' : `Pas en pause : ${status.state}.`;
-  }
-  if (intent.kind === 'resume') {
-    if (!(await input.confirm("Reprendre l'impression."))) return "Rien n'a été repris.";
-    const status = await printer.resume();
-    return status.state === 'printing' ? 'Impression reprise.' : `Pas reprise : ${status.state}.`;
-  }
-  if (!intent.filename) return 'Quel fichier .gcode ?';
-  if (!(await input.confirm(startConfirmText(intent.filename)))) return "Rien n'a été lancé.";
-  const status = await printer.start(intent.filename);
-  return status.state === 'printing' ? `Impression lancée : ${intent.filename}.` : `Pas lancée : ${status.state}.`;
+  return runPrinterReply(input, () => new MoonrakerClient(settings.printer?.baseUrl ?? '', settings.printer?.apiKey ?? ''));
 }
 
 let printWatch: { stop(): void } | null = null;

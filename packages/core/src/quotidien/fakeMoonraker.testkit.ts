@@ -19,8 +19,11 @@ export class FakeMoonraker {
   files: { path: string; size: number }[] = [{ path: 'synthetique-test.gcode', size: 12 }];
   calls: string[] = [];
   apiKeys: string[] = [];
+  /** Vrai : l'imprimante est éteinte, aucun appel ne répond. */
+  stopped = false;
 
   fetch: typeof fetch = async (input, init) => {
+    if (this.stopped) throw new Error('imprimante éteinte');
     const url = new URL(String(input));
     const method = init?.method ?? 'GET';
     this.calls.push(`${method} ${url.pathname}`);
