@@ -54,6 +54,7 @@ const api: JarvisApi = {
   orchestra: {
     validateTeam: (input: TeamValidationInput) =>
       ipcRenderer.invoke(IpcChannel.orchestraValidateTeam, input),
+    routerScore: () => ipcRenderer.invoke(IpcChannel.orchestraRouterScore),
   },
   images: {
     open: (path: string) => ipcRenderer.invoke(IpcChannel.imagesOpen, path),

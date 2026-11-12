@@ -854,6 +854,15 @@ Branche `cursor/enceinte-raccordement`. Cahier `docs/specs/enceinte-raccordement
 
 ---
 
+## Bourse express et tri plus sûr (branche `cursor/bourse-et-tri`)
+
+Version inchangée. Pas de fusion dans `main`, pas de publication. `speaker/` et `firmware/` non touchés. Rapport `rapports/2026-11-11-bourse-et-tri.md`.
+
+- **Cours sans modèle** (`packages/core/src/market/stockIntent.ts`, chemin orchestre de `session.ts`, comme l’horloge). « le cours de SPIE », « cours de l’action Airbus », « combien vaut SPIE en bourse », « cotation de Nvidia », « le cours de SPIE sur Yahoo Finance », après « Jarvis, », deux noms. Pas l’or, l’euro, le bitcoin, « cours de maths / guitare / cuisine », « en cours », « au cours de », ni une phrase sans nom. `prefer: 'paris'` si la phrase dit française, français, Paris, CAC ou Euronext. Appel direct de `get_stock_quote` (journal d’audit), pas de cerveau, pas de trieur, pas de modèle d’équipe. Réponse fixe : « SPIE, Euronext Paris : 34,12 €, en hausse de 1,2 % aujourd’hui (17 h 35). » Pastille « Bourse · express ». Échec : « Je n’ai pas trouvé SPIE à la bourse. Tu peux me donner son symbole ? » Jamais un cours inventé. Le catalogue et la description de `get_stock_quote` pour le modèle ne changent pas.
+- **Bonne entreprise** (`chooseListing`, Yahoo). Avec `prefer: 'paris'`, `.PA` / `PAR` passe devant. Sans indication, si plusieurs actions et une est à Paris : « J’ai pris SPIE (Paris). Tu voulais peut-être SPI Energy (Nasdaq) ? » « Apple » donne toujours AAPL.
+- **Règles avant le modèle** (`looksLikeExpressWeb`). Équipe web : Yahoo, Yahoo Finance, sur internet, cherche, sur le web, Wikipédia, cherche sur Google (`looksLikeGoogleIntent` reste faux pour cette phrase). Équipe Google : seulement mails, agenda, Drive, Docs, Sheets. « Google » seul et « finance » ne mènent pas à l’équipe Google. Correction (« non », « je t’ai dit », « passe par », « pas Google ») juste après un tour : la phrase repasse par ces règles ; si aucune ne la prend, le cerveau reçoit « l’équipe X n’a pas su répondre au tour précédent ».
+- **Score du trieur** (Réglages → Chef d’orchestre, à côté du trieur). Dernier banc s’il existe (`trieur-dernier-score.json` dans userData, sinon l’examen des phrases Jarvis dans `rapports`). Exemple : « Trieur : 42 % de bonnes équipes sur tes phrases. Le cerveau : 70 %. » Avis : « Pour l’instant, garde le cerveau. » Rien n’est activé tout seul. `parseSettings({})` ne gagne aucune clé.
+
 ## Ce qu’il ne faut pas casser
 
 - **Le Tool Manager comme seul passage** vers le système. Pas d’`exec` / `fs` / `shell.openExternal` déclenché par le renderer (exceptions : un lien `http(s)` cliqué, ouvert dans le navigateur par `window.ts` ; l’URI fixe `ms-settings:privacy-microphone`, sans paramètre venu du renderer ; 5.0.63 : les deux lectures fixes `tailscale status --json` et `tailscale serve status --json`, sans paramètre venu du renderer).

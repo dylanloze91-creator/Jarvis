@@ -108,6 +108,12 @@ export {
   validationPathForHow,
   type ValidationPath,
 } from './trieur/validationSettings.js';
+export {
+  pickLatestRouterScore,
+  routerScoreFromBench,
+  type MeasuredBench,
+  type RouterScoreLine,
+} from './trieur/score.js';
 export * from './agent/persona.js';
 
 export * from './search/types.js';
@@ -255,6 +261,16 @@ export {
 export { SITEBLOCK_SYSTEM_PROMPT_FRAGMENT, withSiteBlockPrompt } from './siteblock/prompt.js';
 
 export * from './market/types.js';
+export { chooseListing, listedInParis, type ListingCandidate, type ListingChoice } from './market/chooseListing.js';
+export { detectStockRequest, type StockRequest } from './market/stockIntent.js';
+export {
+  formatStockSpoken,
+  readStockOutcomes,
+  speakStockOutcomes,
+  spokenParisTime,
+  stockNotFoundReply,
+  type StockOutcomeRow,
+} from './market/stockReply.js';
 export {
   YahooFinanceMarketDataProvider,
   yahooFinanceDescriptor,

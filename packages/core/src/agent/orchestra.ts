@@ -5,9 +5,13 @@
  * 1. **Calcul** : une opération écrite en chiffres est calculée par Jarvis, sans modèle
  *    (un LLM calcule mal de tête ; ici le résultat est exact).
  * 2. **Express** : les règles déjà connues de Jarvis (Spotify, YouTube, actualité, Google,
- *    mémoire, blocage de sites) désignent l'équipe sans appeler de modèle.
+ *    mémoire, blocage de sites, Yahoo, « cherche », Wikipédia) désignent l'équipe
+ *    sans appeler de modèle. La bourse (« le cours de SPIE ») est décidée encore avant,
+ *    dans la session, et n'appelle aucun modèle.
  * 3. **Cerveau** : le modèle cerveau lit la demande (et la fin de la conversation) et
  *    répond par le nom d'une équipe. Réponse illisible : Jarvis répond comme avant.
+ *    Une correction (« non », « passe par »…) qui ne tombe sous aucune règle lui dit
+ *    que l'équipe précédente n'a pas su répondre.
  *
  * L'équipe choisie répond avec son modèle et seulement ses outils.
  */
@@ -268,8 +272,58 @@ export function expressTeam(input: ExpressInput): OrchestraTeam | null {
     const images = pick('images');
     if (images) return images;
   }
+  // Avant le modèle : Yahoo, une recherche, Wikipédia. « cherche sur Google » n'est pas Gmail
+  // (`looksLikeGoogleIntent` reste faux) et part ici, ou via la recherche web juste dessous.
+  if (looksLikeExpressWeb(text)) return pick('web');
   if (detectCurrentInfoIntent(text, input.now ?? new Date()) || looksLikeWebResearchIntent(text)) return pick('web');
   return null;
+}
+
+/**
+ * Mots qui envoient à l'équipe Internet sans modèle.
+ * « cherche » seul ne suffit pas : suivi de « sur internet », « sur le web »,
+ * « sur Google » ou « en ligne », ou bien une recherche sans possessif ni
+ * fichier, dossier, document, photo, PC, ordinateur, disque ou mail.
+ * Sinon la règle ne dit rien. « Google » seul et « finance » ne vont pas à Google.
+ */
+export function looksLikeExpressWeb(text: string): boolean {
+  const folded = text
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '');
+  if (/\byahoo(?:\s+finance)?\b/.test(folded)) return true;
+  if (/\bsur internet\b/.test(folded)) return true;
+  if (/\bsur le web\b/.test(folded)) return true;
+  if (/\bwikipedia\b/.test(folded)) return true;
+  return chercheGoesToWeb(folded);
+}
+
+function chercheGoesToWeb(folded: string): boolean {
+  const at = folded.search(/\bcherche\b/);
+  if (at < 0) return false;
+  const after = folded.slice(at);
+  if (/\bsur internet\b/.test(after) || /\bsur le web\b/.test(after) || /\bsur google\b/.test(after) || /\ben ligne\b/.test(after)) {
+    return true;
+  }
+  if (/\b(?:mon|ma|mes|ton|ta|tes|notre|votre)\b/.test(folded)) return false;
+  if (/\b(?:fichiers?|dossiers?|documents?|photos?|pc|ordinateurs?|disques?|e-?mails?|mails?)\b/.test(folded)) return false;
+  return true;
+}
+
+/** « non », « je t'ai dit », « passe par », « pas Google » : la phrase repasse par les règles. */
+export function isTeamCorrection(text: string): boolean {
+  const folded = text
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .replace(/[’']/g, "'");
+  if (!folded) return false;
+  return /^(?:non|nan)\b/.test(folded) || /\bje t'ai dit\b/.test(folded) || /\bpasse par\b/.test(folded) || /\bpas google\b/.test(folded);
+}
+
+/** Ajouté au cerveau quand aucune règle ne reprend une correction. */
+export function teamMissedNotice(team: string): string {
+  return `l'équipe ${team} n'a pas su répondre au tour précédent`;
 }
 
 /* ------------------------------------------------------------------ */
@@ -282,12 +336,13 @@ export function routerSystemPrompt(available: readonly OrchestraTeam[]): string 
     'Tu ne réponds jamais à la demande : tu choisis l’équipe qui va la traiter.',
     'Équipes :',
     ...available.map((team) => `- ${team} : ${TEAM_SPECS[team].description}`),
+    'L’équipe google : seulement les mails, l’agenda, Drive, Docs ou Sheets. Le mot « Google » seul, ou « finance », n’est pas cette équipe.',
     'Réponds par un seul mot : le nom de l’équipe, sans rien d’autre.',
   ].join('\n');
 }
 
 /** Demande montrée au cerveau : les derniers échanges (pour « et ferme-le »), puis la demande. */
-export function routerUserPrompt(text: string, history: readonly ChatMessage[]): string {
+export function routerUserPrompt(text: string, history: readonly ChatMessage[], notice?: string): string {
   const recent = history
     .filter((message) => message.role === 'user' || message.role === 'assistant')
     .filter((message) => message.content.trim())
@@ -296,7 +351,12 @@ export function routerUserPrompt(text: string, history: readonly ChatMessage[]):
       const content = message.content.replace(/\s+/g, ' ').trim();
       return `${message.role === 'user' ? 'Utilisateur' : 'Jarvis'} : ${content.length > 240 ? `${content.slice(0, 240)}…` : content}`;
     });
-  return [recent.length ? `Conversation récente :\n${recent.join('\n')}\n` : '', `Demande : ${text.trim()}`, 'Équipe :']
+  return [
+    recent.length ? `Conversation récente :\n${recent.join('\n')}\n` : '',
+    notice?.trim() ?? '',
+    `Demande : ${text.trim()}`,
+    'Équipe :',
+  ]
     .filter(Boolean)
     .join('\n');
 }
