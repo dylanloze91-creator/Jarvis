@@ -127,7 +127,12 @@ export {
   parseDuckDuckGoLite,
   unwrapDuckDuckGoHref,
 } from './search/providers/duckduckgo.js';
-export { BingSearchProvider, bingDescriptor, parseBingHtml, unwrapBingHref } from './search/providers/bing.js';
+export {
+  BingSearchProvider,
+  bingDescriptor,
+  parseBingHtml,
+  unwrapBingHref,
+} from './search/providers/bing.js';
 export {
   BingNewsRssProvider,
   GoogleNewsRssProvider,
@@ -388,7 +393,11 @@ export {
 } from './speech/piperAssets.js';
 export { normalizePiperStdinText } from './speech/piperInput.js';
 export { playPiperPartsWithPrefetch } from './speech/piperStream.js';
-export { PIPER_VOICE_CREDITS, PIPER_ENGINE_CREDITS, type PiperVoiceCreditLine } from './speech/piperCredits.js';
+export {
+  PIPER_VOICE_CREDITS,
+  PIPER_ENGINE_CREDITS,
+  type PiperVoiceCreditLine,
+} from './speech/piperCredits.js';
 export { concatFloat32, encodeWav, decodeWav, type DecodedWav } from './speech/wav.js';
 export {
   isWhisperHallucination,
@@ -511,11 +520,7 @@ export {
   type AudioInputOption,
   type MicrophoneChoice,
 } from './speech/audioInput.js';
-export {
-  CircularPcmBuffer,
-  WakeTriggerGate,
-  slidingWindows,
-} from './speech/wakeBuffer.js';
+export { CircularPcmBuffer, WakeTriggerGate, slidingWindows } from './speech/wakeBuffer.js';
 export {
   WakeWordDetector,
   SpeechBurstDetector,
@@ -606,3 +611,4 @@ export * from './health/index.js';
 export * from './backup/index.js';
 export * from './vault/index.js';
 export * from './privacy/index.js';
+export * from './carnet/index.js';
