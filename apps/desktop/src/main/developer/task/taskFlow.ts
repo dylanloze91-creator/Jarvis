@@ -254,18 +254,15 @@ export class TaskRun extends TaskRunBase {
       );
     }
     if (request.toolName === 'dev_review_diff') return true;
-    // Les libellés d’outils fichier (ex. « Réécrire src/game.ts (12 lignes) ») ne sont
-    // pas des commandes shell : classifyCommand les refuse à cause des parenthèses.
-    if (
-      call.name === 'dev_install_sandbox' ||
-      call.name === 'dev_run_tests' ||
-      FILE_TOOL_NAMES.has(call.name)
-    ) {
-      this.state.planApproved.push({
-        tool: call.name,
-        target: path || String(call.arguments.suite ?? ''),
-        at: Date.now(),
-      });
+    // 5.0.78 : un fichier n’est écrit sans carte que si le plan validé le couvre
+    // (décision 9), en mode direct comme ailleurs. Hors plan (src/rules.ts, mission
+    // d’essai du 12 novembre 2026) ou protégé : carte avec le diff, et « Validé par
+    // le plan » n’est inscrit au journal que si le plan couvre vraiment le fichier.
+    if (FILE_TOOL_NAMES.has(call.name)) return super.decide(request, signal);
+    // Dépendances et tests de la copie isolée : sans carte en mode direct (5.0.6),
+    // mais le journal le dit tel quel, pas « validé par le plan ».
+    if (call.name === 'dev_install_sandbox' || call.name === 'dev_run_tests') {
+      this.directNote = 'Mode direct : sans carte';
       return true;
     }
     const firstLine = (request.command ?? '').split('\n')[0] ?? '';
