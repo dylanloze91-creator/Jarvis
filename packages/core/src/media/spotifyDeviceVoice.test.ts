@@ -63,6 +63,21 @@ describe('spotifyDeviceVoice', () => {
     expect(interpretSpotifyDeviceAnswer('peu importe', names)).toEqual({ kind: 'usual' });
     expect(interpretSpotifyDeviceAnswer("comme d'habitude", names)).toEqual({ kind: 'usual' });
     expect(interpretSpotifyDeviceAnswer('euh ailleurs', names)).toEqual({ kind: 'fuzzy' });
+    // 5.0.77 : réponse écrite par Whisper comme il l'entend, ou début du nom seulement.
+    const heard = ['Phantom 98 dB', 'Chambre dylanloze 2'];
+    expect(interpretSpotifyDeviceAnswer('fantôme', heard)).toEqual({ kind: 'named', name: 'Phantom 98 dB' });
+    expect(interpretSpotifyDeviceAnswer('Fantôme.', heard)).toEqual({ kind: 'named', name: 'Phantom 98 dB' });
+    expect(interpretSpotifyDeviceAnswer('la phantom', heard)).toEqual({ kind: 'named', name: 'Phantom 98 dB' });
+    expect(interpretSpotifyDeviceAnswer('sur la Phantom 98 dB', heard)).toEqual({ kind: 'named', name: 'Phantom 98 dB' });
+    expect(interpretSpotifyDeviceAnswer('la chambre', heard)).toEqual({ kind: 'named', name: 'Chambre dylanloze 2' });
+    expect(interpretSpotifyDeviceAnswer('dévialé', ['Devialet'])).toEqual({ kind: 'named', name: 'Devialet' });
+    // Deux appareils qui commencent pareil : un seul mot ne suffit pas.
+    expect(interpretSpotifyDeviceAnswer('la phantom', ['Phantom salon', 'Phantom cuisine'])).toEqual({ kind: 'fuzzy' });
+    expect(interpretSpotifyDeviceAnswer('la phantom cuisine', ['Phantom salon', 'Phantom cuisine'])).toEqual({
+      kind: 'named',
+      name: 'Phantom cuisine',
+    });
+    expect(interpretSpotifyDeviceAnswer('la cuisine', heard)).toEqual({ kind: 'fuzzy' });
     expect(interpretSpotifyDeviceAnswer('quelle heure est-il ?', names)).toEqual({ kind: 'unrelated' });
     expect(isSpotifyHaltPhrase('stop')).toBe(true);
     expect(isSpotifyHaltPhrase('pause')).toBe(true);

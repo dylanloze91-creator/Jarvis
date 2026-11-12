@@ -204,6 +204,47 @@ function foldDeviceWords(text: string): string {
 }
 
 /**
+ * Clé « à l'oreille » d'un mot, pour comparer ce que Whisper écrit à un nom d'appareil :
+ * « fantôme » et « Phantom » → « fantom », « dévialé » et « Devialet » → « devial ».
+ * Accents retirés, ph → f, qu/ck → k, y → i, lettres doublées réduites, lettres finales
+ * muettes (e, s, t) retirées. Les chiffres (« 98 dB ») ne comptent pas.
+ */
+function soundKey(word: string): string {
+  return word
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .toLowerCase()
+    .replace(/[^a-z]/g, '')
+    .replace(/ph/g, 'f')
+    .replace(/qu|ck/g, 'k')
+    .replace(/y/g, 'i')
+    .replace(/(.)\1+/g, '$1')
+    .replace(/[est]+$/, '');
+}
+
+function soundKeys(text: string): string[] {
+  return foldDeviceWords(text)
+    .split(' ')
+    .map(soundKey)
+    .filter((key) => key.length >= 3);
+}
+
+/**
+ * 5.0.77 : la réponse dictée ne reprend que le début du nom (« la Phantom » pour « Phantom 98 dB »)
+ * et Whisper l'écrit comme il l'entend (« fantôme »). Un appareil est reconnu si les mots entendus
+ * sonnent comme le début de son nom, et s'il est le seul dans ce cas.
+ */
+function deviceHeardAs(answer: string, deviceNames: readonly string[]): string | null {
+  const heard = soundKeys(answer);
+  if (heard.length === 0) return null;
+  const matches = deviceNames.filter((name) => {
+    const keys = soundKeys(name);
+    return keys.length >= heard.length && heard.every((key, index) => keys[index] === key);
+  });
+  return matches.length === 1 ? matches[0]! : null;
+}
+
+/**
  * Réponse à « Devialet ou PC ? », sans « Jarvis ». Une phrase qui n'y répond
  * pas (autre demande, question) reste `unrelated` : la recherche attend encore.
  */
@@ -226,6 +267,8 @@ export function interpretSpotifyDeviceAnswer(
     if (!folded || folded.length < 2) continue;
     if (bare === folded || body === folded) return { kind: 'named', name };
   }
+  const heard = deviceHeardAs(bare, deviceNames);
+  if (heard) return { kind: 'named', name: heard };
 
   const words = body.split(' ').filter(Boolean);
   if (words.length === 0 || words.length > 6) return { kind: 'unrelated' };
