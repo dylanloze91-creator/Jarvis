@@ -10,6 +10,23 @@ L'équipe de développeurs de Jarvis compte 7 rôles, tenus par **2 cerveaux** :
 
 Aujourd'hui, jarvis-coder v1 ne sait faire qu'une chose : écrire du code à partir d'un énoncé (79/87 à l'examen, contre 69 pour sa base). La v2 doit savoir les quatre.
 
+## Résultat du banc du 12 novembre (à lire avant tout le reste)
+
+Banc `lab:compare`, catalogue d'évaluation, 29 missions × 3 passages, RTX 2060 (`rapports/2026-11-12-banc-equipe-dev.md`, branche `claude/banc-equipe-dev`) :
+
+| Modèle | Score | Niveau 3 | Appels illisibles | Jetons/s |
+| --- | --- | --- | --- | --- |
+| qwen2.5-coder:7b (base de la v1) | 69/87 | 9/12 | 3 | 17,3 |
+| jarvis-coder (v1) | 79/87 | 9/12 | 0 | 17,8 |
+| Seed-Coder-8B | 75/87 | 9/12 | 0 | 14,2 |
+| **Ornith-1.0-9B Q4_K_M** (MIT) | **84/87** | **12/12** | 0 | 13,2 |
+
+Ce qu'on en tire :
+
+1. **Base de la v2 : Ornith-1.0-9B**, si la chaîne d'entraînement le supporte. C'est une architecture Qwen3.5 : vérifie à la source la version de `transformers`, le gabarit de chat avec outils, `peft` sur ses couches et la conversion `llama.cpp`. Si la chaîne actuelle (transformers 4.57.6, llama.cpp b12032) ne le prend pas, propose les versions à épingler, avec un essai `--dry-run` sur un petit modèle de la même famille. Sinon, repli sur Qwen2.5-Coder-7B. L'option `--base` reste le seul endroit où la base est choisie.
+2. **L'examen « écrire » est presque saturé.** Ornith fait 84/87, autant que le 30B, et la seule mission ratée est un piège connu (`l2-need-name`). Il ne permettra plus de voir un progrès sur cette compétence. **Ne modifie pas** le catalogue d'évaluation (les mesures deviendraient incomparables). Ajoute plutôt un **second examen « écrire », plus dur et tenu à l'écart** (`evalCatalogHard()` : niveau 3, plusieurs fichiers, cas limites), construit comme le premier (solution de référence jamais entraînée, contrôles du catalogue). Les examens « corriger », « tester » et « relire » (point 4) deviennent la vraie mesure de la v2.
+3. **Seuil pour adopter la v2** : meilleure que la base Ornith sur au moins deux des quatre compétences, et aucune perte de plus de 2 missions sur « écrire ».
+
 ## La fiche
 
 | Compétence | Rôle dans Jarvis Développeur | L'exemple montre | Vérification sans modèle | Source |
