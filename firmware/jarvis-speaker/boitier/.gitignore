@@ -1,0 +1,4 @@
+*.stl
+*.npz
+cotes.json
+[1-6]-*.png
