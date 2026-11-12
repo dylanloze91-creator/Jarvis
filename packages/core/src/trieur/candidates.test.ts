@@ -12,11 +12,19 @@ describe('trieur candidats modèle de base', () => {
     }
   });
 
-  it('fiches Qwen3 base sur Hugging Face : Apache-2.0 (vérif en ligne 2026-11-03)', async () => {
+  it('fiches Qwen3 base sur Hugging Face : Apache-2.0 (vérif en ligne 2026-11-03)', async (context) => {
     const urls = TRIEUR_BASE_CANDIDATES.filter((c) => c.id.startsWith('qwen3')).map((c) => c.licenseUrl);
     expect(urls).toHaveLength(2);
     for (const url of urls) {
-      const response = await fetch(url);
+      let response: Response;
+      try {
+        response = await fetch(url, { signal: AbortSignal.timeout(15_000) });
+      } catch {
+        // Hugging Face injoignable (PC hors ligne, réseau filtré) : la vérification en ligne est
+        // ignorée, pas ratée. Une réponse reçue avec un autre texte reste un échec.
+        context.skip();
+        return;
+      }
       expect(response.ok, url).toBe(true);
       const text = await response.text();
       expect(text).toContain('Apache License');
