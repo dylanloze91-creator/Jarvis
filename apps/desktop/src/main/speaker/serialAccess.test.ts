@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { allowPermissionCheck } from '../mediaPermissions.js';
-import { bindSerialAccess, type SerialSessionLike } from './serialAccess.js';
+import { bindSerialAccess, type PermissionCheckHandler, type SerialSessionLike } from './serialAccess.js';
 
 describe('accès série', () => {
   it('garde la règle du micro et n’accorde le port série qu’à Jarvis', () => {
-    type Check = (webContents: unknown, permission: string, mediaType?: string) => boolean;
+    // Le faux de session suit la vraie signature d'Electron :
+    // (webContents, permission, requestingOrigin, details), `mediaType` dans `details`.
+    type Check = PermissionCheckHandler;
     type Select = (event: { preventDefault(): void }, ports: Array<{ portId: string; usbVendorId?: number; portName?: string }>, webContents: unknown, callback: (portId: string) => void) => void;
     const seen: {
       check: Check | null;
@@ -32,13 +34,19 @@ describe('accès série', () => {
     );
     const check = seen.check;
     expect(check).toBeTruthy();
-    expect(check?.(ours, 'media', 'audio')).toBe(allowPermissionCheck('media', 'audio'));
-    expect(check?.(ours, 'media', 'video')).toBe(allowPermissionCheck('media', 'video'));
-    expect(check?.(ours, 'media')).toBe(allowPermissionCheck('media'));
-    expect(check?.(ours, 'clipboard-sanitized-write')).toBe(true);
-    expect(check?.(ours, 'serial')).toBe(true);
-    expect(check?.(other, 'serial')).toBe(false);
-    expect(check?.(other, 'media', 'audio')).toBe(true);
+    const origin = 'file://';
+    expect(check?.(ours, 'media', origin, { mediaType: 'audio' })).toBe(true);
+    // La caméra reste refusée : avant la retouche, l'origine était lue à la place de `mediaType`.
+    expect(check?.(ours, 'media', origin, { mediaType: 'video' })).toBe(false);
+    expect(check?.(ours, 'media', 'video', { mediaType: 'audio' })).toBe(true);
+    expect(check?.(ours, 'media', origin, { mediaType: 'unknown' })).toBe(allowPermissionCheck('media', 'unknown'));
+    expect(check?.(ours, 'media', origin, {})).toBe(allowPermissionCheck('media'));
+    expect(check?.(ours, 'media', origin)).toBe(allowPermissionCheck('media'));
+    expect(check?.(ours, 'clipboard-sanitized-write', origin, {})).toBe(true);
+    expect(check?.(ours, 'serial', origin, {})).toBe(true);
+    expect(check?.(other, 'serial', origin, {})).toBe(false);
+    expect(check?.(other, 'media', origin, { mediaType: 'audio' })).toBe(true);
+    expect(check?.(other, 'media', origin, { mediaType: 'video' })).toBe(false);
     expect(seen.device?.({ deviceType: 'serial', origin: 'file:///Jarvis/index.html' })).toBe(true);
     expect(seen.device?.({ deviceType: 'serial', origin: 'https://exemple.test' })).toBe(false);
     expect(seen.device?.({ deviceType: 'usb', origin: 'file:///Jarvis/index.html' })).toBe(false);
