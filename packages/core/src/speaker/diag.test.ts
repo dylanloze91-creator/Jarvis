@@ -32,6 +32,8 @@ describe('diagnostic', () => {
     const mdns = script.split('\n').find((line) => line.includes("mDNS"));
     expect(mdns).toContain('5353');
     expect(mdns).not.toContain('$Port');
+    // Une règle du bon nom déjà là mais désactivée (12 novembre 2026) est réactivée, pas ignorée.
+    expect(script).toContain('Enable-NetFirewallRule -DisplayName $Name');
   });
 
   it('lit le JSON figé du réseau et ne vise que la maison', () => {
