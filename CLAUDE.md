@@ -859,6 +859,8 @@ Branche `cursor/enceinte-raccordement`. Cahier `docs/specs/enceinte-raccordement
 - **Le Tool Manager comme seul passage** vers le système. Pas d’`exec` / `fs` / `shell.openExternal` déclenché par le renderer (exceptions : un lien `http(s)` cliqué, ouvert dans le navigateur par `window.ts` ; l’URI fixe `ms-settings:privacy-microphone`, sans paramètre venu du renderer ; 5.0.63 : les deux lectures fixes `tailscale status --json` et `tailscale serve status --json`, sans paramètre venu du renderer).
 - **Preload étroit** (`contextIsolation: true`, `nodeIntegration: false`). Pas d’`ipcRenderer` brut dans React.
 - **`packages/core` sans Electron.**
+- **Lot B** : `briefing`, `notes`, `routines` et `printer` sont facultatifs, sans défaut Zod. Leurs outils et les équipes Tâches et Impression restent hors du catalogue tant que l'utilisateur ne les a pas activés. Une routine n'accepte pas `run_command`.
+- **Imprimante** : adresse locale seulement (`checkRoverBaseUrl`). Annuler n'attend pas un clic. Une enceinte ne lance pas d'impression.
 - **Clés uniquement dans `settings.json`**, jamais d’env, jamais dans git (`.gitignore` ignore `.env`).
 - **`forceConfirm`** sur `run_command`, `delete_file`, mutations SiteBlock, indexation/effacement mémoire. `ConfirmationCard` doit montrer `command` tel quel pour le shell.
 - **Protocole `jarvis-oww:` + extraResources** (`voice-assets/`) pour le runtime ONNX, Whisper, openWakeWord et Vosk. Ne pas remettre les ONNX dans asar ni charger transformers depuis jsDelivr. Ne pas bundler `onnxruntime-node` / `@huggingface/transformers` dans l’exe (`electron-builder.yml`).
@@ -962,3 +964,14 @@ Le carnet **observe**. Il ne change ni ce que Jarvis envoie au modèle, ni les r
 - `chat-unchanged`, `ollama-unchanged`, `orchestra-session`, `profiles/jarvis` restent verts sans régénérer les `__golden__`. `parseSettings({})` ne gagne aucune clé.
 
 À ne pas casser : le carnet ne s'ajoute pas au prompt ni au catalogue ; une phrase normale envoie la même requête au modèle, carnet actif ou non.
+
+## Lot B — au quotidien (branche `cursor/lot-b-quotidien`, version inchangée)
+
+Pas de fusion dans `main`, pas de publication. Rapport : `rapports/2026-11-12-lot-b-quotidien.md`. Base : `origin/cursor/carnet-des-rates`. `origin/main` est encore en 5.0.76 : la bourse (5.0.77) n'y est pas, elle n'a pas été fusionnée.
+
+Tout est coupé tant que l'utilisateur ne l'active pas (Réglages). `parseSettings({})` ne gagne aucune clé. Le catalogue et le prompt de chat ne changent pas sans ces réglages.
+
+- **Briefing** (Réglages → Moi). « Mon briefing », « quoi de neuf ce matin ? », et « bonjour » une seule fois dans la plage. Gabarits : date, météo Open-Meteo, agenda du jour si Google est branché, notes en attente. Version courte sur une enceinte. « Bonjour » l'après-midi reste une salutation.
+- **Notes** (Réglages → Moi). `note_ajouter`, `notes_lister`, `note_cocher`, `note_effacer`. Fichier `userData/notes.json`. L'effacement confirme sur le PC ou le téléphone ; une enceinte ne l'efface pas.
+- **Routines** (Réglages → Services). Découpage par règles, carte de résumé, rien sans « C'est bon ». Pas de commande libre. L'équipe Tâches n'existe que si une routine est enregistrée. Une étape ratée est dite ; la suivante continue, sauf si elle en dépend.
+- **Imprimante** (Réglages → Services). Client Moonraker dans `packages/core`, réseau local seulement. Lancer confirme et rappelle de vérifier le plateau. Annuler n'attend pas. Une enceinte ne lance pas. Fin d'impression dite une seule fois.
