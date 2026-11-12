@@ -168,6 +168,8 @@ export const IpcChannel = {
   questionnaireRestore: 'questionnaire:restore',
   editionState: 'edition:state',
   editionClaim: 'edition:claim',
+  editionCopyOffer: 'edition:copy-offer',
+  editionCopy: 'edition:copy',
   phoneStatus: 'phone:status',
   phoneSetEnabled: 'phone:set-enabled',
   phoneStartPairing: 'phone:start-pairing',
@@ -781,6 +783,12 @@ export interface EditionClaimResult {
   settings?: Settings;
 }
 
+export interface LiveCopyResult {
+  ok: boolean;
+  sentence: string;
+  guide: string | null;
+}
+
 export interface JarvisApi {
   chat: {
     send(input: SendChatInput): Promise<void>;
@@ -1043,5 +1051,7 @@ export interface JarvisApi {
     state(): Promise<EditionView>;
     claim(name: ReservedName): Promise<EditionClaimResult>;
     onClaimed(listener: (result: EditionClaimResult) => void): () => void;
+    copyOffer(): Promise<{ ask: boolean }>;
+    copy(choice: 'yes' | 'empty'): Promise<LiveCopyResult>;
   };
 }

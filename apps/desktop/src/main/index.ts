@@ -130,7 +130,8 @@ import { LocalLearningController } from './learning/controller.js';
 import { ListeningIndicatorWindow } from './listeningIndicator.js';
 import { edition } from './edition.js';
 import { portIsFree } from './portFree.js';
-import { readReservations, writeReservations } from './reservations.js';
+import { markCopyAsked, readEditionDisk, readReservations, writeReservations } from './reservations.js';
+import { copyInstalledLive } from './liveCopy.js';
 import { createOverlayWindow, pickSpeakerPort, type OverlayWindow } from './window.js';
 import {
   currentVoiceAssetsRoot,
@@ -946,6 +947,40 @@ function registerIpc(): void {
   ipcMain.handle(IpcChannel.settingsGet, () => ({ settings: settingsForWindow(), status: session.status() }));
   ipcMain.handle(IpcChannel.editionState, () => editionView());
   ipcMain.handle(IpcChannel.editionClaim, (_event, name: unknown) => claimReserved(name));
+  ipcMain.handle(IpcChannel.editionCopyOffer, async () => {
+    if (edition().id !== 'test') return { ask: false };
+    const disk = await readEditionDisk(app.getPath('userData'));
+    return { ask: disk.copyAsked !== true };
+  });
+  ipcMain.handle(IpcChannel.editionCopy, async (_event, choice: unknown) => {
+    if (edition().id !== 'test') {
+      return { ok: false, sentence: 'Jarvis Live ne copie pas ses propres réglages.', guide: null };
+    }
+    const userData = app.getPath('userData');
+    if (choice === 'empty') {
+      await markCopyAsked(userData);
+      return { ok: true, sentence: 'Jarvis Test part de zéro.', guide: null };
+    }
+    if (choice !== 'yes') return { ok: false, sentence: 'Choix inconnu.', guide: null };
+    try {
+      const report = await copyInstalledLive(userData);
+      await markCopyAsked(userData);
+      const sentence =
+        report.copied.length === 0
+          ? 'Je n’ai pas trouvé de réglages dans Jarvis Live.'
+          : report.secrets === 'reconnect'
+            ? 'Réglages copiés. Jarvis Test va redémarrer.'
+            : 'Réglages copiés depuis Jarvis Live. Jarvis Test va redémarrer.';
+      setTimeout(() => {
+        app.relaunch();
+        app.exit(0);
+      }, 700);
+      return { ok: true, sentence, guide: report.guide };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return { ok: false, sentence: message, guide: null };
+    }
+  });
   ipcMain.handle(IpcChannel.settingsSet, async (_event, patch: Partial<Settings>) => {
     const edited = applySecretEdit(settings, patch, await vault.load(), vault.encryptionAvailable());
     const next = edited.settings;

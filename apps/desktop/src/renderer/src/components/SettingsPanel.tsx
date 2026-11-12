@@ -17,6 +17,38 @@ import { Lock } from 'lucide-react';
 import { AuditPanel } from '@/components/AuditPanel';
 import { ReservedGate } from '@/components/ReservedGate';
 import { Button } from '@/components/ui/button';
+import { ConfirmButton } from '@/components/ui/confirmButton';
+
+function CopyFromLive() {
+  const [visible, setVisible] = useState(false);
+  const [sentence, setSentence] = useState<string | null>(null);
+  const [guide, setGuide] = useState<string | null>(null);
+  useEffect(() => {
+    void window.jarvis.edition?.state().then((state) => setVisible(state.id === 'test'));
+  }, []);
+  if (!visible) return null;
+  return (
+    <div className="mt-3 flex flex-col gap-2 rounded-lg border border-white/10 px-3 py-2.5">
+      <p className="text-sm text-slate-200">Recopier depuis Jarvis Live</p>
+      <p className="text-xs leading-relaxed text-slate-400">
+        Remplace les réglages de Test par ceux de Live. L’historique de Test reste ici. Live n’est pas
+        modifié. Jarvis Test redémarre ensuite.
+      </p>
+      {sentence ? <p className="text-xs text-orange-100">{sentence}</p> : null}
+      {guide ? <p className="text-xs text-slate-300">{guide}</p> : null}
+      <ConfirmButton
+        label="Recopier depuis Live"
+        confirmLabel="Oui, recopier"
+        onConfirm={() => {
+          void window.jarvis.edition?.copy('yes').then((result) => {
+            setSentence(result.sentence);
+            setGuide(result.guide);
+          });
+        }}
+      />
+    </div>
+  );
+}
 import { Field, Input, Select, Textarea, Toggle } from '@/components/ui/field';
 import { OllamaSettingsSection } from '@/components/OllamaSettings';
 import { OrchestraSettingsSection } from '@/components/OrchestraSettings';
@@ -662,6 +694,7 @@ export function SettingsPanel({
                 <Input value={draft.hotkey} onChange={(event) => patch({ hotkey: event.target.value })} />
               </Field>
             </ReservedGate>
+            <CopyFromLive />
             <Toggle
               label="Rester ouverte"
               hint="Visible si tu cliques ailleurs (masquage : raccourci, Échap, fermer)."

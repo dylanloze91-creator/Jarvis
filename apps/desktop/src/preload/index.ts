@@ -15,6 +15,7 @@ import {
   type SpeakerTranscribeResult,
   type TeamValidationInput,
   type EditionClaimResult,
+  type LiveCopyResult,
   type ReservedName,
   type UpdateState,
   type VoiceSpeakInput,
@@ -293,6 +294,8 @@ const api: JarvisApi = {
       claimListeners.add(listener);
       return () => claimListeners.delete(listener);
     },
+    copyOffer: () => ipcRenderer.invoke(IpcChannel.editionCopyOffer),
+    copy: (choice: 'yes' | 'empty') => ipcRenderer.invoke(IpcChannel.editionCopy, choice) as Promise<LiveCopyResult>,
   },
   machine: {
     status: () => ipcRenderer.invoke(IpcChannel.machineStatus),
