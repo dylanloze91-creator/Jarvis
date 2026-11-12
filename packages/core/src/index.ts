@@ -346,9 +346,13 @@ export {
 export { classifyUpdateError } from './update/errorClassifier.js';
 export {
   compareSemver,
+  compareTestVersion,
   githubLatestYmlUrl,
+  githubTestYmlUrl,
+  highestTestTag,
   interpretLatestYmlResponse,
   parseLatestYmlVersion,
+  testTagsFromAtom,
   GITHUB_UPDATES_OWNER,
   GITHUB_UPDATES_REPO,
   type UpdateFeedInterpretation,
@@ -593,6 +597,8 @@ export {
   type SpokenTurnDecision,
 } from './speech/conversationSession.js';
 export * from './google/index.js';
+export * from './edition.js';
+export * from './editionCopy.js';
 export * from './phone/phone.js';
 export * from './speaker/speaker.js';
 export * from './speaker/manifest.js';

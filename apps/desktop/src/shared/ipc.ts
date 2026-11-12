@@ -167,6 +167,10 @@ export const IpcChannel = {
   questionnaireSet: 'questionnaire:set',
   questionnaireApply: 'questionnaire:apply',
   questionnaireRestore: 'questionnaire:restore',
+  editionState: 'edition:state',
+  editionClaim: 'edition:claim',
+  editionCopyOffer: 'edition:copy-offer',
+  editionCopy: 'edition:copy',
   phoneStatus: 'phone:status',
   phoneSetEnabled: 'phone:set-enabled',
   phoneStartPairing: 'phone:start-pairing',
@@ -763,6 +767,29 @@ export interface TeamValidationInput {
   path: 'express' | 'cerveau' | 'trieur';
 }
 
+export type ReservedName = 'wakeWord' | 'speaker' | 'phone' | 'shortcut';
+
+export interface EditionView {
+  id: 'live' | 'test';
+  productName: string;
+  badge: { label: string; color: string } | null;
+  phrase: string;
+  held: Record<ReservedName, boolean>;
+}
+
+export interface EditionClaimResult {
+  ok: boolean;
+  sentence?: string;
+  state: EditionView;
+  settings?: Settings;
+}
+
+export interface LiveCopyResult {
+  ok: boolean;
+  sentence: string;
+  guide: string | null;
+}
+
 export interface JarvisApi {
   chat: {
     send(input: SendChatInput): Promise<void>;
@@ -1021,5 +1048,13 @@ export interface JarvisApi {
     set(patch: Partial<QuestionnaireState>): Promise<QuestionnaireState>;
     apply(): Promise<{ state: QuestionnaireState; settings: Settings; status: RuntimeStatus }>;
     restore(): Promise<{ state: QuestionnaireState; settings: Settings | null; status: RuntimeStatus }>;
+  };
+  /** Absent dans l'aperçu Vite. Live : `held` est faux partout. */
+  edition?: {
+    state(): Promise<EditionView>;
+    claim(name: ReservedName): Promise<EditionClaimResult>;
+    onClaimed(listener: (result: EditionClaimResult) => void): () => void;
+    copyOffer(): Promise<{ ask: boolean }>;
+    copy(choice: 'yes' | 'empty'): Promise<LiveCopyResult>;
   };
 }

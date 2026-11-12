@@ -95,6 +95,19 @@ export default function App() {
     initialOnboardingAnswers(),
   );
   const mainPaneRef = useRef<HTMLDivElement>(null);
+  const [copyAsk, setCopyAsk] = useState(false);
+  const [copySentence, setCopySentence] = useState<string | null>(null);
+  const [copyGuide, setCopyGuide] = useState<string | null>(null);
+  useEffect(() => {
+    return window.jarvis.edition?.onClaimed((result) => {
+      if (result.settings) setSettings(result.settings);
+    });
+  }, []);
+  useEffect(() => {
+    void window.jarvis.edition?.copyOffer().then((offer) => {
+      if (offer.ask) setCopyAsk(true);
+    });
+  }, []);
   const seeded = useRef(false);
 
   const voiceRef = useRef<ReturnType<typeof useVoice> | null>(null);
@@ -378,7 +391,7 @@ export default function App() {
 
   return (
     <div
-      className="jarvis-shell flex h-screen flex-col overflow-hidden rounded-[22px] border border-white/[0.09] shadow-2xl"
+      className="jarvis-shell relative flex h-screen flex-col overflow-hidden rounded-[22px] border border-white/[0.09] shadow-2xl"
       data-ui-ready={booting ? 'no' : 'yes'}
       data-ui-view={view}
       data-ui-layout="compact"
@@ -475,6 +488,8 @@ export default function App() {
           </IconButton>
         </div>
       </header>
+
+      <EditionMark />
 
       {view !== 'chat' ? (
         <div className="relative z-10 border-b border-white/[0.06] px-5 py-3">
@@ -612,6 +627,44 @@ export default function App() {
           </div>
         </div>
       ) : null}
+      {copyAsk ? (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-6">
+          <div className="max-w-md rounded-2xl border border-white/10 bg-slate-900 p-5 shadow-2xl">
+            <h2 className="text-base font-semibold text-white">Copier mes réglages de Jarvis Live ?</h2>
+            <p className="mt-2 text-sm leading-relaxed text-slate-300">
+              Réglages, personnalisation, questionnaire, mémoire et projets du mode Développeur. Pas
+              l’historique, pas le journal, pas l’apprentissage, pas les connexions Spotify ni Google :
+              on les reconnecte dans Test. Jarvis Live n’est pas modifié.
+            </p>
+            {copySentence ? <p className="mt-3 text-sm text-orange-100">{copySentence}</p> : null}
+            {copyGuide ? <p className="mt-2 text-sm text-slate-300">{copyGuide}</p> : null}
+            {copySentence ? null : (
+              <div className="mt-4 flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  onClick={() => {
+                    void window.jarvis.edition?.copy('yes').then((result) => {
+                      setCopySentence(result.sentence);
+                      setCopyGuide(result.guide);
+                    });
+                  }}
+                >
+                  Oui
+                </Button>
+                <Button
+                  type="button"
+                  variant="subtle"
+                  onClick={() => {
+                    void window.jarvis.edition?.copy('empty').then(() => setCopyAsk(false));
+                  }}
+                >
+                  Partir de zéro
+                </Button>
+              </div>
+            )}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -621,6 +674,27 @@ function BootStage({ label }: { label: string }) {
     <div className="boot-stage">
       <JarvisOrb />
       <p className="relative z-10 text-[13px] text-slate-400">{label}</p>
+    </div>
+  );
+}
+
+function EditionMark() {
+  const [badge, setBadge] = useState<{ label: string; color: string } | null>(null);
+  useEffect(() => {
+    const api = window.jarvis.edition;
+    if (!api) return;
+    void api.state().then((state) => {
+      document.title = state.productName;
+      setBadge(state.badge);
+    });
+  }, []);
+  if (!badge) return null;
+  return (
+    <div
+      className="relative z-10 px-5 py-1 text-center text-[11px] font-semibold tracking-wide text-slate-950"
+      style={{ background: badge.color }}
+    >
+      {badge.label}
     </div>
   );
 }

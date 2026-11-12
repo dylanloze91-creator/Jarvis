@@ -5,6 +5,7 @@ import { chmod, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { shell, app } from 'electron';
 import {
+  LIVE_EDITION,
   redactSecrets,
   searchQueryVariants,
   type MediaProvider,
@@ -24,8 +25,9 @@ import {
 const API_BASE = 'https://api.spotify.com/v1';
 const AUTHORIZE_URL = 'https://accounts.spotify.com/authorize';
 const TOKEN_URL = 'https://accounts.spotify.com/api/token';
-const REDIRECT_URI = 'http://127.0.0.1:53124/callback';
-export const AUTH_PORT = 53124;
+/** Même adresse pour Live et Test : elle est enregistrée chez Spotify. */
+export const AUTH_PORT = LIVE_EDITION.ports.spotify;
+const REDIRECT_URI = `http://127.0.0.1:${AUTH_PORT}/callback`;
 
 /**
  * Délai laissé à l'utilisateur pour valider l'autorisation dans son
