@@ -859,6 +859,10 @@ function registerIpc(): void {
     ];
     const dataDir = settings.orchestra?.trieurDataDir?.trim();
     if (dataDir) places.push(dataDir);
+    // 5.0.77 : le Jarvis installé ne vit pas dans le dépôt ; les rapports du banc sont dans la
+    // copie de travail réglée dans Jarvis Développeur (sinon la ligne de score n'apparaissait jamais).
+    const repoPath = settings.developer?.repoPath?.trim();
+    if (repoPath) places.push(join(repoPath, 'rapports'));
     return readRouterScore(places);
   });
 
