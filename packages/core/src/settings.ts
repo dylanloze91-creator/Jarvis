@@ -323,6 +323,12 @@ export const settingsSchema = z.object({
       enabled: z.boolean().optional(),
     })
     .optional(),
+  /** Routines. Absent : pas d'équipe Tâches, pas de phrase express. */
+  routines: z
+    .object({
+      enabled: z.boolean().optional(),
+    })
+    .optional(),
   /**
    * Garder la fenêtre visible quand une autre application prend le focus.
    * Masquage uniquement via Ctrl+Espace, Échap, ou le bouton fermer.

@@ -41,6 +41,7 @@ import { createRoverTools } from './rover.js';
 import type { ImagesService } from '../images/ImagesService.js';
 import { createImagesTools } from './images.js';
 import { createNotesTools } from './notes.js';
+import { createRoutineTools, type RoutineToolDeps } from './routines.js';
 
 export interface YoutubeSummarize {
   (
@@ -77,6 +78,8 @@ export interface ToolManagerDeps {
   spotifyConnected?: () => boolean;
   /** Notes. Absentes du catalogue tant que `notes.enabled` n'est pas vrai. */
   notes?: NotesBook;
+  /** Routine. Absente du catalogue tant qu'aucune routine n'est enregistrée. */
+  routines?: RoutineToolDeps;
 }
 
 /**
@@ -135,6 +138,7 @@ function createFullToolManager(deps: ToolManagerDeps): ToolManager {
     // Images — absents du catalogue tant que le module n'est pas activé
     ...imagesToolsIfEnabled(deps),
     ...notesToolsIfEnabled(deps),
+    ...routineToolsIfEnabled(deps),
   ]);
 }
 
@@ -167,9 +171,14 @@ function createModestToolManager(deps: ToolManagerDeps): ToolManager {
     ...(deps.rover ? createRoverTools(deps.rover) : []),
     ...imagesToolsIfEnabled(deps),
     ...notesToolsIfEnabled(deps),
+    ...routineToolsIfEnabled(deps),
   ]);
 }
 
 function notesToolsIfEnabled(deps: ToolManagerDeps) {
   return deps.notes ? createNotesTools(deps.notes, () => deps.getSettings().notes?.enabled === true) : [];
+}
+
+function routineToolsIfEnabled(deps: ToolManagerDeps) {
+  return deps.routines ? createRoutineTools(deps.routines) : [];
 }

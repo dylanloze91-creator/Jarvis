@@ -609,3 +609,4 @@ export * from './privacy/index.js';
 export * from './carnet/index.js';
 export * from './quotidien/briefing.js';
 export * from './quotidien/notes.js';
+export * from './quotidien/routines.js';

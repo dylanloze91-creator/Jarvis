@@ -158,6 +158,7 @@ const TEAM_LABEL: Record<OrchestraTeam, string> = {
   google: 'Google',
   code: 'Code',
   images: 'Images',
+  taches: 'Tâches',
 };
 
 export { TEAM_LABEL as trieurTeamLabels };

@@ -17,6 +17,7 @@ import { Lock } from 'lucide-react';
 import { CarnetSettingsSection } from '@/carnet/CarnetWeekCard';
 import { BriefingSettingsSection } from '@/components/BriefingSettingsSection';
 import { NotesSettingsSection } from '@/components/NotesSettingsSection';
+import { RoutinesSettingsSection } from '@/components/RoutinesSettingsSection';
 import { AuditPanel } from '@/components/AuditPanel';
 import { ReservedGate } from '@/components/ReservedGate';
 import { Button } from '@/components/ui/button';
@@ -667,6 +668,12 @@ export function SettingsPanel({
               </p>
             </div>
           </>,
+        )}
+        {accordion(
+          'routines',
+          'Routines',
+          'Suites d’actions, sans commande libre',
+          <RoutinesSettingsSection value={draft.routines} onChange={(routines) => patch({ routines })} />,
         )}
         {accordion(
           'siteblock-intro',

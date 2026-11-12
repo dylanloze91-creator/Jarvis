@@ -165,6 +165,16 @@ interface SessionDeps {
    */
   notes?: (input: { text: string; place: 'fenetre' | 'telephone' | 'enceinte' }) => Promise<string | null>;
   /**
+   * Routines. Absent ou réglage coupé : le tour suit le chemin d'avant.
+   * La carte de résumé passe par `confirm`. Chaque étape passe par `execute`.
+   */
+  routines?: (input: {
+    text: string;
+    voice: boolean;
+    confirm: (summary: string) => Promise<boolean>;
+    execute: (name: string, args: Record<string, string | number>) => Promise<{ ok: boolean; content: string }>;
+  }) => Promise<string | null>;
+  /**
    * Carnet des ratés. Absent ou coupé : le tour est celui d'avant.
    * La règle express répond avant tout modèle ; le reste observe seulement.
    */
@@ -376,10 +386,35 @@ export class ChatSession {
       !briefingText && settings.notes?.enabled === true && this.deps.notes
         ? await this.deps.notes({ text: input.text, place: notePlace }).catch(() => null)
         : null;
-    const healthIntent = !briefingText && !notesText && looksLikeHealthIntent(input.text);
+    const routineText =
+      !briefingText && !notesText && settings.routines?.enabled === true && this.deps.routines
+        ? await this.deps.routines({
+            text: input.text,
+            voice: input.place?.kind === 'enceinte',
+            confirm: (summary) =>
+              this.askUser(
+                sender,
+                emit,
+                { callId: randomId(), toolName: 'routine', title: 'Routine', details: summary },
+                controller.signal,
+              ),
+            execute: async (name, args) => {
+              const outcome = await this.deps.tools.execute(
+                { id: randomId(), name, arguments: args },
+                {
+                  requestConfirmation: (request) => this.askUser(sender, emit, request, controller.signal),
+                  fromSpeaker: input.place?.kind === 'enceinte',
+                  signal: controller.signal,
+                },
+              );
+              return { ok: outcome.status === 'ok', content: outcome.content };
+            },
+          }).catch(() => null)
+        : null;
+    const healthIntent = !briefingText && !notesText && !routineText && looksLikeHealthIntent(input.text);
     const orchestra = activeOrchestra(settings);
     const routeGap: { kind: 'illisible' | 'silence' | null } = { kind: null };
-    const route = !briefingText && !notesText && !healthIntent && orchestra
+    const route = !briefingText && !notesText && !routineText && !healthIntent && orchestra
       ? await this.routeTurn(settings, orchestra, input.text, messages, controller.signal, routeGap)
       : null;
 
@@ -429,6 +464,8 @@ export class ChatSession {
       run = fixedReply(briefingText);
     } else if (notesText) {
       run = fixedReply(notesText);
+    } else if (routineText) {
+      run = fixedReply(routineText);
     } else if (healthIntent) {
       let reply = "Je n'ai pas pu faire le bilan.";
       if (this.deps.healthReport) {

@@ -62,6 +62,7 @@ export const BENCH_TOOLS = [
   'google_gmail_list',
   'write_file',
   'generer_image',
+  'lancer_routine',
 ];
 const ALL_TOOLS = BENCH_TOOLS;
 

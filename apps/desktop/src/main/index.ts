@@ -60,9 +60,14 @@ import {
   type Reservations,
   type ReservedFunction,
   NotesBook,
+  RoutineBook,
   expressNoteReply,
+  handleRoutinePhrase,
   noteIntent,
   notesFilePath,
+  routinesFilePath,
+  type RoutineStep,
+  type ToolManager,
 } from '@jarvis/core';
 import {
   IpcChannel,
@@ -267,6 +272,25 @@ function openPlayProject(projectId: string | null): void {
 }
 
 const notesBook = new NotesBook(() => notesFilePath(app.getPath('userData')));
+const routineBook = new RoutineBook(() => routinesFilePath(app.getPath('userData')));
+let routineCount = 0;
+
+async function refreshRoutineCount(): Promise<void> {
+  routineCount = (await routineBook.list()).length;
+}
+
+async function runRoutineStep(
+  step: RoutineStep,
+  execute: (name: string, args: Record<string, string | number>) => Promise<{ ok: boolean; content: string }>,
+  voice: boolean,
+): Promise<{ ok: boolean; content: string }> {
+  if (step.tool === 'briefing') {
+    if (settings.briefing?.enabled !== true) return { ok: false, content: "Le briefing n'est pas activé." };
+    const text = await morningBriefing({ text: 'mon briefing', voice });
+    return text ? { ok: true, content: text } : { ok: false, content: "Le briefing n'a rien dit." };
+  }
+  return execute(step.tool, step.args);
+}
 
 async function notesReply(input: {
   text: string;
@@ -277,7 +301,21 @@ async function notesReply(input: {
   return expressNoteReply(notesBook, intent, input.place);
 }
 
-function buildTools() {
+async function routineReply(input: {
+  text: string;
+  voice: boolean;
+  confirm: (summary: string) => Promise<boolean>;
+  execute: (name: string, args: Record<string, string | number>) => Promise<{ ok: boolean; content: string }>;
+}): Promise<string | null> {
+  const reply = await handleRoutinePhrase(routineBook, input.text, {
+    confirm: input.confirm,
+    run: (step) => runRoutineStep(step, input.execute, input.voice),
+  });
+  await refreshRoutineCount();
+  return reply;
+}
+
+function buildTools(): ToolManager {
   return createToolManager({
     getSettings: () => settings,
     searchRegistry,
@@ -293,6 +331,12 @@ function buildTools() {
     currentTurn: () => currentTurn.value,
     spotifyConnected: () => spotify.connectedNow(),
     notes: notesBook,
+    routines: {
+      book: routineBook,
+      isAvailable: () => settings.routines?.enabled === true && routineCount > 0,
+      tools: () => tools,
+      extra: (step) => runRoutineStep(step, async () => ({ ok: false, content: '' }), false).then((result) => (step.tool === 'briefing' ? result : null)),
+    },
     summarizeYoutube: (url, onProgress, signal) =>
       summarizeYoutubeLink({
         url,
@@ -304,7 +348,7 @@ function buildTools() {
   });
 }
 
-let tools = buildTools();
+let tools: ToolManager = buildTools();
 
 function startGoogleIfAllowed(): void {
   if (googleStarted) return;
@@ -368,6 +412,7 @@ const session = new ChatSession({
   carnet,
   briefing: morningBriefing,
   notes: notesReply,
+  routines: routineReply,
 });
 
 // 5.0.63 — téléphone : une session de chat à part (un tour sur le téléphone n'annule pas celui de
@@ -394,6 +439,7 @@ const phoneSession = new ChatSession({
   carnet,
   briefing: morningBriefing,
   notes: notesReply,
+  routines: routineReply,
 });
 const questionnaire = QuestionnaireStore.inUserData(() => app.getPath('userData'));
 const phone = new PhoneService({
@@ -489,6 +535,7 @@ const speakers = new SpeakerService({
       carnet,
       briefing: morningBriefing,
       notes: notesReply,
+      routines: routineReply,
     });
     return {
       send: async (sender, input) => {
@@ -645,6 +692,7 @@ async function bootstrap(): Promise<void> {
   setSettingsDiskStripsSecrets(vault.encryptionAvailable());
   if (migrated.changed) await writeSettings(migrated.disk);
   tools = buildTools();
+  await refreshRoutineCount();
   if (settings.machine?.profile === 'modest' && settings.spotifyClientId.trim()) {
     void spotify.status();
   }
@@ -851,6 +899,14 @@ function createTray(): void {
 
 function registerIpc(): void {
   localLearning.registerIpc(ipcMain);
+  ipcMain.handle(IpcChannel.routinesList, () => routineBook.list());
+  ipcMain.handle(IpcChannel.routinesSave, async (_event, raw: unknown) => {
+    const routine = raw && typeof raw === 'object' ? (raw as { name?: unknown; steps?: unknown }) : {};
+    if (typeof routine.name !== 'string' || !Array.isArray(routine.steps)) return routineBook.list();
+    await routineBook.save({ name: routine.name, steps: routine.steps as RoutineStep[] });
+    await refreshRoutineCount();
+    return routineBook.list();
+  });
   ipcMain.handle(IpcChannel.notesList, () => notesBook.list());
   ipcMain.handle(IpcChannel.notesCheck, (_event, query: unknown) => notesBook.check(typeof query === 'string' ? query : ''));
   ipcMain.handle(IpcChannel.notesErase, (_event, query: unknown) => notesBook.erase(typeof query === 'string' ? query : ''));

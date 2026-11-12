@@ -80,6 +80,7 @@ export const SETTINGS_FIELD_MAP: Record<string, SettingsFieldLocation> = {
   'images.directHoldForge': { category: 'services', subcategory: 'images', highlight: 'images' },
   'images.directNoTxtPerso': { category: 'services', subcategory: 'images', highlight: 'images' },
   'notes.enabled': { category: 'moi', subcategory: 'notes', highlight: 'notes-enabled' },
+  'routines.enabled': { category: 'services', subcategory: 'routines', highlight: 'routines-enabled' },
   'briefing.enabled': { category: 'moi', subcategory: 'briefing', highlight: 'briefing-enabled' },
   'briefing.fromHour': { category: 'moi', subcategory: 'briefing', highlight: 'briefing-hours' },
   'briefing.toHour': { category: 'moi', subcategory: 'briefing', highlight: 'briefing-hours' },

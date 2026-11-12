@@ -24,6 +24,7 @@ import type {
   GeocodingPlace,
   CarnetPlace,
   NoteItem,
+  Routine,
   CarnetSettingsFile,
   RateCategory,
   ToolCategory,
@@ -184,6 +185,8 @@ export const IpcChannel = {
   notesList: 'notes:list',
   notesCheck: 'notes:check',
   notesErase: 'notes:erase',
+  routinesList: 'routines:list',
+  routinesSave: 'routines:save',
   phoneStatus: 'phone:status',
   phoneSetEnabled: 'phone:set-enabled',
   phoneStartPairing: 'phone:start-pairing',
@@ -1075,6 +1078,10 @@ export interface JarvisApi {
     list(): Promise<NoteItem[]>;
     check(query: string): Promise<NoteItem | null>;
     erase(query: string): Promise<NoteItem | null>;
+  };
+  routines: {
+    list(): Promise<Routine[]>;
+    save(routine: Routine): Promise<Routine[]>;
   };
   carnet: {
     get(): Promise<CarnetView>;
