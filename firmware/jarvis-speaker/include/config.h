@@ -74,4 +74,4 @@
 #define SAMPLE_RATE           16000
 #define SERIAL_TAG            "jarvis"
 /** Version du programme, la même que Jarvis quand ce programme est livré avec. */
-#define JARVIS_FW_VERSION     "5.0.75"
+#define JARVIS_FW_VERSION     "5.0.77"
