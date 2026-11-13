@@ -80,6 +80,7 @@ Statuts possibles : `en cours`, `en pause`, `bloqué`, `terminé`.
 | Cursor | `cursor/deux-jarvis` | Deux Jarvis sur le même PC (Live et Test), parties 0 à 4. Pas de fusion dans main, pas de publication, version inchangée. Rapport `rapports/2026-11-12-deux-jarvis.md`. | — | 2026-11-12 | terminé |
 | Cursor | `cursor/carnet-des-rates` | Carnet des ratés (détection, règle express, fichier local, revue, préparation pour Claude). Base `origin/cursor/deux-jarvis` (pas fusionnée dans main). Pas de fusion, pas de publication, version inchangée. Rapport `rapports/2026-11-12-carnet-des-rates.md`. | — | 2026-11-12 | terminé |
 | Cursor | `cursor/lot-b-quotidien` | Lot B, le quotidien : briefing, notes, routines, imprimante 3D. Base `origin/cursor/carnet-des-rates` (main est encore en 5.0.76, pas de fusion de la bourse). Pas de fusion dans main, pas de publication, version inchangée. Rapport `rapports/2026-11-12-lot-b-quotidien.md`. | — | 2026-11-12 | terminé |
+| Claude Code | `claude/test-preparation` | Jarvis Test (préparation) : npm ci, build du cœur, typecheck, lint, tests sur le brouillon de la nuit ; corriger seulement ce que la fusion a cassé (`session.ts`, `orchestra-session.test.ts`), sans régénérer de `__golden__` ; pas de fusion dans main, pas de publication ; rapport `rapports/2026-11-13-test-preparation-verification.md` | `apps/desktop/src/main/session.ts`, `apps/desktop/src/main/orchestra-session.test.ts` | 2026-11-13 | en cours |
 
 ## Ressource GPU / Ollama
 
