@@ -442,6 +442,109 @@ describe('chef d’orchestre dans le chat (5.0.60)', () => {
     expect(events.find((event) => event.type === 'route')).toMatchObject({ team: 'pc', how: 'cerveau' });
   });
 
+  /**
+   * Jarvis Test (préparation) : la fusion de la Live 5.0.77 (avis « l'équipe X n'a pas su »)
+   * et du carnet des ratés (texte du cerveau gardé pour noter « illisible » ou « silence »)
+   * a été résolue à la main dans `routeTurn`. Les deux doivent marcher dans le même tour.
+   */
+  it('correction « non » puis cerveau illisible ou muet : avis reçu, chemin d’avant, carnet renseigné', async () => {
+    const settings = settingsWith(ORCHESTRA);
+    const getSettings = () => settings;
+    const requests: Captured[] = [];
+    let correction: 'illisible' | 'muet' = 'illisible';
+    const registry = new core.ProviderRegistry().register({ ...core.ollamaDescriptor }, (config) => ({
+      id: 'ollama',
+      label: 'Ollama',
+      model: config.model,
+      requiresApiKey: false,
+      async *streamChat(request: { system?: string; messages: { content: string }[] }) {
+        requests.push({
+          model: config.model,
+          system: request.system,
+          tools: [],
+          lastUser: request.messages.at(-1)?.content ?? '',
+        });
+        const router = (request.system ?? '').includes('chef d’orchestre');
+        const user = request.messages.at(-1)?.content ?? '';
+        if (router && user.includes("n'a pas su")) {
+          if (correction === 'illisible') yield { type: 'text' as const, delta: 'hmm, je ne sais pas' };
+        } else {
+          yield { type: 'text' as const, delta: router ? 'web' : 'Très bien.' };
+        }
+        yield { type: 'done' as const, finishReason: 'stop' as const };
+      },
+    }));
+    const observed: Array<{ userText: string; team: string | null; how: string | null; brainUnreadable: boolean }> =
+      [];
+    const carnet = {
+      enabled: () => true,
+      expressReply: () => null,
+      noteExpress: () => undefined,
+      observeTurn: (input: { userText: string; team: string | null; how: string | null; brainUnreadable: boolean }) => {
+        observed.push({
+          userText: input.userText,
+          team: input.team,
+          how: input.how,
+          brainUnreadable: input.brainUnreadable,
+        });
+      },
+      takeSpeakerSound: () => null,
+      markReply: () => undefined,
+      speechCut: () => null,
+    };
+    const events: ChatEvent[] = [];
+    const sender = {
+      isDestroyed: () => false,
+      send: (_channel: string, event: ChatEvent) => events.push(event),
+    } as unknown as Electron.WebContents;
+    const session = new ChatSession({
+      registry,
+      tools: createToolManager({
+        getSettings,
+        searchRegistry: core.createDefaultSearchRegistry(),
+        marketDataRegistry: core.createDefaultMarketDataRegistry(),
+        spotify: new SpotifyBridge(getSettings),
+        siteBlock: new SiteBlockBridge(getSettings),
+        personalization: new PersonalizationStore(),
+        knowledge: new KnowledgeStore({ getUserDataPath: () => userData }),
+      }),
+      store: new core.InMemoryConversationStore(),
+      auditLog: new core.InMemoryAuditLogStore(),
+      getSettings,
+      voice: { hasApiKey: () => false } as never,
+      personalization: { get: async () => core.emptyPersonalization() } as never,
+      knowledge: { indexConversation: async () => 0 } as never,
+      localLearning: { recordTurn: async () => undefined } as never,
+      carnet,
+    });
+
+    for (const kind of ['illisible', 'muet'] as const) {
+      correction = kind;
+      requests.length = 0;
+      events.length = 0;
+      observed.length = 0;
+      await session.send(sender, { conversationId: null, text: 'Ouvre le Bloc-notes' });
+      const done = events.find((event) => event.type === 'done');
+      expect(events.find((event) => event.type === 'route')).toMatchObject({ team: 'web', how: 'cerveau' });
+      const conversationId = done && done.type === 'done' ? done.conversationId : '';
+      requests.length = 0;
+      events.length = 0;
+      await session.send(sender, { conversationId, text: 'non' });
+      // Côté Live : l'avis atteint le cerveau.
+      expect(requests[0]?.lastUser).toContain("l'équipe web n'a pas su répondre au tour précédent");
+      // Réponse illisible ou vide : pas d'équipe devinée, le chat d'avant répond.
+      expect(events.find((event) => event.type === 'route')).toBeUndefined();
+      expect(requests[1]?.model).toBe('qwen2.5:3b');
+      // Côté carnet : « illisible » seulement si le cerveau a écrit quelque chose.
+      expect(observed.at(-1)).toMatchObject({
+        userText: 'non',
+        team: null,
+        how: null,
+        brainUnreadable: kind === 'illisible',
+      });
+    }
+  });
+
   it('validation en direct : absente sur calcul exact', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'jarvis-valide-calc-'));
     const orchestra = {
