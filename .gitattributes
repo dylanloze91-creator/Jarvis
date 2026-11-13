@@ -1,0 +1,2 @@
+# Les scripts bash gardent des fins de ligne Linux, même sur Windows (sinon : « invalid option name: pipefail »).
+*.sh text eol=lf
