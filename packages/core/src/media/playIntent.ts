@@ -42,6 +42,28 @@ const SPELLING_ALIASES: Array<[RegExp, string]> = [
  * Dernier message = demande musicale (lecture ou contrôle). Sinon l'agent
  * garde le catalogue d'outils général, sans spotify_*.
  */
+/**
+ * 5.0.77 : « stop la musique », « mets en pause », « pause », « coupe Spotify » → `spotify_pause`
+ * sans modèle ; « reprends (la musique) », « remets la musique » → `spotify_resume`. Dit à
+ * l'enceinte, « Stop la musique » partait à un petit modèle qui ne coupait rien (21 s, aucune action).
+ * Un « stop » ou « arrête » seul n'est pas pris (stop de quoi ?) : il faut le mot musique, Spotify,
+ * son, morceau, chanson ou lecture ; « pause » seul suffit.
+ */
+const PAUSE_PHRASE =
+  /^(?:jarvis[,:]?\s*)?(?:pause|mets?\s+en\s+pause|(?:mets?\s+)?(?:la\s+)?(?:musique|spotify)\s+en\s+pause|(?:stop(?:pe)?|arr[êe]te|coupe|[ée]teins)\s+(?:la|le|ma|mon)?\s*(?:musique|spotify|son|morceau|chanson|lecture))\s*[.!]?\s*$/iu;
+const RESUME_PHRASE =
+  /^(?:jarvis[,:]?\s*)?(?:reprend(?:s|re)?(?:\s+(?:la|le|ma|mon)?\s*(?:musique|spotify|lecture|morceau|chanson))?|(?:relance|remets)\s+(?:la|le|ma|mon)?\s*(?:musique|spotify|lecture|morceau|chanson))\s*[.!]?\s*$/iu;
+
+export function isSpotifyPausePhrase(prompt: string): boolean {
+  const trimmed = prompt.trim();
+  return Boolean(trimmed) && !NOT_A_TRACK.test(trimmed) && PAUSE_PHRASE.test(trimmed);
+}
+
+export function isSpotifyResumePhrase(prompt: string): boolean {
+  const trimmed = prompt.trim();
+  return Boolean(trimmed) && !NOT_A_TRACK.test(trimmed) && RESUME_PHRASE.test(trimmed);
+}
+
 export function isMusicIntent(prompt: string): boolean {
   const trimmed = prompt.trim();
   if (!trimmed) return false;

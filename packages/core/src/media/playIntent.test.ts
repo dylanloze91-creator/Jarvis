@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { extractSpotifyPlayQuery, isMusicIntent, searchQueryVariants } from './playIntent.js';
+import {
+  extractSpotifyPlayQuery,
+  isMusicIntent,
+  isSpotifyPausePhrase,
+  isSpotifyResumePhrase,
+  searchQueryVariants,
+} from './playIntent.js';
 
 describe('extractSpotifyPlayQuery', () => {
   it('extrait « écouter On Verra de Nekfeu » (orthographe exacte du repro)', () => {
@@ -68,6 +74,18 @@ describe('extractSpotifyPlayQuery', () => {
   it('reconnaît pause / volume / suivant comme de la musique, pas une recherche', () => {
     expect(extractSpotifyPlayQuery('pause')).toBeNull();
     expect(isMusicIntent('pause')).toBe(true);
+    for (const text of ['Stop la musique.', 'Jarvis, stop la musique', 'mets en pause', 'Pause', 'coupe Spotify', 'arrête la musique', 'éteins la musique', 'mets la musique en pause']) {
+      expect(isSpotifyPausePhrase(text), text).toBe(true);
+    }
+    for (const text of ['stop', 'arrête', 'coupe le PC', 'stop la vidéo', 'arrête le processus', 'mets Daft Punk']) {
+      expect(isSpotifyPausePhrase(text), text).toBe(false);
+    }
+    for (const text of ['reprends', 'Reprends la musique.', 'remets la musique', 'relance Spotify']) {
+      expect(isSpotifyResumePhrase(text), text).toBe(true);
+    }
+    for (const text of ['relance', 'remets le fichier', 'reprends le dossier']) {
+      expect(isSpotifyResumePhrase(text), text).toBe(false);
+    }
     expect(isMusicIntent('Stop la musique.')).toBe(true);
     expect(isMusicIntent('coupe la musique')).toBe(true);
     expect(isMusicIntent('éteins Spotify')).toBe(true);

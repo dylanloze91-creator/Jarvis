@@ -215,7 +215,13 @@ export {
 } from './agent/homePlace.js';
 
 export * from './media/types.js';
-export { extractSpotifyPlayQuery, isMusicIntent, searchQueryVariants } from './media/playIntent.js';
+export {
+  extractSpotifyPlayQuery,
+  isMusicIntent,
+  isSpotifyPausePhrase,
+  isSpotifyResumePhrase,
+  searchQueryVariants,
+} from './media/playIntent.js';
 export {
   extractSpotifyPlayDeviceHint,
   extractSpotifyPlayDeviceHintFromQuery,
