@@ -1,6 +1,6 @@
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
+import { jsonParser, readStateFile, writeStateFile } from '../safeFile.js';
 import { PHONE_MAX_DEVICES, cleanDeviceName } from '@jarvis/core';
 
 /**
@@ -27,8 +27,9 @@ function hashToken(token: string): string {
   return createHash('sha256').update(token, 'utf8').digest('hex');
 }
 
-function readFileState(raw: string): PhoneFile {
-  const data = JSON.parse(raw) as Partial<PhoneFile>;
+function readFileState(raw: unknown): PhoneFile {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('phone.json : objet attendu');
+  const data = raw as Partial<PhoneFile>;
   const devices = Array.isArray(data.devices)
     ? data.devices.filter(
         (device): device is StoredDevice =>
@@ -56,11 +57,9 @@ export class PhoneStore {
 
   async load(): Promise<void> {
     if (this.loaded) return;
-    try {
-      this.state = readFileState(await readFile(this.filePath(), 'utf8'));
-    } catch {
-      this.state = { enabled: false, devices: [] };
-    }
+    this.state = { enabled: false, devices: [] };
+    const read = await readStateFile(this.filePath(), jsonParser(readFileState)).catch(() => null);
+    if (read && (read.status === 'ok' || read.status === 'restored')) this.state = read.value;
     this.loaded = true;
   }
 
@@ -116,11 +115,7 @@ export class PhoneStore {
     this.writing = this.writing
       .catch(() => undefined)
       .then(async () => {
-        const target = this.filePath();
-        await mkdir(dirname(target), { recursive: true });
-        const temp = `${target}.tmp`;
-        await writeFile(temp, snapshot, { encoding: 'utf8', mode: 0o600 });
-        await rename(temp, target);
+        await writeStateFile(this.filePath(), snapshot, { mode: 0o600 });
       });
     return this.writing;
   }

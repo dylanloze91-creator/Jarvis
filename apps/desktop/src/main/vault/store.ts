@@ -1,7 +1,8 @@
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { rm } from 'node:fs/promises';
+import { join } from 'node:path';
 import { blankSecrets, fillExistingSecrets, secretsFromSettings, type Settings } from '@jarvis/core';
 import type { SecretCipher } from '../google/tokenStore.js';
+import { readStateFile, writeStateFile } from '../safeFile.js';
 
 const FILE = 'coffre.bin';
 
@@ -57,29 +58,18 @@ export class KeyVault {
     if (this.loaded) return { ...this.secrets };
     this.loaded = true;
     if (!this.encryptionAvailable()) return {};
-    let bytes: Buffer;
-    try {
-      bytes = await readFile(this.filePath());
-    } catch {
-      return {};
-    }
-    try {
-      this.secrets = parseVault(this.cipher.decryptString(bytes));
-    } catch {
-      await this.quarantine();
+    // Fichier abîmé ou que ce PC ne sait plus déchiffrer : mis de côté en `coffre.illisible.bin`,
+    // puis la version précédente (`coffre.bin.bak`) est essayée.
+    const read = await readStateFile(this.filePath(), (bytes) => parseVault(this.cipher.decryptString(bytes)), {
+      asidePath: join(this.userData(), 'coffre.illisible.bin'),
+    }).catch(() => null);
+    if (read && (read.status === 'ok' || read.status === 'restored')) {
+      this.secrets = read.value;
+    } else if (read && read.status === 'damaged') {
       this.unreadable = true;
       this.secrets = {};
     }
     return { ...this.secrets };
-  }
-
-  private async quarantine(): Promise<void> {
-    const dest = join(this.userData(), 'coffre.illisible.bin');
-    try {
-      await rename(this.filePath(), dest);
-    } catch {
-      await rename(this.filePath(), join(this.userData(), `coffre.illisible-${Date.now()}.bin`)).catch(() => undefined);
-    }
   }
 
   async save(secrets: Record<string, string>): Promise<void> {
@@ -88,10 +78,7 @@ export class KeyVault {
     if (!this.encryptionAvailable()) return;
     const body: VaultFile = { version: 1, secrets: this.secrets };
     const encrypted = this.cipher.encryptString(JSON.stringify(body));
-    await mkdir(dirname(this.filePath()), { recursive: true });
-    const tmp = `${this.filePath()}.tmp`;
-    await writeFile(tmp, encrypted, { mode: 0o600 });
-    await rename(tmp, this.filePath());
+    await writeStateFile(this.filePath(), encrypted, { mode: 0o600 });
   }
 
   /**

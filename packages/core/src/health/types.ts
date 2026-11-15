@@ -13,6 +13,7 @@ export const HEALTH_CHECK_ORDER = [
   'disk',
   'backup',
   'vault',
+  'files',
 ] as const;
 
 export type HealthCheckId = (typeof HEALTH_CHECK_ORDER)[number];
@@ -72,5 +73,10 @@ export interface HealthFacts {
   disk: ProbeResult<{ freeBytes: number }>;
   backup: ProbeResult<{ configured: boolean; lastAt: number | null; ok: boolean; stale: boolean }>;
   vault: ProbeResult<{ encryptionAvailable: boolean; unreadable?: boolean }>;
+  /**
+   * Fichiers d'état trouvés abîmés au démarrage (zéros après une coupure, JSON illisible).
+   * Facultatif : absent ou liste vide = aucune ligne dans le bilan.
+   */
+  files?: ProbeResult<{ damaged: Array<{ file: string; restored: boolean; setAside: string | null }> }>;
   now?: number;
 }

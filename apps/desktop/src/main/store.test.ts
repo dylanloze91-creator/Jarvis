@@ -49,9 +49,20 @@ describe('écriture des réglages', () => {
   });
 
   it('5.0.64 : un settings.json illisible est copié avant de repartir des défauts', async () => {
+    // Sans version précédente (5.0.78 : le `.bak` laissé par le test d'avant serait repris).
+    await rm(join(userDataDir, 'settings.json.bak'), { force: true });
     await writeFile(join(userDataDir, 'settings.json'), '{"hotkey": "Control+C", "mod', 'utf8');
     const settings = await readSettings();
     expect(settings.hotkey).toBe('Control+Space');
     expect(await readFile(join(userDataDir, 'settings.json.corrompu'), 'utf8')).toContain('Control+C');
+  });
+
+  it('5.0.78 : un settings.json rempli de zéros reprend la version précédente (.bak)', async () => {
+    await writeSettings(parseSettings({ hotkey: 'Control+D' }));
+    await writeSettings(parseSettings({ hotkey: 'Control+E' })); // .bak = Control+D
+    await writeFile(join(userDataDir, 'settings.json'), Buffer.alloc(512, 0));
+    const settings = await readSettings();
+    expect(settings.hotkey).toBe('Control+D');
+    expect(JSON.parse(await readFile(join(userDataDir, 'settings.json'), 'utf8')).hotkey).toBe('Control+D');
   });
 });

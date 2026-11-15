@@ -1,6 +1,6 @@
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
-import { copyFile, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { jsonParser, readStateFile, writeStateFile } from '../safeFile.js';
+import { join } from 'node:path';
 import { SPEAKER_MAX_SPEAKERS, cleanSpeakerName } from '@jarvis/core';
 
 /**
@@ -48,8 +48,9 @@ function optionalText(value: unknown, max: number): string | undefined {
   return trimmed;
 }
 
-function readFileState(raw: string): SpeakerFile {
-  const data = JSON.parse(raw) as Partial<SpeakerFile>;
+function readFileState(raw: unknown): SpeakerFile {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('speakers.json : objet attendu');
+  const data = raw as Partial<SpeakerFile>;
   const speakers = Array.isArray(data.speakers)
     ? data.speakers.flatMap((speaker): StoredSpeaker[] => {
         if (
@@ -104,22 +105,11 @@ export class SpeakerStore {
   async load(): Promise<void> {
     if (this.loaded) return;
     const target = this.filePath();
-    let raw: string | null = null;
-    try {
-      raw = await readFile(target, 'utf8');
-    } catch {
-      raw = null; // pas encore de fichier : état vide, rien à garder
-    }
     this.state = { enabled: false, pcId: randomBytes(4).toString('hex'), speakers: [] };
-    if (raw !== null) {
-      try {
-        this.state = readFileState(raw);
-      } catch {
-        // Fichier abîmé : on en garde une copie avant qu'une prochaine écriture ne l'écrase,
-        // plutôt que de perdre en silence les enceintes qu'il contenait.
-        await copyFile(target, `${target}.illisible`).catch(() => undefined);
-      }
-    }
+    // Fichier abîmé (zéros après une coupure, JSON illisible) : mis de côté en
+    // `speakers.json.illisible`, puis la version précédente (`.bak`) est reprise si elle se lit.
+    const read = await readStateFile(target, jsonParser(readFileState)).catch(() => null);
+    if (read && (read.status === 'ok' || read.status === 'restored')) this.state = read.value;
     this.loaded = true;
   }
 
@@ -304,11 +294,7 @@ export class SpeakerStore {
     this.writing = this.writing
       .catch(() => undefined)
       .then(async () => {
-        const target = this.filePath();
-        await mkdir(dirname(target), { recursive: true });
-        const temp = `${target}.tmp`;
-        await writeFile(temp, snapshot, { encoding: 'utf8', mode: 0o600 });
-        await rename(temp, target);
+        await writeStateFile(this.filePath(), snapshot, { mode: 0o600 });
       });
     return this.writing;
   }

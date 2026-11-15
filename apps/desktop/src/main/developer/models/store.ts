@@ -1,5 +1,4 @@
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
-import { dirname } from 'node:path';
+import { jsonParser, readStateFile, writeStateFile } from '../../safeFile.js';
 import type { BenchResult, Calibration, ModelRunRecord, RealBenchResult } from '@jarvis/core';
 import type { CodeModelState } from '../../../shared/developerIpc.js';
 
@@ -41,7 +40,12 @@ export class CodeModelStore {
   async load(): Promise<StoredCodeModel> {
     if (this.cache) return this.cache;
     try {
-      const data = JSON.parse(await readFile(this.path(), 'utf8')) as Partial<StoredCodeModel>;
+      const read = await readStateFile(this.path(), jsonParser((value) => {
+        if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('objet attendu');
+        return value as Partial<StoredCodeModel>;
+      }));
+      if (read.status !== 'ok' && read.status !== 'restored') throw new Error('absent');
+      const data = read.value;
       this.cache = {
         calibration: data.calibration ?? null,
         validation: data.validation ?? null,
@@ -60,11 +64,7 @@ export class CodeModelStore {
   async update(patch: Partial<StoredCodeModel>): Promise<StoredCodeModel> {
     const next = { ...(await this.load()), ...patch };
     this.cache = next;
-    const target = this.path();
-    await mkdir(dirname(target), { recursive: true });
-    const temporary = `${target}.tmp`;
-    await writeFile(temporary, JSON.stringify(next, null, 2));
-    await rename(temporary, target);
+    await writeStateFile(this.path(), JSON.stringify(next, null, 2));
     return next;
   }
 }

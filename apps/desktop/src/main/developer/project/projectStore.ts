@@ -1,4 +1,6 @@
-import { mkdir, rename, readFile, writeFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { jsonParser, readStateFile, writeStateFile } from '../../safeFile.js';
 import { dirname, join } from 'node:path';
 import {
   PROJECT_ID_PATTERN,
@@ -31,11 +33,16 @@ export class ProjectStore {
   private write(path: string, value: unknown): Promise<void> {
     const body = `${JSON.stringify(value, null, 2)}\n`;
     const next = this.queue.then(async () => {
-      await mkdir(dirname(path), { recursive: true });
       this.written += 1;
-      const temporary = `${path}.${this.written}.tmp`;
-      await writeFile(temporary, body);
-      await rename(temporary, path);
+      try {
+        // Écriture sûre (5.0.78) : seul le registre garde une version précédente en `.bak`.
+        await writeStateFile(path, body, { keepBackup: path === this.registryPath() });
+      } catch (error) {
+        // 5.0.77 (78dbae4 sur main) : dossier du projet retiré pendant l'écriture (projet retiré,
+        // nettoyage d'un test) : rien à garder, et surtout pas un rejet non traité.
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT' && !existsSync(dirname(path))) return;
+        throw error;
+      }
     });
     this.queue = next.catch(() => undefined);
     return next;
@@ -53,7 +60,9 @@ export class ProjectStore {
     this.foreign = [];
     let raw: unknown;
     try {
-      raw = JSON.parse(await readFile(this.registryPath(), 'utf8'));
+      const read = await readStateFile(this.registryPath(), jsonParser());
+      if (read.status !== 'ok' && read.status !== 'restored') return emptyRegistry();
+      raw = read.value;
     } catch {
       return emptyRegistry();
     }

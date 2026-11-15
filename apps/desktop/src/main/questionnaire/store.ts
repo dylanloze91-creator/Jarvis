@@ -1,5 +1,5 @@
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
+import { readStateFile, writeStateFile } from '../safeFile.js';
 import {
   emptyPersonalization,
   emptyQuestionnaireState,
@@ -57,11 +57,13 @@ export class QuestionnaireStore {
 
   async load(): Promise<void> {
     if (this.loaded) return;
-    try {
-      this.state = readFileState(await readFile(this.filePath(), 'utf8'));
-    } catch {
-      this.state = emptyQuestionnaireState();
-    }
+    this.state = emptyQuestionnaireState();
+    const read = await readStateFile(this.filePath(), (bytes) => {
+      const text = bytes.toString('utf8').replace(/^\uFEFF/, '');
+      JSON.parse(text); // lève si le fichier est abîmé : il est alors mis de côté et le .bak repris
+      return readFileState(text);
+    }).catch(() => null);
+    if (read && (read.status === 'ok' || read.status === 'restored')) this.state = read.value;
     this.loaded = true;
   }
 
@@ -134,11 +136,7 @@ export class QuestionnaireStore {
     this.writing = this.writing
       .catch(() => undefined)
       .then(async () => {
-        const target = this.filePath();
-        await mkdir(dirname(target), { recursive: true });
-        const temp = `${target}.tmp`;
-        await writeFile(temp, snapshot, { encoding: 'utf8', mode: 0o600 });
-        await rename(temp, target);
+        await writeStateFile(this.filePath(), snapshot, { mode: 0o600 });
       });
     return this.writing;
   }
