@@ -3,7 +3,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { parseSettings } from '../settings.js';
-import { NotesBook, expressNoteReply, noteIntent, notesFilePath, parseNoteBody } from './notes.js';
+import { NotesBook, expressNoteReply, notesFilePath } from './fichiers.js';
+import { noteIntent, parseNoteBody } from './notes.js';
 
 describe('notes et liste', () => {
   it('parseSettings({}) ne gagne pas la clé notes', () => {

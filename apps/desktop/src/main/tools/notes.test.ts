@@ -1,7 +1,8 @@
 import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { NotesBook, ToolManager, notesFilePath, type ToolContext } from '@jarvis/core';
+import { ToolManager, type ToolContext } from '@jarvis/core';
+import { NotesBook, notesFilePath } from '@jarvis/core/quotidien/fichiers';
 import { describe, expect, it } from 'vitest';
 import { createNotesTools } from './notes.js';
 

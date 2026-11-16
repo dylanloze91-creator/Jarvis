@@ -3,9 +3,9 @@ import {
   ToolManager,
   type MarketDataProviderRegistry,
   type SearchProviderRegistry,
-  type NotesBook,
   type Settings,
 } from '@jarvis/core';
+import type { NotesBook } from '@jarvis/core/quotidien/fichiers';
 import { getSystemInfoTool } from './system.js';
 import { getCurrentTimeTool } from './time.js';
 import { createFolderTool } from './files.js';

@@ -3,7 +3,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { parseSettings } from '../settings.js';
-import { RoutineBook, handleRoutinePhrase, routineAction, routinesFilePath, runRoutineSteps } from './routines.js';
+import { RoutineBook, handleRoutinePhrase, routinesFilePath } from './fichiers.js';
+import { routineAction, runRoutineSteps } from './routines.js';
 
 const PHRASE = 'crée une routine Travail : ouvre Chrome, mets ma playlist Focus, bloque les réseaux sociaux 2 heures';
 

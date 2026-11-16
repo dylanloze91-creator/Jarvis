@@ -59,13 +59,7 @@ import {
   type ChatAttachment,
   type Reservations,
   type ReservedFunction,
-  NotesBook,
-  RoutineBook,
-  expressNoteReply,
-  handleRoutinePhrase,
   noteIntent,
-  notesFilePath,
-  routinesFilePath,
   type RoutineStep,
   type ToolManager,
   MoonrakerClient,
@@ -75,6 +69,14 @@ import {
   startPrintWatch,
   withMessages,
 } from '@jarvis/core';
+import {
+  NotesBook,
+  RoutineBook,
+  expressNoteReply,
+  handleRoutinePhrase,
+  notesFilePath,
+  routinesFilePath,
+} from '@jarvis/core/quotidien/fichiers';
 import {
   IpcChannel,
   type GoogleConfigDraft,

@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import { defineTool, runRoutineSteps, type RoutineBook, type RoutineStep, type ToolManager } from '@jarvis/core';
+import { defineTool, runRoutineSteps, type RoutineStep, type ToolManager } from '@jarvis/core';
+import type { RoutineBook } from '@jarvis/core/quotidien/fichiers';
 
 export interface RoutineToolDeps {
   book: RoutineBook;

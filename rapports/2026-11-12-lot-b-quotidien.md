@@ -92,3 +92,39 @@ Quand l'imprimante est éteinte ou ne répond pas, la règle express dit « L'im
 - **Testé en vrai** : PAS FAIT. Non testé sur le PC.
 
 Version 5.0.76. Branche `cursor/lot-b-quotidien`. Non testé sur le PC.
+
+## Correction : construction de l'application
+
+`electron-vite build` s'arrêtait : `notes.js` et `routines.js` importaient `node:fs` et étaient dans l'index du cœur, que la fenêtre charge. Les règles restent dans l'index. La lecture et l'écriture (`NotesBook`, `RoutineBook`, chemins, réponses qui touchent le disque) sont dans `@jarvis/core/quotidien/fichiers`, importé seulement par le processus principal. Un test de garde refuse un `import` Node au runtime dans un module exporté directement par l'index.
+
+Sortie de `npx electron-vite build` dans `apps/desktop`, après `npm run build --workspace @jarvis/core` (code de sortie 0) :
+
+```
+vite v7.3.6 building ssr environment for production...
+✓ 284 modules transformed.
+out/main/index.js                    1,379.18 kB
+✓ built in 1.49s
+vite v7.3.6 building ssr environment for production...
+✓ 5 modules transformed.
+out/preload/indicator.js   0.42 kB
+out/preload/index.js      28.88 kB
+✓ built in 26ms
+vite v7.3.6 building client environment for production...
+✓ 2786 modules transformed.
+✓ built in 6.24s
+```
+
+Avertissement déjà présent sur `main`, pas une erreur : Vite externalise `node:path` importé par `packages/core/dist/learning/methods.js`. La construction se termine.
+
+## RAPPORT DE VÉRIFICATION
+
+- **Lancement : OK (electron-vite build).** Pas `npm run build` complet : il télécharge les modèles de voix.
+- **Types** : `npm run typecheck` passe.
+- **Style** : `npm run lint` passe, sans avertissement.
+- **Tests** : `npm test`. Cœur vert, y compris le test de garde. Bureau : 801 tests passés, 6 ignorés, 1 échec connu (« Construire manuel », non modifié). `__golden__` non régénérés. `parseSettings({})` inchangé.
+- **Secrets** : aucun. Pas de chemin personnel, pas de ville réelle.
+- **Fichiers** : `packages/core/src/quotidien/notes.ts`, `routines.ts`, `fichiers.ts`, `packages/core/package.json`, imports du processus principal, `packages/core/src/indexNodeGuard.test.ts`, ce rapport.
+- **Prêt à fusionner** : NON.
+- **Testé en vrai** : PAS FAIT. Non testé sur le PC.
+
+Version 5.0.76. Branche `cursor/lot-b-quotidien`. Non testé sur le PC.

@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import { defineTool, formatNote, type NotesBook } from '@jarvis/core';
+import { defineTool, formatNote } from '@jarvis/core';
+import type { NotesBook } from '@jarvis/core/quotidien/fichiers';
 
 /** Outils absents du catalogue tant que `notes.enabled` n'est pas vrai. */
 export function createNotesTools(book: NotesBook, enabled: () => boolean) {
