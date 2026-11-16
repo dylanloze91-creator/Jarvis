@@ -1,6 +1,6 @@
 # Feuille de route de Jarvis — à lire avant chaque tâche
 
-Tenue par Claude (le chat, manager du projet). Dernière mise à jour : 12 novembre 2026.
+Tenue par Claude (le chat, manager du projet). Dernière mise à jour : 16 novembre 2026.
 
 **Claude Code et Cursor la lisent avant chaque tâche**, en même temps que `AGENTS-COORDINATION.md`. Elle dit vers où va Jarvis, qui fait quoi et dans quel ordre, et ce qui en dépend. Le but : qu'aucun outil ne soit construit sans tenir compte de ceux qui viendront s'y brancher.
 
@@ -39,35 +39,45 @@ Ce fichier ne contient ni secret, ni donnée personnelle, ni nom de réseau : le
 
 ## 3. Les files de travail
 
-État au 13 novembre 2026, nuit (mis à jour par Claude).
+État au 16 novembre 2026, 22 h 30 (mis à jour par Claude d'après GitHub).
+
+### Publié
+
+- **5.0.77** (13 novembre) : corrections des essais du 12 novembre. Reste deux essais à la voix, à faire par l'utilisateur : musique sur la Phantom puis « stop la musique », et une sauvegarde suivie de sa restauration.
+- **5.0.78** (16 novembre) :
+  - écriture sûre des fichiers d'état : forcée sur le disque, avec une copie `.bak` reprise si le fichier est abîmé. C'est la cause de l'enceinte en 401 après les coupures du 13 novembre ;
+  - Codeur par rôle respecté, réflexion coupée, « revue non faite » dite telle quelle ;
+  - correctif de sécurité du mode direct ;
+  - boutons « Copier ».
+- L'enceinte de la chambre est **reliée de nouveau** (16 novembre).
 
 ### Claude Code (PC Windows de l'utilisateur, avec le matériel)
 
 | # | Tâche | État |
 | --- | --- | --- |
-| 1 | **Essais de la Live 5.0.77 avec l'utilisateur, puis publication** (`claude/live-5077`, liste dans `rapports/2026-11-12-live-5077-a-verifier.md`). Sans les essais USB (12 à 18) ni les essais 34 à 36. | **en cours** : E1 à E6 bons, E7 et la suite à finir |
-| 2 | **Live 5.0.78** (`claude/missions-roles-5078`) : Codeur par rôle respecté, réflexion coupée, « revue non faite » dite telle quelle, correctif de sécurité du mode direct. Fusion dans `main` après la 5.0.77, essais, publication. | prête, attend la 5.0.77 |
-| 3 | **Jarvis Test** : branche `dev` = Live à jour + `cursor/deux-jarvis` + `cursor/lot-b-quotidien` (qui contient le carnet corrigé). Un brouillon existe : `claude/test-preparation` (fusions faites, conflit de `session.ts` résolu à la main, **rien de testé** : voir `rapports/2026-11-13-preparation-jarvis-test.md`). Typecheck, tests, lint, puis installer Test à côté de Live. Première publication `5.1.0-test.1` avec `release-test.sh`. | attend la 5.0.78 |
-| 4 | Ajouter la nuit de génération du 11 novembre au cahier (`lab:clean`) | à faire |
-| 5 | Essai du raccordement d'enceinte par USB, avec l'utilisateur et la carte | à faire |
-| 7 | Plus tard : premier entraînement sur les conversations, sur carte louée (`docs/specs/jeu-conversations.md`, partie C), quand `resume.json` montre assez d'exemples et que l'utilisateur a dit oui | après la mission 6 de Cursor et quelques semaines de Jarvis Test |
-| 6 | Carte de l'utilisation réelle : écrite par Cursor (`cursor/carte-utilisation`), corrigée par Claude (`claude/carte-correction` : seuls les messages vraiment tapés comptent). Claude Code lance `npm test --workspace @jarvis/core` sur `claude/carte-correction`, puis `scripts\carte-utilisation.ps1`, et l'utilisateur envoie **seulement** `carte.md` à Claude | à lancer sur le PC |
+| 1 | **Jarvis Test.** Branche `dev` refaite à partir de `main` (5.0.78), avec `cursor/deux-jarvis` et `claude/lot-b-construction`. Le lot B contient déjà le carnet corrigé et la correction de la construction. Le brouillon `claude/test-preparation` a montré le seul conflit (`session.ts`) et la bonne façon de le résoudre ; il est en retard sur `main` et ne sert plus que de modèle. À faire dans la foulée : les notes et les routines (`packages/core/src/quotidien/fichiers.ts`) doivent écrire avec l'écriture sûre de la 5.0.78, comme les autres fichiers d'état. Puis typecheck, lint, tests **et `electron-vite build`**, l'installation de Test à côté de Live, les essais, et la publication de `5.1.0-test.1` avec `release-test.sh`. | **prochaine tâche** |
+| 2 | Carte de l'utilisation réelle : écrite par Cursor (`cursor/carte-utilisation`), corrigée par Claude (`claude/carte-correction`, seuls les messages vraiment tapés comptent). Lancer `npm test --workspace @jarvis/core` sur `claude/carte-correction`, puis `scripts\carte-utilisation.ps1`. L'utilisateur envoie **seulement** `carte.md` à Claude. | à lancer sur le PC (peut se faire avant la tâche 1, c'est court) |
+| 3 | Fusionner dans `main` les branches de documentation que Claude prépare (en ce moment : `claude/feuille-16-nov`). | à chaque fois |
+| 4 | Ajouter la nuit de génération du 11 novembre au cahier (`lab:clean`). | à faire |
+| 5 | Essai du raccordement d'enceinte par USB, avec l'utilisateur et la carte. | à faire |
+| 6 | Plus tard : premier entraînement sur les conversations, sur carte louée (`docs/specs/jeu-conversations.md`, partie C). Seulement quand `resume.json` montre assez d'exemples et que l'utilisateur a dit oui. | après la mission 6 de Cursor et quelques semaines de Jarvis Test |
 
 ### Cursor (une mission à la fois)
 
+Cursor n'arrive pas à pousser sur GitHub. L'utilisateur envoie son travail en archive à Claude, qui le compare à la branche, le relit et le pousse sur une branche `claude/…` en le disant.
+
 | # | Mission | État |
 | --- | --- | --- |
-| 1 | Bourse et tri | terminée, dans `claude/live-5077` |
-| 2 | Deux Jarvis : Live et Test (`cursor/deux-jarvis`) | terminée et relue ; attend la tâche 3 de Claude Code |
-| 3 | Carnet des ratés (`cursor/carnet-des-rates`) | terminée et relue ; dans le lot B ; attend Jarvis Test |
-| 4 | Lot B, le quotidien (`cursor/lot-b-quotidien`), pour Jarvis Test, sur la base du carnet | terminée et relue (correction de l'imprimante faite) ; attend Jarvis Test |
-| 5 | Carte de l'utilisation réelle (`docs/specs/carte-utilisation.md`, branche `cursor/carte-utilisation`) : script du cœur, sans modèle ; chiffres seulement | terminée, relue ; correction faite par Claude (`claude/carte-correction`) |
-| 4 bis | Lot B : l'application ne se construit pas (`notes.ts` et `routines.ts` lisent le disque depuis l'index du cœur), vu par Claude Code le 13 novembre | **à faire en premier** (`cursor-lotb-construction.zip`) |
-| 6 | **Jeu d'entraînement tiré des conversations** (`docs/specs/jeu-conversations.md`, branche `cursor/jeu-conversations`) : journal du tour dans Jarvis Test (équipe, modèle, fournisseur, outils, durée) et script de préparation sans modèle (`trieur.jsonl`, `reponses.jsonl`, `a-corriger.jsonl`). Décision de l'utilisateur du 16 novembre | après la 4 bis |
+| 1 | Bourse et tri | terminée, publiée (5.0.77) |
+| 2 | Deux Jarvis : Live et Test (`cursor/deux-jarvis`) | terminée et relue ; attend la tâche 1 de Claude Code |
+| 3 | Carnet des ratés (`cursor/carnet-des-rates`) | terminée et relue ; dans le lot B |
+| 4 | Lot B, le quotidien | terminée et relue ; **correction de la construction faite** (`claude/lot-b-construction`, poussée par Claude le 16 novembre) ; attend la tâche 1 de Claude Code |
+| 5 | Carte de l'utilisation réelle | terminée, relue, corrigée (`claude/carte-correction`) ; attend la tâche 2 de Claude Code |
+| 6 | **Jeu d'entraînement tiré des conversations** (`docs/specs/jeu-conversations.md`, branche `cursor/jeu-conversations`) : un journal du tour dans Jarvis Test (équipe, modèle, fournisseur, outils, durée) et un script de préparation sans modèle (`trieur.jsonl`, `reponses.jsonl`, `a-corriger.jsonl`). Décision de l'utilisateur du 16 novembre. | **en cours** |
 
 ### Essais de modèles
 
-Ils sont arrêtés depuis le 12 novembre. Ornith-1.0-9B fait 84/87 au banc, mais il a raté une vraie mission, à 6,4 jetons/s sur la RTX 2060. Le choix des modèles se fera avec l'examen tiré de l'usage réel (tâche 6 de Claude Code), pas avant.
+Ils sont arrêtés depuis le 12 novembre. Ornith-1.0-9B fait 84/87 au banc, mais il a raté une vraie mission, à 6,4 jetons/s sur la RTX 2060. Le choix des modèles se fera avec l'examen tiré de l'usage réel (tâche 2 de Claude Code, puis l'examen tiré de l'usage), pas avant.
 
 ### En pause (ne pas commencer sans que cette feuille le dise)
 
