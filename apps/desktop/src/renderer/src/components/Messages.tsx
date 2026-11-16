@@ -13,12 +13,15 @@ export function Messages({
   items,
   scrollParentRef,
   onSend,
+  onDislike,
 }: {
   items: ChatItem[];
   /** Conteneur unique de discussion (évite un second panneau défilant). */
   scrollParentRef?: RefObject<HTMLElement | null>;
   /** Envoi d'un message depuis une carte (bouton « Envoyer à Imager »). Absent : le bouton n'est pas montré. */
   onSend?: (text: string) => void;
+  /** 👎 sous une réponse. Absent : le bouton n'est pas montré. N'est jamais dit à voix haute. */
+  onDislike?: (reply: string) => void;
 }) {
   const bottom = useRef<HTMLDivElement>(null);
   const prevLength = useRef(items.length);
@@ -40,14 +43,14 @@ export function Messages({
   return (
     <div className="messages-list">
       {items.map((item) => (
-        <Item key={item.id} item={item} onSend={onSend} />
+        <Item key={item.id} item={item} onSend={onSend} onDislike={onDislike} />
       ))}
       <div ref={bottom} />
     </div>
   );
 }
 
-function Item({ item, onSend }: { item: ChatItem; onSend?: (text: string) => void }) {
+function Item({ item, onSend, onDislike }: { item: ChatItem; onSend?: (text: string) => void; onDislike?: (reply: string) => void }) {
   if (item.kind === 'imager_offer') {
     if (!onSend) return null;
     return (
@@ -100,6 +103,11 @@ function Item({ item, onSend }: { item: ChatItem; onSend?: (text: string) => voi
           <AssistantMarkdown text={item.text} />
           {item.streaming ? <span className="stream-caret" /> : null}
           {!item.streaming ? <SourcesLine text={item.text} /> : null}
+          {!item.streaming && onDislike ? (
+            <button type="button" className="mt-1 text-xs text-slate-400 hover:text-slate-200" onClick={() => onDislike(item.text)}>
+              👎 Ça n&apos;a pas marché
+            </button>
+          ) : null}
         </div>
       </div>
     );

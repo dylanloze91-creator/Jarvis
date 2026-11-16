@@ -285,7 +285,7 @@ describe('pont des enceintes (5.0.64)', () => {
     expect(wav.sampleRate).toBe(SPEAKER_SAMPLE_RATE);
     expect(wav.samples.length).toBe(Math.round(((100 + 'Réponse à : quelle heure est-il'.length) / 1000) * SPEAKER_SAMPLE_RATE));
     // Le mot de réveil est retiré avant le chat ; source vocale, pas de suivi.
-    expect(chat().inputs).toEqual([{ conversationId: null, text: 'quelle heure est-il', source: 'voice' }]);
+    expect(chat().inputs).toEqual([{ conversationId: null, text: 'quelle heure est-il', source: 'voice', place: { kind: 'enceinte', name: 'Salon' } }]);
     expect(synth.spoken).toEqual(['Réponse à : quelle heure est-il']);
     expect(turns).toHaveLength(1);
     expect(turns[0]![0]).toBe('Salon');
@@ -372,7 +372,7 @@ describe('pont des enceintes (5.0.64)', () => {
     const ignored = await call(port, '/api/speaker/turn', { token, body: voiceWav(), followUp: true });
     expect(ignored.status).toBe(204);
     expect(ignored.headers['x-jarvis-continue']).toBe('0');
-    expect(chat().inputs[0]).toEqual({ conversationId: null, text: 'il fait beau chez eux', source: 'voice', followUp: true });
+    expect(chat().inputs[0]).toEqual({ conversationId: null, text: 'il fait beau chez eux', source: 'voice', followUp: true, place: { kind: 'enceinte', name: 'Salon' } });
 
     setTranscript('pause');
     const ok = await call(port, '/api/speaker/turn', { token, body: voiceWav(), followUp: true });

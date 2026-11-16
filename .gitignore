@@ -11,7 +11,10 @@ apps/desktop/build-test/
 !.env.example
 coverage/
 .vite/
-agent-tools/
+# Carnet des ratés : phrases de l'utilisateur, seulement sur son PC.
+rates.jsonl
+carnet-semaine.md
+
 
 # Enregistrements vocaux réels utilisés pour le test de régression du mot de
 # réveil : jamais commités (voix d'une personne réelle) — voir

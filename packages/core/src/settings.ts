@@ -305,6 +305,42 @@ export const settingsSchema = z.object({
     })
     .optional(),
   /**
+   * Briefing du matin. Absent : pas de briefing, comme avant.
+   * Pas de défaut Zod : `parseSettings({})` ne gagne aucune clé.
+   */
+  briefing: z
+    .object({
+      enabled: z.boolean().optional(),
+      fromHour: z.number().int().min(0).max(23).optional(),
+      toHour: z.number().int().min(0).max(23).optional(),
+      rainMmPerHour: z.number().min(0).max(100).optional(),
+      gustKmh: z.number().min(0).max(300).optional(),
+    })
+    .optional(),
+  /** Notes et liste. Absent : pas d'outils, pas de phrase express. */
+  notes: z
+    .object({
+      enabled: z.boolean().optional(),
+    })
+    .optional(),
+  /** Routines. Absent : pas d'équipe Tâches, pas de phrase express. */
+  routines: z
+    .object({
+      enabled: z.boolean().optional(),
+    })
+    .optional(),
+  /**
+   * Imprimante 3D (Moonraker, réseau local). Absent : aucun outil, aucune phrase.
+   * `apiKey` est un secret : le coffre le retire du fichier de réglages.
+   */
+  printer: z
+    .object({
+      enabled: z.boolean().optional(),
+      baseUrl: z.string().max(300).optional(),
+      apiKey: z.string().max(200).optional(),
+    })
+    .optional(),
+  /**
    * Garder la fenêtre visible quand une autre application prend le focus.
    * Masquage uniquement via Ctrl+Espace, Échap, ou le bouton fermer.
    * Remplace l'ancien `hideOnBlur` (défaut true) : la clé historique est
