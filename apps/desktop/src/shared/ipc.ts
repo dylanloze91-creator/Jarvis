@@ -123,6 +123,7 @@ export const IpcChannel = {
   windowIsVisible: 'window:is-visible',
   windowShown: 'window:shown',
   systemSnapshot: 'system:snapshot',
+  systemCopyText: 'system:copy-text',
   voiceTranscribe: 'voice:transcribe',
   voiceSpeak: 'voice:speak',
   voicePiperSpeak: 'voice:piper-speak',
@@ -875,6 +876,12 @@ export interface JarvisApi {
   system: {
     /** Relevé réel. Les champs inconnus restent `null`. */
     snapshot(): Promise<MachineSnapshot>;
+    /**
+     * Copie un texte dans le presse-papiers par le processus principal. `navigator.clipboard` est
+     * refusé dans la fenêtre (gestionnaire d'autorisations : micro seul) : « Copier le bloc » des
+     * enceintes ne copiait rien. Rend `false` si le texte est refusé (vide ou trop long).
+     */
+    copyText(text: string): Promise<boolean>;
   };
   voice: {
     transcribe(input: VoiceTranscribeInput): Promise<VoiceTranscribeResult>;

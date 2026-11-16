@@ -114,6 +114,7 @@ import { SpeakerChronoFile } from './speaker/chronoFile.js';
 import { warmOllamaModels } from './speaker/warmupRun.js';
 import { presentWindow } from './startup.js';
 import { allowPermissionCheck, allowPermissionRequest, isAppDocumentUrl, originForLog } from './mediaPermissions.js';
+import { isCopyableText } from './copyText.js';
 import { VoiceCaptureLog } from './voiceCaptureLog.js';
 import { WakeLearningStore } from './wakeLearningStore.js';
 import { LocalLearningStore } from './learning/store.js';
@@ -1099,6 +1100,11 @@ function registerIpc(): void {
     if (mode === 'compact' || mode === 'dashboard') overlay?.setChrome(mode);
   });
   ipcMain.handle(IpcChannel.systemSnapshot, () => readMachineSnapshot(app.getVersion()));
+  ipcMain.handle(IpcChannel.systemCopyText, (_event, text: unknown) => {
+    if (!isCopyableText(text)) return false;
+    clipboard.writeText(text);
+    return true;
+  });
 
   ipcMain.handle(IpcChannel.voiceTranscribe, (_event, input: VoiceTranscribeInput) =>
     voice.transcribe(input),
