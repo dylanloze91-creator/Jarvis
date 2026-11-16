@@ -34,6 +34,10 @@ describe('construction de Jarvis Test', () => {
     expect(args).toContain('com.thedexios.jarvis.test');
     expect(args).toContain('Jarvis Test');
     expect(args).not.toContain('latest.yml');
+    // Sans canal, electron-builder écrit latest.yml : celui de Live.
+    expect(testBuilderCliArgs()).toContain('-c.publish.channel=test');
+    // Live : @jarvisdesktop-updater. Test garde ses téléchargements à part.
+    expect(testBuilderCliArgs()).toContain('-c.extraMetadata.name=jarvis-test');
 
     const desktopPkg = JSON.parse(readFileSync(resolve(desktop, 'package.json'), 'utf8')) as {
       scripts: Record<string, string>;

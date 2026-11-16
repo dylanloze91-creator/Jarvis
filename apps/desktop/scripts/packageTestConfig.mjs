@@ -10,6 +10,15 @@ export const testBuilder = {
   shortcutName: 'Jarvis Test',
   output: 'release-test',
   icon: 'build-test/icon.png',
+  // Canal de mise à jour : electron-builder écrit `test.yml` (et `app-update.yml` avec
+  // `channel: test`) au lieu de `latest.yml`. Sans lui, la construction du 16 novembre
+  // a produit `latest.yml`, le fichier que suit Jarvis Live.
+  channel: 'test',
+  // Nom du paquet dans l'installateur. electron-builder en tire le dossier des mises à jour
+  // téléchargées (`<nom>-updater`, réglage `publish.updaterCacheDirName` ignoré) : Live a
+  // `@jarvisdesktop-updater` ; partagé, chacun pouvait effacer le téléchargement de l'autre.
+  // Les données de Test ne dépendent pas de ce nom (`userData` fixé à « Jarvis Test »).
+  packageName: 'jarvis-test',
 };
 
 export function testBuilderCliArgs() {
@@ -25,5 +34,7 @@ export function testBuilderCliArgs() {
     `-c.win.icon=${testBuilder.icon}`,
     `-c.nsis.shortcutName=${testBuilder.shortcutName}`,
     `-c.directories.output=${testBuilder.output}`,
+    `-c.publish.channel=${testBuilder.channel}`,
+    `-c.extraMetadata.name=${testBuilder.packageName}`,
   ];
 }
