@@ -926,6 +926,7 @@ export class SpeakerServer {
         conversationId,
         text,
         source: 'voice',
+        place: { kind: 'enceinte', name: state.speaker.name },
         ...(followUp ? { followUp: true } : {}),
         ...(rulesOnly ? { rulesOnlyAddressee: true } : {}),
       })

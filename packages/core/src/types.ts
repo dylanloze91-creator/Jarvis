@@ -86,12 +86,55 @@ export interface ChatMessage {
   createdAt: number;
 }
 
+/**
+ * Équipe choisie pour un message utilisateur. Facultatif : les anciennes
+ * conversations n'ont pas ce journal. Aucun défaut Zod.
+ */
+export interface RouteLogEntry {
+  userMessageId: string;
+  team: string;
+  how?: string;
+}
+
+/** Outil vu pendant un tour, tel que le journal le note. */
+export interface TurnLogTool {
+  name: string;
+  status: string;
+}
+
+/**
+ * Journal d'un tour, écrit à la fin du tour dans Jarvis Test seulement.
+ * Absent des anciennes conversations et de Jarvis Live. Aucun défaut Zod.
+ */
+export interface TurnLogEntry {
+  userMessageId: string;
+  /** Réponse(s) et messages d'outil de ce tour. */
+  assistantMessageIds: string[];
+  /** Équipe du chef d'orchestre. `null` : chat d'avant. */
+  team: string | null;
+  /** calcul, horloge, express, trieur, cerveau, ou `null`. */
+  how: string | null;
+  /** ollama, openai, anthropic, mock, ou aucun (sans modèle). */
+  provider: string;
+  /** ex. qwen2.5:7b ; `null` si aucun modèle. */
+  model: string | null;
+  place: 'carte' | 'processeur' | null;
+  source: 'texte' | 'voix' | 'telephone' | 'enceinte';
+  tools: TurnLogTool[];
+  durationMs: number;
+  at: number;
+}
+
 export interface Conversation {
   id: string;
   title: string;
   createdAt: number;
   updatedAt: number;
   messages: ChatMessage[];
+  /** Journal des équipes. Absent tant qu'aucun tour ne l'a rempli. */
+  routeLog?: RouteLogEntry[];
+  /** Journal des tours. Absent dans Live et dans les anciennes conversations. */
+  turnLog?: TurnLogEntry[];
 }
 
 export interface ConversationSummary {

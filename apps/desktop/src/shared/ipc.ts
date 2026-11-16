@@ -372,6 +372,11 @@ export interface SendChatInput {
   rulesOnlyAddressee?: boolean;
   /** Module images : photos jointes (3 au plus, 20 Mo chacune), enregistrées par le processus principal. */
   attachments?: ChatAttachmentInput[];
+  /**
+   * D'où vient la phrase. Absent = la fenêtre.
+   * N'est jamais transmis au modèle. Le journal du tour s'en sert dans Jarvis Test.
+   */
+  place?: { kind: 'fenetre' } | { kind: 'telephone' } | { kind: 'enceinte'; name: string };
 }
 
 /** Photo jointe telle que l'interface l'envoie (octets en base64, sans préfixe `data:`). */

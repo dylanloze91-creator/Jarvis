@@ -22,6 +22,7 @@ import {
   teamPersonaPrompt,
   userFirstName,
   chatProviderConfig,
+  resolveChatModel,
   activeOrchestra,
   activeRouter,
   addresseeCheckEnabled,
@@ -93,6 +94,7 @@ import { describeDirectResult, type ImagesService } from './images/ImagesService
 import type { ChatEvent, RuntimeStatus, SendChatInput } from '../shared/ipc.js';
 import { IpcChannel } from '../shared/ipc.js';
 import { canOfferTeamValidation, validationPathForHow } from './orchestra/teamValidation.js';
+import { journaliserTour, type RouteNotee } from './turnJournal.js';
 import type { PersonalizationStore } from './personalization.js';
 import type { KnowledgeStore } from './knowledge.js';
 import type { VoiceBridge } from './voice.js';
@@ -116,6 +118,20 @@ interface TurnRoute {
   /** Réponse déjà prête (calcul) : aucun modèle n'est appelé. */
   reply?: string;
   provider?: LLMProvider;
+}
+
+/** Ce que le journal retient du chemin choisi. N'appelle aucun modèle. */
+function routeNotee(route: TurnRoute | null, orchestra: OrchestraConfig | null): RouteNotee | null {
+  if (!route) return null;
+  const equipe = ORCHESTRA_TEAMS.includes(route.team as OrchestraTeam);
+  return {
+    team: route.team,
+    how: route.how,
+    providerId: route.provider?.id ?? null,
+    model: route.provider?.model ?? null,
+    place: route.provider && orchestra && equipe ? teamAssignment(orchestra, route.team as OrchestraTeam).place : null,
+    sansModele: !route.provider,
+  };
 }
 
 /** Réponse fixe, au même format que les événements de l'agent. */
@@ -312,6 +328,7 @@ export class ChatSession {
     }
 
     const source = input.source ?? 'text';
+    const turnStartedAt = Date.now();
     const healthIntent = looksLikeHealthIntent(input.text);
     const orchestra = activeOrchestra(settings);
     const route = !healthIntent && orchestra
@@ -614,7 +631,17 @@ export class ChatSession {
       emit({ type: 'imager_offer', text: input.text });
     }
 
-    const updated = withMessages(conversation, messages);
+    const updated = journaliserTour(withMessages(conversation, messages), {
+      startedAt: turnStartedAt,
+      previousCount: conversation.messages.length,
+      source: input.source,
+      place: input.place,
+      route: routeNotee(route, orchestra),
+      health: healthIntent,
+      directMission: directMissionTake,
+      chatProviderId: settings.provider,
+      chatModel: resolveChatModel(settings),
+    });
     try {
       await this.deps.store.save(updated);
     } catch (error) {
