@@ -1,11 +1,16 @@
-import { appendFile, mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises';
+import { appendFile, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { app, safeStorage } from 'electron';
 import { copyLiveIntoTest, type CopyHost, type CopyReport } from '@jarvis/core';
+import { findLiveDir, liveDirCandidates } from './liveDir.js';
 
-/** Dossier de l'installateur Live : `%APPDATA%\\Jarvis`. On ne le crée pas. */
-export function installedLiveDir(): string {
-  return join(app.getPath('appData'), 'Jarvis');
+/**
+ * Dossier de l'installateur Live (`%APPDATA%\@jarvis\desktop`, voir `liveDir.ts`).
+ * On ne le crée pas. Absent : le premier candidat (la copie dira que rien n'a été trouvé).
+ */
+export async function installedLiveDir(): Promise<string> {
+  const appData = app.getPath('appData');
+  return (await findLiveDir(appData)) ?? (liveDirCandidates(appData)[0] as string);
 }
 
 function host(): CopyHost {
@@ -33,7 +38,7 @@ async function note(userData: string, lines: string[]): Promise<void> {
 export async function copyInstalledLive(userData: string): Promise<CopyReport> {
   const lines: string[] = [];
   const report = await copyLiveIntoTest({
-    liveRoot: installedLiveDir(),
+    liveRoot: await installedLiveDir(),
     testRoot: userData,
     host: host(),
     cipher: {
@@ -53,9 +58,5 @@ export async function copyInstalledLive(userData: string): Promise<CopyReport> {
 }
 
 export async function liveDirExists(): Promise<boolean> {
-  try {
-    return (await stat(installedLiveDir())).isDirectory();
-  } catch {
-    return false;
-  }
+  return (await findLiveDir(app.getPath('appData'))) !== null;
 }
