@@ -43,7 +43,7 @@ Ce fichier ne contient ni secret, ni donnée personnelle, ni nom de réseau : le
 
 ### Publié
 
-- **5.0.77** (13 novembre) : corrections des essais du 12 novembre. Reste deux essais à la voix, à faire par l'utilisateur : musique sur la Phantom puis « stop la musique », et une sauvegarde suivie de sa restauration.
+- **5.0.77** (13 novembre) : corrections des essais du 12 novembre. Les deux derniers essais à la voix sont bons (16 novembre) : musique sur la Phantom puis « stop la musique », et une sauvegarde suivie de sa restauration.
 - **5.0.78** (16 novembre) :
   - écriture sûre des fichiers d'état : forcée sur le disque, avec une copie `.bak` reprise si le fichier est abîmé. C'est la cause de l'enceinte en 401 après les coupures du 13 novembre ;
   - Codeur par rôle respecté, réflexion coupée, « revue non faite » dite telle quelle ;
