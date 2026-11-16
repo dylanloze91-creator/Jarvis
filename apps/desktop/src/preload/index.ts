@@ -128,6 +128,7 @@ const api: JarvisApi = {
   },
   system: {
     snapshot: () => ipcRenderer.invoke(IpcChannel.systemSnapshot),
+    copyText: (text: string) => ipcRenderer.invoke(IpcChannel.systemCopyText, text),
   },
   voice: {
     transcribe: (input: VoiceTranscribeInput) =>

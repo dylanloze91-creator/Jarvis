@@ -33,7 +33,7 @@ export function CopyCommand({ command }: { command: string }) {
         type="button"
         className="no-drag flex items-center gap-1 text-[11px] text-slate-400 hover:text-slate-100"
         onClick={() => {
-          void navigator.clipboard?.writeText(command).then(() => setCopied(true));
+          void window.jarvis.system.copyText(command).then((ok) => setCopied(ok));
         }}
       >
         {copied ? <Check className="size-3" /> : <Copy className="size-3" />}

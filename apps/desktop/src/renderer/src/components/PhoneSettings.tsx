@@ -50,9 +50,10 @@ export function PhoneSettingsSection() {
   const { tailscale } = status;
   const tailscaleReady = tailscale.online && !!tailscale.dnsName;
   const copyCommand = (): void => {
-    void navigator.clipboard
-      .writeText(status.serveCommand)
-      .then(() => {
+    void window.jarvis.system
+      .copyText(status.serveCommand)
+      .then((ok) => {
+        if (!ok) return;
         setCopied(true);
         window.setTimeout(() => setCopied(false), 2000);
       })
