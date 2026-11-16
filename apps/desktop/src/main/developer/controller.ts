@@ -1203,7 +1203,11 @@ export class DeveloperController {
         const label = MISSION_LABELS[mission.kind] ?? mission.kind;
         return `Mission ${label} en cours…`;
       }
-      if (mission.status === 'finished') return 'Mission terminée.';
+      if (mission.status === 'finished') {
+        // 5.0.78 : terminée sans verdict « réussie » (tests verts, revue non faite) : le dire.
+        const why = mission.verdict === null ? mission.summary?.trim() : '';
+        return why ? `Mission terminée, à vérifier : ${why.split(/\s+/).slice(0, 28).join(' ')}` : 'Mission terminée.';
+      }
       if (mission.status === 'failed') {
         const why = mission.summary?.trim();
         return why ? `Mission échouée : ${why.split(/\s+/).slice(0, 28).join(' ')}` : 'Mission échouée.';

@@ -3,6 +3,7 @@ import { checkOllamaStatus, type HealthReport, type Settings } from '@jarvis/cor
 import { inspectVoiceAssets, currentVoiceAssetsRoot } from '../voiceAssetsProtocol.js';
 import type { HealthProbeSet } from './collect.js';
 import { collectHealthReport } from './collect.js';
+import { stateFileIncidents } from '../safeFile.js';
 
 export interface HealthRuntimeDeps {
   getSettings: () => Settings;
@@ -22,6 +23,8 @@ export interface HealthRuntimeDeps {
     | { encryptionAvailable: boolean; unreadable: boolean }
     | Promise<{ encryptionAvailable: boolean; unreadable: boolean }>;
   broadcast: (report: HealthReport) => void;
+  /** Par défaut : les fichiers abîmés notés par `safeFile.ts` depuis le démarrage. */
+  damagedFiles?: HealthProbeSet['damagedFiles'];
 }
 
 /** Bilan lancé après l'affichage de la fenêtre. Lecture seule. */
@@ -77,6 +80,9 @@ export class HealthMonitor {
       phoneEnabled: () => this.deps.phoneEnabled(),
       speakersEnabled: () => this.deps.speakersEnabled(),
       printerConfigured: () => false,
+      damagedFiles:
+        this.deps.damagedFiles ??
+        (() => stateFileIncidents().map(({ file, restored, setAside }) => ({ file, restored, setAside }))),
     };
   }
 }

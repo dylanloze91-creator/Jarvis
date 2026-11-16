@@ -1,4 +1,3 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { app } from 'electron';
 import {
@@ -7,12 +6,16 @@ import {
   type PersonalizationProfile,
   type PersonalizationScope,
 } from '@jarvis/core';
+import { jsonParser, readStateFile, writeStateFile } from './safeFile.js';
 
 const FILE_NAME = 'personalization.json';
 
 function filePath(): string {
   return join(app.getPath('userData'), FILE_NAME);
 }
+
+/** Même lecteur à la lecture et pour juger la version précédente avant d'en faire le `.bak`. */
+const parsePersonalization = jsonParser((data) => normalizePersonalization(data));
 
 export class PersonalizationStore {
   private profile: PersonalizationProfile | null = null;
@@ -21,8 +24,8 @@ export class PersonalizationStore {
     if (this.profile) return structuredClone(this.profile);
 
     try {
-      const raw = await readFile(filePath(), 'utf8');
-      this.profile = normalizePersonalization(JSON.parse(raw));
+      const read = await readStateFile(filePath(), parsePersonalization);
+      this.profile = read.status === 'ok' || read.status === 'restored' ? read.value : emptyPersonalization();
     } catch {
       this.profile = emptyPersonalization();
     }
@@ -106,11 +109,7 @@ export class PersonalizationStore {
   }
 
   private async save(profile: PersonalizationProfile): Promise<void> {
-    await mkdir(app.getPath('userData'), { recursive: true });
-    await writeFile(filePath(), JSON.stringify(profile, null, 2), {
-      encoding: 'utf8',
-      mode: 0o600,
-    });
+    await writeStateFile(filePath(), JSON.stringify(profile, null, 2), { mode: 0o600, parse: parsePersonalization });
     this.profile = profile;
   }
 }

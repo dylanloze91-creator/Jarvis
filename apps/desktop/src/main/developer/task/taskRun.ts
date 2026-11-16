@@ -155,6 +155,8 @@ export class TaskRunBase {
   protected extraSafetyContext: Partial<CommandSafetyContext> = {};
   protected reviewed: ReviewedPlan | null = null;
   protected approval: PlanApproval | null = null;
+  /** Mode direct (5.0.78) : action passée sans carte hors couverture du plan, dite telle quelle au journal. */
+  protected directNote: string | null = null;
   protected series = 0;
   protected readonly calls = new Map<string, { name: string; arguments: Record<string, unknown> }>();
 
@@ -253,6 +255,7 @@ export class TaskRunBase {
   ): Promise<ToolCallOutcome> {
     this.calls.set(call.id, { name: call.name, arguments: call.arguments });
     const before = this.state.planApproved.length;
+    this.directNote = null;
     const outcome = await this.manager.execute(call, {
       signal,
       requestConfirmation: (request) => this.decide(request, signal),
@@ -260,7 +263,9 @@ export class TaskRunBase {
     });
     this.calls.delete(call.id);
     const covered = this.state.planApproved.length > before;
-    this.host.audit(outcome, covered ? 'Validé par le plan' : undefined);
+    const note = covered ? 'Validé par le plan' : (this.directNote ?? undefined);
+    this.directNote = null;
+    this.host.audit(outcome, note);
     this.host.emit();
     return outcome;
   }

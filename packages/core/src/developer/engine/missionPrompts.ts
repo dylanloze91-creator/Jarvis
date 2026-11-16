@@ -169,6 +169,9 @@ export interface StructuredTaskReview {
   sameModelAsCoder: boolean;
   /** Transparence affichée à l'utilisateur sur l'indépendance de la revue. */
   independenceNote: string;
+  /** 5.0.78 : la revue n'a pas pu se faire (erreur, délai, réponse illisible) ; `skipReason` dit pourquoi. */
+  skipped?: boolean;
+  skipReason?: string;
 }
 
 function issueBucket(severity: 'info' | 'avertissement' | 'bloquant'): StructuredReviewBucket {

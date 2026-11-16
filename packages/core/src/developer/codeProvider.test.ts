@@ -84,6 +84,16 @@ describe('fournisseur IA de code : local seulement', () => {
     });
     expect(createCodeAIProvider(registry, { model: 'x' }).baseUrl).toBe('http://127.0.0.1:11434');
   });
+
+  it('5.0.78 : la réflexion est coupée par défaut ; un réglage explicite garde la main', () => {
+    const { registry, configs } = scripted(() => []);
+    createCodeAIProvider(registry, { model: 'ornith:9b', options: { numCtx: 8_192 } });
+    expect(configs[0]?.ollama).toEqual({ think: false, numCtx: 8_192, recoverToolCalls: true });
+    createCodeAIProvider(registry, { model: 'ornith:9b' });
+    expect(configs[1]?.ollama).toEqual({ think: false, recoverToolCalls: true });
+    createCodeAIProvider(registry, { model: 'qwen3.6:27b', options: { think: true } });
+    expect(configs[2]?.ollama).toEqual({ think: true, recoverToolCalls: true });
+  });
 });
 
 describe('boucle d’outils', () => {

@@ -202,6 +202,29 @@ function phraseFacts(facts: HealthFacts): HealthItem[] {
     }
   }
 
+  if (facts.files && facts.files !== 'skip' && facts.files !== 'timeout' && !isProbeError(facts.files)) {
+    for (const damaged of facts.files.damaged) {
+      const aside = damaged.setAside ? ` (gardé en ${damaged.setAside})` : '';
+      items.push(
+        damaged.restored
+          ? item({
+              id: 'files',
+              level: 'orange',
+              sentence: `${damaged.file} était abîmé${aside} : j'ai repris sa version précédente. Vérifie ce qui a changé depuis.`,
+              short: damaged.file,
+              open: 'backup.directory',
+            })
+          : item({
+              id: 'files',
+              level: 'red',
+              sentence: `${damaged.file} était abîmé${aside} et sans version précédente : ce qu'il contenait est à refaire.`,
+              short: damaged.file,
+              open: 'backup.directory',
+            }),
+      );
+    }
+  }
+
   return items;
 }
 

@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs';
-import { mkdir, rename, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { jsonParser, readStateFile, writeStateFile } from '../../safeFile.js';
 import { dirname, join } from 'node:path';
 import {
   PROJECT_ID_PATTERN,
@@ -23,6 +24,9 @@ import {
  * `<userData>/developer/projects/<projet>/memory.json`. Rien n'est écrit dans
  * les dépôts des projets.
  */
+/** Même lecteur à la lecture et pour juger la version précédente avant d'en faire le `.bak`. */
+const parseRegistryFile = jsonParser();
+
 export class ProjectStore {
   private queue: Promise<void> = Promise.resolve();
   private written = 0;
@@ -32,15 +36,13 @@ export class ProjectStore {
   private write(path: string, value: unknown): Promise<void> {
     const body = `${JSON.stringify(value, null, 2)}\n`;
     const next = this.queue.then(async () => {
-      await mkdir(dirname(path), { recursive: true });
       this.written += 1;
-      const temporary = `${path}.${this.written}.tmp`;
       try {
-        await writeFile(temporary, body);
-        await rename(temporary, path);
+        // Écriture sûre (5.0.78) : seul le registre garde une version précédente en `.bak`.
+        await writeStateFile(path, body, path === this.registryPath() ? { parse: parseRegistryFile } : { keepBackup: false });
       } catch (error) {
-        // 5.0.77 : dossier du projet retiré pendant l'écriture (projet retiré, nettoyage d'un test) :
-        // rien à garder, et surtout pas un rejet non traité (vu dans la suite du bureau, ENOENT au rename).
+        // 5.0.77 (78dbae4 sur main) : dossier du projet retiré pendant l'écriture (projet retiré,
+        // nettoyage d'un test) : rien à garder, et surtout pas un rejet non traité.
         if ((error as NodeJS.ErrnoException).code === 'ENOENT' && !existsSync(dirname(path))) return;
         throw error;
       }
@@ -61,7 +63,9 @@ export class ProjectStore {
     this.foreign = [];
     let raw: unknown;
     try {
-      raw = JSON.parse(await readFile(this.registryPath(), 'utf8'));
+      const read = await readStateFile(this.registryPath(), parseRegistryFile);
+      if (read.status !== 'ok' && read.status !== 'restored') return emptyRegistry();
+      raw = read.value;
     } catch {
       return emptyRegistry();
     }

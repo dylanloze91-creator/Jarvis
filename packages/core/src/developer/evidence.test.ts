@@ -48,6 +48,18 @@ describe('preuves de mission', () => {
     expect(exportStagedEvidence([evidence]).manifest.kept).toBe(0);
   });
 
+  it('5.0.78 : tests verts mais revue non faite = non vérifié, « à vérifier toi-même », jamais candidate', () => {
+    const evidence = programming({ reviewSkipped: 'Réponse sans JSON après une relance' });
+    expect(evidence.status).toBe('unverified');
+    expect(evidence.statusReason).toBe(
+      'Tests verts, revue non faite : à vérifier toi-même (Réponse sans JSON après une relance).',
+    );
+    expect(evidence.staging.validationStatus).toBe('rejected');
+    expect(evidence.skill.action).toBe('none');
+    // Une revue faite ne change rien au succès vérifié.
+    expect(programming({ reviewSkipped: undefined }).status).toBe('success_verified');
+  });
+
   it('refuse un test requis rouge', () => {
     const evidence = programming({
       checks: [check({ name: 'test', passed: false, exitCode: 1, reason: '1 test en échec' })],

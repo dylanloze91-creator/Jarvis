@@ -1,4 +1,4 @@
-import { access, copyFile, mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
+import { access, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { app } from 'electron';
 import {
@@ -10,8 +10,11 @@ import {
   type ConversationSummary,
   type Settings,
 } from '@jarvis/core';
+import { jsonParser, readStateFile, writeStateFile } from './safeFile.js';
 
 const SETTINGS_FILE = 'settings.json';
+/** Même lecteur à la lecture et pour juger la version précédente avant d'en faire le `.bak`. */
+const parseSettingsFile = jsonParser((data) => parseSettings(data));
 const HISTORY_DIR = 'conversations';
 
 function userDataPath(...segments: string[]): string {
@@ -28,22 +31,16 @@ export async function settingsFileExists(): Promise<boolean> {
 }
 
 export async function readSettings(): Promise<Settings> {
-  let raw: string;
+  // 5.0.64 (P12) : un fichier illisible (coupure pendant l'écriture) donnait des réglages
+  // vides, aussitôt réécrits par le premier enregistrement : clés et comptes perdus sans
+  // un mot. 5.0.78 : il est mis de côté en `settings.json.corrompu` et la version
+  // précédente (`settings.json.bak`) est reprise ; sans elle, les défauts.
   try {
-    raw = await readFile(userDataPath(SETTINGS_FILE), 'utf8');
+    const read = await readStateFile(userDataPath(SETTINGS_FILE), parseSettingsFile, {
+      asideSuffix: 'corrompu',
+    });
+    return read.status === 'ok' || read.status === 'restored' ? read.value : parseSettings({});
   } catch {
-    return parseSettings({});
-  }
-  try {
-    return parseSettings(JSON.parse(raw));
-  } catch (error) {
-    // 5.0.64 (P12) : un fichier illisible (coupure pendant l'écriture) donnait des réglages
-    // vides, aussitôt réécrits par le premier enregistrement : clés et comptes perdus sans
-    // un mot. On garde une copie avant de repartir des défauts.
-    console.error('[jarvis] settings.json illisible, copie gardée en settings.json.corrompu :', error);
-    await copyFile(userDataPath(SETTINGS_FILE), userDataPath(`${SETTINGS_FILE}.corrompu`)).catch(
-      () => undefined,
-    );
     return parseSettings({});
   }
 }
@@ -74,12 +71,9 @@ export function writeSettings(settings: Settings): Promise<void> {
   const stored = stripSecretsOnDisk ? blankSecrets(settings) : settings;
   const body = JSON.stringify(stored, null, 2);
   return enqueueSettingsWrite(async () => {
-    await mkdir(userDataPath(), { recursive: true });
-    // Écriture atomique (P12) : le fichier complet est écrit à côté puis renommé ; une
-    // coupure ne laisse jamais un `settings.json` à moitié écrit.
-    const tmp = userDataPath(`${SETTINGS_FILE}.tmp`);
-    await writeFile(tmp, body, 'utf8');
-    await rename(tmp, userDataPath(SETTINGS_FILE));
+    // Écriture sûre (P12, 5.0.78) : temporaire forcé sur le disque, version précédente
+    // gardée en `.bak`, puis renommage. Une coupure ne laisse jamais un fichier vide.
+    await writeStateFile(userDataPath(SETTINGS_FILE), body, { parse: parseSettingsFile });
   });
 }
 

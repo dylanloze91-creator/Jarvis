@@ -73,6 +73,7 @@ import {
   judgeMissionEvidence,
   missionVerdictFromEvidence,
   EVIDENCE_STATUS_LABELS,
+  REVIEW_SKIPPED_VERDICT,
   memoryRetrievalEnabled,
   skillLibraryEnabled,
   experienceReplacement,
@@ -414,6 +415,19 @@ export class MissionWorkflow {
 
   private gameFilesWritten(): boolean {
     return gameFolderWritten(this.project?.root);
+  }
+
+  /**
+   * 5.0.78 : tests verts mais revue non faite. La mission n'est pas « réussie »
+   * (« à vérifier toi-même »), mais un projet neuf est quand même livré dans son
+   * propre dossier : ce n'est pas la copie de l'utilisateur, et le verdict le dit.
+   */
+  private unreviewedGreen(mission: MissionState): boolean {
+    return (
+      mission.verdict === null &&
+      mission.status === 'finished' &&
+      Boolean(this.host.currentTask()?.review?.skipped)
+    );
   }
 
   private levelIsDelivered(): boolean {
@@ -866,7 +880,8 @@ export class MissionWorkflow {
     }
     this.modelPlan = plan;
     const developer = this.developer();
-    const selectedCoder = plan.get('CODER')?.model ?? developer.codeModel.trim();
+    const plannedCoder = plan.get('CODER');
+    const selectedCoder = plannedCoder?.model ?? developer.codeModel.trim();
     const creationCoder =
       kind === 'new-project' || kind === 'modify' || kind === 'fix' || kind === 'skill'
         ? chooseCreationCoder({
@@ -874,6 +889,8 @@ export class MissionWorkflow {
             chatModel: developer.chatModel,
             installed,
             parameterSize: (name) => status.models.find((model) => model.name === name)?.parameterSize,
+            // 5.0.78 : un Codeur choisi dans « Modèle par rôle » n'est pas remplacé par la règle 6 Go stricte.
+            userChosen: plannedCoder?.reason === 'user-role',
           })
         : { model: selectedCoder, pull: null, reason: '' };
     const coder = creationCoder.model;
@@ -1917,7 +1934,9 @@ export class MissionWorkflow {
         continue;
       }
       merged = false;
-      if (mission.verdict === 'success' && this.host.applyTaskToProject) {
+      const unreviewed = this.unreviewedGreen(mission);
+      const deliverable = mission.verdict === 'success' || unreviewed;
+      if (deliverable && this.host.applyTaskToProject) {
         const applied = await this.host.applyTaskToProject();
         const task = this.host.currentTask() ?? applied.codeTask;
         merged = Boolean(task?.applied && task.applied.revertedAt === null);
@@ -1929,7 +1948,9 @@ export class MissionWorkflow {
           );
         }
         if (merged) {
-          mission.summary = `Livré : ${task?.diff.length ?? 0} fichier(s) fusionnés dans ${project.root}.`;
+          mission.summary = unreviewed
+            ? `${REVIEW_SKIPPED_VERDICT}. Livré : ${task?.diff.length ?? 0} fichier(s) fusionnés dans ${project.root}, tests OK, mais le relecteur n’a pas pu relire le diff (${task?.review?.skipReason ?? 'revue non faite'}).`
+            : `Livré : ${task?.diff.length ?? 0} fichier(s) fusionnés dans ${project.root}.`;
           for (const agent of codeAgents) {
             this.agent(agent.id, {
               status: 'done',
@@ -1955,7 +1976,7 @@ export class MissionWorkflow {
           });
         }
       }
-      if (!levelMissing && mission.verdict === 'success' && merged && project) {
+      if (!levelMissing && deliverable && merged && project) {
         this.deps.onMissionFocusProject?.(project.id);
         this.setAgentRole('package', 'running', 'prépare le livrable et le raccourci Bureau');
         await this.deliverWindowsExeIfRequested(template ?? undefined, mission.request, mission.projectId!);
@@ -1973,7 +1994,12 @@ export class MissionWorkflow {
         );
         const doneAgents = (mission.agents ?? []).filter((agent) => agent.status === 'done').length;
         const failedAgents = (mission.agents ?? []).filter((agent) => agent.status === 'failed').length;
-        mission.summary = `Superviseur : ${doneAgents} agent(s) terminés${failedAgents ? `, ${failedAgents} en échec` : ''}. ${mission.summary ?? ''}`.trim();
+        const supervisorLine = `Superviseur : ${doneAgents} agent(s) terminés${failedAgents ? `, ${failedAgents} en échec` : ''}.`;
+        const previous = mission.summary ?? '';
+        // 5.0.78 : « Tests verts, revue non faite : à vérifier toi-même » reste en tête.
+        mission.summary = previous.startsWith(`${REVIEW_SKIPPED_VERDICT}.`)
+          ? `${REVIEW_SKIPPED_VERDICT}. ${supervisorLine} ${previous.slice(REVIEW_SKIPPED_VERDICT.length + 1).trim()}`.trim()
+          : `${supervisorLine} ${previous}`.trim();
         this.deps.onMissionChatLine?.(mission.summary);
       }
       break;
@@ -1986,7 +2012,11 @@ export class MissionWorkflow {
       mission.journalNote = TEMPLATE_STILL_LINE;
       this.closeOpenAgents(TEMPLATE_STILL_LINE, 'failed');
       this.trace('mission', 'end', { error: TEMPLATE_STILL_LINE });
-    } else if (project && this.levelIsDelivered() && mission.verdict === 'success') {
+    } else if (
+      project &&
+      this.levelIsDelivered() &&
+      (mission.verdict === 'success' || this.unreviewedGreen(mission))
+    ) {
       try {
         await this.host.openProjectPreview?.(project);
       } catch {
@@ -2367,7 +2397,9 @@ export class MissionWorkflow {
           })
           .finally(() => (model !== coder ? this.switchModel(coder) : undefined));
         if (run instanceof SpecialistError) {
-          const summary = `revue non faite (${run.message}) : non bloquante, relis le diff toi-même`;
+          // 5.0.78 : la mission ne sera pas « réussie » mais « tests verts, revue non faite :
+          // à vérifier toi-même » (`finishFromTask`, preuve « non vérifiée »).
+          const summary = `revue non faite (${run.message}) : à vérifier toi-même, relis le diff avant d’appliquer`;
           this.patch(id, { status: 'skipped', detail: summary, error: undefined });
           const structured = structureReviewerOutput(
             { verdict: 'à revoir', issues: [], recommendations: [] },
@@ -2376,6 +2408,8 @@ export class MissionWorkflow {
             { coderModel: coder },
           );
           structured.summary = summary;
+          structured.skipped = true;
+          structured.skipReason = run.message;
           return { blocking: [], model, summary, structured };
         }
         const structured = structureReviewerOutput(run.output, model, Date.now(), {
@@ -2456,6 +2490,7 @@ export class MissionWorkflow {
           seenFingerprints: seen,
           audit: this.auditLines,
           lastSeriesOk: task.runs.length ? task.runs.at(-1)?.ok === true : undefined,
+          reviewSkipped: task.review?.skipped ? task.review.skipReason || 'revue non faite' : undefined,
         })
       : judgeMissionEvidence({
           id: mission.id,
@@ -2471,6 +2506,9 @@ export class MissionWorkflow {
     mission.evidence = evidence;
     const verdict = missionVerdictFromEvidence(evidence.status);
     mission.verdict = verdict;
+    // 5.0.78 : tests verts mais revue non faite (erreur, délai, réponse illisible).
+    const reviewSkipped =
+      Boolean(task?.review?.skipped) && evidence.status === 'unverified' && verdict === null;
     mission.status =
       task?.status === 'refused' || task?.status === 'cancelled' || evidence.status === 'cancelled'
         ? 'cancelled'
@@ -2489,6 +2527,8 @@ export class MissionWorkflow {
     mission.summary =
       task?.status === 'refused'
         ? 'Plan refusé : rien n’a été écrit.'
+        : reviewSkipped
+          ? `${REVIEW_SKIPPED_VERDICT}. ${task?.diff.length ?? 0} fichier(s) modifié(s), tests OK, mais le relecteur n’a pas pu relire le diff (${task?.review?.skipReason ?? 'revue non faite'}). Relis-le avant d’appliquer.`
         : verdict === 'success'
           ? `Réussie : ${task?.diff.length ?? 0} fichier(s) modifié(s), tests et aperçu OK${task?.review ? ', revue sans point bloquant' : ''}.`
           : evidence.status === 'success_partial' || evidence.status === 'unverified' || evidence.status === 'failed' || evidence.status === 'blocked'
@@ -2505,10 +2545,12 @@ export class MissionWorkflow {
         .recordModelRun?.({
           model: task.model,
           category: modelRunCategory('CODER', mission.kind),
-          success: verdict === 'success',
+          // Tests verts sans revue : la panne du relecteur n'est pas un échec du codeur.
+          success: verdict === 'success' || reviewSkipped,
         })
         ?.catch(() => undefined);
     }
+    if (reviewSkipped && mission.summary) this.deps.onMissionChatLine?.(mission.summary);
     if (task && this.deps.manualStore) {
       const installed = (await this.deps.ollama().status()).models.map((m) => m.name);
       mission.learning = await this.deps.manualStore.tryLearningFromTask({

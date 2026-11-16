@@ -41,18 +41,34 @@ const MISSION_CODER_PREFER = ['qwen3.6:35b-a3b-coding', 'qwen2.5-coder:14b', 'qw
 export const PREFERRED_SIX_GB_CODER = 'qwen3.6:35b-a3b-coding';
 
 const SIX_GB = 6e9;
+/** Plafond toléré pour un codeur choisi par l'utilisateur (9B dense en Q4 : 6,2 Go). */
+const SIX_GB_RELAXED = 6.6e9;
 
 /**
  * Tient dans 6 Go de VRAM : dense jusqu’à 7B (Q4 + marge), ou MoE « a3b »
  * (experts en RAM, attention sur la carte). Taille inconnue : on ne l’écarte pas.
  * `qwen3.8` est dense et trop gros même sans suffixe « b ».
  */
-export function modelFitsSixGb(name: string, parameterSize?: string | null): boolean {
+export function modelFitsSixGb(
+  name: string,
+  parameterSize?: string | null,
+  options: { relaxed?: boolean } = {},
+): boolean {
   if (/qwen3\.8/i.test(name)) return false;
   if (/a3b/i.test(name)) return true;
   const params = modelParamsB(name, parameterSize);
   if (params === null) return true;
-  return params * 0.6e9 + 0.8e9 <= SIX_GB;
+  return params * 0.6e9 + 0.8e9 <= (options.relaxed ? SIX_GB_RELAXED : SIX_GB);
+}
+
+/**
+ * Un codeur choisi par l'utilisateur dans « Modèle par rôle » déborde un peu de 6 Go
+ * sans être refusé (5.0.78) : un 9B dense en Q4 tourne avec une partie des couches
+ * sur le processeur (mesuré sur une RTX 2060 : 71 % du modèle sur la carte).
+ * Un 14B dense reste refusé.
+ */
+export function modelFitsSixGbRelaxed(name: string, parameterSize?: string | null): boolean {
+  return modelFitsSixGb(name, parameterSize, { relaxed: true });
 }
 
 function isCoderName(name: string): boolean {
@@ -98,6 +114,8 @@ export function chooseCreationCoder(input: {
   chatModel?: string;
   installed: ReadonlySet<string>;
   parameterSize?: (name: string) => string | null | undefined;
+  /** `selected` vient de « Modèle par rôle » (choix explicite de l'utilisateur) : règle 6 Go assouplie. */
+  userChosen?: boolean;
 }): CreationCoderChoice {
   const selected = input.selected.trim();
   const chat = input.chatModel?.trim() ?? '';
@@ -105,6 +123,13 @@ export function chooseCreationCoder(input: {
   const isChat = Boolean(chat) && selected === chat;
   const fits = Boolean(selected) && modelFitsSixGb(selected, sizeOf?.(selected)) && !isChat;
   if (fits) return { model: selected, pull: null, reason: '' };
+  if (input.userChosen && selected && !isChat && modelFitsSixGbRelaxed(selected, sizeOf?.(selected))) {
+    return {
+      model: selected,
+      pull: null,
+      reason: `Codeur : « ${selected} » choisi dans Modèle par rôle, gardé bien qu’il dépasse un peu 6 Go (une partie des couches tourne sur le processeur).`,
+    };
+  }
   const moe = input.installed.has(PREFERRED_SIX_GB_CODER) ? PREFERRED_SIX_GB_CODER : null;
   if (moe && moe !== chat) {
     return {
@@ -271,7 +296,11 @@ export function buildMissionModelPlan(
     plan.set(role, route);
   }
   if (missionUsesTask(kind)) {
-    const selectedCoder = developer.codeModel.trim();
+    // 5.0.78 : le Codeur choisi dans « Modèle par rôle » prime sur le « Modèle de code ».
+    // Avant, une mission qui modifie du code ignorait `roleModels.CODER`.
+    const roleCoder = developer.roleModels?.CODER?.trim() ?? '';
+    const userCoder = roleCoder && installed.has(roleCoder) ? roleCoder : '';
+    const selectedCoder = userCoder || developer.codeModel.trim();
     const missionCoder =
       selectedCoder && installed.has(selectedCoder)
         ? selectedCoder
@@ -287,14 +316,17 @@ export function buildMissionModelPlan(
       missionCoder &&
       (MISSION_CODER_PREFER as readonly string[]).includes(missionCoder);
     const explicitPick = Boolean(selectedCoder && missionCoder === selectedCoder);
+    const rolePick = Boolean(userCoder && missionCoder === userCoder);
     if (missionCoder && (explicitPick || benchPick || catalogPick)) {
       const shared: RoleModelRoute = {
         role: 'CODER',
         model: missionCoder,
-        reason: 'code-model',
-        logLine: explicitPick
-          ? `Codeur de mission : modèle choisi « ${missionCoder} » respecté (un seul modèle chargé à la fois).`
-          : `Codeur de mission : « ${missionCoder} » (un seul modèle chargé pour écrire, corriger et relire).`,
+        reason: rolePick ? 'user-role' : 'code-model',
+        logLine: rolePick
+          ? `Codeur de mission : « ${missionCoder} » choisi dans Modèle par rôle, respecté (un seul modèle chargé à la fois).`
+          : explicitPick
+            ? `Codeur de mission : modèle choisi « ${missionCoder} » respecté (un seul modèle chargé à la fois).`
+            : `Codeur de mission : « ${missionCoder} » (un seul modèle chargé pour écrire, corriger et relire).`,
       };
       plan.set('CODER', shared);
       // Un relecteur ou un débogueur choisi par l'utilisateur reste le sien.

@@ -34,6 +34,8 @@ export interface HealthProbeSet {
   diskFree: () => Promise<number>;
   backupState: () => Promise<{ lastAt: number | null; ok: boolean }>;
   vaultReady: () => Promise<{ encryptionAvailable: boolean; unreadable: boolean }>;
+  /** Fichiers d'état abîmés trouvés depuis le démarrage (facultatif). */
+  damagedFiles?: () => Array<{ file: string; restored: boolean; setAside: string | null }>;
   phoneEnabled: () => boolean;
   speakersEnabled: () => boolean;
   /** Lot B : faux tant qu'aucune imprimante n'est réglée. */
@@ -182,6 +184,9 @@ export async function collectHealthReport(
     const ready = await bounded(() => probes.vaultReady(), parent.signal, limits.each);
     facts.vault = ready === 'timeout' || isProbeError(ready) ? ready : ready;
   });
+
+  const damaged = probes.damagedFiles?.() ?? [];
+  if (damaged.length > 0) facts.files = { damaged };
 
   await Promise.all(jobs);
   clearTimeout(totalTimer);
