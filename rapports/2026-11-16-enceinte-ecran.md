@@ -43,3 +43,23 @@ L'heure vient d'Internet (SNTP, `pool.ntp.org`), à l'heure de Paris (changement
 - `display.c` : syntaxe vérifiée avec des en-têtes de remplacement. **Pas compilé avec ESP-IDF** (pas de chaîne de compilation dans le cloud) : à faire par `pio run` sur le PC.
 - Testé en vrai (sur la carte) : **PAS FAIT**.
 - À venir : l'animation dessinée par l'utilisateur, à incorporer quand il l'enverra.
+
+## Compilation et tests sur le PC Windows (Claude Code, nuit du 16 au 17 novembre)
+
+Fait sur la branche telle quelle (`788645c`), dans une copie de travail à part. **Rien n'a été flashé.** Aucune correction n'a été nécessaire : aucun fichier du programme n'est modifié.
+
+- **`pio run`** (`firmware/jarvis-speaker`, PlatformIO, `PYTHONUTF8=1`) : **SUCCÈS** en 317 s. `display.c` compile donc avec ESP-IDF (`driver/i2c_master.h`). Aucun avertissement venant des fichiers de l'enceinte. RAM 27,1 % (88 692 octets sur 327 680), flash 53,3 % (1 677 525 octets sur 3 145 728), `srmodels.bin` 284 Ko (`wn9_jarvis_tts`).
+  - `include/secrets.h` n'est pas dans le dépôt : la compilation a utilisé une copie de `secrets.example.h` (valeurs d'exemple, sans clé), effacée après. Le binaire obtenu ne sert qu'à vérifier la compilation : il ne doit pas être flashé tel quel.
+- **`host-tests/run.sh`** : gcc n'existe pas sous Windows ; lancé dans WSL (Ubuntu, gcc 15.2.0, ASan/UBSan, `-Werror -Wconversion`) : **OK**, code de sortie 0 (filtre du micro, flux WAV, `display_test`).
+- Remarque sans conséquence : `run.sh` compile et lance `mic_filter_test` deux fois (lignes en double). Non corrigé : ça n'empêche rien.
+- Broches vérifiées dans `config.h` : IO8 et IO9 ne sont prises ni par le micro (4, 5, 6), ni par l'ampli (15, 16, 17), ni par la LED (48).
+
+RAPPORT DE VÉRIFICATION (Claude Code)
+Lancement : OK (pio run, firmware.bin et srmodels.bin construits)
+Types     : sans objet (C)
+Style     : OK (aucun avertissement dans les fichiers de l'enceinte)
+Tests     : OK (host-tests/run.sh dans WSL, code 0)
+Secrets   : OK (secrets.h d'exemple, effacé, jamais commité)
+Fichiers modifiés : ce rapport seulement
+Prêt à fusionner : à décider après l'essai sur la carte
+Testé en vrai (sur la carte) : PAS FAIT (pas de flash cette nuit, à la demande de l'utilisateur)
