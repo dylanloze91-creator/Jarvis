@@ -50,6 +50,7 @@ Ce fichier ne contient ni secret, ni donnée personnelle, ni nom de réseau : le
 | 3 | **Jarvis Test** : branche `dev` = Live à jour + `cursor/deux-jarvis` + `cursor/lot-b-quotidien` (qui contient le carnet corrigé). Un brouillon existe : `claude/test-preparation` (fusions faites, conflit de `session.ts` résolu à la main, **rien de testé** : voir `rapports/2026-11-13-preparation-jarvis-test.md`). Typecheck, tests, lint, puis installer Test à côté de Live. Première publication `5.1.0-test.1` avec `release-test.sh`. | attend la 5.0.78 |
 | 4 | Ajouter la nuit de génération du 11 novembre au cahier (`lab:clean`) | à faire |
 | 5 | Essai du raccordement d'enceinte par USB, avec l'utilisateur et la carte | à faire |
+| 7 | Plus tard : premier entraînement sur les conversations, sur carte louée (`docs/specs/jeu-conversations.md`, partie C), quand `resume.json` montre assez d'exemples et que l'utilisateur a dit oui | après la mission 6 de Cursor et quelques semaines de Jarvis Test |
 | 6 | Carte de l'utilisation réelle : écrite par Cursor (`cursor/carte-utilisation`), corrigée par Claude (`claude/carte-correction` : seuls les messages vraiment tapés comptent). Claude Code lance `npm test --workspace @jarvis/core` sur `claude/carte-correction`, puis `scripts\carte-utilisation.ps1`, et l'utilisateur envoie **seulement** `carte.md` à Claude | à lancer sur le PC |
 
 ### Cursor (une mission à la fois)
@@ -61,8 +62,8 @@ Ce fichier ne contient ni secret, ni donnée personnelle, ni nom de réseau : le
 | 3 | Carnet des ratés (`cursor/carnet-des-rates`) | terminée et relue ; dans le lot B ; attend Jarvis Test |
 | 4 | Lot B, le quotidien (`cursor/lot-b-quotidien`), pour Jarvis Test, sur la base du carnet | terminée et relue (correction de l'imprimante faite) ; attend Jarvis Test |
 | 5 | Carte de l'utilisation réelle (`docs/specs/carte-utilisation.md`, branche `cursor/carte-utilisation`) : script du cœur, sans modèle ; chiffres seulement | terminée, relue ; correction faite par Claude (`claude/carte-correction`) |
-
-Après la mission 5, la file de Cursor est vide jusqu'à Jarvis Test : il recevra les corrections qui en sortiront. Une autre mission demande une décision de l'utilisateur.
+| 4 bis | Lot B : l'application ne se construit pas (`notes.ts` et `routines.ts` lisent le disque depuis l'index du cœur), vu par Claude Code le 13 novembre | **à faire en premier** (`cursor-lotb-construction.zip`) |
+| 6 | **Jeu d'entraînement tiré des conversations** (`docs/specs/jeu-conversations.md`, branche `cursor/jeu-conversations`) : journal du tour dans Jarvis Test (équipe, modèle, fournisseur, outils, durée) et script de préparation sans modèle (`trieur.jsonl`, `reponses.jsonl`, `a-corriger.jsonl`). Décision de l'utilisateur du 16 novembre | après la 4 bis |
 
 ### Essais de modèles
 
@@ -88,7 +89,7 @@ Ils sont arrêtés depuis le 12 novembre. Ornith-1.0-9B fait 84/87 au banc, mais
 - **Carnet des ratés** :
   - chaque nouvel outil doit rendre un **résultat clair** (réussi, raté et pourquoi), jamais un « fait » non vérifié, et chaque chemin du chef d'orchestre doit noter l'équipe choisie et comment (`route`), pour que les ratés soient lisibles ;
   - les corrections de l'utilisateur (« non, c'est faux ») sont déjà repérées (`classifyUtterance`) : le carnet s'appuiera dessus.
-- **Données d'entraînement de demain** : le carnet et la carte de l'utilisation produiront les exemples des spécialistes. Tout ce qui touche aux phrases de l'utilisateur reste local et se compte, sans se recopier dans le dépôt.
+- **Données d'entraînement de demain** : le carnet, la carte de l'utilisation et le journal du tour (`turnLog`, mission 6 de Cursor) produiront les exemples des spécialistes. Une réponse n'entre dans un jeu d'entraînement que si le journal prouve qu'elle vient d'un modèle ouvert local ; une correction n'est jamais écrite par Claude. Tout ce qui touche aux phrases de l'utilisateur reste local et se compte, sans se recopier dans le dépôt.
 - **L'imprimante 3D** : le client Moonraker du lot B sera réutilisé par le futur spécialiste impression 3D, qui vérifiera ses exercices avec Klipper en mode simulation. Il doit donc vivre dans `packages/core`, sans Electron, avec un faux Moonraker de test.
 - **Les enceintes** :
   - le contrat de tour de parole (`/api/speaker/turn`, `/wake`, en-têtes, Jarvis Réflexe) ne change pas sans cahier ;
