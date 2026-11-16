@@ -41,6 +41,7 @@ export function SpeakerSettingsSection() {
   const [repairNotice, setRepairNotice] = useState<string | null>(null);
   const scene = new URLSearchParams(window.location.search).get('scene');
   const [copied, setCopied] = useState(false);
+  const [copyFailed, setCopyFailed] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const [settings, setSettings] = useState<Settings | null>(null);
   const [chrono, setChrono] = useState<SpeakerChronoView | null>(null);
@@ -137,13 +138,15 @@ export function SpeakerSettingsSection() {
 
   const copySecrets = (): void => {
     if (!added) return;
-    void navigator.clipboard
-      .writeText(added.secrets)
-      .then(() => {
+    setCopyFailed(false);
+    void window.jarvis.system
+      .copyText(added.secrets)
+      .then((ok) => {
+        if (!ok) throw new Error('copie refusée');
         setCopied(true);
         window.setTimeout(() => setCopied(false), 2000);
       })
-      .catch(() => undefined);
+      .catch(() => setCopyFailed(true));
   };
 
   const address = status.addresses[0] ?? null;
@@ -516,7 +519,7 @@ export function SpeakerSettingsSection() {
               <p className="text-[11px] text-amber-200/80">
                 Ce jeton n’est montré qu’une fois. Si tu le perds, retire l’enceinte et ajoute-la à nouveau.
               </p>
-              <pre className="overflow-x-auto rounded-md bg-black/40 px-2 py-1.5 font-mono text-[11px] leading-snug text-cyan-100">
+              <pre className="select-text overflow-x-auto rounded-md bg-black/40 px-2 py-1.5 font-mono text-[11px] leading-snug text-cyan-100">
                 {added.secrets}
               </pre>
               <div className="flex items-center gap-2">
@@ -528,6 +531,11 @@ export function SpeakerSettingsSection() {
                   J’ai fini
                 </Button>
               </div>
+              {copyFailed ? (
+                <p className="text-[11px] text-rose-300">
+                  La copie n’a pas marché : sélectionne le bloc ci-dessus puis fais Ctrl+C.
+                </p>
+              ) : null}
             </div>
           ) : null}
 

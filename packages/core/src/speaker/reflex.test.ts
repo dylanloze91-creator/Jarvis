@@ -15,6 +15,12 @@ describe('phrases réflexes de l’enceinte', () => {
     expect(speakerReflexPhrase('spotify_transfer', 'sur la Devialet')).toBe('C’est parti.');
   });
 
+  it('ne remplace pas la question « où jouer » par « C’est parti » (12 novembre 2026 : rien n’était lancé)', () => {
+    expect(speakerReflexPhrase('spotify_play', 'mets de la musique', 'Sur la Phantom 98 dB, la Chambre ou sur le PC ?')).toBeNull();
+    expect(speakerReflexPhrase('spotify_play', 'mets de la musique', 'Phantom ou PC ?')).toBeNull();
+    expect(speakerReflexPhrase('spotify_play', 'mets de la musique', 'Lecture sur « PC » : Around the World — Daft Punk.')).toBe('C’est parti.');
+  });
+
   it('ne raccourcit pas une question sur le morceau en cours', () => {
     expect(speakerReflexPhrase('spotify_current_track', 'qu’est-ce qui joue')).toBeNull();
     expect(speakerReflexPhrase('generer_image', 'dessine un chat')).toBeNull();

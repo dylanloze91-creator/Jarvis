@@ -103,20 +103,58 @@ async function elevate(script: string, args: string[], deps: RepairDeps): Promis
   }
 }
 
-function psQuote(value: string): string {
-  if (!/^[\w.\\: ()\-/]+$/.test(value)) throw new Error('argument refusé');
+/**
+ * Lettres (accentuées comprises : un dossier d'utilisateur « Zoé », « Jérôme »), chiffres et la
+ * ponctuation d'un chemin Windows. Ni apostrophe, ni guillemet, ni `$`, ni backtick, ni point-virgule.
+ */
+export function psQuote(value: string): string {
+  if (!/^[\p{L}\p{N}_.\\: ()\-/]+$/u.test(value)) throw new Error('argument refusé');
   return `'${value.replace(/'/g, "''")}'`;
+}
+
+/**
+ * Un Windows réglé par défaut (politique « Restricted ») refuse tout fichier .ps1.
+ * Les trois scripts de Jarvis sont constants et livrés avec lui : `Bypass` pour ce seul lancement,
+ * comme la voix des enceintes (`synth.ts`). La politique de la machine n'est pas modifiée.
+ */
+const SCRIPT_FLAGS = ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass'] as const;
+
+/** Arguments de la lecture seule (sans élévation). */
+export function statusArgs(script: string): string[] {
+  return [...SCRIPT_FLAGS, '-File', script];
+}
+
+/**
+ * Un argument qui contient un espace (le chemin du script dans « Program Files », ou un dossier
+ * « Nouveau dossier ») est mis entre guillemets doubles à l'intérieur de l'élément : Start-Process
+ * recolle ses arguments avec des espaces, sans les protéger. Sans ces guillemets, « Réparer » ouvrait
+ * la fenêtre d'accord de Windows puis ne faisait rien (vu le 12 novembre 2026 sur le PC de l'utilisateur).
+ * psQuote refuse déjà les guillemets, donc l'argument ne peut pas en sortir.
+ */
+function elevateArgument(value: string): string {
+  const quoted = psQuote(value);
+  return /\s/.test(value) ? `'"${value}"'` : quoted;
+}
+
+/**
+ * Commande qui demande l'accord de Windows puis lance le script, avec les seuls arguments donnés.
+ * Le code de sortie du script élevé est rendu (-PassThru) : un script qui échoue n'est plus « réparé ».
+ * try/catch : un refus de la fenêtre d'accord (Start-Process en erreur « annulée par l'utilisateur ») sort
+ * avec le code 1 et son message. Sans le try, l'erreur n'arrête que cette instruction, $p reste vide et
+ * « exit $p.ExitCode » rend 0 : le refus passait pour un succès (vu le 12 novembre 2026).
+ */
+export function elevateCommand(script: string, args: readonly string[]): string {
+  const list = [...SCRIPT_FLAGS, '-File', script, ...args].map(elevateArgument).join(',');
+  return `try { $p = Start-Process -FilePath powershell.exe -Verb RunAs -Wait -PassThru -ErrorAction Stop -ArgumentList ${list}; exit $p.ExitCode } catch { Write-Error $_; exit 1 }`;
 }
 
 /** Vrai lancement. Les tests passent un faux `elevate` et n'appellent pas ceci. */
 export async function elevateScript(script: string, args: string[]): Promise<void> {
-  const list = ['-NoProfile', '-NonInteractive', '-File', script, ...args].map(psQuote).join(',');
-  const command = `Start-Process -FilePath powershell.exe -Verb RunAs -Wait -ArgumentList ${list}`;
-  await runPowerShell(['-NoProfile', '-NonInteractive', '-Command', command]);
+  await runPowerShell(['-NoProfile', '-NonInteractive', '-Command', elevateCommand(script, args)]);
 }
 
 export function readStatusScript(script: string): Promise<string> {
-  return runPowerShell(['-NoProfile', '-NonInteractive', '-File', script]);
+  return runPowerShell(statusArgs(script));
 }
 
 function runPowerShell(args: string[]): Promise<string> {

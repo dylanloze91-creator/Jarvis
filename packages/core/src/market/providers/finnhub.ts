@@ -1,4 +1,5 @@
 import { describeError } from '../../search/shared.js';
+import { chooseListing, type ListingCandidate } from '../chooseListing.js';
 import {
   MarketDataError,
   type MarketDataProvider,
@@ -90,24 +91,30 @@ export class FinnhubMarketDataProvider implements MarketDataProvider {
       exchange: profile?.exchange,
       asOf: quote.t ? new Date(quote.t * 1000).toISOString() : new Date().toISOString(),
       providerId: this.id,
+      ...(resolved.clarification ? { clarification: resolved.clarification } : {}),
     };
   }
 
-  private async resolveSymbol(query: MarketDataQuery): Promise<{ symbol: string; name: string }> {
+  private async resolveSymbol(
+    query: MarketDataQuery,
+  ): Promise<{ symbol: string; name: string; clarification?: string }> {
     const payload = await this.fetchJson<FinnhubSearchResponse>(
       'search',
       { q: query.query },
       query.signal,
       'Recherche du symbole',
     );
-    const results = payload?.result ?? [];
-    const best = results.find((candidate) => candidate.type === 'Common Stock') ?? results[0];
-
-    if (!best) {
+    const candidates: ListingCandidate[] = (payload?.result ?? []).map((candidate) => ({
+      symbol: candidate.symbol,
+      name: candidate.description,
+      shortname: candidate.description,
+      ...(candidate.type === 'Common Stock' || !candidate.type ? { quoteType: 'EQUITY' } : { quoteType: candidate.type }),
+    }));
+    const choice = chooseListing(candidates, query.query, query.prefer ?? null);
+    if (!choice) {
       throw new MarketDataError(`Aucune valeur boursière trouvée pour « ${query.query} ».`);
     }
-
-    return { symbol: best.symbol, name: best.description };
+    return choice;
   }
 
   private async fetchJson<T>(

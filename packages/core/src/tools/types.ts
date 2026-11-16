@@ -47,6 +47,11 @@ export interface ToolContext {
   spotifyVoiceSessionId?: string;
   /** Horloge du tour, pour l'échéance de la question Spotify. Défaut : l'heure du PC. */
   spotifyNowMs?: number;
+  /**
+   * Chemin bourse express seulement. Absent : `get_stock_quote` pour le modèle
+   * ne demande pas Paris. Le schéma de l'outil ne change pas.
+   */
+  stockPrefer?: 'paris' | null;
 }
 
 /**

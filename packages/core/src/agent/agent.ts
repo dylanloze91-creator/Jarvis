@@ -12,7 +12,12 @@ import { isRoverToolName, looksLikeRoverIntent, recentlyUsedRoverTools } from '.
 import { imagesTurnPrompt, isImageToolName, looksLikeImageIntent, recentlyUsedImageTools } from '../images/intent.js';
 import { roverTurnPrompt } from '../rover/prompt.js';
 import { isCurrentTrackQuestion } from '../media/currentTrackIntent.js';
-import { extractSpotifyPlayQuery, isMusicIntent } from '../media/playIntent.js';
+import {
+  extractSpotifyPlayQuery,
+  isMusicIntent,
+  isSpotifyPausePhrase,
+  isSpotifyResumePhrase,
+} from '../media/playIntent.js';
 import {
   clearSpotifyDeviceAsk,
   clearSpotifyDeviceAskSuppression,
@@ -753,6 +758,9 @@ export class Agent {
 
     const prompt = conversation[lastUserIndex]?.content ?? '';
     if (isCurrentTrackQuestion(prompt)) return this.forcedCall('spotify_current_track', {});
+    // 5.0.77 : pause et reprise dites clairement partent sans modèle, comme la lecture.
+    if (isSpotifyPausePhrase(prompt)) return this.forcedCall('spotify_pause', {});
+    if (isSpotifyResumePhrase(prompt)) return this.forcedCall('spotify_resume', {});
 
     const transfer = extractSpotifyTransferTarget(prompt);
     if (transfer)

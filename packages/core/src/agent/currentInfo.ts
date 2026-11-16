@@ -305,7 +305,11 @@ function researchQueries(query: string, newsQuery: string, now: Date): string[] 
   return [...new Set(queries.map((item) => item.trim()).filter(Boolean))].slice(0, 4);
 }
 
-const CITY_STOP = rx(String.raw`^(?:aujourd'hui|demain|ce|cette|en|la|le|les|maintenant|dehors|chez|ici|noël|paques|pâques)$`);
+/**
+ * Jamais une ville, même avec une majuscule : « sur Internet », « sur Google », « sur le Web ».
+ * (5.0.77 : « Cherche sur Internet la météo à Lyon » donnait la ville « Internet », donc pas d'Open-Meteo.)
+ */
+const CITY_STOP = rx(String.raw`^(?:aujourd'hui|demain|ce|cette|en|la|le|les|maintenant|dehors|chez|ici|noël|paques|pâques|[Ii]nternet|[Ww]eb|[Gg]oogle|[Nn]et|[Tt]oile|[Ll]igne|[Yy]ou[Tt]ube|[Ww]ikip[ée]dia)$`);
 /**
  * Mots en minuscules qui suivent souvent « à » ou « sur » dans une question météo sans être une
  * ville : déterminants, possessifs, pronoms, temps, lieux communs, verbes à l'infinitif (« pour

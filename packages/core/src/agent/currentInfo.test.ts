@@ -175,6 +175,11 @@ describe('extractCity', () => {
   it('sans ville nommée', () => {
     expect(extractCity('Quel temps fait-il aujourd’hui ?')).toBeUndefined();
     expect(extractCity('météo à demain')).toBeUndefined();
+    // 5.0.77 : « sur Internet » n'est pas « sur <Ville> » ; la vraie ville vient après.
+    expect(extractCity('Cherche sur Internet la météo à Lyon')).toBe('Lyon');
+    expect(extractCity('regarde sur Google la météo à Nantes demain')).toBe('Nantes');
+    expect(extractCity('Cherche sur Internet la météo')).toBeUndefined();
+    expect(detectCurrentInfoIntent('Cherche sur Internet la météo à Lyon')).toMatchObject({ kind: 'weather', city: 'Lyon', newsQuery: 'météo Lyon' });
   });
 
   describe('revue 5.0.64, point 2 : un mot en minuscules n’est pas une ville', () => {

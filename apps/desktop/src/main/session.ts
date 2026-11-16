@@ -32,13 +32,19 @@ import {
   availableTeams,
   clockLinePrompt,
   clockReply,
+  detectStockRequest,
   expressTeam,
+  isTeamCorrection,
+  readStockOutcomes,
+  speakStockOutcomes,
+  stockNotFoundReply,
   orchestraBasePrompt,
   orchestraProviderConfig,
   parseRouterReply,
   routerSystemPrompt,
   routerUserPrompt,
   solveArithmetic,
+  teamMissedNotice,
   teamAssignment,
   teamHasTool,
   teamPrompt,
@@ -103,7 +109,7 @@ const BRAIN_DEADLINE_MS = 90_000;
 const ADDRESSEE_DEADLINE_MS = 10_000;
 
 interface TurnRoute {
-  team: OrchestraTeam | 'calcul' | 'horloge';
+  team: OrchestraTeam | 'calcul' | 'horloge' | 'bourse';
   label: string;
   model: string;
   how: 'calcul' | 'express' | 'cerveau' | 'trieur';
@@ -164,6 +170,8 @@ export class ChatSession {
   private sendSeq = 0;
   /** Fenêtre, téléphone et chaque enceinte ont leur question Spotify. */
   private readonly spotifyVoiceSessionId = randomId();
+  /** Dernière équipe d'un tour d'orchestre, pour une correction (« non », « passe par »). */
+  private readonly lastTeamByConversation = new Map<string, string>();
 
   constructor(private readonly deps: SessionDeps) {}
 
@@ -307,8 +315,16 @@ export class ChatSession {
     const healthIntent = looksLikeHealthIntent(input.text);
     const orchestra = activeOrchestra(settings);
     const route = !healthIntent && orchestra
-      ? await this.routeTurn(settings, orchestra, input.text, messages, controller.signal)
+      ? await this.routeTurn(
+          settings,
+          orchestra,
+          input.text,
+          messages,
+          controller.signal,
+          this.lastTeamByConversation.get(conversation.id) ?? null,
+        )
       : null;
+    if (route) this.lastTeamByConversation.set(conversation.id, route.team);
 
     const chatMissionHub = this.deps.getChatMissionHub?.() ?? null;
     const chatMissionsOn =
@@ -390,7 +406,7 @@ export class ChatSession {
       };
     } else if (route?.reply !== undefined) {
       run = fixedReply(route.reply);
-    } else if (route?.provider && route.team !== 'calcul' && route.team !== 'horloge') {
+    } else if (route?.provider && route.team !== 'calcul' && route.team !== 'horloge' && route.team !== 'bourse') {
       const team = route.team;
       const turn = await this.turnContext(settings, input.text, source, {
         base: orchestraBasePrompt(settings.systemPrompt),
@@ -791,9 +807,9 @@ export class ChatSession {
   }
 
   /**
-   * 5.0.60 — chef d'orchestre. Calcul exact sans modèle, puis règles express, puis le cerveau.
-   * `null` : le cerveau n'a pas pu choisir (Ollama arrêté, réponse illisible) ; le tour suit
-   * le chemin d'avant, avec le modèle et le catalogue habituels.
+   * 5.0.60 — chef d'orchestre. Calcul exact sans modèle, horloge, cours de bourse,
+   * puis règles express, puis le cerveau. `null` : le cerveau n'a pas pu choisir
+   * (Ollama arrêté, réponse illisible) ; le tour suit le chemin d'avant.
    */
   private async routeTurn(
     settings: Settings,
@@ -801,6 +817,7 @@ export class ChatSession {
     text: string,
     messages: ChatMessage[],
     signal: AbortSignal,
+    previousTeam: string | null,
   ): Promise<TurnRoute | null> {
     const calc = solveArithmetic(text);
     if (calc) {
@@ -808,6 +825,11 @@ export class ChatSession {
     }
     const clock = clockReply(text, new Date());
     if (clock) return { team: 'horloge', label: 'Horloge', model: 'sans modèle', how: 'express', reply: clock };
+    const stock = detectStockRequest(text);
+    if (stock) {
+      const reply = await this.stockQuoteReply(stock.names, stock.prefer, signal);
+      return { team: 'bourse', label: 'Bourse', model: 'express', how: 'express', reply };
+    }
     const teams = availableTeams(this.deps.tools.schemas().map((tool) => tool.name));
     const available = new Set(teams);
     let team: OrchestraTeam | null = expressTeam({
@@ -817,17 +839,19 @@ export class ChatSession {
       hasImageAttachment: lastUserHasImageAttachment(messages),
     });
     let how: TurnRoute['how'] = team ? 'express' : 'cerveau';
+    const notice =
+      !team && previousTeam && isTeamCorrection(text) ? teamMissedNotice(previousTeam) : undefined;
     if (!team) {
       const router = activeRouter(settings);
       if (router) {
-        team = await this.askRouter(settings, router, teams, text, messages.slice(0, -1), signal);
+        team = await this.askRouter(settings, router, teams, text, messages.slice(0, -1), signal, notice);
         if (team) how = 'trieur';
         else {
-          team = await this.askBrain(settings, orchestra, teams, text, messages.slice(0, -1), signal);
+          team = await this.askBrain(settings, orchestra, teams, text, messages.slice(0, -1), signal, notice);
           if (team) how = 'cerveau';
         }
       } else {
-        team = await this.askBrain(settings, orchestra, teams, text, messages.slice(0, -1), signal);
+        team = await this.askBrain(settings, orchestra, teams, text, messages.slice(0, -1), signal, notice);
       }
     }
     if (!team) {
@@ -845,6 +869,35 @@ export class ChatSession {
     return { team, label: TEAM_SPECS[team].label, model: assignment.model, how, provider };
   }
 
+  /**
+   * `get_stock_quote` appelé ici, pas par un modèle. Le journal d'audit reçoit l'appel.
+   * Sans prix renvoyé : une phrase d'échec, jamais un cours inventé.
+   */
+  private async stockQuoteReply(
+    names: readonly string[],
+    prefer: 'paris' | null,
+    signal: AbortSignal,
+  ): Promise<string> {
+    if (!this.deps.tools.get('get_stock_quote')) return names.map((name) => stockNotFoundReply(name)).join(' ');
+    const callId = randomId();
+    try {
+      const outcome = await this.deps.tools.execute(
+        { id: callId, name: 'get_stock_quote', arguments: { queries: [...names] } },
+        {
+          signal,
+          requestConfirmation: async () => false,
+          ...(prefer ? { stockPrefer: prefer } : {}),
+        },
+      );
+      void this.deps.auditLog
+        .append(buildAuditEntry(outcome))
+        .catch((error: unknown) => console.error('[jarvis] journal d’audit non écrit :', error));
+      return speakStockOutcomes(names, readStockOutcomes(outcome.data));
+    } catch {
+      return names.map((name) => stockNotFoundReply(name)).join(' ');
+    }
+  }
+
   private async askRouter(
     settings: Settings,
     router: { model: string; place: ModelPlace },
@@ -852,6 +905,7 @@ export class ChatSession {
     text: string,
     history: ChatMessage[],
     signal: AbortSignal,
+    notice?: string,
   ): Promise<OrchestraTeam | null> {
     const { provider } = this.deps.registry.createOrFallback(
       orchestraProviderConfig(settings, router.model, router.place, true),
@@ -864,7 +918,7 @@ export class ChatSession {
     try {
       for await (const event of provider.streamChat({
         system: routerSystemPrompt(teams),
-        messages: [createMessage('user', routerUserPrompt(text, history))],
+        messages: [createMessage('user', routerUserPrompt(text, history, notice))],
         temperature: 0,
         maxTokens: 12,
         signal: deadline.signal,
@@ -888,6 +942,7 @@ export class ChatSession {
     text: string,
     history: ChatMessage[],
     signal: AbortSignal,
+    notice?: string,
   ): Promise<OrchestraTeam | null> {
     const { provider } = this.deps.registry.createOrFallback(
       orchestraProviderConfig(settings, orchestra.brain, 'carte', true),
@@ -901,7 +956,7 @@ export class ChatSession {
     try {
       for await (const event of provider.streamChat({
         system: routerSystemPrompt(teams),
-        messages: [createMessage('user', routerUserPrompt(text, history))],
+        messages: [createMessage('user', routerUserPrompt(text, history, notice))],
         temperature: 0,
         maxTokens: 12,
         signal: deadline.signal,

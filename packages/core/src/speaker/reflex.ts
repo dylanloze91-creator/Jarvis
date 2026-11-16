@@ -4,9 +4,16 @@
  * (titre, appareil) reste le texte écrit sur le PC.
  */
 
+import { isSpotifyDeviceQuestion } from '../media/spotifyDeviceVoice.js';
+
 const SHUFFLE_OFF = /d[ée]sactiv|desactiv|coupe|arr[êe]te/iu;
 
-export function speakerReflexPhrase(toolName: string, userText: string): string | null {
+/**
+ * `toolResult` : le texte rendu par l'outil. Une question d'appareil (« Sur la Devialet ou sur
+ * le PC ? », 5.0.69) n'a rien lancé : aucune phrase réflexe, la question doit être dite.
+ */
+export function speakerReflexPhrase(toolName: string, userText: string, toolResult?: string): string | null {
+  if (toolResult !== undefined && isSpotifyDeviceQuestion(toolResult)) return null;
   switch (toolName) {
     case 'spotify_play':
     case 'spotify_transfer':

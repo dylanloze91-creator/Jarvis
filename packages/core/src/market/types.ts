@@ -12,12 +12,19 @@ export interface StockQuote {
   /** Horodatage ISO 8601 de la cotation. */
   asOf: string;
   providerId: string;
+  /**
+   * Dit quand plusieurs actions correspondent et qu'une est à Paris,
+   * sans préférence dans la phrase. Absent sinon.
+   */
+  clarification?: string;
 }
 
 export interface MarketDataQuery {
   /** Nom d'entreprise en langage naturel, ou symbole boursier. */
   query: string;
   signal?: AbortSignal;
+  /** « paris » : une cotation Euronext (.PA, PAR) passe devant les autres. */
+  prefer?: 'paris' | null;
 }
 
 export interface MarketDataProviderDescriptor {

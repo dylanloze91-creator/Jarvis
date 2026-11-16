@@ -81,6 +81,125 @@ describe('YahooFinanceMarketDataProvider', () => {
     await expect(provider.getQuote({ query: 'nvidia' })).rejects.toThrow(/429/);
   });
 
+  it('avec prefer paris, SPIE.PA passe devant SPI Energy', async () => {
+    const fetchMock = vi.fn(async (input: URL | string) => {
+      const url = input.toString();
+      if (url.includes('/v1/finance/search')) {
+        return jsonResponse({
+          quotes: [
+            { symbol: 'SPI', shortname: 'SPI Energy', longname: 'SPI Energy Co., Ltd.', quoteType: 'EQUITY', exchange: 'NCM', exchDisp: 'NasdaqCM' },
+            { symbol: 'SPIE.PA', shortname: 'SPIE', longname: 'SPIE SA', quoteType: 'EQUITY', exchange: 'PAR', exchDisp: 'Paris' },
+          ],
+        });
+      }
+      if (url.includes('/v8/finance/chart/SPIE.PA')) {
+        return jsonResponse({
+          chart: {
+            result: [
+              {
+                meta: {
+                  symbol: 'SPIE.PA',
+                  currency: 'EUR',
+                  fullExchangeName: 'Euronext Paris',
+                  regularMarketPrice: 34.12,
+                  regularMarketChangePercent: 1.2,
+                  chartPreviousClose: 33.71,
+                  regularMarketTime: 1_700_000_000,
+                },
+              },
+            ],
+          },
+        });
+      }
+      throw new Error(`URL inattendue : ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const quote = await new YahooFinanceMarketDataProvider().getQuote({ query: 'SPIE', prefer: 'paris' });
+    expect(quote.symbol).toBe('SPIE.PA');
+    expect(quote.clarification).toBeUndefined();
+    expect(fetchMock.mock.calls.some((call) => String(call[0]).includes('/chart/SPIE.PA'))).toBe(true);
+  });
+
+  it('sans indication, dit « tu voulais peut-être » et prend Paris', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: URL | string) => {
+        const url = input.toString();
+        if (url.includes('/v1/finance/search')) {
+          return jsonResponse({
+            quotes: [
+              { symbol: 'SPI', shortname: 'SPI Energy', longname: 'SPI Energy Co., Ltd.', quoteType: 'EQUITY', exchange: 'NCM', exchDisp: 'NasdaqCM' },
+              { symbol: 'SPIE.PA', shortname: 'SPIE', longname: 'SPIE SA', quoteType: 'EQUITY', exchange: 'PAR', exchDisp: 'Paris' },
+            ],
+          });
+        }
+        if (url.includes('/v8/finance/chart/SPIE.PA')) {
+          return jsonResponse({
+            chart: {
+              result: [
+                {
+                  meta: {
+                    symbol: 'SPIE.PA',
+                    currency: 'EUR',
+                    fullExchangeName: 'Euronext Paris',
+                    regularMarketPrice: 34.12,
+                    regularMarketChangePercent: 1.2,
+                    chartPreviousClose: 33.71,
+                    regularMarketTime: 1_700_000_000,
+                  },
+                },
+              ],
+            },
+          });
+        }
+        throw new Error(`URL inattendue : ${url}`);
+      }),
+    );
+
+    const quote = await new YahooFinanceMarketDataProvider().getQuote({ query: 'spi' });
+    expect(quote.symbol).toBe('SPIE.PA');
+    expect(quote.clarification).toBe('J\'ai pris SPIE (Paris). Tu voulais peut-être SPI Energy (Nasdaq) ?');
+  });
+
+  it('Apple donne toujours AAPL, même si une autre action est listée avant', async () => {
+    const fetchMock = vi.fn(async (input: URL | string) => {
+      const url = input.toString();
+      if (url.includes('/v1/finance/search')) {
+        return jsonResponse({
+          quotes: [
+            { symbol: 'APLE', shortname: 'Apple Hospitality', longname: 'Apple Hospitality REIT', quoteType: 'EQUITY', exchange: 'NYQ', exchDisp: 'NYSE' },
+            { symbol: 'AAPL', shortname: 'Apple', longname: 'Apple Inc.', quoteType: 'EQUITY', exchange: 'NMS', exchDisp: 'NasdaqGS' },
+          ],
+        });
+      }
+      if (url.includes('/v8/finance/chart/AAPL')) {
+        return jsonResponse({
+          chart: {
+            result: [
+              {
+                meta: {
+                  symbol: 'AAPL',
+                  currency: 'USD',
+                  fullExchangeName: 'NasdaqGS',
+                  regularMarketPrice: 220,
+                  regularMarketChangePercent: 0.4,
+                  chartPreviousClose: 219,
+                  regularMarketTime: 1_700_000_000,
+                },
+              },
+            ],
+          },
+        });
+      }
+      throw new Error(`URL inattendue : ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const quote = await new YahooFinanceMarketDataProvider().getQuote({ query: 'Apple' });
+    expect(quote.symbol).toBe('AAPL');
+    expect(quote.name).toBe('Apple Inc.');
+  });
+
   it('signale une panne réseau sans planter', async () => {
     vi.stubGlobal(
       'fetch',

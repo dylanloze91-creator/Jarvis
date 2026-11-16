@@ -11,6 +11,8 @@ import {
   clockReply,
   evaluateArithmetic,
   expressTeam,
+  isTeamCorrection,
+  looksLikeExpressWeb,
   ORCHESTRA_BASE_PROMPT,
   ORCHESTRA_TEAMS,
   orchestraBasePrompt,
@@ -23,6 +25,7 @@ import {
   SUGGESTED_ORCHESTRA,
   teamAssignment,
   teamHasTool,
+  teamMissedNotice,
   type OrchestraTeam,
 } from './orchestra.js';
 
@@ -79,6 +82,41 @@ describe('chef d’orchestre — chemin express', () => {
     expect(express('Ouvre le Bloc-notes')).toBeNull();
     expect(express('Explique-moi la photosynthèse')).toBeNull();
     expect(express('Écris une fonction Python qui trie une liste')).toBeNull();
+  });
+
+  it('Yahoo, cherche, le web et Wikipédia partent vers Internet sans modèle', () => {
+    expect(express('passe par Yahoo Finance')).toBe('web');
+    expect(express('regarde sur Yahoo')).toBe('web');
+    expect(express('cherche sur internet le prix du cuivre')).toBe('web');
+    expect(express('sur le web')).toBe('web');
+    expect(express('Wikipédia Nvidia')).toBe('web');
+    expect(express('cherche sur Google le prix du cuivre')).toBe('web');
+    expect(looksLikeExpressWeb('cherche sur Google')).toBe(true);
+    expect(express('Cherche le fichier devis dans mes documents')).toBeNull();
+    expect(express('cherche mes photos de vacances')).toBeNull();
+    expect(express('cherche le dossier Jarvis sur le PC')).toBeNull();
+    expect(looksLikeExpressWeb('Cherche le fichier devis dans mes documents')).toBe(false);
+    expect(looksLikeExpressWeb('cherche mes photos de vacances')).toBe(false);
+    expect(looksLikeExpressWeb('cherche le dossier Jarvis sur le PC')).toBe(false);
+  });
+
+  it('« Google » seul et « finance » ne vont pas à l’équipe Google', () => {
+    expect(express('Google')).not.toBe('google');
+    expect(express('finance')).not.toBe('google');
+    expect(express('finance')).toBeNull();
+    expect(express('lis mes mails')).toBe('google');
+  });
+
+  it('une correction sans règle le dit au cerveau ; « passe par » reste une règle', () => {
+    expect(isTeamCorrection('non')).toBe(true);
+    expect(isTeamCorrection("je t'ai dit le cours")).toBe(true);
+    expect(isTeamCorrection('passe par Yahoo Finance')).toBe(true);
+    expect(isTeamCorrection('pas Google')).toBe(true);
+    expect(isTeamCorrection('bonjour')).toBe(false);
+    const notice = teamMissedNotice('google');
+    expect(notice).toBe("l'équipe google n'a pas su répondre au tour précédent");
+    expect(routerUserPrompt('non', [], notice)).toBe(`${notice}\nDemande : non\nÉquipe :`);
+    expect(express('passe par Yahoo Finance')).toBe('web');
   });
 
   it('une équipe sans ses outils n’est jamais choisie', () => {

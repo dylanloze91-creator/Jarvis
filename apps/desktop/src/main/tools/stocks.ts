@@ -31,17 +31,18 @@ export function createGetStockQuoteTool(deps: StockQuoteDeps) {
         ),
     }),
     summarize: ({ queries }) => `Consulter le cours de bourse : ${queries.join(', ')}.`,
-    execute: async ({ queries }) => {
+    execute: async ({ queries }, context) => {
       const settings = deps.getSettings();
       const { provider, fellBack } = deps.marketDataRegistry.createOrFallback({
         provider: settings.marketDataProvider,
         apiKey: settings.marketDataApiKey,
       });
+      const prefer = context.stockPrefer === 'paris' ? ('paris' as const) : null;
 
       const outcomes = await Promise.all(
         queries.map(async (query) => {
           try {
-            const quote = await provider.getQuote({ query });
+            const quote = await provider.getQuote({ query, ...(prefer ? { prefer } : {}) });
             return { query, quote };
           } catch (error) {
             return { query, error: describeError(error) };
@@ -60,6 +61,7 @@ export function createGetStockQuoteTool(deps: StockQuoteDeps) {
           `  Prix : ${formatNumber(quote.price)} ${quote.currency}`,
           `  Variation du jour : ${sign}${formatNumber(quote.change)} ${quote.currency} (${sign}${formatNumber(quote.changePercent)} %)`,
           `  Horodatage : ${dateFormatter.format(new Date(quote.asOf))}`,
+          ...(quote.clarification ? [`  ${quote.clarification}`] : []),
         ].join('\n');
       });
 

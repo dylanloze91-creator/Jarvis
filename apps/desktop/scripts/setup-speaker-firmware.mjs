@@ -81,7 +81,12 @@ if (!help.toLowerCase().includes('platformio')) {
   fail(`« ${pio} » ne ressemble pas à PlatformIO.`);
 }
 
-execFileSync(pio, ['run', '-d', firmwareDir], { stdio: 'inherit' });
+// PYTHONUTF8 : sous Windows, PlatformIO écrit sa bannière finale en UTF-8 sur une console cp1252
+// et finit par une trace Python (UnicodeEncodeError) après « [SUCCESS] », trompeuse dans release.sh.
+execFileSync(pio, ['run', '-d', firmwareDir], {
+  stdio: 'inherit',
+  env: { ...process.env, PYTHONUTF8: '1', PYTHONIOENCODING: 'utf-8' },
+});
 
 const buildDir = join(firmwareDir, '.pio', 'build', 'esp32-s3-devkitc-1');
 const sources = {

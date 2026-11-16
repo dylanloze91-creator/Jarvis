@@ -948,6 +948,26 @@ describe('SpotifyProvider', () => {
     }
   });
 
+  it('une écriture (pause, reprise) répondue 200 avec un corps vide ou non JSON réussit ; une lecture non JSON est une erreur claire', async () => {
+    // Vu le 12 novembre 2026 : Spotify répond 200 « a2vgQNLPqh… » à PUT /me/player/pause,
+    // et le client échouait sur « is not valid JSON » : « stop » ne coupait plus la musique.
+    await seedValidToken();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: string | URL, init?: RequestInit) => {
+        const method = (init?.method ?? 'GET').toUpperCase();
+        if (method === 'PUT' && input.toString().includes('/me/player/pause')) return new Response('a2vgQNLPqhXYZ', { status: 200 });
+        if (method === 'PUT' && input.toString().includes('/me/player/play')) return new Response('', { status: 200 });
+        if (method === 'GET' && input.toString().includes('/me/player')) return new Response('<html>oops</html>', { status: 200 });
+        return new Response(null, { status: 204 });
+      }),
+    );
+
+    const provider = new SpotifyProvider('client-id');
+    await expect(provider.pause()).resolves.toBeUndefined();
+    await expect(provider.getPlaybackState()).rejects.toThrow(/Réponse Spotify illisible/);
+  });
+
   it('renvoie une erreur claire (pas une exception muette) quand le rafraîchissement échoue', async () => {
     await seedExpiredToken();
     vi.stubGlobal(

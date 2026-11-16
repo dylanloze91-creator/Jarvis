@@ -80,6 +80,7 @@ export const IpcChannel = {
   chatMissionOpenFolder: 'chat:mission-open-folder',
   chatMissionReload: 'chat:mission-reload',
   orchestraValidateTeam: 'orchestra:validate-team',
+  orchestraRouterScore: 'orchestra:router-score',
   settingsGet: 'settings:get',
   settingsSet: 'settings:set',
   settingsProviders: 'settings:providers',
@@ -122,6 +123,7 @@ export const IpcChannel = {
   windowIsVisible: 'window:is-visible',
   windowShown: 'window:shown',
   systemSnapshot: 'system:snapshot',
+  systemCopyText: 'system:copy-text',
   voiceTranscribe: 'voice:transcribe',
   voiceSpeak: 'voice:speak',
   voicePiperSpeak: 'voice:piper-speak',
@@ -790,6 +792,8 @@ export interface JarvisApi {
   };
   orchestra: {
     validateTeam(input: TeamValidationInput): Promise<{ ok: true } | { ok: false; error: string }>;
+    /** Dernier score mesuré du trieur, s'il existe. N'active rien. */
+    routerScore(): Promise<{ line: string; advice: string } | null>;
   };
   images: {
     /** Ouvre dans la visionneuse une image ou un fichier du dossier des images de Jarvis (rien d'autre). */
@@ -872,6 +876,12 @@ export interface JarvisApi {
   system: {
     /** Relevé réel. Les champs inconnus restent `null`. */
     snapshot(): Promise<MachineSnapshot>;
+    /**
+     * Copie un texte dans le presse-papiers par le processus principal. `navigator.clipboard` est
+     * refusé dans la fenêtre (gestionnaire d'autorisations : micro seul) : « Copier le bloc » des
+     * enceintes ne copiait rien. Rend `false` si le texte est refusé (vide ou trop long).
+     */
+    copyText(text: string): Promise<boolean>;
   };
   voice: {
     transcribe(input: VoiceTranscribeInput): Promise<VoiceTranscribeResult>;

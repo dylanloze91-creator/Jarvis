@@ -776,7 +776,18 @@ export class SpotifyProvider implements MediaProvider {
       throw new SpotifyApiError(response.status, body);
     }
 
-    return (await response.json()) as T;
+    // 5.0.77 : Spotify répond parfois 200 avec un corps vide ou non JSON à une écriture (pause,
+    // reprise : vu le 12 novembre 2026, « "a2vgQNLPqh"… is not valid JSON »). Une écriture n'attend
+    // rien : corps ignoré. Une lecture dont le corps n'est pas du JSON reste une erreur, dite clairement.
+    const text = await response.text();
+    if (!text.trim()) return undefined as T;
+    try {
+      return JSON.parse(text) as T;
+    } catch {
+      const method = (init.method ?? 'GET').toUpperCase();
+      if (method !== 'GET') return undefined as T;
+      throw new SpotifyApiError(response.status, `Réponse Spotify illisible : ${redactSecrets(text).slice(0, 120)}`);
+    }
   }
 
   private async ensureToken(): Promise<void> {

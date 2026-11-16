@@ -882,7 +882,9 @@ export class SpeakerServer {
             if (!outcome.refused) hooks?.onDelta?.(event.text);
             break;
           case 'tool_result':
-            if (event.status === 'ok') outcome.tools.push(event.toolName);
+            // 5.0.77 : « Sur la Devialet ou sur le PC ? » est un résultat « ok » de spotify_play qui
+            // n'a rien lancé : pas de phrase réflexe « C'est parti » à sa place, la question est dite.
+            if (event.status === 'ok' && !isSpotifyDeviceQuestion(event.content)) outcome.tools.push(event.toolName);
             hooks?.onUpdate?.(outcome, false);
             break;
           case 'mission_proposal':

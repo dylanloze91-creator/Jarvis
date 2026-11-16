@@ -201,6 +201,7 @@ export function installPreviewBridge(): void {
     },
     orchestra: {
       validateTeam: async () => ({ ok: true }),
+      routerScore: async () => null,
     },
     images: {
       open: async () => ({ ok: true as const }),
@@ -347,6 +348,10 @@ export function installPreviewBridge(): void {
     },
     system: {
       snapshot: previewSnapshot,
+      copyText: async (text: string) => {
+        await navigator.clipboard?.writeText(text).catch(() => undefined);
+        return true;
+      },
     },
     voice: {
       transcribe: async () => ({ ok: false, error: 'Aperçu hors micro.' }),

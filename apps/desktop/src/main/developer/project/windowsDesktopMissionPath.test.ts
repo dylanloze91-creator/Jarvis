@@ -178,10 +178,12 @@ describe('chemin mission bureau .exe (apply + Construire)', () => {
   }, 180_000);
 
   it('Construire manuel : la carte reste obligatoire', async () => {
-    const title = 'Manuel Build';
-    const core = 'ManuelBuild';
+    // Le nom du projet vient de la demande (gabarit choisi par règles, sans le modèle) :
+    // un nom écrit en dur ici (« ManuelBuild ») visait un fichier qui n'existe pas.
+    const request = 'Appli Windows .exe minimaliste.';
+    const core = dotnetCoreForRequest(request);
     fake.scripts.set(CODE, missionScript({
-      factoryName: title,
+      factoryName: 'Manuel Build',
       plan: [{ path: `src/${core}.Core/Salutation.cs`, action: 'modifier' }],
       writes: { [`src/${core}.Core/Salutation.cs`]: SALUTATION_CS(core) },
     }));
@@ -193,11 +195,7 @@ describe('chemin mission bureau .exe (apply + Construire)', () => {
       intercept: offlineDotnet(true),
     });
     await h.instance.validate(jarvis);
-    const done = await h.instance.startMission(
-      'new-project',
-      'Appli Windows .exe minimaliste.',
-      true,
-    );
+    const done = await h.instance.startMission('new-project', request, true);
     expect(done.mission?.status, String(done.mission?.summary ?? '')).toBe('finished');
     const projectId = done.mission!.projectId!;
     await h.instance.discardTask();

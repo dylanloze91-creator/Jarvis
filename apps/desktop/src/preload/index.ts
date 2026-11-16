@@ -54,6 +54,7 @@ const api: JarvisApi = {
   orchestra: {
     validateTeam: (input: TeamValidationInput) =>
       ipcRenderer.invoke(IpcChannel.orchestraValidateTeam, input),
+    routerScore: () => ipcRenderer.invoke(IpcChannel.orchestraRouterScore),
   },
   images: {
     open: (path: string) => ipcRenderer.invoke(IpcChannel.imagesOpen, path),
@@ -127,6 +128,7 @@ const api: JarvisApi = {
   },
   system: {
     snapshot: () => ipcRenderer.invoke(IpcChannel.systemSnapshot),
+    copyText: (text: string) => ipcRenderer.invoke(IpcChannel.systemCopyText, text),
   },
   voice: {
     transcribe: (input: VoiceTranscribeInput) =>

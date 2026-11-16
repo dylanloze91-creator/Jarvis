@@ -1,4 +1,4 @@
-# Jarvis — passe UNE interface en profil Privé. Script constant.
+﻿# Jarvis — passe UNE interface en profil Privé. Script constant.
 # Le seul argument est l'index de l'interface de la maison, déjà vérifié (un nombre).
 # Windows affiche sa fenêtre d'accord avant de lancer ce fichier.
 param(

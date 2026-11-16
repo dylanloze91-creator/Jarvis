@@ -1,4 +1,5 @@
 import { readFile, writeFile } from 'node:fs/promises';
+import { readRouterScore } from './orchestra/routerScore.js';
 import { join } from 'node:path';
 import {
   BrowserWindow,
@@ -113,6 +114,7 @@ import { SpeakerChronoFile } from './speaker/chronoFile.js';
 import { warmOllamaModels } from './speaker/warmupRun.js';
 import { presentWindow } from './startup.js';
 import { allowPermissionCheck, allowPermissionRequest, isAppDocumentUrl, originForLog } from './mediaPermissions.js';
+import { isCopyableText } from './copyText.js';
 import { VoiceCaptureLog } from './voiceCaptureLog.js';
 import { WakeLearningStore } from './wakeLearningStore.js';
 import { LocalLearningStore } from './learning/store.js';
@@ -845,6 +847,25 @@ function registerIpc(): void {
   ipcMain.handle(IpcChannel.orchestraValidateTeam, (_event, input: TeamValidationInput) =>
     appendTeamValidation(settings, teamValidationPayload(input)),
   );
+  ipcMain.handle(IpcChannel.orchestraRouterScore, () => {
+    const userData = app.getPath('userData');
+    const appPath = app.getAppPath();
+    const places = [
+      join(userData, 'trieur-dernier-score.json'),
+      userData,
+      join(appPath, '..', '..', 'rapports'),
+      join(appPath, '..', '..', '..', 'rapports'),
+      join(process.cwd(), 'rapports'),
+      join(process.cwd(), '..', '..', 'rapports'),
+    ];
+    const dataDir = settings.orchestra?.trieurDataDir?.trim();
+    if (dataDir) places.push(dataDir);
+    // 5.0.77 : le Jarvis installé ne vit pas dans le dépôt ; les rapports du banc sont dans la
+    // copie de travail réglée dans Jarvis Développeur (sinon la ligne de score n'apparaissait jamais).
+    const repoPath = settings.developer?.repoPath?.trim();
+    if (repoPath) places.push(join(repoPath, 'rapports'));
+    return readRouterScore(places);
+  });
 
   ipcMain.handle(IpcChannel.settingsGet, () => ({ settings: settingsForWindow(), status: session.status() }));
   ipcMain.handle(IpcChannel.settingsSet, async (_event, patch: Partial<Settings>) => {
@@ -1079,6 +1100,11 @@ function registerIpc(): void {
     if (mode === 'compact' || mode === 'dashboard') overlay?.setChrome(mode);
   });
   ipcMain.handle(IpcChannel.systemSnapshot, () => readMachineSnapshot(app.getVersion()));
+  ipcMain.handle(IpcChannel.systemCopyText, (_event, text: unknown) => {
+    if (!isCopyableText(text)) return false;
+    clipboard.writeText(text);
+    return true;
+  });
 
   ipcMain.handle(IpcChannel.voiceTranscribe, (_event, input: VoiceTranscribeInput) =>
     voice.transcribe(input),

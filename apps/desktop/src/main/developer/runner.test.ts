@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { CommandRefusedError, displayCommand, refusalOf, runProcess } from './runner.js';
 
@@ -88,9 +89,16 @@ describe('lanceur de Jarvis Développeur', () => {
     const alive = (() => {
       try {
         process.kill(grandchild, 0);
-        return true;
       } catch {
         return false;
+      }
+      // Sous Linux, un processus tué mais pas encore « ramassé » par le processus 1 (conteneur sans init)
+      // reste un zombie : il répond encore au signal 0 alors qu'il est mort et ne peut plus rien exécuter.
+      try {
+        const stat = readFileSync(`/proc/${grandchild}/stat`, 'utf8');
+        return stat.slice(stat.lastIndexOf(')') + 2).charAt(0) !== 'Z';
+      } catch {
+        return true;
       }
     })();
     expect(alive).toBe(false);
