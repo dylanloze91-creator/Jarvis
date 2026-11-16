@@ -395,8 +395,8 @@ export interface SendChatInput {
   /** Module images : photos jointes (3 au plus, 20 Mo chacune), enregistrées par le processus principal. */
   attachments?: ChatAttachmentInput[];
   /**
-   * D'où vient la phrase, pour le carnet des ratés. Absent = la fenêtre.
-   * N'est jamais transmis au modèle.
+   * D'où vient la phrase, pour le carnet des ratés et le journal du tour (Jarvis Test).
+   * Absent = la fenêtre. N'est jamais transmis au modèle.
    */
   place?: CarnetPlace;
 }

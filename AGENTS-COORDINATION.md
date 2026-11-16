@@ -80,6 +80,7 @@ Statuts possibles : `en cours`, `en pause`, `bloqué`, `terminé`.
 | Cursor | `cursor/deux-jarvis` | Deux Jarvis sur le même PC (Live et Test), parties 0 à 4. Pas de fusion dans main, pas de publication, version inchangée. Rapport `rapports/2026-11-12-deux-jarvis.md`. | — | 2026-11-12 | terminé |
 | Cursor | `cursor/carnet-des-rates` | Carnet des ratés (détection, règle express, fichier local, revue, préparation pour Claude). Base `origin/cursor/deux-jarvis` (pas fusionnée dans main). Pas de fusion, pas de publication, version inchangée. Rapport `rapports/2026-11-12-carnet-des-rates.md`. | — | 2026-11-12 | terminé |
 | Cursor | `cursor/lot-b-quotidien` | Lot B, le quotidien : briefing, notes, routines, imprimante 3D. Base `origin/cursor/carnet-des-rates` (main est encore en 5.0.76, pas de fusion de la bourse). Pas de fusion dans main, pas de publication, version inchangée. Rapport `rapports/2026-11-12-lot-b-quotidien.md`. | — | 2026-11-12 | terminé |
+| Cursor | `cursor/jeu-conversations` | Jeu d'entraînement tiré des conversations : journal du tour dans Jarvis Test, préparation sans modèle. Pas de fusion, pas de publication. Rapport `rapports/2026-11-16-jeu-conversations.md`. | — | 2026-11-16 | terminé |
 
 ## Ressource GPU / Ollama
 
