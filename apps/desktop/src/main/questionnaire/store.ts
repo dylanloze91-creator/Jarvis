@@ -44,6 +44,13 @@ export interface QuestionnaireApplyDeps {
  * 5.0.70 — questionnaire d’accueil dans `userData/questionnaire.json`
  * (hors de `settings.json`, comme le téléphone).
  */
+/** Même lecteur à la lecture et pour juger la version précédente avant d'en faire le `.bak`. */
+function parseQuestionnaireFile(bytes: Buffer): QuestionnaireState {
+  const text = bytes.toString('utf8').replace(/^\uFEFF/, '');
+  JSON.parse(text); // lève si le fichier est abîmé : il est alors mis de côté et le .bak repris
+  return readFileState(text);
+}
+
 export class QuestionnaireStore {
   private state: QuestionnaireState = emptyQuestionnaireState();
   private loaded = false;
@@ -58,11 +65,7 @@ export class QuestionnaireStore {
   async load(): Promise<void> {
     if (this.loaded) return;
     this.state = emptyQuestionnaireState();
-    const read = await readStateFile(this.filePath(), (bytes) => {
-      const text = bytes.toString('utf8').replace(/^\uFEFF/, '');
-      JSON.parse(text); // lève si le fichier est abîmé : il est alors mis de côté et le .bak repris
-      return readFileState(text);
-    }).catch(() => null);
+    const read = await readStateFile(this.filePath(), parseQuestionnaireFile).catch(() => null);
     if (read && (read.status === 'ok' || read.status === 'restored')) this.state = read.value;
     this.loaded = true;
   }
@@ -136,7 +139,7 @@ export class QuestionnaireStore {
     this.writing = this.writing
       .catch(() => undefined)
       .then(async () => {
-        await writeStateFile(this.filePath(), snapshot, { mode: 0o600 });
+        await writeStateFile(this.filePath(), snapshot, { mode: 0o600, parse: parseQuestionnaireFile });
       });
     return this.writing;
   }

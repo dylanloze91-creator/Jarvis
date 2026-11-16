@@ -12,7 +12,8 @@ import { basename, dirname } from 'node:path';
  *
  * Ordre suivi ici :
  *   1. écrire le contenu dans un fichier temporaire, puis le forcer sur le disque (`fsync`) ;
- *   2. copier la version actuelle, si elle est saine, en `<fichier>.bak` (forcée sur le disque) ;
+ *   2. copier la version actuelle, si elle se lit (même `parse` qu'à la lecture), en
+ *      `<fichier>.bak` (forcée sur le disque) ;
  *   3. renommer le temporaire à la place du fichier.
  *
  * À la lecture : un fichier vide, rempli de zéros ou que `parse` refuse est mis de côté
@@ -76,20 +77,24 @@ async function syncDirectory(dir: string): Promise<void> {
   }
 }
 
-export interface WriteStateOptions {
-  mode?: number;
-  /** Garder la version précédente en `.bak` (défaut : oui). */
-  keepBackup?: boolean;
-}
+/**
+ * Garder la version précédente en `.bak` exige le lecteur du fichier (`parse`, le même qu'à la
+ * lecture) : seule une version qui se lit vraiment devient la copie de secours.
+ * Sans `.bak` : `keepBackup: false`.
+ */
+export type WriteStateOptions = { mode?: number } & (
+  | { parse: (bytes: Buffer) => unknown; keepBackup?: true }
+  | { keepBackup: false; parse?: undefined }
+);
 
 /**
  * Écrit `data` dans `target` sans jamais laisser un fichier vide ou à moitié écrit,
- * et garde la version précédente saine en `<target>.bak`.
+ * et garde la version précédente lisible en `<target>.bak`.
  */
 export async function writeStateFile(
   target: string,
   data: string | Uint8Array,
-  options: WriteStateOptions = {},
+  options: WriteStateOptions,
 ): Promise<void> {
   const dir = dirname(target);
   await mkdir(dir, { recursive: true });
@@ -105,12 +110,12 @@ export async function writeStateFile(
   }
   await handle.close();
 
-  if (options.keepBackup !== false) {
-    // La version actuelle ne devient le `.bak` que si elle est saine : un fichier de zéros
-    // ne doit jamais écraser la dernière bonne copie.
+  if (options.parse) {
+    // La version actuelle ne devient le `.bak` que si elle se lit vraiment (même lecteur qu'à la
+    // lecture) : un fichier de zéros ou à moitié écrit ne doit jamais écraser la dernière bonne copie.
     try {
       const current = await readFile(target);
-      if (blankReason(current) === null) {
+      if (tryParse(current, options.parse).ok) {
         const bak = await open(`${target}${BACKUP_SUFFIX}`, 'w', options.mode ?? 0o600);
         try {
           await bak.writeFile(current);
@@ -120,7 +125,7 @@ export async function writeStateFile(
         }
       }
     } catch {
-      /* pas encore de fichier : rien à garder */
+      /* pas encore de fichier, ou copie impossible : rien à garder */
     }
   }
 

@@ -25,6 +25,9 @@ function parseVault(text: string): Record<string, string> {
 
 /** Clés chiffrées par safeStorage dans `userData/coffre.bin`. */
 export class KeyVault {
+  /** Même lecteur à la lecture et pour juger la version précédente avant d'en faire le `.bak`. */
+  private readonly parseFile = (bytes: Buffer): Record<string, string> => parseVault(this.cipher.decryptString(bytes));
+
   private secrets: Record<string, string> = {};
   private loaded = false;
   private unreadable = false;
@@ -60,7 +63,7 @@ export class KeyVault {
     if (!this.encryptionAvailable()) return {};
     // Fichier abîmé ou que ce PC ne sait plus déchiffrer : mis de côté en `coffre.illisible.bin`,
     // puis la version précédente (`coffre.bin.bak`) est essayée.
-    const read = await readStateFile(this.filePath(), (bytes) => parseVault(this.cipher.decryptString(bytes)), {
+    const read = await readStateFile(this.filePath(), this.parseFile, {
       asidePath: join(this.userData(), 'coffre.illisible.bin'),
     }).catch(() => null);
     if (read && (read.status === 'ok' || read.status === 'restored')) {
@@ -78,7 +81,7 @@ export class KeyVault {
     if (!this.encryptionAvailable()) return;
     const body: VaultFile = { version: 1, secrets: this.secrets };
     const encrypted = this.cipher.encryptString(JSON.stringify(body));
-    await writeStateFile(this.filePath(), encrypted, { mode: 0o600 });
+    await writeStateFile(this.filePath(), encrypted, { mode: 0o600, parse: this.parseFile });
   }
 
   /**

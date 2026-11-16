@@ -24,6 +24,9 @@ import {
  * `<userData>/developer/projects/<projet>/memory.json`. Rien n'est écrit dans
  * les dépôts des projets.
  */
+/** Même lecteur à la lecture et pour juger la version précédente avant d'en faire le `.bak`. */
+const parseRegistryFile = jsonParser();
+
 export class ProjectStore {
   private queue: Promise<void> = Promise.resolve();
   private written = 0;
@@ -36,7 +39,7 @@ export class ProjectStore {
       this.written += 1;
       try {
         // Écriture sûre (5.0.78) : seul le registre garde une version précédente en `.bak`.
-        await writeStateFile(path, body, { keepBackup: path === this.registryPath() });
+        await writeStateFile(path, body, path === this.registryPath() ? { parse: parseRegistryFile } : { keepBackup: false });
       } catch (error) {
         // 5.0.77 (78dbae4 sur main) : dossier du projet retiré pendant l'écriture (projet retiré,
         // nettoyage d'un test) : rien à garder, et surtout pas un rejet non traité.
@@ -60,7 +63,7 @@ export class ProjectStore {
     this.foreign = [];
     let raw: unknown;
     try {
-      const read = await readStateFile(this.registryPath(), jsonParser());
+      const read = await readStateFile(this.registryPath(), parseRegistryFile);
       if (read.status !== 'ok' && read.status !== 'restored') return emptyRegistry();
       raw = read.value;
     } catch {

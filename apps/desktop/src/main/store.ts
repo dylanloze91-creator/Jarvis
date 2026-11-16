@@ -13,6 +13,8 @@ import {
 import { jsonParser, readStateFile, writeStateFile } from './safeFile.js';
 
 const SETTINGS_FILE = 'settings.json';
+/** Même lecteur à la lecture et pour juger la version précédente avant d'en faire le `.bak`. */
+const parseSettingsFile = jsonParser((data) => parseSettings(data));
 const HISTORY_DIR = 'conversations';
 
 function userDataPath(...segments: string[]): string {
@@ -34,7 +36,7 @@ export async function readSettings(): Promise<Settings> {
   // un mot. 5.0.78 : il est mis de côté en `settings.json.corrompu` et la version
   // précédente (`settings.json.bak`) est reprise ; sans elle, les défauts.
   try {
-    const read = await readStateFile(userDataPath(SETTINGS_FILE), jsonParser((data) => parseSettings(data)), {
+    const read = await readStateFile(userDataPath(SETTINGS_FILE), parseSettingsFile, {
       asideSuffix: 'corrompu',
     });
     return read.status === 'ok' || read.status === 'restored' ? read.value : parseSettings({});
@@ -71,7 +73,7 @@ export function writeSettings(settings: Settings): Promise<void> {
   return enqueueSettingsWrite(async () => {
     // Écriture sûre (P12, 5.0.78) : temporaire forcé sur le disque, version précédente
     // gardée en `.bak`, puis renommage. Une coupure ne laisse jamais un fichier vide.
-    await writeStateFile(userDataPath(SETTINGS_FILE), body);
+    await writeStateFile(userDataPath(SETTINGS_FILE), body, { parse: parseSettingsFile });
   });
 }
 

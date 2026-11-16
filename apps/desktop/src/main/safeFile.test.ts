@@ -31,6 +31,7 @@ afterEach(async () => {
 });
 
 const quiet = { log: () => undefined };
+const json = { parse: jsonParser() };
 
 describe('écriture sûre des fichiers d’état', () => {
   it('reconnaît un fichier vide ou rempli de zéros', () => {
@@ -41,8 +42,8 @@ describe('écriture sûre des fichiers d’état', () => {
 
   it('garde la version précédente en .bak et ne laisse aucun temporaire', async () => {
     const target = join(dir, 'etat.json');
-    await writeStateFile(target, '{"v":1}');
-    await writeStateFile(target, '{"v":2}');
+    await writeStateFile(target, '{"v":1}', json);
+    await writeStateFile(target, '{"v":2}', json);
     expect(await readFile(target, 'utf8')).toBe('{"v":2}');
     expect(await readFile(`${target}.bak`, 'utf8')).toBe('{"v":1}');
     expect((await readdir(dir)).filter((name) => name.endsWith('.tmp'))).toEqual([]);
@@ -50,17 +51,49 @@ describe('écriture sûre des fichiers d’état', () => {
 
   it('un fichier de zéros ne remplace jamais la dernière bonne copie', async () => {
     const target = join(dir, 'etat.json');
-    await writeStateFile(target, '{"v":1}');
-    await writeStateFile(target, '{"v":2}'); // .bak = v1
+    await writeStateFile(target, '{"v":1}', json);
+    await writeStateFile(target, '{"v":2}', json); // .bak = v1
     await writeFile(target, ZEROS); // coupure
-    await writeStateFile(target, '{"v":3}');
+    await writeStateFile(target, '{"v":3}', json);
     expect(await readFile(`${target}.bak`, 'utf8')).toBe('{"v":1}');
+  });
+
+  it('un fichier à moitié écrit (illisible) ne devient jamais la copie de secours', async () => {
+    const target = join(dir, 'etat.json');
+    await writeStateFile(target, '{"v":1}', json);
+    await writeStateFile(target, '{"v":2}', json); // .bak = v1
+    await writeFile(target, '{"v":2, "enceintes": [{"nom": "cham'); // coupé en plein milieu
+    await writeStateFile(target, '{"v":3}', json);
+    expect(await readFile(`${target}.bak`, 'utf8')).toBe('{"v":1}');
+    expect(await readFile(target, 'utf8')).toBe('{"v":3}');
+  });
+
+  it('le lecteur du fichier décide : un JSON valable que le lecteur refuse ne devient pas le .bak', async () => {
+    const target = join(dir, 'etat.json');
+    const objet = {
+      parse: jsonParser((data) => {
+        if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('objet attendu');
+        return data;
+      }),
+    };
+    await writeStateFile(target, '{"v":1}', objet);
+    await writeStateFile(target, '{"v":2}', objet); // .bak = v1
+    await writeFile(target, '[]'); // JSON lisible, mais pas un état
+    await writeStateFile(target, '{"v":3}', objet);
+    expect(await readFile(`${target}.bak`, 'utf8')).toBe('{"v":1}');
+  });
+
+  it('sans .bak demandé : aucun fichier .bak', async () => {
+    const target = join(dir, 'etat.json');
+    await writeStateFile(target, '{"v":1}', { keepBackup: false });
+    await writeStateFile(target, '{"v":2}', { keepBackup: false });
+    expect((await readdir(dir)).filter((name) => name.endsWith('.bak'))).toEqual([]);
   });
 
   it('fichier rempli de zéros : mis de côté, .bak repris et réécrit, incident noté', async () => {
     const target = join(dir, 'etat.json');
-    await writeStateFile(target, '{"v":1}');
-    await writeStateFile(target, '{"v":2}');
+    await writeStateFile(target, '{"v":1}', json);
+    await writeStateFile(target, '{"v":2}', json);
     await writeFile(target, ZEROS);
 
     const read = await readStateFile(target, jsonParser<{ v: number }>(), quiet);

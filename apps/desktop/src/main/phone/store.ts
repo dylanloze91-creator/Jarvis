@@ -44,6 +44,9 @@ function readFileState(raw: unknown): PhoneFile {
   return { enabled: data.enabled === true, devices };
 }
 
+/** Même lecteur à la lecture et pour juger la version précédente avant d'en faire le `.bak`. */
+const parsePhoneFile = jsonParser(readFileState);
+
 export class PhoneStore {
   private state: PhoneFile = { enabled: false, devices: [] };
   private loaded = false;
@@ -58,7 +61,7 @@ export class PhoneStore {
   async load(): Promise<void> {
     if (this.loaded) return;
     this.state = { enabled: false, devices: [] };
-    const read = await readStateFile(this.filePath(), jsonParser(readFileState)).catch(() => null);
+    const read = await readStateFile(this.filePath(), parsePhoneFile).catch(() => null);
     if (read && (read.status === 'ok' || read.status === 'restored')) this.state = read.value;
     this.loaded = true;
   }
@@ -115,7 +118,7 @@ export class PhoneStore {
     this.writing = this.writing
       .catch(() => undefined)
       .then(async () => {
-        await writeStateFile(this.filePath(), snapshot, { mode: 0o600 });
+        await writeStateFile(this.filePath(), snapshot, { mode: 0o600, parse: parsePhoneFile });
       });
     return this.writing;
   }

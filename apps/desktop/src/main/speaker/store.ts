@@ -91,6 +91,9 @@ function readFileState(raw: unknown): SpeakerFile {
   return { enabled: data.enabled === true, pcId, speakers };
 }
 
+/** Même lecteur à la lecture et pour juger la version précédente avant d'en faire le `.bak`. */
+const parseSpeakerFile = jsonParser(readFileState);
+
 export class SpeakerStore {
   private state: SpeakerFile = { enabled: false, pcId: '', speakers: [] };
   private loaded = false;
@@ -108,7 +111,7 @@ export class SpeakerStore {
     this.state = { enabled: false, pcId: randomBytes(4).toString('hex'), speakers: [] };
     // Fichier abîmé (zéros après une coupure, JSON illisible) : mis de côté en
     // `speakers.json.illisible`, puis la version précédente (`.bak`) est reprise si elle se lit.
-    const read = await readStateFile(target, jsonParser(readFileState)).catch(() => null);
+    const read = await readStateFile(target, parseSpeakerFile).catch(() => null);
     if (read && (read.status === 'ok' || read.status === 'restored')) this.state = read.value;
     this.loaded = true;
   }
@@ -294,7 +297,7 @@ export class SpeakerStore {
     this.writing = this.writing
       .catch(() => undefined)
       .then(async () => {
-        await writeStateFile(this.filePath(), snapshot, { mode: 0o600 });
+        await writeStateFile(this.filePath(), snapshot, { mode: 0o600, parse: parseSpeakerFile });
       });
     return this.writing;
   }

@@ -48,7 +48,7 @@ Nouveau module `apps/desktop/src/main/safeFile.ts`.
 
 **À l'écriture (`writeStateFile`)**, dans cet ordre :
 1. écrire un fichier temporaire au nom unique, puis le forcer sur le disque ;
-2. copier la version actuelle en `<fichier>.bak`, forcée sur le disque, **seulement si elle est saine** : un fichier de zéros n'écrase jamais la dernière bonne copie ;
+2. copier la version actuelle en `<fichier>.bak`, forcée sur le disque, **seulement si elle se lit vraiment** : elle passe par le même lecteur qu'à la lecture (`parse`, obligatoire pour garder un `.bak`). Un fichier de zéros ou à moitié écrit n'écrase jamais la dernière bonne copie ;
 3. renommer le temporaire à la place du fichier ;
 4. forcer le dossier (sans effet sous Windows).
 
@@ -89,7 +89,7 @@ Pour les autres fichiers des projets (`memory.json`, discussions), l'écriture e
 
 - `apps/desktop/src/main/safeFile.test.ts` couvre :
   - fichier de 413 octets nuls, comme celui du PC ;
-  - `.bak` gardé et non écrasé par un fichier de zéros ;
+  - `.bak` gardé et non écrasé par un fichier de zéros, ni par un fichier à moitié écrit, ni par un JSON que le lecteur du fichier refuse ;
   - mise de côté sans écrasement ;
   - fichier absent non ressuscité ;
   - **`speakers.json` de zéros : l'enceinte et sa clé reviennent** ;
