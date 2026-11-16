@@ -21,6 +21,7 @@
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "display.h"
 #include "led.h"
 #include "link.h"
 #include "net.h"
@@ -297,6 +298,7 @@ static void life_task(void *arg) {
 void app_main(void) {
     cfg_init();
     led_init();
+    display_init(); // sans écran branché : ne fait rien
     link_start();
     if (!jarvis_cfg.configured) {
         led_set(LED_SETUP);
