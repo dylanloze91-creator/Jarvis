@@ -2,6 +2,10 @@
  * Fichiers des notes et des routines. Module Node, hors de l'index du cœur :
  * la fenêtre ne doit pas l'importer.
  * `userData/notes.json` et `userData/routines.json`.
+ *
+ * Lecture et écriture passent par `StateFileIO`. Jarvis lui donne l'écriture sûre du bureau
+ * (`safeFile.ts`, 5.0.78 : forcée sur le disque, copie `.bak` reprise si le fichier est abîmé),
+ * comme pour les autres fichiers d'état. Sans `io` (tests du cœur) : temporaire puis renommage.
  */
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -22,13 +26,62 @@ import {
   type StepRunner,
 } from './routines.js';
 
+/**
+ * Lecture et écriture d'un fichier d'état texte. `parse` lève une erreur si le contenu
+ * ne se lit pas : c'est lui qui décide si un fichier est abîmé, et si la version actuelle
+ * peut devenir la copie de secours.
+ */
+export interface StateFileIO {
+  /** Contenu lu par `parse`, ou `null` si le fichier n'existe pas ou n'a rien de lisible. */
+  read<T>(path: string, parse: (text: string) => T): Promise<T | null>;
+  write(path: string, text: string, parse: (text: string) => unknown): Promise<void>;
+}
+
+/** Sans l'écriture sûre du bureau : comportement du lot B (temporaire puis renommage). */
+export const plainStateFileIO: StateFileIO = {
+  async read<T>(path: string, parse: (text: string) => T): Promise<T | null> {
+    let text: string;
+    try {
+      text = await readFile(path, 'utf8');
+    } catch {
+      return null;
+    }
+    try {
+      return parse(text);
+    } catch {
+      return null;
+    }
+  },
+  async write(path: string, text: string): Promise<void> {
+    await mkdir(parentDir(path), { recursive: true });
+    const tmp = `${path}.tmp`;
+    await writeFile(tmp, text, 'utf8');
+    await rename(tmp, path);
+  },
+};
+
+/** Un fichier des notes ou des routines est un objet JSON ; sinon il est abîmé. */
+function parseStateObject(text: string): Record<string, unknown> {
+  const raw: unknown = JSON.parse(text.charCodeAt(0) === 0xfeff ? text.slice(1) : text);
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('pas un objet JSON');
+  return raw as Record<string, unknown>;
+}
+
 interface NotesFile {
   version: 1;
   items: NoteItem[];
 }
 
+function parseNotesFile(text: string): NotesFile {
+  const raw = parseStateObject(text);
+  return { version: 1, items: Array.isArray(raw.items) ? raw.items.filter(isNote) : [] };
+}
+
 export class NotesBook {
-  constructor(private readonly pathOf: () => string) {}
+  constructor(
+    private readonly pathOf: () => string,
+    private readonly io: StateFileIO = plainStateFileIO,
+  ) {}
 
   private file(): string {
     return this.pathOf();
@@ -70,21 +123,11 @@ export class NotesBook {
   }
 
   private async read(): Promise<NotesFile> {
-    try {
-      const raw = JSON.parse(await readFile(this.file(), 'utf8')) as Partial<NotesFile>;
-      const items = Array.isArray(raw.items) ? raw.items.filter(isNote) : [];
-      return { version: 1, items };
-    } catch {
-      return { version: 1, items: [] };
-    }
+    return (await this.io.read(this.file(), parseNotesFile)) ?? { version: 1, items: [] };
   }
 
   private async write(file: NotesFile): Promise<void> {
-    const path = this.file();
-    await mkdir(parentDir(path), { recursive: true });
-    const tmp = `${path}.tmp`;
-    await writeFile(tmp, `${JSON.stringify(file)}\n`, 'utf8');
-    await rename(tmp, path);
+    await this.io.write(this.file(), `${JSON.stringify(file)}\n`, parseNotesFile);
   }
 }
 
@@ -131,8 +174,20 @@ interface RoutineFile {
   pending: { name: string; steps: RoutineStep[] } | null;
 }
 
+function parseRoutineFile(text: string): RoutineFile {
+  const raw = parseStateObject(text);
+  return {
+    version: 1,
+    items: Array.isArray(raw.items) ? raw.items.filter(isRoutine) : [],
+    pending: raw.pending && isRoutine(raw.pending) ? (raw.pending as RoutineFile['pending']) : null,
+  };
+}
+
 export class RoutineBook {
-  constructor(private readonly pathOf: () => string) {}
+  constructor(
+    private readonly pathOf: () => string,
+    private readonly io: StateFileIO = plainStateFileIO,
+  ) {}
 
   async list(): Promise<Routine[]> {
     return (await this.read()).items;
@@ -178,25 +233,11 @@ export class RoutineBook {
   }
 
   private async read(): Promise<RoutineFile> {
-    try {
-      const raw = JSON.parse(await readFile(this.pathOf(), 'utf8')) as Partial<RoutineFile>;
-      return {
-        version: 1,
-        items: Array.isArray(raw.items) ? raw.items.filter(isRoutine) : [],
-        pending: raw.pending && isRoutine(raw.pending) ? raw.pending : null,
-      };
-    } catch {
-      return { version: 1, items: [], pending: null };
-    }
+    return (await this.io.read(this.pathOf(), parseRoutineFile)) ?? { version: 1, items: [], pending: null };
   }
 
   private async write(file: RoutineFile): Promise<void> {
-    const path = this.pathOf();
-    const cut = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
-    await mkdir(cut > 0 ? path.slice(0, cut) : '.', { recursive: true });
-    const tmp = `${path}.tmp`;
-    await writeFile(tmp, `${JSON.stringify(file)}\n`, 'utf8');
-    await rename(tmp, path);
+    await this.io.write(this.pathOf(), `${JSON.stringify(file)}\n`, parseRoutineFile);
   }
 }
 

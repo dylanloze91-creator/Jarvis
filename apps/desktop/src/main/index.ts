@@ -146,6 +146,7 @@ import { warmOllamaModels } from './speaker/warmupRun.js';
 import { presentWindow } from './startup.js';
 import { allowPermissionCheck, allowPermissionRequest, isAppDocumentUrl, originForLog } from './mediaPermissions.js';
 import { isCopyableText } from './copyText.js';
+import { safeTextStateIO } from './safeFile.js';
 import { VoiceCaptureLog } from './voiceCaptureLog.js';
 import { WakeLearningStore } from './wakeLearningStore.js';
 import { LocalLearningStore } from './learning/store.js';
@@ -282,8 +283,9 @@ function openPlayProject(projectId: string | null): void {
   void controller.playProject(projectId);
 }
 
-const notesBook = new NotesBook(() => notesFilePath(app.getPath('userData')));
-const routineBook = new RoutineBook(() => routinesFilePath(app.getPath('userData')));
+// Écriture sûre des fichiers d'état (5.0.78), comme settings.json et speakers.json.
+const notesBook = new NotesBook(() => notesFilePath(app.getPath('userData')), safeTextStateIO);
+const routineBook = new RoutineBook(() => routinesFilePath(app.getPath('userData')), safeTextStateIO);
 let routineCount = 0;
 
 async function refreshRoutineCount(): Promise<void> {

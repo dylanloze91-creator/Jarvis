@@ -1,6 +1,10 @@
-import { join } from 'node:path';
+import { posix } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { copyLiveIntoTest, type CopyHost } from './editionCopy.js';
+
+// Le module joint ses chemins avec « / » (il n'importe pas node:path) : les clés du faux disque
+// aussi, sinon, sous Windows, `path.join` met des « \ » et aucun fichier n'est retrouvé.
+const join = posix.join;
 
 describe('copie depuis Jarvis Live', () => {
   it('copie la liste, jamais l’historique, et n’écrit pas chez Live', async () => {

@@ -240,6 +240,21 @@ async function readBackup<T>(target: string, parse: (bytes: Buffer) => T): Promi
   return result.ok ? { value: result.value, bytes } : null;
 }
 
+/**
+ * Lecture et écriture sûres d'un fichier d'état texte, pour le cœur (`StateFileIO` des notes
+ * et des routines, `@jarvis/core/quotidien/fichiers`). Fichier absent, ou abîmé sans `.bak`
+ * lisible : `null` (le fichier abîmé reste mis de côté, jamais effacé).
+ */
+export const safeTextStateIO = {
+  async read<T>(path: string, parse: (text: string) => T): Promise<T | null> {
+    const result = await readStateFile(path, (bytes) => parse(bytes.toString('utf8')));
+    return result.status === 'ok' || result.status === 'restored' ? result.value : null;
+  },
+  async write(path: string, text: string, parse: (text: string) => unknown): Promise<void> {
+    await writeStateFile(path, text, { parse: (bytes) => parse(bytes.toString('utf8')) });
+  },
+};
+
 /** Lecteur JSON courant : texte UTF-8 (marque BOM tolérée) puis `JSON.parse`, et `check` éventuel. */
 export function jsonParser<T>(check: (data: unknown) => T = (data) => data as T): (bytes: Buffer) => T {
   return (bytes) => check(JSON.parse(bytes.toString('utf8').replace(/^\uFEFF/, '')));
