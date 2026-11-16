@@ -1,4 +1,4 @@
-import { PHONE_PORT, phoneAppUrl, tailscaleServeCommand } from '@jarvis/core';
+import { PHONE_PORT, RESERVED_PHRASE, phoneAppUrl, tailscaleServeCommand } from '@jarvis/core';
 import type { PhoneStatus } from '../../shared/ipc.js';
 import { PhoneServer, type PhoneServerDeps } from './server.js';
 import type { PhoneStore } from './store.js';
@@ -11,6 +11,8 @@ import { readTailscale, type TailscaleRunner, type TailscaleState } from './tail
 export interface PhoneServiceDeps extends Omit<PhoneServerDeps, 'store' | 'onPaired'> {
   store: PhoneStore;
   port?: number;
+  /** Test : faux tant que l'utilisateur n'a pas activé la fonction réservée. */
+  mayRun?: () => boolean;
   tailscale?: TailscaleRunner;
   /** Pousse l'état à l'interface (appareil relié depuis le téléphone). */
   broadcast?: (status: PhoneStatus) => void;
@@ -41,13 +43,17 @@ export class PhoneService {
     return this.deps.port ?? PHONE_PORT;
   }
 
+  private canRun(): boolean {
+    return this.deps.mayRun?.() ?? true;
+  }
+
   isEnabled(): boolean {
     return this.deps.store.enabled;
   }
 
   async init(): Promise<void> {
     await this.deps.store.load();
-    if (this.deps.store.enabled) await this.startServer();
+    if (this.deps.store.enabled && this.canRun()) await this.startServer();
   }
 
   private async startServer(): Promise<void> {
@@ -65,6 +71,10 @@ export class PhoneService {
   }
 
   async setEnabled(enabled: boolean): Promise<PhoneStatus> {
+    if (enabled && !this.canRun()) {
+      this.error = RESERVED_PHRASE;
+      return this.status();
+    }
     await this.deps.store.setEnabled(enabled);
     if (enabled) await this.startServer();
     else {

@@ -1251,4 +1251,26 @@ describe('enceinte réflexe', () => {
       clear.mockRestore();
     }
   });
+
+  it('fonction réservée : le pont ne démarre pas, même si le fichier dit oui', async () => {
+    const store = new SpeakerStore(() => join(dir, 'reserve.json'));
+    await store.setEnabled(true);
+    const service = new SpeakerService({
+      store,
+      port: 0,
+      mayRun: () => false,
+      chatFor: () => new FakeChat(() => undefined),
+      transcribe: async () => 'bonjour',
+      synthesizer: new FakeSynth(),
+      voiceSettings: () => ({ wakeWord: 'jarvis', wakeWordVariants: [] }),
+      version: () => '5.0.76',
+      localAddresses: () => ['127.0.0.1'],
+    });
+    await service.init();
+    expect(service.server.running).toBe(false);
+    const status = await service.setEnabled(true);
+    expect(service.server.running).toBe(false);
+    expect(status.error).toBe('Réservé à Jarvis Live');
+    expect(status.enabled).toBe(true);
+  });
 });

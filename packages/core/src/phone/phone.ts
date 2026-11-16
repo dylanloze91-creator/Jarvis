@@ -7,9 +7,10 @@
  * `apps/desktop/src/main/phone/`.
  */
 import { z } from 'zod';
+import { LIVE_EDITION } from '../edition.js';
 
-/** Port local du serveur du téléphone (127.0.0.1 seulement ; Tailscale le publie en HTTPS). */
-export const PHONE_PORT = 53130;
+/** Port local du téléphone pour Live. L'application en cours utilise `edition().ports.phone`. */
+export const PHONE_PORT = LIVE_EDITION.ports.phone;
 /** Code de jumelage : 6 chiffres, 10 minutes, 5 essais. */
 export const PHONE_PAIRING_TTL_MS = 10 * 60_000;
 export const PHONE_PAIRING_MAX_ATTEMPTS = 5;
