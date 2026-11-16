@@ -12,7 +12,10 @@
  * - Sheets : `spreadsheets` (ajouter des lignes, écrire une plage). Sensible.
  */
 
-export const GOOGLE_OAUTH_PORT = 53125;
+import { LIVE_EDITION } from '../edition.js';
+
+/** Port préféré, le même pour Live et Test (client Google « Application de bureau »). */
+export const GOOGLE_OAUTH_PORT = LIVE_EDITION.ports.google;
 export const GOOGLE_REDIRECT_PATH = '/callback';
 export const GOOGLE_REDIRECT_URI = `http://127.0.0.1:${GOOGLE_OAUTH_PORT}${GOOGLE_REDIRECT_PATH}`;
 

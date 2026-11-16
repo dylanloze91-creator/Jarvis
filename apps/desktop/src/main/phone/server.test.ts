@@ -264,7 +264,7 @@ describe('serveur du téléphone (5.0.63)', () => {
     expect(reply.headers['content-type']).toContain('application/x-ndjson');
     const events = reply.body.trim().split('\n').map((line) => JSON.parse(line) as ChatEvent);
     expect(events.map((event) => event.type)).toEqual(['started', 'delta', 'delta', 'done']);
-    expect(chat.inputs).toEqual([{ conversationId: null, text: 'Salut', source: 'voice' }]);
+    expect(chat.inputs).toEqual([{ conversationId: null, text: 'Salut', source: 'voice', place: { kind: 'telephone' } }]);
     expect((await call(port, '/api/chat', { token, body: { text: '' } })).status).toBe(400);
     expect((await call(port, '/api/chat', { token, body: { text: 'x', conversationId: '../x' } })).status).toBe(400);
   });
