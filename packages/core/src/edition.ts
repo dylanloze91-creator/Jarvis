@@ -59,6 +59,18 @@ export interface Edition {
   updateChannel: UpdateChannel;
   allowPrerelease: boolean;
   badge: EditionBadge | null;
+  /**
+   * Garder chauds les modèles du chef d'orchestre (préchauffage au démarrage, prolongation).
+   * Absent dans Live : rien ne change pour elle.
+   */
+  keepModelsWarm?: boolean;
+  /**
+   * Ligne d'heure des équipes placée dans la demande du tour, pas dans le message système :
+   * Ollama ne relit plus les outils et l'historique à chaque nouvelle minute.
+   */
+  clockAfterHistory?: boolean;
+  /** Mémoire courte des résultats d'outils de lecture (quelques minutes). */
+  keepToolResults?: boolean;
 }
 
 const PHONE_OFFSET = 6;
@@ -110,6 +122,9 @@ export const TEST_EDITION: Edition = {
   updateChannel: 'test',
   allowPrerelease: true,
   badge: { label: 'TEST', color: '#E07A1F' },
+  keepModelsWarm: true,
+  clockAfterHistory: true,
+  keepToolResults: true,
 };
 
 export function readEditionId(input: { env?: string; baked?: string } = {}): EditionId {

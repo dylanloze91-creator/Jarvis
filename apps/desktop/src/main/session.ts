@@ -93,12 +93,15 @@ import {
   type CarnetPlace,
   type ToolLine,
   TurnClock,
+  withTrailingNote,
+  mentionsTime,
 } from '@jarvis/core';
 import { describeDirectResult, type ImagesService } from './images/ImagesService.js';
 import type { ChatEvent, RuntimeStatus, SendChatInput } from '../shared/ipc.js';
 import { IpcChannel } from '../shared/ipc.js';
 import { canOfferTeamValidation, validationPathForHow } from './orchestra/teamValidation.js';
 import { journaliserTour, type RouteNotee } from './turnJournal.js';
+import { edition } from './edition.js';
 import type { PersonalizationStore } from './personalization.js';
 import type { KnowledgeStore } from './knowledge.js';
 import type { VoiceBridge } from './voice.js';
@@ -609,10 +612,20 @@ export class ChatSession {
         chatMissionsOn && chatMissionHub
           ? this.deps.tools.compose(createProposerMissionTool(chatMissionHub))
           : this.deps.tools;
-      const agent = new Agent(clock.wrap(route.provider, 'reponse'), turnTools, {
-        systemPrompt: `${turn.systemPrompt}\n\n${teamPrompt(team, character, clockLinePrompt(new Date()))}${missionPrompt}`,
+      // Ligne d'heure : elle change chaque minute. Dans le message système, elle faisait relire les
+      // outils et tout l'historique à chaque nouvelle minute. Jarvis Test la place en tête de la
+      // demande, dans la copie envoyée au modèle seulement ; ce qu'elle dit ne change pas.
+      const clockLine = clockLinePrompt(new Date());
+      // Une demande qui parle de temps (heure, jour, « tard »…) garde la ligne dans le message
+      // système, comme avant : c'est là que le modèle la cite le plus sûrement.
+      const clockLast = edition().clockAfterHistory === true && !mentionsTime(input.text);
+      const teamProvider = clockLast ? withTrailingNote(route.provider, clockLine, userMessage.id) : route.provider;
+      const agent = new Agent(clock.wrap(teamProvider, 'reponse'), turnTools, {
+        systemPrompt: `${turn.systemPrompt}\n\n${teamPrompt(team, character, clockLast ? null : clockLine)}${missionPrompt}`,
         temperature: settings.temperature,
         homeLocation: settings.homeLocation ?? null,
+        // La date du tour est dans la note de la demande : le tour de recherche ne la répète pas.
+        ...(clockLast ? { dateInTurnNote: true } : {}),
         allowedTools: (name) =>
           teamHasTool(team, name) || (chatMissionsOn && name === PROPOSER_MISSION_TOOL_NAME),
         spotifyAskDevice: settings.spotifyAskDevice === true,
@@ -690,7 +703,7 @@ export class ChatSession {
             emit({ type: 'tool_progress', callId: event.callId, message: event.message });
             break;
           case 'tool_result':
-            clock.tool(event.outcome.name, event.outcome.durationMs);
+            clock.tool(event.outcome.name, event.outcome.durationMs, event.outcome.kept !== undefined);
             if (chatMissionsOn && event.outcome.name === PROPOSER_MISSION_TOOL_NAME) {
               const payload = event.outcome.data as ChatMissionProposalPayload | undefined;
               if (payload) {
@@ -1194,7 +1207,7 @@ export class ChatSession {
           ...(prefer ? { stockPrefer: prefer } : {}),
         },
       );
-      clock?.tool(outcome.name, outcome.durationMs);
+      clock?.tool(outcome.name, outcome.durationMs, outcome.kept !== undefined);
       void this.deps.auditLog
         .append(buildAuditEntry(outcome))
         .catch((error: unknown) => console.error('[jarvis] journal d’audit non écrit :', error));

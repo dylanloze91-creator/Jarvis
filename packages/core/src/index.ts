@@ -62,6 +62,7 @@ export {
 
 export * from './tools/types.js';
 export { ToolManager, defineTool } from './tools/manager.js';
+export * from './tools/resultMemory.js';
 export {
   TOOL_OUTCOME_KINDS,
   classifyThrownError,
@@ -103,6 +104,7 @@ export {
   type MessageOrigin,
 } from './agent/voiceOriginNotice.js';
 export * from './agent/orchestra.js';
+export * from './agent/expressRules.js';
 export {
   teamValidationEnabled,
   validationPathForHow,
@@ -619,6 +621,8 @@ export * from './speaker/chrono.js';
 export * from './vitesse/chrono.js';
 export * from './vitesse/resume.js';
 export * from './vitesse/banc.js';
+export * from './vitesse/chauds.js';
+export * from './vitesse/promptTail.js';
 export * from './speaker/reflex.js';
 export * from './speaker/warmup.js';
 export { encodeQr, qrSvgPath, QR_MAX_VERSION, type QrMatrix } from './qr/qrCode.js';

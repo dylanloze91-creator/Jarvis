@@ -3,6 +3,8 @@ import './editionBoot.js';
 import { readFile, writeFile } from 'node:fs/promises';
 import { readRouterScore } from './orchestra/routerScore.js';
 import { VoiceStartBook } from './vitesse/voix.js';
+import { ModelWarmer } from './vitesse/chauds.js';
+import { mostUsedTeamOf } from './vitesse/usage.js';
 import { join } from 'node:path';
 import {
   BrowserWindow,
@@ -63,6 +65,7 @@ import {
   type ReservedFunction,
   noteIntent,
   type RoutineStep,
+  ToolResultMemory,
   type ToolManager,
   MoonrakerClient,
   checkRoverBaseUrl,
@@ -368,7 +371,12 @@ async function announcePrint(message: string): Promise<void> {
   overlay?.browserWindow.webContents.send(IpcChannel.chatEvent, { type: 'notice', text: message });
 }
 
+// Mémoire courte des résultats d'outils de lecture : Jarvis Test seulement (table d'édition).
+const toolMemory = edition().keepToolResults ? new ToolResultMemory() : null;
+
 function buildTools(): ToolManager {
+  // Réglages changés (moteur de recherche, clé…) : un résultat gardé avec l'ancien réglage ne ressert pas.
+  toolMemory?.clear();
   return createToolManager({
     getSettings: () => settings,
     searchRegistry,
@@ -405,7 +413,7 @@ function buildTools(): ToolManager {
         onProgress,
         signal,
       }),
-  });
+  }).useResultMemory(toolMemory);
 }
 
 let tools: ToolManager = buildTools();
@@ -653,6 +661,20 @@ const speakers = new SpeakerService({
   },
 });
 
+// Modèles gardés chauds : Jarvis Test seulement (table d'édition). Live : rien n'est créé.
+const modelWarmer = edition().keepModelsWarm
+  ? new ModelWarmer({
+      getSettings: () => settings,
+      busy: () =>
+        images.isBusy() ||
+        (chatMissionHub?.missionBusy() ?? false) ||
+        localLearning.status().running ||
+        (developerIpc?.current()?.workInProgress() ?? false),
+      mostUsedTeam: () => mostUsedTeamOf(store),
+      log: (line) => console.info(line),
+    })
+  : null;
+
 backupService = new BackupService({
   userData: () => app.getPath('userData'),
   getSettings: () => settings,
@@ -834,6 +856,8 @@ async function bootstrap(): Promise<void> {
   );
   // Le bilan attend la première image (0.4.14) : il ne bloque pas l'ouverture.
   void healthMonitor?.run();
+  // Après la première image : le démarrage n'attend jamais Ollama.
+  modelWarmer?.start();
   backupService?.start();
   // 5.0.64 : un raccourci déjà pris au démarrage (ou mal écrit) laissait Jarvis sans
   // porte d'entrée ; comme à l'enregistrement, on retombe sur Control+Space.
@@ -1722,6 +1746,7 @@ app.on('will-quit', () => {
   void piper.stop();
   // Un Forge lancé par Jarvis ne survit pas à Jarvis (un Forge lancé par l'utilisateur n'est pas touché).
   void images.shutdown();
+  modelWarmer?.stop();
   updateManager.stop();
 });
 

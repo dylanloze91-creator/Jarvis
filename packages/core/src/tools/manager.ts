@@ -1,3 +1,4 @@
+import { keptAgeText, type ToolResultMemory } from './resultMemory.js';
 import { z } from 'zod';
 import { debugLog } from '../security/debugLog.js';
 import { redactSecrets, redactValue } from '../security/redact.js';
@@ -123,6 +124,14 @@ export interface ToolExecutionEvents {
  */
 export class ToolManager {
   private readonly tools = new Map<string, RegisteredTool>();
+  /** Mémoire courte des résultats de lecture. Absente : chaque appel refait le travail, comme avant. */
+  private memory: ToolResultMemory | null = null;
+
+  /** Branche (ou retire, avec `null`) la mémoire courte. Elle ne garde que les outils de sa table. */
+  useResultMemory(memory: ToolResultMemory | null): this {
+    this.memory = memory;
+    return this;
+  }
 
   register(tool: RegisteredTool): this {
     if (this.tools.has(tool.name)) {
@@ -142,6 +151,7 @@ export class ToolManager {
     const next = new ToolManager();
     for (const tool of this.list()) next.register(tool);
     for (const tool of extras) next.register(tool);
+    next.memory = this.memory;
     return next;
   }
 
@@ -281,9 +291,16 @@ export class ToolManager {
 
     events.onStart?.(call, tool);
 
+    // Mémoire courte : seulement un outil de lecture de la table, jamais un outil qui demande un accord.
+    const memory = tool.risk === 'safe' && this.memory?.keeps(tool.name) ? this.memory : null;
+    const memoryExtra = context.stockPrefer ?? null;
+    const kept = memory && !context.signal?.aborted ? memory.lookup(tool.name, call.arguments, memoryExtra) : null;
+
     let result: ToolResult;
     try {
-      if (context.signal?.aborted) {
+      if (kept) {
+        result = kept.result;
+      } else if (context.signal?.aborted) {
         result = {
           ok: false,
           outcome: 'cancelled',
@@ -292,6 +309,7 @@ export class ToolManager {
         };
       } else {
         result = await tool.run(call.arguments, context);
+        memory?.store(tool.name, call.arguments, memoryExtra, result);
       }
     } catch (error) {
       const classified = classifyThrownError(error);
@@ -305,7 +323,9 @@ export class ToolManager {
 
     const outcomeKind: ToolOutcomeKind = outcomeFromResult(result);
     const content = presentUserContent({ ...result, outcome: outcomeKind });
-    const technicalDetail = result.technicalDetail ? redactSecrets(result.technicalDetail) : undefined;
+    const ownDetail = result.technicalDetail ? redactSecrets(result.technicalDetail) : undefined;
+    // Le journal dit quand le résultat vient de la mémoire courte, et son âge.
+    const technicalDetail = kept ? [keptAgeText(kept.ageMs), ownDetail].filter(Boolean).join(' ; ') : ownDetail;
     debugLog(context.debug === true, 'tool', `${call.name} ${outcomeKind}`, {
       technicalDetail,
       arguments: call.arguments,
@@ -323,6 +343,7 @@ export class ToolManager {
       outcome: outcomeKind,
       technicalDetail,
       ...(result.data !== undefined ? { data: result.data } : {}),
+      ...(kept ? { kept: { ageMs: kept.ageMs } } : {}),
     });
   }
 

@@ -120,6 +120,13 @@ export interface AgentOptions {
   spotifyAskDevice?: boolean;
   /** Fenêtre, téléphone ou enceinte : chacun garde sa question 60 secondes. */
   spotifyVoiceSessionId?: string;
+  /**
+   * La date et l'heure du tour sont déjà données au modèle par une note en fin de demande
+   * (équipes de l'orchestre, Jarvis Test) : le tour de recherche ne les répète pas dans le message
+   * système, où elles feraient relire les outils et l'historique à chaque nouvelle minute.
+   * Absent : le prompt d'avant, date comprise.
+   */
+  dateInTurnNote?: boolean;
 }
 
 export const DEFAULT_SYSTEM_PROMPT = [
@@ -260,8 +267,11 @@ export class Agent {
     if (roverOffered) system = `${system} ${roverTurnPrompt()}`;
     if (imagesOffered) system = `${system} ${imagesTurnPrompt()}`;
     // Date et protocole seulement pour la recherche forcée : les autres tours gardent leur prompt.
-    if (currentPlan)
-      system = `${system} ${currentDatePrompt(now, timeZone)} ${CURRENT_INFO_TURN_PROMPT}`;
+    if (currentPlan) {
+      system = this.options.dateInTurnNote
+        ? `${system} ${CURRENT_INFO_TURN_PROMPT}`
+        : `${system} ${currentDatePrompt(now, timeZone)} ${CURRENT_INFO_TURN_PROMPT}`;
+    }
     let currentSearch: CurrentSearchResult | null = null;
     let learningRetried = false;
     let reviewSystem: string | null = null;

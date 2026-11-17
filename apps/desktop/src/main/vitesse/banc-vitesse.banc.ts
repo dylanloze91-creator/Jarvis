@@ -43,6 +43,7 @@ const { PersonalizationStore } = await import('../personalization.js');
 const { KnowledgeStore } = await import('../knowledge.js');
 const { stubLocalLearning } = await import('../test/localLearningStub.js');
 const { benchStartup } = await import('./demarrage.js');
+const { edition } = await import('../edition.js');
 
 afterAll(() => rmSync(userData, { recursive: true, force: true }));
 
@@ -83,6 +84,9 @@ const DEMANDES: Demande[] = [
   { id: 'b3', discussion: 'B', text: 'On est quel jour ?' },
   { id: 'i1', discussion: 'J', text: 'En une ligne de Python, comment inverser une chaîne de caractères ?' },
   { id: 'j1', discussion: 'A', text: 'Merci. Résume en une phrase ce qu’on vient de se dire.' },
+  // Deuxième demande aux équipes qui tournent sur le processeur : le début du prompt est-il relu ?
+  { id: 'i2', discussion: 'J2', text: 'En une ligne de Python, comment mettre une chaîne de caractères en majuscules ?' },
+  { id: 'g2', discussion: 'G2', text: 'Cherche dans ta mémoire ce que tu sais sur ma voiture.' },
   // Une discussion qui s'allonge, avec des résultats d'outil dans l'historique.
   { id: 'm1', discussion: 'M', text: 'Cherche sur internet la population de Lyon.' },
   { id: 'm2', discussion: 'M', text: 'Cherche sur internet la population de Marseille.' },
@@ -99,6 +103,14 @@ function reglagesDeJarvisTest(): ReturnType<typeof core.parseSettings> {
   delete raw.images;
   delete raw.developer;
   raw.debugLogging = false;
+  // JARVIS_BANC_EQUIPES=memoire=qwen2.5:7b@carte,code=qwen2.5:7b@carte : essayer une autre
+  // répartition des modèles pour ce passage seulement (les réglages de l'utilisateur ne changent pas).
+  const orchestra = raw.orchestra as { teams?: Record<string, { model: string; place: string }> } | undefined;
+  for (const item of (process.env.JARVIS_BANC_EQUIPES ?? '').split(',')) {
+    const match = /^([a-z]+)=(.+)@(carte|processeur)$/.exec(item.trim());
+    if (!match || !orchestra) continue;
+    orchestra.teams = { ...(orchestra.teams ?? {}), [match[1]!]: { model: match[2]!, place: match[3]! } };
+  }
   return core.parseSettings(raw);
 }
 
@@ -143,6 +155,13 @@ it(
   'banc de vitesse',
   async () => {
     process.env.JARVIS_EDITION = 'test';
+    // JARVIS_BANC_SANS=chauds,heure,memoire : couper un outil de vitesse pour ce passage seulement,
+    // afin de mesurer chaque outil avec et sans lui (la table d'édition n'est changée que dans le banc).
+    const sans = (process.env.JARVIS_BANC_SANS ?? '').split(',').map((name) => name.trim());
+    const table = core.TEST_EDITION as { keepModelsWarm?: boolean; clockAfterHistory?: boolean; keepToolResults?: boolean };
+    if (sans.includes('chauds')) table.keepModelsWarm = false;
+    if (sans.includes('heure')) table.clockAfterHistory = false;
+    if (sans.includes('memoire')) table.keepToolResults = false;
     const label = (process.env.JARVIS_BANC_LABEL ?? 'passage').replace(/[^\w.-]+/g, '-');
     const settings = reglagesDeJarvisTest();
     const baseUrl = (settings.baseUrl || 'http://127.0.0.1:11434').replace(/\/+$/, '');
@@ -157,6 +176,8 @@ it(
       personalization: new PersonalizationStore(),
       knowledge,
     });
+    // Comme l'appli : la mémoire courte des outils, quand l'édition la prévoit.
+    if (edition().keepToolResults) tools.useResultMemory(new core.ToolResultMemory());
     const registry = core.createDefaultRegistry();
     const store = new core.InMemoryConversationStore();
     const session = new ChatSession({
@@ -173,11 +194,14 @@ it(
 
     if (process.env.JARVIS_BANC_FROID !== '0') await dechargerTout(baseUrl);
     // Ce que l'appli fait à son démarrage (préchauffage) : le banc le fait aussi, et le mesure.
-    const warmupMs = await benchStartup({ settings, registry, toolNames: tools.schemas().map((tool) => tool.name) });
+    const warmupMs = await benchStartup({ settings });
 
+    // JARVIS_BANC_SEULEMENT=g1,g2 : ne passer que ces demandes (pour compléter un passage).
+    const only = (process.env.JARVIS_BANC_SEULEMENT ?? '').split(',').map((id) => id.trim()).filter(Boolean);
+    const demandes = only.length ? DEMANDES.filter((demande) => only.includes(demande.id)) : DEMANDES;
     const conversations = new Map<string, string>();
     const turns: BenchTurn[] = [];
-    for (const demande of DEMANDES) {
+    for (const demande of demandes) {
       const events: ChatEvent[] = [];
       const sender = {
         isDestroyed: () => false,
@@ -256,7 +280,7 @@ it(
     const target = join(dir, `${label}.json`);
     writeFileSync(target, `${JSON.stringify(run, null, 1)}\n`, 'utf8');
     console.log(`[banc] écrit : ${target}`);
-    expect(turns).toHaveLength(DEMANDES.length);
+    expect(turns).toHaveLength(demandes.length);
   },
   DEMANDES.length * TURN_DEADLINE_MS,
 );

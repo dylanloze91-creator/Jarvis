@@ -44,6 +44,8 @@ export interface ToolCallOutcome {
   technicalDetail?: string;
   /** Charge utile structurée de l'outil (`ToolResult.data`), jamais envoyée au modèle ni au journal. */
   data?: unknown;
+  /** Résultat repris de la mémoire courte des outils, avec son âge. Absent : l'outil a travaillé. */
+  kept?: { ageMs: number };
 }
 
 /**

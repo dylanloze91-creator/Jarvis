@@ -15,6 +15,7 @@
  *
  * L'équipe choisie répond avec son modèle et seulement ses outils.
  */
+import { EXPRESS_RULES, matchExpressRules } from './expressRules.js';
 import type { ChatMessage } from '../types.js';
 import type { ProviderConfig } from '../providers/types.js';
 import { extractKnowledgeIntent } from '../knowledge/intent.js';
@@ -276,7 +277,9 @@ export function expressTeam(input: ExpressInput): OrchestraTeam | null {
   // (`looksLikeGoogleIntent` reste faux) et part ici, ou via la recherche web juste dessous.
   if (looksLikeExpressWeb(text)) return pick('web');
   if (detectCurrentInfoIntent(text, input.now ?? new Date()) || looksLikeWebResearchIntent(text)) return pick('web');
-  return null;
+  // Règles ajoutées par l'outil des règles express (`expressRules.ts`), chacune avec ses essais.
+  // Elles passent après les règles en place, et ne décident rien dans le doute.
+  return matchExpressRules(EXPRESS_RULES, text, input.available)?.team ?? null;
 }
 
 /**
