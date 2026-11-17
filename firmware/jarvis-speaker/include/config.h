@@ -53,11 +53,12 @@
 #define DISPLAY_PIN_SDA   8
 #define DISPLAY_PIN_SCL   9
 #define DISPLAY_ADDRESS   0x3C     // 0x3D est essayée aussi
+#define DISPLAY_I2C_HZ    400000
 #define DISPLAY_CONTRAST  0xCF     // 0 à 255, quand Jarvis écoute ou répond
-#define DISPLAY_CONTRAST_STANDBY 0x10 // en veille : faible, pour la nuit
-// Heure de Paris, changement d'heure compris.
-#define DISPLAY_TZ        "CET-1CEST,M3.5.0,M10.5.0/3"
-#define DISPLAY_NTP_SERVER "pool.ntp.org"
+#define DISPLAY_CONTRAST_STANDBY 0x10 // quand la mascotte dort : faible, pour la nuit
+// La mascotte : après la réponse, elle reste en « écoute » encore ce temps, puis elle dort.
+#define MASCOTTE_REPOS_MS 10000
+#define MASCOTTE_IMAGES_PAR_SECONDE 15
 
 // ---------------------------------------------------------------------------------------------
 // Écoute.

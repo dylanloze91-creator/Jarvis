@@ -63,3 +63,34 @@ Secrets   : OK (secrets.h d'exemple, effacé, jamais commité)
 Fichiers modifiés : ce rapport seulement
 Prêt à fusionner : à décider après l'essai sur la carte
 Testé en vrai (sur la carte) : PAS FAIT (pas de flash cette nuit, à la demande de l'utilisateur)
+
+## La mascotte (17 novembre, matin)
+
+L'utilisateur a dessiné une mascotte animée (`include/jarvis_mascotte.h`, aperçu `apercu.html` et `mascotte-apercu.gif`). Cursor l'a branchée de son côté, à partir de `main` (archive `mascotte-ecran.patch`), avec la bibliothèque U8g2. Comme l'écran avait déjà son programme ici (compilé cette nuit), Claude a **réuni les deux** au lieu d'en garder deux. Il n'y a donc qu'un seul programme d'écran.
+
+**Repris de Cursor, sans changement de comportement :**
+- le dessin, non modifié ;
+- `src/mascotte_etat.c/.h` : dort, écoute, réfléchit, parle ; 10 s d'écoute après la réponse ; décalage pendant le sommeil ;
+- les appels dans `main.c` (réfléchit, dort, écoute) et dans `net.c` (« parle » quand le son part, bouche réglée sur le volume du bloc) ;
+- ses deux tests sur PC.
+
+**Gardé d'ici :**
+- le pilote I2C sans bibliothèque (`display.c`, ESP-IDF `i2c_master`), déjà compilé sur le PC ;
+- l'image en mémoire (`display_gfx.c`) ;
+- les messages : PC injoignable, pas de Wi-Fi, clé refusée, à installer, « C'est moi ! ».
+
+**Retiré :**
+- U8g2 (environ 10 000 lignes) : le pilote d'ici sait déjà parler aux puces SH1106 et SSD1306 ;
+- l'horloge et l'heure par Internet : quand l'enceinte est en veille, c'est la mascotte qui dort. L'horloge pourra revenir en option si l'utilisateur la veut.
+
+**Ce qui s'affiche :** la mascotte pour la vie normale ; un message court quand l'enceinte doit dire ce qui ne va pas (LED en erreur, à installer, clé refusée, signe demandé).
+
+**Nouveau :** `src/display_mascotte.cpp/.h`, le pont entre le dessin (C++) et l'image (C). `display_gfx.h` est utilisable depuis le C++. Le test `host-tests/display_mascotte_test.cpp` vérifie que les 4 états allument des points sur 4 s, que la bouche imposée change l'image et que le décalage la déplace.
+
+**Tâche de l'écran :** 15 images par seconde, cœur 0 (le son tourne sur l'autre cœur), pile de 8 Ko, priorité basse.
+
+### Vérification
+
+- `host-tests/run.sh` (gcc et g++, ASan/UBSan, `-Werror`) : **OK**. Dans l'ordre : filtre du micro, flux WAV, messages, état de la mascotte, dessin, mascotte dans l'image. Le doublon de `mic_filter_test` est retiré.
+- `display.c` : syntaxe vérifiée avec des en-têtes de remplacement. **À recompiler sur le PC** (`pio run`), puisque `display.c`, `main.c` et `net.c` ont changé depuis la compilation de cette nuit.
+- Testé en vrai (sur la carte) : **PAS FAIT**.

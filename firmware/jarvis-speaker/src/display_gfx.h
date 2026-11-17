@@ -5,6 +5,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define GFX_MAX_W 128
 #define GFX_MAX_H 64
 
@@ -32,3 +36,7 @@ void gfx_text_center(gfx_t *g, int y, const char *utf8, int scale);
  * Écrit dans `out` (au plus `size` octets, zéro final compris).
  */
 void gfx_fit(const char *in, int max_w, int scale, char *out, size_t size);
+
+#ifdef __cplusplus
+}
+#endif

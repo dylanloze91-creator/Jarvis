@@ -1,27 +1,29 @@
 /**
  * Écran OLED de l'enceinte (idée du 12 novembre 2026, programme du 16 novembre).
  *
- * Une seule tâche parle à l'écran : elle redessine 4 fois par seconde ce que montre l'état de
- * l'enceinte (display_view.c) et envoie l'image par I2C. Rien d'autre n'attend l'écran : s'il est
- * absent, débranché ou lent, l'écoute, le réveil et le son ne changent pas.
+ * Une seule tâche parle à l'écran : environ 15 images par seconde, en priorité basse. Rien d'autre
+ * n'attend l'écran : s'il est absent, débranché ou lent, l'écoute, le réveil et le son ne changent pas.
  *
- * L'heure vient d'Internet (SNTP) une fois le Wi-Fi connecté, à l'heure de Paris (DISPLAY_TZ).
+ * Ce qui s'affiche :
+ *  - la mascotte dessinée par l'utilisateur (include/jarvis_mascotte.h) pour la vie normale :
+ *    elle dort, écoute, réfléchit, parle (src/mascotte_etat.c décide, main.c et net.c la préviennent) ;
+ *  - un message court quand il faut dire ce qui ne va pas : PC injoignable ou pas de Wi-Fi,
+ *    clé refusée, enceinte à installer, et « C'est moi ! » quand Jarvis demande un signe
+ *    (src/display_view.c).
  */
 #include "display.h"
 
-#include <stdlib.h>
 #include <string.h>
-#include <sys/time.h>
-#include <time.h>
 
 #include "cfg.h"
 #include "config.h"
 #include "display_gfx.h"
+#include "display_mascotte.h"
 #include "display_view.h"
 #include "esp_log.h"
-#include "esp_netif_sntp.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "mascotte_etat.h"
 #include "net.h"
 
 #if DISPLAY_ENABLED
@@ -93,56 +95,52 @@ static void set_contrast(uint8_t value) {
     (void)send_commands(cmds, sizeof(cmds));
 }
 
-static void start_clock_once(void) {
-    static bool started;
-    if (started || !net_connected()) return;
-    esp_sntp_config_t config = ESP_NETIF_SNTP_DEFAULT_CONFIG(DISPLAY_NTP_SERVER);
-    if (esp_netif_sntp_init(&config) == ESP_OK) {
-        started = true;
-        ESP_LOGI(SERIAL_TAG, "écran : heure demandée à %s", DISPLAY_NTP_SERVER);
-    }
+/** Les états où l'écran doit dire avec des mots ce qui se passe, au lieu de la mascotte. */
+static bool message_state(led_state_t state) {
+    return state == LED_ERROR || state == LED_SETUP || state == LED_KEY || state == LED_IDENTIFY;
 }
 
 static void display_task(void *arg) {
     (void)arg;
-    uint32_t tick = 0;
     int failures = 0;
-    led_state_t last_state = LED_BOOT;
+    uint8_t contrast = 0;
+    const TickType_t period = pdMS_TO_TICKS(1000 / MASCOTTE_IMAGES_PAR_SECONDE);
+    TickType_t last = xTaskGetTickCount();
     for (;;) {
-        start_clock_once();
-        display_view_t view = {.state = shown_state, .wifi_ok = net_connected(), .name = jarvis_cfg.name, .tick = tick};
-        time_t now = time(NULL);
-        struct tm local;
-        localtime_r(&now, &local);
-        if (local.tm_year >= 2024 - 1900) {
-            view.time_ok = true;
-            view.hour = local.tm_hour;
-            view.minute = local.tm_min;
-            view.weekday = local.tm_wday;
-            view.day = local.tm_mday;
-            view.month = local.tm_mon + 1;
+        const uint32_t now_ms = mascotte_horloge_ms();
+        const led_state_t state = shown_state;
+        uint8_t wanted = (uint8_t)DISPLAY_CONTRAST;
+        if (message_state(state)) {
+            display_view_t view = {.state = state, .wifi_ok = net_connected(), .name = jarvis_cfg.name,
+                                   .tick = now_ms / 250};
+            display_render(&frame, &view);
+        } else {
+            mascotte_vue_t vue;
+            mascotte_etat_voir(now_ms, &vue);
+            int dx = 0, dy = 0;
+            if (vue.etat == MASCOTTE_DORT) {
+                mascotte_decalage_sommeil(vue.t_ms, &dx, &dy); // l'OLED ne marque pas
+                wanted = (uint8_t)DISPLAY_CONTRAST_STANDBY;    // il dort : la chambre reste sombre
+            }
+            mascotte_render(&frame, (int)vue.etat, vue.t_ms, vue.bouche, dx, dy);
         }
-        // En veille, l'écran baisse : il éclaire moins la chambre et s'use moins.
-        if (view.state != last_state) {
-            set_contrast(view.state == LED_STANDBY ? DISPLAY_CONTRAST_STANDBY : DISPLAY_CONTRAST);
-            last_state = view.state;
+        if (wanted != contrast) {
+            set_contrast(wanted);
+            contrast = wanted;
         }
-        display_render(&frame, &view);
         if (panel_flush() != ESP_OK) {
             if (++failures == 3) ESP_LOGW(SERIAL_TAG, "écran : plus de réponse (fils SDA/SCL ?)");
-            if (failures >= 3 && failures % 40 == 0) (void)panel_init(); // un faux contact se rattrape
+            if (failures >= 3 && failures % 150 == 0) (void)panel_init(); // un faux contact se rattrape
         } else {
             if (failures >= 3) ESP_LOGI(SERIAL_TAG, "écran : de nouveau là");
             failures = 0;
         }
-        tick++;
-        vTaskDelay(pdMS_TO_TICKS(250));
+        vTaskDelayUntil(&last, period);
     }
 }
 
 void display_init(void) {
-    setenv("TZ", DISPLAY_TZ, 1);
-    tzset();
+    mascotte_etat_init(mascotte_horloge_ms());
     i2c_master_bus_config_t bus_config = {
         .i2c_port = -1, // le premier libre
         .sda_io_num = DISPLAY_PIN_SDA,
@@ -168,7 +166,7 @@ void display_init(void) {
     i2c_device_config_t dev_config = {
         .dev_addr_length = I2C_ADDR_BIT_LEN_7,
         .device_address = address,
-        .scl_speed_hz = 400000,
+        .scl_speed_hz = DISPLAY_I2C_HZ,
     };
     if (i2c_master_bus_add_device(bus, &dev_config, &dev) != ESP_OK) return;
     gfx_init(&frame, 128, DISPLAY_H);
@@ -178,12 +176,12 @@ void display_init(void) {
     }
     present = true;
     ESP_LOGI(SERIAL_TAG, "écran : %s trouvé à 0x%02X", DISPLAY_IS_SH1106 ? "SH1106 128x64" : (DISPLAY_H == 32 ? "SSD1306 128x32" : "SSD1306 128x64"), address);
-    xTaskCreate(display_task, "ecran", 4096, NULL, 1, NULL);
+    xTaskCreatePinnedToCore(display_task, "ecran", 8192, NULL, 1, NULL, 0); // le son tourne sur l'autre cœur
 }
 
 #else
 
-void display_init(void) {}
+void display_init(void) { mascotte_etat_init(mascotte_horloge_ms()); }
 bool display_present(void) { return false; }
 
 #endif
