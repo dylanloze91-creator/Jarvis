@@ -958,6 +958,19 @@ Branche `claude/live-5077`, à partir de `main` (5.0.76). Aucune nouveauté. Fus
 
 Travaux **hors scope** de cet arbre (ne pas les reprendre ici) : publication GitHub.
 
+## Informations sur l'écran de l'enceinte, côté PC (branche `claude/ecran-infos`, pour la Live 5.0.79)
+
+Mission 7 de la feuille de route, exception validée par l'utilisateur le 17 novembre : les enceintes sont réservées à la Live. Version inchangée, pas de fusion, pas de publication. Rapport : `rapports/2026-11-17-ecran-infos.md`. Le programme de l'enceinte qui lit l'en-tête est sur `claude/enceinte-ecran` (`display_info_parse`). **Pas essayé sur la carte.**
+
+- **Cœur** (`packages/core/src/speaker/screen.ts`, pur) : `speakerScreenHeader({ title, line?, seconds? })` rend la valeur de l'en-tête `X-Jarvis-Ecran`, toujours `titre|ligne|secondes`. Texte sur une ligne (retours à la ligne et caractères de contrôle retirés), coupé à 47 et 95 octets UTF-8 sans casser un caractère, encodé pour une URL (`|`, `%` et `+` compris), durée de 1 à 300 s (20 par défaut). `speakerScreenClear()` rend `-`. `parseSpeakerScreenHeader` relit l'en-tête comme la carte : il sert aux tests.
+- **Pont** (`SpeakerServer.showOnSpeaker(cible, info)`) : cible = le nom d'une enceinte (sans casse ni accent) ou `toutes`. Une file par enceinte, 3 en attente au plus (la plus ancienne saute). L'information part une seule fois, dans les en-têtes de la prochaine réponse à cette enceinte (`hello` ou `turn`, quel que soit le code), et elle est jetée si sa durée passe avant. Rien n'est écrit sur le disque. Pont coupé ou enceinte retirée : file oubliée.
+- **Deux sources seulement** :
+  - le bilan de santé (`HealthScreenWatch`, cœur) : un contrôle qui **passe** au rouge envoie « Jarvis » et sa phrase à toutes les enceintes pendant 60 s, une fois par incident. Le bilan ne tourne pas plus souvent qu'avant (démarrage, réglages, « fais ton bilan ») ;
+  - l'outil `afficher_sur_enceinte` (`tools/speakerScreen.ts`, `safe`, 60 s par défaut), en fin de catalogue, proposé seulement si le pont tourne et qu'une enceinte est reliée (`isAvailable`). Avec le chef d'orchestre : équipe PC, et la règle express `looksLikeSpeakerScreenIntent` (« affiche … sur l'enceinte ») n'existe que si l'outil est proposé.
+- Sa réponse dit « envoyé », jamais « affiché » : le PC ne peut pas vérifier l'écran.
+
+À ne pas casser : sans enceinte reliée, catalogue, chemins et réponses sont ceux d'avant (`catalog-speaker-screen.test.ts`) ; l'information ne part jamais sans jeton ; `parseSettings({})` ne gagne aucune clé ; les `__golden__` ne sont pas régénérés.
+
 ## Contrats 0.4.14
 
 - **Outil** : `ToolResult.outcome` vaut `success`, `recoverable`, `definitive`, `timeout`, `cancelled` ou `missing_dependency`. `content` est une phrase française. `technicalDetail` est le journal. `ok` reste le booléen historique.

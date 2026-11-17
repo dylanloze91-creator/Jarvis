@@ -32,6 +32,10 @@ import {
   readHelloHeaders,
   isWavContentType,
   readCaptureMs,
+  SPEAKER_SCREEN_HEADER,
+  speakerScreenHeader,
+  speakerScreenSeconds,
+  type SpeakerScreenInfo,
   type SpeakerChrono,
   type SpeakerChronoPath,
   type SpeakerChronoSample,
@@ -66,7 +70,7 @@ export interface SpeakerChat {
 }
 
 export interface SpeakerServerDeps {
-  store: Pick<SpeakerStore, 'verify' | 'noteHello' | 'takeHelloActions'>;
+  store: Pick<SpeakerStore, 'verify' | 'noteHello' | 'takeHelloActions' | 'speakers'>;
   /** Une session de chat par enceinte, créée à sa première phrase. */
   chatFor: (speaker: Speaker) => SpeakerChat;
   /** Transcription Whisper (dans la fenêtre) d'un PCM 16 kHz. */
@@ -94,6 +98,27 @@ export interface SpeakerServerDeps {
   warmupEnabled?: () => boolean;
   /** Charge Whisper, les modèles et Piper. Ne doit rien générer. */
   warm?: () => void | Promise<void>;
+}
+
+/** Cible de `showOnSpeaker` : toutes les enceintes reliées. */
+export const SPEAKER_SCREEN_ALL = 'toutes';
+/** Informations en attente par enceinte ; au-delà, la plus ancienne saute. */
+export const SPEAKER_SCREEN_QUEUE_MAX = 3;
+
+interface PendingScreen {
+  /** Valeur de l'en-tête `X-Jarvis-Ecran`, déjà encodée. */
+  header: string;
+  /** Passé ce moment sans réponse à l'enceinte, l'information est jetée. */
+  expiresAt: number;
+}
+
+function foldName(name: string): string {
+  return name
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 class HttpError extends Error {
@@ -212,6 +237,8 @@ export class SpeakerServer {
   private readonly states = new Map<string, SpeakerState>();
   private queue: Promise<void> = Promise.resolve();
   private lastWarmAt = Number.NEGATIVE_INFINITY;
+  /** Informations à afficher sur l'écran, par enceinte (au plus `SPEAKER_SCREEN_QUEUE_MAX`). */
+  private readonly screens = new Map<string, PendingScreen[]>();
 
   constructor(private readonly deps: SpeakerServerDeps) {}
 
@@ -291,6 +318,7 @@ export class SpeakerServer {
       state.live?.chat.cancel();
     }
     this.states.clear();
+    this.screens.clear();
     if (!server) return;
     await new Promise<void>((resolve) => {
       server.close(() => resolve());
@@ -298,8 +326,44 @@ export class SpeakerServer {
     });
   }
 
+  /**
+   * Affiche une information sur l'écran d'une enceinte (son nom) ou de toutes (`SPEAKER_SCREEN_ALL`).
+   * Rien n'est envoyé tout de suite : l'information part **une seule fois**, dans l'en-tête
+   * `X-Jarvis-Ecran` de la prochaine réponse à cette enceinte (`hello` ou `turn`). Elle est jetée
+   * si sa durée d'affichage passe avant. Rend le nombre d'enceintes servies (0 : pont coupé,
+   * nom inconnu ou titre vide).
+   */
+  showOnSpeaker(target: string, info: SpeakerScreenInfo): number {
+    if (!this.server) return 0;
+    const header = speakerScreenHeader(info);
+    if (!header) return 0;
+    const wanted = foldName(target);
+    const all = wanted === SPEAKER_SCREEN_ALL;
+    const speakers = this.deps.store.speakers().filter((speaker) => !speaker.pending && (all || foldName(speaker.name) === wanted));
+    const expiresAt = this.now() + speakerScreenSeconds(info.seconds) * 1000;
+    for (const speaker of speakers) {
+      const queue = this.screens.get(speaker.id) ?? [];
+      queue.push({ header, expiresAt });
+      while (queue.length > SPEAKER_SCREEN_QUEUE_MAX) queue.shift();
+      this.screens.set(speaker.id, queue);
+    }
+    return speakers.length;
+  }
+
+  /** La plus ancienne information encore valable de cette enceinte, retirée de sa file. */
+  private takeScreen(speakerId: string): string | null {
+    const queue = this.screens.get(speakerId);
+    if (!queue) return null;
+    const now = this.now();
+    while (queue.length > 0 && queue[0]!.expiresAt <= now) queue.shift();
+    const next = queue.shift();
+    if (queue.length === 0) this.screens.delete(speakerId);
+    return next ? next.header : null;
+  }
+
   /** Enceinte retirée : sa discussion est oubliée. */
   forget(speakerId: string): void {
+    this.screens.delete(speakerId);
     const state = this.states.get(speakerId);
     if (!state) return;
     state.chat?.cancel();
@@ -348,7 +412,8 @@ export class SpeakerServer {
       };
       if (actions.identify) body.identify = true;
       if (actions.rename) body.rename = actions.rename;
-      return sendJson(res, 200, body);
+      const screen = this.takeScreen(speaker.id);
+      return sendJson(res, 200, body, screen ? { [SPEAKER_SCREEN_HEADER]: screen } : {});
     }
     if (path === '/api/speaker/greeting') {
       if (method !== 'GET') throw new HttpError(405, 'Méthode refusée.');
@@ -362,6 +427,7 @@ export class SpeakerServer {
     }
     if (path === '/api/speaker/turn') {
       if (method !== 'POST') throw new HttpError(405, 'Méthode refusée.');
+      this.screenOnHeaders(res, speaker.id);
       return this.turn(req, res, speaker);
     }
     if (path === '/api/speaker/wake') {
@@ -372,6 +438,22 @@ export class SpeakerServer {
       return;
     }
     throw new HttpError(404, 'Introuvable.');
+  }
+
+  /**
+   * L'information en attente part avec les en-têtes de la réponse, quel que soit le chemin
+   * (WAV, 204, erreur) : elle est prise au moment où ils sont écrits, pas à l'arrivée de la
+   * phrase. Une information demandée pendant ce tour part donc avec sa réponse.
+   */
+  private screenOnHeaders(res: ServerResponse, speakerId: string): void {
+    const writeHead = res.writeHead.bind(res) as (...args: unknown[]) => ServerResponse;
+    res.writeHead = ((...args: unknown[]) => {
+      if (!res.headersSent) {
+        const screen = this.takeScreen(speakerId);
+        if (screen) res.setHeader(SPEAKER_SCREEN_HEADER, screen);
+      }
+      return writeHead(...args);
+    }) as ServerResponse['writeHead'];
   }
 
   private scheduleWarm(): void {

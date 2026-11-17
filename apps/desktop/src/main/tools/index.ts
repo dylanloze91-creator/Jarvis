@@ -39,6 +39,7 @@ import type { RoverClient } from '../rover/RoverClient.js';
 import { createRoverTools } from './rover.js';
 import type { ImagesService } from '../images/ImagesService.js';
 import { createImagesTools } from './images.js';
+import { createSpeakerScreenTools, type SpeakerScreenPort } from './speakerScreen.js';
 
 export interface YoutubeSummarize {
   (
@@ -68,6 +69,8 @@ export interface ToolManagerDeps {
   openImagePath?: (path: string) => Promise<string | void>;
   /** Module images : le message de l'utilisateur en cours (texte mot pour mot, photos), posé par la session de chat. */
   currentTurn?: () => { text: string; attachments?: ChatAttachment[] } | null;
+  /** Écran des enceintes. Son outil n'est proposé que si une enceinte est reliée. */
+  speakerScreen?: SpeakerScreenPort;
   /**
    * Profil modeste seulement : Spotify reste enregistré mais absent du prompt
    * tant que le compte n’est pas connecté. Ignoré sur les autres profils.
@@ -130,6 +133,7 @@ function createFullToolManager(deps: ToolManagerDeps): ToolManager {
     ...(deps.rover ? createRoverTools(deps.rover) : []),
     // Images — absents du catalogue tant que le module n'est pas activé
     ...imagesToolsIfEnabled(deps),
+    ...(deps.speakerScreen ? createSpeakerScreenTools(deps.speakerScreen) : []),
   ]);
 }
 
@@ -161,5 +165,6 @@ function createModestToolManager(deps: ToolManagerDeps): ToolManager {
     ...(deps.google ? createGoogleTools(deps.google) : []),
     ...(deps.rover ? createRoverTools(deps.rover) : []),
     ...imagesToolsIfEnabled(deps),
+    ...(deps.speakerScreen ? createSpeakerScreenTools(deps.speakerScreen) : []),
   ]);
 }
