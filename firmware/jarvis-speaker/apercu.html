@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Aperçu - Mascotte de l'enceinte Jarvis</title>
+<style>
+  body { margin: 0; padding: 24px 16px; background: #1b1b1b; color: #e8e8e8; font-family: system-ui, sans-serif; text-align: center; }
+  h1 { font-size: 20px; font-weight: 500; margin: 0 0 4px; }
+  p { color: #a8a8a8; font-size: 14px; margin: 0 0 16px; }
+  .cadre { background: #000; border: 1px solid #333; border-radius: 12px; padding: 16px; max-width: 544px; margin: 0 auto; }
+  canvas { width: 100%; display: block; image-rendering: pixelated; background: #000; }
+  .boutons { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; margin: 16px 0 8px; }
+  button { background: transparent; color: #e8e8e8; border: 1px solid #555; border-radius: 8px; padding: 8px 14px; font-size: 14px; cursor: pointer; }
+  button:hover { background: #2a2a2a; }
+</style>
+</head>
+<body>
+<h1>Mascotte de l'enceinte Jarvis</h1>
+<p>Aperçu de l'écran OLED 128 × 64, agrandi 4 fois. C'est le modèle de référence validé.</p>
+<div class="cadre"><canvas id="scr" width="512" height="256"></canvas></div>
+<div class="boutons">
+  <button id="b-sleep">Il dort</button>
+  <button id="b-listen">Il écoute</button>
+  <button id="b-work">Il réfléchit</button>
+  <button id="b-talk">Il parle</button>
+  <button id="b-auto">Démo auto</button>
+</div>
+<p id="lbl">Démo auto : il dort</p>
+<script>
+var W=128,H=64,off=document.createElement('canvas');off.width=W;off.height=H;
+var o=off.getContext('2d'),cv=document.getElementById('scr'),c=cv.getContext('2d');
+c.imageSmoothingEnabled=false;
+var state='sleep',auto=true,t0=performance.now(),ts=0;
+var names={sleep:'il dort',listen:'il écoute',work:'il réfléchit',talk:'il parle'};
+function px(x,y,w,h,on){o.fillStyle=on?'#fff':'#000';o.fillRect(Math.round(x),Math.round(y),w,h);}
+//DEBUT_DESSIN
+function rr(x,y,w,h,r,on){for(var i=0;i<h;i++){var d=0,k=i<r?i:(i>=h-r?h-1-i:-1);if(k>=0){var dy=r-k-0.5;d=Math.round(r-Math.sqrt(r*r-dy*dy));}px(x+d,y+i,w-2*d,1,on);}}
+function circ(cx,cy,r,on){for(var dy=-r;dy<=r;dy++){var w=Math.floor(Math.sqrt(r*r-dy*dy+0.5));px(cx-w,cy+dy,2*w+1,1,on);}}
+function zed(x,y,s){px(x,y,s,1,1);px(x,y+s-1,s,1,1);for(var k=1;k<s-1;k++)px(x+s-1-k,y+k,1,1,1);}
+function plus(x,y){px(x-2,y,5,1,1);px(x,y-2,1,5,1);}
+function arc(cx,ey,s){px(cx-4,ey+s,2,2,1);px(cx-3,ey-s,2,2,1);px(cx-1,ey-2*s,3,2,1);px(cx+2,ey-s,2,2,1);px(cx+3,ey+s,2,2,1);}
+function hat(x,y){rr(x+3,y,16,8,1,1);px(x+3,y+5,16,2,0);px(x,y+8,22,2,1);}
+function head(hy,dx,eye,mouth,hasHat,t){
+px(37+dx,hy+9,3,12,1);px(88+dx,hy+9,3,12,1);
+rr(40+dx,hy,48,30,9,1);
+if(hasHat){rr(53+dx,hy-9,22,8,1,1);px(53+dx,hy-4,22,2,0);px(47+dx,hy-1,34,2,1);px(47+dx,hy+1,34,1,0);}
+rr(44+dx,hy+6,40,15,5,0);
+var ey=hy+13,xs=[54+dx,74+dx];
+for(var i=0;i<2;i++){var cx=xs[i];
+if(eye==='closed')arc(cx,ey,-1);
+else if(eye==='happy')arc(cx,ey,1);
+else if(t%3400<140)px(cx-4,ey,9,2,1);
+else{var ox=0,oy=0;
+if(eye==='down'){ox=Math.floor(t/600)%3-1;oy=2;}
+if(eye==='up'){ox=2;oy=-2;}
+circ(cx,ey,5,1);circ(cx+ox,ey+oy,2,0);px(cx+ox-1,ey+oy-1,1,1,1);}}
+px(44+dx,hy+23,2,1,0);px(47+dx,hy+23,2,1,0);px(79+dx,hy+23,2,1,0);px(82+dx,hy+23,2,1,0);
+var mx=64+dx,my=hy+24;
+if(mouth==='line')px(mx-2,my,4,1,0);
+else if(mouth==='flat')px(mx-3,my,6,1,0);
+else if(mouth==='o'){circ(mx,my,2,0);px(mx,my,1,1,1);}
+else if(mouth==='smile'){px(mx-4,my-1,1,1,0);px(mx-3,my,7,1,0);px(mx+4,my-1,1,1,0);}
+else{var hs=[1,3,5,2,4,1,5,3,2,4],h=hs[Math.floor(t/110)%hs.length];rr(mx-5,my+1-Math.floor(h/2),10,h,Math.min(2,Math.floor(h/2)),0);}
+}
+function sleepScene(t){
+var b=Math.sin(t/900)>0?1:0,y=31-b;
+rr(28,8,68,24,6,1);rr(29,9,66,22,5,0);
+head(5,-2,'closed',b?'o':'line',false,t);
+rr(23,y-1,78,40,7,0);rr(24,y,76,40,6,1);rr(25,y+1,74,40,5,0);
+px(25,y+7,74,1,1);
+for(var r=0;r<4;r++)for(var q=0;q<7;q++){var xx=31+q*10+(r%2?5:0),yy=y+13+r*7;if(xx<96&&yy<63)px(xx,yy,2,2,1);}
+circ(33,y,3,1);circ(91,y,3,1);
+px(104,52,22,2,1);px(106,54,2,10,1);px(122,54,2,10,1);
+hat(104,42);
+for(var i=0;i<3;i++){var p=((t/2600)+i/3)%1;zed(104+p*14,26-p*20,3+Math.floor(p*3));}
+}
+function workScene(t){
+var ph=t%5200,mode=ph<2600?0:(ph<4200?1:2);
+head(10,0,mode===0?'down':(mode===1?'up':'happy'),mode===0?'flat':(mode===1?'o':'smile'),true,t);
+var tap=mode===0?Math.floor(t/130)%2:0;
+rr(44,41,8,5,2,1);rr(76,41,8,5,2,1);
+px(45,45+tap,4,4,1);px(79,46-tap,4,4,1);
+px(52,41,24,9,0);rr(53,42,22,8,2,1);rr(54,43,20,6,1,0);circ(64,46,1,1);
+px(12,50,104,3,1);px(16,53,3,11,1);px(109,53,3,11,1);
+px(54,58,9,5,1);px(65,58,9,5,1);
+px(20,43,8,7,1);px(28,45,2,3,1);
+var s=Math.floor(t/400)%2;px(22+s,39,1,2,1);px(25-s,36,1,2,1);
+if(mode>0){circ(94,22,1,1);circ(98,17,2,1);
+rr(102,2,24,13,5,1);rr(103,3,22,11,4,0);
+if(mode===1){var n=Math.floor(ph/300)%4;for(var k=0;k<n;k++)px(108+k*5,8,2,2,1);}
+else{px(113,5,2,5,1);px(113,11,2,2,1);if(Math.floor(t/200)%2){plus(100,28);plus(28,14);}}}
+}
+function standScene(t,talk){
+var bob=talk?Math.floor(t/220)%2:0,hy=10+bob;
+var dx=talk?0:Math.round(Math.sin(t/700));
+var happy=talk&&(t%2600)<700;
+head(hy,dx,happy?'happy':'open',talk?'talk':'smile',true,t);
+rr(54,41,20,12,4,1);
+px(60,41,2,1,0);px(66,41,2,1,0);
+px(62,41,4,2,0);px(63,43,2,2,0);px(62,45,4,3,0);px(63,48,2,1,0);
+rr(46,41,8,5,2,1);rr(74,41,8,5,2,1);
+if(!talk){px(47,46,3,6,1);px(78,46,3,6,1);
+var n=Math.floor(t/250)%3+1;for(var j=0;j<n;j++){var hh=6+4*j,yy=28-2*j;
+px(97+5*j,yy,1,hh,1);px(96+5*j,yy-1,1,1,1);px(96+5*j,yy+hh,1,1,1);
+px(30-5*j,yy,1,hh,1);px(31-5*j,yy-1,1,1,1);px(31-5*j,yy+hh,1,1,1);}
+if(Math.floor(t/350)%2)plus(26,10);else plus(102,9);}
+else{var a=Math.floor(t/220)%2;
+if(a){px(40,43,6,3,1);px(38,38,3,6,1);px(78,46,3,6,1);}
+else{px(47,46,3,6,1);px(82,43,6,3,1);px(87,38,3,6,1);}}
+px(54,54,9,5,1);px(65,54,9,5,1);
+}
+function scene(st,t){
+if(st==='sleep')sleepScene(t);else if(st==='work')workScene(t);else standScene(t,st==='talk');
+}
+//FIN_DESSIN
+function draw(t){px(0,0,W,H,0);scene(state,t);c.drawImage(off,0,0,512,256);}
+var seq=[['sleep',4500],['listen',3000],['work',5200],['talk',5200],['listen',1500]],total=19400,last='';
+function label(){var s=(auto?'Démo auto : ':'État : ')+names[state];if(s!==last){last=s;document.getElementById('lbl').textContent=s;}}
+function loop(now){
+var lt=now-ts;
+if(auto){var m=(now-t0)%total,acc=0;for(var i=0;i<seq.length;i++){if(m<acc+seq[i][1]){state=seq[i][0];lt=m-acc;break;}acc+=seq[i][1];}}
+label();draw(lt);requestAnimationFrame(loop);
+}
+function set(s){auto=false;state=s;ts=performance.now();}
+document.getElementById('b-sleep').onclick=function(){set('sleep');};
+document.getElementById('b-listen').onclick=function(){set('listen');};
+document.getElementById('b-work').onclick=function(){set('work');};
+document.getElementById('b-talk').onclick=function(){set('talk');};
+document.getElementById('b-auto').onclick=function(){auto=true;t0=performance.now();};
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
