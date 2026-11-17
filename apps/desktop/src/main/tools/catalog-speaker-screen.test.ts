@@ -110,6 +110,19 @@ describe('outil afficher_sur_enceinte', () => {
     expect(result.content).toContain('Rien n’a été affiché');
   });
 
+  it('texte mis dans « ligne » sans titre (vu avec qwen2.5:7b) : la ligne sert de titre', async () => {
+    const ok = await run(['Chambre'], { ligne: 'Test', enceinte: 'chambre' });
+    expect(ok.result.status).toBe('ok');
+    expect(ok.shown).toEqual([{ target: 'chambre', info: { title: 'Test', line: '', seconds: 60 } }]);
+    const inconnue = await run(['Chambre'], { ligne: 'Test', enceinte: 'cuisine' });
+    expect(inconnue.result.status).toBe('error');
+    expect(inconnue.result.content).toContain('« cuisine »');
+    expect(inconnue.result.content).toContain('Chambre');
+    const vide = await run(['Chambre'], { enceinte: 'chambre' });
+    expect(vide.result.status).toBe('error');
+    expect(vide.shown).toEqual([]);
+  });
+
   it('un texte trop long est coupé avant l’envoi, et la réponse le dit', async () => {
     const { result, shown } = await run(['Chambre'], { titre: 'é'.repeat(40), ligne: 'Deux\nlignes' });
     expect(result.status).toBe('ok');

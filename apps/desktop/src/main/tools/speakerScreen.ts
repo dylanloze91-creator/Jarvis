@@ -39,14 +39,19 @@ export function createSpeakerScreenTools(port: SpeakerScreenPort): RegisteredToo
       isAvailable: () => port.linkedNames().length > 0,
       unavailableMessage: SPEAKER_SCREEN_UNAVAILABLE,
       schema: z.object({
-        titre: z.string().min(1).max(120).describe('Titre court, quelques mots (47 octets au plus, coupé au-delà).'),
+        // Facultatif pour la validation seulement : qwen2.5:7b met parfois le texte dans « ligne » sans
+        // titre (essais du 17 novembre 2026) ; la ligne sert alors de titre.
+        titre: z.string().max(120).optional().describe('Titre court, quelques mots (47 octets au plus, coupé au-delà).'),
         ligne: z.string().max(300).optional().describe('Une ligne de détail (95 octets au plus, coupée au-delà). Facultatif.'),
         enceinte: z.string().max(60).optional().describe('Nom de l’enceinte (« chambre »), ou « toutes ». Toutes si rien n’est précisé.'),
         secondes: z.number().min(1).max(300).optional().describe('Durée d’affichage en secondes, 300 au plus. 60 si rien n’est précisé.'),
       }),
-      summarize: ({ titre, enceinte }) =>
-        `Afficher « ${titre} » sur ${enceinte && enceinte.trim().toLowerCase() !== ALL ? `l’enceinte ${enceinte.trim()}` : 'les enceintes'}.`,
-      execute: async ({ titre, ligne, enceinte, secondes }) => {
+      summarize: ({ titre, ligne, enceinte }) =>
+        `Afficher « ${titre?.trim() || ligne?.trim() || ''} » sur ${enceinte && enceinte.trim().toLowerCase() !== ALL ? `l’enceinte ${enceinte.trim()}` : 'les enceintes'}.`,
+      execute: async (input) => {
+        const { enceinte, secondes } = input;
+        const titre = input.titre?.trim() || input.ligne?.trim() || '';
+        const ligne = input.titre?.trim() ? input.ligne : '';
         const title = speakerScreenText(titre, SPEAKER_SCREEN_TITLE_MAX_BYTES);
         if (!title) return toolFailure('definitive', 'Le titre est vide : rien n’a été affiché.', 'titre vide après nettoyage');
         const line = speakerScreenText(ligne ?? '', SPEAKER_SCREEN_LINE_MAX_BYTES);

@@ -153,3 +153,76 @@ export function looksLikeSpeakerScreenIntent(text: string): boolean {
     .replace(/\p{M}/gu, '');
   return /\b(?:affiche|ecris|montre|marque)[a-z-]*\b[^.?!]*\bsur\b[^.?!]*\benceintes?\b/.test(folded);
 }
+
+export interface SpeakerScreenRequest {
+  titre: string;
+  ligne?: string;
+  /** Nom de l'enceinte dit dans la demande ; absent : toutes. */
+  enceinte?: string;
+}
+
+const SCREEN_VERB = '(?:affiche|[ée]cris|montre|marque)(?:[- ]moi)?';
+const SCREEN_WHERE = "sur\\s+(?:l['’]\\s?enceinte|(?:toutes\\s+)?les\\s+enceintes)";
+const SCREEN_ROOM = "(?:\\s+(?:de\\s+la|du|de\\s+l['’]|des|de)\\s*([^:,.!?]+?))?";
+const SCREEN_LEAD = "^\\s*(?:jarvis\\s*[,!]?\\s*)?(?:(?:peux|pourrais)[- ]tu\\s+|tu\\s+peux\\s+|s['’]il\\s+te\\s+pla[iî]t\\s*,?\\s*)?";
+
+function unquote(text: string): string {
+  return text.trim().replace(/^[«"“'‘\s]+|[»"”'’\s]+$/gu, '').trim();
+}
+
+function capitalized(text: string): string {
+  return text ? text[0]!.toLocaleUpperCase('fr-FR') + text.slice(1) : text;
+}
+
+/**
+ * Lit par règles une demande simple d'affichage : « Affiche Terminé sur l'enceinte de la chambre »,
+ * « Affiche Dîner, à table ! sur l'enceinte », « Affiche sur l'enceinte : Test », « … le titre A et
+ * la ligne B ». `null` : la phrase n'a pas cette forme, le modèle s'en occupe comme avant.
+ *
+ * Raison (essais du 17 novembre 2026) : le modèle répondait « affichage terminé » sans appeler
+ * l'outil quand la phrase venait de la voix, et oubliait le titre une fois sur trois.
+ */
+export function parseSpeakerScreenRequest(text: string): SpeakerScreenRequest | null {
+  const clean = text.replace(/\s+/g, ' ').trim();
+  let content = '';
+  let room = '';
+  const after = new RegExp(`${SCREEN_LEAD}${SCREEN_VERB}\\s+${SCREEN_WHERE}${SCREEN_ROOM}\\s*[:,]\\s*(.+)$`, 'iu').exec(clean);
+  const before = new RegExp(`${SCREEN_LEAD}${SCREEN_VERB}\\s+(.+?)\\s+${SCREEN_WHERE}${SCREEN_ROOM}\\s*[.!?]*$`, 'iu').exec(clean);
+  if (after) {
+    room = after[1] ?? '';
+    content = after[2] ?? '';
+  } else if (before) {
+    content = before[1] ?? '';
+    room = before[2] ?? '';
+  } else {
+    const middle = new RegExp(`${SCREEN_LEAD}${SCREEN_VERB}\\s+${SCREEN_WHERE}${SCREEN_ROOM}\\s+(le\\s+titre\\s+.+)$`, 'iu').exec(clean);
+    if (!middle) return null;
+    room = middle[1] ?? '';
+    content = middle[2] ?? '';
+  }
+  content = unquote(content.replace(/[.\s]+$/u, ''));
+  if (!content) return null;
+  let titre = content;
+  let ligne = '';
+  const named = /^(?:le\s+)?titre\s+(.+?)\s*(?:,|\bet\b|\bavec\b)\s*(?:la\s+)?ligne\s+(.+)$/iu.exec(content);
+  const comma = /^([^,:]{1,40})\s*[,:]\s+(.+)$/u.exec(content);
+  if (named) {
+    titre = unquote(named[1]!);
+    ligne = unquote(named[2]!);
+  } else if (comma) {
+    titre = unquote(comma[1]!);
+    ligne = unquote(comma[2]!);
+  } else {
+    const head = speakerScreenText(content, SPEAKER_SCREEN_TITLE_MAX_BYTES);
+    if (head !== content) {
+      // Trop long pour le titre : coupé à un mot, la suite passe sur la ligne.
+      const cut = head.lastIndexOf(' ');
+      titre = cut > 0 ? head.slice(0, cut) : head;
+      ligne = content.slice(titre.length).trim();
+    }
+  }
+  titre = capitalized(titre.replace(/^(?:le\s+(?:mot|texte|message)\s+)/iu, ''));
+  if (!titre) return null;
+  const enceinte = unquote(room);
+  return { titre, ...(ligne ? { ligne } : {}), ...(enceinte ? { enceinte } : {}) };
+}
