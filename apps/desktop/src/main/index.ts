@@ -50,6 +50,7 @@ import {
   validateRepo,
   normalizeDirectRequest,
   type ChatAttachment,
+  HealthScreenWatch,
 } from '@jarvis/core';
 import {
   IpcChannel,
@@ -94,6 +95,7 @@ import { KeyVault } from './vault/store.js';
 import { BackupService } from './backup/service.js';
 import { PrivacyService } from './privacy/service.js';
 import { HealthMonitor } from './health/runtime.js';
+import { SPEAKER_SCREEN_ALL } from './speaker/server.js';
 import { readGoogleHealth } from './health/googleProbe.js';
 import { GOOGLE_TOKEN_FILE } from './google/runtime.js';
 import { GoogleTokenStore } from './google/tokenStore.js';
@@ -260,6 +262,14 @@ function buildTools() {
     images,
     openImagePath: (path) => shell.openPath(path),
     currentTurn: () => currentTurn.value,
+    // Écran des enceintes : proposé seulement si le pont tourne et qu'une enceinte est reliée.
+    speakerScreen: {
+      linkedNames: () =>
+        speakers.isEnabled() && speakers.server.running
+          ? speakerStore.speakers().filter((speaker) => !speaker.pending).map((speaker) => speaker.name)
+          : [],
+      show: (target, info) => speakers.server.showOnSpeaker(target, info),
+    },
     spotifyConnected: () => spotify.connectedNow(),
     summarizeYoutube: (url, onProgress, signal) =>
       summarizeYoutubeLink({
@@ -525,6 +535,7 @@ const privacy = new PrivacyService({
   },
 });
 
+const healthScreen = new HealthScreenWatch();
 healthMonitor = new HealthMonitor({
   getSettings: () => settings,
   userData: () => app.getPath('userData'),
@@ -560,6 +571,8 @@ healthMonitor = new HealthMonitor({
   broadcast: (report) => {
     const contents = overlay?.browserWindow.webContents;
     if (contents && !contents.isDestroyed()) contents.send(IpcChannel.healthEvent, report);
+    // Un contrôle qui passe au rouge s'affiche sur l'écran des enceintes, une fois par incident.
+    for (const info of healthScreen.next(report)) speakers.server.showOnSpeaker(SPEAKER_SCREEN_ALL, info);
   },
 });
 

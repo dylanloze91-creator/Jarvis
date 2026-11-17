@@ -15,6 +15,7 @@ Statuts possibles : `en cours`, `en pause`, `bloqué`, `terminé`.
 
 | Agent | Branche | Tâche | Fichiers concernés | Début | Statut |
 | --- | --- | --- | --- | --- | --- |
+| Claude Code | `claude/ecran-infos` | Informations sur l'écran de l'enceinte, côté PC (mission 7, pour la Live 5.0.79) : en-tête `X-Jarvis-Ecran` (`speakerScreenHeader`), file par enceinte dans le pont (`showOnSpeaker`), bilan de santé qui passe au rouge, outil `afficher_sur_enceinte` ; pas de fusion, pas de publication, rien de flashé | — | 2026-11-17 | terminé : rapport `rapports/2026-11-17-ecran-infos.md` ; correction du programme de l'enceinte sur `claude/enceinte-ecran` (lettre accentuée en fin de texte) ; à relire, puis à essayer sur la carte avec l'utilisateur |
 | Claude Code | `claude/coordination-agents-v2` | Règles de travail à deux agents | — | 2026-10-28 | terminé |
 | Claude Code | `claude/donnees-code` | Générateur d'exercices (5.0.54 à 5.0.58), fusionné dans main | — | 2026-10-27 | terminé |
 | Cursor | `cursor/maj-developpeur-def9` | Ancienne branche de travail : 3 corrections du labo après la 5.0.53 | — | 2026-10-23 | en pause |

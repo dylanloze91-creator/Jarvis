@@ -61,6 +61,7 @@ import {
   redactSecrets,
   withAttachmentNotes,
   lastUserHasImageAttachment,
+  SPEAKER_SCREEN_TOOL,
   MAX_ATTACHMENTS_PER_MESSAGE,
   type ChatAttachment,
   type ChatMissionProposalPayload,
@@ -830,13 +831,15 @@ export class ChatSession {
       const reply = await this.stockQuoteReply(stock.names, stock.prefer, signal);
       return { team: 'bourse', label: 'Bourse', model: 'express', how: 'express', reply };
     }
-    const teams = availableTeams(this.deps.tools.schemas().map((tool) => tool.name));
+    const toolNames = this.deps.tools.schemas().map((tool) => tool.name);
+    const teams = availableTeams(toolNames);
     const available = new Set(teams);
     let team: OrchestraTeam | null = expressTeam({
       text,
       history: messages,
       available,
       hasImageAttachment: lastUserHasImageAttachment(messages),
+      speakerScreen: toolNames.includes(SPEAKER_SCREEN_TOOL),
     });
     let how: TurnRoute['how'] = team ? 'express' : 'cerveau';
     const notice =
