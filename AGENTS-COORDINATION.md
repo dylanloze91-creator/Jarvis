@@ -15,6 +15,7 @@ Statuts possibles : `en cours`, `en pause`, `bloqué`, `terminé`.
 
 | Agent | Branche | Tâche | Fichiers concernés | Début | Statut |
 | --- | --- | --- | --- | --- | --- |
+| Claude Code | `claude/rapide-sans-modele` | Mission 2 bis, « Jarvis plus rapide, sans nouveau modèle » (cahier `docs/specs/rapide-sans-modele.md`), partie de `claude/dev`, Jarvis Test seulement : chronomètre par étape, `scripts/vitesse.ps1`, banc de vitesse, modèles chauds, prompt plus court, mémoire courte des outils ; pas de fusion dans `claude/dev` avant les essais de `5.1.0-test.1` | `apps/desktop/src/main/session.ts`, `apps/desktop/src/main/turnJournal.ts`, `apps/desktop/src/main/vitesse/`, `packages/core/src/vitesse/`, `packages/core/src/agent/orchestra.ts` | 2026-11-17 | en cours |
 | Claude Code | `claude/coordination-agents-v2` | Règles de travail à deux agents | — | 2026-10-28 | terminé |
 | Claude Code | `claude/donnees-code` | Générateur d'exercices (5.0.54 à 5.0.58), fusionné dans main | — | 2026-10-27 | terminé |
 | Cursor | `cursor/maj-developpeur-def9` | Ancienne branche de travail : 3 corrections du labo après la 5.0.53 | — | 2026-10-23 | en pause |
@@ -89,6 +90,6 @@ Une seule carte (RTX 2060 6 Go) : un seul agent à la fois lance le banc (`npm r
 
 | État | Par qui | Pour quoi | Depuis |
 | --- | --- | --- | --- |
-| libre | — | — | — |
+| occupée | Claude Code | banc de vitesse de la mission 2 bis (`claude/rapide-sans-modele`) | 2026-11-17 |
 
 Pour réserver : passer l'état à `occupée`, remplir les colonnes, commiter et pousser **avant** de lancer. Pour libérer : remettre `libre` et `—`, commiter et pousser.
