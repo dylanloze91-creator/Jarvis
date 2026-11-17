@@ -2,6 +2,7 @@
 import './editionBoot.js';
 import { readFile, writeFile } from 'node:fs/promises';
 import { readRouterScore } from './orchestra/routerScore.js';
+import { VoiceStartBook } from './vitesse/voix.js';
 import { join } from 'node:path';
 import {
   BrowserWindow,
@@ -447,6 +448,9 @@ const morningBriefing = createMorningBriefing(() => app.getPath('userData'), () 
   pendingNotes: async () => (settings.notes?.enabled === true ? notesBook.pendingLabels() : []),
 });
 
+// Chronomètre « voix » : Jarvis Test seulement, comme le journal du tour.
+const voiceStarts = edition().id === 'test' ? new VoiceStartBook(store) : undefined;
+
 const session = new ChatSession({
   registry,
   get tools() {
@@ -473,6 +477,7 @@ const session = new ChatSession({
   notes: notesReply,
   routines: routineReply,
   printer: printerReply,
+  voiceStarts,
 });
 
 // 5.0.63 — téléphone : une session de chat à part (un tour sur le téléphone n'annule pas celui de
@@ -553,7 +558,10 @@ async function warmSpeakerSide(): Promise<void> {
 const speakerStore = SpeakerStore.inUserData(() => app.getPath('userData'));
 const speakers = new SpeakerService({
   store: speakerStore,
-  onSpeakerSound: (name, elapsedMs) => carnet.noteFirstSound(name, elapsedMs),
+  onSpeakerSound: (name, elapsedMs) => {
+    carnet.noteFirstSound(name, elapsedMs);
+    void voiceStarts?.sound(`enceinte:${name}`).catch(() => undefined);
+  },
   port: edition().ports.speaker,
   mayRun: () => reservedAllows(edition(), reservations, 'speaker'),
   keptAddresses: () => keptLanAddresses(),
@@ -594,6 +602,7 @@ const speakers = new SpeakerService({
       },
       healthReport: () => healthMonitor?.run() ?? Promise.reject(new Error('bilan indisponible')),
       carnet,
+      voiceStarts,
       briefing: morningBriefing,
       notes: notesReply,
       routines: routineReply,
@@ -1517,6 +1526,10 @@ function registerIpc(): void {
     if (!fromMainWindow(event)) return;
     const active = (payload as { active?: unknown } | null)?.active === true;
     listeningIndicator?.setActive(active);
+  });
+  ipcMain.on(IpcChannel.voiceSpeechStarted, (event) => {
+    if (!fromMainWindow(event)) return;
+    void voiceStarts?.sound('fenetre').catch(() => undefined);
   });
   ipcMain.on(IpcChannel.listeningLevel, (event, level: unknown) => {
     if (!fromMainWindow(event)) return;

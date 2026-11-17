@@ -53,7 +53,10 @@ export class LocalBrowserTtsProvider implements TextToSpeechProvider {
     // panne, et l'ancienne phrase ne doit plus toucher à l'état de la voix.
     let stopped = false;
     utterance.onstart = () => {
-      if (!stopped) handlers.onStart?.();
+      if (!stopped) {
+        handlers.onStart?.();
+        handlers.onSound?.();
+      }
     };
     utterance.onend = () => {
       if (!stopped) handlers.onEnd?.();

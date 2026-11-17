@@ -15,6 +15,7 @@
     "setup:voice": "node scripts/setup-voice-assets.mjs",
     "setup:speaker-firmware": "node scripts/setup-speaker-firmware.mjs",
     "test:firmware": "sh ../../firmware/jarvis-speaker/test/run.sh",
+    "banc:vitesse": "vitest run --config vitest.banc.config.ts",
     "package:win": "npm run build && node scripts/setup-piper.mjs --target win-x64 && node scripts/verify-piper-windows-bundle.mjs && electron-builder --win --publish never",
     "package:win:test": "npm run build && node scripts/generate-icons.mjs --test && node scripts/setup-piper.mjs --target win-x64 && node scripts/verify-piper-windows-bundle.mjs && node scripts/package-test.mjs",
     "package:win:publish": "npm run build && electron-builder --win --publish always",

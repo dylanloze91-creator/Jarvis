@@ -133,6 +133,8 @@ export const IpcChannel = {
   voiceSpeak: 'voice:speak',
   voicePiperSpeak: 'voice:piper-speak',
   voicePiperStatus: 'voice:piper-status',
+  /** Chronomètre « voix » : la fenêtre commence à dire une réponse. */
+  voiceSpeechStarted: 'voice:speech-started',
   voiceAssetsReport: 'voice:assets-report',
   voiceCopyReport: 'voice:copy-report',
   voiceCaptureLog: 'voice:capture-log',
@@ -966,6 +968,8 @@ export interface JarvisApi {
     speak(input: VoiceSpeakInput): Promise<VoiceSpeakResult>;
     piperSpeak(input: VoicePiperSpeakInput): Promise<VoicePiperSpeakResult>;
     piperStatus(): Promise<VoicePiperStatus>;
+    /** Chronomètre « voix » : premier son d'une réponse dite. Ne transporte rien. */
+    speechStarted?(): void;
     assetsReport(): Promise<VoiceAssetsReport>;
     /** Copie le détail du diagnostic dans le presse-papiers (texte seul). */
     copyReport(text: string): Promise<void>;

@@ -625,6 +625,15 @@ export function useVoice({
     if (stateRef.current === 'speaking') backToSleepOrIdle();
   }, [audioMs, backToSleepOrIdle, setVoiceState, stopPlayback]);
 
+  /** Chronomètre « voix » : prévient le processus principal, qui ne garde que le premier son du tour. */
+  const noteSound = useCallback(() => {
+    try {
+      window.jarvis.voice.speechStarted?.();
+    } catch {
+      // Le chronomètre ne doit jamais gêner la voix.
+    }
+  }, []);
+
   const playClip = useCallback((data: Uint8Array, mimeType: string, onEnd: () => void) => {
     const blob = wavBlobFromBytes(data, mimeType);
     const url = URL.createObjectURL(blob);
@@ -634,11 +643,14 @@ export function useVoice({
       URL.revokeObjectURL(url);
       onEnd();
     });
-    void audio.play().catch(() => {
-      URL.revokeObjectURL(url);
-      onEnd();
-    });
-  }, []);
+    void audio
+      .play()
+      .then(noteSound)
+      .catch(() => {
+        URL.revokeObjectURL(url);
+        onEnd();
+      });
+  }, [noteSound]);
 
   const speak = useCallback(
     (text: string) => {
@@ -654,6 +666,7 @@ export function useVoice({
         text,
         {
           onAudio: (clip) => playClip(clip.data, clip.mimeType, () => backToSleepOrIdle()),
+          onSound: noteSound,
           onEnd: () => {
             if (provider.managesOwnPlayback) backToSleepOrIdle();
           },
@@ -666,7 +679,7 @@ export function useVoice({
       );
       ttsControllerRef.current = controller;
     },
-    [backToSleepOrIdle, playClip, resolveTts, setVoiceError, setVoiceState, stopSpeaking],
+    [backToSleepOrIdle, noteSound, playClip, resolveTts, setVoiceError, setVoiceState, stopSpeaking],
   );
 
   const speakInConversation = useCallback(
@@ -691,6 +704,7 @@ export function useVoice({
         text,
         {
           onAudio: (clip) => playClip(clip.data, clip.mimeType, finished),
+          onSound: noteSound,
           onEnd: () => {
             if (provider.managesOwnPlayback) finished();
           },
@@ -703,7 +717,7 @@ export function useVoice({
       );
       ttsControllerRef.current = controller;
     },
-    [audioMs, playClip, resolveTts, setVoiceError, setVoiceState, stopPlayback],
+    [audioMs, noteSound, playClip, resolveTts, setVoiceError, setVoiceState, stopPlayback],
   );
 
   const noteAssistantReply = useCallback(
