@@ -122,6 +122,15 @@ int main(int argc, char **argv) {
     char small[6];
     assert(display_info_parse("%C3%A9%C3%A9%C3%A9", small, sizeof(small), l, sizeof(l), &secs));
     assert(strcmp(small, "\xC3\xA9\xC3\xA9") == 0); // coupé sans casser une lettre
+    // Une lettre accentuée entière en fin de texte est gardée (elle disparaissait : « Terminé » → « Termin »).
+    assert(display_info_parse("Termin%C3%A9|pr%C3%AAt%20%E2%82%AC", t, sizeof(t), l, sizeof(l), &secs));
+    assert(strcmp(t, "Termin\xC3\xA9") == 0 && strcmp(l, "pr\xC3\xAAt \xE2\x82\xAC") == 0);
+    char five[5]; // 4 octets utiles : « éé » tient en entier
+    assert(display_info_parse("%C3%A9%C3%A9", five, sizeof(five), l, sizeof(l), &secs));
+    assert(strcmp(five, "\xC3\xA9\xC3\xA9") == 0);
+    char four[4]; // 3 octets utiles : « € » tient en entier, « é€ » est coupé après « é »
+    assert(display_info_parse("%E2%82%AC", four, sizeof(four), l, sizeof(l), &secs) && strcmp(four, "\xE2\x82\xAC") == 0);
+    assert(display_info_parse("%C3%A9%E2%82%AC", four, sizeof(four), l, sizeof(l), &secs) && strcmp(four, "\xC3\xA9") == 0);
 
     // Écran d'information : tient dans l'écran, même avec un titre long.
     gfx_init(&g, 128, 64);

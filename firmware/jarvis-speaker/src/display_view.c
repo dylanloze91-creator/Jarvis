@@ -184,9 +184,15 @@ static bool decode_part(const char *from, const char *to, char *out, size_t size
         if (n + 1 >= size) break; // trop long : coupé, l'écran ajoutera « … »
         out[n++] = (char)c;
     }
-    // Ne pas couper une lettre accentuée en deux.
-    while (n > 0 && ((unsigned char)out[n - 1] & 0xC0) == 0x80) n--;
-    if (n > 0 && ((unsigned char)out[n - 1] & 0xC0) == 0xC0) n--;
+    // Ne pas couper une lettre accentuée en deux : une suite UTF-8 incomplète en fin de tampon
+    // est retirée, une lettre entière est gardée.
+    size_t lead = n;
+    while (lead > 0 && ((unsigned char)out[lead - 1] & 0xC0) == 0x80) lead--;
+    if (lead > 0 && ((unsigned char)out[lead - 1] & 0xC0) == 0xC0) {
+        unsigned char first = (unsigned char)out[lead - 1];
+        size_t expected = first >= 0xF0 ? 4 : first >= 0xE0 ? 3 : 2;
+        if (n - (lead - 1) < expected) n = lead - 1;
+    }
     out[n] = '\0';
     return true;
 }

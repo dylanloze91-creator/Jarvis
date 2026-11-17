@@ -116,3 +116,11 @@ L'utilisateur a dessiné une mascotte animée (`include/jarvis_mascotte.h`, aper
 
 - `host-tests/run.sh` : **OK**. Ajouts testés : le choix de l'écran (10 cas), l'en-tête (11 cas, dont l'illisible, le retour à la ligne, la coupe d'un accent), l'écran d'information avec un titre trop long.
 - `display.c` : syntaxe vérifiée avec des en-têtes de remplacement. **À recompiler sur le PC** (`pio run`).
+
+## 17 novembre : lettre accentuée en fin de texte (corrigé, non flashé)
+
+Trouvé en écrivant le côté PC (`claude/ecran-infos`). `display_info_parse` retirait toujours le dernier caractère accentué d'un titre ou d'une ligne, même quand il était entier : « Terminé » s'affichait « Termin ». La coupe ne retire maintenant qu'une suite UTF-8 incomplète en fin de tampon.
+
+- Test ajouté dans `host-tests/display_test.c` : rouge avant la correction, vert après.
+- `host-tests/run.sh` : **OK** (WSL, gcc).
+- **Non recompilé avec PlatformIO et non flashé** : à faire avec l'utilisateur, comme le reste de l'écran.
