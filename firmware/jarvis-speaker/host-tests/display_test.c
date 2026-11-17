@@ -94,6 +94,44 @@ int main(int argc, char **argv) {
     display_render(&gb, &b);
     assert(memcmp(ga.buf, gb.buf, sizeof(ga.buf)) != 0);
 
+    // Choix de l'écran : souci d'abord, puis activité, puis information, puis l'heure.
+    assert(display_choose(LED_ERROR, true, 999999, false, true, true, 120000) == DISPLAY_SHOW_MESSAGE);
+    assert(display_choose(LED_KEY, false, 0, false, false, false, 120000) == DISPLAY_SHOW_MESSAGE);
+    assert(display_choose(LED_LISTENING, false, 0, false, true, true, 120000) == DISPLAY_SHOW_MASCOT);
+    assert(display_choose(LED_THINKING, false, 0, false, true, true, 120000) == DISPLAY_SHOW_MASCOT);
+    assert(display_choose(LED_STANDBY, false, 0, true, true, true, 120000) == DISPLAY_SHOW_MASCOT); // il parle
+    assert(display_choose(LED_STANDBY, true, 5000, false, true, true, 120000) == DISPLAY_SHOW_INFO);
+    assert(display_choose(LED_STANDBY, true, 5000, false, false, true, 120000) == DISPLAY_SHOW_MASCOT);
+    assert(display_choose(LED_STANDBY, true, 120000, false, false, true, 120000) == DISPLAY_SHOW_CLOCK);
+    assert(display_choose(LED_STANDBY, true, 999999, false, false, false, 120000) == DISPLAY_SHOW_MASCOT); // pas d'heure
+    assert(display_choose(LED_STANDBY, false, 999999, false, false, true, 120000) == DISPLAY_SHOW_MASCOT); // écoute encore
+
+    // En-tête d'information du PC.
+    char t[48], l[96];
+    uint32_t secs = 99;
+    assert(display_info_parse("Imprimante|Impression%20termin%C3%A9e|30", t, sizeof(t), l, sizeof(l), &secs));
+    assert(strcmp(t, "Imprimante") == 0 && strcmp(l, "Impression termin\xC3\xA9" "e") == 0 && secs == 30);
+    assert(display_info_parse("Minuteur", t, sizeof(t), l, sizeof(l), &secs) && secs == 20 && l[0] == '\0');
+    assert(display_info_parse("A|b|9999", t, sizeof(t), l, sizeof(l), &secs) && secs == 300);
+    assert(display_info_parse("-", t, sizeof(t), l, sizeof(l), &secs) && secs == 0);
+    assert(display_info_parse("", t, sizeof(t), l, sizeof(l), &secs) && secs == 0);
+    assert(!display_info_parse("%ZZ|x", t, sizeof(t), l, sizeof(l), &secs));     // illisible
+    assert(!display_info_parse("a%0Ab|x", t, sizeof(t), l, sizeof(l), &secs));   // retour à la ligne refusé
+    assert(!display_info_parse("|ligne", t, sizeof(t), l, sizeof(l), &secs));    // pas de titre
+    assert(!display_info_parse("A|b|12x", t, sizeof(t), l, sizeof(l), &secs));   // secondes illisibles
+    char small[6];
+    assert(display_info_parse("%C3%A9%C3%A9%C3%A9", small, sizeof(small), l, sizeof(l), &secs));
+    assert(strcmp(small, "\xC3\xA9\xC3\xA9") == 0); // coupé sans casser une lettre
+
+    // Écran d'information : tient dans l'écran, même avec un titre long.
+    gfx_init(&g, 128, 64);
+    display_render_info(&g, "Imprimante", "Impression termin\xC3\xA9" "e");
+    assert(lit(&g) > 20);
+    save(&g, dir, "info-64");
+    display_render_info(&g, "Un titre beaucoup trop long pour tenir en grand", "et une ligne qui d\xC3\xA9" "passe largement la largeur");
+    assert(lit(&g) > 20);
+    save(&g, dir, "info-long-64");
+
     printf("display_test : OK\n");
     return 0;
 }

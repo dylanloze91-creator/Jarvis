@@ -10,6 +10,7 @@
 #include "audio_io.h"
 #include "cfg.h"
 #include "config.h"
+#include "display.h"
 #include "mascotte_etat.h"
 #include "esp_event.h"
 #include "esp_http_client.h"
@@ -258,6 +259,7 @@ static esp_err_t on_http_event(esp_http_client_event_t *evt) {
     if (evt->event_id == HTTP_EVENT_ON_HEADER && evt->header_key && evt->header_value) {
         if (strcasecmp(evt->header_key, "X-Jarvis-Continue") == 0) ctx->continue_listening = evt->header_value[0] == '1';
         if (strcasecmp(evt->header_key, "Content-Type") == 0) ctx->is_wav = strncasecmp(evt->header_value, "audio/wav", 9) == 0;
+        if (strcasecmp(evt->header_key, "X-Jarvis-Ecran") == 0) display_info_header(evt->header_value);
     }
     return ESP_OK;
 }

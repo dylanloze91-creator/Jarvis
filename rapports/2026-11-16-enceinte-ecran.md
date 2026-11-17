@@ -94,3 +94,25 @@ L'utilisateur a dessiné une mascotte animée (`include/jarvis_mascotte.h`, aper
 - `host-tests/run.sh` (gcc et g++, ASan/UBSan, `-Werror`) : **OK**. Dans l'ordre : filtre du micro, flux WAV, messages, état de la mascotte, dessin, mascotte dans l'image. Le doublon de `mic_filter_test` est retiré.
 - `display.c` : syntaxe vérifiée avec des en-têtes de remplacement. **À recompiler sur le PC** (`pio run`), puisque `display.c`, `main.c` et `net.c` ont changé depuis la compilation de cette nuit.
 - Testé en vrai (sur la carte) : **PAS FAIT**.
+
+## L'heure et les informations reviennent (17 novembre, 8 h, demande de l'utilisateur)
+
+« Garde l'heure et les écrans d'information, incorpore-les aux écrans de la mascotte. » Le choix est fait par `display_choose` (`src/display_view.c`), testé sur le PC. L'ordre :
+
+1. **Un souci ou une étape à comprendre** : PC injoignable, pas de Wi-Fi, clé refusée, à installer, « C'est moi ! ». Toujours en premier.
+2. **L'activité** : il écoute, il réfléchit, il parle. C'est toujours la mascotte.
+3. **Une information importante envoyée par le PC**, le temps demandé.
+4. **L'heure et la date**, quand la mascotte dort depuis 2 minutes (`DISPLAY_HEURE_APRES_MS`) et que l'heure est connue (SNTP, heure de Paris). Lumière baissée, petit décalage chaque minute.
+5. Sinon, la mascotte.
+
+**Informations du PC** : en-tête `X-Jarvis-Ecran: titre|ligne|secondes`, en UTF-8 encodé pour une URL (`Imprimante|Impression%20termin%C3%A9e|30`).
+- Il est lu sur **toutes** les réponses du PC, l'interrogation régulière `hello` comprise : le PC peut donc afficher quelque chose sans qu'on parle à l'enceinte.
+- 20 s par défaut, 300 s au plus. `-` efface.
+- Un en-tête illisible ne change rien. Les caractères de contrôle sont refusés, et un texte trop long est coupé sans casser une lettre accentuée.
+
+**Côté PC, rien n'envoie encore cet en-tête.** C'est une petite mission pour Jarvis Test, à confier à Cursor : `cursor-ecran-infos.zip`.
+
+### Vérification
+
+- `host-tests/run.sh` : **OK**. Ajouts testés : le choix de l'écran (10 cas), l'en-tête (11 cas, dont l'illisible, le retour à la ligne, la coupe d'un accent), l'écran d'information avec un titre trop long.
+- `display.c` : syntaxe vérifiée avec des en-têtes de remplacement. **À recompiler sur le PC** (`pio run`).

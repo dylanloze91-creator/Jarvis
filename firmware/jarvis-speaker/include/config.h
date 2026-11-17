@@ -59,6 +59,10 @@
 // La mascotte : après la réponse, elle reste en « écoute » encore ce temps, puis elle dort.
 #define MASCOTTE_REPOS_MS 10000
 #define MASCOTTE_IMAGES_PAR_SECONDE 15
+// Quand la mascotte dort depuis ce temps, l'écran montre l'heure et la date (heure par Internet).
+#define DISPLAY_HEURE_APRES_MS (2u * 60u * 1000u)
+#define DISPLAY_TZ        "CET-1CEST,M3.5.0,M10.5.0/3" // heure de Paris, changement d'heure compris
+#define DISPLAY_NTP_SERVER "pool.ntp.org"
 
 // ---------------------------------------------------------------------------------------------
 // Écoute.
