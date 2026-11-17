@@ -518,20 +518,20 @@ Une règle ne dépend pas du matériel : **la sécurité du robot ne passe jamai
 
 ## 6. L'ordre de construction proposé
 
-Chaque étape est **utile seule** et **essayable dans Jarvis Test**. Elle commence toujours par son faux appendice, sans rien acheter. Les prix détaillés et les totaux sont dans le document matériel, section « Récapitulatif ».
+Chaque étape est **utile seule** et **essayable dans Jarvis Test**. Elle commence toujours par son faux appendice, sans rien acheter. Les coûts sont des relevés du 17 novembre 2026, hors frais de port et hors petites pièces sans prix relevé ; le détail et les sources sont dans le document matériel, section « Récapitulatif ». Total des étapes 1 à 7 : **199,36 €** au moins cher, **438,37 €** au meilleur choix, plus les outils si rien n'est déjà là (116,77 € à 295,07 €).
 
-| Étape | Ce qu'on construit | Ce que l'utilisateur gagne | Objectif de la feuille de route |
-| --- | --- | --- | --- |
-| **0. Le socle** | Le contrat commun, le registre, le pont, un faux appendice, « arrête tout ». Aucun achat. | Rien de visible. Tout le reste s'y branche. | Tous |
-| **1. L'imprimante sous surveillance** | Une caméra sur l'imprimante, une prise qui mesure et coupe, un détecteur de fumée. Surveillance par règles (sans modèle) : erreur de Klipper, température, progression. | « Montre-moi l'impression. » Une alerte avec la photo. La pause automatique sur un vrai problème. Le début du dossier de photos. | **Jarvis autonome, étapes 1 et 2** |
-| **2. Couper Jarvis sur le PC** | L'annulation d'écho, d'abord en logiciel. | On peut lui couper la parole. | **Vraie conversation, étape 1** |
-| **3. Les sens** | Une première carte de capteurs (température, humidité, présence, puis CO2), un contact de porte. | « Il fait combien dans la chambre ? » Des alertes. | Jarvis autonome (les règles ont des yeux partout) |
-| **4. Les mains sur la maison** | Deux ou trois lampes et prises, en direct. | « Allume la lampe du bureau. » | Usage de tous les jours |
-| **5. Le robot voit et se protège** | Caméra du robot, capteurs de distance, pare-chocs, repères imprimés. | Le robot s'arrête avant l'obstacle. Il sait où il est. | **Jarvis autonome, étape 3** (préparation) |
-| **6. La pince** | Une pince imprimée, deux moteurs. | Le robot range 2 ou 3 petits objets dans une zone connue. | **Jarvis autonome, étape 3** |
-| **7. Couper Jarvis depuis l'enceinte** | L'annulation d'écho sur la carte. Les annonces. | On lui coupe la parole depuis la chambre. Il peut prévenir à voix haute. | **Vraie conversation, étape 4** |
-| **8. Le robot rentre et se recharge** | La base, le retour, la recharge. | Le robot est toujours prêt. | Jarvis autonome (suite) |
-| **Plus tard** | Panneau d'atelier, onduleur, Home Assistant, carte complète de la pièce, bras de bureau. | Du confort. | — |
+| Étape | Ce qu'on construit | Ce que l'utilisateur gagne | Objectif de la feuille de route | Coût relevé (moins cher → meilleur choix) |
+| --- | --- | --- | --- | --- |
+| **0. Le socle** | Le contrat commun, le registre, le pont, un faux appendice, « arrête tout ». Aucun achat. | Rien de visible. Tout le reste s'y branche. | Tous | 0 € |
+| **1. L'imprimante sous surveillance** | Une caméra sur l'imprimante, une prise qui mesure et coupe, un détecteur de fumée. Surveillance par règles (sans modèle) : erreur de Klipper, température, progression. | « Montre-moi l'impression. » Une alerte avec la photo. La pause automatique sur un vrai problème. Le début du dossier de photos. | **Jarvis autonome, étapes 1 et 2** | 78,66 € → 133,56 € (minimum : caméra et prise, 43,67 €) |
+| **2. Couper Jarvis sur le PC** | L'annulation d'écho, d'abord en logiciel. | On peut lui couper la parole. | **Vraie conversation, étape 1** | 0 € ; un haut-parleur-micro USB (48 à 113 €) seulement si la mesure est mauvaise |
+| **3. Les sens** | Une première carte de capteurs (température, humidité, présence, puis CO2), un contact de porte. | « Il fait combien dans la chambre ? » Des alertes. | Jarvis autonome (les règles ont des yeux partout) | 27,34 € → 69,94 € |
+| **4. Les mains sur la maison** | Deux ou trois lampes et prises, en direct. | « Allume la lampe du bureau. » | Usage de tous les jours | 23,68 € → 47,36 € |
+| **5. Le robot voit et se protège** | Caméra du robot, capteurs de distance, pare-chocs, repères imprimés. | Le robot s'arrête avant l'obstacle. Il sait où il est. | **Jarvis autonome, étape 3** (préparation) | 43,46 € → 112,21 € |
+| **6. La pince** | Une pince imprimée, deux moteurs. | Le robot range 2 ou 3 petits objets dans une zone connue. | **Jarvis autonome, étape 3** | 26,22 € → 45,35 € |
+| **7. Couper Jarvis depuis l'enceinte** | L'annulation d'écho sur la carte. Les annonces. | On lui coupe la parole depuis la chambre. Il peut prévenir à voix haute. | **Vraie conversation, étape 4** | 0 € (essai sur la carte actuelle) → 29,95 € |
+| **8. Le robot rentre et se recharge** | La base, le retour, la recharge. | Le robot est toujours prêt. | Jarvis autonome (suite) | non chiffré : dépend de la batterie actuelle |
+| **Plus tard** | Panneau d'atelier, onduleur, Home Assistant, carte complète de la pièce, bras de bureau. | Du confort. | — | voir le document matériel |
 
 Pourquoi cet ordre :
 
@@ -570,7 +570,7 @@ Model Development (plus tard)        ──► impression ratée, objets à rang
 | --- | --- | --- |
 | A1 | **Sur quoi tourne Klipper** (un Raspberry Pi, un boîtier du commerce, autre), et y a-t-il un port USB libre ? | Port libre : une webcam USB. Sinon : une petite caméra Wi-Fi. |
 | A2 | **La vision sans achat au début** (processeur du PC, Pi 5 du robot), un accélérateur seulement si la mesure le demande ? | Oui. |
-| A3 | **La maison en direct d'abord**, Home Assistant plus tard ? Et quel est le **type de chauffage** ? | En direct d'abord. Le chauffage attend la réponse. |
+| A3 | **La maison en direct d'abord**, Home Assistant plus tard ? Et quel est le **type de chauffage** ? | En direct d'abord (des appareils Wi-Fi qui parlent au PC). Le chauffage et les capteurs sans fil à pile (Zigbee) viendront avec Home Assistant. |
 | A4 | **Les lumières sans carte de confirmation**, comme Spotify ? | Oui, sinon la voix est inutilisable. Les prises d'appareils qui chauffent restent confirmées. |
 | A5 | **Une règle permanente peut-elle régler le chauffage** dans des bornes fixées ? (La feuille de route dit « jamais une règle qui chauffe » ; la mission dit « sauf une règle permanente validée ».) | Oui pour le chauffage du logement, entre deux bornes. Jamais pour l'imprimante, le robot ni un bras. |
 | A6 | **Prévenir le téléphone quand l'appli est fermée** : une notification passe par les serveurs d'Apple (texte chiffré, sans photo). L'accepter, ou s'en tenir au PC et aux enceintes ? | À décider. Sans elle, l'alerte est dite par les enceintes et s'affiche à l'ouverture de l'appli. |
@@ -598,6 +598,9 @@ Hors de cette mission. Ces besoins sont seulement notés, avec ce qu'il faudrait
 | **Savoir que c'est à Jarvis de parler**, en français (« euh… attends ») | Oreilles et voix | Vérifier d'abord si un détecteur ouvert existant suffit en français. |
 | **Entendre un détecteur de fumée sonner**, ou un bruit anormal de l'imprimante | Oreilles | Des modèles ouverts de reconnaissance de sons existent ; à évaluer avant d'entraîner. |
 | **Apprendre un geste par démonstration** | Bras de bureau | Seulement s'il y a un bras de bureau. Loin. |
+| **Une seconde carte graphique ?** | Tous les modèles | La RTX 2060 est pleine avec le modèle de langage. Une carte de 12 ou 16 Go changerait surtout les modèles de langage : c'est à Model Development d'en juger, chiffres du document matériel à l'appui. |
+
+Un point de départ relevé : un grand jeu ouvert de photos d'impressions existe (CAXTON, université de Cambridge, licence CC BY), mais ses étiquettes sont des réglages d'impression, pas « ratée » ou « réussie ». Aucun jeu ouvert d'impressions ratées n'a pu être vérifié pendant cette étude : les photos de l'imprimante de l'utilisateur resteront la base.
 
 Règles déjà écrites dans la feuille de route, qui s'appliqueront : jamais un texte ni une image produits par Claude ou Cursor dans un jeu d'entraînement ; l'examen n'est jamais entraîné ; les données de l'utilisateur restent sur son PC.
 
