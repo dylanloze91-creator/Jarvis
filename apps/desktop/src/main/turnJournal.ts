@@ -4,7 +4,7 @@
  * comme partout ailleurs : pas de seconde façon de savoir « Test ou Live ».
  * Live : le fichier de conversation ne gagne aucun champ.
  */
-import type { Conversation, TurnLogEntry } from '@jarvis/core';
+import { emptySteps, type Conversation, type TurnLogEntry, type TurnSteps } from '@jarvis/core';
 import { edition } from './edition.js';
 
 export interface LieuTour {
@@ -65,6 +65,8 @@ export function journaliserTour(
     directMission: boolean;
     chatProviderId: string;
     chatModel: string | null;
+    /** Chronomètre par étape. Absent ou vide : la ligne du journal est celle d'avant. */
+    etapes?: TurnSteps;
     now?: number;
   },
 ): Conversation {
@@ -118,6 +120,7 @@ export function journaliserTour(
       .map((message) => ({ name: message.toolName ?? '', status: message.toolStatus ?? 'inconnu' })),
     durationMs: Math.max(0, (input.now ?? Date.now()) - input.startedAt),
     at: user.createdAt,
+    ...(input.etapes && !emptySteps(input.etapes) ? { etapes: input.etapes } : {}),
   };
 
   const turnLog = [...(conversation.turnLog ?? []), entry];

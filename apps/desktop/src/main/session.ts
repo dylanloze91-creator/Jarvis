@@ -95,12 +95,16 @@ import {
   type CarnetHow,
   type CarnetPlace,
   type ToolLine,
+  TurnClock,
+  withTrailingNote,
+  mentionsTime,
 } from '@jarvis/core';
 import { describeDirectResult, type ImagesService } from './images/ImagesService.js';
 import type { ChatEvent, RuntimeStatus, SendChatInput } from '../shared/ipc.js';
 import { IpcChannel } from '../shared/ipc.js';
 import { canOfferTeamValidation, validationPathForHow } from './orchestra/teamValidation.js';
 import { journaliserTour, type RouteNotee } from './turnJournal.js';
+import { edition } from './edition.js';
 import type { PersonalizationStore } from './personalization.js';
 import type { KnowledgeStore } from './knowledge.js';
 import type { VoiceBridge } from './voice.js';
@@ -108,6 +112,7 @@ import type { LocalLearningController } from './learning/controller.js';
 import type { ChatMissionHub } from './chatMission/hub.js';
 import { createProposerMissionTool } from './chatMission/proposerMissionTool.js';
 import { createTurnWatch } from './carnet/watch.js';
+import { voicePlaceKey, type VoiceTurn } from './vitesse/voix.js';
 
 /** Délai du cerveau pour choisir une équipe, chargement compris. */
 const BRAIN_DEADLINE_MS = 90_000;
@@ -139,6 +144,13 @@ function routeNotee(route: TurnRoute | null, orchestra: OrchestraConfig | null):
     place: route.provider && orchestra && equipe ? teamAssignment(orchestra, route.team as OrchestraTeam).place : null,
     sansModele: !route.provider,
   };
+}
+
+/** Chemin du tri, pour le chronomètre : le même mot que le journal du tour. */
+function cheminDuTri(route: TurnRoute | null): string | null {
+  if (!route) return null;
+  if (route.team === 'horloge' || route.team === 'bourse') return route.team;
+  return route.how;
 }
 
 /** Réponse fixe, au même format que les événements de l'agent. */
@@ -243,6 +255,13 @@ interface SessionDeps {
       source?: 'voice' | 'text';
       text: string;
     }): { afterMs: number; button?: boolean; speech?: boolean; text?: string } | null;
+  };
+  /**
+   * Chronomètre « voix » (Jarvis Test). Absent : le premier son n'est pas noté.
+   */
+  voiceStarts?: {
+    turnStarted(place: string, turn: VoiceTurn): void;
+    journalised(place: string, userMessageId: string): number | null;
   };
 }
 
@@ -411,6 +430,16 @@ export class ChatSession {
 
     const source = input.source ?? 'text';
     const turnStartedAt = Date.now();
+    // Chronomètre par étape : il mesure, il ne change ni la requête ni la réponse.
+    const clock = new TurnClock();
+    const voiceKey = voicePlaceKey(input.place);
+    if (voiceKey) {
+      this.deps.voiceStarts?.turnStarted(voiceKey, {
+        conversationId: conversation.id,
+        userMessageId: userMessage.id,
+        startedAt: turnStartedAt,
+      });
+    }
     const briefingText =
       settings.briefing?.enabled === true && this.deps.briefing
         ? await this.deps.briefing({ text: input.text, voice: input.place?.kind === 'enceinte' }).catch(() => null)
@@ -462,6 +491,8 @@ export class ChatSession {
     const healthIntent = !briefingText && !notesText && !routineText && !printerText && looksLikeHealthIntent(input.text);
     const orchestra = activeOrchestra(settings);
     const routeGap: { kind: 'illisible' | 'silence' | null } = { kind: null };
+    const routed = !briefingText && !notesText && !routineText && !printerText && !healthIntent && Boolean(orchestra);
+    if (routed) clock.startRouting();
     const route = !briefingText && !notesText && !routineText && !printerText && !healthIntent && orchestra
       ? await this.routeTurn(
           settings,
@@ -471,8 +502,10 @@ export class ChatSession {
           controller.signal,
           this.lastTeamByConversation.get(conversation.id) ?? null,
           routeGap,
+          clock,
         )
       : null;
+    if (routed) clock.endRouting(cheminDuTri(route));
     if (route) this.lastTeamByConversation.set(conversation.id, route.team);
 
     const chatMissionHub = this.deps.getChatMissionHub?.() ?? null;
@@ -582,10 +615,20 @@ export class ChatSession {
         chatMissionsOn && chatMissionHub
           ? this.deps.tools.compose(createProposerMissionTool(chatMissionHub))
           : this.deps.tools;
-      const agent = new Agent(route.provider, turnTools, {
-        systemPrompt: `${turn.systemPrompt}\n\n${teamPrompt(team, character, clockLinePrompt(new Date()))}${missionPrompt}`,
+      // Ligne d'heure : elle change chaque minute. Dans le message système, elle faisait relire les
+      // outils et tout l'historique à chaque nouvelle minute. Jarvis Test la place en tête de la
+      // demande, dans la copie envoyée au modèle seulement ; ce qu'elle dit ne change pas.
+      const clockLine = clockLinePrompt(new Date());
+      // Une demande qui parle de temps (heure, jour, « tard »…) garde la ligne dans le message
+      // système, comme avant : c'est là que le modèle la cite le plus sûrement.
+      const clockLast = edition().clockAfterHistory === true && !mentionsTime(input.text);
+      const teamProvider = clockLast ? withTrailingNote(route.provider, clockLine, userMessage.id) : route.provider;
+      const agent = new Agent(clock.wrap(teamProvider, 'reponse'), turnTools, {
+        systemPrompt: `${turn.systemPrompt}\n\n${teamPrompt(team, character, clockLast ? null : clockLine)}${missionPrompt}`,
         temperature: settings.temperature,
         homeLocation: settings.homeLocation ?? null,
+        // La date du tour est dans la note de la demande : le tour de recherche ne la répète pas.
+        ...(clockLast ? { dateInTurnNote: true } : {}),
         allowedTools: (name) =>
           teamHasTool(team, name) || (chatMissionsOn && name === PROPOSER_MISSION_TOOL_NAME),
         spotifyAskDevice: settings.spotifyAskDevice === true,
@@ -604,7 +647,7 @@ export class ChatSession {
     } else {
       const { provider } = this.deps.registry.createOrFallback(chatProviderConfig(settings));
       const turn = await this.turnContext(settings, input.text, source);
-      const agent = new Agent(provider, this.deps.tools, {
+      const agent = new Agent(clock.wrap(provider, 'reponse'), this.deps.tools, {
         // La note d'origine vocale ne vit que dans ce prompt système, transmis
         // au modèle pour ce tour : elle n'est jamais écrite dans `userMessage`
         // ni dans `messages`, donc jamais affichée ni persistée.
@@ -632,7 +675,10 @@ export class ChatSession {
       for await (const event of run) {
         switch (event.type) {
           case 'assistant_delta':
-            if (event.delta.trim()) visibleReply = true;
+            if (event.delta.trim()) {
+              visibleReply = true;
+              clock.firstWord();
+            }
             emit({ type: 'delta', text: event.delta });
             break;
           case 'assistant_message': {
@@ -660,6 +706,7 @@ export class ChatSession {
             emit({ type: 'tool_progress', callId: event.callId, message: event.message });
             break;
           case 'tool_result':
+            clock.tool(event.outcome.name, event.outcome.durationMs, event.outcome.kept !== undefined);
             if (chatMissionsOn && event.outcome.name === PROPOSER_MISSION_TOOL_NAME) {
               const payload = event.outcome.data as ChatMissionProposalPayload | undefined;
               if (payload) {
@@ -784,6 +831,11 @@ export class ChatSession {
       directMission: directMissionTake,
       chatProviderId: settings.provider,
       chatModel: resolveChatModel(settings),
+      etapes: (() => {
+        const sound = voiceKey ? (this.deps.voiceStarts?.journalised(voiceKey, userMessage.id) ?? null) : null;
+        if (sound !== null) clock.voice(sound);
+        return clock.steps();
+      })(),
     });
     try {
       await this.deps.store.save(updated);
@@ -1077,6 +1129,7 @@ export class ChatSession {
     signal: AbortSignal,
     previousTeam: string | null,
     gap?: { kind: 'illisible' | 'silence' | null },
+    chrono?: TurnClock,
   ): Promise<TurnRoute | null> {
     const calc = solveArithmetic(text);
     if (calc) {
@@ -1086,7 +1139,7 @@ export class ChatSession {
     if (clock) return { team: 'horloge', label: 'Horloge', model: 'sans modèle', how: 'express', reply: clock };
     const stock = detectStockRequest(text);
     if (stock) {
-      const reply = await this.stockQuoteReply(stock.names, stock.prefer, signal);
+      const reply = await this.stockQuoteReply(stock.names, stock.prefer, signal, chrono);
       return { team: 'bourse', label: 'Bourse', model: 'express', how: 'express', reply };
     }
     const toolNames = this.deps.tools.schemas().map((tool) => tool.name);
@@ -1113,17 +1166,17 @@ export class ChatSession {
     if (!team) {
       const router = activeRouter(settings);
       if (router) {
-        const routed = await this.askRouter(settings, router, teams, text, messages.slice(0, -1), signal, notice);
+        const routed = await this.askRouter(settings, router, teams, text, messages.slice(0, -1), signal, notice, chrono);
         team = routed.team;
         if (team) how = 'trieur';
         else {
-          const brained = await this.askBrain(settings, orchestra, teams, text, messages.slice(0, -1), signal, notice);
+          const brained = await this.askBrain(settings, orchestra, teams, text, messages.slice(0, -1), signal, notice, chrono);
           team = brained.team;
           brainText = brained.text;
           if (team) how = 'cerveau';
         }
       } else {
-        const brained = await this.askBrain(settings, orchestra, teams, text, messages.slice(0, -1), signal, notice);
+        const brained = await this.askBrain(settings, orchestra, teams, text, messages.slice(0, -1), signal, notice, chrono);
         team = brained.team;
         brainText = brained.text;
         if (team) how = 'cerveau';
@@ -1169,6 +1222,7 @@ export class ChatSession {
     names: readonly string[],
     prefer: 'paris' | null,
     signal: AbortSignal,
+    clock?: TurnClock,
   ): Promise<string> {
     if (!this.deps.tools.get('get_stock_quote')) return names.map((name) => stockNotFoundReply(name)).join(' ');
     const callId = randomId();
@@ -1181,6 +1235,7 @@ export class ChatSession {
           ...(prefer ? { stockPrefer: prefer } : {}),
         },
       );
+      clock?.tool(outcome.name, outcome.durationMs, outcome.kept !== undefined);
       void this.deps.auditLog
         .append(buildAuditEntry(outcome))
         .catch((error: unknown) => console.error('[jarvis] journal d’audit non écrit :', error));
@@ -1198,10 +1253,12 @@ export class ChatSession {
     history: ChatMessage[],
     signal: AbortSignal,
     notice?: string,
+    clock?: TurnClock,
   ): Promise<{ team: OrchestraTeam | null; text: string }> {
-    const { provider } = this.deps.registry.createOrFallback(
+    const { provider: bare } = this.deps.registry.createOrFallback(
       orchestraProviderConfig(settings, router.model, router.place, true),
     );
+    const provider = clock ? clock.wrap(bare, 'tri') : bare;
     const deadline = new AbortController();
     const timer = setTimeout(() => deadline.abort(), BRAIN_DEADLINE_MS);
     const onAbort = (): void => deadline.abort();
@@ -1235,10 +1292,12 @@ export class ChatSession {
     history: ChatMessage[],
     signal: AbortSignal,
     notice?: string,
+    clock?: TurnClock,
   ): Promise<{ team: OrchestraTeam | null; text: string }> {
-    const { provider } = this.deps.registry.createOrFallback(
+    const { provider: bare } = this.deps.registry.createOrFallback(
       orchestraProviderConfig(settings, orchestra.brain, 'carte', true),
     );
+    const provider = clock ? clock.wrap(bare, 'tri') : bare;
     // Premier chargement du cerveau compris (environ 20 s sur la RTX 2060).
     const deadline = new AbortController();
     const timer = setTimeout(() => deadline.abort(), BRAIN_DEADLINE_MS);

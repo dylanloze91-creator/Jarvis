@@ -45,7 +45,14 @@ function fauxOllama(calls: string[]) {
       const routeur = (request.system ?? '').includes('chef d');
       const delta = routeur ? (config.model === 'jarvis-trieur' ? 'conversation' : 'conversation') : 'Très bien.';
       yield { type: 'text' as const, delta };
-      yield { type: 'done' as const, finishReason: 'stop' as const };
+      // Mesures d'Ollama (valeurs synthétiques) : le chronomètre les lit au passage.
+      yield {
+        type: 'done' as const,
+        finishReason: 'stop' as const,
+        usage: routeur
+          ? { promptTokens: 300, promptMs: 90, outputTokens: 2, outputMs: 40, loadMs: 5000, totalMs: 5200 }
+          : { promptTokens: 1800, promptMs: 700, outputTokens: 12, outputMs: 300, loadMs: 0, totalMs: 1100 },
+      };
     },
   }));
 }
@@ -209,6 +216,39 @@ describe('journal du tour (synthetique-test)', () => {
     await session.send(sender([]), { conversationId: null, text: 'Note : acheter du lait' });
     const tour = journal(await store.get((await store.list())[0]!.id));
     expect(tour).toMatchObject({ team: null, how: null, provider: 'aucun', model: null });
+  });
+
+  it('chronomètre par étape : tri, chargement, lecture, écriture, premier mot, outils', async () => {
+    const cerveau = await tourOrchestre('Raconte-moi une histoire courte', ORCHESTRA);
+    const etapes = journal(cerveau.conversation).etapes;
+    expect(etapes?.tri).toMatchObject({ chemin: 'cerveau', modele: true, chargementMs: 5000, jetons: 300 });
+    expect(etapes).toMatchObject({
+      appels: 1,
+      chargement: 0,
+      lecture: { ms: 700, jetons: 1800 },
+      ecriture: { ms: 300, jetons: 12 },
+    });
+    expect(typeof etapes?.premierMot).toBe('number');
+    expect(etapes?.outils).toBeUndefined();
+    expect(etapes?.voix).toBeUndefined();
+
+    // Règle sans modèle : le tri est noté, aucun modèle n'a été mesuré.
+    const horloge = await tourOrchestre('Quelle heure est-il ?', ORCHESTRA);
+    const sansModele = journal(horloge.conversation).etapes;
+    expect(sansModele?.tri).toMatchObject({ chemin: 'horloge' });
+    expect(sansModele?.tri?.modele).toBeUndefined();
+    expect(sansModele?.appels).toBeUndefined();
+    expect(sansModele?.lecture).toBeUndefined();
+    expect(horloge.calls).toEqual([]);
+
+    // Le journal ne contient que des durées, des comptes et des noms : jamais la phrase.
+    expect(JSON.stringify(cerveau.conversation?.turnLog)).not.toContain('histoire');
+  });
+
+  it('le chronomètre ne change pas ce qui est envoyé au modèle ni la réponse', async () => {
+    const avec = await tourOrchestre('Raconte-moi une histoire courte', ORCHESTRA);
+    expect(avec.calls).toEqual(['qwen2.5:7b', 'qwen2.5:7b']);
+    expect(avec.reply).toBe('Très bien.');
   });
 
   it('est absent dans Jarvis Live', async () => {

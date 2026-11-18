@@ -141,6 +141,7 @@ const api: JarvisApi = {
     speak: (input: VoiceSpeakInput) => ipcRenderer.invoke(IpcChannel.voiceSpeak, input),
     piperSpeak: (input: VoicePiperSpeakInput) => ipcRenderer.invoke(IpcChannel.voicePiperSpeak, input),
     piperStatus: () => ipcRenderer.invoke(IpcChannel.voicePiperStatus),
+    speechStarted: () => ipcRenderer.send(IpcChannel.voiceSpeechStarted),
     assetsReport: () => ipcRenderer.invoke(IpcChannel.voiceAssetsReport),
     copyReport: (text: string) => ipcRenderer.invoke(IpcChannel.voiceCopyReport, text),
     log: (line: string) => ipcRenderer.send(IpcChannel.voiceCaptureLog, line),

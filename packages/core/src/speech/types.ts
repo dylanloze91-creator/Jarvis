@@ -122,6 +122,8 @@ export interface VoiceDescriptor {
 
 export interface TextToSpeechHandlers {
   onStart?: () => void;
+  /** Premier son réellement joué (chronomètre « voix »). Facultatif : absent, rien ne change. */
+  onSound?: () => void;
   /** Fourni quand `managesOwnPlayback` est faux : l'appelant se charge de la lecture. */
   onAudio?: (clip: AudioClip) => void;
   onEnd?: () => void;

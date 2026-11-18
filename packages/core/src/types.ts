@@ -44,6 +44,8 @@ export interface ToolCallOutcome {
   technicalDetail?: string;
   /** Charge utile structurée de l'outil (`ToolResult.data`), jamais envoyée au modèle ni au journal. */
   data?: unknown;
+  /** Résultat repris de la mémoire courte des outils, avec son âge. Absent : l'outil a travaillé. */
+  kept?: { ageMs: number };
 }
 
 /**
@@ -123,6 +125,32 @@ export interface TurnLogEntry {
   tools: TurnLogTool[];
   durationMs: number;
   at: number;
+  /** Chronomètre par étape. Absent des journaux écrits avant lui. */
+  etapes?: TurnSteps;
+}
+
+/**
+ * Détail d'un tour, en millisecondes (mission « Jarvis plus rapide, sans nouveau modèle »).
+ * Que des durées, des comptes et des noms d'outil : jamais une phrase. Chaque champ est
+ * facultatif : il manque quand l'étape n'a pas eu lieu ou n'a pas pu être mesurée.
+ */
+export interface TurnSteps {
+  /** Choix de l'équipe. `modele` : un modèle a été appelé pour trier (cerveau ou trieur). */
+  tri?: { ms: number; chemin: string; modele?: boolean; chargementMs?: number; jetons?: number };
+  /** Chargement du modèle qui répond (`load_duration` d'Ollama, tous ses appels du tour). */
+  chargement?: number;
+  /** Lecture du prompt (`prompt_eval_duration`, `prompt_eval_count`). */
+  lecture?: { ms: number; jetons: number };
+  /** Du début du tour au premier morceau de réponse affiché. */
+  premierMot?: number;
+  /** Écriture de la réponse (`eval_duration`, `eval_count`). */
+  ecriture?: { ms: number; jetons: number };
+  /** Nombre d'appels au modèle qui répond (1, plus un par tour d'outils). */
+  appels?: number;
+  /** Temps passé dans chaque outil. `garde` : résultat repris de la mémoire courte. */
+  outils?: { name: string; ms: number; garde?: boolean }[];
+  /** Du début du tour au premier son, quand la réponse est dite. */
+  voix?: number;
 }
 
 export interface Conversation {

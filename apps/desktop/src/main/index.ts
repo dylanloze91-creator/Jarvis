@@ -2,6 +2,9 @@
 import './editionBoot.js';
 import { readFile, writeFile } from 'node:fs/promises';
 import { readRouterScore } from './orchestra/routerScore.js';
+import { VoiceStartBook } from './vitesse/voix.js';
+import { ModelWarmer } from './vitesse/chauds.js';
+import { mostUsedTeamOf } from './vitesse/usage.js';
 import { join } from 'node:path';
 import {
   BrowserWindow,
@@ -62,6 +65,7 @@ import {
   type ReservedFunction,
   noteIntent,
   type RoutineStep,
+  ToolResultMemory,
   type ToolManager,
   MoonrakerClient,
   checkRoverBaseUrl,
@@ -369,7 +373,12 @@ async function announcePrint(message: string): Promise<void> {
   overlay?.browserWindow.webContents.send(IpcChannel.chatEvent, { type: 'notice', text: message });
 }
 
+// Mémoire courte des résultats d'outils de lecture : Jarvis Test seulement (table d'édition).
+const toolMemory = edition().keepToolResults ? new ToolResultMemory() : null;
+
 function buildTools(): ToolManager {
+  // Réglages changés (moteur de recherche, clé…) : un résultat gardé avec l'ancien réglage ne ressert pas.
+  toolMemory?.clear();
   return createToolManager({
     getSettings: () => settings,
     searchRegistry,
@@ -414,7 +423,7 @@ function buildTools(): ToolManager {
         onProgress,
         signal,
       }),
-  });
+  }).useResultMemory(toolMemory);
 }
 
 let tools: ToolManager = buildTools();
@@ -457,6 +466,9 @@ const morningBriefing = createMorningBriefing(() => app.getPath('userData'), () 
   pendingNotes: async () => (settings.notes?.enabled === true ? notesBook.pendingLabels() : []),
 });
 
+// Chronomètre « voix » : Jarvis Test seulement, comme le journal du tour.
+const voiceStarts = edition().id === 'test' ? new VoiceStartBook(store) : undefined;
+
 const session = new ChatSession({
   registry,
   get tools() {
@@ -483,6 +495,7 @@ const session = new ChatSession({
   notes: notesReply,
   routines: routineReply,
   printer: printerReply,
+  voiceStarts,
 });
 
 // 5.0.63 — téléphone : une session de chat à part (un tour sur le téléphone n'annule pas celui de
@@ -563,7 +576,10 @@ async function warmSpeakerSide(): Promise<void> {
 const speakerStore = SpeakerStore.inUserData(() => app.getPath('userData'));
 const speakers = new SpeakerService({
   store: speakerStore,
-  onSpeakerSound: (name, elapsedMs) => carnet.noteFirstSound(name, elapsedMs),
+  onSpeakerSound: (name, elapsedMs) => {
+    carnet.noteFirstSound(name, elapsedMs);
+    void voiceStarts?.sound(`enceinte:${name}`).catch(() => undefined);
+  },
   port: edition().ports.speaker,
   mayRun: () => reservedAllows(edition(), reservations, 'speaker'),
   keptAddresses: () => keptLanAddresses(),
@@ -604,6 +620,7 @@ const speakers = new SpeakerService({
       },
       healthReport: () => healthMonitor?.run() ?? Promise.reject(new Error('bilan indisponible')),
       carnet,
+      voiceStarts,
       briefing: morningBriefing,
       notes: notesReply,
       routines: routineReply,
@@ -653,6 +670,20 @@ const speakers = new SpeakerService({
     }
   },
 });
+
+// Modèles gardés chauds : Jarvis Test seulement (table d'édition). Live : rien n'est créé.
+const modelWarmer = edition().keepModelsWarm
+  ? new ModelWarmer({
+      getSettings: () => settings,
+      busy: () =>
+        images.isBusy() ||
+        (chatMissionHub?.missionBusy() ?? false) ||
+        localLearning.status().running ||
+        (developerIpc?.current()?.workInProgress() ?? false),
+      mostUsedTeam: () => mostUsedTeamOf(store),
+      log: (line) => console.info(line),
+    })
+  : null;
 
 backupService = new BackupService({
   userData: () => app.getPath('userData'),
@@ -838,6 +869,8 @@ async function bootstrap(): Promise<void> {
   );
   // Le bilan attend la première image (0.4.14) : il ne bloque pas l'ouverture.
   void healthMonitor?.run();
+  // Après la première image : le démarrage n'attend jamais Ollama.
+  modelWarmer?.start();
   backupService?.start();
   // 5.0.64 : un raccourci déjà pris au démarrage (ou mal écrit) laissait Jarvis sans
   // porte d'entrée ; comme à l'enregistrement, on retombe sur Control+Space.
@@ -1531,6 +1564,10 @@ function registerIpc(): void {
     const active = (payload as { active?: unknown } | null)?.active === true;
     listeningIndicator?.setActive(active);
   });
+  ipcMain.on(IpcChannel.voiceSpeechStarted, (event) => {
+    if (!fromMainWindow(event)) return;
+    void voiceStarts?.sound('fenetre').catch(() => undefined);
+  });
   ipcMain.on(IpcChannel.listeningLevel, (event, level: unknown) => {
     if (!fromMainWindow(event)) return;
     if (typeof level === 'number' && Number.isFinite(level)) listeningIndicator?.setLevel(level);
@@ -1722,6 +1759,7 @@ app.on('will-quit', () => {
   void piper.stop();
   // Un Forge lancé par Jarvis ne survit pas à Jarvis (un Forge lancé par l'utilisateur n'est pas touché).
   void images.shutdown();
+  modelWarmer?.stop();
   updateManager.stop();
 });
 
