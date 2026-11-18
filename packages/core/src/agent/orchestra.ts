@@ -23,6 +23,7 @@ import { isCurrentTrackQuestion } from '../media/currentTrackIntent.js';
 import { isMusicIntent } from '../media/playIntent.js';
 import { extractSiteBlockIntent } from '../siteblock/intent.js';
 import { looksLikeImageIntent } from '../images/intent.js';
+import { looksLikeSpeakerScreenIntent } from '../speaker/screen.js';
 import { extractYoutubeUrl } from '../youtube/url.js';
 import { DEFAULT_SYSTEM_PROMPT, looksLikeWebResearchIntent } from './agent.js';
 import { detectCurrentInfoIntent } from './currentInfo.js';
@@ -249,6 +250,8 @@ export interface ExpressInput {
   now?: Date;
   /** Module images : le message porte une photo jointe (elle sert à faire une image). */
   hasImageAttachment?: boolean;
+  /** Une enceinte est reliée : l'outil `afficher_sur_enceinte` est proposé (équipe PC). */
+  speakerScreen?: boolean;
 }
 
 /** Équipe désignée par une règle de Jarvis, sans modèle ; `null` : le cerveau décide. */
@@ -257,6 +260,8 @@ export function expressTeam(input: ExpressInput): OrchestraTeam | null {
   if (!text) return null;
   const pick = (team: OrchestraTeam) => (input.available.has(team) ? team : null);
   if (extractYoutubeUrl(text)) return pick('web');
+  // Écran d'une enceinte : seulement si une enceinte est reliée (sinon, le chemin d'avant).
+  if (input.speakerScreen && looksLikeSpeakerScreenIntent(text)) return pick('pc');
   if (isMusicIntent(text) || isCurrentTrackQuestion(text)) return pick('musique');
   // 5.0.64 : le suivi d'un tour Google n'est plus forcé vers l'équipe Google (« ouvre Chrome »
   // juste après un mail y partait, sans outil du PC) : le cerveau tranche avec les derniers échanges.

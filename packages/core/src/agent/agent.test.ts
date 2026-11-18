@@ -238,6 +238,40 @@ describe('Agent', () => {
     expect(result?.type === 'tool_result' && result.message.toolStatus).toBe('denied');
   });
 
+  it('écran d’une enceinte : la réponse est celle de l’outil, mot pour mot, sans relancer le modèle', async () => {
+    const provider = new ScriptedProvider([
+      [
+        { type: 'tool_call', call: { id: 'c1', name: 'afficher_sur_enceinte', arguments: { titre: 'Test' } } },
+        { type: 'done', finishReason: 'tool_calls' },
+      ],
+      [
+        { type: 'text', delta: 'Test a été affiché sur l’enceinte.' },
+        { type: 'done', finishReason: 'stop' },
+      ],
+    ]);
+    const tool = defineTool({
+      name: 'afficher_sur_enceinte',
+      description: 'Affiche sur une enceinte.',
+      risk: 'safe',
+      schema: z.object({ titre: z.string() }),
+      execute: async () => ({ ok: true, content: 'Envoyé à 1 enceinte : « Test », pendant 60 s.' }),
+    });
+    const agent = new Agent(provider, new ToolManager().register(tool), { systemPrompt: 'test' });
+    const events: AgentEvent[] = [];
+    for await (const event of agent.run([createMessage('user', 'Affiche Test sur l’enceinte')], {
+      requestConfirmation: async () => true,
+    })) {
+      events.push(event);
+    }
+    const reply = events
+      .filter((e) => e.type === 'assistant_delta')
+      .map((e) => e.delta)
+      .join('');
+    expect(provider.requests).toHaveLength(1);
+    expect(reply).toBe('Envoyé à 1 enceinte : « Test », pendant 60 s.');
+    expect(reply).not.toContain('affiché');
+  });
+
   it('après un refus, répond sans relancer le modèle (qui prétendait l’action faite)', async () => {
     const provider = new ScriptedProvider([
       [

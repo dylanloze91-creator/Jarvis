@@ -43,6 +43,7 @@ import { createImagesTools } from './images.js';
 import { createNotesTools } from './notes.js';
 import { createRoutineTools, type RoutineToolDeps } from './routines.js';
 import { createPrinterTools, type PrinterToolDeps } from './printer.js';
+import { createSpeakerScreenTools, type SpeakerScreenPort } from './speakerScreen.js';
 
 export interface YoutubeSummarize {
   (
@@ -72,6 +73,8 @@ export interface ToolManagerDeps {
   openImagePath?: (path: string) => Promise<string | void>;
   /** Module images : le message de l'utilisateur en cours (texte mot pour mot, photos), posé par la session de chat. */
   currentTurn?: () => { text: string; attachments?: ChatAttachment[] } | null;
+  /** Écran des enceintes. Son outil n'est proposé que si une enceinte est reliée. */
+  speakerScreen?: SpeakerScreenPort;
   /**
    * Profil modeste seulement : Spotify reste enregistré mais absent du prompt
    * tant que le compte n’est pas connecté. Ignoré sur les autres profils.
@@ -143,6 +146,7 @@ function createFullToolManager(deps: ToolManagerDeps): ToolManager {
     ...notesToolsIfEnabled(deps),
     ...routineToolsIfEnabled(deps),
     ...printerToolsIfEnabled(deps),
+    ...(deps.speakerScreen ? createSpeakerScreenTools(deps.speakerScreen) : []),
   ]);
 }
 
@@ -177,6 +181,7 @@ function createModestToolManager(deps: ToolManagerDeps): ToolManager {
     ...notesToolsIfEnabled(deps),
     ...routineToolsIfEnabled(deps),
     ...printerToolsIfEnabled(deps),
+    ...(deps.speakerScreen ? createSpeakerScreenTools(deps.speakerScreen) : []),
   ]);
 }
 

@@ -21,8 +21,10 @@
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "display.h"
 #include "led.h"
 #include "link.h"
+#include "mascotte_etat.h"
 #include "net.h"
 #include "wake.h"
 
@@ -147,6 +149,7 @@ static phrase_result_t record_and_send(uint32_t wait_ms, bool follow_up, turn_re
     }
 
     led_set(LED_THINKING);
+    mascotte_etat_poser(MASCOTTE_REFLECHIT, mascotte_horloge_ms());
     wake_mute(true); // la carte va parler : le micro n'écoute pas
     ESP_LOGI(SERIAL_TAG, "envoi de %.1f s%s…", (double)length / SAMPLE_RATE, follow_up ? " (suivi)" : "");
     *turn = net_turn(phrase, length, follow_up);
@@ -172,6 +175,7 @@ static void brain_task(void *arg) {
         // ---- veille : on attend « Jarvis » -----------------------------------------------------
         if (net_connected()) note_link(true);
         else note_link(false);
+        mascotte_etat_poser(MASCOTTE_DORT, mascotte_horloge_ms());
         led_set(down_long() ? LED_ERROR : LED_STANDBY);
         wake_mute(false);
         wake_enable(true);
@@ -193,6 +197,7 @@ static void brain_task(void *arg) {
             continue;
         }
         led_set(LED_LISTENING);
+        mascotte_etat_poser(MASCOTTE_ECOUTE, mascotte_horloge_ms());
 #if WAKE_BEEP
         // Bip très court, micro **toujours ouvert** : « Jarvis quelle heure est-il » dit d'une traite
         // n'est pas coupé. Le bip s'entend un peu dans la phrase envoyée ; Whisper n'en fait rien.
@@ -235,6 +240,7 @@ static void brain_task(void *arg) {
             // Fenêtre de suivi : on écoute sans « Jarvis ».
             follow_up = true;
             led_set(LED_LISTENING);
+            mascotte_etat_poser(MASCOTTE_ECOUTE, mascotte_horloge_ms());
             wake_mute(false);
         }
     }
@@ -286,6 +292,7 @@ static void life_task(void *arg) {
                 led_set(LED_IDENTIFY);
                 tone_wake();
                 net_play_greeting();
+                mascotte_etat_poser(MASCOTTE_DORT, mascotte_horloge_ms());
                 vTaskDelay(pdMS_TO_TICKS(3000));
             }
         } else if (hello.status == 0 || !net_connected()) {
@@ -297,6 +304,7 @@ static void life_task(void *arg) {
 void app_main(void) {
     cfg_init();
     led_init();
+    display_init(); // sans écran branché : ne fait rien
     link_start();
     if (!jarvis_cfg.configured) {
         led_set(LED_SETUP);
