@@ -1,6 +1,6 @@
 # Feuille de route de Jarvis — à lire avant chaque tâche
 
-Tenue par Claude (le chat, manager du projet). Dernière mise à jour : 17 novembre 2026.
+Tenue par Claude (le chat, manager du projet). Dernière mise à jour : 18 novembre 2026.
 
 **Claude Code et Cursor la lisent avant chaque tâche**, en même temps que `AGENTS-COORDINATION.md`. Elle dit vers où va Jarvis, qui fait quoi et dans quel ordre, et ce qui en dépend. Le but : qu'aucun outil ne soit construit sans tenir compte de ceux qui viendront s'y brancher.
 
@@ -16,6 +16,11 @@ Ce fichier ne contient ni secret, ni donnée personnelle, ni nom de réseau : le
 - **Un Jarvis un peu autonome** (objectif ajouté le 16 novembre) : sur certaines tâches, il **surveille seul**, **voit quand quelque chose ne va pas** et **agit sans attendre** quand l'action va dans le sens de la sécurité : couper une impression qui part en vrille, mettre en pause, arrêter le robot. Il **prévient toujours** l'utilisateur de ce qu'il a fait et pourquoi. Tout ce qui démarre, chauffe ou fait bouger quelque chose reste soumis à son accord, sauf règle permanente qu'il aura lui-même validée. Détail dans la section 6 (« Jarvis autonome »).
 - **Une vraie conversation à la voix** (objectif ajouté le 16 novembre, **prochain grand chantier une fois Jarvis Test et la carte de l'utilisation faits**) : parler avec Jarvis comme avec une personne. Pas « je parle, il parle » : l'utilisateur peut le **couper** au milieu d'une phrase, se reprendre (« non, attends… »), et Jarvis répond vite, sans attendre un long silence. Détail dans la section 6 (« Vraie conversation »).
 - **Jarvis plus rapide sans nouveau modèle** (décision de l'utilisateur du 17 novembre) : la machine calcule vite, ce sont les modèles qui ralentissent. On construit donc des **outils qui ne sont pas des modèles** pour que Jarvis réponde plus vite : mesurer où part le temps, garder les modèles chargés, raccourcir ce qu'on leur envoie, régler plus de demandes par des règles sûres, garder quelques minutes les résultats d'outils. Cahier : `docs/specs/rapide-sans-modele.md`. Mission 2 bis de Claude Code (section 3).
+- **Trois chantiers côte à côte** (décision de l'utilisateur du 17 novembre) :
+  - **Jarvis** (Live et Test) : l'appli elle-même, cette feuille de route telle quelle ;
+  - **Jarvis Development** (branche longue `claude/jarvis-development`) : les **appendices** de Jarvis, c'est-à-dire ses yeux, ses bras, ses jambes, ses sens et ses mains sur la maison, avec leurs programmes et leur électronique. Cahier : `docs/specs/jarvis-development.md` ; matériel : `docs/materiel/electronique-appendices.md` ;
+  - **Model Development** (plus tard, pas encore ouvert) : l'entraînement des modèles. La liste de ses besoins est tenue dans le cahier de Jarvis Development, section 9.
+  Quand l'utilisateur n'est pas chez lui, on avance Jarvis Development dans le cloud, et les essais de Live et de Test attendent son retour (accord du 17 novembre).
 - **On n'entraîne un modèle que là où l'usage réel montre qu'il échoue.** Les ratés de tous les jours (carnet des ratés) et la carte de l'utilisation réelle décident des entraînements. Les exercices génériques ne servent que de base.
 
 ## 1 bis. On suit cette feuille, quoi qu'il arrive (accord du 12 novembre)
@@ -53,15 +58,16 @@ Ce fichier ne contient ni secret, ni donnée personnelle, ni nom de réseau : le
   - correctif de sécurité du mode direct ;
   - boutons « Copier ».
 - L'enceinte de la chambre est **reliée de nouveau** (16 novembre).
+- **5.0.79** (18 novembre) : l'écran de l'enceinte (mascotte, heure, messages de souci, informations du PC) et l'outil `afficher_sur_enceinte`. Enceinte flashée et **tous les essais réussis** avec l'utilisateur ; publication lancée par l'utilisateur le 18 novembre au soir.
 
 ### Claude Code (PC Windows de l'utilisateur, avec le matériel)
 
 | # | Tâche | État |
 | --- | --- | --- |
 | 1 | **Jarvis Test** : préparé la nuit du 16 au 17 novembre (`claude/dev`, rapport `rapports/2026-11-17-jarvis-test-preparation.md`) ; tout est vert et l'installateur est construit. Reste : les essais avec l'utilisateur, puis la publication de `5.1.0-test.1` sur sa décision. | **prochaine tâche, avec l'utilisateur** |
-| 1 bis | **Écran de l'enceinte** (`claude/enceinte-ecran`) : la mascotte de l'utilisateur, l'heure après 2 min de sommeil, les messages de souci et les informations du PC. À recompiler (`pio run`), puis à flasher avec l'utilisateur et l'écran branché. La Live 5.0.79 est **préparée** sur `claude/live-5079` (écran + mission 7, version 5.0.79, liste des essais) : ni publiée ni flashée. | **ce soir, avec l'utilisateur** : flasher, essayer, publier |
+| 1 bis | **Écran de l'enceinte** (`claude/enceinte-ecran`) : la mascotte de l'utilisateur, l'heure après 2 min de sommeil, les messages de souci et les informations du PC. À recompiler (`pio run`), puis à flasher avec l'utilisateur et l'écran branché. Live 5.0.79 (`claude/live-5079`) flashée et essayée le 18 novembre : tout est bon. | **fait** ; publication en cours (fusion dans `main`, `release.sh`) |
 | 2 | Carte de l'utilisation réelle : écrite par Cursor (`cursor/carte-utilisation`), corrigée par Claude (`claude/carte-correction`, seuls les messages vraiment tapés comptent). Lancer `npm test --workspace @jarvis/core` sur `claude/carte-correction`, puis `scripts\carte-utilisation.ps1`. L'utilisateur envoie **seulement** `carte.md` à Claude. | à lancer sur le PC (peut se faire avant la tâche 1, c'est court) |
-| 2 bis | **Jarvis plus rapide, sans nouveau modèle** (`docs/specs/rapide-sans-modele.md`, branche `claude/rapide-sans-modele` partie de `claude/dev`, Jarvis Test seulement). D'abord le chronomètre par étape et `vitesse.ps1`, puis : modèles gardés chauds, prompt plus court, mémoire courte des outils, outil des règles express. Ne pas fusionner dans `claude/dev` avant les essais de `5.1.0-test.1`. Les règles express elles-mêmes attendent `carte.md` et `vitesse.md`. | **peut commencer tout de suite** (sans toucher à la Live ni à `claude/dev`) |
+| 2 bis | **Jarvis plus rapide, sans nouveau modèle** (`docs/specs/rapide-sans-modele.md`, branche `claude/rapide-sans-modele` partie de `claude/dev`, Jarvis Test seulement). D'abord le chronomètre par étape et `vitesse.ps1`, puis : modèles gardés chauds, prompt plus court, mémoire courte des outils, outil des règles express. Ne pas fusionner dans `claude/dev` avant les essais de `5.1.0-test.1`. Les règles express elles-mêmes attendent `carte.md` et `vitesse.md`. | **terminée** le 17 novembre, relue par Claude : premier tour 8,2 s → 3,0 s, lecture des consignes 2,0 s → 0,6 s. À fusionner dans `claude/dev` après les essais de `5.1.0-test.1`. Réglage fait par l'utilisateur : équipes Mémoire et Code sur la carte graphique. |
 | 3 | Fusionner dans `main` les branches de documentation que Claude prépare (en ce moment : `claude/feuille-rapide`). | à chaque fois |
 | 4 | Ajouter la nuit de génération du 11 novembre au cahier (`lab:clean`). | à faire |
 | 5 | Essai du raccordement d'enceinte par USB, avec l'utilisateur et la carte. | à faire |
@@ -80,6 +86,17 @@ Cursor n'arrive pas à pousser sur GitHub. L'utilisateur envoie son travail en a
 | 5 | Carte de l'utilisation réelle | terminée, relue, corrigée (`claude/carte-correction`) ; attend la tâche 2 de Claude Code |
 | 6 | **Jeu d'entraînement tiré des conversations** (`docs/specs/jeu-conversations.md`, branche `cursor/jeu-conversations`) : un journal du tour dans Jarvis Test (équipe, modèle, fournisseur, outils, durée) et un script de préparation sans modèle (`trieur.jsonl`, `reponses.jsonl`, `a-corriger.jsonl`). Décision de l'utilisateur du 16 novembre. | terminée, relue (`claude/jeu-conversations`) ; dans `claude/dev` |
 | 7 | **Informations sur l'écran de l'enceinte, côté PC** — **confiée à Claude Code** le 17 novembre (l'utilisateur ménage son quota Cursor), branche `claude/ecran-infos` partie de `main` : en-tête `X-Jarvis-Ecran`, file par enceinte, bilan de santé et outil `afficher_sur_enceinte`. **Exception validée par l'utilisateur le 17 novembre** : les enceintes sont réservées à la Live, donc ce travail va dans la **Live 5.0.79** avec le programme d'écran (`claude/enceinte-ecran`), après relecture et essai sur la carte. | **terminée** (`claude/ecran-infos`), relue par Claude ; dans `claude/live-5079`, à essayer ce soir |
+
+### Jarvis Development (Claude Code, souvent dans le cloud)
+
+| # | Étape | État |
+| --- | --- | --- |
+| 1 | **Étude et plan des appendices** (cahier, liste de l'électronique, rapport `rapports/2026-11-17-jarvis-development-etude.md`) | **terminée** le 17 novembre, relue par Claude. Une correction : le bras réel du robot (bras treillis V1, voir plus bas) remplace la « pince simple » de l'étude |
+| 1 bis | Corriger l'étude : section des bras et liste du matériel d'après le bras treillis V1 de l'utilisateur | à faire |
+| 2 | **Le socle** (étape 0 du cahier) : contrat commun, registre des appendices, faux appendice, « arrête tout ». Aucun achat. Avant d'écrire ce code : fusionner `claude/dev` dans `claude/jarvis-development` (table des éditions, client Moonraker). | après les décisions de l'utilisateur |
+| 3 | **L'imprimante sous surveillance** (étape 1 du cahier) : caméra USB sur le Raspberry Pi de Klipper, prise qui mesure et coupe, surveillance par règles sans modèle. Ordre des gestes : pause, annulation, arrêt d'urgence de Klipper, coupure de la prise en dernier. | après le socle et les achats |
+
+Le reste de l'ordre (sens, maison, robot qui voit, bras, couper Jarvis) est dans le cahier, section 6, et se décide étape par étape. Le **bras du robot** est celui que l'utilisateur a déjà conçu : bras treillis V1, 2 × 150 mm, servos de 25 et 35 kg déjà achetés, pince à deux mâchoires, carte PCA9685, alimentation des servos 6,8 à 7,4 V et 10 A au moins.
 
 ### Essais de modèles
 
@@ -135,6 +152,7 @@ Ils sont arrêtés depuis le 12 novembre. Ornith-1.0-9B fait 84/87 au banc, mais
   2. **Règles permanentes** (« si l'impression part en vrille, annule-la », « préviens-moi quand elle est finie »). L'utilisateur les écrit ou les valide une fois. Un journal dit ce que Jarvis a fait seul. Jamais une règle qui démarre une impression, chauffe ou fait bouger le robot sans accord.
   3. **Le robot range quelques petites choses.** Jarvis lance le robot (Jarvis Rover) pour ramasser et poser 2 ou 3 petits objets à un endroit connu. Il faut d'abord : une pince ou un bras sur le robot (il n'en a pas aujourd'hui), une caméra, une zone de travail délimitée, une vitesse réduite et l'arrêt d'urgence ; au début, chaque départ du robot reste confirmé.
   - Toujours : l'arrêt d'urgence et « stop » passent avant tout. Une action autonome n'a jamais le droit d'être plus risquée que de ne rien faire.
+- **Œil de pièce : boîtier de vision qui détecte sur place** (idée du 17 novembre, mise de côté par l'utilisateur ; appendice « Yeux » de Jarvis Development). Version retenue si on la reprend : un Raspberry Pi 5 2 Go, une seule caméra grand angle (environ 120°) sur un servo de 180° (environ 300° couverts, 3 positions, un tour en environ 1,5 s, pas de câble qui s'enroule), la détection faite par le processeur du Pi (7 à 15 images par seconde, il en faut 1 à 2), précédée d'une simple comparaison d'images pour ne détecter que quand ça bouge. La tête se tourne vers le mur quand la caméra est coupée. Environ 130 à 140 € (environ 60 € en reprenant le Pi 5 actuel). Le module IA (environ 90 €) s'ajoute plus tard seulement si la mesure le demande. Écartée : deux caméras fish-eye 220° + Pi 5 8 Go + module IA, environ 400 €, jugée trop chère. Jamais dans une chambre, rien dans le cloud.
 - **Vraie conversation** (objectif du 16 novembre, prochain grand chantier après Jarvis Test et la carte de l'utilisation). Comme le mode voix des grands assistants, mais en local. Par étapes, chacune mesurée (temps entre la fin de la phrase et le premier mot de Jarvis) et essayée dans Jarvis Test :
   1. **Couper Jarvis** sur le PC : dès que l'utilisateur parle, la voix s'arrête net et Jarvis écoute. Il faut l'annulation d'écho du micro (Jarvis ne doit pas s'entendre lui-même), sans remettre le contrôle automatique du volume coupé en 0.4.16.
   2. **Répondre plus vite** : transcription au fil de la parole, réponse du modèle en flux et voix phrase par phrase (Jarvis Réflexe en fait déjà une partie). Le chronomètre et les mesures de la mission « Jarvis plus rapide, sans nouveau modèle » servent de point de départ. Cible : moins de 1,5 s entre la fin de la phrase et le premier mot.
