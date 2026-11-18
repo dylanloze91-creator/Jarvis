@@ -73,21 +73,58 @@ Une webcam USB sur le PC n'est pas proposée : l'application refuse la caméra �
 
 ### 2.2 Les BRAS
 
-**Pince sur le robot**
+**Le bras du robot : le bras treillis V1 de l'utilisateur** (correction du 19 novembre 2026 ; il remplace la « pince simple » de la première version)
 
-| | Pièce | Rôle | Prix relevé | Où |
-| --- | --- | --- | --- | --- |
-| **Meilleur choix** | 2 × servo à bus **Feetech STS3215 7,4 V** (C001) | Un moteur qui serre, un qui lève. Ils **disent** leur position, leur effort, leur température : Jarvis sait si l'objet est tenu ou si ça coince. | 19,80 € pièce (en réapprovisionnement) ; 24,10 € pièce | [RobotShop EU](https://eu.robotshop.com/collections/feetech), [OpenELAB](https://openelab.io/products/feetech-sts3215-c001-servo) |
-| | Carte **Waveshare Bus Servo Adapter (A)** | Relie ces moteurs au Pi ou à l'ESP32 | 5,75 € | [TinyTronics (Pays-Bas)](https://www.tinytronics.nl/en/mechanics-and-actuators/motor-controllers-and-drivers/servomotor-controllers/waveshare-serial-bus-servo-adapter-(a)) |
-| **Moins cher, viable** | Lot de 4 servos **MG996R** (copies) | Un sert à lever ; les autres restent en réserve | 18,57 € le lot | [Amazon.fr](https://www.amazon.fr/HTLNUZD-servomoteurs-MG996R-analogiques-h%C3%A9licopt%C3%A8re/dp/B0C2PV9WCC) |
-| | Servo **MG90** | Serre la pince | 7,65 € | [Gotronic](https://www.gotronic.fr/art-servomoteur-mg90-180-31455.htm) |
-| | (facultatif) Carte **PCA9685** 16 canaux | Commande des servos simples ; l'ESP32 sait aussi le faire seul | 6,00 € | [TinyTronics](https://www.tinytronics.nl/en/mechanics-and-actuators/motor-controllers-and-drivers/servomotor-controllers/16-channel-i2c-pwm-servo-controller-pca9685) |
-| Dans les deux cas | Régulateur 5 à 6 V, 5 A, pour les servos | Les servos ne se branchent **jamais** sur le 5 V du Pi | prix à vérifier | — |
-| Dans les deux cas | Filament **TPU 95A** | Les mors souples de la pince | prix en euros à vérifier (vu 22 à 29 CHF en Suisse) | [3DJake.ch](https://www.3djake.ch/fr-CH/sunlu/tpu-95a-gray) |
+Deux segments en treillis de 150 mm en PETG ; servos de base, de coude et de poignet de 25 kg, servo d'épaule de 35 kg ; pince à deux mâchoires sur un servo MF90 ; environ 540 g ; charge de 250 g à moins de 25 cm de l'épaule.
 
-- **Pourquoi le meilleur choix.** Un servo simple ne dit rien : la pince ne sait pas si elle tient quelque chose. Le servo à bus le dit ([registres lisibles](https://github.com/pollen-robotics/rustypot/blob/develop/src/servo/feetech/sts3215.rs)). Avec l'option moins chère, il faut ajouter un petit contact dans la pince pour savoir que l'objet est là.
-- **Alimentation.** Le STS3215 en version 7,4 V marche aussi en 5 V, avec un peu moins de force ([dépôt SO-ARM100](https://github.com/TheRobotStudio/SO-ARM100)).
-- **À imprimer** : toute la pince (corps en PETG ou PLA, mors en TPU), son support sur le robot.
+**Ce qui est déjà acheté**
+
+| Pièce | Rôle |
+| --- | --- |
+| 3 × servo de 25 kg | Base, coude, poignet |
+| 1 × servo de 35 kg | Épaule (l'articulation qui porte le plus) |
+
+**Ce qui manque** (prix relevés par recherche web le **18 novembre 2026**, sauf mention ; mêmes limites qu'à la section 0 : à revérifier sur la page avant de commander)
+
+| Pièce | Rôle | Prix relevé | Où |
+| --- | --- | --- | --- |
+| Carte **PCA9685** 16 canaux, modèle générique | Envoie le signal de commande aux cinq servos, par deux fils (I2C) depuis le Pi ou l'ESP32 | 6,00 € (relevé le 17 novembre) ; 7,95 € | [TinyTronics](https://www.tinytronics.nl/en/mechanics-and-actuators/motor-controllers-and-drivers/servomotor-controllers/16-channel-i2c-pwm-servo-controller-pca9685), [Bits & Parts (Pays-Bas)](https://www.bitsandparts.nl/en/servo-motor-driver-pwm-16-channel-12-bits-pca9685-i2c-p1930792) |
+| Carte **PCA9685**, modèle de marque | Même rôle, mieux finie | 13,56 € | [RobotShop EU](https://eu.robotshop.com/products/pca9685-16-channel-12-bit-pwm-servo-driver) |
+| **Alimentation des servos** : convertisseur abaisseur **réglable**, 300 W, 20 A au plus (15 A conseillés), à régler entre 6,8 et 7,4 V | Alimente les quatre gros servos depuis la batterie. Il faut 10 A au moins. | 15,95 € (+ 7,49 € de port) ; 24,99 € port compris | [Fruugo](https://www.fruugo.fr/module-de-conversion-abaisseur-reglable-300w-20a-dc-dc/p-398067443-848653422), [Kaufland.fr](https://www.kaufland.fr/product/565164962/) ; fiche technique : [Kubii](https://kubii.com/en/modulos-reles/3322-300w-20a-voltage-converter-step-down-module-3272496306424.html) |
+| **Régulateur 5 à 6 V, 3 A** (UBEC de modélisme) | Alimente le MF90 de la pince, à part | 5,95 € (sans marque, + port) ; 12,95 € (Hobbywing, port compris) | [Fruugo](https://www.fruugo.fr/module-regulateur-de-tension-ubec-entree-55-26-v-carte-de-commutation-bec-anti-interference-pour-avion-rc/p-423636791-891305019), [Fruugo](https://www.fruugo.ie/hobbywing-3a-ubec-5v-6v-max-5a-lowest-rf-noise-bec-voltage-regulator/p-438161266-918315209) |
+| **Porte-fusibles à lame en ligne + fusibles** | Le fusible de l'alimentation des servos, au plus près de la batterie | 7,99 € le lot de 3 avec 14 fusibles (relevé le 17 novembre) | [Touslesprix (vendeur Amazon)](https://www.touslesprix.com/achat,porte-fusible-voiture.html) |
+| **Relais automobile 12 V 30 A**, 5 broches | Coupe l'alimentation des servos quand l'arrêt d'urgence est enfoncé | 13,29 € le lot de 5 | [Touslesprix (vendeur Amazon)](https://www.touslesprix.com/achat,relais-auto-12v-30a.html) |
+| **Support de relais** 5 broches | Brancher le relais sans souder sur ses pattes | 10,85 € | [Touslesprix (vendeur Cdiscount)](https://www.touslesprix.com/achat,relais-auto-12v-30a.html) |
+| Bouton d'arrêt d'urgence | Le même que celui de l'étape 5 : il coupe aussi le bras | déjà compté à l'étape 5 (15,59 €) | section 2.3 |
+| Servo **MF90** | Serre la pince | **à confirmer : déjà là ?** Aucun prix trouvé pour ce modèle précis | — |
+| Filament **PETG**, 1 kg | Les segments et les pièces du bras | 16,99 € HT ; 28,75 € | [filament2print](https://filament2print.com/fr/pet-petg-cpe/2484-petg-r3d.html), [LDLC](https://ldlc.com/en/product/PB00508702.html) |
+| Petit contact (micro-interrupteur) dans la pince | Savoir que l'objet est tenu | prix à vérifier | — |
+| Fil souple de bonne section, rallonges de servo | Porter 10 A sans chauffer ; atteindre le poignet | prix à vérifier | — |
+
+**Comment c'est protégé**
+
+```
+batterie ── fusible ── contact du relais ── convertisseur 6,8 à 7,4 V ──► servos de 25 et 35 kg
+                            ▲                └─ régulateur 5 à 6 V ──────► MF90 de la pince
+        arrêt d'urgence ── bobine du relais
+```
+
+- **Le fusible** est le premier élément après la batterie. Son calibre se choisit selon la batterie (décision A10 du cahier) et la section du fil ; l'ordre de grandeur est 10 à 15 A.
+- **L'arrêt d'urgence coupe par le câblage.** La bobine du relais passe par le contact « normalement fermé » du bouton : bouton enfoncé, ou fil arraché, la bobine n'a plus de courant, le relais s'ouvre, les servos sont coupés. Aucun programme n'est dans cette chaîne.
+- Bouton enfoncé, **le bras retombe** (540 g, plus la charge). C'est voulu : un bras sans force ne pince plus. Il ne faut rien de fragile ni personne dessous.
+- Un « stop » ordinaire, lui, ne coupe rien : le programme fige le bras, servos alimentés.
+
+**Points à vérifier avant de câbler**
+
+- **Régler le convertisseur à vide**, au multimètre, entre 6,8 et 7,4 V, **avant** de brancher un servo. Un module réglable peut sortir beaucoup plus à la livraison.
+- **La carte PCA9685 distribue une seule tension** à toutes ses sorties. Le MF90 (5 à 6 V) ne prend que son signal sur la carte ; son alimentation vient de son régulateur. Toutes les masses sont reliées.
+- **Les pistes de la carte PCA9685** ne sont pas forcément prévues pour 10 A. Si le doute reste, l'alimentation des gros servos est distribuée à part (un bornier), et la carte ne porte que les signaux.
+- Un régulateur fixe de qualité a été regardé puis **écarté** : le Pololu D24V150F7 sort 7,5 V, au-dessus de la plage prévue, et coûte de 72 € HT à 122,50 € ([exp-tech](https://exp-tech.de/en/products/pololu-75v-15a-step-down-voltage-regulator-d24v150f7), [opencircuit](https://opencircuit.shop/product/pololu-7.5v-15a-step-down-voltage-regulator), [Botland](https://botland.store/converters-step-down/7615-step-down-voltage-regulator-d24v150f7-75v-15a-pololu-2883-5904422360108.html)).
+- Ces servos **ne renvoient ni position ni effort**. Le contact dans la pince, ou la caméra, dit si l'objet est tenu.
+
+**À imprimer** : les deux segments en treillis, les supports de servo, la base, les mâchoires de la pince (PETG ; des patins en TPU sur les mâchoires si les objets glissent), le support du bras sur le robot.
+
+**Idée pour plus tard** : décoller une pièce du plateau de l'imprimante avec une spatule (cahier, section 6, « Idées en attente »).
 
 **Bras de bureau** (plus tard, seulement si l'envie est là)
 
@@ -321,7 +358,8 @@ Source : [liste des modèles d'Ollama](https://github.com/ollama/ollama/blob/v0.
 | Écran tactile 2,8" ou 4,3" | 5 V (USB) | moins de 1 A | un chargeur USB |
 | **Raspberry Pi 5** du robot | 5 V | **jusqu'à 5 A** | depuis la batterie, par un régulateur 5 V 5 A |
 | Caméra du robot | — | alimentée par le Pi | rien à ajouter |
-| **Servos de la pince** | 5 à 7,4 V | de fortes pointes au démarrage et au blocage | **leur propre régulateur**, jamais le 5 V du Pi |
+| **Servos du bras** (25 et 35 kg) | 6,8 à 7,4 V | **10 A au moins** ; de fortes pointes au démarrage et au blocage | **leur propre convertisseur**, derrière un fusible et la coupure de l'arrêt d'urgence ; jamais le 5 V du Pi |
+| Servo MF90 de la pince | 5 à 6 V | moins de 3 A | son propre régulateur |
 | Capteurs du robot | 3,3 ou 5 V | faible | l'ESP32 du robot |
 | Prise Shelly, détecteur de fumée | 230 V ou pile | — | appareils certifiés, rien à câbler |
 
@@ -439,14 +477,14 @@ Les étapes sont celles du cahier (`docs/specs/jarvis-development.md`, section 6
 | **3. Les sens** | Lot de 5 cartes ESP32-C3, port compris (20,44) + SHT40 (6,90) = **27,34 €** | Le même + capteur de CO2 SCD40 (42,60) = **69,94 €**, + radar de présence (prix à vérifier) |
 | **4. Les mains sur la maison** | 1 prise Shelly Plug S Gen3 = **23,68 €** | 2 prises = **47,36 €** |
 | **5. Le robot voit et se protège** | Caméra OV5647 (12,95) + nappe (1,32) + 2 capteurs HC-SR04 (7,80) + MPU6050 (5,80) + bouton d'arrêt d'urgence (15,59) = **43,46 €** | Camera Module 3 Wide (39,90) + nappe (1,32) + VL53L5CX (20,90) + BNO085 (34,50) + bouton d'arrêt d'urgence (15,59) = **112,21 €** |
-| **6. La pince** | Lot de MG996R (18,57) + MG90 (7,65) = **26,22 €** | 2 STS3215 (39,60) + carte d'interface (5,75) = **45,35 €** |
+| **6. Le bras** (servos de 25 et 35 kg déjà achetés ; relevés du 18 novembre) | PCA9685 (6,00) + convertisseur réglable (15,95) + régulateur du MF90 (5,95) + porte-fusibles (7,99) + relais (13,29) + support de relais (10,85) = **60,03 €** | PCA9685 de marque (13,56) + convertisseur réglable (24,99) + régulateur Hobbywing (12,95) + porte-fusibles (7,99) + relais (13,29) + support de relais (10,85) = **83,63 €** |
 | **7. Couper Jarvis depuis l'enceinte** | **0 €** (essai en logiciel sur la carte actuelle) | Kit ReSpeaker Lite = **29,95 €** |
 | **8. Le robot rentre et se recharge** | non chiffré : dépend de la batterie actuelle | non chiffré |
-| **Total des étapes 1 à 7** | **199,36 €** | **438,37 €** |
+| **Total des étapes 1 à 7** | **233,17 €** | **476,65 €** |
 | Outils, si rien n'est déjà là | 116,77 € | 295,07 € |
-| **Total général** | **316,13 €** | **733,44 €** |
+| **Total général** | **349,94 €** | **771,72 €** |
 
-Ce que les totaux ne comptent pas, faute de prix relevé : l'éclairage de l'imprimante, le régulateur des servos, les micro-interrupteurs, le filament TPU, le radar de présence, le contact de porte, les contacts de recharge. Ce sont de petites pièces ; compter une marge de 30 à 50 €.
+Ce que les totaux ne comptent pas, faute de prix relevé : l'éclairage de l'imprimante, le servo MF90 du bras s'il n'est pas déjà là, le fil et les rallonges du bras, les micro-interrupteurs, le filament (PETG : 16,99 € HT à 28,75 € le kilo ; TPU), le radar de présence, le contact de porte, les contacts de recharge. Ce sont de petites pièces ; compter une marge de 30 à 50 €.
 
 Le **minimum pour commencer** : une webcam et une prise, **43,67 €**.
 

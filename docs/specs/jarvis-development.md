@@ -33,7 +33,7 @@ Ce que dit ce cahier, en dix points :
 6. **Pour la vision, on n'achète rien au début.** Surveiller l'imprimante demande une image toutes les 10 à 30 secondes : le processeur du PC suffit, la RTX 2060 reste aux modèles de langage. Les chiffres sont dans le document matériel.
 7. **Pour la maison, on commence en direct** (une prise qui parle au PC sans Internet), et on passe par Home Assistant seulement quand il y aura beaucoup d'appareils. Le contrat côté Jarvis est le même dans les deux cas.
 8. **L'ordre proposé commence par l'imprimante** : une caméra, une prise, un détecteur de fumée. C'est le moins cher et c'est le premier objectif de « Jarvis autonome ».
-9. Ensuite : couper Jarvis à la voix, les capteurs, les lumières, les yeux et la sécurité du robot, la pince, puis la recharge.
+9. Ensuite : couper Jarvis à la voix, les capteurs, les lumières, les yeux et la sécurité du robot, le bras, puis la recharge.
 10. Ce qui demande un **modèle entraîné** (reconnaître une impression ratée, reconnaître les objets à ranger) est seulement noté dans la section « Pour Model Development ».
 
 ---
@@ -275,31 +275,50 @@ Trois yeux, plus un qui existe déjà :
 - « Lâche. » « Ouvre la pince. »
 - Plus tard, sur le bureau : « Passe-moi le tournevis. »
 
-Deux formes :
+**Le bras du robot existe déjà sur le papier : c'est le bras treillis V1, conçu par l'utilisateur.** Il est pris tel quel, à la place de la « pince simple » de la première version de ce cahier (correction du 19 novembre 2026).
 
-| Bras | Description | Quand |
-| --- | --- | --- |
-| **Pince sur le robot** | Deux mouvements : serrer, et lever un peu. Imprimée sur l'Ender, avec des mors souples. | D'abord. C'est elle qui sert l'objectif « le robot range 2 ou 3 choses ». |
-| **Bras de bureau** | Un petit bras à six moteurs, d'un modèle ouvert, dont les pièces s'impriment. | Plus tard, et seulement si l'envie est là. Il ouvre la porte à l'apprentissage par démonstration (Model Development). |
+| | Bras treillis V1 |
+| --- | --- |
+| Structure | Deux segments en treillis de **150 mm**, imprimés en **PETG** |
+| Articulations | Base, épaule, coude, poignet : quatre servos |
+| Servos | Base, coude et poignet : **25 kg** ; épaule : **35 kg**. **Déjà achetés.** |
+| Pince | Deux mâchoires, sur un servo **MF90** |
+| Masse | Environ **540 g** |
+| Charge | **250 g**, à moins de **25 cm** de l'épaule |
+| Électronique prévue | Carte **PCA9685** ; alimentation des servos de **6,8 à 7,4 V**, **10 A au moins** ; le MF90 en **5 à 6 V** |
 
-Un point à connaître : le robot **ne tourne pas sur place** (rayon de braquage d'environ 0,5 m). Il lui est difficile de se placer au centimètre devant un objet. La pince doit donc **pardonner** : une ouverture large en entonnoir, des objets choisis pour ça (légers, de 3 à 6 cm, posés au sol dans une zone dégagée), et une approche en ligne droite.
+Le **bras de bureau** (un petit bras à six moteurs, d'un modèle ouvert) reste une idée pour plus tard, seulement si l'envie est là. Il ouvre la porte à l'apprentissage par démonstration (Model Development).
+
+Trois points à connaître :
+
+- Le robot **ne tourne pas sur place** (rayon de braquage d'environ 0,5 m). Il lui est difficile de se placer au centimètre devant un objet. Le bras rattrape une partie de l'écart grâce à sa portée, mais la règle reste : des objets choisis pour ça (légers, de 3 à 6 cm, posés au sol dans une zone dégagée), et une approche en ligne droite.
+- Ces servos **ne disent rien** : ni leur position réelle, ni leur effort. Le bras ne sait pas tout seul s'il tient l'objet ou s'il force. Il faut donc une vérification à part : un petit contact dans la pince, ou la caméra qui regarde.
+- Un servo de 25 ou 35 kg **peut pincer et faire mal**, et un bras de 540 g qui n'est plus alimenté **retombe**. La sécurité du bras (plus bas) en tient compte.
+
+**L'alimentation des servos et sa protection.**
+
+- Les servos ont **leur propre alimentation** (6,8 à 7,4 V, 10 A au moins), jamais le 5 V du Pi.
+- Le MF90 de la pince a **son propre régulateur de 5 à 6 V**. La carte PCA9685 distribue une seule tension à toutes ses sorties : le MF90 ne prend donc que son **signal** sur la carte, et son alimentation à part. Toutes les masses sont reliées.
+- **Un fusible** sur la ligne qui alimente les servos, au plus près de la batterie. Son calibre dépend de la batterie (décision A10) ; l'ordre de grandeur est 10 à 15 A.
+- **Une coupure par l'arrêt d'urgence** : le bouton coupe l'alimentation des servos **par le câblage**, sans passer par un programme. Bouton enfoncé, les servos n'ont plus de courant, même si le Pi ou l'ESP32 est planté. Si le contact du bouton ne supporte pas 10 A, il commande un relais (bouton enfoncé : bobine sans courant, relais ouvert).
+- À vérifier sur la carte PCA9685 avant de câbler : ses pistes ne sont pas forcément prévues pour 10 A. Si elles ne le sont pas, l'alimentation des gros servos est distribuée à part et la carte ne porte que les signaux.
 
 **Les programmes.**
 
 | Où | Programmes et sous-programmes |
 | --- | --- |
-| **a) Sur la carte** | Sur l'ESP32 du robot, ou sur une petite carte ajoutée : commande des moteurs de la pince avec une **vitesse limitée**, des **butées** logicielles, la **détection de blocage** (l'effort monte, on relâche), les gestes de base (`ouvrir`, `fermer`, `lever`, `baisser`, `repos`), et le chien de garde. Sur stop : la pince se fige. Sur arrêt d'urgence : ses moteurs sont coupés. |
+| **a) Sur la carte** | Sur l'ESP32 du robot, ou sur une petite carte ajoutée, qui commande la PCA9685 : chaque articulation a une **vitesse limitée**, des **butées** logicielles (angles permis), une montée en douceur ; les gestes de base (`repos`, `ouvrir`, `fermer`, `tendre`, `replier`) ; le chien de garde. Sur stop : le bras **se fige**, servos toujours alimentés (il ne lâche pas et ne tombe pas). Sur arrêt d'urgence : l'alimentation des servos est **coupée** par le câblage ; le bras retombe, et le programme le sait (il repartira de la position de repos, lentement). |
 | **b) Sur le PC et sur le Pi** | Sur le Pi, un programme séparé (`robot/bras/`), à côté du pilotage : il sert le contrat et enchaîne le geste complet (approcher, saisir, vérifier que l'objet est tenu, aller, poser, vérifier). L'enchaînement vit sur le Pi, près des capteurs, pas sur le PC : le Wi-Fi ne doit jamais être dans la boucle d'un geste. Sur le PC : le client du robot gagne quelques ordres. |
-| **c) Dans le cœur** | Outils proposés : `rover_grip` et `rover_release` (confirmés, sans catégorie, comme `rover_move`), `rover_tidy` (« ranger » : la carte montre **quel objet** et **où**), et le stop qui existe. Règles : jamais depuis une enceinte ; au début, chaque départ est confirmé ; zone de travail obligatoire. |
-| **d) Essais sans matériel** | Le mode simulation du robot gagne une **fausse pince** : un objet est saisi s'il est à portée, l'effort se lit, un objet peut tomber. Tests : objet absent, pince bloquée, objet perdu en route, stop au milieu du geste, lien coupé. |
+| **c) Dans le cœur** | Outils proposés : `rover_grip` et `rover_release` (confirmés, sans catégorie, comme `rover_move`), `rover_tidy` (« ranger » : la carte montre **quel objet** et **où**), et le stop qui existe. Règles : jamais depuis une enceinte ; au début, chaque départ est confirmé ; zone de travail obligatoire ; charge de 250 g au plus. |
+| **d) Essais sans matériel** | Le mode simulation du robot gagne un **faux bras** : quatre articulations avec leurs butées, un objet saisi s'il est à portée (25 cm), un objet qui peut tomber, une charge trop lourde refusée. Tests : objet absent, objet hors de portée, pince bloquée, objet perdu en route, stop au milieu du geste (le bras se fige), arrêt d'urgence (le bras retombe, puis repart du repos), lien coupé. |
 
-**Ce qui existe.** Le robot, son service, le stop et l'arrêt d'urgence, les outils `rover_*`, le mode simulation.
+**Ce qui existe.** Le robot, son service, le stop et l'arrêt d'urgence, les outils `rover_*`, le mode simulation. Pour le bras : sa conception, et les quatre gros servos.
 
-**Ce qui manque.** La pince, ses moteurs, leur alimentation, la caméra, la reconnaissance des objets, la zone de travail.
+**Ce qui manque.** L'impression des pièces, la carte PCA9685, l'alimentation des servos avec son fusible et sa coupure, le régulateur du MF90 (et le MF90 lui-même s'il n'est pas déjà là : à confirmer), le contact de la pince, la caméra, la reconnaissance des objets, la zone de travail. Le détail et les prix sont dans le document matériel, section 2.2.
 
 **Dépendances.** Il dépend des jambes (s'approcher), des yeux (voir l'objet), du contrat. Pour reconnaître les objets : au début, des objets **marqués** (une couleur vive ou un repère imprimé), sans entraînement ; plus tard un modèle (Model Development).
 
-**Risque : bouger.** Sécurités : de petits moteurs qui ne peuvent pas faire mal ; des mors souples ; une vitesse lente ; le bouton d'arrêt d'urgence qui coupe aussi la pince ; une zone délimitée ; jamais depuis une enceinte ; chaque départ confirmé au début.
+**Risque : bouger.** Sécurités : une vitesse lente et des butées ; une charge limitée à 250 g ; un fusible sur l'alimentation des servos ; le bouton d'arrêt d'urgence qui la coupe par le câblage ; une zone délimitée, sans personne à portée du bras ; jamais depuis une enceinte ; chaque départ confirmé au début.
 
 ### 4.3 Les JAMBES
 
@@ -518,7 +537,7 @@ Une règle ne dépend pas du matériel : **la sécurité du robot ne passe jamai
 
 ## 6. L'ordre de construction proposé
 
-Chaque étape est **utile seule** et **essayable dans Jarvis Test**. Elle commence toujours par son faux appendice, sans rien acheter. Les coûts sont des relevés du 17 novembre 2026, hors frais de port et hors petites pièces sans prix relevé ; le détail et les sources sont dans le document matériel, section « Récapitulatif ». Total des étapes 1 à 7 : **199,36 €** au moins cher, **438,37 €** au meilleur choix, plus les outils si rien n'est déjà là (116,77 € à 295,07 €).
+Chaque étape est **utile seule** et **essayable dans Jarvis Test**. Elle commence toujours par son faux appendice, sans rien acheter. Les coûts sont des relevés du 17 novembre 2026, hors frais de port et hors petites pièces sans prix relevé ; le détail et les sources sont dans le document matériel, section « Récapitulatif ». L'étape 6 a été rechiffrée le 19 novembre 2026 (relevés du 18 novembre). Total des étapes 1 à 7 : **233,17 €** au moins cher, **476,65 €** au meilleur choix, plus les outils si rien n'est déjà là (116,77 € à 295,07 €).
 
 | Étape | Ce qu'on construit | Ce que l'utilisateur gagne | Objectif de la feuille de route | Coût relevé (moins cher → meilleur choix) |
 | --- | --- | --- | --- | --- |
@@ -528,7 +547,7 @@ Chaque étape est **utile seule** et **essayable dans Jarvis Test**. Elle commen
 | **3. Les sens** | Une première carte de capteurs (température, humidité, présence, puis CO2), un contact de porte. | « Il fait combien dans la chambre ? » Des alertes. | Jarvis autonome (les règles ont des yeux partout) | 27,34 € → 69,94 € |
 | **4. Les mains sur la maison** | Deux ou trois lampes et prises, en direct. | « Allume la lampe du bureau. » | Usage de tous les jours | 23,68 € → 47,36 € |
 | **5. Le robot voit et se protège** | Caméra du robot, capteurs de distance, pare-chocs, repères imprimés. | Le robot s'arrête avant l'obstacle. Il sait où il est. | **Jarvis autonome, étape 3** (préparation) | 43,46 € → 112,21 € |
-| **6. La pince** | Une pince imprimée, deux moteurs. | Le robot range 2 ou 3 petits objets dans une zone connue. | **Jarvis autonome, étape 3** | 26,22 € → 45,35 € |
+| **6. Le bras** | Le bras treillis V1 de l'utilisateur : pièces imprimées en PETG, les quatre servos déjà achetés, la pince sur son MF90, la carte PCA9685, l'alimentation des servos avec **son fusible et sa coupure par l'arrêt d'urgence**. D'abord le faux bras, puis le vrai bras essayé seul sur l'établi, puis monté sur le robot. | Le robot range 2 ou 3 petits objets (250 g au plus) dans une zone connue. | **Jarvis autonome, étape 3** | 60,03 € → 83,63 € (servos déjà achetés ; MF90 et PETG non comptés) |
 | **7. Couper Jarvis depuis l'enceinte** | L'annulation d'écho sur la carte. Les annonces. | On lui coupe la parole depuis la chambre. Il peut prévenir à voix haute. | **Vraie conversation, étape 4** | 0 € (essai sur la carte actuelle) → 29,95 € |
 | **8. Le robot rentre et se recharge** | La base, le retour, la recharge. | Le robot est toujours prêt. | Jarvis autonome (suite) | non chiffré : dépend de la batterie actuelle |
 | **Plus tard** | Panneau d'atelier, onduleur, Home Assistant, carte complète de la pièce, bras de bureau. | Du confort. | — | voir le document matériel |
@@ -537,8 +556,17 @@ Pourquoi cet ordre :
 
 - **L'étape 1 d'abord** : c'est la moins chère, elle répond au premier objectif de « Jarvis autonome », et le client Moonraker est déjà écrit. Elle marche **sans modèle entraîné** : une erreur de Klipper ou une température qui dérive se lisent par des règles. Le détecteur d'impression ratée viendra s'y brancher (Model Development), une fois le dossier de photos rempli.
 - **L'étape 2 ne coûte peut-être rien** : c'est du logiciel. Mais la feuille de route la place après Jarvis Test et la carte de l'utilisation. Elle est listée ici pour que le matériel soit prêt.
-- **Les étapes 5 et 6 vont ensemble** : une pince sans yeux ni capteurs ne range rien. Elles sont les plus longues ; elles passent après les gains rapides.
+- **Les étapes 5 et 6 vont ensemble** : un bras sans yeux ni capteurs ne range rien. Elles sont les plus longues ; elles passent après les gains rapides.
 - **L'étape 0 n'achète rien** et peut commencer dès que la feuille de route le dit.
+
+### Idées en attente
+
+Notées pour ne pas les perdre. Aucune n'est dans l'ordre de construction, aucune n'est chiffrée.
+
+| Idée | Ce que c'est | Ce qu'il faudrait trancher avant |
+| --- | --- | --- |
+| **Décoller une pièce du plateau avec une spatule** | Le bras, équipé d'une spatule, décolle une impression finie du plateau de l'imprimante. | Le bras est sur le robot et le plateau est en hauteur : portée et placement. Le plateau doit être froid (une règle, pas un modèle). La force pour décoller dépasse peut-être la charge de 250 g. Une lame près d'une machine : zone sans personne, chaque geste confirmé. |
+| **Le boîtier « œil de pièce »** (mis de côté le 17 novembre 2026) | Un Raspberry Pi 5 2 Go, une caméra grand angle montée sur un servo de 180°, et la détection faite par le Pi lui-même. Un œil qui balaie une pièce. | La décision A8 (une caméra dans une pièce de vie, les pièces interdites, le volet, le témoin lumineux). Les règles des yeux s'appliquent telles quelles : images traitées sur place, rien d'enregistré par défaut. |
 
 ---
 
@@ -576,7 +604,7 @@ Model Development (plus tard)        ──► impression ratée, objets à rang
 | A6 | **Prévenir le téléphone quand l'appli est fermée** : une notification passe par les serveurs d'Apple (texte chiffré, sans photo). L'accepter, ou s'en tenir au PC et aux enceintes ? | À décider. Sans elle, l'alerte est dite par les enceintes et s'affiche à l'ouverture de l'appli. |
 | A7 | **Un bouton « Oui » près de l'imprimante** vaut-il un accord ? | Oui, pour l'imprimante seulement, et seulement pendant que Jarvis pose la question. |
 | A8 | **Une caméra dans une pièce de vie** : en veut-on une ? Quelles pièces sont interdites ? | Seulement à la demande, avec volet. Pas dans une chambre. |
-| A9 | **La pince** : simple (deux moteurs) d'abord, ou tout de suite un petit bras ? | Simple d'abord. |
+| A9 | **Le bras** : **décidé le 19 novembre 2026.** C'est le bras treillis V1 de l'utilisateur (section 4.2), pas une pince simple. Reste à confirmer : le MF90 est-il déjà là ? | — |
 | A10 | **La batterie du robot** aujourd'hui : type, tension, protection, chargeur ? | À relever avant de choisir la recharge. |
 | A11 | **Les outils déjà possédés** : fer à souder, multimètre ? | La liste des outils du document matériel se réduit d'autant. |
 | A12 | **Un appendice = une seule édition**, les nouveaux reliés à Test ; port du pont = base + 8. | Oui. |
