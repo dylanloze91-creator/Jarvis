@@ -80,7 +80,7 @@ L'enceinte « chambre » est flashée en 5.0.79 et se présente au PC. Jarvis 5.
 | E3 | **bon** | 18 novembre, utilisateur : l'heure s'affiche après 2 minutes. Sur le 128×32, l'heure seule, sans la date (pas la place) |
 | E4 | **bon après correction** | 18 novembre, utilisateur. Au premier essai l'écran ne montrait que la mascotte ou l'heure : « PC injoignable » ne restait que 0,6 s. Corrigé (`display_state`, `src/display.c`) : le souci reste 6 s à l'écran, sauf si l'enceinte se remet à écouter. Après correction : « PC injoignable » lu ; Jarvis relancé, la mascotte revient |
 | E5 | **bon** | 18 novembre, utilisateur : « Jarvis » entendu 3 fois sur 3, son bon |
-| E6 | **pas fait** | il faut débrancher l'écran |
+| E6 | **bon** | 18 novembre, utilisateur : écran débranché, l'enceinte répond comme avant |
 | E7 | **bon côté PC après correction** | réponse « Envoyé à 1 enceinte : « Terminé » », en-tête `Terminé||60` avec le é. Avant correction, le modèle répondait « a été affiché ». **Vu à l'écran le 18 novembre : « Terminé », le é est bon** |
 | E8 | **bon côté PC après correction** | l'information revient avec la réponse à la phrase (`Terminée||60`). Avant correction, le modèle répondait « Affichage terminé » sans appeler l'outil : rien n'était envoyé. **Vu à l'écran le 18 novembre** |
 | E9 | **bon côté PC** | en-tête `Dîner|à table !|60`, accents justes. **Vu à l'écran le 18 novembre : lisible sur le 128×32** |
@@ -111,7 +111,7 @@ Sans enceinte reliée, rien ne change : l'outil est absent et ces chemins ne s'o
 
 ### Reste à faire avec toi
 
-E1 à E6 et E14 (écran, voix, réveil), et un coup d'œil à l'écran pour E7, E9 et E10 (le é, les deux lignes, la coupe). À la voix, la réponse à « affiche … » dure 11 s (la phrase de l'outil est longue) : à raccourcir si ça gêne.
+Plus rien : E1 à E17 sont faits (18 novembre, avec l'utilisateur pour l'écran et la voix). E11 et E12 n'ont été vérifiés que côté PC (en-tête envoyé), pas regardés à l'écran. À la voix, la réponse à « affiche … » dure 11 s (la phrase de l'outil est longue) : à raccourcir si ça gêne.
 
 ```
 RAPPORT DE VÉRIFICATION (après les essais et les corrections)
@@ -120,10 +120,11 @@ Types     : OK (npm run typecheck)
 Style     : OK (npm run lint)
 Tests     : OK (cœur 215 fichiers, 2514 tests ; bureau 159 fichiers, 829 tests, 8 ignorés par leur propre condition ; aucun __golden__ régénéré)
 Secrets   : OK (secrets.h retiré du dépôt après le flash, binaire compilé supprimé ; clé jamais affichée)
-Fichiers modifiés : packages/core/src/speaker/screen.ts, screenRequest.test.ts, agent/agent.ts, agent/agent.test.ts ; apps/desktop/src/main/session.ts, tools/speakerScreen.ts, tools/catalog-speaker-screen.test.ts ; ce rapport
-Prêt à fusionner : NON (E1 à E6 et E14 restent à faire avec l'utilisateur)
-À corriger : rien de connu côté PC
-Testé en vrai (à la voix, sur le PC) : EN PARTIE (fenêtre réelle et pont réel, voix de synthèse ; ni l'écran ni la vraie voix)
+Fichiers modifiés : packages/core/src/speaker/screen.ts, screenRequest.test.ts, agent/agent.ts, agent/agent.test.ts ; apps/desktop/src/main/session.ts, tools/speakerScreen.ts, tools/catalog-speaker-screen.test.ts ; le 18 novembre, programme de l'enceinte seulement : include/config.h, src/display.c, display.h, display_mascotte.cpp, link.c, host-tests/display_mascotte_test.cpp ; CLAUDE.md ; ce rapport
+Programme de l'enceinte (18 novembre) : compile (pio run), host-tests/run.sh vert dans WSL avant la tenue du message d'erreur (display.c n'a pas de test sur PC), flashé et essayé sur la carte
+Prêt à fusionner : OUI, sur décision de l'utilisateur (rien n'est fusionné ni publié)
+À corriger : rien de connu. Pas essayé : le réglage 1,3 pouce (SH1106) avec la pompe de charge ajoutée ; E11 et E12 à l'écran
+Testé en vrai (à la voix, sur le PC) : FAIT (E1 à E10 et E14 avec l'utilisateur, à la voix et à l'écran)
 ```
 
 ## RAPPORT DE VÉRIFICATION (préparation, avant les essais)
