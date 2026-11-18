@@ -51,6 +51,31 @@ int main(int argc, char **argv) {
     mascotte_render(&a, 0, 1000, -1, 0, 0);
     mascotte_render(&b, 0, 1000, -1, 2, 1);
     if (std::memcmp(a.buf, b.buf, sizeof(a.buf)) == 0) { std::puts("le décalage ne déplace rien"); return 1; }
+    // Petit écran 128 x 32 : le dessin entier, réduit de moitié et centré (rien hors de la bande du milieu).
+    gfx_t p;
+    gfx_init(&p, 128, 32);
+    for (int etat = 0; etat < 4; etat++) {
+        mascotte_render(&p, etat, 500, -1, 0, 0);
+        if (lit(p) < 30) { std::printf("petit écran, état %d : presque rien\n", etat); return 1; }
+        for (int y = 0; y < 32; y++)
+            for (int x = 0; x < 128; x++)
+                if ((x < 32 || x >= 96) && gfx_get(&p, x, y)) { std::puts("petit écran : dessin hors de la bande centrée"); return 1; }
+        char file[48];
+        std::snprintf(file, sizeof(file), "petit-%s", names[etat]);
+        save(p, dir, file);
+    }
+    gfx_t bas;
+    gfx_init(&bas, 128, 64);
+    mascotte_render(&bas, 1, 500, -1, 0, 0);
+    mascotte_render(&p, 1, 500, -1, 0, 0);
+    int moitie_basse = 0;
+    for (int y = 32; y < 64; y++)
+        for (int x = 0; x < 128; x++) moitie_basse += gfx_get(&bas, x, y);
+    if (moitie_basse == 0) { std::puts("le grand dessin n'a rien en bas : test à revoir"); return 1; }
+    int bas_petit = 0;
+    for (int y = 16; y < 32; y++)
+        for (int x = 0; x < 128; x++) bas_petit += gfx_get(&p, x, y);
+    if (bas_petit == 0) { std::puts("petit écran : le bas du dessin est coupé"); return 1; }
     std::puts("display_mascotte : OK");
     return 0;
 }

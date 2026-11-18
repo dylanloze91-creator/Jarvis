@@ -49,7 +49,7 @@
 #define DISPLAY_SSD1306_128X32 1   // le petit 0,91 pouce
 #define DISPLAY_SSD1306_128X64 2   // le 0,96 pouce
 #define DISPLAY_SH1106_128X64  3   // le 1,3 pouce (conseillé)
-#define DISPLAY_TYPE      DISPLAY_SH1106_128X64
+#define DISPLAY_TYPE      DISPLAY_SSD1306_128X32   // l'écran de l'enceinte de la chambre ; un 1,3 pouce : DISPLAY_SH1106_128X64
 #define DISPLAY_PIN_SDA   8
 #define DISPLAY_PIN_SCL   9
 #define DISPLAY_ADDRESS   0x3C     // 0x3D est essayée aussi
