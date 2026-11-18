@@ -44,6 +44,8 @@ import { createNotesTools } from './notes.js';
 import { createRoutineTools, type RoutineToolDeps } from './routines.js';
 import { createPrinterTools, type PrinterToolDeps } from './printer.js';
 import { createSpeakerScreenTools, type SpeakerScreenPort } from './speakerScreen.js';
+import { createAppendiceTools } from './appendices.js';
+import type { AppendiceService } from '../appendices/service.js';
 
 export interface YoutubeSummarize {
   (
@@ -75,6 +77,8 @@ export interface ToolManagerDeps {
   currentTurn?: () => { text: string; attachments?: ChatAttachment[] } | null;
   /** Écran des enceintes. Son outil n'est proposé que si une enceinte est reliée. */
   speakerScreen?: SpeakerScreenPort;
+  /** Appendices de Jarvis (Jarvis Test seulement). Absent : aucun outil. */
+  appendices?: AppendiceService;
   /**
    * Profil modeste seulement : Spotify reste enregistré mais absent du prompt
    * tant que le compte n’est pas connecté. Ignoré sur les autres profils.
@@ -147,6 +151,7 @@ function createFullToolManager(deps: ToolManagerDeps): ToolManager {
     ...routineToolsIfEnabled(deps),
     ...printerToolsIfEnabled(deps),
     ...(deps.speakerScreen ? createSpeakerScreenTools(deps.speakerScreen) : []),
+    ...(deps.appendices ? createAppendiceTools(deps.appendices) : []),
   ]);
 }
 
@@ -182,6 +187,7 @@ function createModestToolManager(deps: ToolManagerDeps): ToolManager {
     ...routineToolsIfEnabled(deps),
     ...printerToolsIfEnabled(deps),
     ...(deps.speakerScreen ? createSpeakerScreenTools(deps.speakerScreen) : []),
+    ...(deps.appendices ? createAppendiceTools(deps.appendices) : []),
   ]);
 }
 
