@@ -612,6 +612,7 @@ export * from './speaker/pcScreen.js';
 export * from './speaker/chrono.js';
 export * from './speaker/reflex.js';
 export * from './speaker/warmup.js';
+export * from './speaker/screen.js';
 export { encodeQr, qrSvgPath, QR_MAX_VERSION, type QrMatrix } from './qr/qrCode.js';
 export * from './rover/index.js';
 export * from './images/index.js';

@@ -10,6 +10,8 @@
 #include "audio_io.h"
 #include "cfg.h"
 #include "config.h"
+#include "display.h"
+#include "mascotte_etat.h"
 #include "esp_event.h"
 #include "esp_http_client.h"
 #include "esp_log.h"
@@ -257,6 +259,7 @@ static esp_err_t on_http_event(esp_http_client_event_t *evt) {
     if (evt->event_id == HTTP_EVENT_ON_HEADER && evt->header_key && evt->header_value) {
         if (strcasecmp(evt->header_key, "X-Jarvis-Continue") == 0) ctx->continue_listening = evt->header_value[0] == '1';
         if (strcasecmp(evt->header_key, "Content-Type") == 0) ctx->is_wav = strncasecmp(evt->header_value, "audio/wav", 9) == 0;
+        if (strcasecmp(evt->header_key, "X-Jarvis-Ecran") == 0) display_info_header(evt->header_value);
     }
     return ESP_OK;
 }
@@ -385,8 +388,19 @@ static void sink_set_rate(uint32_t sample_rate, void *user) {
     speaker_set_rate(sample_rate);
 }
 
+/** Bouche de 0 à 5 d'après le volume du bloc déjà prêt à jouer. Quelques multiplications, avant l'envoi. */
+static int bouche_du_volume(const int16_t *pcm, size_t samples) {
+    int32_t rms = pcm_rms(pcm, samples);
+    if (rms <= 0) return 0;
+    int niveau = (int)(rms / 800);
+    if (niveau > 5) niveau = 5;
+    return niveau;
+}
+
 static void sink_play(const int16_t *pcm, size_t samples, void *user) {
     (void)user;
+    mascotte_etat_poser(MASCOTTE_PARLE, mascotte_horloge_ms());
+    mascotte_bouche_poser(bouche_du_volume(pcm, samples));
     speaker_play(pcm, samples);
 }
 

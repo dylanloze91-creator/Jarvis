@@ -45,3 +45,6 @@ training/lora/jeux/
 training/lora/sorties/
 training/lora/*.safetensors
 Jarvis_images/
+# Construction de Jarvis Test (dossiers produits sur le PC).
+release-test/
+apps/desktop/build-test/

@@ -61,6 +61,9 @@ import {
   redactSecrets,
   withAttachmentNotes,
   lastUserHasImageAttachment,
+  SPEAKER_SCREEN_TOOL,
+  parseSpeakerScreenRequest,
+  type SpeakerScreenRequest,
   MAX_ATTACHMENTS_PER_MESSAGE,
   type ChatAttachment,
   type ChatMissionProposalPayload,
@@ -830,13 +833,22 @@ export class ChatSession {
       const reply = await this.stockQuoteReply(stock.names, stock.prefer, signal);
       return { team: 'bourse', label: 'Bourse', model: 'express', how: 'express', reply };
     }
-    const teams = availableTeams(this.deps.tools.schemas().map((tool) => tool.name));
+    const toolNames = this.deps.tools.schemas().map((tool) => tool.name);
+    // 5.0.79 : une demande simple d'affichage sur une enceinte est lue par règles et l'outil est
+    // appelé ici, sans modèle (il répondait parfois « affiché » sans appeler l'outil).
+    const screen = toolNames.includes(SPEAKER_SCREEN_TOOL) ? parseSpeakerScreenRequest(text) : null;
+    if (screen) {
+      const reply = await this.speakerScreenReply(screen, signal);
+      if (reply) return { team: 'pc', label: TEAM_SPECS.pc.label, model: 'sans modèle', how: 'express', reply };
+    }
+    const teams = availableTeams(toolNames);
     const available = new Set(teams);
     let team: OrchestraTeam | null = expressTeam({
       text,
       history: messages,
       available,
       hasImageAttachment: lastUserHasImageAttachment(messages),
+      speakerScreen: toolNames.includes(SPEAKER_SCREEN_TOOL),
     });
     let how: TurnRoute['how'] = team ? 'express' : 'cerveau';
     const notice =
@@ -867,6 +879,22 @@ export class ChatSession {
       debugLog(true, 'orchestre', `${how} → ${team} · ${assignment.model} (${assignment.place})`);
     }
     return { team, label: TEAM_SPECS[team].label, model: assignment.model, how, provider };
+  }
+
+  /** `afficher_sur_enceinte` appelé ici, pas par un modèle ; sa phrase est la réponse. `null` : le modèle s'en occupe. */
+  private async speakerScreenReply(request: SpeakerScreenRequest, signal: AbortSignal): Promise<string | null> {
+    try {
+      const outcome = await this.deps.tools.execute(
+        { id: randomId(), name: SPEAKER_SCREEN_TOOL, arguments: { ...request } },
+        { signal, requestConfirmation: async () => false },
+      );
+      void this.deps.auditLog
+        .append(buildAuditEntry(outcome))
+        .catch((error: unknown) => console.error('[jarvis] journal d’audit non écrit :', error));
+      return outcome.content.trim() || null;
+    } catch {
+      return null;
+    }
   }
 
   /**

@@ -9,6 +9,7 @@ export default tseslint.config(
       '**/dist/**',
       '**/out/**',
       '**/release/**',
+      '**/release-test/**', // construction de Jarvis Test (code tiers recopié)
       '**/node_modules/**',
       // Runtime ONNX, Whisper, openWakeWord et Vosk copiés par setup:voice : code tiers, non commité.
       'apps/desktop/voice-assets/**',

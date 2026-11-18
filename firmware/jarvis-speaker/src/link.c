@@ -17,6 +17,7 @@
 #include "freertos/task.h"
 #include "led.h"
 #include "net.h"
+#include "display.h"
 #include "provision_proto.h"
 
 static bool usb_ready;
@@ -51,10 +52,10 @@ static void handle_line(char *line) {
         const char *state = "setup";
         if (cfg_key_refused()) state = "key";
         else if (jarvis_cfg.configured) state = "ready";
-        char json[192];
+        char json[320];
         snprintf(json, sizeof(json),
-                 "{\"fw\":\"%s\",\"chip\":\"ESP32-S3\",\"mac\":\"%s\",\"psram_mb\":%d,\"state\":\"%s\",\"configured\":%s}",
-                 JARVIS_FW_VERSION, mac, psram, state, jarvis_cfg.configured ? "true" : "false");
+                 "{\"fw\":\"%s\",\"chip\":\"ESP32-S3\",\"mac\":\"%s\",\"psram_mb\":%d,\"state\":\"%s\",\"configured\":%s,\"ecran\":\"%s\"}",
+                 JARVIS_FW_VERSION, mac, psram, state, jarvis_cfg.configured ? "true" : "false", display_report());
         say(json);
         return;
     }
