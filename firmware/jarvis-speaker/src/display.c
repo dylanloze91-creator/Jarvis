@@ -41,7 +41,21 @@ static i2c_master_dev_handle_t dev;
 
 static volatile led_state_t shown_state = LED_BOOT;
 
-void display_state(led_state_t state) { shown_state = state; }
+// Un souci (PC injoignable, pas de Wi-Fi) ne dure que 0,6 s côté LED : trop court pour être lu.
+// L'écran le garde quelques secondes, sauf si l'enceinte se remet à écouter, réfléchir ou parler.
+#define DISPLAY_ERROR_HOLD_MS 6000u
+static volatile uint32_t error_hold_until_ms;
+static volatile bool error_hold;
+
+void display_state(led_state_t state) {
+    if (state == LED_ERROR) {
+        error_hold_until_ms = mascotte_horloge_ms() + DISPLAY_ERROR_HOLD_MS;
+        error_hold = true;
+    } else if (state != LED_STANDBY) {
+        error_hold = false;
+    }
+    shown_state = state;
+}
 
 // Information envoyée par le PC : écrite par la tâche réseau, lue par la tâche de l'écran.
 static portMUX_TYPE info_lock = portMUX_INITIALIZER_UNLOCKED;
@@ -166,7 +180,11 @@ static void display_task(void *arg) {
     TickType_t last = xTaskGetTickCount();
     for (;;) {
         const uint32_t now_ms = mascotte_horloge_ms();
-        const led_state_t state = shown_state;
+        led_state_t state = shown_state;
+        if (state == LED_STANDBY && error_hold) {
+            if ((int32_t)(error_hold_until_ms - now_ms) > 0) state = LED_ERROR;
+            else error_hold = false;
+        }
         start_clock_once();
         mascotte_vue_t vue;
         mascotte_etat_voir(now_ms, &vue);

@@ -76,19 +76,19 @@ L'enceinte « chambre » est flashée en 5.0.79 et se présente au PC. Jarvis 5.
 | # | Résultat | Détail |
 | --- | --- | --- |
 | E1 | **bon avec un second écran** | 18 novembre, avec l'utilisateur. Le premier écran (0,91 pouce 128×32, SSD1306) répondait à la carte mais restait noir malgré le bon réglage, la masse recâblée, 3,3 V puis 5 V : en panne. Le second, même modèle, s'allume |
-| E2 | **pas fait** | il faut parler et regarder la mascotte |
-| E3 | **pas fait** | il faut regarder l'écran |
-| E4 | **pas fait** | il faut parler et regarder l'écran |
-| E5 | **pas fait** | il faut parler à l'enceinte |
+| E2 | **bon** | 18 novembre, utilisateur : la mascotte est entière sur le petit écran, elle écoute, réfléchit et parle |
+| E3 | **bon** | 18 novembre, utilisateur : l'heure s'affiche après 2 minutes. Sur le 128×32, l'heure seule, sans la date (pas la place) |
+| E4 | **bon après correction** | 18 novembre, utilisateur. Au premier essai l'écran ne montrait que la mascotte ou l'heure : « PC injoignable » ne restait que 0,6 s. Corrigé (`display_state`, `src/display.c`) : le souci reste 6 s à l'écran, sauf si l'enceinte se remet à écouter. Après correction : « PC injoignable » lu ; Jarvis relancé, la mascotte revient |
+| E5 | **bon** | 18 novembre, utilisateur : « Jarvis » entendu 3 fois sur 3, son bon |
 | E6 | **pas fait** | il faut débrancher l'écran |
-| E7 | **bon côté PC après correction** | réponse « Envoyé à 1 enceinte : « Terminé » », en-tête `Terminé||60` avec le é. Avant correction, le modèle répondait « a été affiché ». Écran non regardé |
-| E8 | **bon côté PC après correction** | l'information revient avec la réponse à la phrase (`Terminée||60`). Avant correction, le modèle répondait « Affichage terminé » sans appeler l'outil : rien n'était envoyé |
-| E9 | **bon côté PC** | en-tête `Dîner|à table !|60`, accents justes. Écran non regardé |
-| E10 | **bon côté PC** | titre coupé à un mot (47 octets au plus), ligne coupée à 95 octets, aucun caractère cassé. Écran non regardé |
+| E7 | **bon côté PC après correction** | réponse « Envoyé à 1 enceinte : « Terminé » », en-tête `Terminé||60` avec le é. Avant correction, le modèle répondait « a été affiché ». **Vu à l'écran le 18 novembre : « Terminé », le é est bon** |
+| E8 | **bon côté PC après correction** | l'information revient avec la réponse à la phrase (`Terminée||60`). Avant correction, le modèle répondait « Affichage terminé » sans appeler l'outil : rien n'était envoyé. **Vu à l'écran le 18 novembre** |
+| E9 | **bon côté PC** | en-tête `Dîner|à table !|60`, accents justes. **Vu à l'écran le 18 novembre : lisible sur le 128×32** |
+| E10 | **bon côté PC** | titre coupé à un mot (47 octets au plus), ligne coupée à 95 octets, aucun caractère cassé. **Vu à l'écran le 18 novembre : lisible** |
 | E11 | **bon côté PC** | Ollama coupé : `Jarvis|Ollama ne répond pas : les modèles de ce PC sont injoignables.|60`, une seule fois ; le second bilan n'envoie rien |
 | E12 | **bon côté PC** | Ollama relancé puis recoupé : la phrase repart |
 | E13 | **bon après correction** | « Je n'ai pas d'enceinte nommée « cuisine ». Enceintes reliées : chambre. Rien n'a été affiché. » Avant correction : 3 échecs sur 3 (le modèle oubliait le titre, puis disait que l'enceinte affichait « Test ») |
-| E14 | **pas fait** | il faut parler et regarder l'écran |
+| E14 | **bon** | 18 novembre, utilisateur : pendant « Terminé », « Jarvis » fait écouter la mascotte tout de suite |
 | E15 | **bon** | pont coupé : l'outil n'est plus proposé, aucune réponse « envoyé » ; pont rétabli ensuite |
 | E16 | **bon côté PC** | « quelle heure est-il » : l'heure, sans modèle ; « stop » : 204, rien de dit. « Mets de la musique » : Jarvis demande l'appareil (Phantom, Chambre ou PC), puis le modèle ajoute une phrase de trop (« je vais démarrer la musique ») ; rien n'a été lancé. Ce chemin n'a pas changé depuis la 5.0.78 |
 | E17 | **bon** | « Mets du jazz sur l'enceinte » part à l'équipe Musique (Spotify), aucun affichage |
