@@ -1,6 +1,6 @@
 # Feuille de route de Jarvis — à lire avant chaque tâche
 
-Tenue par Claude (le chat, manager du projet). Dernière mise à jour : 17 novembre 2026.
+Tenue par Claude (le chat, manager du projet). Dernière mise à jour : 18 novembre 2026.
 
 **Claude Code et Cursor la lisent avant chaque tâche**, en même temps que `AGENTS-COORDINATION.md`. Elle dit vers où va Jarvis, qui fait quoi et dans quel ordre, et ce qui en dépend. Le but : qu'aucun outil ne soit construit sans tenir compte de ceux qui viendront s'y brancher.
 
@@ -58,13 +58,14 @@ Ce fichier ne contient ni secret, ni donnée personnelle, ni nom de réseau : le
   - correctif de sécurité du mode direct ;
   - boutons « Copier ».
 - L'enceinte de la chambre est **reliée de nouveau** (16 novembre).
+- **5.0.79** (18 novembre) : l'écran de l'enceinte (mascotte, heure, messages de souci, informations du PC) et l'outil `afficher_sur_enceinte`. Enceinte flashée et **tous les essais réussis** avec l'utilisateur ; publication lancée par l'utilisateur le 18 novembre au soir.
 
 ### Claude Code (PC Windows de l'utilisateur, avec le matériel)
 
 | # | Tâche | État |
 | --- | --- | --- |
 | 1 | **Jarvis Test** : préparé la nuit du 16 au 17 novembre (`claude/dev`, rapport `rapports/2026-11-17-jarvis-test-preparation.md`) ; tout est vert et l'installateur est construit. Reste : les essais avec l'utilisateur, puis la publication de `5.1.0-test.1` sur sa décision. | **prochaine tâche, avec l'utilisateur** |
-| 1 bis | **Écran de l'enceinte** (`claude/enceinte-ecran`) : la mascotte de l'utilisateur, l'heure après 2 min de sommeil, les messages de souci et les informations du PC. À recompiler (`pio run`), puis à flasher avec l'utilisateur et l'écran branché. La Live 5.0.79 est **préparée** sur `claude/live-5079` (écran + mission 7, version 5.0.79, liste des essais) : ni publiée ni flashée. | **ce soir, avec l'utilisateur** : flasher, essayer, publier |
+| 1 bis | **Écran de l'enceinte** (`claude/enceinte-ecran`) : la mascotte de l'utilisateur, l'heure après 2 min de sommeil, les messages de souci et les informations du PC. À recompiler (`pio run`), puis à flasher avec l'utilisateur et l'écran branché. Live 5.0.79 (`claude/live-5079`) flashée et essayée le 18 novembre : tout est bon. | **fait** ; publication en cours (fusion dans `main`, `release.sh`) |
 | 2 | Carte de l'utilisation réelle : écrite par Cursor (`cursor/carte-utilisation`), corrigée par Claude (`claude/carte-correction`, seuls les messages vraiment tapés comptent). Lancer `npm test --workspace @jarvis/core` sur `claude/carte-correction`, puis `scripts\carte-utilisation.ps1`. L'utilisateur envoie **seulement** `carte.md` à Claude. | à lancer sur le PC (peut se faire avant la tâche 1, c'est court) |
 | 2 bis | **Jarvis plus rapide, sans nouveau modèle** (`docs/specs/rapide-sans-modele.md`, branche `claude/rapide-sans-modele` partie de `claude/dev`, Jarvis Test seulement). D'abord le chronomètre par étape et `vitesse.ps1`, puis : modèles gardés chauds, prompt plus court, mémoire courte des outils, outil des règles express. Ne pas fusionner dans `claude/dev` avant les essais de `5.1.0-test.1`. Les règles express elles-mêmes attendent `carte.md` et `vitesse.md`. | **terminée** le 17 novembre, relue par Claude : premier tour 8,2 s → 3,0 s, lecture des consignes 2,0 s → 0,6 s. À fusionner dans `claude/dev` après les essais de `5.1.0-test.1`. Réglage fait par l'utilisateur : équipes Mémoire et Code sur la carte graphique. |
 | 3 | Fusionner dans `main` les branches de documentation que Claude prépare (en ce moment : `claude/feuille-rapide`). | à chaque fois |
