@@ -976,7 +976,7 @@ Deux fusions, rien d'autre :
 
 ## Informations sur l'écran de l'enceinte, côté PC (branche `claude/ecran-infos`, dans la Live 5.0.79)
 
-Mission 7 de la feuille de route, exception validée par l'utilisateur le 17 novembre : les enceintes sont réservées à la Live. Fusionnée dans `claude/live-5079` avec le programme de l'enceinte qui lit l'en-tête (`display_info_parse`). Rapport : `rapports/2026-11-17-ecran-infos.md`. **Pas essayé sur la carte.**
+Mission 7 de la feuille de route, exception validée par l'utilisateur le 17 novembre : les enceintes sont réservées à la Live. Fusionnée dans `claude/live-5079` avec le programme de l'enceinte qui lit l'en-tête (`display_info_parse`). Rapport : `rapports/2026-11-17-ecran-infos.md`. Essayé sur la carte les 17 et 18 novembre (E7 à E14).
 
 - **Cœur** (`packages/core/src/speaker/screen.ts`, pur) : `speakerScreenHeader({ title, line?, seconds? })` rend la valeur de l'en-tête `X-Jarvis-Ecran`, toujours `titre|ligne|secondes`. Texte sur une ligne (retours à la ligne et caractères de contrôle retirés), coupé à 47 et 95 octets UTF-8 sans casser un caractère, encodé pour une URL (`|`, `%` et `+` compris), durée de 1 à 300 s (20 par défaut). `speakerScreenClear()` rend `-`. `parseSpeakerScreenHeader` relit l'en-tête comme la carte : il sert aux tests.
 - **Pont** (`SpeakerServer.showOnSpeaker(cible, info)`) : cible = le nom d'une enceinte (sans casse ni accent) ou `toutes`. Une file par enceinte, 3 en attente au plus (la plus ancienne saute). L'information part une seule fois, dans les en-têtes de la prochaine réponse à cette enceinte (`hello` ou `turn`, quel que soit le code), et elle est jetée si sa durée passe avant. Rien n'est écrit sur le disque. Pont coupé ou enceinte retirée : file oubliée.
