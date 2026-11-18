@@ -75,7 +75,7 @@ L'enceinte « chambre » est flashée en 5.0.79 et se présente au PC. Jarvis 5.
 
 | # | Résultat | Détail |
 | --- | --- | --- |
-| E1 | **pas fait** | il faut regarder l'écran ; journal de la carte illisible par l'USB |
+| E1 | **raté : écran noir** | essai du 18 novembre avec l'utilisateur. L'écran est un 0,91 pouce 128×32 (SSD1306), pas le 1,3 pouce prévu. La carte le trouve à 0x3C, il se dit allumé, aucun envoi n'échoue, mais la dalle reste noire : réglage 128×32, pompe de charge, « tous les points allumés » 4 s, masse recâblée, 3,3 V puis 5 V, rien n'y fait. Écran très probablement en panne : à remplacer, puis refaire E1 à E6 et E14 |
 | E2 | **pas fait** | il faut parler et regarder la mascotte |
 | E3 | **pas fait** | il faut regarder l'écran |
 | E4 | **pas fait** | il faut parler et regarder l'écran |
@@ -100,6 +100,13 @@ L'enceinte « chambre » est flashée en 5.0.79 et se présente au PC. Jarvis 5.
 3. **Titre oublié** (`tools/speakerScreen.ts`) : si le modèle met le texte dans `ligne` sans `titre`, la ligne sert de titre.
 
 Sans enceinte reliée, rien ne change : l'outil est absent et ces chemins ne s'ouvrent pas. Aucun `__golden__` régénéré.
+
+### Diagnostic de l'écran (18 novembre)
+
+- Le journal série ne passe pas par la prise USB de la carte (COM9 est l'USB natif, le journal sort sur l'UART). La commande « hello » du câble rend maintenant un champ `ecran` : adresse trouvée, octet d'état de la puce, nombre d'envois ratés (`display_report`, `src/display.c`, `src/link.c`). Sans écran, elle liste les autres adresses qui répondent sur les deux fils.
+- Réglage SH1106 : la pompe de charge d'un SSD1306 (`0x8D 0x14`) est aussi allumée, car un SSD1306 réglé en SH1106 répondait mais restait noir. **Pas essayé sur un vrai SH1106.**
+- `DISPLAY_TYPE` reste sur le 1,3 pouce dans le dépôt. Pour un 0,91 pouce : `DISPLAY_SSD1306_128X32`.
+- La carte porte encore un programme d'essai (réglage 128×32, tout blanc 4 s au démarrage) : à reflasher avec le programme du dépôt quand le nouvel écran sera là.
 
 ### Reste à faire avec toi
 

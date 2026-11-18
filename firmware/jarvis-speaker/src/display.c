@@ -85,6 +85,16 @@ static gfx_t frame;
 
 bool display_present(void) { return present; }
 
+// Ce que le démarrage a trouvé, pour la commande « hello » du câble USB (le journal série n'y passe pas).
+static char found[24] = "pas cherche";
+static char report[64];
+static volatile unsigned flush_failures;
+static volatile int status_byte = -1;
+const char *display_report(void) {
+    snprintf(report, sizeof(report), "%s etat=%d echecs=%u", found, status_byte, flush_failures);
+    return report;
+}
+
 #define DISPLAY_IS_SH1106 (DISPLAY_TYPE == DISPLAY_SH1106_128X64)
 #define DISPLAY_H ((DISPLAY_TYPE == DISPLAY_SSD1306_128X32) ? 32 : 64)
 /** La SH1106 a 132 colonnes : l'image commence à la colonne 2. */
@@ -102,7 +112,9 @@ static esp_err_t panel_init(void) {
     const uint8_t mux = (uint8_t)(DISPLAY_H - 1);
     const uint8_t pins = DISPLAY_H == 32 ? 0x02 : 0x12;
 #if DISPLAY_IS_SH1106
-    const uint8_t cmds[] = {0xAE, 0xD5, 0x80, 0xA8, mux, 0xD3, 0x00, 0x40, 0xAD, 0x8B, 0xA1, 0xC8,
+    // 0x8D 0x14 allume la pompe de charge d'un SSD1306 : beaucoup d'écrans 1,3 pouce vendus « SH1106 »
+    // sont des SSD1306, et sans elle ils répondent mais restent noirs. Un vrai SH1106 n'en fait rien.
+    const uint8_t cmds[] = {0xAE, 0xD5, 0x80, 0xA8, mux, 0xD3, 0x00, 0x40, 0x8D, 0x14, 0xAD, 0x8B, 0xA1, 0xC8,
                             0xDA, pins, 0x81, DISPLAY_CONTRAST, 0xD9, 0x22, 0xDB, 0x35, 0xA4, 0xA6};
 #else
     const uint8_t cmds[] = {0xAE, 0xD5, 0x80, 0xA8, mux, 0xD3, 0x00, 0x40, 0x8D, 0x14, 0x20, 0x02,
@@ -203,6 +215,7 @@ static void display_task(void *arg) {
             set_contrast(wanted);
             contrast = wanted;
         }
+        flush_failures = failures;
         if (panel_flush() != ESP_OK) {
             if (++failures == 3) ESP_LOGW(SERIAL_TAG, "écran : plus de réponse (fils SDA/SCL ?)");
             if (failures >= 3 && failures % 150 == 0) (void)panel_init(); // un faux contact se rattrape
@@ -228,6 +241,7 @@ void display_init(void) {
     };
     if (i2c_new_master_bus(&bus_config, &bus) != ESP_OK) {
         ESP_LOGW(SERIAL_TAG, "écran : bus I2C indisponible (broches %d et %d)", DISPLAY_PIN_SDA, DISPLAY_PIN_SCL);
+        snprintf(found, sizeof(found), "bus indisponible");
         return;
     }
     uint8_t address = DISPLAY_ADDRESS;
@@ -235,6 +249,11 @@ void display_init(void) {
         address = address == 0x3C ? 0x3D : 0x3C; // certaines cartes sont réglées sur l'autre adresse
         if (i2c_master_probe(bus, address, 50) != ESP_OK) {
             ESP_LOGI(SERIAL_TAG, "écran : aucun écran trouvé (normal s'il n'est pas branché)");
+            // Autre chose répond-il sur ces deux fils ? Utile pour distinguer « rien de branché » d'une autre adresse.
+            int n = snprintf(found, sizeof(found), "aucun");
+            for (uint8_t a = 0x08; a < 0x78 && n < (int)sizeof(found) - 6; a++) {
+                if (i2c_master_probe(bus, a, 20) == ESP_OK) n += snprintf(found + n, sizeof(found) - (size_t)n, " 0x%02X", a);
+            }
             i2c_del_master_bus(bus);
             bus = NULL;
             return;
@@ -249,9 +268,15 @@ void display_init(void) {
     gfx_init(&frame, 128, DISPLAY_H);
     if (panel_init() != ESP_OK) {
         ESP_LOGW(SERIAL_TAG, "écran : trouvé à 0x%02X mais il ne répond pas aux réglages", address);
+        snprintf(found, sizeof(found), "0x%02X muet", address);
         return;
     }
+    {
+        uint8_t st = 0;
+        if (i2c_master_receive(dev, &st, 1, 50) == ESP_OK) status_byte = st; // octet d'état de la puce, pour « hello »
+    }
     present = true;
+    snprintf(found, sizeof(found), "0x%02X", address);
     ESP_LOGI(SERIAL_TAG, "écran : %s trouvé à 0x%02X", DISPLAY_IS_SH1106 ? "SH1106 128x64" : (DISPLAY_H == 32 ? "SSD1306 128x32" : "SSD1306 128x64"), address);
     xTaskCreatePinnedToCore(display_task, "ecran", 8192, NULL, 1, NULL, 0); // le son tourne sur l'autre cœur
 }
@@ -260,5 +285,6 @@ void display_init(void) {
 
 void display_init(void) { mascotte_etat_init(mascotte_horloge_ms()); }
 bool display_present(void) { return false; }
+const char *display_report(void) { return "coupe"; }
 
 #endif
