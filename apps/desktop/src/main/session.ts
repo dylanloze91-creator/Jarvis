@@ -10,6 +10,10 @@ import {
   withSiteBlockPrompt,
   withKnowledgePrompt,
   classifyUtterance,
+  detectCreationRequest,
+  FACILE_BUSY_REPLY,
+  FACILE_IMMEDIATE_REPLY,
+  FACILE_SPEAKER_REPLY,
   EXPRESS_RULES,
   EXPRESS_RULE_TOOLS,
   expressToolReply,
@@ -57,7 +61,6 @@ import {
   teamPrompt,
   TEAM_SPECS,
   ORCHESTRA_TEAMS,
-  chatMissionsEnabled,
   CHAT_MISSION_DIRECT_INTRO,
   CODE_MISSION_TOOL_PROMPT,
   directMissionRequest,
@@ -113,6 +116,7 @@ import type { KnowledgeStore } from './knowledge.js';
 import type { VoiceBridge } from './voice.js';
 import type { LocalLearningController } from './learning/controller.js';
 import type { ChatMissionHub } from './chatMission/hub.js';
+import type { FacileCoordinator } from './chatMission/facile.js';
 import { createProposerMissionTool } from './chatMission/proposerMissionTool.js';
 import { createTurnWatch } from './carnet/watch.js';
 import { voicePlaceKey, type VoiceTurn } from './vitesse/voix.js';
@@ -235,6 +239,8 @@ interface SessionDeps {
   localLearning: LocalLearningController;
   /** 5.0.68 — missions depuis la discussion (après le contrôleur Développeur). */
   getChatMissionHub?: () => ChatMissionHub | null;
+  /** Développeur facile (Jarvis Test seulement). Absent : une demande de création suit le chemin d'avant. */
+  getFacile?: () => FacileCoordinator | null;
   /**
    * Module images : enregistre une photo jointe (dossier des images) et rend la pièce jointe
    * du message. Absent : les photos jointes sont refusées avec un message clair.
@@ -553,10 +559,17 @@ export class ChatSession {
         : null;
     const healthIntent = !briefingText && !notesText && !routineText && !printerText && looksLikeHealthIntent(input.text);
     const orchestra = activeOrchestra(settings);
+    // Développeur facile : une demande de création est reconnue par règles, avant tout modèle.
+    const facile = this.deps.getFacile?.() ?? null;
+    const creationHub = facile ? (this.deps.getChatMissionHub?.() ?? null) : null;
+    const creation =
+      facile && creationHub?.enabled() && !attachments.length && !briefingText && !notesText && !routineText && !printerText && !healthIntent
+        ? detectCreationRequest(input.text)
+        : null;
     const routeGap: { kind: 'illisible' | 'silence' | null } = { kind: null };
-    const routed = !briefingText && !notesText && !routineText && !printerText && !healthIntent && Boolean(orchestra);
+    const routed = !creation && !briefingText && !notesText && !routineText && !printerText && !healthIntent && Boolean(orchestra);
     if (routed) clock.startRouting();
-    const route = !briefingText && !notesText && !routineText && !printerText && !healthIntent && orchestra
+    const route = !creation && !briefingText && !notesText && !routineText && !printerText && !healthIntent && orchestra
       ? await this.routeTurn(
           settings,
           orchestra,
@@ -573,7 +586,7 @@ export class ChatSession {
 
     const chatMissionHub = this.deps.getChatMissionHub?.() ?? null;
     const chatMissionsOn =
-      Boolean(chatMissionHub?.enabled()) && chatMissionsEnabled(settings) && route?.team === 'code';
+      Boolean(chatMissionHub?.enabled()) && route?.team === 'code';
     const wakeWord = { word: settings.voice.wakeWord, variants: settings.voice.wakeWordVariants };
     const directReq =
       chatMissionsOn && route?.team === 'code'
@@ -611,9 +624,34 @@ export class ChatSession {
       emit(routeEvent);
     }
 
+    if (creation) {
+      emit({ type: 'route', team: 'code', label: TEAM_SPECS.code.label, model: 'sans modèle', how: 'mission-directe' });
+    }
+
     let run: AsyncGenerator<AgentEvent>;
     let appendMissionProposal: (() => void) | null = null;
-    if (briefingText) {
+    /** À faire une fois la discussion enregistrée (la création écrit dans son message). */
+    const afterSave: Array<() => void> = [];
+    if (creation && facile) {
+      if (input.place?.kind === 'enceinte') {
+        // Depuis une enceinte : Jarvis répond, mais ne lance jamais une création.
+        run = fixedReply(FACILE_SPEAKER_REPLY);
+      } else if (facile.busy() || creationHub?.missionBusy()) {
+        run = fixedReply(FACILE_BUSY_REPLY);
+      } else {
+        // Phrase fixe, sans attendre un modèle ; la mission et la recherche partent juste après.
+        run = fixedReply(FACILE_IMMEDIATE_REPLY);
+        appendMissionProposal = () => {
+          const payload = facile.prepare(creation, source === 'voice');
+          const card = createMessage('assistant', '', { chatMission: { kind: 'facile', data: payload } });
+          messages.push(card);
+          creationHub?.setConversationContext(conversation.id);
+          creationHub?.unbindMissionMessage();
+          emit({ type: 'mission_card', message: card });
+          afterSave.push(() => facile.start(conversation.id, card.id, payload, creation));
+        };
+      }
+    } else if (briefingText) {
       run = fixedReply(briefingText);
     } else if (notesText) {
       run = fixedReply(notesText);
@@ -900,7 +938,7 @@ export class ChatSession {
       place: input.place,
       route: routeNotee(route, orchestra),
       health: healthIntent,
-      fixedReply: Boolean(briefingText || notesText || routineText || printerText),
+      fixedReply: Boolean(briefingText || notesText || routineText || printerText || creation),
       directMission: directMissionTake,
       chatProviderId: settings.provider,
       chatModel: resolveChatModel(settings),
@@ -919,6 +957,7 @@ export class ChatSession {
         message: `Conversation non enregistrée dans l'historique : ${error instanceof Error ? error.message : String(error)}`,
       });
     }
+    for (const task of afterSave) task();
     void this.deps.knowledge
       .indexConversation(
         `conversation:${updated.id}`,

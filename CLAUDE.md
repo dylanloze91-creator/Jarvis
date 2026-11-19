@@ -1109,3 +1109,26 @@ Feuille de route, tâche 1 quater. Rapport : `rapports/2026-11-19-corrections-50
 - le rappel ne compte pas les petits mots, et l'en-tête des règles ne dit jamais de ne pas appeler un outil ;
 - une règle express n'appelle qu'un outil de `EXPRESS_RULE_TOOLS` (lecture, sans argument, sans carte), garde ses phrases pour et contre, et laisse dans la discussion la trace de l'outil appelé ;
 - les données de Live ne sont jamais modifiées par un banc : copie temporaire seulement.
+
+## Jarvis Développeur facile, étape 1 (branche `claude/developpeur-facile`, Jarvis Test seulement)
+
+Cahier `docs/specs/developpeur-facile.md` (feuille de route, tâche 1 ter), rapport `rapports/2026-11-19-developpeur-facile.md`, captures dans `rapports/developpeur-facile-captures/`. Partie de `claude/dev` après les corrections 5.0.80. **Pas encore fusionnée dans `claude/dev`, rien sur `main`, rien de publié. Aucune création réelle n'a tourné : essais avec un faux moteur et de faux résultats de recherche.**
+
+Demander une application dans la discussion normale démarre tout de suite, racontée en mots simples. **Le moteur des missions ne change pas** : cette étape change ce que l'utilisateur voit.
+
+- **Réservé à Test** : champ `easyDeveloper` de la table d'édition (`packages/core/src/edition.ts`, absent de Live). `chatMissionsEnabled(settings, { easyDeveloper })` : dans Test, la discussion qui fait tout est active dès que le mode Développeur et le chef d'orchestre le sont, sans `developer.chatMissions`.
+- **Cœur pur** (`packages/core/src/developer/facile/facile.ts`) : `detectCreationRequest` (« crée / fais-moi une appli, un programme, un jeu, un site… », par règles ; une question ou une explication de code n'est pas une création), `FACILE_IMMEDIATE_REPLY`, `facileRestatement`, `creationSearchQueries`, `pickExistingApps` (de vrais résultats seulement, un par site, trois au plus), `buildingSentence`, `facileLines` / `facileFiles` / `facileFolder` (d'après les étapes réelles de la mission, reconnues par leur identifiant : `supervisor`, `web-research`, `scaffold`, `goal`, `design`, `create`, puis `plan-N`, `edit-N`, `test-N`, `review-N`, `diagnose-N`, `fix-N`), `nextFacileQuestion`, `facileResult`, `facileVoiceMoment`. Enveloppe `{ kind: 'facile', data: FacilePayload }` dans `ChatMissionEnvelope`.
+- **Session** (`session.ts`) : avant le tri, si `getFacile` existe et que le concentrateur est actif, une demande de création reçoit la phrase fixe sans aucun modèle (`fixedReply`, notée « réponse fixe » au journal du tour) ; la carte est ajoutée au message et la création démarre **après** l'enregistrement de la discussion (`afterSave`). Depuis une enceinte : `FACILE_SPEAKER_REPLY`, rien n'est lancé. Création déjà en cours : `FACILE_BUSY_REPLY`. Seule la session de la fenêtre reçoit `getFacile` (ni le téléphone, ni les enceintes).
+- **Coordinateur** (`apps/desktop/src/main/chatMission/facile.ts`, `FacileCoordinator`) : lance `startMission('new-project', …, NEW_PROJECT_SCOPE)` et, en même temps, deux recherches `web_search` (au journal d'audit) ; à chaque état du mode Développeur, recalcule lignes, fichiers et dossier ; pose une question à la fois (`FACILE_QUESTION_TIMEOUT_MS` = 2 minutes, puis `FACILE_DEFAULT_ANSWER`) et rend toutes les réponses au moteur ; choix « construire » (défaut), « voir » (ouvre le premier lien, arrête), « changer » (arrête). Il ne parle au moteur que par `startMission`, `answerMission`, `cancel` et l'état : c'est la couche à rebrancher pour un autre moteur.
+- **Fenêtre** : `components/chat/ChatMissionFacileCard.tsx` (ligne vivante avec le temps écoulé, ambre après `FACILE_SLOW_STEP_MS` = 30 s, lignes finies, fichiers, « Ouvrir le dossier », question, résultat, « Détails pour développeur » replié). Événements `mission_card` (la carte apparaît, rien n'est dit) et `mission_update.voiceHint` (moment important dit à voix haute si la demande venait de la voix). Canaux `chat:facile-choice`, `chat:facile-answer`, `chat:facile-open-folder`. Scènes `?scene=developer-facile-1` à `-5`, captures par `apps/desktop/scripts/capture-developpeur-facile.mjs`.
+- **Pas encore fait** : ouvrir la base dès qu'elle tourne ; une réponse par défaut propre à chaque question (le moteur ne pose d'ailleurs aucune question pour un projet neuf aujourd'hui) ; la suite sur le PC après une demande à l'enceinte ; les fichiers un par un à la seconde où ils sont créés.
+
+À ne pas casser :
+
+- Live n'a ni `easyDeveloper`, ni coordinateur : une demande de création y suit le chemin d'avant ;
+- une ligne de travail ne vient que d'une étape réelle et commencée du moteur ; « prêt » n'est dit que si le moteur a réussi ;
+- un lien de « Ça existe déjà » vient toujours d'un vrai résultat de recherche ;
+- depuis une enceinte, une création n'est jamais lancée ;
+- « Ouvrir le dossier » n'ouvre que le dossier du projet en cours, jamais un chemin venu de la fenêtre ;
+- les sécurités du moteur (dossier neuf, tri des commandes, cartes) ne sont pas contournées par la carte.
+

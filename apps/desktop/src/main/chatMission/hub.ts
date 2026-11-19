@@ -23,6 +23,8 @@ export interface ChatMissionHubDeps {
   developer: () => DeveloperController | null;
   realBenches?: () => RealBenchResult[];
   ollamaModels?: () => Array<{ name: string; parameterSize?: string }>;
+  /** Jarvis Test : la discussion qui fait tout est active dès que le mode Développeur l'est. */
+  easyDeveloper?: () => boolean;
 }
 
 export interface ProposerMissionInputWithLang extends ProposerMissionInput {
@@ -50,7 +52,7 @@ export class ChatMissionHub {
   constructor(private readonly deps: ChatMissionHubDeps) {}
 
   enabled(): boolean {
-    return chatMissionsEnabled(this.deps.getSettings());
+    return chatMissionsEnabled(this.deps.getSettings(), { easyDeveloper: this.deps.easyDeveloper?.() === true });
   }
 
   setConversationContext(conversationId: string): void {
@@ -143,6 +145,11 @@ export class ChatMissionHub {
 
   bindMissionMessage(messageId: string): void {
     this.activeMissionMessageId = messageId;
+  }
+
+  /** Développeur facile tient sa propre carte : le suivi d'avant ne doit pas réécrire un ancien message. */
+  unbindMissionMessage(): void {
+    this.activeMissionMessageId = null;
   }
 
   conversationId(): string | null {

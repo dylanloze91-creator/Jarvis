@@ -66,6 +66,11 @@ export interface Edition {
   keepModelsWarm?: boolean;
   /** Mémoire courte des résultats d'outils de lecture (quelques minutes). */
   keepToolResults?: boolean;
+  /**
+   * Jarvis Développeur facile (`docs/specs/developpeur-facile.md`) : une demande d'application
+   * dans la discussion démarre tout de suite, racontée en mots simples. Absent dans Live.
+   */
+  easyDeveloper?: boolean;
 }
 
 const PHONE_OFFSET = 6;
@@ -119,6 +124,7 @@ export const TEST_EDITION: Edition = {
   badge: { label: 'TEST', color: '#E07A1F' },
   keepModelsWarm: true,
   keepToolResults: true,
+  easyDeveloper: true,
 };
 
 export function readEditionId(input: { env?: string; baked?: string } = {}): EditionId {
