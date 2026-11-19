@@ -200,6 +200,13 @@ const api: JarvisApi = {
       return () => ipcRenderer.removeListener(IpcChannel.updateEvent, handler);
     },
   },
+  appendices: {
+    status: (refresh?: boolean) => ipcRenderer.invoke(IpcChannel.appendicesStatus, refresh === true),
+    setEnabled: (enabled: boolean) => ipcRenderer.invoke(IpcChannel.appendicesSetEnabled, enabled),
+    add: (input: { baseUrl: string; token: string }) => ipcRenderer.invoke(IpcChannel.appendicesAdd, input),
+    remove: (id: string) => ipcRenderer.invoke(IpcChannel.appendicesRemove, id),
+    stopAll: () => ipcRenderer.invoke(IpcChannel.appendicesStopAll),
+  },
   phone: {
     status: () => ipcRenderer.invoke(IpcChannel.phoneStatus),
     setEnabled: (enabled: boolean) => ipcRenderer.invoke(IpcChannel.phoneSetEnabled, enabled),

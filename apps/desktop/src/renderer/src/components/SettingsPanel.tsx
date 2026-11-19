@@ -62,6 +62,7 @@ import { SpotifySettingsSection } from '@/components/SpotifySettings';
 import { GoogleSettingsSection } from '@/components/GoogleSettings';
 import { SiteBlockSettingsSection } from '@/components/SiteBlockSettings';
 import { RoverSettingsSection } from '@/components/RoverSettings';
+import { AppendicesSettingsSection, useAppendicesAllowed } from '@/components/AppendicesSettings';
 import { ImagesSettingsSection } from '@/components/ImagesSettings';
 import { PhoneSettingsSection } from '@/components/PhoneSettings';
 import { SpeakerSettingsSection } from '@/components/SpeakerSettings';
@@ -146,6 +147,8 @@ export function SettingsPanel({
   const [saveNotice, setSaveNotice] = useState<string | null>(null);
 
   const [category, setCategory] = useState<SettingsCategoryId>(() => lastSettingsNavigation.category);
+  // Appendices : la section n'existe que dans Jarvis Test.
+  const appendicesAllowed = useAppendicesAllowed();
   const [openSections, setOpenSections] = useState<Record<string, boolean>>(() => ({
     [lastSettingsNavigation.subcategory]: true,
   }));
@@ -429,6 +432,9 @@ export function SettingsPanel({
             onChange={(values) => patch(values)}
           />,
         )}
+        {appendicesAllowed
+          ? accordion('appendices', 'Appendices', 'Bras, capteurs, lampes (Jarvis Test)', <AppendicesSettingsSection />)
+          : null}
         {accordion(
           'images',
           'Jarvis Imager',

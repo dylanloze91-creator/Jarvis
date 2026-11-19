@@ -197,6 +197,12 @@ interface SessionDeps {
    */
   briefing?: (input: { text: string; voice: boolean }) => Promise<string | null>;
   /**
+   * « Arrête tout » (appendices, Jarvis Test seulement) : règles seulement, avant tout le reste.
+   * `null` : la phrase n'est pas un arrêt général, ou il n'y a rien à arrêter ; le tour suit le
+   * chemin d'avant. Absent (Jarvis Live) : rien ne change.
+   */
+  stopAll?: (input: { text: string }) => Promise<string | null>;
+  /**
    * Notes et liste, règles seulement. Absent ou réglage coupé : le tour suit
    * le chemin d'avant. `null` : la phrase n'est pas une note express.
    */
@@ -440,10 +446,14 @@ export class ChatSession {
         startedAt: turnStartedAt,
       });
     }
+    // « Arrête tout » passe avant le briefing, les notes, le chef d'orchestre et tout modèle.
+    // Sa phrase suit ensuite le chemin des réponses fixes (celui du briefing).
+    const stopAllText = this.deps.stopAll ? await this.deps.stopAll({ text: input.text }).catch(() => null) : null;
     const briefingText =
-      settings.briefing?.enabled === true && this.deps.briefing
+      stopAllText ??
+      (settings.briefing?.enabled === true && this.deps.briefing
         ? await this.deps.briefing({ text: input.text, voice: input.place?.kind === 'enceinte' }).catch(() => null)
-        : null;
+        : null);
     const notePlace = input.place?.kind ?? 'fenetre';
     const notesText =
       !briefingText && settings.notes?.enabled === true && this.deps.notes

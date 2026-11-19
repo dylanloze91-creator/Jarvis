@@ -71,10 +71,18 @@ export interface Edition {
   clockAfterHistory?: boolean;
   /** Mémoire courte des résultats d'outils de lecture (quelques minutes). */
   keepToolResults?: boolean;
+  /**
+   * Appendices de Jarvis (Jarvis Development) : registre, outils et « arrête tout ».
+   * Absent dans Live : rien n'existe pour elle. `port` est réservé au pont des appendices qui
+   * appelleront Jarvis (base + 8) ; rien ne l'ouvre encore.
+   */
+  appendices?: { port: number };
 }
 
 const PHONE_OFFSET = 6;
 const SPEAKER_OFFSET = 7;
+/** Pont des appendices : à côté du téléphone (6) et des enceintes (7). Nulle part ailleurs. */
+const APPENDICE_OFFSET = 8;
 /** Adresses déjà enregistrées chez Spotify et Google. Elles ne suivent pas la base. */
 const SPOTIFY_PORT = 53124;
 const GOOGLE_PORT = 53125;
@@ -125,6 +133,7 @@ export const TEST_EDITION: Edition = {
   keepModelsWarm: true,
   clockAfterHistory: true,
   keepToolResults: true,
+  appendices: { port: 53224 + APPENDICE_OFFSET },
 };
 
 export function readEditionId(input: { env?: string; baked?: string } = {}): EditionId {

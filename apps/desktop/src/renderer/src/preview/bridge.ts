@@ -425,6 +425,17 @@ export function installPreviewBridge(): void {
       reportProgress: () => undefined,
       reportResult: () => undefined,
     },
+    appendices: {
+      status: async () => ({ allowed: true, enabled: false, encryption: true, max: 20, appendices: [] }),
+      setEnabled: async (enabled: boolean) => ({ allowed: true, enabled, encryption: true, max: 20, appendices: [] }),
+      add: async () => ({
+        ok: false as const,
+        sentence: 'Aperçu : aucun appendice à joindre.',
+        status: { allowed: true, enabled: true, encryption: true, max: 20, appendices: [] },
+      }),
+      remove: async () => ({ allowed: true, enabled: true, encryption: true, max: 20, appendices: [] }),
+      stopAll: async () => ({ sentence: '', status: { allowed: true, enabled: true, encryption: true, max: 20, appendices: [] } }),
+    },
     phone: {
       status: async () => phone,
       setEnabled: async (enabled: boolean) => (phone = { ...phone, enabled, running: enabled, pairing: enabled ? phone.pairing : null }),

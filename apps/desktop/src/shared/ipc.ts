@@ -192,6 +192,11 @@ export const IpcChannel = {
   routinesList: 'routines:list',
   routinesSave: 'routines:save',
   printerTest: 'printer:test',
+  appendicesStatus: 'appendices:status',
+  appendicesSetEnabled: 'appendices:set-enabled',
+  appendicesAdd: 'appendices:add',
+  appendicesRemove: 'appendices:remove',
+  appendicesStopAll: 'appendices:stop-all',
   phoneStatus: 'phone:status',
   phoneSetEnabled: 'phone:set-enabled',
   phoneStartPairing: 'phone:start-pairing',
@@ -316,6 +321,42 @@ export interface SpeakerTranscribeResult {
 }
 
 /** 5.0.63 — Jarvis sur le téléphone : état montré dans Réglages → Téléphone. */
+/** Un appendice relié à Jarvis Test (Jarvis Development). Jamais de jeton ici. */
+export interface AppendiceView {
+  id: string;
+  genre: 'oeil' | 'bras' | 'jambes' | 'oreille' | 'sens' | 'main' | 'ecran' | 'energie';
+  nom: string;
+  piece?: string;
+  risque: 'lire' | 'agir' | 'bouger';
+  capacites: Array<{ nom: string; description?: string; risque: 'lire' | 'agir' | 'bouger' }>;
+  version: string;
+  baseUrl: string;
+  /** Faux : le jeton est à redonner (pas de chiffrement sur ce PC, ou fichier venu d'ailleurs). */
+  hasToken: boolean;
+  etat?: 'pret' | 'occupe' | 'arrete' | 'arret_urgence' | 'erreur';
+  reachable?: boolean;
+  lastSeenAt?: number;
+  error?: string;
+}
+
+export interface AppendiceStatus {
+  /** Faux dans Jarvis Live : les appendices n'existent que dans Jarvis Test. */
+  allowed: boolean;
+  enabled: boolean;
+  /** Faux : le jeton ne peut pas être gardé chiffré, il reste en mémoire. */
+  encryption: boolean;
+  max: number;
+  appendices: AppendiceView[];
+}
+
+export type AppendiceAddReply = { ok: true; status: AppendiceStatus } | { ok: false; sentence: string; status: AppendiceStatus };
+
+export interface AppendiceStopAllReply {
+  /** Phrase à afficher ; vide s'il n'y avait rien à arrêter. */
+  sentence: string;
+  status: AppendiceStatus;
+}
+
 export interface PhoneStatus {
   /** Interrupteur « Accès depuis le téléphone » (coupé par défaut). */
   enabled: boolean;
@@ -1014,6 +1055,15 @@ export interface JarvisApi {
     onTranscribe(listener: (request: YoutubeTranscribeRequest) => void): () => void;
     reportProgress(payload: YoutubeTranscribeProgress): void;
     reportResult(payload: YoutubeTranscribeResult): void;
+  };
+  /** Appendices de Jarvis (Jarvis Test seulement) : registre et « Tout arrêter ». */
+  appendices: {
+    /** `refresh` : relit l'état de chaque appendice avant de répondre. */
+    status(refresh?: boolean): Promise<AppendiceStatus>;
+    setEnabled(enabled: boolean): Promise<AppendiceStatus>;
+    add(input: { baseUrl: string; token: string }): Promise<AppendiceAddReply>;
+    remove(id: string): Promise<AppendiceStatus>;
+    stopAll(): Promise<AppendiceStopAllReply>;
   };
   /** 5.0.63 — accès depuis le téléphone (Tailscale). */
   phone: {
