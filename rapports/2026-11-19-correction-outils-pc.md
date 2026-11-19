@@ -92,6 +92,18 @@ Ces chiffres sont ceux du 17 novembre. Je n'ai pas repassé le banc de vitesse a
 4. La série C.
 5. Mémoire et Code sur la carte graphique.
 
+### Résultats du 19 novembre au soir
+
+L'utilisateur dit que tous les essais sont passés. Ce que le journal de Jarvis Test confirme (une discussion, trois tours de suite, équipe PC, `qwen2.5:7b` sur la carte) :
+
+| Essai | Résultat | Journal |
+| --- | --- | --- |
+| B2, informations du PC | **réussi** | `get_system_info` appelé, premier mot en 2,4 s |
+| B2, fenêtre active | **réussi** | `get_active_window` appelé, premier mot en 2,1 s |
+| Bloc-notes, dans la même discussion | **réussi** | `open_application` appelé, premier mot en 2,7 s |
+
+Pas de trace dans les journaux, donc sur la seule parole de l'utilisateur : l'installateur qui ferme Jarvis Test, la série C, et Mémoire et Code sur la carte graphique. Les réglages de Test portent encore Mémoire et Code sur le processeur, et le journal de Test ne contient aucun tour de ces deux équipes ce soir.
+
 ## RAPPORT DE VÉRIFICATION
 
 ```
