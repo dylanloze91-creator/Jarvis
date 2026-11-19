@@ -102,7 +102,16 @@ L'utilisateur dit que tous les essais sont passés. Ce que le journal de Jarvis 
 | B2, fenêtre active | **réussi** | `get_active_window` appelé, premier mot en 2,1 s |
 | Bloc-notes, dans la même discussion | **réussi** | `open_application` appelé, premier mot en 2,7 s |
 
-Pas de trace dans les journaux, donc sur la seule parole de l'utilisateur : l'installateur qui ferme Jarvis Test, la série C, et Mémoire et Code sur la carte graphique. Les réglages de Test portent encore Mémoire et Code sur le processeur, et le journal de Test ne contient aucun tour de ces deux équipes ce soir.
+Mémoire et Code sur la carte graphique, refait ensuite (réglages enregistrés : les deux équipes sont sur « carte ») :
+
+| Essai | Résultat | Journal |
+| --- | --- | --- |
+| Une question à l'équipe Mémoire | **réussi** | `qwen3.5:4b` sur la carte, chemin express ; chargement du modèle 12,1 s, premier mot à 14,3 s, tour entier 14,3 s ; aucun outil appelé |
+| Une question à l'équipe Code | **réussi** | `jarvis-coder` sur la carte, choisi par le cerveau ; chargement 5,1 s pour le tri puis 5,5 s pour l'équipe, premier mot à 12,9 s, tour entier 27,3 s |
+
+La carte n'a que 6 Go : chaque changement d'équipe décharge un modèle pour charger l'autre, d'où 10 à 12 s d'attente avant le premier mot. Après la question au Code, seul `jarvis-coder` restait chargé (4,3 Go sur la carte) : la demande suivante à une autre équipe rechargera `qwen2.5:7b`.
+
+Pas de trace dans les journaux, donc sur la seule parole de l'utilisateur : l'installateur qui ferme Jarvis Test, et la série C.
 
 ## RAPPORT DE VÉRIFICATION
 
