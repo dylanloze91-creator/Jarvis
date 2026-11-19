@@ -62,12 +62,21 @@ function text(a: { action: SurveillanceAction }): string {
 }
 
 describe('surveillance de l’impression', () => {
-  it('une impression qui se passe bien : aucun geste, une phrase au début et à la fin', () => {
-    const obs = every(0, 30 * MIN, (at) => seen(at, { progress: 0.1 + at / (40 * MIN) }));
-    obs.push(seen(31 * MIN, { state: 'complete', progress: 1 }));
+  it('une impression qui se passe bien : aucun geste, le début, 25/50/75 % et la fin', () => {
+    // 40 minutes d'impression : 1 % toutes les 24 s.
+    const obs = every(0, 40 * MIN - 10_000, (at) => seen(at, { progress: at / (40 * MIN), printDuration: at / 1000 }));
+    obs.push(seen(40 * MIN, { state: 'complete', progress: 1, printDuration: 2400 }));
     const { gestures, says } = run(obs);
     expect(gestures).toEqual([]);
-    expect(says.map(text)).toEqual(["Je surveille l'impression de cube.gcode.", 'Impression terminée. La surveillance s’arrête.']);
+    expect(says.map(text)).toEqual([
+      "Je surveille l'impression de cube.",
+      'Impression de cube : 25 %. Tout va bien. Reste environ 30 min.',
+      'Impression de cube : 50 %. Tout va bien. Reste environ 20 min.',
+      'Impression de cube : 75 %. Tout va bien. Reste environ 10 min.',
+      "Impression de cube terminée en 40 min. Tout s'est bien passé.",
+    ]);
+    expect(says.filter((s) => s.action.kind === 'say' && s.action.level === 'etape')).toHaveLength(4);
+    expect(says.at(-1)!.action).toMatchObject({ photo: true });
   });
 
   it('la chauffe du début n’est pas un écart, même longue', () => {
@@ -224,5 +233,61 @@ describe('Klipper injoignable et coupure de secours', () => {
   it('rien n’est surveillé quand aucune impression n’était en cours', () => {
     const { all } = run(every(0, 10 * MIN, (at) => down(at, heating)), CUT);
     expect(all).toEqual([]);
+  });
+});
+
+describe('points d’avancement envoyés tout seuls', () => {
+  it('surveillance démarrée en cours de route : on ne rattrape pas les points déjà passés', () => {
+    const obs = every(0, 5 * MIN, (at) => seen(at, { progress: 0.6 + at / (100 * MIN), printDuration: 1200 + at / 1000 }));
+    const { says } = run(obs);
+    const etapes = says.filter((s) => s.action.kind === 'say' && s.action.level === 'etape').map(text);
+    expect(etapes).toHaveLength(0);
+    const later = run([...obs, seen(16 * MIN, { progress: 0.76, printDuration: 2000 })]);
+    expect(later.says.filter((s) => s.action.kind === 'say' && s.action.level === 'etape').map(text)).toEqual([
+      'Impression de cube : 75 %. Tout va bien. Reste environ 10 min.',
+    ]);
+  });
+
+  it('un saut de 20 % à 55 % : un seul message, le plus récent', () => {
+    const { says } = run([seen(0, { progress: 0.2 }), seen(10_000, { progress: 0.55 })]);
+    const etapes = says.filter((s) => s.action.kind === 'say' && s.action.level === 'etape').map(text);
+    expect(etapes).toHaveLength(1);
+    expect(etapes[0]!.startsWith('Impression de cube : 50 %')).toBe(true);
+  });
+
+  it('un doute entre deux points : le point suivant le dit, la fin le raconte', () => {
+    const obs = [
+      seen(0, { progress: 0.1 }),
+      ...every(10_000, 100_000, (at) => seen(at, { progress: 0.1 + at / 10_000_000, extruder: 180 })),
+      seen(110_000, { progress: 0.3 }),
+      seen(120_000, { progress: 0.52 }),
+      seen(130_000, { state: 'complete', progress: 1, printDuration: 3700 }),
+    ];
+    const { says, gestures } = run(obs);
+    expect(gestures).toEqual([]);
+    const etapes = says.filter((s) => s.action.kind === 'say' && s.action.level === 'etape').map(text);
+    expect(etapes[0]).toContain('Tout va bien maintenant, après un doute depuis le dernier point.');
+    expect(etapes[1]).toContain('Tout va bien.');
+    expect(etapes.at(-1)).toBe(
+      "Impression de cube terminée en 1 h 1. Un incident pendant l'impression : température de la buse (180° au lieu de 210°). Vérifie la pièce.",
+    );
+  });
+
+  it('caméra aveugle au moment d’un point : jamais « tout va bien »', () => {
+    const cam = (at: number) => ({ camera: { reachable: true, dark: true, signature: String(at) } });
+    const obs = every(0, 60_000, (at) => seen(at, { progress: 0.2 }, cam(at)));
+    obs.push(seen(70_000, { progress: 0.26 }, cam(70_000)));
+    const etapes = run(obs).says.filter((s) => s.action.kind === 'say' && s.action.level === 'etape').map(text);
+    expect(etapes).toHaveLength(1);
+    expect(etapes[0]).toContain("Klipper va bien, mais je ne vois plus l'imprimante.");
+    expect(etapes[0]).not.toContain('Tout va bien');
+  });
+
+  it('pas de point pendant une pause de Jarvis', () => {
+    const obs = [seen(0, { progress: 0.2 }), ...every(10_000, 10 * MIN, (at) => seen(at, { progress: 0.2 }))];
+    const paused = run(obs);
+    expect(paused.gestures.map((g) => g.action.kind)).toContain('pause');
+    const after = run([seen(11 * MIN, { state: 'paused', progress: 0.3 })], BASE, paused.state);
+    expect(after.says.filter((s) => s.action.kind === 'say' && s.action.level === 'etape')).toEqual([]);
   });
 });

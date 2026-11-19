@@ -17,7 +17,7 @@
  *   « coupure de secours » cochée, un seuil de chauffe réglé, puis une minute d'annonce ;
  * - jamais de lancement, de reprise ni de chauffe : la reprise passe par l'utilisateur et sa carte.
  */
-import type { PrintStatus } from '../quotidien/moonraker.js';
+import { formatPrintDuration, type PrintStatus } from '../quotidien/moonraker.js';
 
 /** État de Klipper vu par Moonraker (objet `webhooks`). */
 export type KlippyState = 'ready' | 'startup' | 'shutdown' | 'error' | 'unknown';
@@ -65,7 +65,11 @@ export const DEFAULT_SURVEILLANCE_SETTINGS: SurveillanceSettings = {
   heatingWatts: null,
 };
 
-export type SurveillanceLevel = 'info' | 'doute' | 'alerte';
+/** `etape` : point d'avancement (25, 50, 75 %), envoyé tout seul à l'enceinte et au téléphone. */
+export type SurveillanceLevel = 'info' | 'etape' | 'doute' | 'alerte';
+
+/** Points d'avancement annoncés tout seuls (la fin est annoncée à part). */
+export const POINTS_ETAPE = [25, 50, 75] as const;
 
 export type SurveillanceAction =
   | { kind: 'say'; level: SurveillanceLevel; text: string; photo: boolean }
@@ -100,6 +104,12 @@ export interface SurveillanceState {
   cutSentAt: number | null;
   /** Phrases déjà dites pour cette impression (chacune une seule fois). */
   said: Record<string, true>;
+  /** Points d'avancement déjà annoncés. */
+  etapes: number[];
+  /** Ce qui s'est passé depuis le début de l'impression (doutes, alertes), en mots courts. */
+  incidents: string[];
+  /** Incidents déjà racontés au dernier point d'étape. */
+  incidentsDits: number;
 }
 
 function heater(): HeaterTrack {
@@ -121,6 +131,9 @@ export function initialSurveillanceState(): SurveillanceState {
     cancelSentAt: null,
     cutSentAt: null,
     said: {},
+    etapes: [],
+    incidents: [],
+    incidentsDits: 0,
   };
 }
 
@@ -132,6 +145,8 @@ function clone(state: SurveillanceState): SurveillanceState {
     camera: { ...state.camera },
     pause: state.pause ? { ...state.pause } : null,
     said: { ...state.said },
+    etapes: [...state.etapes],
+    incidents: [...state.incidents],
   };
 }
 
@@ -143,14 +158,15 @@ function minutes(ms: number): string {
 class Out {
   readonly actions: SurveillanceAction[] = [];
   constructor(private readonly state: SurveillanceState) {}
-  say(level: SurveillanceLevel, text: string, photo = false): void {
+  say(level: SurveillanceLevel, text: string, photo = false, incident?: string): void {
     this.actions.push({ kind: 'say', level, text, photo });
+    if (incident) this.state.incidents.push(incident);
   }
   /** Une seule fois par impression. */
-  once(key: string, level: SurveillanceLevel, text: string, photo = false): void {
+  once(key: string, level: SurveillanceLevel, text: string, photo = false, incident?: string): void {
     if (this.state.said[key]) return;
     this.state.said[key] = true;
-    this.say(level, text, photo);
+    this.say(level, text, photo, incident);
   }
 }
 
@@ -166,6 +182,9 @@ function resetPrint(state: SurveillanceState, at: number): void {
   state.failures = 0;
   state.unreachableSince = null;
   state.said = {};
+  state.etapes = [];
+  state.incidents = [];
+  state.incidentsDits = 0;
   void at;
 }
 
@@ -223,7 +242,7 @@ export function stepSurveillance(
       } else if (status.state === 'cancelled' && state.phase === 'cancel_sent') {
         out.say('alerte', 'Impression annulée, vérifié.', true);
       } else if (status.state === 'complete') {
-        out.say('info', 'Impression terminée. La surveillance s’arrête.');
+        out.say('etape', finImpression(state, status), true);
       }
     }
     resetPrint(state, obs.at);
@@ -240,7 +259,8 @@ export function stepSurveillance(
   }
   if (state.phase === 'idle') {
     state.phase = 'watching';
-    out.once('debut', 'info', `Je surveille l'impression${status.filename ? ` de ${status.filename}` : ''}.`);
+    out.once('debut', 'info', `Je surveille l'impression${status.filename ? ` de ${nomImpression(status.filename)}` : ''}.`);
+    for (const point of POINTS_ETAPE) if (status.progress * 100 >= point) state.etapes.push(point);
   }
   state.printing = true;
   if (status.filename) state.filename = status.filename;
@@ -277,12 +297,14 @@ export function stepSurveillance(
   checkProgress(state, status, obs.at, problems);
   checkCamera(state, obs, out);
 
+  if (problems.length === 0 && state.phase === 'watching') pointEtape(state, status, out);
+
   if (problems.length > 0 && state.phase === 'watching') {
     const reason = problems[0]!;
     state.phase = 'paused_by_jarvis';
     state.pause = { reason, askedAt: obs.at, confirmedAt: null, deadline: null, userKeeps: false };
     out.actions.push({ kind: 'pause', reason });
-    out.say('alerte', `Problème sur l'impression : ${reason} Je la mets en pause.`, true);
+    out.say('alerte', `Problème sur l'impression : ${reason} Je la mets en pause.`, true, `pause : ${reason}`);
   }
   return { state, actions: out.actions };
 }
@@ -349,7 +371,7 @@ function checkHeater(
     problems.push(`La température de ${name} s'écarte de sa consigne depuis ${minutes(lasting)} (${what}).`);
   } else if (lasting >= SURVEILLANCE_LIMITS.tempDoubtMs && !track.doubtSaid) {
     track.doubtSaid = true;
-    out.say('doute', `La température de ${name} s'écarte de sa consigne (${what}). Je surveille.`);
+    out.say('doute', `La température de ${name} s'écarte de sa consigne (${what}). Je surveille.`, false, `température de ${name} (${what})`);
   }
 }
 
@@ -379,7 +401,7 @@ function checkCamera(state: SurveillanceState, obs: Observation, out: Out): void
     blind = camera.same >= SURVEILLANCE_LIMITS.frozenFrames - 1;
   }
   if (blind && !camera.blind) {
-    out.say('doute', "Je ne vois plus l'imprimante (caméra noire, figée ou muette). Je ne peux pas dire que tout va bien.");
+    out.say('doute', "Je ne vois plus l'imprimante (caméra noire, figée ou muette). Je ne peux pas dire que tout va bien.", false, 'caméra aveugle');
   } else if (!blind && camera.blind) {
     out.say('info', "Je revois l'imprimante.");
   }
@@ -395,7 +417,7 @@ function unreachable(state: SurveillanceState, obs: Observation, settings: Surve
   }
   if (!state.printing) return;
   if (state.failures === SURVEILLANCE_LIMITS.unreachableFailures) {
-    out.once('injoignable', 'doute', "Je n'arrive plus à joindre l'imprimante (Klipper ou Moonraker). Je réessaie.");
+    out.once('injoignable', 'doute', "Je n'arrive plus à joindre l'imprimante (Klipper ou Moonraker). Je réessaie.", false, 'imprimante injoignable');
   }
   const down = obs.at - state.unreachableSince;
   if (down < SURVEILLANCE_LIMITS.unreachableCutMs) return;
@@ -442,7 +464,7 @@ function unreachable(state: SurveillanceState, obs: Observation, settings: Surve
     state.cutSentAt = obs.at;
     const reason = `Klipper injoignable depuis ${minutes(down)}, chauffe mesurée par la prise.`;
     out.actions.push({ kind: 'cut', reason });
-    out.say('alerte', "Je coupe la prise de l'imprimante.");
+    out.say('alerte', "Je coupe la prise de l'imprimante.", false, 'prise coupée');
   }
 }
 
@@ -455,6 +477,37 @@ function verifyCut(state: SurveillanceState, obs: Observation, out: Out): void {
   if (state.cutSentAt !== null && obs.at - state.cutSentAt >= SURVEILLANCE_LIMITS.checkMs) {
     out.once('coupure-non-faite', 'alerte', "J'ai demandé la coupure, mais je ne peux pas vérifier que la prise est coupée. Va voir l'imprimante.");
   }
+}
+
+/** « cube.gcode » se dit « cube ». */
+export function nomImpression(filename: string): string {
+  const base = filename.split(/[\\/]/).pop() ?? filename;
+  return base.replace(/\.gcode$/i, '').replace(/[_]+/g, ' ').trim() || 'en cours';
+}
+
+function reste(status: PrintStatus): string {
+  if (status.progress <= 0 || status.progress >= 1 || status.printDuration <= 0) return '';
+  return ` Reste environ ${formatPrintDuration(status.printDuration * ((1 - status.progress) / status.progress))}.`;
+}
+
+function pointEtape(state: SurveillanceState, status: PrintStatus, out: Out): void {
+  const point = POINTS_ETAPE.filter((p) => status.progress * 100 >= p && !state.etapes.includes(p)).pop();
+  if (point === undefined) return;
+  for (const p of POINTS_ETAPE) if (p <= point && !state.etapes.includes(p)) state.etapes.push(p);
+  const nouveaux = state.incidents.length - state.incidentsDits;
+  state.incidentsDits = state.incidents.length;
+  let etat = 'Tout va bien.';
+  if (state.camera.blind) etat = "Klipper va bien, mais je ne vois plus l'imprimante.";
+  else if (nouveaux > 0) etat = `Tout va bien maintenant, après ${nouveaux === 1 ? 'un doute' : `${nouveaux} doutes`} depuis le dernier point.`;
+  out.say('etape', `Impression de ${nomImpression(status.filename)} : ${point} %. ${etat}${reste(status)}`, true);
+}
+
+function finImpression(state: SurveillanceState, status: PrintStatus): string {
+  const duree = status.printDuration > 0 ? ` en ${formatPrintDuration(status.printDuration)}` : '';
+  const debut = `Impression de ${nomImpression(status.filename || state.filename)} terminée${duree}.`;
+  if (state.incidents.length === 0) return `${debut} Tout s'est bien passé.`;
+  const liste = state.incidents.slice(0, 3).join(' ; ');
+  return `${debut} ${state.incidents.length === 1 ? 'Un incident' : `${state.incidents.length} incidents`} pendant l'impression : ${liste}. Vérifie la pièce.`;
 }
 
 /** Réponse de l'utilisateur après une pause demandée par Jarvis. Reprendre ne passe pas par ici : c'est une carte. */
