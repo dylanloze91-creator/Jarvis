@@ -72,8 +72,11 @@ de l'usage réel (le carnet des ratés dira ce qui manque).
 
 1. OpenSCAD en ligne de commande sous Windows (`openscad -o pièce.stl pièce.scad`, image
    `-o pièce.png`) : licence, installation (winget, jamais lancée par Jarvis), version.
-2. Le trancheur : **celui que l'utilisateur utilise déjà** s'il a une ligne de commande
-   (PrusaSlicer, OrcaSlicer ou Cura), avec son profil de l'Ender 3 S1 Plus ; sinon PrusaSlicer.
+2. Le trancheur : **OrcaSlicer**, celui de l'utilisateur (dit le 19 novembre), en ligne de commande,
+   avec **ses** préréglages de l'Ender 3 S1 Plus (machine, réglages d'impression, filament) tels
+   qu'il les a enregistrés dans OrcaSlicer. Vérifier la ligne de commande d'OrcaSlicer sous Windows
+   dans sa documentation officielle, et où sont rangés ses préréglages ; Jarvis les lit sans jamais
+   les modifier.
 3. Le G-code produit accepté par Klipper (gcode_flavor, macros de début et de fin de
    l'utilisateur).
 
