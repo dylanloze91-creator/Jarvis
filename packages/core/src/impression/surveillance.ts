@@ -30,6 +30,12 @@ export interface Observation {
   plug?: { reachable: true; on: boolean; watts: number } | { reachable: false };
   /** Absent : pas de caméra. `dark` et `signature` viennent de `CameraWatch`. */
   camera?: { reachable: true; dark: boolean; signature: string } | { reachable: false };
+  /**
+   * Résultat de la surveillance objet par objet (`objets.ts`) : un problème qui touche toute
+   * l'impression (traité comme les autres : pause), un doute (une phrase), et les incidents à
+   * garder pour le bilan.
+   */
+  vision?: { probleme: string | null; doute: string | null; incidents?: readonly string[] };
 }
 
 export interface SurveillanceSettings {
@@ -292,6 +298,11 @@ export function stepSurveillance(
   }
 
   const problems: string[] = [];
+  if (obs.vision) {
+    for (const i of obs.vision.incidents ?? []) state.incidents.push(i);
+    if (obs.vision.probleme) problems.push(phrase(obs.vision.probleme));
+    else if (obs.vision.doute) out.once(`vision:${obs.vision.doute}`, 'doute', obs.vision.doute, true);
+  }
   checkHeater(state.heaters.extruder, status.extruder, status.extruderTarget, 'la buse', obs.at, problems, out);
   checkHeater(state.heaters.bed, status.bed, status.bedTarget, 'le plateau', obs.at, problems, out);
   checkProgress(state, status, obs.at, problems);
@@ -477,6 +488,12 @@ function verifyCut(state: SurveillanceState, obs: Observation, out: Out): void {
   if (state.cutSentAt !== null && obs.at - state.cutSentAt >= SURVEILLANCE_LIMITS.checkMs) {
     out.once('coupure-non-faite', 'alerte', "J'ai demandé la coupure, mais je ne peux pas vérifier que la prise est coupée. Va voir l'imprimante.");
   }
+}
+
+/** Première lettre en majuscule (après un éventuel « ), point final. */
+function phrase(t: string): string {
+  const s = t.trim().replace(/^(« )?(.)/, (_m, g: string | undefined, c: string) => `${g ?? ''}${c.toUpperCase()}`);
+  return /[.!?]$/.test(s) ? s : `${s}.`;
 }
 
 /** « cube.gcode » se dit « cube ». */

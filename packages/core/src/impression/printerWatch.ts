@@ -13,6 +13,51 @@
 import type { PrintStatus } from '../quotidien/moonraker.js';
 import { checkRoverBaseUrl } from '../rover/url.js';
 import type { KlippyState } from './surveillance.js';
+import { nomObjetSur } from './objets.js';
+import type { Point2, Point3 } from './camera3d.js';
+
+/** Objets de l'impression vus par Klipper (`exclude_object`), position de la tête et zone palpée. */
+export interface ObjetsKlipper {
+  objets: { nom: string; polygone: Point2[]; centre: Point2 | null }[];
+  exclus: string[];
+  courant: string | null;
+  tete: Point3 | null;
+  maillage: { minX: number; maxX: number; minY: number; maxY: number } | null;
+}
+
+interface ObjetsTree {
+  exclude_object?: {
+    objects?: { name?: string; center?: number[]; polygon?: number[][] }[];
+    excluded_objects?: string[];
+    current_object?: string | null;
+  };
+  toolhead?: { position?: number[] };
+  bed_mesh?: { mesh_min?: number[]; mesh_max?: number[] };
+}
+
+export function lireObjetsKlipper(tree: ObjetsTree): ObjetsKlipper {
+  const ex = tree.exclude_object ?? {};
+  const objets = (ex.objects ?? [])
+    .filter((o) => typeof o.name === 'string' && o.name)
+    .map((o) => ({
+      nom: o.name!,
+      polygone: (o.polygon ?? []).filter((p) => Array.isArray(p) && p.length >= 2).map((p) => [Number(p[0]), Number(p[1])] as Point2),
+      centre: Array.isArray(o.center) && o.center.length >= 2 ? ([Number(o.center[0]), Number(o.center[1])] as Point2) : null,
+    }));
+  const pos = tree.toolhead?.position;
+  const mn = tree.bed_mesh?.mesh_min;
+  const mx = tree.bed_mesh?.mesh_max;
+  return {
+    objets,
+    exclus: (ex.excluded_objects ?? []).filter((n): n is string => typeof n === 'string'),
+    courant: typeof ex.current_object === 'string' ? ex.current_object : null,
+    tete: Array.isArray(pos) && pos.length >= 3 ? [Number(pos[0]), Number(pos[1]), Number(pos[2])] : null,
+    maillage:
+      Array.isArray(mn) && Array.isArray(mx) && mn.length >= 2 && mx.length >= 2 && (mx[0]! > mn[0]! || mx[1]! > mn[1]!)
+        ? { minX: mn[0]!, minY: mn[1]!, maxX: mx[0]!, maxY: mx[1]! }
+        : null,
+  };
+}
 
 export class PrinterWatchError extends Error {
   constructor(message: string) {
@@ -122,6 +167,22 @@ export class PrinterWatchClient {
     return bytes;
   }
 
+  /** Objets de l'impression, position de la tête et zone palpée. */
+  async readObjets(): Promise<ObjetsKlipper> {
+    const response = await this.call(`${this.origin}/printer/objects/query?exclude_object&toolhead&bed_mesh`, 'GET');
+    const body = (await response.json()) as { result?: { status?: ObjetsTree } };
+    return lireObjetsKlipper(body.result?.status ?? {});
+  }
+
+  /**
+   * Arrête UN objet (`EXCLUDE_OBJECT`), les autres continuent. Le nom doit venir de Klipper et
+   * ne contenir que lettres, chiffres, « _ », « . », « - » : rien ne peut glisser une autre commande.
+   */
+  async excludeObject(nom: string): Promise<void> {
+    if (!nomObjetSur(nom)) throw new PrinterWatchError("Nom d'objet refusé.");
+    await this.call(`${this.origin}/printer/gcode/script`, 'POST', true, { script: `EXCLUDE_OBJECT NAME=${nom}` });
+  }
+
   async pause(): Promise<void> {
     await this.call(`${this.origin}/printer/print/pause`, 'POST');
   }
@@ -135,7 +196,7 @@ export class PrinterWatchClient {
     await this.call(`${this.origin}/printer/emergency_stop`, 'POST');
   }
 
-  private async call(url: string, method: 'GET' | 'POST', withKey = true): Promise<Response> {
+  private async call(url: string, method: 'GET' | 'POST', withKey = true, body: Record<string, string> = {}): Promise<Response> {
     const headers: Record<string, string> = {};
     if (withKey && this.apiKey) headers['X-Api-Key'] = this.apiKey;
     if (method === 'POST') headers['Content-Type'] = 'application/json';
@@ -144,7 +205,7 @@ export class PrinterWatchClient {
       response = await this.fetchImpl(url, {
         method,
         headers,
-        body: method === 'POST' ? '{}' : undefined,
+        body: method === 'POST' ? JSON.stringify(body) : undefined,
         redirect: 'error',
         signal: AbortSignal.timeout(this.timeoutMs),
       });
