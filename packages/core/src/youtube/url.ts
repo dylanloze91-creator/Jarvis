@@ -14,6 +14,25 @@ const WATCH_HOSTS = new Set([
 ]);
 
 /** Identifiant vidéo à 11 caractères, ou `null` si le lien n'est pas une vidéo YouTube. */
+export const INVALID_YOUTUBE_URL_MESSAGE =
+  "Ce lien n'est pas une adresse YouTube reconnue (watch, youtu.be, Shorts ou live).";
+
+/**
+ * Phrase d'échec pour un lien sans vidéo. Une adresse YouTube dont l'identifiant n'en est pas un
+ * (« watch?v=your_video_id », vue deux fois dans le journal d'audit : le modèle avait inventé le
+ * lien) dit au modèle de demander le lien à l'utilisateur au lieu d'en inventer un autre.
+ */
+export function youtubeUrlProblem(raw: string): string {
+  let host = '';
+  try {
+    host = new URL(raw.trim()).hostname.toLowerCase().replace(/\.$/, '');
+  } catch {
+    return INVALID_YOUTUBE_URL_MESSAGE;
+  }
+  if (host !== 'youtu.be' && !WATCH_HOSTS.has(host)) return INVALID_YOUTUBE_URL_MESSAGE;
+  return "Ce lien YouTube ne désigne aucune vidéo : son identifiant n'est pas valable (un identifiant fait 11 caractères). N'invente jamais un lien : demande à l'utilisateur de coller l'adresse de la vidéo.";
+}
+
 export function parseYoutubeVideoId(raw: string): string | null {
   let url: URL;
   try {

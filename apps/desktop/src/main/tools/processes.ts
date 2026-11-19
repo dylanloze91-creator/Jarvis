@@ -5,6 +5,23 @@ import { run, runPowerShell } from './platform/exec.js';
 
 const sortBySchema = z.enum(['cpu', 'memory', 'name']);
 
+/** Place pour quelques milliers de processus en JSON. */
+const PROCESS_LIST_MAX_CHARS = 2_000_000;
+
+/**
+ * Un petit modèle écrit parfois le filtre en objet (`{ "name": "chrome" }`, vu le 16 novembre
+ * 2026) : le nom est repris. Toute autre forme est laissée telle quelle, et refusée par le schéma.
+ */
+function filterText(value: unknown): unknown {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    const fields = value as Record<string, unknown>;
+    for (const key of ['name', 'nom', 'query', 'filter', 'value', 'process']) {
+      if (typeof fields[key] === 'string') return fields[key];
+    }
+  }
+  return value;
+}
+
 interface ProcessInfo {
   pid: number;
   name: string;
@@ -21,9 +38,7 @@ export const listProcessesTool = defineTool({
   risk: 'safe',
   schema: z.object({
     filter: z
-      .string()
-      .max(100)
-      .optional()
+      .preprocess(filterText, z.string().max(100).optional())
       .describe('Sous-chaîne du nom de processus à rechercher (insensible à la casse).'),
     sortBy: sortBySchema.default('cpu').describe('Critère de tri : cpu, memory ou name.'),
     limit: z
@@ -76,7 +91,9 @@ async function listProcesses(): Promise<ProcessInfo[]> {
 async function listProcessesWindows(): Promise<ProcessInfo[]> {
   const script =
     'Get-Process | Select-Object Id,ProcessName,CPU,WorkingSet | ConvertTo-Json -Compress';
-  const result = await runPowerShell(script, { timeoutMs: 15_000 });
+  // La sortie par défaut est coupée à 8 000 caractères : avec plus d'une centaine de processus,
+  // le JSON arrivait tronqué et l'outil échouait à chaque fois (journal d'audit, 25 septembre 2026).
+  const result = await runPowerShell(script, { timeoutMs: 15_000, maxOutputChars: PROCESS_LIST_MAX_CHARS });
   if (result.code !== 0 || result.timedOut) {
     throw new Error(result.stderr || 'PowerShell indisponible.');
   }

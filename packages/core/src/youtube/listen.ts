@@ -5,7 +5,7 @@ import {
   titleFromPlayer,
   youtubeRefusalReason,
 } from './captions.js';
-import { parseYoutubeVideoId } from './url.js';
+import { parseYoutubeVideoId, youtubeUrlProblem } from './url.js';
 import { formatVideoAnalysis } from './analysis.js';
 import { condenseTranscript, type TextComplete } from './summarize.js';
 
@@ -48,10 +48,7 @@ export async function summarizeYoutubeVideo(
 ): Promise<{ ok: boolean; content: string }> {
   const videoId = parseYoutubeVideoId(rawUrl);
   if (!videoId) {
-    return {
-      ok: false,
-      content: "Ce lien n'est pas une adresse YouTube reconnue (watch, youtu.be, Shorts ou live).",
-    };
+    return { ok: false, content: youtubeUrlProblem(rawUrl) };
   }
 
   const progress = (message: string): void => {

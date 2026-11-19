@@ -1,0 +1,100 @@
+# Live 5.0.80 : essais à faire avec toi (préparée le 19 novembre 2026)
+
+Branche `claude/live-5080`, partie de `main` (5.0.79), préparée par Claude Code sur le PC Windows. **Rien n'est fusionné dans `main`, rien n'est publié. Jarvis Live installé n'a pas été touché ; ses données ont été lues seulement, par copie temporaire.** J'attends ton « publie ».
+
+## 1. Ce que contient la 5.0.80
+
+Seulement les corrections essayées d'abord dans Jarvis Test (`rapports/2026-11-19-corrections-5080.md`), rien d'autre de Test :
+
+- **Mémoire apprise** : une phrase en « non » sans rien à retenir attend ton accord au lieu de devenir une règle ; les petits mots ne comptent plus au rappel ; l'en-tête ne dit plus de ne pas appeler d'outil.
+- **Règle express sans modèle** : « les informations sur mon PC » appelle `get_system_info` directement. Le fichier `packages/core/src/agent/expressRules.ts` arrive dans la Live avec cette seule règle.
+- **Outils** : pause de Spotify sans lecture en cours, `list_processes`, lien YouTube inventé par le modèle.
+- Version **5.0.80** : `package.json` (racine et bureau), `package-lock.json`. Le programme de l'enceinte ne change pas : il garde l'étiquette 5.0.79, **rien à flasher**.
+
+Non repris de Test : le chronomètre, les modèles gardés chauds, la mémoire courte des outils, le carnet, le lot B, le socle des appendices.
+
+## 2. Ce qui est déjà vérifié sans toi
+
+Banc des outils du PC sur ce code, avec **tes vraies données de Live** (personnalisation et mémoire apprise, copie temporaire), 10 passages. Bon outil appelé :
+
+| | Bloc-notes | Infos du PC | Fenêtre active | Bloc-notes, neuve | Infos du PC, neuve | Fenêtre, neuve |
+| --- | --- | --- | --- | --- | --- | --- |
+| Live 5.0.79 (avant) | 10 | 10 | 10 | 10 | 9 | **0** |
+| Live 5.0.80 (ce code) | 10 | 10 | 10 | 10 | 10 | **10** |
+
+Contrôles : types, style, tests (cœur 217 fichiers, 2 534 tests ; bureau 161 fichiers, 841 tests, 8 ignorés par leur propre condition), construction, installateur. Aucun `__golden__` régénéré.
+
+## 3. Comment l'essayer
+
+Deux façons, au choix :
+
+- **Sans l'installer** (conseillé d'abord) : quitter Jarvis Live (icône près de l'horloge → Quitter), puis `npm run dev` depuis cette branche. Elle utilise les mêmes données que la Live : mêmes réglages, mêmes enceintes, même mémoire.
+- **En l'installant** : `apps/desktop/release/Jarvis-Setup-5.0.80.exe` remplace la 5.0.79. Pour revenir en arrière : réinstaller `Jarvis-Setup-5.0.79.exe` depuis la release GitHub `v5.0.79`. Tes données ne bougent pas.
+
+## 4. Les essais
+
+### A. Le défaut de la fenêtre active
+
+| # | Essai | Attendu |
+| --- | --- | --- |
+| E1 | Nouvelle discussion, première phrase : « Quelle fenêtre est active ? » | le vrai nom de la fenêtre, avec la bulle de l'outil. Avant : une fenêtre inventée, 10 fois sur 10 |
+| E2 | Même chose à l'enceinte : « Jarvis, quelle fenêtre est active sur mon PC ? » | le vrai nom |
+
+### B. Les informations du PC, sans modèle
+
+| # | Essai | Attendu |
+| --- | --- | --- |
+| E3 | Nouvelle discussion : « Donne-moi les informations sur mon PC » | réponse immédiate, « Voici les informations du PC : » puis la liste (système, processeur, mémoire, disque) ; pastille « PC · sans modèle · express » ; la bulle de l'outil est là |
+| E4 | Juste après, dans la même discussion : « Quelle fenêtre est active ? » | le vrai nom de la fenêtre (l'outil est appelé) |
+| E5 | « Pourquoi mon PC est lent en ce moment ? » | c'est le modèle qui répond, pas la liste toute faite |
+| E6 | À l'enceinte : « Jarvis, donne-moi les informations sur mon PC » | Jarvis lit le début, puis dit que le détail est sur le PC. À me dire si c'est trop long à l'oreille |
+
+### C. La mémoire apprise
+
+| # | Essai | Attendu |
+| --- | --- | --- |
+| E7 | Poser une question à laquelle Jarvis répond par une question, puis répondre « Non merci, pas maintenant » | dans Réglages → Moi → Mémoire documentaire → « Fiches récentes » : la phrase est notée « candidate », avec « Valider » et « Rejeter ». Elle n'est pas une règle |
+| E8 | Dire une vraie correction : « Non, la capitale de l'Australie est Canberra » | la fiche est « validated » |
+| E9 | Dans « Fiches récentes », regarder les anciennes fiches en « non » | elles sont encore là (je n'ai rien modifié). Tu peux les rejeter ; même sans le faire, elles ne sont plus rappelées |
+
+### D. Les outils corrigés
+
+| # | Essai | Attendu |
+| --- | --- | --- |
+| E10 | Sans musique en cours : « Stop la musique » | « Rien n'était en lecture sur Spotify : il n'y a rien à mettre en pause. » Avant : une erreur 404 en anglais |
+| E11 | Avec de la musique : « pause », « reprends », « morceau précédent » | chaque ordre est fait |
+| E12 | « Liste les processus qui prennent le plus de mémoire » | une vraie liste. Avant : l'outil échouait à chaque fois sur ce PC |
+| E13 | « Résume-moi cette vidéo YouTube », sans donner de lien | Jarvis demande le lien. Il ne doit pas en inventer un. Si le modèle en invente quand même un, l'outil lui répond de te le demander : me dire ce que Jarvis dit alors |
+
+### E. Rien d'autre n'a bougé
+
+| # | Essai | Attendu |
+| --- | --- | --- |
+| E14 | « Quelle heure est-il ? », « Le cours de l'action Airbus », « Combien font 12 fois 37 ? » | comme avant, sans modèle |
+| E15 | Une question à l'enceinte, et Ctrl+Espace | comme avant |
+
+## 5. Ce que je n'ai pas pu vérifier
+
+- Rien n'a été essayé dans la fenêtre ni à la voix : le banc passe par la vraie session et le vrai Ollama, sans fenêtre.
+- L'installateur est construit, pas installé.
+- `generer_image` : les ratés du 12 novembre viennent du démarrage de Forge (113 s au repos, plus de 4 minutes un soir chargé). Non corrigé : à décider.
+- Gmail : la connexion Google expire au bout de 7 jours en mode « Test ». Rien à corriger dans Jarvis.
+
+## 6. Pour publier
+
+Quand tu as essayé et que tu dis « publie » : fusion de `claude/live-5080` dans `main`, puis `bash release.sh` depuis `main`. Les corrections sont déjà dans `claude/dev` (Jarvis Test).
+
+## RAPPORT DE VÉRIFICATION
+
+```
+RAPPORT DE VÉRIFICATION
+Lancement : OK (npx electron-vite build ; installateur Jarvis-Setup-5.0.80.exe construit, non publié ; banc sur le vrai Ollama)
+Types     : OK (npm run typecheck)
+Style     : OK (npm run lint)
+Tests     : OK (cœur 217 fichiers, 2534 tests ; bureau 161 fichiers, 841 tests, 8 ignorés par leur propre condition ; aucun __golden__ régénéré, les tests figés passent tels quels)
+Secrets   : OK (aucune clé, aucune phrase de l'utilisateur, aucun souvenir)
+Fichiers modifiés : learning/continuous.ts, agent/expressRules.ts (nouveau dans la Live), agent/orchestra.ts, youtube/url.ts, captions.ts, listen.ts, index.ts ; bureau session.ts, tools/spotify.ts, tools/processes.ts ; cinq fichiers d'essais ; versions ; CLAUDE.md, AGENTS-COORDINATION.md, rapports
+Prêt à fusionner : NON, pas avant tes essais et ton « publie »
+À corriger : rien de connu
+Testé en vrai (à la voix, sur le PC) : PAS FAIT
+```
