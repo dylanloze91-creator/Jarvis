@@ -8,7 +8,7 @@ La mission demandait de fusionner `claude/dev` dans `claude/jarvis-development`,
 
 Pour ne pas perdre la nuit, le socle est construit sur une branche à part, **`claude/socle-appendices`**, partie de `claude/dev`. Elle n'a pas le cahier ni la liste d'électronique, qui restent sur `claude/jarvis-development`.
 
-À décider : résoudre ce conflit (garder les lignes des deux côtés) pour réunir les deux branches, ou garder la documentation et le code séparés.
+**Résolu le 19 novembre, sur décision de l'utilisateur** : le conflit est réglé en gardant les lignes des deux côtés. `claude/dev` puis `claude/socle-appendices` sont fusionnées dans `claude/jarvis-development` (`94fcc8c`), qui porte maintenant l'étude et le socle. Contrôles refaits sur cette branche : types, style, cœur 2 667 tests, bureau 913 tests, construction réussie.
 
 ## 2. Ce qui est construit
 
