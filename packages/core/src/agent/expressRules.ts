@@ -7,9 +7,8 @@
  * doit prendre, et des phrases qu'elle ne doit pas prendre. Une règle sans ses essais, ou dont un
  * essai échoue, fait échouer la suite de tests : elle ne peut pas entrer dans Jarvis.
  *
- * On ne devine pas : la liste (`EXPRESS_RULES`) est vide tant que la carte de l'utilisation
- * (`carte.md`) et les mesures (`vitesse.md`) n'ont pas dit quelles demandes le cerveau trie pour
- * rien. Les phrases d'essai sont écrites pour la règle ; ce ne sont jamais des phrases recopiées
+ * On ne devine pas : une règle n'entre dans la liste (`EXPRESS_RULES`) que si la carte de
+ * l'utilisation, les mesures ou un banc ont montré le besoin. Les phrases d'essai sont écrites pour la règle ; ce ne sont jamais des phrases recopiées
  * des conversations de l'utilisateur.
  *
  * En cas de doute, la règle laisse passer : deux règles d'équipes différentes qui prennent la même
@@ -29,16 +28,112 @@ export interface ExpressRule {
   pour: string[];
   /** Phrases que la règle ne doit pas prendre (elles contiennent souvent un déclencheur). */
   contre: string[];
+  /**
+   * Outil de lecture, sans argument, appelé tout de suite à la place du modèle de l'équipe : sa
+   * réponse est la réponse de Jarvis. Jamais un outil qui agit ni un outil à confirmer. Si l'outil
+   * manque ou échoue, l'équipe répond comme pour une règle sans outil.
+   */
+  outil?: string;
+  /** Phrase mise devant le résultat de l'outil. */
+  annonce?: string;
 }
 
 /** Essais exigés de chaque côté. */
 export const EXPRESS_RULE_MIN_TESTS = 3;
 
 /**
- * Les règles express ajoutées par cet outil. Vide exprès : chaque règle viendra de la carte de
- * l'utilisation, avec ses essais pour et contre.
+ * Les règles express ajoutées par cet outil. Chacune vient d'un raté mesuré, avec ses essais
+ * pour et contre.
  */
-export const EXPRESS_RULES: readonly ExpressRule[] = [];
+export const EXPRESS_RULES: readonly ExpressRule[] = [
+  {
+    // 19 novembre 2026 : en première phrase d'une discussion, `qwen2.5:7b` inventait une fiche du
+    // PC ou demandait de préciser, 2 à 5 fois sur 30, dans Test comme dans Live
+    // (rapports/2026-11-19-outils-pc-discussion-neuve.md). L'outil est appelé sans modèle.
+    id: 'infos-pc',
+    team: 'pc',
+    outil: 'get_system_info',
+    annonce: 'Voici les informations du PC :',
+    declencheurs: [
+      'informations sur mon pc',
+      'informations sur le pc',
+      'informations sur ce pc',
+      'informations de mon pc',
+      'informations du pc',
+      'informations sur mon ordinateur',
+      'informations sur l’ordinateur',
+      'informations sur cet ordinateur',
+      'informations de mon ordinateur',
+      'informations de l’ordinateur',
+      'informations sur ma machine',
+      'informations système',
+      'infos sur mon pc',
+      'infos sur le pc',
+      'infos de mon pc',
+      'infos du pc',
+      'infos sur mon ordinateur',
+      'infos de mon ordinateur',
+      'infos système',
+      'état de mon pc',
+      'état du pc',
+      'état de mon ordinateur',
+      'état de l’ordinateur',
+    ],
+    empechements: [
+      // Une autre source ou une autre action que la lecture de l'état du PC.
+      'internet',
+      'web',
+      'google',
+      'cherche',
+      'recherche',
+      'note',
+      'retiens',
+      'souviens',
+      'envoie',
+      'mail',
+      'écris',
+      'enregistre',
+      'sauvegarde',
+      'copie',
+      'affiche',
+      'enceinte',
+      'imprime',
+      // Une question précise ou une explication : le modèle répond, avec ses outils.
+      'pourquoi',
+      'comment',
+      'où',
+      'processus',
+      'fenêtre',
+      'erreurs',
+      'acheter',
+      'achat',
+      'prix',
+      'nouveau',
+      'portable',
+      'fichier',
+      'dossier',
+    ],
+    pour: [
+      'Donne-moi les informations sur mon PC',
+      'Jarvis, donne-moi les infos sur mon PC s’il te plaît',
+      'Quel est l’état de mon ordinateur ?',
+      'Les informations système',
+      'Tu peux me donner les informations de mon ordinateur ?',
+      'Dis-moi l’état du PC',
+    ],
+    contre: [
+      'Cherche sur Internet les informations sur mon PC',
+      'Note les informations sur mon PC dans ma liste',
+      'Pourquoi l’état de mon PC est aussi lent ?',
+      'Envoie les informations sur mon PC par mail',
+      'Où sont rangées les informations sur mon PC ?',
+      'Affiche les informations sur mon PC sur l’enceinte',
+      'Quelle fenêtre est active sur mon PC ?',
+      'Ouvre le Bloc-notes',
+      'Quels sont les processus et les informations du PC ?',
+    ],
+  },
+];
 
 /** Minuscules, sans accent, ponctuation remplacée par des espaces, apostrophes comprises. */
 export function foldForRule(text: string): string {
@@ -65,11 +160,39 @@ export function expressRuleMatches(rule: ExpressRule, text: string): boolean {
   return !rule.empechements.some((word) => hasWords(folded, word));
 }
 
+/** Outils qu'une règle peut appeler sans modèle : lecture seule, sans argument, sans carte. */
+export const EXPRESS_RULE_TOOLS: readonly string[] = ['get_system_info'];
+
+/** Résultat d'outil mis en liste sous l'annonce de la règle. */
+export function expressToolReply(rule: ExpressRule, content: string): string {
+  const lines = content
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const body = lines.length > 1 ? lines.map((line) => `- ${line}`).join('\n') : (lines[0] ?? '');
+  return rule.annonce ? `${rule.annonce}\n\n${body}` : body;
+}
+
+/** La règle à outil qui prend cette phrase, ou `null` (aucune, ou deux équipes en désaccord). */
+export function expressToolRule(
+  rules: readonly ExpressRule[],
+  text: string,
+  available: ReadonlySet<OrchestraTeam>,
+): ExpressRule | null {
+  const found = matchExpressRules(rules, text, available);
+  if (!found) return null;
+  const rule = rules.find((item) => item.id === found.rule);
+  return rule?.outil ? rule : null;
+}
+
 /** Ce qui manque à une règle pour être acceptée. Liste vide : elle est en ordre. */
 export function checkExpressRule(rule: ExpressRule): string[] {
   const problems: string[] = [];
   if (!rule.id.trim()) problems.push('la règle n’a pas de nom');
   if (rule.declencheurs.filter((word) => foldForRule(word)).length === 0) problems.push('aucun mot ne la déclenche');
+  if (rule.outil && !EXPRESS_RULE_TOOLS.includes(rule.outil)) {
+    problems.push(`l’outil ${rule.outil} n’est pas dans la liste des outils de lecture permis`);
+  }
   if (rule.pour.length < EXPRESS_RULE_MIN_TESTS) {
     problems.push(`il faut au moins ${EXPRESS_RULE_MIN_TESTS} phrases qu’elle doit prendre`);
   }

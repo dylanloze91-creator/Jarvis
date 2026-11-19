@@ -31,6 +31,14 @@ function describeError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+/** Spotify répond 404 « NO_ACTIVE_DEVICE » quand rien ne joue nulle part. */
+function isNoActiveDevice(error: unknown): boolean {
+  return /NO_ACTIVE_DEVICE|No active device/i.test(describeError(error));
+}
+
+const NO_ACTIVE_DEVICE_MESSAGE =
+  "Spotify n'a aucune lecture en cours, sur aucun appareil. Demande d'abord un morceau (« mets … »).";
+
 function describeSpotifyFailure(error: unknown): string {
   const message = describeError(error);
   if (/identifiant client|n'est pas configuré/i.test(message)) {
@@ -250,6 +258,10 @@ export function createSpotifyTools(deps: SpotifyToolsDeps) {
         await getSpotify().pause();
         return { ok: true, content: 'Spotify est en pause.' };
       } catch (error) {
+        // Rien ne joue : la pause est déjà là. Ce n'est pas un raté (journal d'audit, 12 et 17 novembre 2026).
+        if (isNoActiveDevice(error)) {
+          return { ok: true, content: "Rien n'était en lecture sur Spotify : il n'y a rien à mettre en pause." };
+        }
         return { ok: false, content: `Spotify : ${describeError(error)}` };
       }
     },
@@ -266,6 +278,7 @@ export function createSpotifyTools(deps: SpotifyToolsDeps) {
         await getSpotify().play();
         return { ok: true, content: 'Lecture Spotify reprise.' };
       } catch (error) {
+        if (isNoActiveDevice(error)) return { ok: false, outcome: 'recoverable', content: NO_ACTIVE_DEVICE_MESSAGE };
         return { ok: false, content: `Spotify : ${describeError(error)}` };
       }
     },
@@ -282,6 +295,7 @@ export function createSpotifyTools(deps: SpotifyToolsDeps) {
         await getSpotify().next();
         return { ok: true, content: 'Morceau suivant.' };
       } catch (error) {
+        if (isNoActiveDevice(error)) return { ok: false, outcome: 'recoverable', content: NO_ACTIVE_DEVICE_MESSAGE };
         return { ok: false, content: `Spotify : ${describeError(error)}` };
       }
     },
@@ -299,6 +313,7 @@ export function createSpotifyTools(deps: SpotifyToolsDeps) {
         await getSpotify().previous();
         return { ok: true, content: 'Morceau précédent.' };
       } catch (error) {
+        if (isNoActiveDevice(error)) return { ok: false, outcome: 'recoverable', content: NO_ACTIVE_DEVICE_MESSAGE };
         return { ok: false, content: `Spotify : ${describeError(error)}` };
       }
     },

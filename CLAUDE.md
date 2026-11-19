@@ -1091,3 +1091,21 @@ Défaut bloquant des essais du 18 novembre : dans Jarvis Test, l'équipe PC anno
 - le banc des outils du PC garde sa personnalisation et ses demandes qui agissent ; un changement du prompt des équipes repasse par lui ;
 - l'installateur de Live ne ferme jamais Jarvis Test, et celui de Test ne ferme jamais Jarvis Live.
 
+## Corrections 5.0.80 : mémoire apprise, règle express à outil, outils qui rataient (branche `claude/corrections-5080`, dans Jarvis Test d'abord)
+
+Feuille de route, tâche 1 quater. Rapport : `rapports/2026-11-19-corrections-5080.md`. Causes trouvées dans `rapports/2026-11-19-outils-pc-discussion-neuve.md` et dans le journal d'audit de Live (lu seulement).
+
+- **Mémoire apprise** (`packages/core/src/learning/continuous.ts`). Dans Live 5.0.79, une phrase dictée qui commençait par « non » était rangée comme « correction validée », rappelée par deux petits mots, et posée sous un en-tête qui disait « sans appeler un outil » : « Quelle fenêtre est active ? » ratait 10 fois sur 10.
+  - `isRuleCorrection` : « non » suivi de ce qu'il faut retenir reste une correction validée ; un refus, une question, une marque sans contenu (« non, c'est faux ») ou une réponse à une question de Jarvis (`afterQuestion`, calculé par `session.ts` avec `endsWithQuestion`) devient « candidate » et attend l'accord de l'utilisateur. `classifyUtterance` ne change pas : le carnet des ratés s'en sert.
+  - `relevantRecords` : les petits mots (`SMALL_WORDS`) ne comptent plus, seuil `RECALL_THRESHOLD` 0,25 (0,2 avant). Une ancienne fiche en « non » validée toute seule (`isStaleAutoCorrection`) n'est plus rappelée, sans toucher au fichier ; une fiche validée ou corrigée par l'utilisateur reste une règle.
+  - `LEARNING_RULES_HEADER` : « Elles ne remplacent jamais un outil : quand la demande a besoin d'un outil, appelle-le comme d'habitude. »
+- **Règle express à outil** (`packages/core/src/agent/expressRules.ts`). `ExpressRule.outil` : un outil de lecture, sans argument, de la liste fermée `EXPRESS_RULE_TOOLS` (`get_system_info`), appelé par `session.ts` (`expressToolRun`) sans cerveau ni modèle d'équipe ; sa sortie est la réponse. La discussion garde l'appel, le résultat et la réponse, comme pour un appel du modèle : avec une réponse toute faite sans trace d'outil, le modèle répondait ensuite sans outil à la demande suivante (1 sur 10 au banc). Règle `infos-pc` : « les informations sur mon PC » et ses variantes. Outil absent ou en échec : l'équipe répond avec son modèle.
+- **Outils** : `spotify_pause` sans lecture en cours n'est plus un raté (« il n'y a rien à mettre en pause ») ; reprise, suivant et précédent disent « aucune lecture en cours » en français (`tools/spotify.ts`). `list_processes` lit la liste entière (`maxOutputChars`, la sortie était coupée à 8 000 caractères : l'outil échouait à chaque fois) et accepte un filtre écrit en objet (`tools/processes.ts`). Un lien YouTube inventé par le modèle reçoit « N'invente jamais un lien : demande à l'utilisateur… » (`youtubeUrlProblem`, `youtube/url.ts`).
+- **Hors de Jarvis, non corrigé** : Forge met 113 s à démarrer au repos et dépasse parfois les 4 minutes (`FORGE_START_TIMEOUT_MS`) ; la connexion Google expire au bout de 7 jours en mode « Test ».
+
+À ne pas casser :
+
+- une phrase qui commence seulement par « non » ne devient jamais une règle validée toute seule ;
+- le rappel ne compte pas les petits mots, et l'en-tête des règles ne dit jamais de ne pas appeler un outil ;
+- une règle express n'appelle qu'un outil de `EXPRESS_RULE_TOOLS` (lecture, sans argument, sans carte), garde ses phrases pour et contre, et laisse dans la discussion la trace de l'outil appelé ;
+- les données de Live ne sont jamais modifiées par un banc : copie temporaire seulement.

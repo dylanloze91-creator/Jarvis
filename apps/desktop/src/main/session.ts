@@ -10,6 +10,12 @@ import {
   withSiteBlockPrompt,
   withKnowledgePrompt,
   classifyUtterance,
+  EXPRESS_RULES,
+  EXPRESS_RULE_TOOLS,
+  expressToolReply,
+  expressToolRule,
+  type ExpressRule,
+  type ToolCallOutcome,
   coderLearningPrompt,
   memoryRetrievalEnabled,
   skillLibraryEnabled,
@@ -127,6 +133,11 @@ interface TurnRoute {
   /** Réponse déjà prête (calcul) : aucun modèle n'est appelé. */
   reply?: string;
   provider?: LLMProvider;
+  /**
+   * Règle express à outil : l'outil est appelé sans modèle. `provider` reste celui de l'équipe,
+   * qui ne sert que si l'outil échoue.
+   */
+  expressTool?: ExpressRule;
 }
 
 /** Ce que le journal retient du chemin choisi. N'appelle aucun modèle. */
@@ -136,10 +147,13 @@ function routeNotee(route: TurnRoute | null, orchestra: OrchestraConfig | null):
   return {
     team: route.team,
     how: route.how,
-    providerId: route.provider?.id ?? null,
-    model: route.provider?.model ?? null,
-    place: route.provider && orchestra && equipe ? teamAssignment(orchestra, route.team as OrchestraTeam).place : null,
-    sansModele: !route.provider,
+    providerId: route.expressTool ? null : (route.provider?.id ?? null),
+    model: route.expressTool ? null : (route.provider?.model ?? null),
+    place:
+      route.provider && !route.expressTool && orchestra && equipe
+        ? teamAssignment(orchestra, route.team as OrchestraTeam).place
+        : null,
+    sansModele: !route.provider || Boolean(route.expressTool),
   };
 }
 
@@ -152,6 +166,46 @@ function cheminDuTri(route: TurnRoute | null): string | null {
 
 /** Réponse fixe, au même format que les événements de l'agent. */
 async function* fixedReply(text: string): AsyncGenerator<AgentEvent> {
+  yield { type: 'assistant_delta', delta: text };
+  yield { type: 'assistant_message', message: createMessage('assistant', text) };
+  yield { type: 'done' };
+}
+
+/**
+ * Règle express à outil : l'outil de lecture est appelé sans modèle, et la discussion garde les
+ * mêmes messages que si le modèle l'avait appelé (appel, résultat, réponse). C'est voulu : avec
+ * une réponse toute faite sans trace d'outil, le modèle imitait ensuite ce tour et répondait à la
+ * demande suivante sans appeler d'outil (banc du 19 novembre 2026 : 1 sur 10).
+ * Outil en échec : rien n'est montré, l'équipe répond avec son modèle (`fallback`).
+ */
+async function* expressToolRun(
+  rule: ExpressRule,
+  tools: ToolManager,
+  signal: AbortSignal,
+  onFailure: (outcome: ToolCallOutcome) => void,
+  fallback: AsyncGenerator<AgentEvent>,
+): AsyncGenerator<AgentEvent> {
+  const call = { id: randomId(), name: rule.outil ?? '', arguments: {} };
+  let outcome: ToolCallOutcome | null = null;
+  try {
+    outcome = await tools.execute(call, { signal, requestConfirmation: async () => false });
+  } catch {
+    outcome = null;
+  }
+  if (!outcome || outcome.status !== 'ok' || !outcome.content.trim()) {
+    if (outcome) onFailure(outcome);
+    yield* fallback;
+    return;
+  }
+  yield { type: 'assistant_message', message: createMessage('assistant', '', { toolCalls: [call] }) };
+  yield { type: 'tool_start', call };
+  const toolMessage = createMessage('tool', outcome.content, {
+    toolCallId: call.id,
+    toolName: call.name,
+    toolStatus: outcome.status,
+  });
+  yield { type: 'tool_result', outcome, message: toolMessage };
+  const text = expressToolReply(rule, outcome.content);
   yield { type: 'assistant_delta', delta: text };
   yield { type: 'assistant_message', message: createMessage('assistant', text) };
   yield { type: 'done' };
@@ -267,6 +321,16 @@ interface SessionDeps {
  * conversation, ses événements de streaming, ses demandes de confirmation et
  * la persistance du résultat.
  */
+/** La dernière réponse de Jarvis finissait par une question. */
+function endsWithQuestion(messages: readonly ChatMessage[]): boolean {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const message = messages[i];
+    if (message?.role !== 'assistant') continue;
+    return typeof message.content === 'string' && /\?\s*$/.test(message.content.trim());
+  }
+  return false;
+}
+
 export class ChatSession {
   private readonly pendingConfirmations = new Map<string, (approved: boolean) => void>();
   private controller: AbortController | null = null;
@@ -285,6 +349,8 @@ export class ChatSession {
     source: 'text' | 'voice',
     /** 5.0.60 (orchestre) : consigne de base et fragments à ajouter. Absent : le prompt d'avant. */
     orchestra?: { base: string; siteBlock: boolean; knowledge: boolean },
+    /** Jarvis venait de poser une question : « non… » y répond, ce n'est pas une correction à retenir. */
+    afterQuestion = false,
   ): Promise<{
     systemPrompt: string;
     learningReview?: (reply: string) => string | null;
@@ -305,7 +371,7 @@ export class ChatSession {
     const knowledge = this.deps.knowledge;
     if (kind !== 'one-off' && knowledge.applyLearning) {
       await knowledge
-        .applyLearning(noteToRecord({ id: randomId(), text, now: Date.now(), kind }))
+        .applyLearning(noteToRecord({ id: randomId(), text, now: Date.now(), kind, afterQuestion }))
         .catch(() => undefined);
     }
     const recall = knowledge.promptLearning ?? knowledge.relevantLearning;
@@ -599,7 +665,7 @@ export class ChatSession {
         base: orchestraBasePrompt(settings.systemPrompt),
         siteBlock: team === 'concentration',
         knowledge: team === 'memoire',
-      });
+      }, endsWithQuestion(conversation.messages));
       // Caractère de Jarvis : dans les consignes de l'équipe, comme l'avis franc (5.0.62).
       // Le cerveau routeur et le chat sans orchestre ne le reçoivent jamais.
       const character = teamPersonaPrompt(team, activePersona(settings), {
@@ -638,9 +704,22 @@ export class ChatSession {
         fromSpeaker: input.place?.kind === 'enceinte',
         requestConfirmation: (request) => this.askUser(sender, emit, request, controller.signal),
       });
+      if (route.expressTool) {
+        run = expressToolRun(
+          route.expressTool,
+          this.deps.tools,
+          controller.signal,
+          (outcome) => {
+            void this.deps.auditLog
+              .append(buildAuditEntry(outcome))
+              .catch((error: unknown) => console.error('[jarvis] journal d’audit non écrit :', error));
+          },
+          run,
+        );
+      }
     } else {
       const { provider } = this.deps.registry.createOrFallback(chatProviderConfig(settings));
-      const turn = await this.turnContext(settings, input.text, source);
+      const turn = await this.turnContext(settings, input.text, source, undefined, endsWithQuestion(conversation.messages));
       const agent = new Agent(clock.wrap(provider, 'reponse'), this.deps.tools, {
         // La note d'origine vocale ne vit que dans ce prompt système, transmis
         // au modèle pour ce tour : elle n'est jamais écrite dans `userMessage`
@@ -1154,6 +1233,13 @@ export class ChatSession {
       speakerScreen: toolNames.includes(SPEAKER_SCREEN_TOOL),
     });
     let how: TurnRoute['how'] = team ? 'express' : 'cerveau';
+    // Règle express à outil (« les informations sur mon PC ») : l'outil de lecture sera appelé
+    // sans modèle (`expressToolRun`). S'il manque ou échoue, l'équipe répond comme d'habitude.
+    const matched = team ? expressToolRule(EXPRESS_RULES, text, available) : null;
+    const toolRule =
+      matched && matched.team === team && matched.outil && EXPRESS_RULE_TOOLS.includes(matched.outil) && this.deps.tools.get(matched.outil)
+        ? matched
+        : null;
     const notice =
       !team && previousTeam && isTeamCorrection(text) ? teamMissedNotice(previousTeam) : undefined;
     let brainText = '';
@@ -1188,6 +1274,9 @@ export class ChatSession {
     );
     if (settings.debugLogging) {
       debugLog(true, 'orchestre', `${how} → ${team} · ${assignment.model} (${assignment.place})`);
+    }
+    if (toolRule) {
+      return { team, label: TEAM_SPECS[team].label, model: 'sans modèle', how, provider, expressTool: toolRule };
     }
     return { team, label: TEAM_SPECS[team].label, model: assignment.model, how, provider };
   }
