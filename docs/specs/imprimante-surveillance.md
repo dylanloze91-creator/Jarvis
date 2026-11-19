@@ -21,7 +21,7 @@ impression, voit quand elle part mal, met en pause, prévient, et annule si pers
   réponds pas dans le délai que tu as choisi. La coupure de la prise vient **en tout dernier**,
   seulement si Klipper ne répond plus du tout alors que l'imprimante chauffe encore.
 - Jarvis ne lance, ne reprend et ne chauffe jamais rien tout seul.
-- Il faut acheter : la webcam (Logitech C270, environ 20 €) et la prise (Shelly Plug S Gen3,
+- Une webcam est déjà branchée sur Klipper (dit par l'utilisateur le 19 novembre). Il faut acheter seulement la prise (Shelly Plug S Gen3,
   environ 24 €). Prix relevés le 17 novembre, à revérifier.
 - Hors Jarvis, et dans tous les cas : **un détecteur de fumée certifié près de l'imprimante**.
   C'est la vraie sécurité ; Jarvis vient en plus, jamais à la place.
