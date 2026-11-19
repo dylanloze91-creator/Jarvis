@@ -14,6 +14,10 @@
     "./trieur/validation": {
       "types": "./dist/trieur/validation.d.ts",
       "default": "./dist/trieur/validation.js"
+    },
+    "./quotidien/fichiers": {
+      "types": "./dist/quotidien/fichiers.d.ts",
+      "default": "./dist/quotidien/fichiers.js"
     }
   },
   "files": [
@@ -33,7 +37,10 @@
     "trieur:trier": "tsc -p tsconfig.json && node scripts/trieur-trier.mjs",
     "trieur:banc": "tsc -p tsconfig.json && node scripts/trieur-banc.mjs",
     "trieur:generer": "tsc -p tsconfig.json && node scripts/trieur-generer.mjs",
-    "trieur:preparer": "tsc -p tsconfig.json && node scripts/trieur-preparer.mjs"
+    "trieur:preparer": "tsc -p tsconfig.json && node scripts/trieur-preparer.mjs",
+    "conversations:preparer": "tsc -p tsconfig.json && node scripts/conversations-preparer.mjs",
+    "vitesse": "tsc -p tsconfig.json && node scripts/vitesse.mjs",
+    "vitesse:comparer": "tsc -p tsconfig.json && node scripts/vitesse-comparer.mjs"
   },
   "dependencies": {
     "zod": "^4.6.5"

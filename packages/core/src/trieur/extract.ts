@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import type { ChatMessage, Conversation } from '../types.js';
+import type { ChatMessage, Conversation, RouteLogEntry } from '../types.js';
 import { routerUserPrompt } from '../agent/orchestra.js';
 import type { OrchestraTeam } from '../agent/orchestraTeams.js';
 import { ORCHESTRA_TEAMS } from '../agent/orchestraTeams.js';
@@ -25,11 +25,7 @@ export interface ExamLine {
 }
 
 /** Journal optionnel dans un fichier conversation (équipe choisie à l'époque). */
-export interface ConversationRouteLog {
-  userMessageId: string;
-  team: string;
-  how?: string;
-}
+export type ConversationRouteLog = RouteLogEntry;
 
 export interface StoredConversation extends Conversation {
   routeLog?: ConversationRouteLog[];
@@ -158,6 +154,8 @@ const TEAM_LABEL: Record<OrchestraTeam, string> = {
   google: 'Google',
   code: 'Code',
   images: 'Images',
+  taches: 'Tâches',
+  impression: 'Impression',
 };
 
 export { TEAM_LABEL as trieurTeamLabels };

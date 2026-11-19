@@ -5,6 +5,7 @@ import {
   type SearchProviderRegistry,
   type Settings,
 } from '@jarvis/core';
+import type { NotesBook } from '@jarvis/core/quotidien/fichiers';
 import { getSystemInfoTool } from './system.js';
 import { getCurrentTimeTool } from './time.js';
 import { createFolderTool } from './files.js';
@@ -39,6 +40,10 @@ import type { RoverClient } from '../rover/RoverClient.js';
 import { createRoverTools } from './rover.js';
 import type { ImagesService } from '../images/ImagesService.js';
 import { createImagesTools } from './images.js';
+import { createNotesTools } from './notes.js';
+import { createRoutineTools, type RoutineToolDeps } from './routines.js';
+import { createPrinterTools, type PrinterToolDeps } from './printer.js';
+import { createSpeakerScreenTools, type SpeakerScreenPort } from './speakerScreen.js';
 
 export interface YoutubeSummarize {
   (
@@ -68,11 +73,19 @@ export interface ToolManagerDeps {
   openImagePath?: (path: string) => Promise<string | void>;
   /** Module images : le message de l'utilisateur en cours (texte mot pour mot, photos), posé par la session de chat. */
   currentTurn?: () => { text: string; attachments?: ChatAttachment[] } | null;
+  /** Écran des enceintes. Son outil n'est proposé que si une enceinte est reliée. */
+  speakerScreen?: SpeakerScreenPort;
   /**
    * Profil modeste seulement : Spotify reste enregistré mais absent du prompt
    * tant que le compte n’est pas connecté. Ignoré sur les autres profils.
    */
   spotifyConnected?: () => boolean;
+  /** Notes. Absentes du catalogue tant que `notes.enabled` n'est pas vrai. */
+  notes?: NotesBook;
+  /** Routine. Absente du catalogue tant qu'aucune routine n'est enregistrée. */
+  routines?: RoutineToolDeps;
+  /** Imprimante. Absente du catalogue tant que l'adresse locale n'est pas activée. */
+  printer?: PrinterToolDeps;
 }
 
 /**
@@ -130,6 +143,10 @@ function createFullToolManager(deps: ToolManagerDeps): ToolManager {
     ...(deps.rover ? createRoverTools(deps.rover) : []),
     // Images — absents du catalogue tant que le module n'est pas activé
     ...imagesToolsIfEnabled(deps),
+    ...notesToolsIfEnabled(deps),
+    ...routineToolsIfEnabled(deps),
+    ...printerToolsIfEnabled(deps),
+    ...(deps.speakerScreen ? createSpeakerScreenTools(deps.speakerScreen) : []),
   ]);
 }
 
@@ -161,5 +178,21 @@ function createModestToolManager(deps: ToolManagerDeps): ToolManager {
     ...(deps.google ? createGoogleTools(deps.google) : []),
     ...(deps.rover ? createRoverTools(deps.rover) : []),
     ...imagesToolsIfEnabled(deps),
+    ...notesToolsIfEnabled(deps),
+    ...routineToolsIfEnabled(deps),
+    ...printerToolsIfEnabled(deps),
+    ...(deps.speakerScreen ? createSpeakerScreenTools(deps.speakerScreen) : []),
   ]);
+}
+
+function notesToolsIfEnabled(deps: ToolManagerDeps) {
+  return deps.notes ? createNotesTools(deps.notes, () => deps.getSettings().notes?.enabled === true) : [];
+}
+
+function routineToolsIfEnabled(deps: ToolManagerDeps) {
+  return deps.routines ? createRoutineTools(deps.routines) : [];
+}
+
+function printerToolsIfEnabled(deps: ToolManagerDeps) {
+  return deps.printer ? createPrinterTools(deps.printer) : [];
 }

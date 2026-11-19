@@ -1,5 +1,7 @@
 #include "led.h"
 
+#include "display.h"
+
 #include "config.h"
 #include "driver/gpio.h"
 #include "esp_log.h"
@@ -88,5 +90,6 @@ void led_init(void) {
 
 void led_set(led_state_t state) {
     current = state;
+    display_state(state); // l'écran suit la LED
     paint(state, true, LED_BRIGHTNESS);
 }

@@ -40,6 +40,7 @@ import type { CurrentSearchResult } from '../search/currentSearch.js';
 import type { CurrentInfoPlan } from './currentInfo.js';
 import { LOCATION_ASK_REPLY, planCurrentInfoTurn, weatherFocusFromQuestion } from './homePlace.js';
 import type { HomeLocation } from '../settings.js';
+import { SPEAKER_SCREEN_TOOL } from '../speaker/screen.js';
 import {
   CURRENT_INFO_TURN_PROMPT,
   currentDatePrompt,
@@ -120,6 +121,13 @@ export interface AgentOptions {
   spotifyAskDevice?: boolean;
   /** Fenêtre, téléphone ou enceinte : chacun garde sa question 60 secondes. */
   spotifyVoiceSessionId?: string;
+  /**
+   * La date et l'heure du tour sont déjà données au modèle par une note en fin de demande
+   * (équipes de l'orchestre, Jarvis Test) : le tour de recherche ne les répète pas dans le message
+   * système, où elles feraient relire les outils et l'historique à chaque nouvelle minute.
+   * Absent : le prompt d'avant, date comprise.
+   */
+  dateInTurnNote?: boolean;
 }
 
 export const DEFAULT_SYSTEM_PROMPT = [
@@ -260,8 +268,11 @@ export class Agent {
     if (roverOffered) system = `${system} ${roverTurnPrompt()}`;
     if (imagesOffered) system = `${system} ${imagesTurnPrompt()}`;
     // Date et protocole seulement pour la recherche forcée : les autres tours gardent leur prompt.
-    if (currentPlan)
-      system = `${system} ${currentDatePrompt(now, timeZone)} ${CURRENT_INFO_TURN_PROMPT}`;
+    if (currentPlan) {
+      system = this.options.dateInTurnNote
+        ? `${system} ${CURRENT_INFO_TURN_PROMPT}`
+        : `${system} ${currentDatePrompt(now, timeZone)} ${CURRENT_INFO_TURN_PROMPT}`;
+    }
     let currentSearch: CurrentSearchResult | null = null;
     let learningRetried = false;
     let reviewSystem: string | null = null;
@@ -496,6 +507,19 @@ export class Agent {
       // 5.0.64 : tour interrompu pendant les outils (bouton Arrêter, nouvelle demande) :
       // on s'arrête là, sans réponse inventée ni relance du modèle.
       if (context.signal?.aborted) {
+        yield { type: 'done' };
+        return;
+      }
+
+      // 5.0.79 : écran d'une enceinte. La réponse est celle de l'outil, mot pour mot, sans relancer
+      // le modèle : il disait « affiché » alors que le PC ne peut que dire « envoyé », et « l'enceinte
+      // affiche Test » après un échec (essais du 17 novembre 2026).
+      if (outcomes.length > 0 && outcomes.every((outcome) => outcome.name === SPEAKER_SCREEN_TOOL && outcome.decision !== 'refused')) {
+        const text = [...new Set(outcomes.map((outcome) => outcome.content.trim()).filter(Boolean))].join('\n');
+        yield { type: 'assistant_delta', delta: text };
+        const reply = createMessage('assistant', text);
+        conversation.push(reply);
+        yield { type: 'assistant_message', message: reply };
         yield { type: 'done' };
         return;
       }

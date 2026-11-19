@@ -19,7 +19,8 @@ import {
   type SpeakerChrono,
 } from '@jarvis/core';
 import type { SendChatInput } from '../../shared/ipc.js';
-import { SpeakerServer, type SpeakerChat, type SpeakerSender } from './server.js';
+import { parseSpeakerScreenHeader } from '@jarvis/core';
+import { SPEAKER_SCREEN_ALL, SpeakerServer, type SpeakerChat, type SpeakerSender } from './server.js';
 import { SpeakerService, localHostName } from './service.js';
 import { SpeakerStore } from './store.js';
 import { windowsSpeechScript, WindowsSpeechSynthesizer, createSpeakerSynthesizer, type SpeakerSynthesizer } from './synth.js';
@@ -285,7 +286,9 @@ describe('pont des enceintes (5.0.64)', () => {
     expect(wav.sampleRate).toBe(SPEAKER_SAMPLE_RATE);
     expect(wav.samples.length).toBe(Math.round(((100 + 'Réponse à : quelle heure est-il'.length) / 1000) * SPEAKER_SAMPLE_RATE));
     // Le mot de réveil est retiré avant le chat ; source vocale, pas de suivi.
-    expect(chat().inputs).toEqual([{ conversationId: null, text: 'quelle heure est-il', source: 'voice' }]);
+    expect(chat().inputs).toEqual([
+      { conversationId: null, text: 'quelle heure est-il', source: 'voice', place: { kind: 'enceinte', name: 'Salon' } },
+    ]);
     expect(synth.spoken).toEqual(['Réponse à : quelle heure est-il']);
     expect(turns).toHaveLength(1);
     expect(turns[0]![0]).toBe('Salon');
@@ -372,7 +375,13 @@ describe('pont des enceintes (5.0.64)', () => {
     const ignored = await call(port, '/api/speaker/turn', { token, body: voiceWav(), followUp: true });
     expect(ignored.status).toBe(204);
     expect(ignored.headers['x-jarvis-continue']).toBe('0');
-    expect(chat().inputs[0]).toEqual({ conversationId: null, text: 'il fait beau chez eux', source: 'voice', followUp: true });
+    expect(chat().inputs[0]).toEqual({
+      conversationId: null,
+      text: 'il fait beau chez eux',
+      source: 'voice',
+      followUp: true,
+      place: { kind: 'enceinte', name: 'Salon' },
+    });
 
     setTranscript('pause');
     const ok = await call(port, '/api/speaker/turn', { token, body: voiceWav(), followUp: true });
@@ -1250,5 +1259,142 @@ describe('enceinte réflexe', () => {
       interval.mockRestore();
       clear.mockRestore();
     }
+  });
+
+  it('fonction réservée : le pont ne démarre pas, même si le fichier dit oui', async () => {
+    const store = new SpeakerStore(() => join(dir, 'reserve.json'));
+    await store.setEnabled(true);
+    const service = new SpeakerService({
+      store,
+      port: 0,
+      mayRun: () => false,
+      chatFor: () => new FakeChat(() => undefined),
+      transcribe: async () => 'bonjour',
+      synthesizer: new FakeSynth(),
+      voiceSettings: () => ({ wakeWord: 'jarvis', wakeWordVariants: [] }),
+      version: () => '5.0.76',
+      localAddresses: () => ['127.0.0.1'],
+    });
+    await service.init();
+    expect(service.server.running).toBe(false);
+    const status = await service.setEnabled(true);
+    expect(service.server.running).toBe(false);
+    expect(status.error).toBe('Réservé à Jarvis Live');
+    expect(status.enabled).toBe(true);
+  });
+});
+
+describe('écran des enceintes : en-tête X-Jarvis-Ecran', () => {
+  const screen = (reply: Reply) => reply.headers['x-jarvis-ecran'];
+
+  it('sans information en attente, ni hello ni turn ne portent l’en-tête', async () => {
+    const { port, token } = await setup();
+    expect(screen(await call(port, '/api/speaker/hello', { token }))).toBeUndefined();
+    expect(screen(await call(port, '/api/speaker/turn', { token, body: voiceWav() }))).toBeUndefined();
+  });
+
+  it('part sur le prochain hello, une seule fois, et la carte relit le même texte', async () => {
+    const { port, token, server } = await setup();
+    expect(server.showOnSpeaker('Salon', { title: 'Imprimante', line: 'Impression terminée | 100 %', seconds: 30 })).toBe(1);
+    const hello = await call(port, '/api/speaker/hello', { token });
+    expect(hello.status).toBe(200);
+    expect(screen(hello)).toBe('Imprimante|Impression%20termin%C3%A9e%20%7C%20100%20%25|30');
+    expect(parseSpeakerScreenHeader(String(screen(hello)))).toEqual({
+      clear: false,
+      title: 'Imprimante',
+      line: 'Impression terminée | 100 %',
+      seconds: 30,
+    });
+    // La réponse du hello ne change pas.
+    expect(JSON.parse(hello.body.toString('utf8'))).toEqual({ name: 'Salon', version: '5.0.64', followUpMs: 8_000 });
+    expect(screen(await call(port, '/api/speaker/hello', { token }))).toBeUndefined();
+    expect(screen(await call(port, '/api/speaker/turn', { token, body: voiceWav() }))).toBeUndefined();
+  });
+
+  it('part sur le prochain turn, une seule fois : avec le WAV, et aussi sur un 204', async () => {
+    const { port, token, server, setTranscript } = await setup();
+    server.showOnSpeaker(SPEAKER_SCREEN_ALL, { title: 'Jarvis', line: 'Ollama ne répond pas.', seconds: 60 });
+    const turn = await call(port, '/api/speaker/turn', { token, body: voiceWav() });
+    expect(turn.status).toBe(200);
+    expect(turn.headers['content-type']).toBe('audio/wav');
+    expect(parseSpeakerScreenHeader(String(screen(turn)))).toMatchObject({ title: 'Jarvis', line: 'Ollama ne répond pas.', seconds: 60 });
+    expect(screen(await call(port, '/api/speaker/turn', { token, body: voiceWav() }))).toBeUndefined();
+
+    server.showOnSpeaker('salon', { title: 'Minuteur' });
+    setTranscript('...');
+    const silent = await call(port, '/api/speaker/turn', { token, body: voiceWav() });
+    expect(silent.status).toBe(204);
+    expect(screen(silent)).toBe('Minuteur||20');
+    expect(screen(await call(port, '/api/speaker/hello', { token }))).toBeUndefined();
+  });
+
+  it('une information demandée pendant la phrase part avec la réponse de cette phrase', async () => {
+    const conversations = new InMemoryConversationStore();
+    const reply = answering(conversations, () => 'C’est affiché.');
+    let bridge: SpeakerServer | null = null;
+    const { port, token, server } = await setup({
+      script: async (sender, input) => {
+        bridge!.showOnSpeaker('Salon', { title: 'Dîner', line: 'À table !', seconds: 45 });
+        await reply(sender, input);
+      },
+    });
+    bridge = server;
+    const turn = await call(port, '/api/speaker/turn', { token, body: voiceWav() });
+    expect(turn.status).toBe(200);
+    expect(parseSpeakerScreenHeader(String(screen(turn)))).toEqual({ clear: false, title: 'Dîner', line: 'À table !', seconds: 45 });
+  });
+
+  it('jetée si sa durée passe avant l’envoi', async () => {
+    let clock = 1_000_000;
+    const { port, token, server } = await setup({ now: () => clock });
+    server.showOnSpeaker('Salon', { title: 'Vieux', seconds: 20 });
+    server.showOnSpeaker('Salon', { title: 'Encore bon', seconds: 60 });
+    clock += 20_000;
+    // La première (20 s) est périmée, la seconde (60 s) part.
+    expect(screen(await call(port, '/api/speaker/hello', { token }))).toBe('Encore%20bon||60');
+    server.showOnSpeaker('Salon', { title: 'Trop tard', seconds: 20 });
+    clock += 21_000;
+    expect(screen(await call(port, '/api/speaker/hello', { token }))).toBeUndefined();
+    expect(screen(await call(port, '/api/speaker/turn', { token, body: voiceWav() }))).toBeUndefined();
+  });
+
+  it('3 en attente au plus : la plus ancienne saute ; une par réponse, dans l’ordre', async () => {
+    const { port, token, server } = await setup();
+    for (const title of ['Un', 'Deux', 'Trois', 'Quatre']) server.showOnSpeaker('Salon', { title, seconds: 300 });
+    const seen: unknown[] = [];
+    for (let i = 0; i < 4; i += 1) seen.push(screen(await call(port, '/api/speaker/hello', { token })));
+    expect(seen).toEqual(['Deux||300', 'Trois||300', 'Quatre||300', undefined]);
+  });
+
+  it('cible : un nom (sans casse ni accent) ou toutes ; nom inconnu, titre vide ou pont coupé : rien', async () => {
+    const { port, token, server, store } = await setup();
+    const { token: chambre } = await store.addSpeaker('Chambre d’été');
+    expect(server.showOnSpeaker('chambre d’ete', { title: 'Pour la chambre' })).toBe(1);
+    expect(screen(await call(port, '/api/speaker/hello', { token }))).toBeUndefined();
+    expect(screen(await call(port, '/api/speaker/hello', { token: chambre }))).toBe('Pour%20la%20chambre||20');
+
+    expect(server.showOnSpeaker(SPEAKER_SCREEN_ALL, { title: 'Pour tous' })).toBe(2);
+    expect(screen(await call(port, '/api/speaker/hello', { token }))).toBe('Pour%20tous||20');
+    expect(screen(await call(port, '/api/speaker/hello', { token: chambre }))).toBe('Pour%20tous||20');
+
+    expect(server.showOnSpeaker('Cuisine', { title: 'Personne' })).toBe(0);
+    expect(server.showOnSpeaker('Salon', { title: ' \n ' })).toBe(0);
+    expect(screen(await call(port, '/api/speaker/hello', { token }))).toBeUndefined();
+
+    // Pont coupé : la file est oubliée, et rien ne se met en attente.
+    server.showOnSpeaker('Salon', { title: 'Oubliée', seconds: 300 });
+    await server.stop();
+    expect(server.showOnSpeaker(SPEAKER_SCREEN_ALL, { title: 'Pont coupé' })).toBe(0);
+    await server.start(0);
+    expect(screen(await call(server.port!, '/api/speaker/hello', { token }))).toBeUndefined();
+  });
+
+  it('jamais sans jeton : un 401 ne porte pas l’information et ne la consomme pas', async () => {
+    const { port, token, server } = await setup();
+    server.showOnSpeaker('Salon', { title: 'Secret', seconds: 300 });
+    const refused = await call(port, '/api/speaker/hello');
+    expect(refused.status).toBe(401);
+    expect(screen(refused)).toBeUndefined();
+    expect(screen(await call(port, '/api/speaker/hello', { token }))).toBe('Secret||300');
   });
 });

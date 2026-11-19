@@ -15,6 +15,7 @@
  *
  * L'équipe choisie répond avec son modèle et seulement ses outils.
  */
+import { EXPRESS_RULES, matchExpressRules } from './expressRules.js';
 import type { ChatMessage } from '../types.js';
 import type { ProviderConfig } from '../providers/types.js';
 import { extractKnowledgeIntent } from '../knowledge/intent.js';
@@ -23,6 +24,7 @@ import { isCurrentTrackQuestion } from '../media/currentTrackIntent.js';
 import { isMusicIntent } from '../media/playIntent.js';
 import { extractSiteBlockIntent } from '../siteblock/intent.js';
 import { looksLikeImageIntent } from '../images/intent.js';
+import { looksLikeSpeakerScreenIntent } from '../speaker/screen.js';
 import { extractYoutubeUrl } from '../youtube/url.js';
 import { DEFAULT_SYSTEM_PROMPT, looksLikeWebResearchIntent } from './agent.js';
 import { detectCurrentInfoIntent } from './currentInfo.js';
@@ -249,6 +251,8 @@ export interface ExpressInput {
   now?: Date;
   /** Module images : le message porte une photo jointe (elle sert à faire une image). */
   hasImageAttachment?: boolean;
+  /** Une enceinte est reliée : l'outil `afficher_sur_enceinte` est proposé (équipe PC). */
+  speakerScreen?: boolean;
 }
 
 /** Équipe désignée par une règle de Jarvis, sans modèle ; `null` : le cerveau décide. */
@@ -257,6 +261,8 @@ export function expressTeam(input: ExpressInput): OrchestraTeam | null {
   if (!text) return null;
   const pick = (team: OrchestraTeam) => (input.available.has(team) ? team : null);
   if (extractYoutubeUrl(text)) return pick('web');
+  // Écran d'une enceinte : seulement si une enceinte est reliée (sinon, le chemin d'avant).
+  if (input.speakerScreen && looksLikeSpeakerScreenIntent(text)) return pick('pc');
   if (isMusicIntent(text) || isCurrentTrackQuestion(text)) return pick('musique');
   // 5.0.64 : le suivi d'un tour Google n'est plus forcé vers l'équipe Google (« ouvre Chrome »
   // juste après un mail y partait, sans outil du PC) : le cerveau tranche avec les derniers échanges.
@@ -276,7 +282,9 @@ export function expressTeam(input: ExpressInput): OrchestraTeam | null {
   // (`looksLikeGoogleIntent` reste faux) et part ici, ou via la recherche web juste dessous.
   if (looksLikeExpressWeb(text)) return pick('web');
   if (detectCurrentInfoIntent(text, input.now ?? new Date()) || looksLikeWebResearchIntent(text)) return pick('web');
-  return null;
+  // Règles ajoutées par l'outil des règles express (`expressRules.ts`), chacune avec ses essais.
+  // Elles passent après les règles en place, et ne décident rien dans le doute.
+  return matchExpressRules(EXPRESS_RULES, text, input.available)?.team ?? null;
 }
 
 /**

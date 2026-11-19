@@ -544,9 +544,27 @@ export function useVoice({
   // Écoute permanente : un bail sur le micro partagé, et le moteur du mot de
   // réveil démarré une fois la fenêtre affichée. Une reprise du micro
   // (débranché, changé, pilote relancé) ne redémarre pas le moteur.
+  const [wakeHeld, setWakeHeld] = useState(false);
+  useEffect(() => {
+    const api = window.jarvis.edition;
+    if (!api) return;
+    let stop = false;
+    const read = (): void => {
+      void api.state().then((state) => {
+        if (!stop) setWakeHeld(state.held.wakeWord);
+      });
+    };
+    read();
+    const unsubscribe = api.onClaimed(() => read());
+    return () => {
+      stop = true;
+      unsubscribe();
+    };
+  }, []);
+
   useEffect(() => {
     if (!settings) return;
-    if (!settings.voice.enabled) {
+    if (!settings.voice.enabled || wakeHeld) {
       stopEngines();
       setVoiceState('idle');
       return;
@@ -569,7 +587,8 @@ export function useVoice({
     };
     // Volontairement limité à l'activation : le micro et la configuration
     // du mot de réveil sont appliqués par les autres effets.
-  }, [settings?.voice.enabled]);
+    // wakeHeld : Test ne démarre pas l'écoute tant que la fonction est réservée.
+  }, [settings?.voice.enabled, wakeHeld]);
 
   useEffect(() => {
     if (!settings?.voice.enabled || !settings.voice.wakeLearning) return;
@@ -606,6 +625,15 @@ export function useVoice({
     if (stateRef.current === 'speaking') backToSleepOrIdle();
   }, [audioMs, backToSleepOrIdle, setVoiceState, stopPlayback]);
 
+  /** Chronomètre « voix » : prévient le processus principal, qui ne garde que le premier son du tour. */
+  const noteSound = useCallback(() => {
+    try {
+      window.jarvis.voice.speechStarted?.();
+    } catch {
+      // Le chronomètre ne doit jamais gêner la voix.
+    }
+  }, []);
+
   const playClip = useCallback((data: Uint8Array, mimeType: string, onEnd: () => void) => {
     const blob = wavBlobFromBytes(data, mimeType);
     const url = URL.createObjectURL(blob);
@@ -615,11 +643,14 @@ export function useVoice({
       URL.revokeObjectURL(url);
       onEnd();
     });
-    void audio.play().catch(() => {
-      URL.revokeObjectURL(url);
-      onEnd();
-    });
-  }, []);
+    void audio
+      .play()
+      .then(noteSound)
+      .catch(() => {
+        URL.revokeObjectURL(url);
+        onEnd();
+      });
+  }, [noteSound]);
 
   const speak = useCallback(
     (text: string) => {
@@ -635,6 +666,7 @@ export function useVoice({
         text,
         {
           onAudio: (clip) => playClip(clip.data, clip.mimeType, () => backToSleepOrIdle()),
+          onSound: noteSound,
           onEnd: () => {
             if (provider.managesOwnPlayback) backToSleepOrIdle();
           },
@@ -647,7 +679,7 @@ export function useVoice({
       );
       ttsControllerRef.current = controller;
     },
-    [backToSleepOrIdle, playClip, resolveTts, setVoiceError, setVoiceState, stopSpeaking],
+    [backToSleepOrIdle, noteSound, playClip, resolveTts, setVoiceError, setVoiceState, stopSpeaking],
   );
 
   const speakInConversation = useCallback(
@@ -672,6 +704,7 @@ export function useVoice({
         text,
         {
           onAudio: (clip) => playClip(clip.data, clip.mimeType, finished),
+          onSound: noteSound,
           onEnd: () => {
             if (provider.managesOwnPlayback) finished();
           },
@@ -684,7 +717,7 @@ export function useVoice({
       );
       ttsControllerRef.current = controller;
     },
-    [audioMs, playClip, resolveTts, setVoiceError, setVoiceState, stopPlayback],
+    [audioMs, noteSound, playClip, resolveTts, setVoiceError, setVoiceState, stopPlayback],
   );
 
   const noteAssistantReply = useCallback(

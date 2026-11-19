@@ -14,8 +14,46 @@ import {
   userFirstName,
 } from '@jarvis/core';
 import { Lock } from 'lucide-react';
+import { CarnetSettingsSection } from '@/carnet/CarnetWeekCard';
+import { BriefingSettingsSection } from '@/components/BriefingSettingsSection';
+import { NotesSettingsSection } from '@/components/NotesSettingsSection';
+import { RoutinesSettingsSection } from '@/components/RoutinesSettingsSection';
+import { PrinterSettingsSection } from '@/components/PrinterSettingsSection';
 import { AuditPanel } from '@/components/AuditPanel';
+import { ReservedGate } from '@/components/ReservedGate';
 import { Button } from '@/components/ui/button';
+import { ConfirmButton } from '@/components/ui/confirmButton';
+
+function CopyFromLive() {
+  const [visible, setVisible] = useState(false);
+  const [sentence, setSentence] = useState<string | null>(null);
+  const [guide, setGuide] = useState<string | null>(null);
+  useEffect(() => {
+    void window.jarvis.edition?.state().then((state) => setVisible(state.id === 'test'));
+  }, []);
+  if (!visible) return null;
+  return (
+    <div className="mt-3 flex flex-col gap-2 rounded-lg border border-white/10 px-3 py-2.5">
+      <p className="text-sm text-slate-200">Recopier depuis Jarvis Live</p>
+      <p className="text-xs leading-relaxed text-slate-400">
+        Remplace les réglages de Test par ceux de Live. L’historique reste ici. Spotify et Google
+        se reconnectent dans Test. Live n’est pas modifié. Jarvis Test redémarre ensuite.
+      </p>
+      {sentence ? <p className="text-xs text-orange-100">{sentence}</p> : null}
+      {guide ? <p className="text-xs text-slate-300">{guide}</p> : null}
+      <ConfirmButton
+        label="Recopier depuis Live"
+        confirmLabel="Oui, recopier"
+        onConfirm={() => {
+          void window.jarvis.edition?.copy('yes').then((result) => {
+            setSentence(result.sentence);
+            setGuide(result.guide);
+          });
+        }}
+      />
+    </div>
+  );
+}
 import { Field, Input, Select, Textarea, Toggle } from '@/components/ui/field';
 import { OllamaSettingsSection } from '@/components/OllamaSettings';
 import { OrchestraSettingsSection } from '@/components/OrchestraSettings';
@@ -277,6 +315,18 @@ export function SettingsPanel({
 
       <CategoryPanel id="moi" active={category}>
         {accordion('personalization', 'Personnalisation', 'Ce que Jarvis retient de toi', <PersonalizationSettingsSection />)}
+        {accordion(
+          'briefing',
+          'Briefing du matin',
+          'Date, météo, agenda, notes',
+          <BriefingSettingsSection value={draft.briefing} onChange={(briefing) => patch({ briefing })} />,
+        )}
+        {accordion(
+          'notes',
+          'Notes et liste',
+          'Courses, rappels, idées',
+          <NotesSettingsSection value={draft.notes} onChange={(notes) => patch({ notes })} />,
+        )}
         {accordion('know', 'Ce que Jarvis sait de moi', 'Voir, exporter ou effacer', <KnowSettingsSection />)}
         {accordion(
           'persona',
@@ -621,6 +671,18 @@ export function SettingsPanel({
           </>,
         )}
         {accordion(
+          'printer',
+          'Imprimante 3D',
+          'Moonraker, réseau local',
+          <PrinterSettingsSection value={draft.printer} onChange={(printer) => patch({ printer })} />,
+        )}
+        {accordion(
+          'routines',
+          'Routines',
+          'Suites d’actions, sans commande libre',
+          <RoutinesSettingsSection value={draft.routines} onChange={(routines) => patch({ routines })} />,
+        )}
+        {accordion(
           'siteblock-intro',
           'Blocage de sites (rappel)',
           'Outils siteblock_*',
@@ -656,9 +718,12 @@ export function SettingsPanel({
           'Fenêtre et raccourci',
           'Affichage et démarrage Windows',
           <>
-            <Field label="Raccourci global" hint="Exemples : Control+Space, Alt+J, Super+K.">
-              <Input value={draft.hotkey} onChange={(event) => patch({ hotkey: event.target.value })} />
-            </Field>
+            <ReservedGate name="shortcut">
+              <Field label="Raccourci global" hint="Exemples : Control+Space, Alt+J, Super+K.">
+                <Input value={draft.hotkey} onChange={(event) => patch({ hotkey: event.target.value })} />
+              </Field>
+            </ReservedGate>
+            <CopyFromLive />
             <Toggle
               label="Rester ouverte"
               hint="Visible si tu cliques ailleurs (masquage : raccourci, Échap, fermer)."
@@ -679,6 +744,7 @@ export function SettingsPanel({
           'Copie de tes données Jarvis',
           <BackupSettingsSection draft={draft} onChange={patch} />,
         )}
+        {accordion('carnet', 'Carnet des ratés', 'Noter sans rien changer à la réponse', <CarnetSettingsSection />)}
         {accordion('updates', 'Mises à jour', 'Version et installation', <UpdateSettingsSection />)}
         {accordion(
           'questionnaire',

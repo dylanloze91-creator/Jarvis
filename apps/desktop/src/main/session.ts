@@ -22,6 +22,7 @@ import {
   teamPersonaPrompt,
   userFirstName,
   chatProviderConfig,
+  resolveChatModel,
   activeOrchestra,
   activeRouter,
   addresseeCheckEnabled,
@@ -61,6 +62,9 @@ import {
   redactSecrets,
   withAttachmentNotes,
   lastUserHasImageAttachment,
+  SPEAKER_SCREEN_TOOL,
+  parseSpeakerScreenRequest,
+  type SpeakerScreenRequest,
   MAX_ATTACHMENTS_PER_MESSAGE,
   type ChatAttachment,
   type ChatMissionProposalPayload,
@@ -88,17 +92,27 @@ import {
   looksLikeImageIntent,
   isImageToolName,
   type ImageProject,
+  type CarnetHow,
+  type CarnetPlace,
+  type ToolLine,
+  TurnClock,
+  withTrailingNote,
+  mentionsTime,
 } from '@jarvis/core';
 import { describeDirectResult, type ImagesService } from './images/ImagesService.js';
 import type { ChatEvent, RuntimeStatus, SendChatInput } from '../shared/ipc.js';
 import { IpcChannel } from '../shared/ipc.js';
 import { canOfferTeamValidation, validationPathForHow } from './orchestra/teamValidation.js';
+import { journaliserTour, type RouteNotee } from './turnJournal.js';
+import { edition } from './edition.js';
 import type { PersonalizationStore } from './personalization.js';
 import type { KnowledgeStore } from './knowledge.js';
 import type { VoiceBridge } from './voice.js';
 import type { LocalLearningController } from './learning/controller.js';
 import type { ChatMissionHub } from './chatMission/hub.js';
 import { createProposerMissionTool } from './chatMission/proposerMissionTool.js';
+import { createTurnWatch } from './carnet/watch.js';
+import { voicePlaceKey, type VoiceTurn } from './vitesse/voix.js';
 
 /** Délai du cerveau pour choisir une équipe, chargement compris. */
 const BRAIN_DEADLINE_MS = 90_000;
@@ -116,6 +130,27 @@ interface TurnRoute {
   /** Réponse déjà prête (calcul) : aucun modèle n'est appelé. */
   reply?: string;
   provider?: LLMProvider;
+}
+
+/** Ce que le journal retient du chemin choisi. N'appelle aucun modèle. */
+function routeNotee(route: TurnRoute | null, orchestra: OrchestraConfig | null): RouteNotee | null {
+  if (!route) return null;
+  const equipe = ORCHESTRA_TEAMS.includes(route.team as OrchestraTeam);
+  return {
+    team: route.team,
+    how: route.how,
+    providerId: route.provider?.id ?? null,
+    model: route.provider?.model ?? null,
+    place: route.provider && orchestra && equipe ? teamAssignment(orchestra, route.team as OrchestraTeam).place : null,
+    sansModele: !route.provider,
+  };
+}
+
+/** Chemin du tri, pour le chronomètre : le même mot que le journal du tour. */
+function cheminDuTri(route: TurnRoute | null): string | null {
+  if (!route) return null;
+  if (route.team === 'horloge' || route.team === 'bourse') return route.team;
+  return route.how;
 }
 
 /** Réponse fixe, au même format que les événements de l'agent. */
@@ -156,6 +191,78 @@ interface SessionDeps {
   saveAttachment?: (input: { name: string; mime: string; data: Buffer }) => Promise<ChatAttachment>;
   /** Bilan de santé, sans modèle. Absent : la phrase suit le chat habituel. */
   healthReport?: () => Promise<HealthReport>;
+  /**
+   * Briefing du matin, gabarits seulement. Absent, ou réglage coupé : le tour
+   * suit le chemin d'avant. Ne renvoie un texte que pour une phrase de briefing.
+   */
+  briefing?: (input: { text: string; voice: boolean }) => Promise<string | null>;
+  /**
+   * Notes et liste, règles seulement. Absent ou réglage coupé : le tour suit
+   * le chemin d'avant. `null` : la phrase n'est pas une note express.
+   */
+  notes?: (input: { text: string; place: 'fenetre' | 'telephone' | 'enceinte' }) => Promise<string | null>;
+  /**
+   * Routines. Absent ou réglage coupé : le tour suit le chemin d'avant.
+   * La carte de résumé passe par `confirm`. Chaque étape passe par `execute`.
+   */
+  routines?: (input: {
+    text: string;
+    voice: boolean;
+    confirm: (summary: string) => Promise<boolean>;
+    execute: (name: string, args: Record<string, string | number>) => Promise<{ ok: boolean; content: string }>;
+  }) => Promise<string | null>;
+  /** Imprimante. Absent ou coupée : le tour suit le chemin d'avant. */
+  printer?: (input: {
+    text: string;
+    place: 'fenetre' | 'telephone' | 'enceinte';
+    confirm: (summary: string) => Promise<boolean>;
+  }) => Promise<string | null>;
+  /**
+   * Carnet des ratés. Absent ou coupé : le tour est celui d'avant.
+   * La règle express répond avant tout modèle ; le reste observe seulement.
+   */
+  carnet?: {
+    enabled(): boolean;
+    expressReply(text: string): string | null;
+    noteExpress(ctx: {
+      text: string;
+      conversationId: string;
+      before: readonly ChatMessage[];
+      place: CarnetPlace;
+      at: number;
+    }): void;
+    observeTurn(input: {
+      at: number;
+      conversationId: string;
+      before: readonly ChatMessage[];
+      userText: string;
+      replyText: string;
+      place: CarnetPlace;
+      team: string | null;
+      model: string | null;
+      how: CarnetHow | null;
+      brainUnreadable: boolean;
+      tools: ToolLine[];
+      firstWordMs: number | null;
+      speakerFirstSoundMs: number | null;
+      cut: { afterMs: number; button?: boolean; speech?: boolean; text?: string } | null;
+    }): void;
+    takeSpeakerSound(name: string): number | null;
+    markReply(conversationId: string, at: number | null): void;
+    speechCut(input: {
+      conversationId: string;
+      at: number;
+      source?: 'voice' | 'text';
+      text: string;
+    }): { afterMs: number; button?: boolean; speech?: boolean; text?: string } | null;
+  };
+  /**
+   * Chronomètre « voix » (Jarvis Test). Absent : le premier son n'est pas noté.
+   */
+  voiceStarts?: {
+    turnStarted(place: string, turn: VoiceTurn): void;
+    journalised(place: string, userMessageId: string): number | null;
+  };
 }
 
 /**
@@ -259,13 +366,23 @@ export class ChatSession {
   }
 
   async send(sender: WebContents, input: SendChatInput): Promise<void> {
+    const turnStartedAt = Date.now();
+    const watch = this.deps.carnet?.enabled() ? createTurnWatch(turnStartedAt) : null;
     const emit = (event: ChatEvent): void => {
+      watch?.see(event, Date.now());
       if (!sender.isDestroyed()) sender.send(IpcChannel.chatEvent, event);
     };
 
     // 5.0.62 — une phrase dite sans « Jarvis » pendant la discussion : lui est-elle adressée ?
     // Vérifié avant d'annuler quoi que ce soit : une conversation dans la pièce ne coupe rien.
     const seq = (this.sendSeq += 1);
+    // « Ça n'a pas marché » : avant le modèle du destinataire, avant le cerveau, avant la réponse.
+    const noted = this.deps.carnet?.expressReply(input.text) ?? null;
+    if (noted) {
+      this.cancel();
+      await this.notedFailure(sender, emit, input, seq, noted);
+      return;
+    }
     if (input.source === 'voice' && input.followUp) {
       const checkSettings = this.deps.getSettings();
       if (addresseeCheckEnabled(checkSettings.voice)) {
@@ -312,9 +429,71 @@ export class ChatSession {
     }
 
     const source = input.source ?? 'text';
-    const healthIntent = looksLikeHealthIntent(input.text);
+    const turnStartedAt = Date.now();
+    // Chronomètre par étape : il mesure, il ne change ni la requête ni la réponse.
+    const clock = new TurnClock();
+    const voiceKey = voicePlaceKey(input.place);
+    if (voiceKey) {
+      this.deps.voiceStarts?.turnStarted(voiceKey, {
+        conversationId: conversation.id,
+        userMessageId: userMessage.id,
+        startedAt: turnStartedAt,
+      });
+    }
+    const briefingText =
+      settings.briefing?.enabled === true && this.deps.briefing
+        ? await this.deps.briefing({ text: input.text, voice: input.place?.kind === 'enceinte' }).catch(() => null)
+        : null;
+    const notePlace = input.place?.kind ?? 'fenetre';
+    const notesText =
+      !briefingText && settings.notes?.enabled === true && this.deps.notes
+        ? await this.deps.notes({ text: input.text, place: notePlace }).catch(() => null)
+        : null;
+    const routineText =
+      !briefingText && !notesText && settings.routines?.enabled === true && this.deps.routines
+        ? await this.deps.routines({
+            text: input.text,
+            voice: input.place?.kind === 'enceinte',
+            confirm: (summary) =>
+              this.askUser(
+                sender,
+                emit,
+                { callId: randomId(), toolName: 'routine', title: 'Routine', details: summary },
+                controller.signal,
+              ),
+            execute: async (name, args) => {
+              const outcome = await this.deps.tools.execute(
+                { id: randomId(), name, arguments: args },
+                {
+                  requestConfirmation: (request) => this.askUser(sender, emit, request, controller.signal),
+                  fromSpeaker: input.place?.kind === 'enceinte',
+                  signal: controller.signal,
+                },
+              );
+              return { ok: outcome.status === 'ok', content: outcome.content };
+            },
+          }).catch(() => null)
+        : null;
+    const printerText =
+      !briefingText && !notesText && !routineText && settings.printer?.enabled === true && this.deps.printer
+        ? await this.deps.printer({
+            text: input.text,
+            place: input.place?.kind ?? 'fenetre',
+            confirm: (summary) =>
+              this.askUser(
+                sender,
+                emit,
+                { callId: randomId(), toolName: 'imprimante', title: 'Imprimante', details: summary, forced: true },
+                controller.signal,
+              ),
+          }).catch(() => null)
+        : null;
+    const healthIntent = !briefingText && !notesText && !routineText && !printerText && looksLikeHealthIntent(input.text);
     const orchestra = activeOrchestra(settings);
-    const route = !healthIntent && orchestra
+    const routeGap: { kind: 'illisible' | 'silence' | null } = { kind: null };
+    const routed = !briefingText && !notesText && !routineText && !printerText && !healthIntent && Boolean(orchestra);
+    if (routed) clock.startRouting();
+    const route = !briefingText && !notesText && !routineText && !printerText && !healthIntent && orchestra
       ? await this.routeTurn(
           settings,
           orchestra,
@@ -322,8 +501,11 @@ export class ChatSession {
           messages,
           controller.signal,
           this.lastTeamByConversation.get(conversation.id) ?? null,
+          routeGap,
+          clock,
         )
       : null;
+    if (routed) clock.endRouting(cheminDuTri(route));
     if (route) this.lastTeamByConversation.set(conversation.id, route.team);
 
     const chatMissionHub = this.deps.getChatMissionHub?.() ?? null;
@@ -368,7 +550,15 @@ export class ChatSession {
 
     let run: AsyncGenerator<AgentEvent>;
     let appendMissionProposal: (() => void) | null = null;
-    if (healthIntent) {
+    if (briefingText) {
+      run = fixedReply(briefingText);
+    } else if (notesText) {
+      run = fixedReply(notesText);
+    } else if (routineText) {
+      run = fixedReply(routineText);
+    } else if (printerText) {
+      run = fixedReply(printerText);
+    } else if (healthIntent) {
       let reply = "Je n'ai pas pu faire le bilan.";
       if (this.deps.healthReport) {
         try {
@@ -425,10 +615,20 @@ export class ChatSession {
         chatMissionsOn && chatMissionHub
           ? this.deps.tools.compose(createProposerMissionTool(chatMissionHub))
           : this.deps.tools;
-      const agent = new Agent(route.provider, turnTools, {
-        systemPrompt: `${turn.systemPrompt}\n\n${teamPrompt(team, character, clockLinePrompt(new Date()))}${missionPrompt}`,
+      // Ligne d'heure : elle change chaque minute. Dans le message système, elle faisait relire les
+      // outils et tout l'historique à chaque nouvelle minute. Jarvis Test la place en tête de la
+      // demande, dans la copie envoyée au modèle seulement ; ce qu'elle dit ne change pas.
+      const clockLine = clockLinePrompt(new Date());
+      // Une demande qui parle de temps (heure, jour, « tard »…) garde la ligne dans le message
+      // système, comme avant : c'est là que le modèle la cite le plus sûrement.
+      const clockLast = edition().clockAfterHistory === true && !mentionsTime(input.text);
+      const teamProvider = clockLast ? withTrailingNote(route.provider, clockLine, userMessage.id) : route.provider;
+      const agent = new Agent(clock.wrap(teamProvider, 'reponse'), turnTools, {
+        systemPrompt: `${turn.systemPrompt}\n\n${teamPrompt(team, character, clockLast ? null : clockLine)}${missionPrompt}`,
         temperature: settings.temperature,
         homeLocation: settings.homeLocation ?? null,
+        // La date du tour est dans la note de la demande : le tour de recherche ne la répète pas.
+        ...(clockLast ? { dateInTurnNote: true } : {}),
         allowedTools: (name) =>
           teamHasTool(team, name) || (chatMissionsOn && name === PROPOSER_MISSION_TOOL_NAME),
         spotifyAskDevice: settings.spotifyAskDevice === true,
@@ -441,12 +641,13 @@ export class ChatSession {
         policies: settings.toolPolicies,
         debug: settings.debugLogging,
         spotifyVoiceSessionId: this.spotifyVoiceSessionId,
+        fromSpeaker: input.place?.kind === 'enceinte',
         requestConfirmation: (request) => this.askUser(sender, emit, request, controller.signal),
       });
     } else {
       const { provider } = this.deps.registry.createOrFallback(chatProviderConfig(settings));
       const turn = await this.turnContext(settings, input.text, source);
-      const agent = new Agent(provider, this.deps.tools, {
+      const agent = new Agent(clock.wrap(provider, 'reponse'), this.deps.tools, {
         // La note d'origine vocale ne vit que dans ce prompt système, transmis
         // au modèle pour ce tour : elle n'est jamais écrite dans `userMessage`
         // ni dans `messages`, donc jamais affichée ni persistée.
@@ -463,6 +664,7 @@ export class ChatSession {
         policies: settings.toolPolicies,
         debug: settings.debugLogging,
         spotifyVoiceSessionId: this.spotifyVoiceSessionId,
+        fromSpeaker: input.place?.kind === 'enceinte',
         requestConfirmation: (request) => this.askUser(sender, emit, request, controller.signal),
       });
     }
@@ -473,7 +675,10 @@ export class ChatSession {
       for await (const event of run) {
         switch (event.type) {
           case 'assistant_delta':
-            if (event.delta.trim()) visibleReply = true;
+            if (event.delta.trim()) {
+              visibleReply = true;
+              clock.firstWord();
+            }
             emit({ type: 'delta', text: event.delta });
             break;
           case 'assistant_message': {
@@ -501,6 +706,7 @@ export class ChatSession {
             emit({ type: 'tool_progress', callId: event.callId, message: event.message });
             break;
           case 'tool_result':
+            clock.tool(event.outcome.name, event.outcome.durationMs, event.outcome.kept !== undefined);
             if (chatMissionsOn && event.outcome.name === PROPOSER_MISSION_TOOL_NAME) {
               const payload = event.outcome.data as ChatMissionProposalPayload | undefined;
               if (payload) {
@@ -614,7 +820,23 @@ export class ChatSession {
       emit({ type: 'imager_offer', text: input.text });
     }
 
-    const updated = withMessages(conversation, messages);
+    const updated = journaliserTour(withMessages(conversation, messages), {
+      startedAt: turnStartedAt,
+      previousCount: conversation.messages.length,
+      source: input.source,
+      place: input.place,
+      route: routeNotee(route, orchestra),
+      health: healthIntent,
+      fixedReply: Boolean(briefingText || notesText || routineText || printerText),
+      directMission: directMissionTake,
+      chatProviderId: settings.provider,
+      chatModel: resolveChatModel(settings),
+      etapes: (() => {
+        const sound = voiceKey ? (this.deps.voiceStarts?.journalised(voiceKey, userMessage.id) ?? null) : null;
+        if (sound !== null) clock.voice(sound);
+        return clock.steps();
+      })(),
+    });
     try {
       await this.deps.store.save(updated);
     } catch (error) {
@@ -642,6 +864,38 @@ export class ChatSession {
         message: 'Je n’ai pas pu répondre. Réessaie dans un instant.',
       });
     }
+    if (watch && !superseded()) {
+      try {
+        const place = input.place ?? { kind: 'fenetre' as const };
+        const sound = place.kind === 'enceinte' ? this.deps.carnet?.takeSpeakerSound(place.name) ?? null : null;
+        this.deps.carnet?.observeTurn({
+          at: turnStartedAt,
+          conversationId: updated.id,
+          before: conversation.messages,
+          userText: input.text,
+          replyText: watch.reply(),
+          place,
+          team: watch.team(),
+          model: watch.model(),
+          how: watch.how(),
+          brainUnreadable: routeGap.kind === 'illisible',
+          tools: watch.tools(),
+          firstWordMs: watch.firstWordMs(),
+          speakerFirstSoundMs: sound,
+          cut: controller.signal.aborted
+            ? watch.buttonCut(Date.now())
+            : (this.deps.carnet?.speechCut({
+                conversationId: updated.id,
+                at: turnStartedAt,
+                source: input.source,
+                text: input.text,
+              }) ?? null),
+        });
+        this.deps.carnet?.markReply(updated.id, watch.responseStartedAt());
+      } catch (error) {
+        console.error('[jarvis] carnet non noté :', error);
+      }
+    }
     emit({ type: 'done', conversationId: updated.id, messages: updated.messages });
     } catch {
       if (this.controller === controller) this.controller = null;
@@ -651,6 +905,62 @@ export class ChatSession {
         message: "Le message n'a pas pu être envoyé. Réessaie dans un instant.",
       });
       emit({ type: 'done', conversationId, messages: [] });
+    }
+  }
+
+  /**
+   * Règle express du carnet. Aucun fournisseur n'est créé : le faux modèle des tests
+   * échoue s'il est appelé. La réponse est exactement le texte rendu par le carnet.
+   */
+  private async notedFailure(
+    sender: WebContents,
+    emit: (event: ChatEvent) => void,
+    input: SendChatInput,
+    seq: number,
+    replyText: string,
+  ): Promise<void> {
+    const controller = new AbortController();
+    this.controller = controller;
+    let conversationId = input.conversationId ?? '';
+    try {
+      const conversation = await this.loadConversation(input.conversationId);
+      if (seq !== this.sendSeq || this.controller !== controller) return;
+      conversationId = conversation.id;
+      const userMessage = createMessage('user', input.text);
+      const reply = createMessage('assistant', replyText);
+      const messages = [...conversation.messages, userMessage, reply];
+      emit({ type: 'started', conversationId, message: userMessage });
+      emit({ type: 'delta', text: replyText });
+      const updated = withMessages(conversation, messages);
+      try {
+        await this.deps.store.save(updated);
+      } catch (error) {
+        emit({
+          type: 'error',
+          message: `Conversation non enregistrée dans l'historique : ${error instanceof Error ? error.message : String(error)}`,
+        });
+      }
+      try {
+        this.deps.carnet?.noteExpress({
+          text: input.text,
+          conversationId: updated.id,
+          before: conversation.messages,
+          place: input.place ?? { kind: 'fenetre' },
+          at: userMessage.createdAt,
+        });
+      } catch (error) {
+        console.error('[jarvis] carnet non noté :', error);
+      }
+      emit({ type: 'done', conversationId: updated.id, messages: updated.messages });
+    } catch {
+      if (seq !== this.sendSeq) return;
+      emit({
+        type: 'error',
+        message: "Le message n'a pas pu être envoyé. Réessaie dans un instant.",
+      });
+      emit({ type: 'done', conversationId, messages: [] });
+    } finally {
+      if (this.controller === controller) this.controller = null;
     }
   }
 
@@ -818,6 +1128,8 @@ export class ChatSession {
     messages: ChatMessage[],
     signal: AbortSignal,
     previousTeam: string | null,
+    gap?: { kind: 'illisible' | 'silence' | null },
+    chrono?: TurnClock,
   ): Promise<TurnRoute | null> {
     const calc = solveArithmetic(text);
     if (calc) {
@@ -827,34 +1139,51 @@ export class ChatSession {
     if (clock) return { team: 'horloge', label: 'Horloge', model: 'sans modèle', how: 'express', reply: clock };
     const stock = detectStockRequest(text);
     if (stock) {
-      const reply = await this.stockQuoteReply(stock.names, stock.prefer, signal);
+      const reply = await this.stockQuoteReply(stock.names, stock.prefer, signal, chrono);
       return { team: 'bourse', label: 'Bourse', model: 'express', how: 'express', reply };
     }
-    const teams = availableTeams(this.deps.tools.schemas().map((tool) => tool.name));
+    const toolNames = this.deps.tools.schemas().map((tool) => tool.name);
+    // 5.0.79 : une demande simple d'affichage sur une enceinte est lue par règles et l'outil est
+    // appelé ici, sans modèle (il répondait parfois « affiché » sans appeler l'outil).
+    const screen = toolNames.includes(SPEAKER_SCREEN_TOOL) ? parseSpeakerScreenRequest(text) : null;
+    if (screen) {
+      const reply = await this.speakerScreenReply(screen, signal);
+      if (reply) return { team: 'pc', label: TEAM_SPECS.pc.label, model: 'sans modèle', how: 'express', reply };
+    }
+    const teams = availableTeams(toolNames);
     const available = new Set(teams);
     let team: OrchestraTeam | null = expressTeam({
       text,
       history: messages,
       available,
       hasImageAttachment: lastUserHasImageAttachment(messages),
+      speakerScreen: toolNames.includes(SPEAKER_SCREEN_TOOL),
     });
     let how: TurnRoute['how'] = team ? 'express' : 'cerveau';
     const notice =
       !team && previousTeam && isTeamCorrection(text) ? teamMissedNotice(previousTeam) : undefined;
+    let brainText = '';
     if (!team) {
       const router = activeRouter(settings);
       if (router) {
-        team = await this.askRouter(settings, router, teams, text, messages.slice(0, -1), signal, notice);
+        const routed = await this.askRouter(settings, router, teams, text, messages.slice(0, -1), signal, notice, chrono);
+        team = routed.team;
         if (team) how = 'trieur';
         else {
-          team = await this.askBrain(settings, orchestra, teams, text, messages.slice(0, -1), signal, notice);
+          const brained = await this.askBrain(settings, orchestra, teams, text, messages.slice(0, -1), signal, notice, chrono);
+          team = brained.team;
+          brainText = brained.text;
           if (team) how = 'cerveau';
         }
       } else {
-        team = await this.askBrain(settings, orchestra, teams, text, messages.slice(0, -1), signal, notice);
+        const brained = await this.askBrain(settings, orchestra, teams, text, messages.slice(0, -1), signal, notice, chrono);
+        team = brained.team;
+        brainText = brained.text;
+        if (team) how = 'cerveau';
       }
     }
     if (!team) {
+      if (gap) gap.kind = brainText.trim() ? 'illisible' : 'silence';
       if (settings.debugLogging) debugLog(true, 'orchestre', 'le cerveau n’a pas choisi d’équipe : chemin habituel');
       return null;
     }
@@ -869,6 +1198,22 @@ export class ChatSession {
     return { team, label: TEAM_SPECS[team].label, model: assignment.model, how, provider };
   }
 
+  /** `afficher_sur_enceinte` appelé ici, pas par un modèle ; sa phrase est la réponse. `null` : le modèle s'en occupe. */
+  private async speakerScreenReply(request: SpeakerScreenRequest, signal: AbortSignal): Promise<string | null> {
+    try {
+      const outcome = await this.deps.tools.execute(
+        { id: randomId(), name: SPEAKER_SCREEN_TOOL, arguments: { ...request } },
+        { signal, requestConfirmation: async () => false },
+      );
+      void this.deps.auditLog
+        .append(buildAuditEntry(outcome))
+        .catch((error: unknown) => console.error('[jarvis] journal d’audit non écrit :', error));
+      return outcome.content.trim() || null;
+    } catch {
+      return null;
+    }
+  }
+
   /**
    * `get_stock_quote` appelé ici, pas par un modèle. Le journal d'audit reçoit l'appel.
    * Sans prix renvoyé : une phrase d'échec, jamais un cours inventé.
@@ -877,6 +1222,7 @@ export class ChatSession {
     names: readonly string[],
     prefer: 'paris' | null,
     signal: AbortSignal,
+    clock?: TurnClock,
   ): Promise<string> {
     if (!this.deps.tools.get('get_stock_quote')) return names.map((name) => stockNotFoundReply(name)).join(' ');
     const callId = randomId();
@@ -889,6 +1235,7 @@ export class ChatSession {
           ...(prefer ? { stockPrefer: prefer } : {}),
         },
       );
+      clock?.tool(outcome.name, outcome.durationMs, outcome.kept !== undefined);
       void this.deps.auditLog
         .append(buildAuditEntry(outcome))
         .catch((error: unknown) => console.error('[jarvis] journal d’audit non écrit :', error));
@@ -906,10 +1253,12 @@ export class ChatSession {
     history: ChatMessage[],
     signal: AbortSignal,
     notice?: string,
-  ): Promise<OrchestraTeam | null> {
-    const { provider } = this.deps.registry.createOrFallback(
+    clock?: TurnClock,
+  ): Promise<{ team: OrchestraTeam | null; text: string }> {
+    const { provider: bare } = this.deps.registry.createOrFallback(
       orchestraProviderConfig(settings, router.model, router.place, true),
     );
+    const provider = clock ? clock.wrap(bare, 'tri') : bare;
     const deadline = new AbortController();
     const timer = setTimeout(() => deadline.abort(), BRAIN_DEADLINE_MS);
     const onAbort = (): void => deadline.abort();
@@ -927,12 +1276,12 @@ export class ChatSession {
         if (event.type === 'error') break;
       }
     } catch {
-      return null;
+      return { team: null, text: reply };
     } finally {
       clearTimeout(timer);
       signal.removeEventListener('abort', onAbort);
     }
-    return parseRouterReply(reply, teams);
+    return { team: parseRouterReply(reply, teams), text: reply };
   }
 
   private async askBrain(
@@ -943,10 +1292,12 @@ export class ChatSession {
     history: ChatMessage[],
     signal: AbortSignal,
     notice?: string,
-  ): Promise<OrchestraTeam | null> {
-    const { provider } = this.deps.registry.createOrFallback(
+    clock?: TurnClock,
+  ): Promise<{ team: OrchestraTeam | null; text: string }> {
+    const { provider: bare } = this.deps.registry.createOrFallback(
       orchestraProviderConfig(settings, orchestra.brain, 'carte', true),
     );
+    const provider = clock ? clock.wrap(bare, 'tri') : bare;
     // Premier chargement du cerveau compris (environ 20 s sur la RTX 2060).
     const deadline = new AbortController();
     const timer = setTimeout(() => deadline.abort(), BRAIN_DEADLINE_MS);
@@ -965,12 +1316,12 @@ export class ChatSession {
         if (event.type === 'error') break;
       }
     } catch {
-      return null;
+      return { team: null, text: reply };
     } finally {
       clearTimeout(timer);
       signal.removeEventListener('abort', onAbort);
     }
-    return parseRouterReply(reply, teams);
+    return { team: parseRouterReply(reply, teams), text: reply };
   }
 
   private askUser(

@@ -1,5 +1,10 @@
+// Premier import : dossier de Jarvis Test avant tout getPath. Live n'appelle pas setPath.
+import './editionBoot.js';
 import { readFile, writeFile } from 'node:fs/promises';
 import { readRouterScore } from './orchestra/routerScore.js';
+import { VoiceStartBook } from './vitesse/voix.js';
+import { ModelWarmer } from './vitesse/chauds.js';
+import { mostUsedTeamOf } from './vitesse/usage.js';
 import { join } from 'node:path';
 import {
   BrowserWindow,
@@ -34,6 +39,13 @@ import {
   testOllamaConnection,
   PIPER_TTS_ID,
   SpeakerChrono,
+  grantReservation,
+  hotkeyFallback,
+  hotkeyToRegister,
+  portTakenSentence,
+  reservedAllows,
+  reservedHeld,
+  shortcutTakenSentence,
   speakerRulesOnly,
   speakerStaysAwake,
   speakerUsesPiper,
@@ -41,7 +53,6 @@ import {
   speakerWhisperHeld,
   homeInterface,
   parseNetStatus,
-  SPEAKER_PORT,
   type MarketDataProviderDescriptor,
   type ProviderDescriptor,
   type SearchProviderDescriptor,
@@ -50,7 +61,28 @@ import {
   validateRepo,
   normalizeDirectRequest,
   type ChatAttachment,
+  type Reservations,
+  type ReservedFunction,
+  noteIntent,
+  type RoutineStep,
+  ToolResultMemory,
+  type ToolManager,
+  MoonrakerClient,
+  checkRoverBaseUrl,
+  createMessage,
+  formatPrintStatus,
+  startPrintWatch,
+  withMessages,
+  HealthScreenWatch,
 } from '@jarvis/core';
+import {
+  NotesBook,
+  RoutineBook,
+  expressNoteReply,
+  handleRoutinePhrase,
+  notesFilePath,
+  routinesFilePath,
+} from '@jarvis/core/quotidien/fichiers';
 import {
   IpcChannel,
   type GoogleConfigDraft,
@@ -74,6 +106,10 @@ import { createGoogleRuntime } from './google/runtime.js';
 import { PersonalizationStore } from './personalization.js';
 import { KnowledgeStore } from './knowledge.js';
 import { ChatSession } from './session.js';
+import { CarnetHub } from './carnet/hub.js';
+import { createMorningBriefing } from './quotidien/morning.js';
+import { runPrinterReply } from './quotidien/printerReply.js';
+import { CarnetFile } from './carnet/file.js';
 import { appendTeamValidation, type TeamValidationPayload } from './orchestra/teamValidation.js';
 import { PhoneService } from './phone/service.js';
 import { PhoneStore } from './phone/store.js';
@@ -94,6 +130,7 @@ import { KeyVault } from './vault/store.js';
 import { BackupService } from './backup/service.js';
 import { PrivacyService } from './privacy/service.js';
 import { HealthMonitor } from './health/runtime.js';
+import { SPEAKER_SCREEN_ALL } from './speaker/server.js';
 import { readGoogleHealth } from './health/googleProbe.js';
 import { GOOGLE_TOKEN_FILE } from './google/runtime.js';
 import { GoogleTokenStore } from './google/tokenStore.js';
@@ -115,11 +152,16 @@ import { warmOllamaModels } from './speaker/warmupRun.js';
 import { presentWindow } from './startup.js';
 import { allowPermissionCheck, allowPermissionRequest, isAppDocumentUrl, originForLog } from './mediaPermissions.js';
 import { isCopyableText } from './copyText.js';
+import { safeTextStateIO } from './safeFile.js';
 import { VoiceCaptureLog } from './voiceCaptureLog.js';
 import { WakeLearningStore } from './wakeLearningStore.js';
 import { LocalLearningStore } from './learning/store.js';
 import { LocalLearningController } from './learning/controller.js';
 import { ListeningIndicatorWindow } from './listeningIndicator.js';
+import { edition } from './edition.js';
+import { portIsFree } from './portFree.js';
+import { markCopyAsked, readEditionDisk, readReservations, writeReservations } from './reservations.js';
+import { copyInstalledLive } from './liveCopy.js';
 import { createOverlayWindow, pickSpeakerPort, type OverlayWindow } from './window.js';
 import {
   currentVoiceAssetsRoot,
@@ -166,6 +208,7 @@ const wakeLearning = new WakeLearningStore(() => app.getPath('userData'), (line)
 let listeningIndicator: ListeningIndicatorWindow | null = null;
 
 let settings: Settings = parseSettings({});
+let reservations: Reservations = {};
 let settingsFileExisted = false;
 const localLearningStore = new LocalLearningStore(() => app.getPath('userData'));
 const localLearning = new LocalLearningController(
@@ -246,7 +289,96 @@ function openPlayProject(projectId: string | null): void {
   void controller.playProject(projectId);
 }
 
-function buildTools() {
+// Écriture sûre des fichiers d'état (5.0.78), comme settings.json et speakers.json.
+const notesBook = new NotesBook(() => notesFilePath(app.getPath('userData')), safeTextStateIO);
+const routineBook = new RoutineBook(() => routinesFilePath(app.getPath('userData')), safeTextStateIO);
+let routineCount = 0;
+
+async function refreshRoutineCount(): Promise<void> {
+  routineCount = (await routineBook.list()).length;
+}
+
+async function runRoutineStep(
+  step: RoutineStep,
+  execute: (name: string, args: Record<string, string | number>) => Promise<{ ok: boolean; content: string }>,
+  voice: boolean,
+): Promise<{ ok: boolean; content: string }> {
+  if (step.tool === 'briefing') {
+    if (settings.briefing?.enabled !== true) return { ok: false, content: "Le briefing n'est pas activé." };
+    const text = await morningBriefing({ text: 'mon briefing', voice });
+    return text ? { ok: true, content: text } : { ok: false, content: "Le briefing n'a rien dit." };
+  }
+  return execute(step.tool, step.args);
+}
+
+async function notesReply(input: {
+  text: string;
+  place: 'fenetre' | 'telephone' | 'enceinte';
+}): Promise<string | null> {
+  const intent = noteIntent(input.text);
+  if (!intent) return null;
+  return expressNoteReply(notesBook, intent, input.place);
+}
+
+async function routineReply(input: {
+  text: string;
+  voice: boolean;
+  confirm: (summary: string) => Promise<boolean>;
+  execute: (name: string, args: Record<string, string | number>) => Promise<{ ok: boolean; content: string }>;
+}): Promise<string | null> {
+  const reply = await handleRoutinePhrase(routineBook, input.text, {
+    confirm: input.confirm,
+    run: (step) => runRoutineStep(step, input.execute, input.voice),
+  });
+  await refreshRoutineCount();
+  return reply;
+}
+
+async function printerReply(input: {
+  text: string;
+  place: 'fenetre' | 'telephone' | 'enceinte';
+  confirm: (summary: string) => Promise<boolean>;
+}): Promise<string | null> {
+  return runPrinterReply(input, () => new MoonrakerClient(settings.printer?.baseUrl ?? '', settings.printer?.apiKey ?? ''));
+}
+
+let printWatch: { stop(): void } | null = null;
+
+function syncPrintWatch(): void {
+  printWatch?.stop();
+  printWatch = null;
+  const printer = settings.printer;
+  if (printer?.enabled !== true || !printer.baseUrl || !checkRoverBaseUrl(printer.baseUrl).ok) return;
+  const baseUrl = printer.baseUrl;
+  const apiKey = printer.apiKey ?? '';
+  printWatch = startPrintWatch({
+    intervalMs: 60_000,
+    read: async () => {
+      try {
+        return await new MoonrakerClient(baseUrl, apiKey).status();
+      } catch {
+        return null;
+      }
+    },
+    onDone: (message) => {
+      void announcePrint(message);
+    },
+  });
+}
+
+async function announcePrint(message: string): Promise<void> {
+  const summaries = await store.list();
+  const current = summaries[0] ? await store.get(summaries[0].id) : null;
+  if (current) await store.save(withMessages(current, [...current.messages, createMessage('assistant', message)]));
+  overlay?.browserWindow.webContents.send(IpcChannel.chatEvent, { type: 'notice', text: message });
+}
+
+// Mémoire courte des résultats d'outils de lecture : Jarvis Test seulement (table d'édition).
+const toolMemory = edition().keepToolResults ? new ToolResultMemory() : null;
+
+function buildTools(): ToolManager {
+  // Réglages changés (moteur de recherche, clé…) : un résultat gardé avec l'ancien réglage ne ressert pas.
+  toolMemory?.clear();
   return createToolManager({
     getSettings: () => settings,
     searchRegistry,
@@ -260,7 +392,29 @@ function buildTools() {
     images,
     openImagePath: (path) => shell.openPath(path),
     currentTurn: () => currentTurn.value,
+    // Écran des enceintes : proposé seulement si le pont tourne et qu'une enceinte est reliée.
+    speakerScreen: {
+      linkedNames: () =>
+        speakers.isEnabled() && speakers.server.running
+          ? speakerStore.speakers().filter((speaker) => !speaker.pending).map((speaker) => speaker.name)
+          : [],
+      show: (target, info) => speakers.server.showOnSpeaker(target, info),
+    },
     spotifyConnected: () => spotify.connectedNow(),
+    notes: notesBook,
+    routines: {
+      book: routineBook,
+      isAvailable: () => settings.routines?.enabled === true && routineCount > 0,
+      tools: () => tools,
+      extra: (step) => runRoutineStep(step, async () => ({ ok: false, content: '' }), false).then((result) => (step.tool === 'briefing' ? result : null)),
+    },
+    printer: {
+      isAvailable: () => {
+        const printer = settings.printer;
+        return printer?.enabled === true && !!printer.baseUrl && checkRoverBaseUrl(printer.baseUrl).ok;
+      },
+      client: () => new MoonrakerClient(settings.printer?.baseUrl ?? '', settings.printer?.apiKey ?? ''),
+    },
     summarizeYoutube: (url, onProgress, signal) =>
       summarizeYoutubeLink({
         url,
@@ -269,10 +423,10 @@ function buildTools() {
         onProgress,
         signal,
       }),
-  });
+  }).useResultMemory(toolMemory);
 }
 
-let tools = buildTools();
+let tools: ToolManager = buildTools();
 
 function startGoogleIfAllowed(): void {
   if (googleStarted) return;
@@ -301,6 +455,20 @@ function settingsForWindow(): Settings {
   return maskSecrets(settings, vault.secretsNow());
 }
 
+/** Actif dans Test, coupé dans Live, tant que l'interrupteur n'a pas été touché. */
+const carnet = new CarnetHub(edition().id, new CarnetFile(() => app.getPath('userData')));
+const morningBriefing = createMorningBriefing(() => app.getPath('userData'), () => settings, {
+  appointments: async () => {
+    const result = await google.calendar.list({ period: 'today', maxResults: 8 });
+    const events = (result.data as { events?: { title?: string; when?: string }[] } | undefined)?.events ?? [];
+    return events.map((event) => `${event.when ?? ''} ${event.title ?? ''}`.trim()).filter(Boolean);
+  },
+  pendingNotes: async () => (settings.notes?.enabled === true ? notesBook.pendingLabels() : []),
+});
+
+// Chronomètre « voix » : Jarvis Test seulement, comme le journal du tour.
+const voiceStarts = edition().id === 'test' ? new VoiceStartBook(store) : undefined;
+
 const session = new ChatSession({
   registry,
   get tools() {
@@ -322,6 +490,12 @@ const session = new ChatSession({
   // Module images : une photo jointe est enregistrée dans le dossier des images (sous _references).
   saveAttachment: (input) => images.saveReference(input),
   healthReport: () => healthMonitor?.run() ?? Promise.reject(new Error('bilan indisponible')),
+  carnet,
+  briefing: morningBriefing,
+  notes: notesReply,
+  routines: routineReply,
+  printer: printerReply,
+  voiceStarts,
 });
 
 // 5.0.63 — téléphone : une session de chat à part (un tour sur le téléphone n'annule pas celui de
@@ -345,10 +519,17 @@ const phoneSession = new ChatSession({
     currentTurn.value = turn;
   },
   healthReport: () => healthMonitor?.run() ?? Promise.reject(new Error('bilan indisponible')),
+  carnet,
+  briefing: morningBriefing,
+  notes: notesReply,
+  routines: routineReply,
+  printer: printerReply,
 });
 const questionnaire = QuestionnaireStore.inUserData(() => app.getPath('userData'));
 const phone = new PhoneService({
   store: PhoneStore.inUserData(() => app.getPath('userData')),
+  port: edition().ports.phone,
+  mayRun: () => reservedAllows(edition(), reservations, 'phone'),
   chat: {
     send: async (sender, input) => {
       chatActivity.begin();
@@ -395,13 +576,19 @@ async function warmSpeakerSide(): Promise<void> {
 const speakerStore = SpeakerStore.inUserData(() => app.getPath('userData'));
 const speakers = new SpeakerService({
   store: speakerStore,
+  onSpeakerSound: (name, elapsedMs) => {
+    carnet.noteFirstSound(name, elapsedMs);
+    void voiceStarts?.sound(`enceinte:${name}`).catch(() => undefined);
+  },
+  port: edition().ports.speaker,
+  mayRun: () => reservedAllows(edition(), reservations, 'speaker'),
   keptAddresses: () => keptLanAddresses(),
   openAnnounce: async () => {
     try {
       const ifaces = await lanInterfaces();
       return openAnnounce(
         ifaces,
-        { pcId: speakerStore.pcId, port: SPEAKER_PORT, hostname: localHostName() },
+        { pcId: speakerStore.pcId, port: edition().ports.speaker, hostname: localHostName() },
         (address) => {
           const socket = createMulticastSocket(address);
           if (!socket) throw new Error('annonce impossible');
@@ -432,6 +619,12 @@ const speakers = new SpeakerService({
         currentTurn.value = turn;
       },
       healthReport: () => healthMonitor?.run() ?? Promise.reject(new Error('bilan indisponible')),
+      carnet,
+      voiceStarts,
+      briefing: morningBriefing,
+      notes: notesReply,
+      routines: routineReply,
+      printer: printerReply,
     });
     return {
       send: async (sender, input) => {
@@ -477,6 +670,20 @@ const speakers = new SpeakerService({
     }
   },
 });
+
+// Modèles gardés chauds : Jarvis Test seulement (table d'édition). Live : rien n'est créé.
+const modelWarmer = edition().keepModelsWarm
+  ? new ModelWarmer({
+      getSettings: () => settings,
+      busy: () =>
+        images.isBusy() ||
+        (chatMissionHub?.missionBusy() ?? false) ||
+        localLearning.status().running ||
+        (developerIpc?.current()?.workInProgress() ?? false),
+      mostUsedTeam: () => mostUsedTeamOf(store),
+      log: (line) => console.info(line),
+    })
+  : null;
 
 backupService = new BackupService({
   userData: () => app.getPath('userData'),
@@ -525,6 +732,7 @@ const privacy = new PrivacyService({
   },
 });
 
+const healthScreen = new HealthScreenWatch();
 healthMonitor = new HealthMonitor({
   getSettings: () => settings,
   userData: () => app.getPath('userData'),
@@ -560,6 +768,8 @@ healthMonitor = new HealthMonitor({
   broadcast: (report) => {
     const contents = overlay?.browserWindow.webContents;
     if (contents && !contents.isDestroyed()) contents.send(IpcChannel.healthEvent, report);
+    // Un contrôle qui passe au rouge s'affiche sur l'écran des enceintes, une fois par incident.
+    for (const info of healthScreen.next(report)) speakers.server.showOnSpeaker(SPEAKER_SCREEN_ALL, info);
   },
 });
 
@@ -577,7 +787,7 @@ if (!app.requestSingleInstanceLock()) {
 }
 
 async function bootstrap(): Promise<void> {
-  app.setName('Jarvis');
+  app.setName(edition().productName);
   settingsFileExisted = await settingsFileExists();
   const [loaded] = await Promise.all([
     settingsFileExisted ? readSettings() : Promise.resolve(parseSettings({})),
@@ -588,23 +798,27 @@ async function bootstrap(): Promise<void> {
   setSettingsDiskStripsSecrets(vault.encryptionAvailable());
   if (migrated.changed) await writeSettings(migrated.disk);
   tools = buildTools();
+  await refreshRoutineCount();
+  syncPrintWatch();
   if (settings.machine?.profile === 'modest' && settings.spotifyClientId.trim()) {
     void spotify.status();
   }
   // Pas attendu : la fenêtre ne patiente pas pour lire les jetons Google.
   // Profil modeste et premier lancement : Google n’est chargé qu’à l’ouverture des réglages.
   startGoogleIfAllowed();
+  reservations = await readReservations(app.getPath('userData'));
   // Coupé par défaut : sans « Accès depuis le téléphone », aucun port n'est ouvert.
   void phone.init().catch((error: unknown) => console.error(error));
   // Coupé par défaut aussi : sans « Enceintes », le port 53131 reste fermé.
   void speakers.init().catch((error: unknown) => console.error(error));
+  void carnet.load().catch((error: unknown) => console.error(error));
   void speakerChronoFile.readLast().then((samples) => speakerChrono.replace(samples));
   registerVoiceAssetsProtocol();
   voiceCaptureLog.append(
-    `[démarrage] Jarvis ${app.getVersion()} · Electron ${process.versions.electron} · Chromium ${process.versions.chrome} · ${process.platform} ${process.arch} · écoute ${settings.voice.enabled ? 'activée' : 'coupée'}`,
+    `[démarrage] ${edition().productName} ${app.getVersion()} · Electron ${process.versions.electron} · Chromium ${process.versions.chrome} · ${process.platform} ${process.arch} · écoute ${settings.voice.enabled ? 'activée' : 'coupée'}`,
   );
 
-  app.setAppUserModelId('com.thedexios.jarvis');
+  app.setAppUserModelId(edition().appId);
   if (process.platform === 'darwin') app.dock?.hide();
 
   // Micro seul, depuis l'interface ; chaque décision va dans le journal de capture.
@@ -633,6 +847,7 @@ async function bootstrap(): Promise<void> {
     },
     isJarvisOrigin: (origin) => isAppDocumentUrl(origin, devServer),
   });
+  overlay.browserWindow.setTitle(edition().productName);
   overlay.browserWindow.webContents.on('did-finish-load', () => {
     if (speakerWhisperHeld(settings)) {
       overlay?.browserWindow.webContents.send(IpcChannel.speakerHoldWhisper);
@@ -654,13 +869,13 @@ async function bootstrap(): Promise<void> {
   );
   // Le bilan attend la première image (0.4.14) : il ne bloque pas l'ouverture.
   void healthMonitor?.run();
+  // Après la première image : le démarrage n'attend jamais Ollama.
+  modelWarmer?.start();
   backupService?.start();
   // 5.0.64 : un raccourci déjà pris au démarrage (ou mal écrit) laissait Jarvis sans
   // porte d'entrée ; comme à l'enregistrement, on retombe sur Control+Space.
-  if (!registerHotkey(settings.hotkey) && settings.hotkey !== 'Control+Space') {
-    console.warn(`[jarvis] raccourci « ${settings.hotkey} » refusé par le système : Control+Space`);
-    registerHotkey('Control+Space');
-  }
+  // Test ne retombe pas dessus : ce raccourci reste à Live.
+  await syncHotkey(false);
   createTray();
 
   // Poussé à l'interface dès qu'un état change (vérification, téléchargement,
@@ -698,13 +913,92 @@ function registerHotkey(accelerator: string): boolean {
   }
 }
 
+/** Live : même repli qu'avant (Control+Space). Test : rien si la fonction est coupée, pas de repli. */
+async function syncHotkey(persistFallback: boolean): Promise<void> {
+  const current = edition();
+  const wanted = hotkeyToRegister(current, settings.hotkey, reservedAllows(current, reservations, 'shortcut'));
+  if (!wanted) {
+    globalShortcut.unregisterAll();
+    return;
+  }
+  if (registerHotkey(wanted)) return;
+  const fallback = hotkeyFallback(current, wanted);
+  if (!fallback) return;
+  console.warn(`[jarvis] raccourci « ${wanted} » refusé par le système : ${fallback}`);
+  registerHotkey(fallback);
+  if (!persistFallback || settings.hotkey === fallback) return;
+  settings = parseSettings({ ...settings, hotkey: fallback }, settings);
+  await writeSettings(settings);
+}
+
+const RESERVED_NAMES: readonly ReservedFunction[] = ['wakeWord', 'speaker', 'phone', 'shortcut'];
+
+function editionView(): {
+  id: 'live' | 'test';
+  productName: string;
+  badge: { label: string; color: string } | null;
+  phrase: string;
+  held: Record<ReservedFunction, boolean>;
+} {
+  const current = edition();
+  return {
+    id: current.id,
+    productName: current.productName,
+    badge: current.badge,
+    phrase: current.reservedPhrase,
+    held: {
+      wakeWord: reservedHeld(current, reservations, 'wakeWord'),
+      speaker: reservedHeld(current, reservations, 'speaker'),
+      phone: reservedHeld(current, reservations, 'phone'),
+      shortcut: reservedHeld(current, reservations, 'shortcut'),
+    },
+  };
+}
+
+async function claimReserved(name: unknown): Promise<{
+  ok: boolean;
+  sentence?: string;
+  state: ReturnType<typeof editionView>;
+  settings?: Settings;
+}> {
+  if (typeof name !== 'string' || !RESERVED_NAMES.includes(name as ReservedFunction)) {
+    return { ok: false, sentence: 'Fonction inconnue.', state: editionView() };
+  }
+  const fn = name as ReservedFunction;
+  const current = edition();
+  if (!reservedHeld(current, reservations, fn)) {
+    return { ok: true, state: editionView(), settings: settingsForWindow() };
+  }
+  if (fn === 'speaker' || fn === 'phone') {
+    const port = fn === 'speaker' ? current.ports.speaker : current.ports.phone;
+    const free = await portIsFree(port, fn === 'phone' ? '127.0.0.1' : undefined);
+    if (!free) return { ok: false, sentence: portTakenSentence(port), state: editionView() };
+  }
+  if (fn === 'shortcut' && !registerHotkey(current.shortcut)) {
+    return { ok: false, sentence: shortcutTakenSentence(), state: editionView() };
+  }
+  reservations = grantReservation(reservations, fn);
+  await writeReservations(app.getPath('userData'), reservations);
+  if (fn === 'speaker') await speakers.setEnabled(true);
+  if (fn === 'phone') await phone.setEnabled(true);
+  if (fn === 'wakeWord') {
+    settings = parseSettings({ ...settings, voice: { ...settings.voice, enabled: true } }, settings);
+    await writeSettings(settings);
+  }
+  if (fn === 'shortcut' && settings.hotkey === 'Control+Space') {
+    settings = parseSettings({ ...settings, hotkey: current.shortcut }, settings);
+    await writeSettings(settings);
+  }
+  return { ok: true, state: editionView(), settings: settingsForWindow() };
+}
+
 function createTray(): void {
   const icon = nativeImage.createFromPath(join(__dirname, '../../resources/tray.png'));
   tray = new Tray(icon.isEmpty() ? nativeImage.createEmpty() : icon);
-  tray.setToolTip('Jarvis');
+  tray.setToolTip(edition().productName);
   tray.setContextMenu(
     Menu.buildFromTemplate([
-      { label: 'Ouvrir Jarvis', click: () => overlay?.show() },
+      { label: `Ouvrir ${edition().productName}`, click: () => overlay?.show() },
       { type: 'separator' },
       { label: 'Quitter', click: () => app.quit() },
     ]),
@@ -714,6 +1008,71 @@ function createTray(): void {
 
 function registerIpc(): void {
   localLearning.registerIpc(ipcMain);
+  ipcMain.handle(IpcChannel.printerTest, async () => {
+    try {
+      const printer = new MoonrakerClient(settings.printer?.baseUrl ?? '', settings.printer?.apiKey ?? '');
+      return { ok: true, text: formatPrintStatus(await printer.status()) };
+    } catch (error) {
+      return { ok: false, text: error instanceof Error ? error.message : 'Imprimante injoignable.' };
+    }
+  });
+  ipcMain.handle(IpcChannel.routinesList, () => routineBook.list());
+  ipcMain.handle(IpcChannel.routinesSave, async (_event, raw: unknown) => {
+    const routine = raw && typeof raw === 'object' ? (raw as { name?: unknown; steps?: unknown }) : {};
+    if (typeof routine.name !== 'string' || !Array.isArray(routine.steps)) return routineBook.list();
+    await routineBook.save({ name: routine.name, steps: routine.steps as RoutineStep[] });
+    await refreshRoutineCount();
+    return routineBook.list();
+  });
+  ipcMain.handle(IpcChannel.notesList, () => notesBook.list());
+  ipcMain.handle(IpcChannel.notesCheck, (_event, query: unknown) => notesBook.check(typeof query === 'string' ? query : ''));
+  ipcMain.handle(IpcChannel.notesErase, (_event, query: unknown) => notesBook.erase(typeof query === 'string' ? query : ''));
+  ipcMain.handle(IpcChannel.carnetGet, () => carnet.view());
+  ipcMain.handle(IpcChannel.carnetSet, (_event, patch: unknown) => {
+    const record = patch && typeof patch === 'object' ? (patch as Record<string, unknown>) : {};
+    return carnet
+      .updateSettings({
+        ...(typeof record.enabled === 'boolean' ? { enabled: record.enabled } : {}),
+        ...(typeof record.fenetrePremierMotMs === 'number' ? { fenetrePremierMotMs: record.fenetrePremierMotMs } : {}),
+        ...(typeof record.enceintePremierSonMs === 'number' ? { enceintePremierSonMs: record.enceintePremierSonMs } : {}),
+      })
+      .then(() => carnet.view());
+  });
+  ipcMain.handle(IpcChannel.carnetDismiss, (_event, ids: unknown) => {
+    const list = Array.isArray(ids) ? ids.filter((id): id is string => typeof id === 'string') : [];
+    return carnet.dismiss(list).then(() => carnet.view());
+  });
+  ipcMain.handle(IpcChannel.carnetAnnotate, (_event, ids: unknown, patch: unknown) => {
+    const list = Array.isArray(ids) ? ids.filter((id): id is string => typeof id === 'string') : [];
+    const record = patch && typeof patch === 'object' ? (patch as Record<string, unknown>) : {};
+    const category = record.category;
+    return carnet
+      .annotate(list, {
+        ...(typeof record.expected === 'string' ? { expected: record.expected } : {}),
+        ...(category === 'regle' || category === 'bogue' || category === 'modele' || category === 'materiel' || category === 'pas-grave'
+          ? { category }
+          : {}),
+      })
+      .then(() => carnet.view());
+  });
+  ipcMain.handle(IpcChannel.carnetSundaySeen, (_event, day: unknown) => {
+    if (typeof day !== 'string') return;
+    return carnet.acknowledgeSunday(day);
+  });
+  ipcMain.handle(IpcChannel.carnetThumb, (_event, input: unknown) => {
+    const record = input && typeof input === 'object' ? (input as Record<string, unknown>) : {};
+    if (typeof record.conversationId !== 'string' || typeof record.replyText !== 'string') return;
+    return carnet.thumb({
+      conversationId: record.conversationId,
+      userText: typeof record.userText === 'string' ? record.userText : '',
+      replyText: record.replyText,
+    });
+  });
+  ipcMain.handle(IpcChannel.carnetPrepare, () =>
+    carnet.prepare(app.getPath('documents'), (path) => {
+      void shell.showItemInFolder(path);
+    }),
+  );
   ipcMain.handle(IpcChannel.localLearningSnapshot, () => localLearning.snapshot());
   ipcMain.handle(IpcChannel.localLearningTrain, () => localLearning.trainNow().then(() => localLearning.status()));
   ipcMain.handle(IpcChannel.localLearningRollback, () => localLearning.rollback());
@@ -868,6 +1227,42 @@ function registerIpc(): void {
   });
 
   ipcMain.handle(IpcChannel.settingsGet, () => ({ settings: settingsForWindow(), status: session.status() }));
+  ipcMain.handle(IpcChannel.editionState, () => editionView());
+  ipcMain.handle(IpcChannel.editionClaim, (_event, name: unknown) => claimReserved(name));
+  ipcMain.handle(IpcChannel.editionCopyOffer, async () => {
+    if (edition().id !== 'test') return { ask: false };
+    const disk = await readEditionDisk(app.getPath('userData'));
+    return { ask: disk.copyAsked !== true };
+  });
+  ipcMain.handle(IpcChannel.editionCopy, async (_event, choice: unknown) => {
+    if (edition().id !== 'test') {
+      return { ok: false, sentence: 'Jarvis Live ne copie pas ses propres réglages.', guide: null };
+    }
+    const userData = app.getPath('userData');
+    if (choice === 'empty') {
+      await markCopyAsked(userData);
+      return { ok: true, sentence: 'Jarvis Test part de zéro.', guide: null };
+    }
+    if (choice !== 'yes') return { ok: false, sentence: 'Choix inconnu.', guide: null };
+    try {
+      const report = await copyInstalledLive(userData);
+      await markCopyAsked(userData);
+      const sentence =
+        report.copied.length === 0
+          ? 'Je n’ai pas trouvé de réglages dans Jarvis Live.'
+          : report.secrets === 'reconnect'
+            ? 'Réglages copiés. Jarvis Test va redémarrer.'
+            : 'Réglages copiés depuis Jarvis Live. Jarvis Test va redémarrer.';
+      setTimeout(() => {
+        app.relaunch();
+        app.exit(0);
+      }, 700);
+      return { ok: true, sentence, guide: report.guide };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return { ok: false, sentence: message, guide: null };
+    }
+  });
   ipcMain.handle(IpcChannel.settingsSet, async (_event, patch: Partial<Settings>) => {
     const edited = applySecretEdit(settings, patch, await vault.load(), vault.encryptionAvailable());
     const next = edited.settings;
@@ -877,15 +1272,12 @@ function registerIpc(): void {
     await writeSettings(edited.disk);
 
     overlay?.setHideOnBlur(!settings.stayVisibleOnBlur && !isDev);
-    if (hotkeyChanged && !registerHotkey(settings.hotkey)) {
-      registerHotkey('Control+Space');
-      settings = parseSettings({ ...settings, hotkey: 'Control+Space' });
-      await writeSettings(settings);
-    }
+    if (hotkeyChanged) await syncHotkey(true);
     if (app.isPackaged) {
       app.setLoginItemSettings({ openAtLogin: settings.launchAtLogin });
     }
 
+    syncPrintWatch();
     if (speakerWhisperHeld(settings)) overlay?.browserWindow.webContents.send(IpcChannel.speakerHoldWhisper);
     if (speakerStaysAwake(settings) || speakerWarmupEnabled(settings)) void warmSpeakerSide();
     return { settings: settingsForWindow(), status: session.status() };
@@ -896,14 +1288,11 @@ function registerIpc(): void {
     settings = parseSettings(next, settings);
     await writeSettings(settings);
     overlay?.setHideOnBlur(!settings.stayVisibleOnBlur && !isDev);
-    if (hotkeyChanged && !registerHotkey(settings.hotkey)) {
-      registerHotkey('Control+Space');
-      settings = parseSettings({ ...settings, hotkey: 'Control+Space' }, settings);
-      await writeSettings(settings);
-    }
+    if (hotkeyChanged) await syncHotkey(true);
     if (app.isPackaged) {
       app.setLoginItemSettings({ openAtLogin: settings.launchAtLogin });
     }
+    syncPrintWatch();
     return { settings: settingsForWindow(), status: session.status() };
   };
 
@@ -1175,6 +1564,10 @@ function registerIpc(): void {
     const active = (payload as { active?: unknown } | null)?.active === true;
     listeningIndicator?.setActive(active);
   });
+  ipcMain.on(IpcChannel.voiceSpeechStarted, (event) => {
+    if (!fromMainWindow(event)) return;
+    void voiceStarts?.sound('fenetre').catch(() => undefined);
+  });
   ipcMain.on(IpcChannel.listeningLevel, (event, level: unknown) => {
     if (!fromMainWindow(event)) return;
     if (typeof level === 'number' && Number.isFinite(level)) listeningIndicator?.setLevel(level);
@@ -1366,6 +1759,7 @@ app.on('will-quit', () => {
   void piper.stop();
   // Un Forge lancé par Jarvis ne survit pas à Jarvis (un Forge lancé par l'utilisateur n'est pas touché).
   void images.shutdown();
+  modelWarmer?.stop();
   updateManager.stop();
 });
 

@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   compareSemver,
   githubLatestYmlUrl,
+  githubTestYmlUrl,
+  highestTestTag,
+  testTagsFromAtom,
   interpretLatestYmlResponse,
   parseLatestYmlVersion,
 } from './feed.js';
@@ -11,6 +14,21 @@ describe('githubLatestYmlUrl', () => {
     expect(githubLatestYmlUrl()).toBe(
       'https://github.com/dylanloze91-creator/Jarvis/releases/latest/download/latest.yml',
     );
+  });
+});
+
+describe('canal Test', () => {
+  it('lit test.yml du tag le plus haut, pas latest.yml', () => {
+    const xml = `
+      <entry><link href="https://github.com/dylanloze91-creator/Jarvis/releases/tag/v5.0.76"/></entry>
+      <entry><link href="https://github.com/dylanloze91-creator/Jarvis/releases/tag/v5.1.0-test.1"/></entry>
+      <entry><link href="https://github.com/dylanloze91-creator/Jarvis/releases/tag/v5.1.0-test.2"/></entry>
+    `;
+    expect(highestTestTag(testTagsFromAtom(xml))).toBe('5.1.0-test.2');
+    expect(githubTestYmlUrl('5.1.0-test.2')).toBe(
+      'https://github.com/dylanloze91-creator/Jarvis/releases/download/v5.1.0-test.2/test.yml',
+    );
+    expect(githubTestYmlUrl('5.1.0-test.2')).not.toContain('latest.yml');
   });
 });
 

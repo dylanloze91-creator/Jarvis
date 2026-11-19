@@ -319,6 +319,11 @@ export class ImagesService {
     return this.settings().enabled;
   }
 
+  /** Une image est en cours : la carte graphique lui est réservée. */
+  isBusy(): boolean {
+    return this.busy !== null;
+  }
+
   presetsPath(): string {
     return join(this.settings().outputRoot, PRESETS_FILE_NAME);
   }

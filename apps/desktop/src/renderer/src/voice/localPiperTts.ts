@@ -72,16 +72,22 @@ export class LocalPiperTtsProvider implements TextToSpeechProvider {
     await playPiperPartsWithPrefetch(
       parts,
       (part) => window.jarvis.voice.piperSpeak({ text: part, voice, sentence: true }),
-      (data, mimeType) => this.play(data, mimeType, cancelled),
+      (data, mimeType) => this.play(data, mimeType, cancelled, handlers.onSound),
       cancelled,
     );
     if (!cancelled()) handlers.onEnd?.();
   }
 
-  private play(data: Uint8Array, mimeType: string, cancelled: () => boolean): Promise<void> {
+  private play(
+    data: Uint8Array,
+    mimeType: string,
+    cancelled: () => boolean,
+    onSound?: () => void,
+  ): Promise<void> {
     return playPiperWavBytes(data, mimeType, undefined, cancelled, {
       onAudio: (audio) => {
         this.activeAudio = audio;
+        onSound?.();
       },
     }).finally(() => {
       if (this.activeAudio) this.activeAudio = null;

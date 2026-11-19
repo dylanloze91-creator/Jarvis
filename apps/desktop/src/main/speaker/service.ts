@@ -1,5 +1,5 @@
 import { hostname, networkInterfaces } from 'node:os';
-import { SPEAKER_PORT, sortLocalAddresses, speakerSecretsBlock } from '@jarvis/core';
+import { RESERVED_PHRASE, SPEAKER_PORT, sortLocalAddresses, speakerSecretsBlock } from '@jarvis/core';
 import type { SpeakerAdded, SpeakerStatus } from '../../shared/ipc.js';
 import { SpeakerServer, type SpeakerServerDeps } from './server.js';
 import type { Speaker, SpeakerStore } from './store.js';
@@ -12,6 +12,8 @@ import type { Speaker, SpeakerStore } from './store.js';
 export interface SpeakerServiceDeps extends Omit<SpeakerServerDeps, 'store' | 'onTurn'> {
   store: SpeakerStore;
   port?: number;
+  /** Test : faux tant que l'utilisateur n'a pas activé la fonction réservée. */
+  mayRun?: () => boolean;
   /** Adresses IPv4 du PC ; remplaçable dans les tests. */
   localAddresses?: () => string[];
   hostName?: () => string;
@@ -70,13 +72,17 @@ export class SpeakerService {
     return this.deps.port ?? SPEAKER_PORT;
   }
 
+  private canRun(): boolean {
+    return this.deps.mayRun?.() ?? true;
+  }
+
   isEnabled(): boolean {
     return this.deps.store.enabled;
   }
 
   async init(): Promise<void> {
     await this.deps.store.load();
-    if (this.deps.store.enabled) {
+    if (this.deps.store.enabled && this.canRun()) {
       await this.startServer();
       // La fenêtre charge Whisper à l'avance quand elle apprend que le pont écoute.
       await this.announce();
@@ -105,6 +111,11 @@ export class SpeakerService {
   }
 
   async setEnabled(enabled: boolean): Promise<SpeakerStatus> {
+    if (enabled && !this.canRun()) {
+      this.error = RESERVED_PHRASE;
+      await this.announce();
+      return this.status();
+    }
     await this.deps.store.setEnabled(enabled);
     if (enabled) await this.startServer();
     else {

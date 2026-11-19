@@ -2,9 +2,14 @@ import { app } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import {
   classifyUpdateError,
+  compareTestVersion,
   githubLatestYmlUrl,
+  githubTestYmlUrl,
+  highestTestTag,
   interpretLatestYmlResponse,
+  testTagsFromAtom,
 } from '@jarvis/core';
+import { edition } from './edition.js';
 import type { UpdateState } from '../shared/ipc.js';
 
 /** Un contrôle au démarrage, un peu après (pas dès la seconde 0, pour laisser
@@ -44,7 +49,8 @@ export class UpdateManager {
     autoUpdater.disableWebInstaller = true;
     autoUpdater.autoDownload = true;
     autoUpdater.autoInstallOnAppQuit = true;
-    autoUpdater.allowPrerelease = false;
+    autoUpdater.allowPrerelease = edition().allowPrerelease;
+    if (edition().updateChannel !== 'latest') autoUpdater.channel = edition().updateChannel;
     autoUpdater.disableDifferentialDownload = false;
 
     autoUpdater.on('checking-for-update', () => {
@@ -243,6 +249,51 @@ export class UpdateManager {
     | { kind: 'network'; message: string }
     | { kind: 'invalid'; message: string }
   > {
+    if (edition().updateChannel === 'test') return this.probeTestFeed();
+    return this.probeLatestFeed();
+  }
+
+  private async probeTestFeed(): Promise<
+    | { kind: 'empty' }
+    | { kind: 'current'; publishedVersion: string }
+    | { kind: 'available'; publishedVersion: string }
+    | { kind: 'network'; message: string }
+    | { kind: 'invalid'; message: string }
+  > {
+    let atom: Response;
+    try {
+      atom = await fetch('https://github.com/dylanloze91-creator/Jarvis/releases.atom', {
+        cache: 'no-store',
+        headers: { Accept: 'application/atom+xml', 'User-Agent': 'Jarvis-updater' },
+      });
+    } catch (error) {
+      const failure = classifyUpdateError(error);
+      return { kind: 'network', message: failure.message };
+    }
+    if (!atom.ok) return { kind: 'empty' };
+    const tag = highestTestTag(testTagsFromAtom(await atom.text()));
+    if (!tag) return { kind: 'empty' };
+    let response: Response;
+    try {
+      response = await fetch(githubTestYmlUrl(tag), {
+        cache: 'no-store',
+        headers: { Accept: 'application/octet-stream', 'User-Agent': 'Jarvis-updater' },
+      });
+    } catch (error) {
+      const failure = classifyUpdateError(error);
+      return { kind: 'network', message: failure.message };
+    }
+    const body = await response.text().catch(() => '');
+    return this.readYml(response.status, body);
+  }
+
+  private async probeLatestFeed(): Promise<
+    | { kind: 'empty' }
+    | { kind: 'current'; publishedVersion: string }
+    | { kind: 'available'; publishedVersion: string }
+    | { kind: 'network'; message: string }
+    | { kind: 'invalid'; message: string }
+  > {
     let response: Response;
     try {
       response = await fetch(githubLatestYmlUrl(), {
@@ -255,7 +306,27 @@ export class UpdateManager {
     }
 
     const body = await response.text().catch(() => '');
-    const interpreted = interpretLatestYmlResponse(response.status, body, this.state.currentVersion);
+    return this.readYml(response.status, body);
+  }
+
+  private readYml(
+    status: number,
+    body: string,
+  ):
+    | { kind: 'empty' }
+    | { kind: 'current'; publishedVersion: string }
+    | { kind: 'available'; publishedVersion: string }
+    | { kind: 'invalid'; message: string } {
+    const interpreted = interpretLatestYmlResponse(status, body, this.state.currentVersion);
+    if (
+      edition().updateChannel === 'test' &&
+      interpreted.publishedVersion &&
+      (interpreted.kind === 'available' || interpreted.kind === 'current')
+    ) {
+      return compareTestVersion(interpreted.publishedVersion, this.state.currentVersion) > 0
+        ? { kind: 'available', publishedVersion: interpreted.publishedVersion }
+        : { kind: 'current', publishedVersion: interpreted.publishedVersion };
+    }
 
     if (interpreted.kind === 'invalid') {
       return {

@@ -44,6 +44,8 @@ export interface ToolCallOutcome {
   technicalDetail?: string;
   /** Charge utile structurée de l'outil (`ToolResult.data`), jamais envoyée au modèle ni au journal. */
   data?: unknown;
+  /** Résultat repris de la mémoire courte des outils, avec son âge. Absent : l'outil a travaillé. */
+  kept?: { ageMs: number };
 }
 
 /**
@@ -86,12 +88,81 @@ export interface ChatMessage {
   createdAt: number;
 }
 
+/**
+ * Équipe choisie pour un message utilisateur. Facultatif : les anciennes
+ * conversations n'ont pas ce journal. Aucun défaut Zod.
+ */
+export interface RouteLogEntry {
+  userMessageId: string;
+  team: string;
+  how?: string;
+}
+
+/** Outil vu pendant un tour, tel que le journal le note. */
+export interface TurnLogTool {
+  name: string;
+  status: string;
+}
+
+/**
+ * Journal d'un tour, écrit à la fin du tour dans Jarvis Test seulement.
+ * Absent des anciennes conversations et de Jarvis Live. Aucun défaut Zod.
+ */
+export interface TurnLogEntry {
+  userMessageId: string;
+  /** Réponse(s) et messages d'outil de ce tour. */
+  assistantMessageIds: string[];
+  /** Équipe du chef d'orchestre. `null` : chat d'avant. */
+  team: string | null;
+  /** calcul, horloge, express, trieur, cerveau, ou `null`. */
+  how: string | null;
+  /** ollama, openai, anthropic, mock, ou aucun (sans modèle). */
+  provider: string;
+  /** ex. qwen2.5:7b ; `null` si aucun modèle. */
+  model: string | null;
+  place: 'carte' | 'processeur' | null;
+  source: 'texte' | 'voix' | 'telephone' | 'enceinte';
+  tools: TurnLogTool[];
+  durationMs: number;
+  at: number;
+  /** Chronomètre par étape. Absent des journaux écrits avant lui. */
+  etapes?: TurnSteps;
+}
+
+/**
+ * Détail d'un tour, en millisecondes (mission « Jarvis plus rapide, sans nouveau modèle »).
+ * Que des durées, des comptes et des noms d'outil : jamais une phrase. Chaque champ est
+ * facultatif : il manque quand l'étape n'a pas eu lieu ou n'a pas pu être mesurée.
+ */
+export interface TurnSteps {
+  /** Choix de l'équipe. `modele` : un modèle a été appelé pour trier (cerveau ou trieur). */
+  tri?: { ms: number; chemin: string; modele?: boolean; chargementMs?: number; jetons?: number };
+  /** Chargement du modèle qui répond (`load_duration` d'Ollama, tous ses appels du tour). */
+  chargement?: number;
+  /** Lecture du prompt (`prompt_eval_duration`, `prompt_eval_count`). */
+  lecture?: { ms: number; jetons: number };
+  /** Du début du tour au premier morceau de réponse affiché. */
+  premierMot?: number;
+  /** Écriture de la réponse (`eval_duration`, `eval_count`). */
+  ecriture?: { ms: number; jetons: number };
+  /** Nombre d'appels au modèle qui répond (1, plus un par tour d'outils). */
+  appels?: number;
+  /** Temps passé dans chaque outil. `garde` : résultat repris de la mémoire courte. */
+  outils?: { name: string; ms: number; garde?: boolean }[];
+  /** Du début du tour au premier son, quand la réponse est dite. */
+  voix?: number;
+}
+
 export interface Conversation {
   id: string;
   title: string;
   createdAt: number;
   updatedAt: number;
   messages: ChatMessage[];
+  /** Journal des équipes. Absent tant qu'aucun tour ne l'a rempli. */
+  routeLog?: RouteLogEntry[];
+  /** Journal des tours. Absent dans Live et dans les anciennes conversations. */
+  turnLog?: TurnLogEntry[];
 }
 
 export interface ConversationSummary {

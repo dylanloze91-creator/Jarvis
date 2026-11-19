@@ -1,8 +1,8 @@
-# Jarvis 5.0.78 — contexte pour un autre développeur
+# Jarvis 5.0.79 — contexte pour un autre développeur
 
 Ce fichier est à la **racine du code**. Les chemins ci-dessous partent de ce dossier. Ce n’est pas un résumé marketing : c’est l’état réel de cet arbre. La voix a été refaite dans cet arbre (publiée en 0.4.11, section « Voix ») : la transcription restait « Chargement… 100 % » sur l’installateur Windows. La refonte du tableau de bord est dans cet arbre : fenêtre étroite = overlay, fenêtre large = tableau de bord.
 
-**Version confirmée :** `apps/desktop/package.json` → `"version": "5.0.78"` (décision D1 : jamais de suffixe `-beta`). La 5.0.78 (missions : Codeur par rôle ; écriture sûre des fichiers d'état après les coupures du 13 novembre ; boutons « Copier » ; section « Missions : Codeur par rôle… ») est fusionnée dans `main` le 16 novembre, **à publier par l'utilisateur** (`bash release.sh`). La 5.0.77 est publiée (release `v5.0.77`, 13 novembre). La 5.0.77 (« Jarvis Live », version stable : corrections et finitions seulement, aucune nouveauté ; section « 5.0.77 — Jarvis Live » ; rapports `rapports/2026-11-12-live-5077.md` et `rapports/2026-11-12-live-5077-a-verifier.md`) est préparée sur `claude/live-5077`, essayée sur le PC le 12 novembre au soir (14 corrections, `rapports/2026-11-12-live-5077-a-verifier.md` § 4), **fusionnée dans `main` (`6c5d4c5`) et à publier par l'utilisateur** (`bash release.sh` depuis `main`, `rapports/2026-11-12-publication-5077.md`). La 5.0.76 (enceinte et voix, 11 novembre au soir : horloge sans modèle tolérante aux fautes de Whisper et date/heure du PC dans les consignes des équipes du chef d'orchestre ; Whisper 3 fois plus rapide (threads réglés sur la copie d'onnxruntime-web embarquée par transformers.js) ; boucles de transcription ramenées à une phrase ; firmware de l'enceinte : micro filtré, seuil de parole qui suit la pièce, bip hors de la phrase, pile LED ; brancher une enceinte depuis Jarvis par USB (Cursor, `cursor/enceinte-raccordement`, non essayé sur la carte) ; rapports `rapports/2026-11-11-enceinte-micro.md`, `rapports/2026-11-11-enceinte-raccordement.md`, `rapports/2026-11-11-publication-5076.md`) est préparée sur `claude/enceinte-micro-diagnostic` puis publiée après les contrôles (release `v5.0.76`). La 5.0.75 (intégration des chantiers Cursor et Claude Code du 7 au 11 novembre : Jarvis Réflexe pour l’enceinte avec la réponse en flux, Spotify « Devialet ou PC ? », l’écran du PC pour ce qui se regarde, le lot A fiabilité : bilan de santé, sauvegarde, « ce que Jarvis sait de moi », coffre des clés ; réglages de la carte XH-S3E de l’enceinte ; trieur : entraînement de `jarvis-trieur`, examen avec les vraies phrases Jarvis et option `--examen`, trieur **non activé** ; rapport `rapports/2026-11-11-publication-5075.md`) reste la release précédente. La 5.0.74 (mode direct de Jarvis Imager : panneau « Imager direct », `/image`, règles avant le cerveau, prompt complété sans modèle, `generer_image` mot pour mot ; rapport `rapports/2026-11-10-publication-5074.md`) reste la release précédente. La 5.0.73 (correctif après l'essai de la 5.0.71 : une demande d'image dite à l'enceinte lançait Spotify ; une seule étiquette de cadrage ; rapport `rapports/2026-11-10-publication-5073.md`) reste la release précédente. La 5.0.71 (module images Forge + SDXL et Jarvis Imager : RealVisXL, Animagine pour l'anime, ADetailer, règles, photos jointes ; rapport `rapports/2026-11-10-publication-5071.md`) reste la release précédente. La 5.0.70 (interface simple, questionnaire « Faisons connaissance » ; rapport `rapports/2026-11-07-publication-5070.md`) reste la release précédente. La 5.0.69 (mission directe depuis la discussion, Spotify sur enceinte Connect choisie ; rapport `rapports/2026-11-05-publication-5069.md`) reste la release précédente. La 5.0.68 (chat unifié phase 1, garde double-lancement ; rapport `rapports/2026-11-04-publication-5068.md`) reste la release précédente. La 5.0.67 (caractère de Jarvis, validation d’équipe en direct, correctif contexte export claude.ai ; rapport `rapports/2026-11-04-publication-5067.md`) reste la release antérieure. La 5.0.66 (correctif Piper Windows, sources courtes, lieu domicile, correctifs Claude ; rapport `rapports/2026-11-03-publication-5066.md`) reste la release antérieure. Le `package.json` racine est aligné sur la même version depuis 0.5.0 (il était resté à `0.3.0`), mais il n’est lu par rien : la version qui compte pour l’exe, l’updater et GitHub est celle de `@jarvis/desktop`. `@jarvis/core` reste à `0.1.0`. Le modèle par défaut reste `qwen2.5:3b`. `qwen3.5:4b` est le modèle recommandé documenté ; le repli est réglable (`fallbackModel`, défaut `qwen2.5:3b`).
+**Version confirmée :** `apps/desktop/package.json` → `"version": "5.0.79"` (décision D1 : jamais de suffixe `-beta`). La 5.0.79 (Jarvis Live : l'écran de l'enceinte, côté PC et programme de la carte ; section « 5.0.79 — Jarvis Live ») a été préparée sur `claude/live-5079` le 17 novembre, flashée et essayée sur la carte avec l'utilisateur les 17 et 18 novembre (E1 à E17, `rapports/2026-11-17-live-5079-a-verifier.md`), puis **fusionnée dans `main` et publiée le 18 novembre sur sa décision** (release `v5.0.79`). La 5.0.78 (missions : Codeur par rôle ; écriture sûre des fichiers d'état après les coupures du 13 novembre ; boutons « Copier » ; section « Missions : Codeur par rôle… ») est publiée (release `v5.0.78`, 16 novembre). La 5.0.77 est publiée (release `v5.0.77`, 13 novembre). La 5.0.77 (« Jarvis Live », version stable : corrections et finitions seulement, aucune nouveauté ; section « 5.0.77 — Jarvis Live » ; rapports `rapports/2026-11-12-live-5077.md` et `rapports/2026-11-12-live-5077-a-verifier.md`) est préparée sur `claude/live-5077`, essayée sur le PC le 12 novembre au soir (14 corrections, `rapports/2026-11-12-live-5077-a-verifier.md` § 4), **fusionnée dans `main` (`6c5d4c5`) et à publier par l'utilisateur** (`bash release.sh` depuis `main`, `rapports/2026-11-12-publication-5077.md`). La 5.0.76 (enceinte et voix, 11 novembre au soir : horloge sans modèle tolérante aux fautes de Whisper et date/heure du PC dans les consignes des équipes du chef d'orchestre ; Whisper 3 fois plus rapide (threads réglés sur la copie d'onnxruntime-web embarquée par transformers.js) ; boucles de transcription ramenées à une phrase ; firmware de l'enceinte : micro filtré, seuil de parole qui suit la pièce, bip hors de la phrase, pile LED ; brancher une enceinte depuis Jarvis par USB (Cursor, `cursor/enceinte-raccordement`, non essayé sur la carte) ; rapports `rapports/2026-11-11-enceinte-micro.md`, `rapports/2026-11-11-enceinte-raccordement.md`, `rapports/2026-11-11-publication-5076.md`) est préparée sur `claude/enceinte-micro-diagnostic` puis publiée après les contrôles (release `v5.0.76`). La 5.0.75 (intégration des chantiers Cursor et Claude Code du 7 au 11 novembre : Jarvis Réflexe pour l’enceinte avec la réponse en flux, Spotify « Devialet ou PC ? », l’écran du PC pour ce qui se regarde, le lot A fiabilité : bilan de santé, sauvegarde, « ce que Jarvis sait de moi », coffre des clés ; réglages de la carte XH-S3E de l’enceinte ; trieur : entraînement de `jarvis-trieur`, examen avec les vraies phrases Jarvis et option `--examen`, trieur **non activé** ; rapport `rapports/2026-11-11-publication-5075.md`) reste la release précédente. La 5.0.74 (mode direct de Jarvis Imager : panneau « Imager direct », `/image`, règles avant le cerveau, prompt complété sans modèle, `generer_image` mot pour mot ; rapport `rapports/2026-11-10-publication-5074.md`) reste la release précédente. La 5.0.73 (correctif après l'essai de la 5.0.71 : une demande d'image dite à l'enceinte lançait Spotify ; une seule étiquette de cadrage ; rapport `rapports/2026-11-10-publication-5073.md`) reste la release précédente. La 5.0.71 (module images Forge + SDXL et Jarvis Imager : RealVisXL, Animagine pour l'anime, ADetailer, règles, photos jointes ; rapport `rapports/2026-11-10-publication-5071.md`) reste la release précédente. La 5.0.70 (interface simple, questionnaire « Faisons connaissance » ; rapport `rapports/2026-11-07-publication-5070.md`) reste la release précédente. La 5.0.69 (mission directe depuis la discussion, Spotify sur enceinte Connect choisie ; rapport `rapports/2026-11-05-publication-5069.md`) reste la release précédente. La 5.0.68 (chat unifié phase 1, garde double-lancement ; rapport `rapports/2026-11-04-publication-5068.md`) reste la release précédente. La 5.0.67 (caractère de Jarvis, validation d’équipe en direct, correctif contexte export claude.ai ; rapport `rapports/2026-11-04-publication-5067.md`) reste la release antérieure. La 5.0.66 (correctif Piper Windows, sources courtes, lieu domicile, correctifs Claude ; rapport `rapports/2026-11-03-publication-5066.md`) reste la release antérieure. Le `package.json` racine est aligné sur la même version depuis 0.5.0 (il était resté à `0.3.0`), mais il n’est lu par rien : la version qui compte pour l’exe, l’updater et GitHub est celle de `@jarvis/desktop`. `@jarvis/core` reste à `0.1.0`. Le modèle par défaut reste `qwen2.5:3b`. `qwen3.5:4b` est le modèle recommandé documenté ; le repli est réglable (`fallbackModel`, défaut `qwen2.5:3b`).
 
 Lis ce fichier avant de modifier le code. **Lis aussi `FEUILLE-DE-ROUTE.md` avant chaque tâche** : il dit vers où va Jarvis, qui fait quoi et dans quel ordre (tenu par Claude, le chat). Ne commence jamais une mission « en pause », et ne modifie pas ce fichier toi-même.
 
@@ -63,7 +63,7 @@ Scripts utiles (racine) :
 
 Le script `setup:voice` remplit `apps/desktop/voice-assets/` (runtime ONNX, Whisper, openWakeWord, modèle Vosk français ; non commité, voir `.gitignore`). Premier `dev` / `build` : besoin de réseau.
 
-L’installateur publié est `Jarvis-Setup-5.0.77.exe` (release GitHub `v5.0.77`) ; la 5.0.78 est fusionnée dans `main`, pas encore publiée (`bash release.sh` à lancer).
+L’installateur publié est `Jarvis-Setup-5.0.79.exe` (release GitHub `v5.0.79`, 18 novembre).
 
 Données utilisateur (Electron `userData`, typiquement `%APPDATA%\Jarvis`) :
 
@@ -97,7 +97,7 @@ Données utilisateur (Electron `userData`, typiquement `%APPDATA%\Jarvis`) :
     src/media/                 intent Spotify
     src/update/                lecture latest.yml GitHub
     src/history/  src/audit/
-  apps/desktop/                Electron (version 5.0.78)
+  apps/desktop/                Electron (version 5.0.79)
     electron-builder.yml       NSIS, extraResources, publish GitHub
     electron.vite.config.ts    aliases onnxruntime-web (wasm, pas JSEP)
     scripts/setup-whisper.mjs
@@ -750,7 +750,7 @@ Demande de l'utilisateur : générer des images en local pour quatre usages (`ja
 
 ## Updater / GitHub
 
-Dernière publication : **5.0.77** (`https://github.com/dylanloze91-creator/Jarvis/releases/tag/v5.0.77`) — exe, `.blockmap` et `latest.yml` publiés : l’updater intégré la propose.
+Dernière publication : **5.0.79** (`https://github.com/dylanloze91-creator/Jarvis/releases/tag/v5.0.79`) — exe, `.blockmap` et `latest.yml` publiés : l’updater intégré la propose.
 
 - `apps/desktop/electron-builder.yml` : `publish.provider: github`, owner `dylanloze91-creator`, repo `Jarvis`, `releaseType: release`, artifact `Jarvis-Setup-${version}.exe`
 - `apps/desktop/src/main/updater.ts` : contrôle 15 s après le démarrage puis toutes les 4 h ; téléchargement auto ; **installation seulement si l’utilisateur clique**
@@ -904,6 +904,8 @@ Branche `claude/live-5077`, à partir de `main` (5.0.76). Aucune nouveauté. Fus
 - **Le Tool Manager comme seul passage** vers le système. Pas d’`exec` / `fs` / `shell.openExternal` déclenché par le renderer (exceptions : un lien `http(s)` cliqué, ouvert dans le navigateur par `window.ts` ; l’URI fixe `ms-settings:privacy-microphone`, sans paramètre venu du renderer ; 5.0.63 : les deux lectures fixes `tailscale status --json` et `tailscale serve status --json`, sans paramètre venu du renderer).
 - **Preload étroit** (`contextIsolation: true`, `nodeIntegration: false`). Pas d’`ipcRenderer` brut dans React.
 - **`packages/core` sans Electron.**
+- **Lot B** : `briefing`, `notes`, `routines` et `printer` sont facultatifs, sans défaut Zod. Leurs outils et les équipes Tâches et Impression restent hors du catalogue tant que l'utilisateur ne les a pas activés. Une routine n'accepte pas `run_command`.
+- **Imprimante** : adresse locale seulement (`checkRoverBaseUrl`). Annuler n'attend pas un clic. Une enceinte ne lance pas d'impression.
 - **Clés uniquement dans `settings.json`**, jamais d’env, jamais dans git (`.gitignore` ignore `.env`).
 - **`forceConfirm`** sur `run_command`, `delete_file`, mutations SiteBlock, indexation/effacement mémoire. `ConfirmationCard` doit montrer `command` tel quel pour le shell.
 - **Protocole `jarvis-oww:` + extraResources** (`voice-assets/`) pour le runtime ONNX, Whisper, openWakeWord et Vosk. Ne pas remettre les ONNX dans asar ni charger transformers depuis jsDelivr. Ne pas bundler `onnxruntime-node` / `@huggingface/transformers` dans l’exe (`electron-builder.yml`).
@@ -958,6 +960,35 @@ Branche `claude/live-5077`, à partir de `main` (5.0.76). Aucune nouveauté. Fus
 
 Travaux **hors scope** de cet arbre (ne pas les reprendre ici) : publication GitHub.
 
+## 5.0.79 — Jarvis Live : l'écran de l'enceinte (branche `claude/live-5079`)
+
+Préparée le 17 novembre à partir de `main` (5.0.78). Exception validée par l'utilisateur le 17 novembre : les enceintes sont réservées à la Live, donc l'écran y entre alors que la Live ne reçoit plus de nouveauté. **Flashée et essayée sur la carte les 17 et 18 novembre (E1 à E17 bons), fusionnée dans `main` et publiée le 18 novembre.** Résultats : `rapports/2026-11-17-live-5079-a-verifier.md` (§ 6). Corrections des essais : demande d'affichage lue par règles sans modèle (`parseSpeakerScreenRequest`), réponse de l'outil mot pour mot, mascotte réduite sur le 128×32, souci tenu 6 s à l'écran (`DISPLAY_ERROR_HOLD_MS`).
+
+Deux fusions, rien d'autre :
+
+- **`claude/ecran-infos`** : le côté PC (section suivante).
+- **`claude/enceinte-ecran`** : le programme de l'enceinte (`firmware/jarvis-speaker/`, rapport `rapports/2026-11-16-enceinte-ecran.md`), étiqueté `5.0.79` (`JARVIS_FW_VERSION`).
+  - **Matériel** : écran OLED I2C à 4 broches, SSD1306 0,91 pouce 128×32 par défaut depuis le 18 novembre (celui de l'utilisateur ; `DISPLAY_TYPE` dans `include/config.h`, SH1106 1,3 pouce et SSD1306 0,96 pouce possibles). Sur le 128×32, la mascotte (dessinée en 128×64) est réduite de moitié et centrée. La commande « hello » du câble USB rend un champ `ecran` (adresse, état, envois ratés) : le journal série ne passe pas par l'USB natif. VCC sur **3V3**, SDA sur IO8, SCL sur IO9, adresse 0x3C puis 0x3D.
+  - **Sans écran branché, rien ne change** : il est cherché une fois au démarrage, puis oublié.
+  - **Ce qui s'affiche** (`display_choose`, `src/display_view.c`, dans cet ordre) : un souci ou une étape (PC injoignable, pas de Wi-Fi, clé refusée, à installer, « C'est moi ! ») ; l'activité (la mascotte écoute, réfléchit, parle) ; une information du PC, le temps demandé ; l'heure et la date quand la mascotte dort depuis 2 minutes (SNTP, heure de Paris) ; sinon la mascotte.
+  - **Fichiers** : `display.c` (I2C d'ESP-IDF, sans bibliothèque, une tâche de priorité basse sur le cœur 0), `display_gfx.c` (image en mémoire), `display_view.c` (choix de l'écran, lecture de l'en-tête `X-Jarvis-Ecran` par `display_info_parse`), `display_mascotte.cpp` et `include/jarvis_mascotte.h` (le dessin de l'utilisateur, à ne pas modifier), `mascotte_etat.c`, `font5x7.h` (générée par `outils/police_5x7.py`). `led_set` prévient l'écran ; `net.c` lit l'en-tête sur toutes les réponses du PC.
+  - **Tests sur PC** : `host-tests/run.sh` (gcc et g++, dans WSL sous Windows).
+
+À ne pas casser : l'écran ne bloque jamais le réveil, le micro ni le son ; un en-tête illisible ne change rien à l'écran ; un texte trop long est coupé sans casser une lettre accentuée, et une lettre accentuée entière en fin de texte est gardée.
+
+## Informations sur l'écran de l'enceinte, côté PC (branche `claude/ecran-infos`, dans la Live 5.0.79)
+
+Mission 7 de la feuille de route, exception validée par l'utilisateur le 17 novembre : les enceintes sont réservées à la Live. Fusionnée dans `claude/live-5079` avec le programme de l'enceinte qui lit l'en-tête (`display_info_parse`). Rapport : `rapports/2026-11-17-ecran-infos.md`. Essayé sur la carte les 17 et 18 novembre (E7 à E14).
+
+- **Cœur** (`packages/core/src/speaker/screen.ts`, pur) : `speakerScreenHeader({ title, line?, seconds? })` rend la valeur de l'en-tête `X-Jarvis-Ecran`, toujours `titre|ligne|secondes`. Texte sur une ligne (retours à la ligne et caractères de contrôle retirés), coupé à 47 et 95 octets UTF-8 sans casser un caractère, encodé pour une URL (`|`, `%` et `+` compris), durée de 1 à 300 s (20 par défaut). `speakerScreenClear()` rend `-`. `parseSpeakerScreenHeader` relit l'en-tête comme la carte : il sert aux tests.
+- **Pont** (`SpeakerServer.showOnSpeaker(cible, info)`) : cible = le nom d'une enceinte (sans casse ni accent) ou `toutes`. Une file par enceinte, 3 en attente au plus (la plus ancienne saute). L'information part une seule fois, dans les en-têtes de la prochaine réponse à cette enceinte (`hello` ou `turn`, quel que soit le code), et elle est jetée si sa durée passe avant. Rien n'est écrit sur le disque. Pont coupé ou enceinte retirée : file oubliée.
+- **Deux sources seulement** :
+  - le bilan de santé (`HealthScreenWatch`, cœur) : un contrôle qui **passe** au rouge envoie « Jarvis » et sa phrase à toutes les enceintes pendant 60 s, une fois par incident. Le bilan ne tourne pas plus souvent qu'avant (démarrage, réglages, « fais ton bilan ») ;
+  - l'outil `afficher_sur_enceinte` (`tools/speakerScreen.ts`, `safe`, 60 s par défaut), en fin de catalogue, proposé seulement si le pont tourne et qu'une enceinte est reliée (`isAvailable`). Avec le chef d'orchestre : équipe PC, et la règle express `looksLikeSpeakerScreenIntent` (« affiche … sur l'enceinte ») n'existe que si l'outil est proposé.
+- Sa réponse dit « envoyé », jamais « affiché » : le PC ne peut pas vérifier l'écran.
+
+À ne pas casser : sans enceinte reliée, catalogue, chemins et réponses sont ceux d'avant (`catalog-speaker-screen.test.ts`) ; l'information ne part jamais sans jeton ; `parseSettings({})` ne gagne aucune clé ; les `__golden__` ne sont pas régénérés.
+
 ## Contrats 0.4.14
 
 - **Outil** : `ToolResult.outcome` vaut `success`, `recoverable`, `definitive`, `timeout`, `cancelled` ou `missing_dependency`. `content` est une phrase française. `technicalDetail` est le journal. `ok` reste le booléen historique.
@@ -976,3 +1007,68 @@ Travaux **hors scope** de cet arbre (ne pas les reprendre ici) : publication Git
 - Autorisations : `setPermissionRequestHandler` (micro seul, depuis l’interface) **et** `setPermissionCheckHandler` (audio accordé, caméra refusée), décisions journalisées (`main/mediaPermissions.ts`).
 - `backgroundThrottling: false` : la fenêtre masquée écoute toujours.
 - Whisper ne tourne qu’après un réveil (ou en repli si Vosk manque). Depuis 0.4.17 il tourne dans un worker (voir « 0.4.17 ») ; s’il retombe dans la page, chaque inférence y bloque l’interface. Avec le déclencheur Whisper de 0.4.15, un son continu dans l’entrée retardait `getUserMedia` de 18 à 65 s (mesuré sur la VM).
+
+## Deux Jarvis — Live et Test (branche `cursor/deux-jarvis`, version inchangée)
+
+Pas de fusion dans `main`, pas de publication. Rapport des choix : `rapports/2026-11-12-deux-jarvis-choix.md`. Live reste l’application d’aujourd’hui (même `appId`, même dossier, mêmes ports, même raccourci, canal `latest` sans préversion).
+
+Chemin d’une nouveauté :
+
+1. une branche ;
+2. relue par Claude ;
+3. fusion dans une branche `dev` ;
+4. Jarvis Test (`npm run package:win:test --workspace @jarvis/desktop`, canal `5.1.N-test.M`, fichier `test.yml`, préversion). Le script n’est pas à la racine : `profiles/jarvis.test.ts` fige les scripts racine ; `package:win` racine ne change pas ;
+5. essayée par l’utilisateur ;
+6. fusion dans `main` ;
+7. Jarvis Live (`npm run package:win`, inchangé).
+
+Une correction de Live va dans `main`, puis est reportée dans `dev`. Le brouillon `release-test.sh` est à côté de `release.sh` et ne le modifie pas. Il refuse de publier tant que la version n’est pas `5.1.N-test.M`.
+
+## Carnet des ratés (branche `cursor/carnet-des-rates`, version inchangée)
+
+Pas de fusion dans `main`, pas de publication. Rapport : `rapports/2026-11-12-carnet-des-rates.md`. Base : `origin/cursor/deux-jarvis` (pas encore dans `main`).
+
+Le carnet **observe**. Il ne change ni ce que Jarvis envoie au modèle, ni les réponses, sauf la règle express « ça n'a pas marché » / « c'était nul » / « tu t'es trompé » : avant tout modèle, Jarvis répond « C'est noté. » et note le tour précédent. Ça vaut pour la fenêtre, l'enceinte et le téléphone.
+
+- Détection par règles seulement (`packages/core/src/carnet/`) : correction, répétition, interruption, outil en échec, lenteur, chemin, signal. Aucun modèle ne décide qu'un tour est raté.
+- Fichier `userData/carnet/rates.jsonl` (format version 1, `FORMAT.md`). Secrets masqués (`redactSecrets`). 5 000 lignes au plus : les plus anciennes déjà revues partent en premier. Jamais dans le dépôt.
+- Réglages dans `userData/carnet/reglages.json`, pas dans `parseSettings`. Actif par défaut dans Test, coupé dans Live, avec un interrupteur (Réglages → Application → Carnet des ratés).
+- Carte « Les ratés de la semaine » sur le tableau de bord. Le dimanche, une phrase dans la discussion, jamais dite à voix haute.
+- « Préparer pour Claude » écrit `carnet-semaine.md` dans les documents de l'utilisateur et l'ouvre. Jarvis ne l'envoie pas.
+- `chat-unchanged`, `ollama-unchanged`, `orchestra-session`, `profiles/jarvis` restent verts sans régénérer les `__golden__`. `parseSettings({})` ne gagne aucune clé.
+
+À ne pas casser : le carnet ne s'ajoute pas au prompt ni au catalogue ; une phrase normale envoie la même requête au modèle, carnet actif ou non.
+
+## Lot B — au quotidien (branche `cursor/lot-b-quotidien`, version inchangée)
+
+Pas de fusion dans `main`, pas de publication. Rapport : `rapports/2026-11-12-lot-b-quotidien.md`. Base : `origin/cursor/carnet-des-rates`. `origin/main` est encore en 5.0.76 : la bourse (5.0.77) n'y est pas, elle n'a pas été fusionnée.
+
+Tout est coupé tant que l'utilisateur ne l'active pas (Réglages). `parseSettings({})` ne gagne aucune clé. Le catalogue et le prompt de chat ne changent pas sans ces réglages.
+
+- **Briefing** (Réglages → Moi). « Mon briefing », « quoi de neuf ce matin ? », et « bonjour » une seule fois dans la plage. Gabarits : date, météo Open-Meteo, agenda du jour si Google est branché, notes en attente. Version courte sur une enceinte. « Bonjour » l'après-midi reste une salutation.
+- **Notes** (Réglages → Moi). `note_ajouter`, `notes_lister`, `note_cocher`, `note_effacer`. Fichier `userData/notes.json`. L'effacement confirme sur le PC ou le téléphone ; une enceinte ne l'efface pas.
+- **Routines** (Réglages → Services). Découpage par règles, carte de résumé, rien sans « C'est bon ». Pas de commande libre. L'équipe Tâches n'existe que si une routine est enregistrée. Une étape ratée est dite ; la suivante continue, sauf si elle en dépend.
+- **Imprimante** (Réglages → Services). Client Moonraker dans `packages/core`, réseau local seulement. Lancer confirme et rappelle de vérifier le plateau. Annuler n'attend pas. Une enceinte ne lance pas. Fin d'impression dite une seule fois.
+
+## Jarvis plus rapide, sans nouveau modèle (branche `claude/rapide-sans-modele`, Jarvis Test seulement)
+
+Mission 2 bis de la feuille de route, cahier `docs/specs/rapide-sans-modele.md`, rapport et chiffres dans `rapports/2026-11-17-rapide-sans-modele.md`. Partie de `claude/dev`. **Pas de fusion dans `claude/dev` avant les essais de `5.1.0-test.1`, pas de publication.** Aucun modèle ajouté, changé ni entraîné. Rien n'a été essayé dans la fenêtre : le banc passe par la vraie session et le vrai Ollama, sans fenêtre ni voix.
+
+Tout est réservé à Jarvis Test par trois champs facultatifs de la table d'édition (`packages/core/src/edition.ts`, absents de Live) : `keepModelsWarm`, `clockAfterHistory`, `keepToolResults`. Live, le chat sans orchestre, les `__golden__` et `parseSettings({})` ne changent pas.
+
+- **Chronomètre par étape** (`packages/core/src/vitesse/chrono.ts`, `TurnClock`) : `TurnLogEntry.etapes` (facultatif) porte `tri` (durée, chemin, chargement du modèle qui trie), `chargement`, `lecture` (durée, jetons), `premierMot`, `ecriture` (durée, jetons), `appels`, `outils` (nom, durée, `garde`) et `voix`. Le chronomètre enveloppe le fournisseur (`clock.wrap`) : même requête, mêmes événements ; il lit `load_duration`, `prompt_eval_*` et `eval_*` d'Ollama. Que des durées, des comptes et des noms : jamais une phrase.
+  - **Premier son** (`apps/desktop/src/main/vitesse/voix.ts`, `VoiceStartBook`) : la fenêtre le signale par `window.jarvis.voice.speechStarted()` (canal `voice:speech-started`, handler facultatif `onSound` des synthèses), l'enceinte par `onSpeakerSound`. Si le son arrive après l'écriture du journal, la ligne du tour est complétée sur le disque.
+- **`scripts\vitesse.ps1`** (`npm run vitesse --workspace @jarvis/core`, `vitesse/resume.ts`) : lit les journaux de tour de Jarvis Test, écrit `C:\dev\jarvis-data\vitesse\vitesse.md` (médiane, pire cas, part du temps ; par équipe, chemin, source, modèle, outil). Les messages ne sont jamais lus.
+- **Banc de vitesse** (`apps/desktop/src/main/vitesse/banc-vitesse.banc.ts`, `npm run banc:vitesse --workspace @jarvis/desktop`, hors de `npm test`) : 29 demandes types écrites pour le banc, passées dans la vraie `ChatSession` avec les réglages de Jarvis Test (lus seulement), le vrai catalogue et le vrai Ollama, tout en mémoire. Variables : `JARVIS_BANC_LABEL`, `JARVIS_BANC_SANS=chauds,heure,memoire` (couper un outil pour un passage), `JARVIS_BANC_SEULEMENT`, `JARVIS_BANC_REPONSES=1` (afficher les réponses, pour contrôler la qualité), `JARVIS_BANC_EQUIPES` (essayer une autre répartition des modèles). Résultats dans `C:\dev\jarvis-data\vitesse\banc\` ; comparaison : `npm run vitesse:comparer --workspace @jarvis/core -- avant.json apres.json`. `npm run banc:outils` : taille des outils par équipe.
+- **Modèles gardés chauds** (`vitesse/chauds.ts` du cœur et du bureau, `ModelWarmer`) : après la première image, charge sans rien générer le modèle qui trie et celui de l'équipe la plus utilisée (journal du tour ; Conversation sinon), avec les mêmes options de chargement que les vraies demandes (`num_ctx`, `num_gpu`). Toutes les 8 minutes, prolonge de 30 minutes les modèles du chef d'orchestre **encore chargés** : un modèle déchargé exprès (Imager, Développeur) ou évincé par Ollama n'est jamais rechargé. Rien pendant une image, une mission ou un entraînement. Jamais les variables du serveur Ollama.
+- **Ligne d'heure hors du message système** (`vitesse/promptTail.ts`, `withTrailingNote`, `mentionsTime`) : `clockLinePrompt` change chaque minute ; dans le message système elle faisait relire les outils de l'équipe et tout l'historique (3,0 s pour 3 000 jetons). Dans Jarvis Test elle est placée **en tête de la demande du tour**, dans la copie envoyée au modèle seulement (l'agent, l'affichage et l'historique ne la voient pas), et le tour de recherche ne répète plus la date dans le message système (`AgentOptions.dateInTurnNote`). **Une demande qui contient un mot de temps garde l'ancien placement.**
+- **Mémoire courte des outils** (`packages/core/src/tools/resultMemory.ts`, `ToolManager.useResultMemory`) : un résultat réussi d'un outil de lecture de la table `TOOL_MEMORY_TTL_MS` (`web_search`, `web_research`, `fetch_page` 5 min ; `web_search_current` 3 min ; `get_stock_quote` 2 min ; `youtube_transcript` 30 min) ressert pour la même demande. `ToolCallOutcome.kept` porte l'âge ; le journal d'audit dit « réponse gardée, vieille de 3 min ». Vidée quand les réglages changent, jamais écrite sur le disque.
+- **Outil des règles express** (`packages/core/src/agent/expressRules.ts`) : `ExpressRule` = déclencheurs, empêchements, au moins 3 phrases « pour » et 3 « contre » ; `checkExpressRules` fait échouer les tests pour une règle incomplète, fausse ou qui contredit une règle en place ; `EXPRESS_RULES` est **vide** (les règles attendent `carte.md`), consultée en dernier par `expressTeam`.
+
+À ne pas casser :
+
+- la ligne d'heure n'est jamais placée **après** la demande (au banc : outil non appelé 2 fois sur 7), et une demande qui parle de temps la garde dans le message système (sinon l'heure n'est plus citée qu'une fois sur deux) ;
+- la mémoire courte ne garde jamais un outil qui agit, un outil à confirmer ni un échec ;
+- la boucle de prolongation ne charge jamais un modèle qui n'est plus chargé ;
+- le journal du tour et `vitesse.md` ne contiennent aucune phrase ; les demandes du banc n'entrent dans aucune conversation ni aucun jeu d'entraînement ;
+- une règle express n'entre pas sans ses essais pour et contre.

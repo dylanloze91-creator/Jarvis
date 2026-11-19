@@ -62,6 +62,7 @@ export {
 
 export * from './tools/types.js';
 export { ToolManager, defineTool } from './tools/manager.js';
+export * from './tools/resultMemory.js';
 export {
   TOOL_OUTCOME_KINDS,
   classifyThrownError,
@@ -103,6 +104,7 @@ export {
   type MessageOrigin,
 } from './agent/voiceOriginNotice.js';
 export * from './agent/orchestra.js';
+export * from './agent/expressRules.js';
 export {
   teamValidationEnabled,
   validationPathForHow,
@@ -352,9 +354,13 @@ export {
 export { classifyUpdateError } from './update/errorClassifier.js';
 export {
   compareSemver,
+  compareTestVersion,
   githubLatestYmlUrl,
+  githubTestYmlUrl,
+  highestTestTag,
   interpretLatestYmlResponse,
   parseLatestYmlVersion,
+  testTagsFromAtom,
   GITHUB_UPDATES_OWNER,
   GITHUB_UPDATES_REPO,
   type UpdateFeedInterpretation,
@@ -599,6 +605,8 @@ export {
   type SpokenTurnDecision,
 } from './speech/conversationSession.js';
 export * from './google/index.js';
+export * from './edition.js';
+export * from './editionCopy.js';
 export * from './phone/phone.js';
 export * from './speaker/speaker.js';
 export * from './speaker/manifest.js';
@@ -610,8 +618,14 @@ export * from './speaker/diag.js';
 export * from './speaker/signal.js';
 export * from './speaker/pcScreen.js';
 export * from './speaker/chrono.js';
+export * from './vitesse/chrono.js';
+export * from './vitesse/resume.js';
+export * from './vitesse/banc.js';
+export * from './vitesse/chauds.js';
+export * from './vitesse/promptTail.js';
 export * from './speaker/reflex.js';
 export * from './speaker/warmup.js';
+export * from './speaker/screen.js';
 export { encodeQr, qrSvgPath, QR_MAX_VERSION, type QrMatrix } from './qr/qrCode.js';
 export * from './rover/index.js';
 export * from './images/index.js';
@@ -622,3 +636,8 @@ export * from './health/index.js';
 export * from './backup/index.js';
 export * from './vault/index.js';
 export * from './privacy/index.js';
+export * from './carnet/index.js';
+export * from './quotidien/briefing.js';
+export * from './quotidien/notes.js';
+export * from './quotidien/routines.js';
+export * from './quotidien/moonraker.js';

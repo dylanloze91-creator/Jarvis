@@ -15,3 +15,4 @@ export {
 export { looksLikeHealthIntent } from './intent.js';
 export { missingModelGroups, modelInstalled, modelsToCheck, type ModelDuty } from './models.js';
 export { buildHealthReport, withModelOpens } from './report.js';
+export { HEALTH_SCREEN_SECONDS, HEALTH_SCREEN_TITLE, HealthScreenWatch } from './screen.js';
