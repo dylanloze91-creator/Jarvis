@@ -28,7 +28,7 @@ Code) viendra plus tard, sur décision de l'utilisateur ; l'interface doit pouvo
 
 ## 0 bis. Les écrans
 
-Maquettes validées par l'utilisateur le 19 novembre 2026 (canevas claude.ai « Jarvis Développeur
+Maquettes proposées par Claude le 19 novembre 2026, à valider par l'utilisateur (canevas claude.ai « Jarvis Développeur
 facile — écrans ») : 1. Tout de suite, 2. Ce que j'ai trouvé, 3. Il construit et raconte,
 4. Une question à la fois, 5. C'est prêt. Couleurs de Jarvis : fond très sombre, accent cyan,
 vert pour ce qui est fait, ambre pour « c'est long ». Les noms d'applis trouvées sont des exemples ;
