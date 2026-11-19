@@ -16,6 +16,8 @@
  *   JARVIS_BANC_LABEL=…            nom du fichier de résultat
  *   JARVIS_BANC_REPONSES=1         afficher les réponses (jamais enregistrées)
  *   JARVIS_BANC_DONNEES=1|perso|memoire|sans   voir plus bas
+ *   JARVIS_BANC_SANS_SOUVENIR=<id>,…   avec JARVIS_BANC_DONNEES : retirer ces souvenirs de la copie
+ *   JARVIS_BANC_SEULEMENT=fenetre-neuve,…   ne rejouer que ces demandes en discussion neuve (pas la discussion mélangée)
  *
  * Rien ne s'ouvre pour de vrai : `open_application` est remplacé par une réponse « ouvert » dans
  * le banc seulement, pour que la discussion continue comme quand l'utilisateur accepte la carte.
@@ -69,6 +71,14 @@ else if (donnees) {
   ];
   for (const name of names) {
     if (existsSync(join(source, name))) cpSync(join(source, name), join(userData, name), { recursive: true });
+  }
+  // JARVIS_BANC_SANS_SOUVENIR=<id>,… : retirer ces souvenirs de la copie, pour savoir lequel gêne.
+  const retires = (process.env.JARVIS_BANC_SANS_SOUVENIR ?? '').split(',').map((id) => id.trim()).filter(Boolean);
+  const indexFile = join(userData, 'knowledge-index.json');
+  if (retires.length && existsSync(indexFile)) {
+    const index = JSON.parse(readFileSync(indexFile, 'utf8')) as { chunks?: Array<{ learning?: { id?: string } }> };
+    index.chunks = (index.chunks ?? []).filter((chunk) => !retires.includes(chunk.learning?.id ?? ''));
+    writeFileSync(indexFile, JSON.stringify(index), 'utf8');
   }
 }
 
@@ -251,13 +261,16 @@ it(
       return done?.conversationId ?? conversationId;
     };
 
+    const seulement = (process.env.JARVIS_BANC_SEULEMENT ?? '').split(',').map((name) => name.trim()).filter(Boolean);
+    const melangee = seulement.length ? [] : MELANGEE;
+    const neuves = seulement.length ? NEUVES.filter((demande) => seulement.includes(demande.id)) : NEUVES;
     for (let passage = 1; passage <= passages; passage += 1) {
       let conversationId: string | null = null;
-      for (const demande of MELANGEE) conversationId = await dire(passage, demande, conversationId);
-      for (const demande of NEUVES) await dire(passage, demande, null);
+      for (const demande of melangee) conversationId = await dire(passage, demande, conversationId);
+      for (const demande of neuves) await dire(passage, demande, null);
     }
 
-    const bilan = [...MELANGEE, ...NEUVES]
+    const bilan = [...melangee, ...neuves]
       .filter((demande) => demande.outil)
       .map((demande) => {
         const lignes = essais.filter((essai) => essai.demande === demande.id);
@@ -274,7 +287,7 @@ it(
       'utf8',
     );
     console.log(`[banc] écrit : ${target}`);
-    expect(essais).toHaveLength(passages * (MELANGEE.length + NEUVES.length));
+    expect(essais).toHaveLength(passages * (melangee.length + neuves.length));
   },
   60 * 60_000,
 );
