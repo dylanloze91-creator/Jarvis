@@ -96,15 +96,12 @@ import {
   type CarnetPlace,
   type ToolLine,
   TurnClock,
-  withTrailingNote,
-  mentionsTime,
 } from '@jarvis/core';
 import { describeDirectResult, type ImagesService } from './images/ImagesService.js';
 import type { ChatEvent, RuntimeStatus, SendChatInput } from '../shared/ipc.js';
 import { IpcChannel } from '../shared/ipc.js';
 import { canOfferTeamValidation, validationPathForHow } from './orchestra/teamValidation.js';
 import { journaliserTour, type RouteNotee } from './turnJournal.js';
-import { edition } from './edition.js';
 import type { PersonalizationStore } from './personalization.js';
 import type { KnowledgeStore } from './knowledge.js';
 import type { VoiceBridge } from './voice.js';
@@ -615,20 +612,17 @@ export class ChatSession {
         chatMissionsOn && chatMissionHub
           ? this.deps.tools.compose(createProposerMissionTool(chatMissionHub))
           : this.deps.tools;
-      // Ligne d'heure : elle change chaque minute. Dans le message système, elle faisait relire les
-      // outils et tout l'historique à chaque nouvelle minute. Jarvis Test la place en tête de la
-      // demande, dans la copie envoyée au modèle seulement ; ce qu'elle dit ne change pas.
+      // Ligne d'heure : dans le message système, pour toutes les équipes et toutes les éditions.
+      // Du 17 au 19 novembre, Jarvis Test la plaçait en tête de la demande pour qu'Ollama ne relise
+      // pas le début du prompt à chaque minute : avec la personnalisation de l'utilisateur, le modèle
+      // répondait alors à la note au lieu d'appeler l'outil (2 sur 10 contre 10 sur 10 au banc,
+      // `rapports/2026-11-19-correction-outils-pc.md`). La fiabilité passe avant la vitesse : ne pas
+      // la déplacer de nouveau sans la décision de l'utilisateur.
       const clockLine = clockLinePrompt(new Date());
-      // Une demande qui parle de temps (heure, jour, « tard »…) garde la ligne dans le message
-      // système, comme avant : c'est là que le modèle la cite le plus sûrement.
-      const clockLast = edition().clockAfterHistory === true && !mentionsTime(input.text);
-      const teamProvider = clockLast ? withTrailingNote(route.provider, clockLine, userMessage.id) : route.provider;
-      const agent = new Agent(clock.wrap(teamProvider, 'reponse'), turnTools, {
-        systemPrompt: `${turn.systemPrompt}\n\n${teamPrompt(team, character, clockLast ? null : clockLine)}${missionPrompt}`,
+      const agent = new Agent(clock.wrap(route.provider, 'reponse'), turnTools, {
+        systemPrompt: `${turn.systemPrompt}\n\n${teamPrompt(team, character, clockLine)}${missionPrompt}`,
         temperature: settings.temperature,
         homeLocation: settings.homeLocation ?? null,
-        // La date du tour est dans la note de la demande : le tour de recherche ne la répète pas.
-        ...(clockLast ? { dateInTurnNote: true } : {}),
         allowedTools: (name) =>
           teamHasTool(team, name) || (chatMissionsOn && name === PROPOSER_MISSION_TOOL_NAME),
         spotifyAskDevice: settings.spotifyAskDevice === true,

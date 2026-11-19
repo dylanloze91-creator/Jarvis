@@ -38,6 +38,14 @@ describe('construction de Jarvis Test', () => {
     expect(testBuilderCliArgs()).toContain('-c.publish.channel=test');
     // Live : @jarvisdesktop-updater. Test garde ses téléchargements à part.
     expect(testBuilderCliArgs()).toContain('-c.extraMetadata.name=jarvis-test');
+    // L'installateur de Test ferme lui-même Jarvis Test avant de copier (essai A1 du 18 novembre) ;
+    // celui de Live n'inclut pas ce fichier et ne ferme jamais Jarvis Test.
+    expect(testBuilderCliArgs()).toContain('-c.nsis.include=scripts/installer-test.nsh');
+    const nsh = readFileSync(resolve(desktop, 'scripts/installer-test.nsh'), 'utf8');
+    expect(nsh).toContain('!macro customInit');
+    expect(nsh).toContain('taskkill /F /T /IM "${APP_EXECUTABLE_FILENAME}"');
+    expect(nsh).not.toContain('Jarvis.exe"');
+    expect(yml).not.toContain('installer-test.nsh');
 
     const desktopPkg = JSON.parse(readFileSync(resolve(desktop, 'package.json'), 'utf8')) as {
       scripts: Record<string, string>;

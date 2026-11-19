@@ -64,12 +64,43 @@ function stripWake(text: string): string {
     .trim();
 }
 
+/** « ma liste », « ma liste de courses », « mes notes ». */
+const LIST_OBJECT = '(?:ma liste(?: de courses)?|mes notes)';
+const LIST_PLACE = `(?:sur|dans) ${LIST_OBJECT}`;
+
+/**
+ * Façons de demander à relire la liste, sur le texte plié (sans accent ni ponctuation). La phrase
+ * entière doit être la demande : « ajoute à ma liste du pain » ou « mets ma liste de lecture » n'en
+ * sont pas. Essai A4 du 18 novembre : « Qu'est-ce qu'il y a sur ma liste ? » partait à une équipe
+ * qui n'a pas la liste.
+ */
+const LIST_REQUESTS = [
+  `^${LIST_OBJECT}$`,
+  `^(?:relis|lis|montre|affiche|donne|dis|rappelle)(?: moi)? ${LIST_OBJECT}$`,
+  `^(?:peux tu |tu peux |est ce que tu peux )?(?:me )?(?:relire|lire|montrer|afficher|donner|dire|rappeler) ${LIST_OBJECT}$`,
+  `^qu est ce qu il y a ${LIST_PLACE}$`,
+  `^qu y a t il ${LIST_PLACE}$`,
+  `^(?:il y a|y a|j ai|on a) quoi ${LIST_PLACE}$`,
+  `^qu est ce que j ai ${LIST_PLACE}$`,
+  `^(?:dis moi |montre moi |rappelle moi )?ce qu il y a ${LIST_PLACE}$`,
+  `^(?:c est quoi|quelle est) ${LIST_OBJECT}$`,
+  '^quelles sont mes notes$',
+  '^qu est ce que j ai note$',
+  '^qu est ce que tu as note$',
+  '^(?:j ai|tu as) note quoi$',
+].map((pattern) => new RegExp(pattern, 'u'));
+
+function isListRequest(folded: string): boolean {
+  const request = folded.replace(/ (?:s il te plait|s il vous plait|stp|svp)$/u, '');
+  return LIST_REQUESTS.some((pattern) => pattern.test(request));
+}
+
 /** Phrase express, ou null si le tour doit suivre vers le modèle. */
 export function noteIntent(text: string): NoteIntent | null {
   const raw = stripWake(text);
   const folded = foldNote(raw);
   if (!folded) return null;
-  if (folded === 'qu est ce que j ai note' || folded === 'mes notes' || folded === 'ma liste') return { kind: 'list' };
+  if (isListRequest(folded)) return { kind: 'list' };
   if (folded.startsWith('c est bon pour ')) {
     const query = raw.replace(/^c['’]est bon pour\s+/iu, '').replace(/[?.!]+$/u, '').trim();
     return query ? { kind: 'check', query } : null;

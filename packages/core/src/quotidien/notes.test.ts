@@ -37,6 +37,45 @@ describe('notes et liste', () => {
     expect(noteIntent("Le film d'hier, note : 3 paquets")).toBeNull();
   });
 
+  it('relire la liste : les façons courantes de le demander, sans prendre une autre phrase', () => {
+    for (const phrase of [
+      'Ma liste',
+      'mes notes',
+      "Qu'est-ce qu'il y a sur ma liste ?",
+      "Qu'est-ce qu'il y a dans ma liste",
+      'Lis-moi ma liste',
+      'Jarvis, relis-moi ma liste',
+      'Montre-moi mes notes',
+      'Affiche ma liste de courses',
+      'Il y a quoi sur ma liste ?',
+      "J'ai quoi sur ma liste ?",
+      "Qu'est-ce que j'ai sur ma liste ?",
+      "Qu'y a-t-il sur ma liste ?",
+      "Dis-moi ce qu'il y a sur ma liste",
+      'Tu peux me lire ma liste ?',
+      'Peux-tu me relire mes notes ?',
+      "C'est quoi ma liste ?",
+      'Quelles sont mes notes ?',
+      'Tu as noté quoi ?',
+      "Lis-moi ma liste s'il te plaît",
+    ]) {
+      expect(noteIntent(phrase), phrase).toEqual({ kind: 'list' });
+    }
+    for (const phrase of [
+      'Mets ma liste de lecture',
+      'Lis-moi ma liste de lecture Spotify',
+      'Ma liste de films à voir est longue',
+      "Qu'est-ce qu'il y a sur ma liste de tâches du projet ?",
+      'Lis-moi mes mails',
+      "Qu'est-ce qu'il y a sur mon bureau ?",
+      'Fais-moi une liste de courses',
+      'Efface ma liste',
+    ]) {
+      expect(noteIntent(phrase), phrase).toBeNull();
+    }
+    expect(noteIntent('ajoute à ma liste du pain')).toEqual({ kind: 'add', body: 'du pain' });
+  });
+
   it('téléphone ajoute, enceinte lit et coche, enceinte n’efface pas', async () => {
     const root = await mkdtemp(join(tmpdir(), 'jarvis-notes-'));
     const book = new NotesBook(() => notesFilePath(root));

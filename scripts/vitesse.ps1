@@ -20,6 +20,11 @@ Write-Output 'trouvé : conversations Jarvis Test (%APPDATA%\Jarvis Test\convers
 
 $sortie = 'C:\dev\jarvis-data\vitesse'
 Write-Output 'Lancement du script du cœur.'
-& npm run vitesse --workspace '@jarvis/core' -- --conversations $dossier --dir $sortie
+# Le chemin de Jarvis Test contient une espace (« Jarvis Test ») : passé par npm, il arrivait
+# coupé en deux et le script ne lisait aucune conversation. On construit donc le cœur par npm,
+# puis on lance le script par node, qui reçoit chaque chemin entier.
+& npm run build --workspace '@jarvis/core'
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+& node (Join-Path $root 'packages\core\scripts\vitesse.mjs') --conversations "$dossier" --dir "$sortie"
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 Write-Output ("À envoyer à Claude : {0}" -f (Join-Path $sortie 'vitesse.md'))
