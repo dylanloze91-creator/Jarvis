@@ -84,6 +84,51 @@ Deux façons, au choix :
 
 Quand tu as essayé et que tu dis « publie » : fusion de `claude/live-5080` dans `main`, puis `bash release.sh` depuis `main`. Les corrections sont déjà dans `claude/dev` (Jarvis Test).
 
+## 7. Essais faits par Claude Code le 20 novembre 2026
+
+À ta demande, pendant ton absence. Jarvis Live arrêté, la branche `claude/live-5080` lancée sans rien installer (`electron-vite dev`), avec tes vraies données. Phrases tapées dans la vraie fenêtre (pilotée par le port de débogage), réponses, bulles d'outil et pastilles relues à l'écran. Enceinte : phrases en voix de synthèse Windows, envoyées au pont par `apps/desktop/scripts/fake-speaker.mjs` avec une enceinte d'essai temporaire. **Rien n'est publié.**
+
+Avant : copie de sécurité des données de Live (488 fichiers, 68 Mo, sans les caches) dans `C:\dev\jarvis-data\sauvegardes\live-avant-essais-5080-2026-11-20`. Après : Jarvis Live 5.0.79 relancé, pont des enceintes de nouveau ouvert.
+
+| # | Résultat | Ce que Jarvis a répondu |
+| --- | --- | --- |
+| E1 | **réussi** | pastille « PC et applications · qwen2.5:7b · choisi par le cerveau », bulle « Fenêtre active · terminé », puis le vrai nom de la fenêtre active (Jarvis) et quelques applications ouvertes. Rejoué 3 fois avec la phrase de l'enceinte tapée au clavier : 3 sur 3 |
+| E2 | **raté 4 fois sur 6** | à la fausse enceinte, discussion neuve à chaque fois. 4 fois : « Je vais vérifier cela pour vous, [prénom]. » suivi du nom de l'outil écrit entre accolades, sans l'appeler (4 s de voix, 6 à 8,5 s d'attente). 2 fois : l'outil est appelé, « La fenêtre active est celle de Jarvis… » (10 s de voix, 9 s d'attente). Voir « Ce qui coince », point 1 |
+| E3 | **réussi** | réponse en 0,5 s, pastille « PC et applications · sans modèle · express », bulle « État du PC · terminé », « Voici les informations du PC : » puis système, machine, processeur, mémoire, disque, temps depuis le démarrage |
+| E4 | **réussi** | bulle « Fenêtre active · terminé », « La fenêtre active est celle de Jarvis. » puis la liste des fenêtres ouvertes (18 s) |
+| E5 | **réussi pour l'attendu, avec un défaut** | ce n'est pas la liste toute faite. Mais la demande part à l'équipe Internet (pastille « Internet · express », à cause de « en ce moment ») et le modèle écrit « j'effectue une recherche rapide » puis un appel d'outil en texte, sans le faire. Pas lié à la 5.0.80 (règle d'actualité inchangée). Point 4 |
+| E6 | **réussi, à écouter** | réponse en 5,6 s, 11,8 s de voix. Enregistrée pour toi : `C:\dev\jarvis-data\essais-5080\reponse-E6.wav`. Le texte de la discussion est la liste complète |
+| E7 | **réussi** | Jarvis demande le lien de la vidéo ; « Non merci, pas maintenant » est rangée « candidate » (lu par la même lecture que l'écran « Fiches récentes »). Fiche retirée après l'essai |
+| E8 | **réussi, avec un défaut trouvé** | la correction est « validated ». Mais elle a fait passer une de tes anciennes fiches de « validated » à « rejected », sans rapport avec elle (point 2). Fiche d'essai retirée, ta fiche remise dans son état d'avant à partir de la copie de sécurité |
+| E9 | **réussi** | les anciennes fiches en « non » sont toujours là (4 rejetées, 2 validées), aucune modifiée au final |
+| E10 | **réussi** | « Rien n'était en lecture sur Spotify : il n'y a rien à mettre en pause. », en 0,5 s |
+| E11 | **pause et reprise réussies, « morceau précédent » raté** | sur le PC, volume de Windows à 8 % le temps de l'essai puis remis. « pause » : « Spotify est en pause. » ; « reprends » : « Lecture Spotify reprise. » ; « morceau précédent » : Spotify refuse (erreur 403 « Restriction violated »), et le modèle dit une fois « je ne peux pas… avec le niveau d'accès actuel », une fois l'erreur en anglais. Points 3 |
+| E12 | **réussi** | bulle « Processus en cours · terminé », une vraie liste de cinq processus avec leur mémoire (15 s) |
+| E13 | **réussi** | « Pour résumer la vidéo, j'ai besoin de l'URL de celle-ci. Pouvez-vous me la fournir, s'il vous plaît ? » Aucun lien inventé (2 essais) |
+| E14 | **réussi** | « Il est 10 h 05. » (Horloge · sans modèle) ; le cours d'Airbus à Paris avec la variation du jour (Bourse · express) ; « 12 × 37 = 444. » (Calcul · calcul exact) |
+| E15 | **réussi** | à la fausse enceinte : « La capitale de l'Italie est Rome. » en 7,3 s ; Ctrl+Espace cache la fenêtre puis la ramène |
+
+### Ce qui coince
+
+1. **À la voix, « quelle fenêtre est active » rate encore 4 fois sur 6.** Dans la fenêtre au clavier, c'est bon (4 sur 4). À l'enceinte, le modèle dit sa phrase de majordome puis écrit le nom de l'outil au lieu de l'appeler. Ce qui change à la voix : la note « transcription vocale » et la consigne « réponds comme on parle » s'ajoutent aux consignes. Le banc des outils du PC ne passe jamais par la voix : il ne pouvait pas le voir, ni sur la 5.0.79 ni sur la 5.0.80. La correction de la mémoire apprise est bonne, mais elle ne suffit pas pour l'enceinte.
+2. **Une correction rejette une fiche sans rapport** (`applyIncoming`, `continuous.ts`) : la règle « deux mots en commun = fiches qui se contredisent » compte encore les petits mots (« non », « la », « est »). Le rappel a été corrigé pour la 5.0.80, pas cette règle.
+3. **Spotify** : (a) Jarvis lance toujours un seul morceau, même pour « l'album … » ; Spotify refuse alors « précédent », et « suivant » arrête la lecture alors que l'outil répond « Morceau suivant. » sans vérifier ; (b) « pause » quand c'est déjà en pause affiche l'erreur 403 en anglais ; (c) « morceau suivant » et « morceau précédent » passent par le petit modèle sur le processeur : 17 à 33 s d'attente.
+4. **« Pourquoi mon PC est lent en ce moment ? »** part sur Internet et annonce une recherche sans la faire.
+5. Le caractère « majordome » vouvoie et ajoute des phrases (« Vous travaillez actuellement… ») : à toi de dire si c'est voulu.
+
+Mon avis : les points 1 à 3 sont des corrections, donc à leur place dans la 5.0.80, d'abord dans Jarvis Test avec un banc qui passe aussi par la voix. Je ne les ai pas faites : tu m'as demandé les essais.
+
+### Deux essais que je te laisse
+
+- **Une phrase à la vraie enceinte, avec ta voix** : « Jarvis, quelle fenêtre est active sur mon PC ? » (il faut d'abord lancer la 5.0.80, voir § 3).
+- **Écouter la réponse E6** (`C:\dev\jarvis-data\essais-5080\reponse-E6.wav`) et me dire si c'est trop long à l'oreille. Les deux réponses de E2 sont à côté (`reponse-E2-ratee.wav`, `reponse-E2-reussie.wav`).
+
+### Traces laissées par mes essais
+
+- Dans l'historique de Jarvis : une douzaine de discussions d'essai (dont celles des enceintes « essai-claude »). Je ne les ai pas effacées.
+- Les six enceintes d'essai sont retirées ; il ne reste que la tienne.
+- `knowledge-index.json.avant-remise-2026-11-20` dans le dossier de données : l'index tel qu'il était juste avant que je remette ta fiche.
+
 ## RAPPORT DE VÉRIFICATION
 
 ```
@@ -95,6 +140,6 @@ Tests     : OK (cœur 217 fichiers, 2534 tests ; bureau 161 fichiers, 841 tests,
 Secrets   : OK (aucune clé, aucune phrase de l'utilisateur, aucun souvenir)
 Fichiers modifiés : learning/continuous.ts, agent/expressRules.ts (nouveau dans la Live), agent/orchestra.ts, youtube/url.ts, captions.ts, listen.ts, index.ts ; bureau session.ts, tools/spotify.ts, tools/processes.ts ; cinq fichiers d'essais ; versions ; CLAUDE.md, AGENTS-COORDINATION.md, rapports
 Prêt à fusionner : NON, pas avant tes essais et ton « publie »
-À corriger : rien de connu
-Testé en vrai (à la voix, sur le PC) : PAS FAIT
+À corriger : § 7, « Ce qui coince » (fenêtre active à la voix, fiche rejetée à tort, Spotify)
+Testé en vrai (à la voix, sur le PC) : FAIT par Claude Code le 20 novembre (fenêtre, fausse enceinte, Spotify sur le PC ; § 7). PAS FAIT avec ta voix sur la vraie enceinte
 ```
