@@ -54,6 +54,39 @@ const PAUSE_PHRASE =
 const RESUME_PHRASE =
   /^(?:jarvis[,:]?\s*)?(?:reprend(?:s|re)?(?:\s+(?:la|le|ma|mon)?\s*(?:musique|spotify|lecture|morceau|chanson))?|(?:relance|remets)\s+(?:la|le|ma|mon)?\s*(?:musique|spotify|lecture|morceau|chanson))\s*[.!]?\s*$/iu;
 
+/**
+ * 20 novembre 2026 : « morceau suivant », « précédent » partaient au petit modèle de l'équipe
+ * Musique, sur le processeur : 17 à 33 s d'attente pour un geste. Comme la pause, ils partent
+ * maintenant sans modèle. Il faut le mot morceau, chanson, titre, piste, son ou musique : « suivant »
+ * ou « reviens en arrière » seuls ne disent pas de quoi.
+ */
+const TRACK_WORD = String.raw`(?:morceau|chanson|titre|piste|son|musique)`;
+const NEXT_PHRASE = new RegExp(
+  String.raw`^(?:jarvis[,:]?\s*)?(?:(?:mets|passe|joue|lance|va)\s+(?:moi\s+)?(?:au|à\s+la|a\s+la|le|la)\s+)?(?:` +
+    String.raw`${TRACK_WORD}\s+suivante?|suivante?\s+${TRACK_WORD}|` +
+    String.raw`(?:change|zappe)\s+(?:de\s+|ce\s+|cette\s+)${TRACK_WORD}|` +
+    String.raw`${TRACK_WORD}\s+d['’]apr[èe]s)` +
+    String.raw`(?:\s+(?:sur\s+)?spotify)?(?:\s+s['’]il\s+te\s+pla[iî]t)?\s*[.!]?\s*$`,
+  'iu',
+);
+const PREVIOUS_PHRASE = new RegExp(
+  String.raw`^(?:jarvis[,:]?\s*)?(?:(?:mets|passe|joue|lance|va|reviens|retourne|remets)\s+(?:moi\s+)?(?:au|à\s+la|a\s+la|le|la)\s+)?(?:` +
+    String.raw`${TRACK_WORD}\s+pr[ée]c[ée]dente?|pr[ée]c[ée]dente?\s+${TRACK_WORD}|` +
+    String.raw`${TRACK_WORD}\s+d['’]avant)` +
+    String.raw`(?:\s+(?:sur\s+)?spotify)?(?:\s+s['’]il\s+te\s+pla[iî]t)?\s*[.!]?\s*$`,
+  'iu',
+);
+
+export function isSpotifyNextPhrase(prompt: string): boolean {
+  const trimmed = prompt.trim();
+  return Boolean(trimmed) && !NOT_A_TRACK.test(trimmed) && NEXT_PHRASE.test(trimmed);
+}
+
+export function isSpotifyPreviousPhrase(prompt: string): boolean {
+  const trimmed = prompt.trim();
+  return Boolean(trimmed) && !NOT_A_TRACK.test(trimmed) && PREVIOUS_PHRASE.test(trimmed);
+}
+
 export function isSpotifyPausePhrase(prompt: string): boolean {
   const trimmed = prompt.trim();
   return Boolean(trimmed) && !NOT_A_TRACK.test(trimmed) && PAUSE_PHRASE.test(trimmed);
@@ -75,6 +108,7 @@ export function isMusicIntent(prompt: string): boolean {
   const normalized = trimmed.toLowerCase();
   if (/qu(?:'|e )est-ce qui joue|morceau (?:actuel|en cours)/.test(normalized)) return true;
   if (/morceau suivant|piste suivante|chanson suivante/.test(normalized)) return true;
+  if (isSpotifyNextPhrase(trimmed) || isSpotifyPreviousPhrase(trimmed)) return true;
   if (/morceau pr[ée]c[ée]dent|piste pr[ée]c[ée]dente|chanson pr[ée]c[ée]dente/.test(normalized)) {
     return true;
   }

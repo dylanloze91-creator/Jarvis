@@ -15,7 +15,9 @@ import { isCurrentTrackQuestion } from '../media/currentTrackIntent.js';
 import {
   extractSpotifyPlayQuery,
   isMusicIntent,
+  isSpotifyNextPhrase,
   isSpotifyPausePhrase,
+  isSpotifyPreviousPhrase,
   isSpotifyResumePhrase,
 } from '../media/playIntent.js';
 import {
@@ -785,6 +787,9 @@ export class Agent {
     // 5.0.77 : pause et reprise dites clairement partent sans modèle, comme la lecture.
     if (isSpotifyPausePhrase(prompt)) return this.forcedCall('spotify_pause', {});
     if (isSpotifyResumePhrase(prompt)) return this.forcedCall('spotify_resume', {});
+    // 20 novembre 2026 : suivant et précédent aussi, sans attendre le petit modèle.
+    if (isSpotifyNextPhrase(prompt)) return this.forcedCall('spotify_next', {});
+    if (isSpotifyPreviousPhrase(prompt)) return this.forcedCall('spotify_previous', {});
 
     const transfer = extractSpotifyTransferTarget(prompt);
     if (transfer)
@@ -834,9 +839,14 @@ export function looksLikeWebResearchIntent(prompt: string): boolean {
   const text = prompt.trim();
   if (!text) return false;
   if (extractKnowledgeIntent(text)) return false;
-  return /sur internet|sur le web|\bgoogle\b|actualit[ée]s?|\bnews\b|aujourd['’]hui|en ce moment|m[ée]t[ée]o|recherche approfondie|plusieurs sources|source officielle|v[ée]rifie(?:r)? (?:sur|avec|ça)/iu.test(
-    text,
-  );
+  if (/sur internet|sur le web|\bgoogle\b|actualit[ée]s?|\bnews\b|m[ée]t[ée]o|recherche approfondie|plusieurs sources|source officielle|v[ée]rifie(?:r)? (?:sur|avec|ça)/iu.test(text)) {
+    return true;
+  }
+  // 20 novembre 2026 : « Pourquoi mon PC est lent en ce moment ? » partait sur Internet à cause
+  // de « en ce moment ». Un mot de temps seul ne suffit plus quand la phrase parle de mes affaires
+  // ou de la machine (`mon`, `ma`, `mes`, PC, ordinateur) : c'est une question sur le PC.
+  if (!/aujourd['’]hui|en ce moment/iu.test(text)) return false;
+  return !/\b(?:mon|ma|mes)\b|\b(?:pc|ordinateur|ordi|machine)\b/iu.test(text);
 }
 
 function isCurrentSearchResult(value: unknown): value is CurrentSearchResult {

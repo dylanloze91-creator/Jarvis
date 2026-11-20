@@ -36,6 +36,11 @@ export interface ExpressRule {
   outil?: string;
   /** Phrase mise devant le résultat de l'outil. */
   annonce?: string;
+  /**
+   * Seule la première ligne du résultat est la réponse (et donc ce que dit la voix) ; le détail
+   * reste dans la bulle de l'outil. Pour une question courte qui appelle une réponse courte.
+   */
+  premiereLigne?: boolean;
 }
 
 /** Essais exigés de chaque côté. */
@@ -133,6 +138,77 @@ export const EXPRESS_RULES: readonly ExpressRule[] = [
       'Quels sont les processus et les informations du PC ?',
     ],
   },
+  {
+    // 20 novembre 2026 : dite à l'enceinte, « quelle fenêtre est active » ratait 4 fois sur 6 :
+    // avec les consignes de la voix, `qwen2.5:7b` écrivait le nom de l'outil au lieu de l'appeler
+    // (rapports/2026-11-19-live-5080-a-verifier.md, § 7). L'outil est appelé sans modèle, et seule
+    // la première ligne est dite (la liste des fenêtres ouvertes reste dans la bulle).
+    id: 'fenetre-active',
+    team: 'pc',
+    outil: 'get_active_window',
+    premiereLigne: true,
+    declencheurs: [
+      'fenêtre active',
+      'fenêtre est active',
+      'fenêtre qui est active',
+      'quelle fenêtre',
+      'fenêtre au premier plan',
+      'application active',
+      'application est active',
+      'appli active',
+      'appli est active',
+    ],
+    empechements: [
+      // Une action sur la fenêtre, pas une question.
+      'ferme',
+      'fermer',
+      'ouvre',
+      'ouvrir',
+      'réduis',
+      'réduire',
+      'agrandis',
+      'agrandir',
+      'déplace',
+      'mets',
+      'bascule',
+      'passe',
+      'capture',
+      'photo',
+      'affiche',
+      // Une autre source, une autre action, ou une question précise : le modèle répond.
+      'internet',
+      'web',
+      'cherche',
+      'recherche',
+      'note',
+      'retiens',
+      'envoie',
+      'mail',
+      'écris',
+      'enregistre',
+      'pourquoi',
+      'comment',
+      'processus',
+      'informations',
+      'infos',
+    ],
+    pour: [
+      'Quelle fenêtre est active ?',
+      'Jarvis, quelle fenêtre est active sur mon PC ?',
+      'Quelle est la fenêtre active ?',
+      'C’est quoi la fenêtre au premier plan ?',
+      'Quelle application est active ?',
+    ],
+    contre: [
+      'Ferme la fenêtre active',
+      'Fais une capture de la fenêtre active',
+      'Pourquoi la fenêtre active ne répond plus ?',
+      'Donne-moi les informations sur mon PC',
+      'Cherche sur Internet comment changer de fenêtre active',
+      'Quels sont les processus de la fenêtre active ?',
+      'Ouvre le Bloc-notes',
+    ],
+  },
 ];
 
 /** Minuscules, sans accent, ponctuation remplacée par des espaces, apostrophes comprises. */
@@ -161,7 +237,7 @@ export function expressRuleMatches(rule: ExpressRule, text: string): boolean {
 }
 
 /** Outils qu'une règle peut appeler sans modèle : lecture seule, sans argument, sans carte. */
-export const EXPRESS_RULE_TOOLS: readonly string[] = ['get_system_info'];
+export const EXPRESS_RULE_TOOLS: readonly string[] = ['get_system_info', 'get_active_window'];
 
 /** Résultat d'outil mis en liste sous l'annonce de la règle. */
 export function expressToolReply(rule: ExpressRule, content: string): string {
@@ -169,6 +245,11 @@ export function expressToolReply(rule: ExpressRule, content: string): string {
     .split('\n')
     .map((line) => line.trim())
     .filter(Boolean);
+  if (rule.premiereLigne) {
+    const first = lines[0] ?? '';
+    const sentence = first && !/[.!?]$/.test(first) ? `${first}.` : first;
+    return rule.annonce ? `${rule.annonce} ${sentence}` : sentence;
+  }
   const body = lines.length > 1 ? lines.map((line) => `- ${line}`).join('\n') : (lines[0] ?? '');
   return rule.annonce ? `${rule.annonce}\n\n${body}` : body;
 }

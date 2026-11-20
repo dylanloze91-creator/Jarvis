@@ -38,7 +38,7 @@ const settings = core.parseSettings({
 });
 const getSettings = () => settings;
 
-function build(options: { reply?: string; breakTool?: boolean } = {}) {
+function build(options: { reply?: string; breakTool?: boolean; activeWindow?: string } = {}) {
   const requests: Array<{ system: string; tools: string[] }> = [];
   const registry = new core.ProviderRegistry().register({ ...core.ollamaDescriptor }, (config) => ({
     id: 'ollama',
@@ -61,6 +61,22 @@ function build(options: { reply?: string; breakTool?: boolean } = {}) {
     personalization: new PersonalizationStore(),
     knowledge: new KnowledgeStore({ getUserDataPath: () => userData }),
   });
+  if (options.activeWindow !== undefined) {
+    // La vraie fenêtre active n'existe pas sur la machine des essais : son résultat est fixé ici.
+    const realExecute = tools.execute.bind(tools);
+    tools.execute = async (call, context) => {
+      if (call.name !== 'get_active_window') return realExecute(call, context);
+      return {
+        callId: call.id,
+        name: call.name,
+        status: 'ok',
+        content: options.activeWindow!,
+        arguments: call.arguments,
+        decision: 'auto',
+        durationMs: 1,
+      } as Awaited<ReturnType<typeof realExecute>>;
+    };
+  }
   if (options.breakTool) {
     const realExecute = tools.execute.bind(tools);
     tools.execute = async (call, context) => {
@@ -88,13 +104,13 @@ function build(options: { reply?: string; breakTool?: boolean } = {}) {
     } as never,
     localLearning: { recordTurn: async () => undefined } as never,
   });
-  const say = async (text: string, conversationId: string | null = null) => {
+  const say = async (text: string, conversationId: string | null = null, source: 'voice' | 'text' = 'text') => {
     const events: ChatEvent[] = [];
     const sender = {
       isDestroyed: () => false,
       send: (_channel: string, event: ChatEvent) => events.push(event),
     } as unknown as Electron.WebContents;
-    await session.send(sender, { conversationId, text });
+    await session.send(sender, { conversationId, text, source });
     const reply = events
       .filter((event): event is Extract<ChatEvent, { type: 'delta' }> => event.type === 'delta')
       .map((event) => event.text)
@@ -154,5 +170,27 @@ describe('mémoire apprise : « non » après une question de Jarvis', () => {
     const neuf = build();
     await neuf.say('Non, la cuisine reste fermée le lundi.');
     expect(neuf.learned.at(-1)?.status).toBe('validated');
+  });
+});
+
+describe('règle express à outil : la fenêtre active (20 novembre 2026)', () => {
+  const FENETRES = 'Fenêtre active : Jarvis\n\nFenêtres ouvertes (2) :\n- Code — main.ts\n- Spotify — Spotify Premium';
+
+  it('dite à l’enceinte : get_active_window appelé sans modèle, réponse courte', async () => {
+    const jarvis = build({ activeWindow: FENETRES });
+    const { reply, route, messages, toolsShown } = await jarvis.say('Jarvis, quelle fenêtre est active sur mon PC ?', null, 'voice');
+    expect(jarvis.requests).toHaveLength(0);
+    expect(route?.team).toBe('pc');
+    expect(route?.how).toBe('express');
+    expect(toolsShown).toBe(1);
+    expect(reply).toBe('Fenêtre active : Jarvis.');
+    // La liste complète reste dans la bulle de l'outil.
+    expect(messages[2]?.content).toContain('Fenêtres ouvertes (2)');
+  });
+
+  it('une action sur la fenêtre n’est pas prise par la règle', async () => {
+    const jarvis = build({ activeWindow: FENETRES });
+    await jarvis.say('Ferme la fenêtre active');
+    expect(jarvis.requests.length).toBeGreaterThan(0);
   });
 });

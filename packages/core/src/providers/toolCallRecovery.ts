@@ -281,5 +281,26 @@ export function recoverToolCallsFromText(
     const calls = callsFromJsonText(match[2]!, allowed);
     if (calls.length > 0) return calls;
   }
-  return [];
+  return bareNameCalls(outsideFences, allowed);
+}
+
+/**
+ * 20 novembre 2026 : à la voix, `qwen2.5:7b` écrivait « Je vais vérifier cela pour vous.
+ * {get_active_window} » au lieu d'appeler l'outil (4 fois sur 6). Un nom d'outil seul entre
+ * accolades est un appel, seulement pour un outil proposé et sans paramètre obligatoire : il n'y a
+ * rien à deviner. Un outil qui demande des paramètres n'est jamais appelé ainsi.
+ */
+const BARE_NAME = /\{\{?\s*["'`]?([a-z][a-z0-9_]{2,63})["'`]?\s*\}?\}/gi;
+
+function bareNameCalls(text: string, allowed: ReadonlyMap<string, ToolSchema>): RecoveredToolCall[] {
+  const calls: RecoveredToolCall[] = [];
+  for (const match of text.matchAll(BARE_NAME)) {
+    const name = match[1]!;
+    const tool = allowed.get(name);
+    if (!tool || calls.some((call) => call.name === name)) continue;
+    const required = tool.parameters.required;
+    if (Array.isArray(required) && required.length > 0) continue;
+    calls.push({ name, arguments: {} });
+  }
+  return calls;
 }

@@ -25,6 +25,8 @@ import type { SpotifyBridge } from '../media/SpotifyBridge.js';
 export interface SpotifyToolsDeps {
   spotify: SpotifyBridge;
   getSettings: () => Settings;
+  /** Attente avant de relire l'état après « suivant » ou « précédent » (remplacée dans les essais). */
+  wait?: (ms: number) => Promise<void>;
 }
 
 function describeError(error: unknown): string {
@@ -35,6 +37,28 @@ function describeError(error: unknown): string {
 function isNoActiveDevice(error: unknown): boolean {
   return /NO_ACTIVE_DEVICE|No active device/i.test(describeError(error));
 }
+
+/**
+ * Spotify répond 403 « Restriction violated » quand la commande n'a pas de sens pour ce qui joue :
+ * pause alors que c'est déjà en pause, reprise alors que ça joue, « précédent » ou « suivant » sur
+ * un morceau lancé seul (essais du 20 novembre 2026). Le texte anglais n'est jamais montré.
+ */
+function isRestrictionViolated(error: unknown): boolean {
+  return /Restriction violated/i.test(describeError(error));
+}
+
+/** Après « suivant » ou « précédent », Spotify met un instant à changer de morceau. */
+const TRACK_CHANGE_WAIT_MS = 800;
+
+const RESTRICTED_MESSAGE = 'Spotify refuse cette commande pour ce qui joue en ce moment.';
+
+/** Morceau lancé seul : Spotify n'a ni morceau suivant ni morceau précédent. */
+const SINGLE_TRACK_MESSAGE = {
+  suivant:
+    "Il n'y a pas de morceau suivant : Spotify joue un morceau seul, et la lecture s'est arrêtée. Pour enchaîner, demande un album ou une playlist.",
+  précédent:
+    "Il n'y a pas de morceau précédent : Spotify joue un morceau seul. Pour revenir en arrière, demande un album ou une playlist.",
+} as const;
 
 const NO_ACTIVE_DEVICE_MESSAGE =
   "Spotify n'a aucune lecture en cours, sur aucun appareil. Demande d'abord un morceau (« mets … »).";
@@ -247,6 +271,39 @@ export function createSpotifyTools(deps: SpotifyToolsDeps) {
     },
   });
 
+  const wait = deps.wait ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+
+  /** `true` : ça joue ; `false` : rien ne joue ; `null` : état illisible. */
+  const playingState = async (): Promise<boolean | null> => {
+    try {
+      const state = await getSpotify().getPlaybackState();
+      return state ? state.isPlaying : false;
+    } catch {
+      return null;
+    }
+  };
+
+  /**
+   * Après « suivant » ou « précédent » : l'état est relu. Avant le 20 novembre 2026, l'outil
+   * disait « Morceau suivant. » même quand Spotify s'était arrêté (morceau lancé seul).
+   */
+  const afterTrackChange = async (sens: 'suivant' | 'précédent') => {
+    await wait(TRACK_CHANGE_WAIT_MS);
+    let state: Awaited<ReturnType<ReturnType<typeof getSpotify>['getPlaybackState']>>;
+    try {
+      state = await getSpotify().getPlaybackState();
+    } catch {
+      return { ok: true, content: `Morceau ${sens} demandé à Spotify (je n'ai pas pu vérifier ce qui joue).` };
+    }
+    if (state?.isPlaying && state.track) {
+      return {
+        ok: true,
+        content: `Morceau ${sens} : ${state.track.title} — ${state.track.artists.join(', ')}.`,
+      };
+    }
+    return { ok: false, outcome: 'recoverable' as const, content: SINGLE_TRACK_MESSAGE[sens] };
+  };
+
   const spotifyPauseTool = defineTool({
     name: 'spotify_pause',
     description: 'Met la lecture Spotify en pause. Nécessite un abonnement Spotify Premium.',
@@ -262,6 +319,10 @@ export function createSpotifyTools(deps: SpotifyToolsDeps) {
         if (isNoActiveDevice(error)) {
           return { ok: true, content: "Rien n'était en lecture sur Spotify : il n'y a rien à mettre en pause." };
         }
+        if (isRestrictionViolated(error) && (await playingState()) === false) {
+          return { ok: true, content: 'Spotify était déjà en pause.' };
+        }
+        if (isRestrictionViolated(error)) return { ok: false, content: RESTRICTED_MESSAGE };
         return { ok: false, content: `Spotify : ${describeError(error)}` };
       }
     },
@@ -279,6 +340,10 @@ export function createSpotifyTools(deps: SpotifyToolsDeps) {
         return { ok: true, content: 'Lecture Spotify reprise.' };
       } catch (error) {
         if (isNoActiveDevice(error)) return { ok: false, outcome: 'recoverable', content: NO_ACTIVE_DEVICE_MESSAGE };
+        if (isRestrictionViolated(error) && (await playingState()) === true) {
+          return { ok: true, content: 'Spotify joue déjà.' };
+        }
+        if (isRestrictionViolated(error)) return { ok: false, content: RESTRICTED_MESSAGE };
         return { ok: false, content: `Spotify : ${describeError(error)}` };
       }
     },
@@ -293,9 +358,10 @@ export function createSpotifyTools(deps: SpotifyToolsDeps) {
     execute: async () => {
       try {
         await getSpotify().next();
-        return { ok: true, content: 'Morceau suivant.' };
+        return await afterTrackChange('suivant');
       } catch (error) {
         if (isNoActiveDevice(error)) return { ok: false, outcome: 'recoverable', content: NO_ACTIVE_DEVICE_MESSAGE };
+        if (isRestrictionViolated(error)) return { ok: false, outcome: 'recoverable', content: SINGLE_TRACK_MESSAGE.suivant };
         return { ok: false, content: `Spotify : ${describeError(error)}` };
       }
     },
@@ -311,9 +377,10 @@ export function createSpotifyTools(deps: SpotifyToolsDeps) {
     execute: async () => {
       try {
         await getSpotify().previous();
-        return { ok: true, content: 'Morceau précédent.' };
+        return await afterTrackChange('précédent');
       } catch (error) {
         if (isNoActiveDevice(error)) return { ok: false, outcome: 'recoverable', content: NO_ACTIVE_DEVICE_MESSAGE };
+        if (isRestrictionViolated(error)) return { ok: false, outcome: 'recoverable', content: SINGLE_TRACK_MESSAGE.précédent };
         return { ok: false, content: `Spotify : ${describeError(error)}` };
       }
     },

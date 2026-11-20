@@ -182,3 +182,24 @@ describe('revue 5.0.64, point 3 — texte retenu après « <tool_call » (mode r
     expect(textOf(events)).toBe('Je commence. ');
   });
 });
+
+describe('nom d’outil seul entre accolades, à la voix (20 novembre 2026)', () => {
+  const FENETRE: ToolSchema[] = [
+    { name: 'get_active_window', description: 'Fenêtre active.', parameters: { type: 'object', properties: {} } },
+  ];
+
+  it('mode orchestre : « Je vais vérifier. {get_active_window} » devient un vrai appel', async () => {
+    const { error, events } = await run({ recoverToolCalls: true }, 'Je vais vérifier cela pour vous. {get_active_window}', FENETRE);
+    expect(error).toBeNull();
+    const calls = events.filter((event) => event.type === 'tool_call');
+    expect(calls).toHaveLength(1);
+    expect((calls[0] as Extract<ChatStreamEvent, { type: 'tool_call' }>).call).toMatchObject({ name: 'get_active_window', arguments: {} });
+    expect(events.at(-1)).toMatchObject({ type: 'done', finishReason: 'tool_calls' });
+  });
+
+  it('chat sans orchestre (option absente) : rien ne change, c’est du texte', async () => {
+    const { error, events } = await run(undefined, 'Je vais vérifier cela pour vous. {get_active_window}', FENETRE);
+    expect(error).toBeNull();
+    expect(events.filter((event) => event.type === 'tool_call')).toEqual([]);
+  });
+});

@@ -221,6 +221,25 @@ export interface ApplyResult {
   action: 'stored' | 'duplicate' | 'conflict-corrected' | 'ignored';
 }
 
+/**
+ * Deux fiches parlent-elles de la même chose ? Seuls les mots du sujet comptent (pas « non », « la »,
+ * « est ») : avant le 20 novembre 2026, « Non, la capitale de l'Australie est Canberra » rejetait
+ * une fiche sans rapport parce qu'elles partageaient ces petits mots
+ * (rapports/2026-11-19-live-5080-a-verifier.md, § 7). Il faut au moins un mot du sujet en commun,
+ * qui pèse au moins la moitié de la fiche la plus courte et 30 % de la plus longue : « Non, le
+ * saut fait 480 » contredit « retiens que le saut fait 200 », pas une longue fiche qui cite un saut.
+ */
+export function sameSubject(a: string, b: string): boolean {
+  const left = new Set(contentTokens(a));
+  const right = new Set(contentTokens(b));
+  if (left.size === 0 || right.size === 0) return false;
+  let shared = 0;
+  for (const token of left) if (right.has(token)) shared += 1;
+  const small = Math.min(left.size, right.size);
+  const large = Math.max(left.size, right.size);
+  return shared >= 1 && shared * 2 >= small && shared * 10 >= large * 3;
+}
+
 /** Une correction explicite remplace une supposition. Un doublon ne crée pas une seconde fiche. */
 export function applyIncoming(existing: readonly LearningRecord[], incoming: LearningRecord | null): ApplyResult {
   if (!incoming) return { records: [...existing], action: 'ignored' };
@@ -239,11 +258,9 @@ export function applyIncoming(existing: readonly LearningRecord[], incoming: Lea
     );
     return { records, action: 'duplicate' };
   }
-  const incomingTokens = new Set(tokens(incoming.content));
   const conflict = existing.find((item) => {
     if (item.status === 'rejected' || norm(item.content) === key) return false;
-    const shared = tokens(item.content).filter((token) => incomingTokens.has(token)).length;
-    return shared >= 2;
+    return sameSubject(item.content, incoming.content);
   });
   if (
     conflict &&

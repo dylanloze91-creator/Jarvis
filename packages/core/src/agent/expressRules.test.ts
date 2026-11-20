@@ -4,6 +4,8 @@ import {
   checkExpressRule,
   checkExpressRules,
   expressRuleMatches,
+  expressToolReply,
+  expressToolRule,
   foldForRule,
   matchExpressRules,
   type ExpressRule,
@@ -103,5 +105,26 @@ describe('règles express de Jarvis (EXPRESS_RULES)', () => {
 
   it('chaque règle vise une équipe qui existe', () => {
     for (const rule of EXPRESS_RULES) expect(ORCHESTRA_TEAMS).toContain(rule.team);
+  });
+});
+
+describe('règle « fenêtre active » (20 novembre 2026)', () => {
+  const regle = EXPRESS_RULES.find((rule) => rule.id === 'fenetre-active')!;
+
+  it('appelle get_active_window sans modèle, pour l’équipe PC', () => {
+    expect(regle.team).toBe('pc');
+    expect(regle.outil).toBe('get_active_window');
+    expect(expressToolRule(EXPRESS_RULES, 'Jarvis, quelle fenêtre est active sur mon PC ?', TOUTES)?.id).toBe('fenetre-active');
+    expect(expressToolRule(EXPRESS_RULES, 'Ferme la fenêtre active', TOUTES)).toBeNull();
+  });
+
+  it('la réponse est la première ligne seulement : courte à l’oreille, le détail reste dans la bulle', () => {
+    const contenu = 'Fenêtre active : Jarvis\n\nFenêtres ouvertes (2) :\n- Code — main.ts\n- Spotify — Spotify Premium';
+    expect(expressToolReply(regle, contenu)).toBe('Fenêtre active : Jarvis.');
+  });
+
+  it('la règle « informations sur mon PC » garde sa liste', () => {
+    const infos = EXPRESS_RULES.find((rule) => rule.id === 'infos-pc')!;
+    expect(expressToolReply(infos, 'Système : Windows 11\nMémoire : 64 Go')).toBe('Voici les informations du PC :\n\n- Système : Windows 11\n- Mémoire : 64 Go');
   });
 });

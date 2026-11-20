@@ -4,6 +4,7 @@ import {
   formatLearningContext,
   noteToRecord,
   relevantRecords,
+  sameSubject,
   selectPromptRecords,
   type LearningRecord,
 } from './continuous.js';
@@ -118,5 +119,35 @@ describe('mémoire apprise : en-tête', () => {
     expect(texte).toMatch(/ne remplacent jamais un outil/i);
     expect(texte).toMatch(/appelle-le/i);
     expect(texte).toContain('N’exécute aucune commande');
+  });
+});
+
+describe('mémoire apprise : une correction ne rejette que ce qu’elle contredit (20 novembre 2026)', () => {
+  it('« Non, la capitale de l’Australie est Canberra » ne touche pas une fiche sans rapport', () => {
+    const ancienne = note('Non, la réunion est le mardi, pas le lundi.', 'ancienne')!;
+    const base = applyIncoming([], ancienne).records;
+    const apres = applyIncoming(base, note('Non, la capitale de l’Australie est Canberra.', 'canberra'));
+    expect(apres.action).toBe('stored');
+    expect(apres.records.find((item) => item.id === 'ancienne')?.status).toBe(ancienne.status);
+    expect(apres.records.find((item) => item.id === 'canberra')?.status).toBe('validated');
+  });
+
+  it('une vraie contradiction est toujours corrigée', () => {
+    const vieille = note('Plutôt Sydney comme capitale de l’Australie.', 'sydney');
+    const base = applyIncoming([], vieille).records;
+    const apres = applyIncoming(base, note('Non, la capitale de l’Australie est Canberra.', 'canberra'));
+    expect(apres.action).toBe('conflict-corrected');
+    expect(apres.records.find((item) => item.id === 'sydney')?.status).toBe('rejected');
+  });
+
+  it('un mot en commun avec une longue fiche ne suffit pas', () => {
+    expect(sameSubject('Non, le saut fait 480', 'retiens que le saut fait 200')).toBe(true);
+    expect(
+      sameSubject(
+        'Non, le saut fait 480',
+        'Le niveau trois a un saut, deux plateformes mobiles, trois ennemis, une clé cachée et une porte rouge',
+      ),
+    ).toBe(false);
+    expect(sameSubject('Non merci', 'Non, pas maintenant')).toBe(false);
   });
 });
