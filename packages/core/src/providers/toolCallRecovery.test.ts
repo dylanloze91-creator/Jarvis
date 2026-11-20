@@ -175,3 +175,18 @@ describe('appels d’outils relus dans le texte', () => {
     expect(recoverToolCallsFromText(text, TOOLS)).toEqual([]);
   });
 });
+
+describe('nom d’outil seul entre accolades (20 novembre 2026)', () => {
+  it('« Je vais vérifier. {list_files} » : un appel, sans paramètre', () => {
+    expect(recoverToolCallsFromText('Je vais vérifier cela pour vous. {list_files}', TOOLS)).toEqual([{ name: 'list_files', arguments: {} }]);
+    expect(recoverToolCallsFromText('Un instant… {{list_files}}', TOOLS)).toEqual([{ name: 'list_files', arguments: {} }]);
+    expect(recoverToolCallsFromText('{"list_files"} puis {list_files}', TOOLS)).toEqual([{ name: 'list_files', arguments: {} }]);
+  });
+
+  it('jamais pour un outil à paramètres obligatoires, un outil non proposé ou un mot quelconque', () => {
+    expect(recoverToolCallsFromText('Je lis le fichier : {read_file}', TOOLS)).toEqual([]);
+    expect(recoverToolCallsFromText('Je regarde : {get_active_window}', TOOLS)).toEqual([]);
+    expect(recoverToolCallsFromText('Le modèle {prenom} est remplacé par ton prénom.', TOOLS)).toEqual([]);
+    expect(recoverToolCallsFromText('Voici un exemple de code :\n```js\nconst x = {list_files};\n```', TOOLS)).toEqual([]);
+  });
+});

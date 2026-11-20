@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   extractSpotifyPlayQuery,
   isMusicIntent,
+  isSpotifyNextPhrase,
   isSpotifyPausePhrase,
+  isSpotifyPreviousPhrase,
   isSpotifyResumePhrase,
   searchQueryVariants,
 } from './playIntent.js';
@@ -150,5 +152,49 @@ describe('searchQueryVariants', () => {
     const variants = searchQueryVariants('un versat de Necfeu').map((value) => value.toLowerCase());
     expect(variants.some((value) => value.includes('nekfeu'))).toBe(true);
     expect(variants.some((value) => value.includes('on verra'))).toBe(true);
+  });
+});
+
+describe('suivant et précédent sans modèle (20 novembre 2026)', () => {
+  it('reconnaît les façons courantes de le dire', () => {
+    for (const phrase of [
+      'Morceau suivant',
+      'Jarvis, morceau suivant',
+      'Chanson suivante !',
+      'Passe au morceau suivant',
+      'Mets la chanson suivante s’il te plaît',
+      'Change de morceau',
+      'Titre suivant sur Spotify',
+    ]) {
+      expect(isSpotifyNextPhrase(phrase), phrase).toBe(true);
+      expect(isMusicIntent(phrase), phrase).toBe(true);
+    }
+    for (const phrase of [
+      'Morceau précédent',
+      'Jarvis, chanson précédente',
+      'Reviens au morceau précédent',
+      'Remets le morceau d’avant',
+      'Piste précédente',
+    ]) {
+      expect(isSpotifyPreviousPhrase(phrase), phrase).toBe(true);
+      expect(isMusicIntent(phrase), phrase).toBe(true);
+    }
+  });
+
+  it('ne prend pas ce qui n’est pas un geste sur la musique', () => {
+    for (const phrase of [
+      'Suivant',
+      'Passe à l’étape suivante',
+      'Quel est le morceau suivant de la playlist ?',
+      'Fenêtre suivante',
+      'Reviens en arrière',
+      'Passe au suivant',
+      'Reviens en arrière dans le dossier',
+      'Mets le morceau de Nekfeu',
+      'Le fichier suivant',
+    ]) {
+      expect(isSpotifyNextPhrase(phrase), phrase).toBe(false);
+      expect(isSpotifyPreviousPhrase(phrase), phrase).toBe(false);
+    }
   });
 });

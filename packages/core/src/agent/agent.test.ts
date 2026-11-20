@@ -12,6 +12,7 @@ import { enforceConstraints } from '../learning/constraints.js';
 import { ToolManager, defineTool } from '../tools/manager.js';
 import type { ChatRequest, ChatStreamEvent, LLMProvider } from '../providers/types.js';
 import { createMessage } from '../types.js';
+import { expressTeam } from './orchestra.js';
 import {
   clearSpotifyDeviceAsks,
   peekSpotifyDeviceAsk,
@@ -1009,5 +1010,59 @@ describe('question Spotify « Devialet ou PC ? »', () => {
     expect(provider.requests).toHaveLength(1);
     expect(peekSpotifyDeviceAsk(pending.sessionId, 5_000)?.query).toBe('Daft Punk');
     clearSpotifyDeviceAsks();
+  });
+});
+
+describe('Spotify : suivant et précédent sans modèle (20 novembre 2026)', () => {
+  function geste(name: string, content: string, seen: string[]) {
+    return defineTool({
+      name,
+      description: name,
+      risk: 'safe',
+      schema: z.object({}),
+      execute: async () => {
+        seen.push(name);
+        return { ok: true, content };
+      },
+    });
+  }
+
+  it('« Morceau suivant » et « Chanson précédente » : l’outil est appelé, le modèle jamais', async () => {
+    for (const [phrase, outil, reponse] of [
+      ['Morceau suivant', 'spotify_next', 'Morceau suivant : Deux — Artiste.'],
+      ['Jarvis, chanson précédente', 'spotify_previous', 'Morceau précédent : Un — Artiste.'],
+    ] as const) {
+      const seen: string[] = [];
+      const tools = new ToolManager().registerAll([
+        geste('spotify_next', 'Morceau suivant : Deux — Artiste.', seen),
+        geste('spotify_previous', 'Morceau précédent : Un — Artiste.', seen),
+      ]);
+      const provider = new ScriptedProvider([]);
+      const events = await collect(new Agent(provider, tools, { systemPrompt: 'test' }), phrase);
+      expect(seen).toEqual([outil]);
+      expect(provider.requests).toHaveLength(0);
+      const texte = events.flatMap((event) => (event.type === 'assistant_delta' ? [event.delta] : [])).join('');
+      expect(texte).toBe(reponse);
+    }
+  });
+});
+
+describe('« en ce moment » sur mon PC n’est pas une recherche Internet (20 novembre 2026)', () => {
+  it('question sur la machine ou mes affaires : pas de recherche', () => {
+    expect(looksLikeWebResearchIntent('Pourquoi mon PC est lent en ce moment ?')).toBe(false);
+    expect(looksLikeWebResearchIntent('Qu’est-ce que mon ordinateur fait en ce moment ?')).toBe(false);
+    expect(looksLikeWebResearchIntent('Quels sont mes rendez-vous aujourd’hui ?')).toBe(false);
+  });
+
+  it('le reste ne change pas', () => {
+    expect(looksLikeWebResearchIntent('Que se passe-t-il en ce moment en Ukraine ?')).toBe(true);
+    expect(looksLikeWebResearchIntent("Quelles sont les actualités aujourd'hui ?")).toBe(true);
+    expect(looksLikeWebResearchIntent('Cherche sur internet pourquoi mon PC est lent')).toBe(true);
+    expect(looksLikeWebResearchIntent('Quelle météo pour mon jardin aujourd’hui ?')).toBe(true);
+  });
+
+  it('chef d’orchestre : la question ne part plus en express vers l’équipe Internet', () => {
+    const toutes = new Set(['conversation', 'pc', 'fichiers', 'web', 'musique', 'memoire'] as const);
+    expect(expressTeam({ text: 'Pourquoi mon PC est lent en ce moment ?', history: [], available: toutes, now: new Date('2026-11-20T10:00:00') })).toBeNull();
   });
 });

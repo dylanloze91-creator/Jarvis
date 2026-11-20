@@ -219,7 +219,9 @@ export * from './media/types.js';
 export {
   extractSpotifyPlayQuery,
   isMusicIntent,
+  isSpotifyNextPhrase,
   isSpotifyPausePhrase,
+  isSpotifyPreviousPhrase,
   isSpotifyResumePhrase,
   searchQueryVariants,
 } from './media/playIntent.js';
