@@ -129,6 +129,16 @@ Mon avis : les points 1 à 3 sont des corrections, donc à leur place dans la 5.
 - Les six enceintes d'essai sont retirées ; il ne reste que la tienne.
 - `knowledge-index.json.avant-remise-2026-11-20` dans le dossier de données : l'index tel qu'il était juste avant que je remette ta fiche.
 
+## 8. Forge : `insightface` réparé (20 novembre 2026, avec ton accord)
+
+Hors de Jarvis : seul le dossier `C:\dev\Forge` a été touché, aucun fichier de Jarvis.
+
+- **Cause** : à chaque démarrage, Forge lance `pip install insightface==0.7.3`. Cette version n'existe sur PyPI qu'en sources à compiler : l'installation échouait à chaque fois, après une longue attente.
+- **Réparation** : la roue officielle `insightface 2.1` de PyPI (projet deepinsight, Python pur, rien à compiler) installée dans le venv de Forge, sans ses dépendances, comme le fait Forge. Aucun autre paquet du venv n'a changé (liste comparée avant et après). Forge voit le paquet et ne tente plus rien.
+- **Mesure**, modèles d'Ollama déchargés comme le fait Jarvis, jusqu'à ce que l'API réponde : **51 s** au premier démarrage, **22 s** au second (113 s avant). Forge arrêté ensuite. Le délai de 4 minutes reste tel quel : plus besoin de passer à 6.
+- **Limite** : Forge est écrit pour la 0.7.3. Les fonctions qui s'en servent (IP-Adapter FaceID, InstantID de ControlNet) n'ont pas été essayées avec la 2.1. Jarvis Imager ne les utilise pas. Aucune image n'a été générée pendant cet essai.
+- **Pour revenir en arrière** : `C:\dev\Forge\venv\Scripts\python.exe -m pip uninstall insightface`.
+
 ## RAPPORT DE VÉRIFICATION
 
 ```
