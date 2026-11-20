@@ -3,6 +3,7 @@ import {
   FACILE_QUESTION_TIMEOUT_MS,
   NEW_PROJECT_SCOPE,
   creationSearchQueries,
+  facileCanOpen,
   facileFiles,
   facileFolder,
   facileLines,
@@ -250,7 +251,8 @@ export class FacileCoordinator {
         ? { findings: { ...active.payload.findings, method: buildingSentence(template) } }
         : {}),
     };
-    const result = facileResult(mission, patch.folder ?? null);
+    if (template) patch.template = template;
+    const result = facileResult(mission, patch.folder ?? null, template ?? active.payload.template ?? null);
     if (result) {
       this.clearTimer();
       patch.status = result.status;
@@ -344,6 +346,32 @@ export class FacileCoordinator {
         choice === 'voir'
           ? 'Je t’ai ouvert celle qui existe, et j’ai arrêté la construction. Ce qui est fait reste dans son dossier.'
           : 'D’accord, j’arrête. Dis-moi ce que tu veux à la place.',
+    });
+  }
+
+  /**
+   * « Ouvrir l'appli » (étape 2) : le clic vaut accord pour préparer l'appli que Jarvis vient de
+   * créer (`npm run build` dans son dossier, rien n'est publié) et l'ouvrir dans une fenêtre de
+   * Jarvis. Seulement la création affichée, seulement si elle est prête et que sa base s'ouvre.
+   */
+  async openApp(): Promise<void> {
+    const active = this.active;
+    if (!active || active.payload.status !== 'pret' || !active.payload.projectId) return;
+    if (!facileCanOpen(active.payload.template)) return;
+    if (active.payload.ouverture?.etat === 'en-cours') return;
+    const dev = this.deps.developer();
+    if (!dev) return;
+    this.update(active, { ouverture: { etat: 'en-cours', message: 'Je prépare l’appli, puis je l’ouvre…' } });
+    let outcome: { ok: boolean; message: string };
+    try {
+      outcome = await dev.openCreatedApp(active.payload.projectId);
+    } catch (error) {
+      outcome = { ok: false, message: `Je n’ai pas pu l’ouvrir : ${error instanceof Error ? error.message : String(error)}` };
+    }
+    this.update(active, {
+      ouverture: outcome.ok
+        ? { etat: 'ouverte', message: 'Elle est ouverte dans une fenêtre à côté.' }
+        : { etat: 'ratee', message: outcome.message },
     });
   }
 

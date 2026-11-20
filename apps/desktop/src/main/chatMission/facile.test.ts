@@ -57,6 +57,7 @@ async function setup(options: {
   start?: () => Promise<DeveloperState>;
   timeoutMs?: number;
   voice?: boolean;
+  openCreatedApp?: (projectId: string) => Promise<{ ok: boolean; message: string }>;
 }) {
   const store = new InMemoryConversationStore();
   const events: ChatEvent[] = [];
@@ -72,6 +73,7 @@ async function setup(options: {
       return stateOf(mission());
     },
     cancel,
+    openCreatedApp: vi.fn(options.openCreatedApp ?? (async () => ({ ok: true, message: 'ouverte' }))),
     respondConfirmation: (requestId: string, approved: boolean) => {
       if (!approved) refused.push(requestId);
     },
@@ -109,7 +111,7 @@ async function setup(options: {
     if (envelope?.kind !== 'facile') throw new Error('carte absente');
     return envelope.data;
   };
-  return { coordinator, events, saved, flush, startMission, answered, opened, cancel, refused, queries, payload };
+  return { coordinator, events, saved, flush, startMission, answered, opened, cancel, refused, queries, payload, developer };
 }
 
 describe('Développeur facile : démarrage', () => {
@@ -347,5 +349,64 @@ describe('Développeur facile : voix', () => {
     await run.flush();
     const spoken = run.events.filter((event) => event.type === 'mission_update' && event.voiceHint);
     expect(spoken).toEqual([]);
+  });
+});
+
+describe('Développeur facile, étape 2 : « Ouvrir l’appli »', () => {
+  const pret = (template: string) =>
+    ({
+      mission: mission({
+        projectId: 'heures-chantier',
+        status: 'finished',
+        verdict: 'success',
+        steps: [step('scaffold', 'done', { detail: 'C:\\Projets\\heures-chantier' })],
+      }),
+      projects: [{ id: 'heures-chantier', template }],
+      notice: null,
+    }) as unknown as DeveloperState;
+
+  it('« C’est prêt » dit comment s’en servir, et le bouton ouvre l’appli', async () => {
+    const run = await setup({});
+    await run.coordinator.onDeveloperState(pret('vite-react'));
+    await run.flush();
+    let card = await run.saved();
+    expect(card.status).toBe('pret');
+    expect(card.template).toBe('vite-react');
+    expect(card.result).toBe('C’est prêt. Clique sur « Ouvrir l’appli » pour l’essayer : je la prépare et je l’ouvre dans une fenêtre.');
+    await run.coordinator.openApp();
+    await run.flush();
+    const open = (run.developer as unknown as { openCreatedApp: ReturnType<typeof vi.fn> }).openCreatedApp;
+    expect(open.mock.calls).toEqual([['heures-chantier']]);
+    card = await run.saved();
+    expect(card.ouverture).toEqual({ etat: 'ouverte', message: 'Elle est ouverte dans une fenêtre à côté.' });
+  });
+
+  it('préparation ratée : la raison est dite, rien n’est prétendu', async () => {
+    const run = await setup({ openCreatedApp: async () => ({ ok: false, message: 'Je n’ai pas réussi à la préparer : npm run build a échoué.' }) });
+    await run.coordinator.onDeveloperState(pret('vite-react'));
+    await run.flush();
+    await run.coordinator.openApp();
+    await run.flush();
+    expect((await run.saved()).ouverture).toEqual({ etat: 'ratee', message: 'Je n’ai pas réussi à la préparer : npm run build a échoué.' });
+  });
+
+  it('un programme à commande n’a pas de bouton : la fin dit où est le mode d’emploi', async () => {
+    const run = await setup({});
+    await run.coordinator.onDeveloperState(pret('node-cli'));
+    await run.flush();
+    const card = await run.saved();
+    expect(card.result).toMatch(/se lance en tapant une commande/);
+    await run.coordinator.openApp();
+    await run.flush();
+    const open = (run.developer as unknown as { openCreatedApp: ReturnType<typeof vi.fn> }).openCreatedApp;
+    expect(open.mock.calls).toEqual([]);
+  });
+
+  it('rien ne s’ouvre avant que ce soit prêt', async () => {
+    const run = await setup({});
+    await run.coordinator.openApp();
+    await run.flush();
+    const open = (run.developer as unknown as { openCreatedApp: ReturnType<typeof vi.fn> }).openCreatedApp;
+    expect(open.mock.calls).toEqual([]);
   });
 });

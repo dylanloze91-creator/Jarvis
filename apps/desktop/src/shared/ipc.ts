@@ -87,6 +87,7 @@ export const IpcChannel = {
   chatFacileChoice: 'chat:facile-choice',
   chatFacileAnswer: 'chat:facile-answer',
   chatFacileOpenFolder: 'chat:facile-open-folder',
+  chatFacileOpenApp: 'chat:facile-open-app',
   orchestraValidateTeam: 'orchestra:validate-team',
   orchestraRouterScore: 'orchestra:router-score',
   settingsGet: 'settings:get',
@@ -879,6 +880,7 @@ export interface JarvisApi {
     facileChoice(choice: 'construire' | 'voir' | 'changer'): Promise<void>;
     facileAnswer(text: string): Promise<void>;
     facileOpenFolder(): Promise<void>;
+    facileOpenApp(): Promise<void>;
     reloadConversationMissions(conversationId: string): Promise<void>;
   };
   orchestra: {

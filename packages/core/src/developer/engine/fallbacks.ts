@@ -49,6 +49,13 @@ const GAME =
   /\b(jeu|jeux|game|pong|snake|tetris|casse[- ]briques?|breakout|morpion|tic[- ]tac[- ]toe|flappy|space invaders|labyrinthe|platformer|plateforme|mario|side[- ]scroller|asteroids?)\b/i;
 const WEB = /\b(site|page web|navigateur|web|react|interface web)\b/i;
 const LIBRARY = /\b(bibliothèque|bibliotheque|librairie|library|module réutilisable)\b/i;
+/**
+ * Étape 2 de Développeur facile (20 novembre 2026) : « une appli pour noter mes heures » donnait
+ * un programme qu'on lance en tapant une commande. Une appli, un écran, des boutons : la base
+ * « page avec écrans » ; sauf si la demande parle de ligne de commande ou de script.
+ */
+const APP = /(?:^|[^\p{L}])(appli|application|app|programme|logiciel|outil|[ée]crans?|fen[êe]tre|boutons?|interface|minuteur|chronom[èe]tre|compteur|convertisseur|quiz)(?![\p{L}])/iu;
+const COMMAND_LINE = /(?:^|[^\p{L}])(cli|ligne de commande|terminal|script|console)(?![\p{L}])/iu;
 const NAMED = /\b(pong|snake|tetris|morpion|breakout|flappy|asteroids?)\b/i;
 
 function nameFromAfterColon(request: string): string | null {
@@ -64,7 +71,7 @@ function nameFromAfterColon(request: string): string | null {
 const POLITE =
   /^(?:je souhaiterais|je voudrais|j['’]aimerais|je veux|peux-tu|tu peux|il me faut|merci de|s['’]il te pla[iî]t)\s+/iu;
 const CREATE_PREFIX =
-  /^(?:créer|creer|crée|cree|fais|fabrique|génère|genere|écris|ecris)(?:-moi)?\s+(?:moi\s+)?(?:une|un|le|la|des)?\s*(?:petite|petit|nouvelle|nouveau|simple)?\s*(?:projet|application|appli|programme|outil)?\s*[:,-]?\s*/iu;
+  /^(?:créer|creer|crée|cree|fais|fabrique|génère|genere|écris|ecris|développe|developpe|construis)(?:-moi)?\s+(?:moi\s+)?(?:une|un|le|la|des)?\s*(?:petite|petit|nouvelle|nouveau|simple)?\s*(?:projet|application|appli|programme|outil)?\s*[:,-]?\s*/iu;
 const STOP = new Set([
   'de',
   'du',
@@ -164,6 +171,8 @@ function nameWords(request: string): string[] {
     text = text.replace(POLITE, '').trim();
   }
   text = text.replace(CREATE_PREFIX, '').trim();
+  // Étape 2 de Développeur facile : « en ligne de commande » dit comment, pas quoi.
+  text = text.replace(/\ben ligne de commande\b/giu, ' ').replace(/\s+/g, ' ').trim();
   text = text.replace(/^(?:un|une)\s+jeu\s+type\s+/iu, '').trim();
   return text.split(/[^\p{L}\p{N}]+/u).filter((word) => word.length > 1);
 }
@@ -214,10 +223,7 @@ export function projectNameFromRequest(request: string): string {
     if (specific.length === 0) return 'Jeu plateforme 2D';
     return titleCase(specific.slice(0, 3));
   }
-  const kept = words.filter((word) => {
-    const lower = word.toLowerCase();
-    return !STOP.has(lower) && !FRAME.has(lower);
-  });
+  const kept = tidyNameWords(words.filter((word) => !FRAME.has(word.toLowerCase())));
   const picked = (kept.length ? kept : words).slice(0, 3);
   if (
     picked.length === 0 ||
@@ -228,6 +234,33 @@ export function projectNameFromRequest(request: string): string {
   )
     return 'Mon projet';
   return titleCase(picked);
+}
+
+/** Petits mots de liaison : jamais dans un nom de projet. */
+const FILLER = new Set(['par', 'en', 'sur', 'avec', 'dans', 'au', 'aux', 'chez', 'entre', 'et', 'ou', 'moi', 'nous', 'ce', 'cette', 'ces', 'chaque', 'tous', 'toutes']);
+const POSSESSIVE = new Set(['mes', 'mon', 'ma', 'tes', 'ton', 'ta', 'ses', 'son', 'sa', 'nos', 'notre', 'vos', 'votre', 'leur', 'leurs']);
+const LINKING = new Set(['pour', 'afin', 'qui', 'que']);
+
+/**
+ * Étape 2 de Développeur facile (essai réel du 20 novembre 2026) : les noms étaient « pour noter
+ * mes », « qui additionne mes ». Les mots vides et les possessifs sont retirés ; « pour » ou « afin »
+ * et le verbe qui le suit aussi ; « qui » et son verbe seulement en tête du nom (« CLI qui renomme »
+ * reste tel quel). « une appli pour noter mes heures de chantier » → « Heures chantier ».
+ */
+function tidyNameWords(words: readonly string[]): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < words.length; i++) {
+    const lower = words[i]!.toLowerCase();
+    if (STOP.has(lower) || POSSESSIVE.has(lower) || FILLER.has(lower)) continue;
+    if (lower === 'pour' || lower === 'afin' || ((lower === 'qui' || lower === 'que') && out.length === 0)) {
+      const next = words[i + 1]?.toLowerCase();
+      // Le mot suivant est un verbe (« pour noter », « qui additionne ») : on le saute aussi.
+      if (next && !STOP.has(next) && !POSSESSIVE.has(next) && !LINKING.has(next)) i++;
+      continue;
+    }
+    out.push(words[i]!);
+  }
+  return out;
 }
 
 /** Une seule question si aucun nom sûr ne sort de la demande. `null` : le nom est décidé. */
@@ -246,7 +279,7 @@ export function fallbackFactory(request: string): FactoryOutput {
       ? 'dotnet-winforms'
       : LIBRARY.test(text)
         ? 'ts-lib'
-        : WEB.test(text)
+        : WEB.test(text) || (APP.test(text) && !COMMAND_LINE.test(text))
           ? 'vite-react'
           : 'node-cli';
   return lockFactoryToRequest(request, {
@@ -270,6 +303,8 @@ export function steerFactory(request: string, chosen: FactoryOutput): FactoryOut
     out = { ...chosen, template: 'dotnet-winforms' };
   } else if (chosen.template !== 'web-game' && GAME.test(text) && !DESKTOP_WINDOWS_EXE.test(text)) {
     out = { ...chosen, template: 'web-game' };
+  } else if (chosen.template === 'node-cli' && (APP.test(text) || WEB.test(text)) && !COMMAND_LINE.test(text) && !DESKTOP_WINDOWS_EXE.test(text)) {
+    out = { ...chosen, template: 'vite-react' };
   }
   return lockFactoryToRequest(request, out);
 }

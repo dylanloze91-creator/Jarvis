@@ -41,6 +41,17 @@ const CREATION_VERB =
   /^(?:(?:me\s+)?(?:cr[ée]e[rsz]?|fai(?:s|re)|fabrique[rsz]?|construi(?:s|re)|d[ée]veloppe[rsz]?|code[rsz]?|programme[rsz]?|[ée]cri(?:s|re)|bricole[rsz]?|pr[ée]pare[rsz]?|monte[rsz]?)(?:-moi|-nous)?|il me faudrait|il me faut|j['’]aimerais(?: avoir)?|je voudrais(?: avoir)?|je veux|j['’]ai besoin d['’]|j['’]ai besoin de)\s+/iu;
 const CREATED_THING =
   /^(?:(?:une?|mon|ma|notre)\s+)?(?:(?:petite?|nouvelle?|nouveau|nouvel|simple|vraie?|mini)\s+){0,2}(appli(?:cation)?|app|programme|logiciel|jeu(?: vid[ée]o)?|site(?: web| internet)?|page web|outil|utilitaire|calculatrice|tableau de bord|extension|script)(?![\p{L}\p{N}])/iu;
+/**
+ * Étape 2 (20 novembre 2026) : « Crée-moi un minuteur de pause café » partait à l'équipe PC (essai
+ * réel). Un petit outil nommé sans le mot « appli » est une création, mais seulement avec un verbe
+ * qui fabrique (crée, développe, code, programme, construis, fabrique) et sans durée : « fais-moi
+ * un minuteur de 10 minutes » reste une demande de minuteur, pas une application.
+ */
+const MAKING_VERB =
+  /^(?:(?:me\s+)?(?:cr[ée]e[rsz]?|fabrique[rsz]?|construi(?:s|re)|d[ée]veloppe[rsz]?|code[rsz]?|programme[rsz]?)(?:-moi|-nous)?)\s+/iu;
+const CREATED_TOOL =
+  /^(?:(?:une?|mon|ma|notre)\s+)?(?:(?:petite?|nouvelle?|nouveau|nouvel|simple|vraie?|mini)\s+){0,2}(minuteur|chronom[èe]tre|compteur|convertisseur|g[ée]n[ée]rateur|gestionnaire|carnet|planificateur|quiz|calculateur|simulateur|tableau de suivi|suivi)(?![\p{L}\p{N}])/iu;
+const DURATION = /\d+\s*(?:s|sec(?:ondes?)?|min(?:utes?)?|h|heures?)(?![\p{L}\p{N}])/iu;
 /** Le mot désigne autre chose qu'un logiciel. */
 const NOT_SOFTWARE =
   /(?:programme\s+(?:de|d['’])\s*(?:musculation|sport|entra[iî]nement|r[ée]visions?|r[ée]gime|t[ée]l[ée]|la\s|ma\s|mon\s|mes\s|vacances|travail|cours|course)|jeu\s+de\s+mots|outil\s+de\s+jardin)/iu;
@@ -71,7 +82,8 @@ export function detectCreationRequest(text: string): CreationRequest | null {
   // Une phrase qui finit par « ? » sans tournure de politesse est une question, pas un ordre.
   if (/\?\s*$/.test(raw) && !polite) return null;
   const after = rest.slice(verb[0].length);
-  const thing = CREATED_THING.exec(after);
+  const thing =
+    CREATED_THING.exec(after) ?? (MAKING_VERB.test(rest) && !DURATION.test(after) ? CREATED_TOOL.exec(after) : null);
   if (!thing) return null;
   // « un programme de musculation », « un jeu de mots » : le même mot, mais pas un logiciel.
   if (NOT_SOFTWARE.test(after)) return null;
@@ -162,7 +174,7 @@ export function buildingSentence(template: string | null | undefined): string {
     case 'web-game':
       return 'Je pars d’un petit jeu qui s’ouvre dans une page, et je le change pour qu’il fasse ce que tu demandes.';
     case 'vite-react':
-      return 'Je pars d’une page qui s’ouvre dans le navigateur, avec des écrans simples, et j’y ajoute ce que tu demandes.';
+      return 'Je pars d’une petite appli avec un écran et des boutons, et j’y ajoute ce que tu demandes.';
     case 'node-cli':
       return 'Je pars d’un petit programme qui se lance d’une ligne de commande, et j’y ajoute ce que tu demandes.';
     case 'dotnet-winforms':
@@ -237,6 +249,10 @@ export interface FacilePayload {
   result: string | null;
   /** Vient de la voix : les moments importants sont dits. */
   voice: boolean;
+  /** Base du projet, dès que le moteur l'a créé (étape 2). Absent dans les cartes d'avant. */
+  template?: string | null;
+  /** « Ouvrir l'appli » : en cours, ouverte, ou ratée avec sa raison (étape 2). */
+  ouverture?: { etat: 'en-cours' | 'ouverte' | 'ratee'; message: string } | null;
 }
 
 /** Mots de développeur → mots simples, dans un texte venu du moteur. */
@@ -420,10 +436,33 @@ export function nextFacileQuestion(
   return { text, defaut: FACILE_DEFAULT_ANSWER, askedAt: now, index: index + 1, total: questions.length };
 }
 
+/** Bases qui s'ouvrent dans une fenêtre de Jarvis (« Ouvrir l'appli »). */
+const OPENABLE_TEMPLATES: ReadonlySet<string> = new Set(['vite-react', 'web-game']);
+/** Bases qui se lancent en tapant une commande. */
+const COMMAND_TEMPLATES: ReadonlySet<string> = new Set(['node-cli', 'dotnet-console', 'dotnet-worker', 'ts-lib']);
+
+/** La base choisie s'ouvre-t-elle d'un clic, dans une fenêtre ? */
+export function facileCanOpen(template: string | null | undefined): boolean {
+  return Boolean(template && OPENABLE_TEMPLATES.has(template));
+}
+
+/** Comment se servir de ce qui vient d'être fait, d'après la base. Sans base connue : rien. */
+export function facileHowToUse(template: string | null | undefined): string {
+  if (facileCanOpen(template)) return 'Clique sur « Ouvrir l’appli » pour l’essayer : je la prépare et je l’ouvre dans une fenêtre.';
+  if (template && COMMAND_TEMPLATES.has(template)) {
+    return 'C’est un petit programme qui se lance en tapant une commande : le mode d’emploi est dans le fichier README du dossier.';
+  }
+  if (template === 'dotnet-winforms' || template === 'dotnet-wpf') {
+    return 'C’est une application Windows : pour la lancer, demande « Construire » dans le panneau Développeur, puis ouvre le fichier .exe du dossier.';
+  }
+  return '';
+}
+
 /** La phrase de fin, d'après ce que le moteur a vraiment conclu. Jamais « prêt » sans réussite. */
 export function facileResult(
   mission: Pick<MissionState, 'status' | 'verdict' | 'summary'>,
   folder: string | null,
+  template?: string | null,
 ): { status: FacileStatus; text: string } | null {
   if (mission.status === 'cancelled') return { status: 'arrete', text: 'J’ai arrêté. Ce qui est fait reste dans son dossier.' };
   if (mission.status === 'failed' || mission.verdict === 'failed') {
@@ -435,13 +474,17 @@ export function facileResult(
     };
   }
   if (mission.status !== 'finished') return null;
+  // Étape 2 : « C'est prêt » dit comment s'en servir (essai réel du 20 novembre 2026 : il fallait
+  // ouvrir le dossier et savoir quoi taper). Sans base connue, la phrase d'avant.
+  const how = facileHowToUse(template);
   if (mission.verdict === 'success') {
+    if (how) return { status: 'pret', text: `C’est prêt. ${how}` };
     return { status: 'pret', text: folder ? 'C’est prêt. Tout est dans le dossier du projet.' : 'C’est prêt.' };
   }
   // Tests verts mais relecture non faite : le moteur ne dit pas « réussi », Jarvis non plus.
   return {
     status: 'pret',
-    text: 'J’ai fini, et les essais marchent, mais je n’ai pas pu relire mon travail : regarde-le avant de t’en servir.',
+    text: `J’ai fini, et les essais marchent, mais je n’ai pas pu relire mon travail : regarde-le avant de t’en servir.${how ? ` ${how}` : ''}`,
   };
 }
 

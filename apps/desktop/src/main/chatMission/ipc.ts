@@ -112,6 +112,11 @@ export function registerChatMissionIpc(ipcMain: IpcMain, deps: ChatMissionIpcDep
     if (folder) await shell.openPath(folder);
   });
 
+  ipcMain.handle(IpcChannel.chatFacileOpenApp, async () => {
+    // Seulement la création affichée, et seulement si elle est prête : aucun projet ne vient de la fenêtre.
+    await deps.facile?.()?.openApp();
+  });
+
   ipcMain.handle(IpcChannel.chatMissionReload, async (_event, conversationId: unknown) => {
     const id = typeof conversationId === 'string' ? conversationId : '';
     if (!id) return;

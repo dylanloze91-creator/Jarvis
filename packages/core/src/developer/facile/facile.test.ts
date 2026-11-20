@@ -4,6 +4,7 @@ import {
   buildingSentence,
   creationSearchQueries,
   detectCreationRequest,
+  facileCanOpen,
   facileFiles,
   facileFolder,
   facileLines,
@@ -17,6 +18,7 @@ import {
   type FacilePayload,
 } from './facile.js';
 import type { MissionStep } from '../engine/mission.js';
+import { fallbackFactory, projectNameFromRequest, steerFactory } from '../engine/fallbacks.js';
 import { TEST_EDITION, LIVE_EDITION } from '../../edition.js';
 import { chatMissionsEnabled } from '../chatMissionsSettings.js';
 import { parseSettings } from '../../settings.js';
@@ -317,5 +319,55 @@ describe('réservé à Jarvis Test', () => {
     expect(chatMissionsEnabled(settings, { easyDeveloper: true })).toBe(true);
     const coupe = parseSettings({ provider: 'ollama', orchestra: { enabled: true, brain: 'qwen2.5:7b' } });
     expect(chatMissionsEnabled(coupe, { easyDeveloper: true })).toBe(false);
+  });
+});
+
+describe('étape 2 (essai réel du 20 novembre 2026)', () => {
+  it('un petit outil nommé sans « appli » est une création, pas une durée', () => {
+    expect(detectCreationRequest('Crée-moi un minuteur de pause café')?.sujet).toBe('un minuteur de pause café');
+    expect(detectCreationRequest('Développe-moi un convertisseur de mètres en pieds')).not.toBeNull();
+    expect(detectCreationRequest('Jarvis, crée-moi un petit chronomètre pour mes tours de vélo')).not.toBeNull();
+    // Une durée : c'est un minuteur à lancer, pas une application.
+    expect(detectCreationRequest('Crée-moi un minuteur de 5 minutes')).toBeNull();
+    // « Fais-moi un minuteur » sans « appli » : le verbe ne dit pas « fabrique », c'est l'équipe PC.
+    expect(detectCreationRequest('Fais-moi un minuteur pour le gâteau')).toBeNull();
+    expect(detectCreationRequest('Comment créer un minuteur ?')).toBeNull();
+  });
+
+  it('« C’est prêt » dit comment s’en servir, selon la base', () => {
+    const ok = { status: 'finished', verdict: 'success', summary: null } as const;
+    expect(facileResult(ok, 'C:\\p', 'vite-react')?.text).toBe(
+      'C’est prêt. Clique sur « Ouvrir l’appli » pour l’essayer : je la prépare et je l’ouvre dans une fenêtre.',
+    );
+    expect(facileResult(ok, 'C:\\p', 'node-cli')?.text).toMatch(/^C’est prêt\. C’est un petit programme qui se lance en tapant une commande/);
+    expect(facileResult(ok, 'C:\\p', 'dotnet-winforms')?.text).toMatch(/application Windows/);
+    // Base inconnue : la phrase d'avant.
+    expect(facileResult(ok, 'C:\\p', null)?.text).toBe('C’est prêt. Tout est dans le dossier du projet.');
+    expect(facileResult({ status: 'finished', verdict: null, summary: null }, 'C:\\p', 'vite-react')?.text).toMatch(/pas pu relire.*Ouvrir l’appli/);
+    expect(facileCanOpen('vite-react')).toBe(true);
+    expect(facileCanOpen('web-game')).toBe(true);
+    expect(facileCanOpen('node-cli')).toBe(false);
+    expect(facileCanOpen(null)).toBe(false);
+  });
+
+  it('« une appli » part d’une base avec écran, avec un nom lisible', () => {
+    const cas: Array<[string, string, string]> = [
+      ['Fais-moi une petite appli pour noter mes heures de chantier', 'vite-react', 'Heures chantier'],
+      ['Crée-moi un petit programme pour compter mes heures de travail par chantier', 'vite-react', 'Heures travail chantier'],
+      ['Fais-moi un petit programme qui additionne mes heures de chantier de la semaine', 'vite-react', 'Heures chantier semaine'],
+      ['Crée-moi une appli de minuteur pour mes pauses', 'vite-react', 'Minuteur pauses'],
+      ['Développe-moi un convertisseur de mètres en pieds', 'vite-react', 'Convertisseur mètres pieds'],
+      ['Fais-moi un programme en ligne de commande qui trie mes photos', 'node-cli', 'Photos'],
+      ['Crée une petite CLI qui renomme des photos', 'node-cli', 'CLI qui renomme'],
+      ['Crée une appli Windows qui bloque des sites', 'dotnet-winforms', 'Windows qui bloque'],
+    ];
+    for (const [demande, base, nom] of cas) {
+      expect(fallbackFactory(demande).template, demande).toBe(base);
+      expect(projectNameFromRequest(demande), demande).toBe(nom);
+    }
+    // Le modèle qui choisit « programme à commande » pour une appli est ramené à la base avec écran.
+    const choisi = { template: 'node-cli' as const, name: 'Heures', description: '' };
+    expect(steerFactory('Fais-moi une petite appli pour noter mes heures de chantier', choisi).template).toBe('vite-react');
+    expect(steerFactory('Crée une petite CLI qui renomme des photos', choisi).template).toBe('node-cli');
   });
 });

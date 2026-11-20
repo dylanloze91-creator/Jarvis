@@ -27,7 +27,12 @@ export class ProjectPreviewWindow {
       this.close();
       return false;
     }
-    const playable = template === 'web-game' || existsSync(join(projectRoot, 'src', 'game.ts'));
+    // Étape 2 de Développeur facile : une appli « page avec écrans » construite (dist/index.html)
+    // s'ouvre aussi, servie en local comme le jeu.
+    const playable =
+      template === 'web-game' ||
+      existsSync(join(projectRoot, 'src', 'game.ts')) ||
+      (template === 'vite-react' && existsSync(distIndex));
     if (!playable) {
       this.close();
       return false;

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import {
   FACILE_QUESTION_TIMEOUT_MS,
   FACILE_SLOW_STEP_MS,
+  facileCanOpen,
   type FacileChoice,
   type FacileLine,
   type FacilePayload,
@@ -18,11 +19,14 @@ export function ChatMissionFacileCard({
   onChoice,
   onAnswer,
   onOpenFolder,
+  onOpenApp,
 }: {
   data: FacilePayload;
   onChoice: (choice: FacileChoice) => void;
   onAnswer: (text: string) => void;
   onOpenFolder: () => void;
+  /** Étape 2 : « Ouvrir l'appli » quand la création est prête et que sa base s'ouvre. */
+  onOpenApp?: () => void;
 }) {
   const working = data.status === 'travaille' || data.status === 'question';
   const now = useNow(working);
@@ -138,6 +142,31 @@ export function ChatMissionFacileCard({
         >
           {data.result}
         </p>
+      ) : null}
+
+      {data.status === 'pret' && onOpenApp && facileCanOpen(data.template) ? (
+        <div className="flex flex-wrap items-center gap-2" data-facile-open-app>
+          <button
+            type="button"
+            className="rounded-lg border border-emerald-400/40 bg-emerald-400/10 px-3 py-1.5 text-[13px] font-medium text-emerald-100 hover:bg-emerald-400/20 disabled:opacity-60"
+            disabled={data.ouverture?.etat === 'en-cours'}
+            onClick={onOpenApp}
+          >
+            {data.ouverture?.etat === 'en-cours'
+              ? 'J’ouvre…'
+              : data.ouverture?.etat === 'ouverte'
+                ? 'Rouvrir l’appli'
+                : 'Ouvrir l’appli'}
+          </button>
+          {data.ouverture?.message ? (
+            <span
+              className={cn('text-[12px]', data.ouverture.etat === 'ratee' ? 'text-rose-200' : 'text-slate-400')}
+              data-facile-open-message
+            >
+              {data.ouverture.message}
+            </span>
+          ) : null}
+        </div>
       ) : null}
 
       {data.missionId ? (

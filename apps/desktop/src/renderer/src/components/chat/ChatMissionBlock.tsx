@@ -23,6 +23,7 @@ export function ChatMissionBlock({
         onChoice={(choice) => void window.jarvis.chat.facileChoice(choice)}
         onAnswer={(text) => void window.jarvis.chat.facileAnswer(text)}
         onOpenFolder={() => void window.jarvis.chat.facileOpenFolder()}
+        onOpenApp={() => void window.jarvis.chat.facileOpenApp()}
       />
     );
   }
