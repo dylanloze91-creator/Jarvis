@@ -215,6 +215,45 @@ describe('questions une à la fois', () => {
   });
 });
 
+describe('lignes : ce que l’essai réel du 20 novembre a montré', () => {
+  it('une série d’essais rouge n’est jamais racontée « Les essais marchent »', () => {
+    const lines = facileLines({
+      steps: [
+        step('plan-1', 'done'),
+        step('test-1', 'done', { detail: 'typecheck : réussi · test : 2 tests réussis' }),
+        step('edit-1', 'done', { files: ['src/main.ts', 'src/main.test.ts'] }),
+        step('test-2', 'done', { detail: 'typecheck : 15 erreur(s) TypeScript · test : échec (7 échec(s) au total)' }),
+        step('diagnose-1', 'done'),
+        step('fix-1', 'done', { files: ['src/main.ts'] }),
+        step('test-3', 'done', { detail: 'typecheck : réussi · test : 8 tests réussis' }),
+      ],
+    });
+    expect(lines.map((line) => `${line.state} ${line.text}`)).toEqual([
+      'fait Je sais quels fichiers toucher.',
+      'fait La base marche, je peux commencer.',
+      'fait J’ai écrit 2 fichiers.',
+      'rate Un essai ne marche pas, je regarde pourquoi.',
+      'fait J’ai trouvé ce qui ne va pas.',
+      'fait J’ai corrigé un fichier.',
+      'fait Les essais marchent.',
+    ]);
+  });
+
+  it('la série d’avant l’écriture parle de la base, en cours comme en échec', () => {
+    expect(facileLines({ steps: [step('test-1', 'running')] })[0]?.text).toBe('Je vérifie que la base marche…');
+    expect(
+      facileLines({ steps: [step('test-1', 'done', { detail: 'typecheck : 1 erreur(s) TypeScript (1 échec(s) au total)' })] })[0],
+    ).toMatchObject({ state: 'rate', text: 'La base a un souci avant même que j’y touche.' });
+  });
+
+  it('un échec ne dit pas que le travail est dans le dossier du projet', () => {
+    const result = facileResult({ status: 'failed', verdict: 'failed', summary: null }, 'C:\\p');
+    expect(result?.text).toBe(
+      'Je n’ai pas réussi à finir. Le dossier du projet contient seulement la base : mon travail inachevé n’y a pas été copié.',
+    );
+  });
+});
+
 describe('fin et voix', () => {
   it('ne dit « prêt » que si le moteur a réussi', () => {
     expect(facileResult({ status: 'finished', verdict: 'success', summary: null }, 'C:\\p')).toMatchObject({

@@ -87,6 +87,55 @@ Avant : mode Développeur activé, chef d'orchestre activé, un modèle Codeur c
 - Le lien entre la carte et le moteur repose sur les identifiants des étapes (`scaffold`, `design`, `edit-1`…), lus dans le code du moteur, pas observés sur une vraie mission.
 - La qualité du code produit par les petits modèles ne change pas : c'est hors de cette étape.
 
+## 7. Essai réel du 20 novembre 2026, fait par Claude Code
+
+À ta demande, pendant ton absence. Jarvis Test installé arrêté, cette branche lancée en édition Test sans rien installer, avec les données et les réglages de Jarvis Test. Phrases tapées dans la vraie fenêtre ; vrai moteur, vrai Ollama, vraie recherche sur Internet. Copie de sécurité des données de Jarvis Test avant : `C:\dev\jarvis-data\sauvegardes\test-avant-essai-facile-2026-11-20`.
+
+Pour l'essai, j'ai dû activer le mode Développeur de Jarvis Test (il était coupé) et, à partir de la deuxième création, mettre `qwen3.5:4b` à la place d'Ornith dans « Modèle par rôle ». **Les deux réglages sont remis comme avant** : pour essayer toi-même, il faut activer le mode Développeur (Réglages → Développeur).
+
+### Les cinq créations demandées
+
+| # | Demande | Résultat |
+| --- | --- | --- |
+| 1 | « Fais-moi une petite appli pour noter mes heures de chantier » | **raté tout de suite** : « Projet introuvable : importe-le ou crée-le d'abord. » Défaut de ma couche, corrigé (point 1) |
+| 2 | la même, après correction, Codeur Ornith | phrase immédiate en 0,6 s, carte, trois vrais liens, dossier créé, base posée, plan fait. Puis **raté à l'écriture des fichiers** au bout de 6 minutes : Ollama répond une erreur 500 avec Ornith (« No user query found in messages », son gabarit de discussion). Carte : « Je n'ai pas réussi à finir. » |
+| 3 | « Crée-moi un petit programme pour compter mes heures de travail par chantier », Codeur `qwen3.5:4b` | fichiers écrits, puis **échec après 3 corrections** (les essais ne passent pas), en 3 min 40. La carte disait pourtant « Les essais marchent. » : défaut corrigé (point 2) |
+| 4 | « Fais-moi un petit programme qui additionne mes heures de chantier de la semaine », `qwen3.5:4b` | **« C'est prêt. Tout est dans le dossier du projet. »** en 2 à 3 minutes. Un essai raté, trouvé, corrigé, relecture faite. Vérifié à la main : 5 essais verts, le programme se construit et se lance. Capture `developpeur-facile-captures/essai-reel-2026-11-20.png` |
+| 5 | « Crée-moi une appli de minuteur pour mes pauses », puis clic sur « Montre-moi celle qui existe » | le lien s'ouvre et la carte dit « j'ai arrêté ». Mais **le moteur continuait** et Jarvis répondait ensuite « Je suis déjà en train de construire quelque chose » à toute nouvelle demande, jusqu'à son redémarrage. Corrigé (point 3), revérifié avec « Je change ma demande » |
+
+Les deux autres essais de la section 5 : « Comment créer une application ? » donne une réponse normale, sans création (bon). La voix et l'enceinte n'ont pas été essayées (Jarvis Test n'a pas d'enceinte, et je n'ai pas de voix).
+
+### Ce qui marche
+
+- La réponse immédiate, sans modèle : 0,5 à 0,6 s à chaque fois, pastille « Code · sans modèle · mission directe ».
+- « Ça existe déjà » : trois vrais résultats de recherche à chaque demande, en quelques secondes, avec leur site.
+- Le dossier du projet et « Ouvrir le dossier » apparaissent dès que le moteur a créé le dossier (environ 1 minute).
+- Les lignes de travail suivent bien les étapes réelles du moteur, y compris « C'est long, je suis toujours dessus » après 30 s.
+- Une création complète peut réussir de bout en bout sans aucun clic (création 4).
+
+### Trois défauts de ma couche, corrigés et testés sur cette branche
+
+1. **Le moteur refusait de démarrer** (`chatMission/facile.ts`) : je lui passais un identifiant de projet pour un projet neuf. Le faux moteur des essais l'acceptait ; l'essai coupait l'appel avant cet argument et ne pouvait pas le voir. Il vérifie maintenant l'appel entier.
+2. **La carte disait « Les essais marchent. » sur des essais rouges** (`developer/facile/facile.ts`). Le moteur note « fait » une série d'essais qui a tourné, même en échec ; le nombre d'échecs est à la fin de son détail. La carte le lit et dit « Un essai ne marche pas, je regarde pourquoi. ». La première série, faite avant toute écriture, dit maintenant « La base marche, je peux commencer. ». Et la phrase d'échec ne dit plus « ce qui est fait est dans le dossier du projet » : c'était faux, le dossier ne contient que la base (le travail inachevé reste dans la copie isolée du moteur).
+3. **Un arrêt ne libérait pas Jarvis** (`chatMission/facile.ts`) : arrêté dans les premières secondes, le moteur passe sur sa carte « Créer le projet », que personne ne voit dans la discussion, et reste « en cours ». Après « Montre-moi celle qui existe » ou « Je change ma demande », le coordinateur refuse maintenant cette carte (plusieurs fois pendant quelques secondes, le moteur l'annonce avant de l'enregistrer) et redemande l'arrêt, jusqu'à ce que la mission soit vraiment finie. Il ne touche qu'à la mission qu'il a arrêtée.
+
+### Ce qui coince encore (non corrigé)
+
+1. **Le Codeur de Jarvis Test (Ornith) ne peut pas écrire les fichiers d'un projet neuf** : erreur 500 d'Ollama à l'étape d'écriture. C'est le moteur et ce modèle, pas la carte. Avec `qwen3.5:4b`, une création sur deux a réussi.
+2. **Ce que Jarvis livre est très loin d'« une appli »** : un programme en ligne de commande. La création 4 additionne des heures données en nombres entiers (`--heures 8,7,6` donne 21 ; 7,5 est compté 7) et répond « Bonjour, monde ! Votre total de heures est : 21 ». Pour « une appli pour noter mes heures », tu t'attends à un écran : le choix de la base (« un petit programme qui se lance d'une ligne de commande ») est fait par règles, et il n'est pas le bon pour cette demande.
+3. **« C'est prêt » ne dit pas comment s'en servir** : aucune commande, aucun bouton pour lancer. Il faut ouvrir le dossier et savoir quoi taper.
+4. **Le nom du projet** vient de trois mots de la phrase : « pour-noter-mes », « qui-additionne-mes », « minuteur-pour-mes ».
+5. **Une phrase sans le mot « appli », « programme », « jeu » ou « site » n'est pas une création** : « Crée-moi un minuteur de pause café » est partie à l'équipe PC, qui a proposé de lancer un minuteur.
+6. **Dans la petite fenêtre, la carte est plus haute que l'écran** : les liens prennent toute la place, les lignes de travail et « C'est prêt » sont en dessous. D'après mes captures, la discussion ne suit pas la carte quand elle grandit : à vérifier avec toi.
+7. **Si le mode Développeur est coupé**, la même phrase fait basculer la fenêtre sur l'onglet Développeur (comportement d'avant) : rien ne dit qu'il suffit de l'activer.
+8. La recherche du moteur lui-même (« la bonne façon de faire ») est notée « indisponible » à chaque fois, alors que celle de la carte marche.
+9. Le bouton « Ça n'a pas marché » du carnet s'affiche sous « Pas de souci, je m'en occupe », avant même le début du travail.
+
+### Traces laissées
+
+- Dans `C:\dev\Projets` : `pour-noter-mes`, `pour-compter-mes`, `qui-additionne-mes` (celui qui marche), `minuteur-pour-mes`, `minuteur-pour-mes-2`, `chronometre-pour-mes`, `qui-convertit-minutes`, avec leurs dossiers `-taches` quand le moteur est allé jusque-là. Ils sont aussi dans la liste des projets de Jarvis Test. Je n'ai rien supprimé.
+- Dans l'historique de Jarvis Test : les discussions de ces essais.
+
 ## RAPPORT DE VÉRIFICATION
 
 ```
@@ -94,10 +143,10 @@ RAPPORT DE VÉRIFICATION
 Lancement : OK (npx electron-vite build ; aperçu de l'interface lancé pour les cinq captures)
 Types     : OK (npm run typecheck)
 Style     : OK (npm run lint)
-Tests     : OK (cœur 234 fichiers, 2678 tests ; bureau 176 fichiers, 914 tests, 8 ignorés par leur propre condition ; aucun __golden__ régénéré, les tests figés passent tels quels)
+Tests     : OK (après les corrections du 20 novembre : cœur 234 fichiers, 2681 tests ; bureau 176 fichiers, 915 tests, 8 ignorés par leur propre condition ; aucun __golden__ régénéré, les tests figés passent tels quels)
 Secrets   : OK (aucune clé, aucune phrase de l'utilisateur ; les phrases et les applications des essais sont inventées)
 Fichiers modifiés : core developer/facile/ (nouveau), chatMissions/envelope.ts, chatMissionsSettings.ts, edition.ts, developer/index.ts ; bureau chatMission/facile.ts (nouveau), hub.ts, ipc.ts, session.ts, index.ts, shared/ipc.ts, preload ; fenêtre ChatMissionFacileCard.tsx (nouveau), ChatMissionBlock.tsx, useChat.ts, App.tsx, preview/ ; script de capture ; CLAUDE.md, AGENTS-COORDINATION.md, ce rapport
 Prêt à fusionner : NON (dans claude/dev seulement, après les essais avec toi)
-À corriger : ouvrir la base dès qu'elle tourne ; réponse par défaut propre à chaque question ; suite sur le PC après une demande à l'enceinte
-Testé en vrai (à la voix, sur le PC) : PAS FAIT
+À corriger : § 7 « Ce qui coince encore » ; ouvrir la base dès qu'elle tourne ; réponse par défaut propre à chaque question ; suite sur le PC après une demande à l'enceinte
+Testé en vrai (à la voix, sur le PC) : FAIT au clavier dans la vraie fenêtre de Jarvis Test le 20 novembre (§ 7) ; PAS FAIT à la voix ni avec toi
 ```

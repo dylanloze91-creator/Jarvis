@@ -67,9 +67,23 @@ interface ActiveCreation {
 
 const OPEN_STATUSES: ReadonlySet<FacilePayload['status']> = new Set(['travaille', 'question']);
 
+/** Après un arrêt demandé par la carte, on insiste au plus ce temps-là auprès du moteur. */
+export const FACILE_STOP_WATCH_MS = 3 * 60_000;
+export const FACILE_STOP_RETRY_MS = 1_000;
+
+/** Un arrêt demandé au moteur, tant que sa mission n'est pas vraiment finie. */
+interface PendingStop {
+  /** La mission à arrêter ; `null` si elle n'avait pas encore de numéro au moment du clic. */
+  missionId: string | null;
+  startedAt: number;
+  until: number;
+}
+
 export class FacileCoordinator {
   private active: ActiveCreation | null = null;
   private timer: ReturnType<typeof setTimeout> | null = null;
+  private stopping: PendingStop | null = null;
+  private stopRetry: ReturnType<typeof setTimeout> | null = null;
   /** Écritures en file : deux mises à jour ne se croisent jamais dans la discussion. */
   private queue: Promise<void> = Promise.resolve();
 
@@ -82,6 +96,52 @@ export class FacileCoordinator {
   /** Une création est en cours (elle travaille, ou attend une réponse). */
   busy(): boolean {
     return Boolean(this.active && OPEN_STATUSES.has(this.active.payload.status));
+  }
+
+  /**
+   * Un arrêt demandé dans les premières secondes laissait le moteur sur sa carte « Créer le
+   * projet », que personne ne voit dans la discussion : la mission restait « en cours » et Jarvis
+   * répondait « je suis déjà en train de construire » jusqu'à son redémarrage (essai réel du
+   * 20 novembre 2026). Tant que la mission arrêtée tourne encore, on refuse sa carte et on
+   * redemande l'arrêt. Rien d'autre n'est refusé : seulement la mission que la carte a arrêtée.
+   */
+  private insistOnStop(state: DeveloperState): void {
+    const stop = this.stopping;
+    if (!stop) return;
+    const mission = state.mission;
+    const ours =
+      mission &&
+      (stop.missionId
+        ? mission.id === stop.missionId
+        : mission.kind === 'new-project' && mission.createdAt >= stop.startedAt - 5_000);
+    const running = ours && mission.status !== 'finished' && mission.status !== 'failed' && mission.status !== 'cancelled';
+    if (!running || this.now() > stop.until) {
+      this.stopping = null;
+      return;
+    }
+    if (!stop.missionId) stop.missionId = mission.id;
+    const dev = this.deps.developer();
+    if (!dev) return;
+    if (this.stopRetry) clearTimeout(this.stopRetry);
+    this.stopRetry = null;
+    if (!state.confirmation) {
+      dev.cancel();
+      return;
+    }
+    // Le moteur annonce sa carte avant de l'avoir enregistrée : un refus donné tout de suite peut
+    // tomber dans le vide. On le redonne une seconde plus tard, quelques fois, tant que la mission
+    // n'est pas finie. Seul le refus de cette carte-là est répété, jamais un arrêt général : il
+    // pourrait toucher une création demandée entre-temps.
+    const requestId = state.confirmation.requestId;
+    const refuse = (left: number): void => {
+      this.deps.developer()?.respondConfirmation(requestId, false);
+      if (left <= 0) return;
+      this.stopRetry = setTimeout(() => {
+        this.stopRetry = null;
+        if (this.stopping) refuse(left - 1);
+      }, FACILE_STOP_RETRY_MS);
+    };
+    refuse(5);
   }
 
   current(): FacilePayload | null {
@@ -118,7 +178,9 @@ export class FacileCoordinator {
       return;
     }
     try {
-      const state = await dev.startMission('new-project', request.objectif, true, NEW_PROJECT_SCOPE);
+      // Projet neuf : aucun identifiant de projet. En passer un (même « nouveau ») fait chercher un
+      // projet existant au moteur, qui répond « Projet introuvable » (essai réel du 20 novembre).
+      const state = await dev.startMission('new-project', request.objectif, true);
       const active = this.mine(id);
       if (!active) return;
       if (!state.mission || (active.payload.missionId && state.mission.id !== active.payload.missionId)) {
@@ -165,6 +227,7 @@ export class FacileCoordinator {
 
   /** Appelée à chaque changement d'état du mode Développeur. */
   async onDeveloperState(state: DeveloperState): Promise<void> {
+    this.insistOnStop(state);
     const active = this.active;
     if (!active || !OPEN_STATUSES.has(active.payload.status)) return;
     const mission = state.mission;
@@ -266,6 +329,11 @@ export class FacileCoordinator {
       return;
     }
     this.clearTimer();
+    this.stopping = {
+      missionId: active.payload.missionId,
+      startedAt: active.payload.startedAt,
+      until: this.now() + FACILE_STOP_WATCH_MS,
+    };
     this.deps.developer()?.cancel();
     if (choice === 'voir') await this.openFirst(active);
     this.update(active, {

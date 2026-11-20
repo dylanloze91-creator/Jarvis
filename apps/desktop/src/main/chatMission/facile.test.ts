@@ -63,6 +63,7 @@ async function setup(options: {
   const answered: string[][] = [];
   const opened: string[] = [];
   const cancel = vi.fn();
+  const refused: string[] = [];
   const startMission = vi.fn(options.start ?? (async () => stateOf(mission())));
   const developer = {
     startMission,
@@ -71,6 +72,9 @@ async function setup(options: {
       return stateOf(mission());
     },
     cancel,
+    respondConfirmation: (requestId: string, approved: boolean) => {
+      if (!approved) refused.push(requestId);
+    },
   } as unknown as DeveloperController;
   const queries: string[] = [];
   const coordinator = new FacileCoordinator({
@@ -105,14 +109,15 @@ async function setup(options: {
     if (envelope?.kind !== 'facile') throw new Error('carte absente');
     return envelope.data;
   };
-  return { coordinator, events, saved, flush, startMission, answered, opened, cancel, queries, payload };
+  return { coordinator, events, saved, flush, startMission, answered, opened, cancel, refused, queries, payload };
 }
 
 describe('Développeur facile : démarrage', () => {
   it('lance tout de suite la mission « nouveau projet » du moteur, sans questionnaire', async () => {
     const run = await setup({});
     expect(run.startMission).toHaveBeenCalledTimes(1);
-    expect(run.startMission.mock.calls[0]?.slice(0, 3)).toEqual(['new-project', REQUEST.objectif, true]);
+    // Appel entier : un quatrième argument (un identifiant de projet) ferait refuser le moteur.
+    expect(run.startMission.mock.calls[0]).toEqual(['new-project', REQUEST.objectif, true]);
     expect(run.payload.restatement).toBe('Si j’ai bien compris : une petite appli pour noter mes heures de chantier.');
     expect(run.coordinator.busy()).toBe(true);
   });
@@ -174,6 +179,29 @@ describe('Développeur facile : ce qui existe déjà', () => {
     expect(run.cancel).toHaveBeenCalledTimes(1);
     expect(card.status).toBe('arrete');
     expect(card.findings.choice).toBe('voir');
+  });
+
+  it('après un arrêt, la carte du moteur est refusée et l’arrêt redemandé jusqu’à la vraie fin', async () => {
+    const run = await setup({});
+    await run.coordinator.choose('changer');
+    expect(run.cancel).toHaveBeenCalledTimes(1);
+    // Le moteur, mal arrêté, demande sa carte « Créer le projet » : personne ne la voit.
+    await run.coordinator.onDeveloperState({
+      ...stateOf(mission()),
+      confirmation: { requestId: 'c1' },
+    } as unknown as DeveloperState);
+    expect(run.refused).toEqual(['c1']);
+    // Toujours en cours, sans carte : l'arrêt est redemandé.
+    await run.coordinator.onDeveloperState(stateOf(mission()));
+    expect(run.cancel).toHaveBeenCalledTimes(2);
+    // Mission vraiment finie : plus rien n'est refusé ni arrêté, même pour une autre mission.
+    await run.coordinator.onDeveloperState(stateOf(mission({ status: 'cancelled' })));
+    await run.coordinator.onDeveloperState({
+      ...stateOf(mission({ id: 'm2' })),
+      confirmation: { requestId: 'c2' },
+    } as unknown as DeveloperState);
+    expect(run.refused).toEqual(['c1']);
+    expect(run.cancel).toHaveBeenCalledTimes(2);
   });
 
   it('« Construis-la quand même » ne change rien au travail', async () => {

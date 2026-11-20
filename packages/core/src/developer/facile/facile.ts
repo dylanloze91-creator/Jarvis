@@ -329,13 +329,32 @@ function stepKey(id: string): string {
   return id.replace(/-\d+$/u, '');
 }
 
-function lineOf(step: MissionStep): FacileLine | null {
+/**
+ * Le moteur note « done » une série d'essais qui a **tourné**, même si des essais échouent : le
+ * nombre d'échecs est alors à la fin de son détail (« … (7 échec(s) au total) », `taskFlow.ts`).
+ * Sans cette lecture, la carte disait « Les essais marchent. » sur une série rouge (essai réel du
+ * 20 novembre 2026).
+ */
+const FAILING_SERIES = /\(\d+ échec\(s\) au total\)\s*$/u;
+
+function lineOf(step: MissionStep, beforeAnyEdit: boolean): FacileLine | null {
   const words = STEP_WORDS[stepKey(step.id)];
   if (!words) return null;
   if (step.status === 'pending' || step.status === 'skipped') return null;
-  const state: FacileLineState = step.status === 'done' ? 'fait' : step.status === 'failed' ? 'rate' : 'en-cours';
-  let text = state === 'fait' ? words.done : state === 'rate' ? words.failed : words.running;
   const key = stepKey(step.id);
+  const redSeries = key === 'test' && step.status === 'done' && FAILING_SERIES.test(step.detail ?? '');
+  const state: FacileLineState =
+    step.status === 'done' && !redSeries ? 'fait' : step.status === 'failed' || redSeries ? 'rate' : 'en-cours';
+  let text = state === 'fait' ? words.done : state === 'rate' ? words.failed : words.running;
+  // La première série tourne avant toute écriture : elle vérifie la base, pas le travail de Jarvis.
+  if (key === 'test' && beforeAnyEdit) {
+    text =
+      state === 'fait'
+        ? 'La base marche, je peux commencer.'
+        : state === 'rate'
+          ? 'La base a un souci avant même que j’y touche.'
+          : 'Je vérifie que la base marche…';
+  }
   const files = step.files?.length ?? 0;
   if (key === 'edit' && state === 'fait' && files > 0) {
     text = files === 1 ? 'J’ai écrit un fichier.' : `J’ai écrit ${files} fichiers.`;
@@ -358,9 +377,11 @@ function lineOf(step: MissionStep): FacileLine | null {
  */
 export function facileLines(mission: Pick<MissionState, 'steps'>): FacileLine[] {
   const lines: FacileLine[] = [];
+  let edited = false;
   for (const step of mission.steps) {
-    const line = lineOf(step);
+    const line = lineOf(step, !edited);
     if (line) lines.push(line);
+    if (stepKey(step.id) === 'edit' && step.status !== 'pending' && step.status !== 'skipped') edited = true;
   }
   return lines;
 }
@@ -408,7 +429,9 @@ export function facileResult(
   if (mission.status === 'failed' || mission.verdict === 'failed') {
     return {
       status: 'rate',
-      text: `Je n’ai pas réussi à finir. ${folder ? 'Ce qui est fait est dans le dossier du projet.' : ''}`.trim(),
+      // Le moteur ne copie dans le dossier du projet qu'un travail réussi : y annoncer « ce qui est
+      // fait » était faux, il ne contient que la base (essai réel du 20 novembre 2026).
+      text: `Je n’ai pas réussi à finir. ${folder ? 'Le dossier du projet contient seulement la base : mon travail inachevé n’y a pas été copié.' : ''}`.trim(),
     };
   }
   if (mission.status !== 'finished') return null;
