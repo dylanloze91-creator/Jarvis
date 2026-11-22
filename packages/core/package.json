@@ -40,7 +40,8 @@
     "trieur:preparer": "tsc -p tsconfig.json && node scripts/trieur-preparer.mjs",
     "conversations:preparer": "tsc -p tsconfig.json && node scripts/conversations-preparer.mjs",
     "vitesse": "tsc -p tsconfig.json && node scripts/vitesse.mjs",
-    "vitesse:comparer": "tsc -p tsconfig.json && node scripts/vitesse-comparer.mjs"
+    "vitesse:comparer": "tsc -p tsconfig.json && node scripts/vitesse-comparer.mjs",
+    "ameliorer": "tsc -p tsconfig.json && node scripts/ameliorer.mjs"
   },
   "dependencies": {
     "zod": "^4.6.5"
