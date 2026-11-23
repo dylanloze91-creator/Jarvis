@@ -95,11 +95,83 @@ function isListRequest(folded: string): boolean {
   return LIST_REQUESTS.some((pattern) => pattern.test(request));
 }
 
+/**
+ * Une liste qui n'est pas la liste de Jarvis : une liste de lecture (Spotify), de diffusion…
+ * Sur le texte plié.
+ */
+const OTHER_LIST = /\b(?:liste de lecture|liste de diffusion|liste noire|liste blanche|playlist)\b/u;
+
+/** « ma liste », « ma liste de courses », « mes notes », sur le texte brut. */
+const RAW_LIST = String.raw`(?:ma\s+liste(?:\s+de\s+courses)?|mes\s+notes)`;
+const RAW_ADD_VERB = String.raw`(?:note|notes|ajoute|rajoute|mets|met|inscris|[ée]cris|marque)`;
+const RAW_PLACE = String.raw`(?:dans|sur|à|a|au)`;
+const POLITE_END = /\s*(?:,\s*)?(?:s['’]il\s+te\s+pla[iî]t|s['’]il\s+vous\s+pla[iî]t|stp|svp)\s*$/iu;
+
+/**
+ * 23 novembre 2026 : « Note dans ma liste de … », « mets … sur ma liste », « ajoute … à ma liste »
+ * partaient au cerveau, puis à une équipe qui n'a pas la liste et répondait « Bien noté » sans rien
+ * noter. Avec le chef d'orchestre, aucune équipe n'a les outils des notes : ces phrases doivent être
+ * prises ici, sans modèle.
+ */
+const ADD_LIST_FIRST = new RegExp(String.raw`^${RAW_ADD_VERB}\s+${RAW_PLACE}\s+${RAW_LIST}\s*[:,]?\s+(.+)$`, 'iu');
+const ADD_LIST_LAST = new RegExp(String.raw`^${RAW_ADD_VERB}\s+(.+?)\s+${RAW_PLACE}\s+${RAW_LIST}\s*[.!?]?$`, 'iu');
+
+const MUSIC_BODY = /^(?:ce|cette|le|la) (?:morceau|chanson|titre|album|son)\b/u;
+
+/** Ce qui reste devant le contenu : « de nettoyer… » → « nettoyer… », « que je dois… » → « je dois… ». */
+function cleanNoteBody(body: string): string {
+  return body
+    .replace(POLITE_END, '')
+    .replace(/[?.!]+$/u, '')
+    .trim()
+    .replace(/^(?:que\s+|qu['’]\s*)/iu, '')
+    .replace(/^(?:de\s+|d['’]\s*)(?!(?:la|l['’])\b)/iu, '')
+    .trim();
+}
+
+/**
+ * La phrase parle d'écrire dans la liste ou les notes de Jarvis, même si `noteIntent` n'a pas su
+ * en tirer le contenu. Sert de garde : une telle phrase ne part jamais à une équipe qui n'a pas la
+ * liste (elle répondrait « Bien noté » sans rien noter).
+ */
+export function looksLikeNoteRequest(text: string): boolean {
+  const folded = foldNote(stripWake(text));
+  if (!folded || OTHER_LIST.test(folded)) return false;
+  if (!/\b(?:ma liste|la liste|mes notes|pense bete)\b/u.test(folded)) return false;
+  return /\b(?:note|noter|notes|ajoute|ajouter|rajoute|rajouter|mets|mettre|met|inscris|inscrire|ecris|ecrire|marque|marquer)\b/u.test(
+    folded,
+  );
+}
+
+/** Demande de note alors que la liste est coupée : rien n'est noté, et c'est dit. */
+export const NOTES_OFF_REPLY =
+  "Je n'ai rien noté : la liste n'est pas activée. Tu peux l'activer dans Réglages, Moi, Notes.";
+/** Demande de note dont `noteIntent` n'a pas su tirer le contenu. */
+export const NOTE_UNCLEAR_REPLY =
+  "Je n'ai rien noté : je n'ai pas compris quoi écrire. Dis par exemple « ajoute du pain à ma liste ».";
+/** Ajouté sous une réponse qui dit « c'est noté » alors qu'aucun outil n'a rien écrit. */
+export const NOTE_CLAIM_CORRECTION =
+  "Correction : je n'ai rien noté, aucun outil n'a rien écrit pendant ce tour. Pour ta liste, dis par exemple « ajoute du pain à ma liste ».";
+
+/**
+ * La réponse affirme avoir noté ou ajouté quelque chose à une liste (« Bien noté », « C'est noté »,
+ * « je l'ai ajouté à ta liste »). Sur le texte plié. Sert seulement quand aucun outil n'a réussi
+ * pendant le tour : la phrase est alors fausse.
+ */
+export function claimsSomethingNoted(reply: string): boolean {
+  const folded = foldNote(reply);
+  if (!folded) return false;
+  if (/\b(?:c est|bien|j ai|je l ai|je les ai|c est bien|tout est) notee?s?\b/u.test(folded)) return true;
+  if (/^notee?s?\b/u.test(folded)) return true;
+  return /\b(?:ajoutee?s?|notee?s?|inscrite?s?|mise?s?) (?:a|dans|sur) (?:ta|votre|la|tes|vos) (?:liste|notes)\b/u.test(folded);
+}
+
 /** Phrase express, ou null si le tour doit suivre vers le modèle. */
 export function noteIntent(text: string): NoteIntent | null {
   const raw = stripWake(text);
   const folded = foldNote(raw);
   if (!folded) return null;
+  if (OTHER_LIST.test(folded)) return null;
   if (isListRequest(folded)) return { kind: 'list' };
   if (folded.startsWith('c est bon pour ')) {
     const query = raw.replace(/^c['’]est bon pour\s+/iu, '').replace(/[?.!]+$/u, '').trim();
@@ -107,6 +179,12 @@ export function noteIntent(text: string): NoteIntent | null {
   }
   const erase = raw.match(/^(?:efface|supprime|enleve)\s+(?:la\s+note|de ma liste)\s+(.+)$/iu);
   if (erase?.[1]) return { kind: 'erase', query: erase[1].replace(/[?.!]+$/u, '').trim() };
+  for (const pattern of [ADD_LIST_FIRST, ADD_LIST_LAST]) {
+    const found = raw.match(pattern)?.[1];
+    const body = found ? cleanNoteBody(found) : '';
+    // « Ajoute ce morceau à ma liste » parle de Spotify, pas de la liste de Jarvis.
+    if (body && !MUSIC_BODY.test(foldNote(body))) return { kind: 'add', body };
+  }
   const add = raw.match(/^(?:note\s*:\s*|rajoute à ma liste\s+|rajoute a ma liste\s+|ajoute à ma liste\s+)(.+)$/iu);
   if (add?.[1]?.trim()) return { kind: 'add', body: add[1].trim().replace(/[?.!]+$/u, '') };
   return null;

@@ -62,6 +62,11 @@ import {
   CODE_MISSION_TOOL_PROMPT,
   directMissionRequest,
   looksLikeHealthIntent,
+  looksLikeNoteRequest,
+  claimsSomethingNoted,
+  NOTE_CLAIM_CORRECTION,
+  NOTE_UNCLEAR_REPLY,
+  NOTES_OFF_REPLY,
   looksLikeWrittenMissionProposal,
   missionFromUserPhrase,
   PROPOSER_MISSION_TOOL_NAME,
@@ -508,10 +513,23 @@ export class ChatSession {
         ? await this.deps.briefing({ text: input.text, voice: input.place?.kind === 'enceinte' }).catch(() => null)
         : null;
     const notePlace = input.place?.kind ?? 'fenetre';
-    const notesText =
+    const notesExpress =
       !briefingText && settings.notes?.enabled === true && this.deps.notes
         ? await this.deps.notes({ text: input.text, place: notePlace }).catch(() => null)
         : null;
+    // 23 novembre 2026 : une demande de note que la règle n'a pas prise ne part jamais à un modèle
+    // qui n'a pas la liste (il répondait « Bien noté » sans rien noter). Avec le chef d'orchestre,
+    // aucune équipe n'a les outils des notes ; sans lui, ils n'existent que si la liste est activée.
+    const noteGuardText =
+      !briefingText &&
+      !notesExpress &&
+      (activeOrchestra(settings) || settings.notes?.enabled !== true) &&
+      looksLikeNoteRequest(input.text)
+        ? settings.notes?.enabled === true
+          ? NOTE_UNCLEAR_REPLY
+          : NOTES_OFF_REPLY
+        : null;
+    const notesText = notesExpress ?? noteGuardText;
     const routineText =
       !briefingText && !notesText && settings.routines?.enabled === true && this.deps.routines
         ? await this.deps.routines({
@@ -612,6 +630,8 @@ export class ChatSession {
     }
 
     let run: AsyncGenerator<AgentEvent>;
+    /** Vrai si un modèle écrit la réponse (équipe ou chat d'avant), pas une réponse toute faite. */
+    let modelRun = false;
     let appendMissionProposal: (() => void) | null = null;
     if (briefingText) {
       run = fixedReply(briefingText);
@@ -696,6 +716,7 @@ export class ChatSession {
         ...(turn.learningReview ? { learningReview: turn.learningReview } : {}),
         ...(turn.learningFinalize ? { learningFinalize: turn.learningFinalize } : {}),
       });
+      modelRun = true;
       run = agent.run(modelMessages, {
         signal: controller.signal,
         policies: settings.toolPolicies,
@@ -732,6 +753,7 @@ export class ChatSession {
         ...(turn.learningReview ? { learningReview: turn.learningReview } : {}),
         ...(turn.learningFinalize ? { learningFinalize: turn.learningFinalize } : {}),
       });
+      modelRun = true;
       run = agent.run(modelMessages, {
         signal: controller.signal,
         policies: settings.toolPolicies,
@@ -743,6 +765,7 @@ export class ChatSession {
     }
 
     let visibleReply = false;
+    let toolSucceeded = false;
     let missionProposed = false;
     try {
       for await (const event of run) {
@@ -779,6 +802,7 @@ export class ChatSession {
             emit({ type: 'tool_progress', callId: event.callId, message: event.message });
             break;
           case 'tool_result':
+            if (event.outcome.status === 'ok') toolSucceeded = true;
             clock.tool(event.outcome.name, event.outcome.durationMs, event.outcome.kept !== undefined);
             if (chatMissionsOn && event.outcome.name === PROPOSER_MISSION_TOOL_NAME) {
               const payload = event.outcome.data as ChatMissionProposalPayload | undefined;
@@ -828,6 +852,20 @@ export class ChatSession {
       }
     } finally {
       if (this.controller === controller) this.controller = null;
+    }
+
+    // 23 novembre 2026 : un modèle qui dit « Bien noté » sans qu'aucun outil n'ait rien écrit
+    // ment ; la réponse le corrige tout de suite, à l'écran, à la voix et dans l'historique.
+    if (modelRun && !toolSucceeded && !controller.signal.aborted && !superseded()) {
+      const lastAssistant = [...messages]
+        .slice(conversation.messages.length)
+        .reverse()
+        .find((message) => message.role === 'assistant' && message.content.trim());
+      if (lastAssistant && claimsSomethingNoted(lastAssistant.content)) {
+        const correction = `\n\n${NOTE_CLAIM_CORRECTION}`;
+        lastAssistant.content += correction;
+        emit({ type: 'delta', text: correction });
+      }
     }
 
     if (appendMissionProposal && !controller.signal.aborted && !superseded()) {

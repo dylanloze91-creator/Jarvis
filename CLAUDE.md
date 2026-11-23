@@ -1109,3 +1109,12 @@ Feuille de route, tâche 1 quater. Rapport : `rapports/2026-11-19-corrections-50
 - le rappel ne compte pas les petits mots, et l'en-tête des règles ne dit jamais de ne pas appeler un outil ;
 - une règle express n'appelle qu'un outil de `EXPRESS_RULE_TOOLS` (lecture, sans argument, sans carte), garde ses phrases pour et contre, et laisse dans la discussion la trace de l'outil appelé ;
 - les données de Live ne sont jamais modifiées par un banc : copie temporaire seulement.
+
+## Notes et musique sans modèle (branche `claude/idees-openjarvis`, Jarvis Test)
+
+Rapport `rapports/2026-11-23-notes-musique-rechargements.md`. Pas de fusion dans `main`, pas de publication.
+
+- **Notes** : avec le chef d'orchestre, aucune équipe n'a les outils des notes ; la liste ne passe que par `noteIntent` (`quotidien/notes.ts`), qui prend aussi « note / inscris / mets / ajoute dans ma liste … » et « ajoute … à ma liste ». `looksLikeNoteRequest` : une demande de note illisible ou une liste coupée reçoit une phrase fixe (`NOTE_UNCLEAR_REPLY`, `NOTES_OFF_REPLY`), jamais un modèle. `claimsSomethingNoted` : une réponse de modèle qui dit « Bien noté » sans aucun outil réussi pendant le tour reçoit `NOTE_CLAIM_CORRECTION` (écran, voix, historique).
+- **Musique** : `genericMusicRequest` (`media/playIntent.ts`) : « mets / lance (de la) musique (sur mon PC / l'enceinte / la <nom>) » → équipe Musique en express, `spotify_resume` sans modèle, avec la cible notée (`stashSpotifyPlayDeviceHint`, lue par `spotify_resume`). Jamais une recherche du mot « musique ». Pas de question « Devialet ou PC ? » sur ce chemin.
+
+À ne pas casser : une phrase qui parle d'écrire dans la liste ne part jamais à un modèle sans outil de notes ; une liste de lecture ou « ce morceau » n'est pas une note.

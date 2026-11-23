@@ -219,6 +219,7 @@ export {
 export * from './media/types.js';
 export {
   extractSpotifyPlayQuery,
+  genericMusicRequest,
   isMusicIntent,
   isSpotifyPausePhrase,
   isSpotifyResumePhrase,

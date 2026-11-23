@@ -17,6 +17,7 @@ import {
   isMusicIntent,
   isSpotifyPausePhrase,
   isSpotifyResumePhrase,
+  genericMusicRequest,
 } from '../media/playIntent.js';
 import {
   clearSpotifyDeviceAsk,
@@ -785,6 +786,12 @@ export class Agent {
     // 5.0.77 : pause et reprise dites clairement partent sans modèle, comme la lecture.
     if (isSpotifyPausePhrase(prompt)) return this.forcedCall('spotify_pause', {});
     if (isSpotifyResumePhrase(prompt)) return this.forcedCall('spotify_resume', {});
+    // 23 novembre 2026 : « mets de la musique (sur l'enceinte) » reprend la lecture, sans modèle.
+    const generic = genericMusicRequest(prompt);
+    if (generic) {
+      stashSpotifyPlayDeviceHint(generic.hint);
+      return this.forcedCall('spotify_resume', {});
+    }
 
     const transfer = extractSpotifyTransferTarget(prompt);
     if (transfer)

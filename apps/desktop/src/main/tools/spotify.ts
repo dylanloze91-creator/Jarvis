@@ -275,7 +275,9 @@ export function createSpotifyTools(deps: SpotifyToolsDeps) {
     summarize: () => 'Reprendre Spotify.',
     execute: async () => {
       try {
-        await getSpotify().play();
+        // Cible dite dans la phrase (« mets de la musique sur l'enceinte »), notée par l'agent.
+        const deviceHint = takeSpotifyPlayDeviceHint();
+        await getSpotify().play(undefined, deviceHint ? { deviceHint } : {});
         return { ok: true, content: 'Lecture Spotify reprise.' };
       } catch (error) {
         if (isNoActiveDevice(error)) return { ok: false, outcome: 'recoverable', content: NO_ACTIVE_DEVICE_MESSAGE };

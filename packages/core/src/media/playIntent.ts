@@ -15,7 +15,55 @@ import {
   extractSpotifyTransferTarget,
   isSpotifyTransferPhrase,
   stripSpotifyPlayDeviceSuffix,
+  type SpotifyPlayDeviceHint,
 } from './spotifyDeviceVoice.js';
+
+/**
+ * 23 novembre 2026 : « Mets de la musique » cherchait un morceau appelé « musique » ; « … sur mon
+ * PC » n'était pas vu comme de la musique (le mot « pc » l'écartait) et partait au cerveau, puis à un
+ * petit modèle qui ne lançait rien. Une demande de musique sans morceau reprend la lecture Spotify
+ * (`spotify_resume`), sans modèle, sur la cible dite : PC, enceinte, ou un appareil nommé.
+ */
+const GENERIC_MUSIC = new RegExp(
+  String.raw`^(?:jarvis[,:]?\s*)?(?:(?:est-ce que tu peux|peux-tu|tu peux|tu pourrais)\s+)?` +
+    String.raw`(?:mets|met|mettre|lance|lancer|joue|jouer|d[ée]marre|remets|relance)(?:[\s-]+moi)?\s+` +
+    String.raw`(?:de\s+la\s+bonne|de\s+la|la|un\s+peu\s+de|ma)\s+musique` +
+    String.raw`(?:\s+(?:sur|dans)\s+(.+?))?` +
+    String.raw`(?:\s*,?\s*(?:s['’]il\s+te\s+pla[iî]t|stp))?\s*[.!?]?\s*$`,
+  'iu',
+);
+
+function genericMusicTarget(clause: string): SpotifyPlayDeviceHint | null | undefined {
+  const folded = clause
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .toLowerCase()
+    .replace(/[’']/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (/^(?:l |une |mon |ma |la )?(?:enceinte|haut parleurs?)$/.test(folded)) return { kind: 'speaker' };
+  if (/^(?:le |mon |ce |l )?(?:pc|ordinateur|ordi)$/.test(folded)) return { kind: 'pc' };
+  const named = clause.match(/^(?:la|le|l['’])\s*(.+)$/iu)?.[1]?.trim();
+  if (named && !/\b(?:radio|playlist|youtube|deezer|internet)\b/iu.test(named)) {
+    return { kind: 'named', name: named };
+  }
+  // « sur YouTube », « dans la cuisine » : pas une cible Spotify connue, la règle ne décide pas.
+  return undefined;
+}
+
+/**
+ * Demande de musique sans morceau (« mets de la musique », « lance la musique sur l'enceinte »).
+ * `null` : ce n'en est pas une. `hint` : la cible dite, ou `null` sans cible (appareil habituel).
+ */
+export function genericMusicRequest(prompt: string): { hint: SpotifyPlayDeviceHint | null } | null {
+  const trimmed = prompt.trim();
+  const match = trimmed.match(GENERIC_MUSIC);
+  if (!match) return null;
+  const clause = match[1]?.trim();
+  if (!clause) return { hint: null };
+  const hint = genericMusicTarget(clause);
+  return hint === undefined ? null : { hint };
+}
 
 const OPEN_SPOTIFY_ONLY =
   /^(?:jarvis[,:]?\s*)?(?:ouvre|ouvrir|lance|lancer|démarre|demarrer)\s+spotify\s*[.!]?\s*$/iu;
@@ -68,6 +116,7 @@ export function isMusicIntent(prompt: string): boolean {
   const trimmed = prompt.trim();
   if (!trimmed) return false;
   if (OPEN_SPOTIFY_ONLY.test(trimmed)) return false;
+  if (genericMusicRequest(trimmed)) return true;
   if (isCurrentTrackQuestion(trimmed)) return true;
   if (extractSpotifyPlayQuery(trimmed)) return true;
   if (isSpotifyTransferPhrase(trimmed) && extractSpotifyTransferTarget(trimmed)) return true;
@@ -133,6 +182,8 @@ export function extractSpotifyPlayQuery(prompt: string): string | null {
   if (isCurrentTrackQuestion(trimmed)) return null;
   if (isPlaybackControlOnly(trimmed)) return null;
   if (isSpotifyTransferPhrase(trimmed)) return null;
+  // Musique sans morceau : reprise de la lecture, jamais une recherche du mot « musique ».
+  if (genericMusicRequest(trimmed)) return null;
 
   const normalized = trimmed.toLowerCase();
 
