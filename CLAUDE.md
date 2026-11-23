@@ -1140,3 +1140,14 @@ Feuille de route, tâche 1 quater. Rapport : `rapports/2026-11-19-corrections-50
 - un nom d'outil seul entre accolades n'est un appel que pour un outil proposé sans paramètre obligatoire, et jamais dans le chat sans orchestre ;
 - après « suivant » ou « précédent », Spotify est relu : jamais « Morceau suivant » sans savoir ce qui joue ;
 - les données de Live ne sont jamais modifiées par un banc : copie temporaire seulement.
+
+## Jarvis Test, nuit du 24 novembre : volume, état de l'image, playlists et albums (branche `claude/nuit-test-1124`)
+
+Jarvis Test seulement, rien dans Live. Rapport : `rapports/2026-11-24-nuit-volume-image-playlists.md`.
+
+- **Volume à la voix** (`media/volumeIntent.ts`) : « mets le volume à 40 » → `spotify_set_volume` ; « plus fort », « moins fort », « monte le son de l'enceinte » → outil interne `spotify_volume_step` (±10, volume relu). Sans modèle (`forcedSpotify`). Le plafond de l'enceinte reste appliqué par `SpotifyProvider` (`spotifySpeakerMaxVolume`, 70). La phrase réflexe de l'enceinte dit le volume appliqué, lu dans le résultat de l'outil (`ChatOutcome.toolContents`).
+- **« Elle en est où, l'image ? »** (`images/jobStatus.ts`) : lue par règles avant tout modèle (`session.ts`, chemin des réponses fixes) ; réponse tirée de `ImagesService.jobReport()` (rien, en cours avec étape et avancement de Forge, finie, ratée). L'estimation de Forge n'est dite qu'à partir de 10 %.
+- **Playlists et albums** (`media/collectionIntent.ts`) : « mets la playlist … », « lance ma playlist … », « joue l'album … » → outil interne `spotify_play_collection` (`searchCollection`, `playCollection`, lecture vérifiée sur le contexte).
+- Les deux outils internes ne sont enregistrés que si `spotifyClientId` est réglé : la liste figée d'une installation neuve ne change pas (`chat-unchanged.test.ts` vert sans régénération).
+
+À ne pas casser : le plafond de l'enceinte n'est jamais appliqué ailleurs que dans le fournisseur ; une réponse sur l'état de l'image ne vient que de `jobReport()`, jamais d'un modèle ; une playlist n'est annoncée « Lecture » que si son contexte joue.

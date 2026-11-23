@@ -40,7 +40,13 @@ describe('réponse tirée de l’état réel', () => {
       { state: 'running', startedAt: now - 80_000, stage: 'Forge génère l’image…', progress: 0.45, etaSeconds: 30 },
       now,
     );
-    expect(reply).toBe('L’image est en cours depuis 1 min 20 s. Dernière étape : Forge génère l’image. Forge en est à 45 %, encore environ 30 s.');
+    expect(reply).toBe('L’image est en cours depuis 1 min 20 s. Dernière étape : Forge génère l’image. Forge en est à 45 % (Forge estime encore 30 s).');
+  });
+
+  it('au tout début, l’estimation de Forge n’est pas dite', () => {
+    expect(imageStatusReply({ state: 'running', startedAt: now - 400_000, progress: 0.01, etaSeconds: 9_720 }, now)).toBe(
+      'L’image est en cours depuis 6 min 40 s. Forge en est à 1 %.',
+    );
   });
 
   it('en cours sans avancement : rien d’inventé', () => {

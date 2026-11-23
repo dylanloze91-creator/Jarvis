@@ -78,8 +78,12 @@ export function imageStatusReply(report: ImageJobReport | null, now: number, mod
     let forge = '';
     if (typeof report.progress === 'number' && report.progress > 0) {
       const percent = Math.min(99, Math.round(report.progress * 100));
+      // Essai du 24 novembre : à 1 %, Forge annonçait 2 h 42 (chargement du modèle) ; à 38 %, 4 min pour
+      // une image finie une minute après. Son estimation n'est dite qu'à partir de 10 %, et comme la sienne.
       const eta =
-        typeof report.etaSeconds === 'number' && report.etaSeconds > 0 ? `, encore environ ${duration(report.etaSeconds * 1000)}` : '';
+        typeof report.etaSeconds === 'number' && report.etaSeconds > 0 && report.progress >= 0.1
+          ? ` (Forge estime encore ${duration(report.etaSeconds * 1000)})`
+          : '';
       forge = ` Forge en est à ${percent} %${eta}.`;
     }
     return `L’image est en cours${since}.${stageSentence(report.stage)}${forge}`;

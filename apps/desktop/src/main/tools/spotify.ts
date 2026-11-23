@@ -64,6 +64,12 @@ const SINGLE_TRACK_MESSAGE = {
 const NO_ACTIVE_DEVICE_MESSAGE =
   "Spotify n'a aucune lecture en cours, sur aucun appareil. Demande d'abord un morceau (« mets … »).";
 
+/** « Spotify : … » sans doubler le mot quand le message commence déjà par lui (essai du 24 novembre). */
+function spotifyError(error: unknown): string {
+  const message = describeError(error);
+  return /^spotify\b/i.test(message) ? message : `Spotify : ${message}`;
+}
+
 function describeSpotifyFailure(error: unknown): string {
   const message = describeError(error);
   if (/identifiant client|n'est pas configuré/i.test(message)) {
@@ -518,7 +524,7 @@ export function createSpotifyTools(deps: SpotifyToolsDeps) {
         return { ok: true, content: `Volume Spotify réglé à ${applied} %.` };
       } catch (error) {
         if (isNoActiveDevice(error)) return { ok: false, outcome: 'recoverable', content: NO_ACTIVE_DEVICE_MESSAGE };
-        return { ok: false, content: `Spotify : ${describeError(error)}` };
+        return { ok: false, content: spotifyError(error) };
       }
     },
   });

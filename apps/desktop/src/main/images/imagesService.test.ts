@@ -284,7 +284,8 @@ describe('ImagesService — mode direct (sans le modèle de langage)', () => {
     const done = svc.jobReport();
     expect(done.state).toBe('done');
     expect(done.files?.[0]).toMatch(/\.png$/);
-    expect(done.files?.[0]).not.toMatch(/[\/]/);
+    // Nom de fichier seul : ni « / » ni « \ ».
+    expect(done.files?.[0]).not.toMatch(/[\\/]/);
 
     const failing: World = { forgeUp: false, loaded: ['qwen2.5:7b'], calls: [], txt2imgPayloads: [], failTxt2img: true };
     const broken = service(failing, {}, join(root, 'Forge-direct-suivi-2')).svc;
