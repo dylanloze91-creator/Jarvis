@@ -63,5 +63,10 @@ describe('préréglages d’OrcaSlicer (copies pour la ligne de commande)', () =
   it('imprimante choisie dans OrcaSlicer.conf', () => {
     expect(imprimanteChoisie('{"presets":{"machine":"MyKlipper 0.4 nozzle - Copie"}}')).toBe('MyKlipper 0.4 nozzle - Copie');
     expect(imprimanteChoisie('pas du json')).toBeNull();
+    // Tel qu'OrcaSlicer 2.4.2 l'enregistre : une ligne de contrôle après le JSON.
+    const conf = '{\r\n\t"presets": {\r\n\t\t"machine": "MyKlipper 0.4 nozzle - Copie"\r\n\t}\r\n}\r\n# MD5 checksum 01ECD70602FCEDBA2BCA2C446AB57ECF\r\n';
+    expect(imprimanteChoisie(conf)).toBe(
+      'MyKlipper 0.4 nozzle - Copie',
+    );
   });
 });

@@ -76,7 +76,8 @@ export function rendreCompatible(json: Record<string, unknown>, imprimante: stri
 /** Le préréglage d'imprimante choisi en dernier dans OrcaSlicer (`OrcaSlicer.conf`, clé `presets.machine`). */
 export function imprimanteChoisie(conf: string): string | null {
   try {
-    const j = JSON.parse(conf) as { presets?: { machine?: unknown } };
+    // OrcaSlicer ajoute « # MD5 checksum … » après le JSON quand il enregistre : on s'arrête à la dernière accolade.
+    const j = JSON.parse(conf.slice(0, conf.lastIndexOf('}') + 1)) as { presets?: { machine?: unknown } };
     return typeof j.presets?.machine === 'string' && j.presets.machine ? j.presets.machine : null;
   } catch {
     return null;

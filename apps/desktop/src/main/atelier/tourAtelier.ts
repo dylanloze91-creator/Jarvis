@@ -182,7 +182,7 @@ export async function tourAtelier(input: AtelierEntree, deps: AtelierDeps): Prom
       if (voix) return { texte: `C'est prêt : ${version.fiche} Regarde l'écran du PC.${probleme}`, etat };
       const quoi = decision.changement ? `Version ${numero} (${decision.changement}). ` : '';
       const suite = controle.ok
-        ? ' Elle est à l’écran : tourne-la à la souris. Dis-moi ce qu’il faut changer, ou « imprime-la ».'
+        ? ' La pièce est à l’écran : tourne-la à la souris. Dis-moi ce qu’il faut changer, ou « imprime-la ».'
         : '';
       return { texte: `${quoi}${version.fiche}${probleme}${suite}`, etat };
     }
