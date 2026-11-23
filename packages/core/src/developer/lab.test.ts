@@ -634,7 +634,12 @@ describe('laboratoire de missions', () => {
     expect(syntax.technicalSuccess).toBe(false);
   }, 120_000);
 
-  it('appelle le modèle réel, ou dit que la série est bloquée', async () => {
+  // 23 novembre 2026 : ce test charge qwen2.5:1.5b dans le vrai Ollama, sur la carte, et en évinçait
+  // le 7B du cerveau de Jarvis Live et de Jarvis Test (22 fois en 10 jours, 3,5 à 15 s de
+  // rechargement au tour suivant ; rapports/2026-11-23-notes-musique-rechargements.md). Il ne tourne
+  // plus que sur demande : JARVIS_LAB_REAL=1 npm test --workspace @jarvis/core.
+  const reel = process.env.JARVIS_LAB_REAL === '1' ? it : it.skip;
+  reel('appelle le modèle réel, ou dit que la série est bloquée', async () => {
     const probe = await probeLabModel();
     if (!probe.ok) {
       expect(probe.reason).toMatch(/bloquée|absent/);
