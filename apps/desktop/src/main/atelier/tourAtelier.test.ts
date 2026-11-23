@@ -3,9 +3,18 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { createMessage, ecrireStlBinaire, SPEAKER_CANNOT_START, type AtelierEtat, type ChatMessage, type PrintStatus } from '@jarvis/core';
+import { createMessage, ecrireStlBinaire, MoonrakerClient, SPEAKER_CANNOT_START, type AtelierEtat, type ChatMessage } from '@jarvis/core';
+import { FakeMoonraker } from '../../../../../packages/core/src/quotidien/fakeMoonraker.testkit.js';
 import { dossierAtelier, lireFichierAtelier } from './atelierPC.js';
-import { ATELIER_IMPRIMANTE_ABSENTE, ATELIER_SANS_OPENSCAD, tourAtelier, type AtelierDeps, type ImprimanteAtelier } from './tourAtelier.js';
+import {
+  ATELIER_FILE_ABSENTE,
+  ATELIER_FILE_AUTO,
+  ATELIER_IMPRIMANTE_ABSENTE,
+  ATELIER_SANS_OPENSCAD,
+  tourAtelier,
+  type AtelierDeps,
+  type ImprimanteAtelier,
+} from './tourAtelier.js';
 
 /** Pavé plein fermé de L × W × H (12 triangles). */
 function pave(L: number, W: number, H: number): Uint8Array {
@@ -62,15 +71,19 @@ function deps(extra: Partial<AtelierDeps> = {}, imprimante: ImprimanteAtelier | 
   };
 }
 
-class FausseImprimante implements ImprimanteAtelier {
+/**
+ * Fausse imprimante : le vrai client Moonraker sur le faux Moonraker du cœur, dont la file d'attente
+ * suit `job_queue.py` (ajout sans lancement, passage automatique, chargement au démarrage).
+ */
+class FausseImprimante extends MoonrakerClient implements ImprimanteAtelier {
   envois: { name: string; print: boolean }[] = [];
-  constructor(public etat = 'standby') {}
-  async status(): Promise<PrintStatus> {
-    return { state: this.etat, filename: '', progress: 0, printDuration: 0, totalDuration: 0, bed: 20, bedTarget: 0, extruder: 20, extruderTarget: 0 };
+  constructor(etat = 'standby', readonly fake = new FakeMoonraker()) {
+    super('http://printer.local:7125', 'synthetique-test-cle', fake.fetch);
+    if (etat !== 'standby') fake.status = { ...fake.status, state: etat, filename: 'en-cours-synthetique-test.gcode', progress: 0.4 };
   }
-  async upload(name: string, _bytes: Uint8Array, print: boolean): Promise<void> {
+  override async upload(name: string, bytes: Uint8Array, print: boolean): Promise<void> {
     this.envois.push({ name, print });
-    if (print) this.etat = 'printing';
+    await super.upload(name, bytes, print);
   }
 }
 
@@ -176,21 +189,136 @@ describe('atelier dans la discussion, côté PC', () => {
     expect(imprimante.envois).toEqual([]);
   });
 
-  it('impression déjà en cours : aucune carte, rien envoyé', async () => {
+  it('« imprime-la » pendant une impression : carte « Ajouter à la file d’attente », envoi sans lancer, file relue', async () => {
     const imprimante = new FausseImprimante('printing');
     const d = deps({}, imprimante);
     const messages: ChatMessage[] = [];
     await dire(messages, 'Fais-moi une boîte de 80 par 50 par 30', d);
-    let carte = false;
+    let carte = '';
     const sortie = await dire(messages, 'Imprime-la', d, {
-      confirm: async () => {
-        carte = true;
+      confirm: async (texte) => {
+        carte = texte;
         return true;
       },
     });
-    expect(carte).toBe(false);
-    expect(sortie?.texte).toContain('déjà en cours');
+    expect(carte).toMatch(/^L'imprimante est occupée\. Ajouter à la file d'attente « boîte », version 1\. Environ 17 min/);
+    expect(carte).toContain('Rien ne sera lancé');
+    expect(imprimante.envois).toEqual([{ name: 'boite-2026-11-23-1-v1.gcode', print: false }]);
+    expect(imprimante.fake.queue.map((j) => j.filename)).toEqual(['boite-2026-11-23-1-v1.gcode']);
+    expect(imprimante.fake.queueState).toBe('paused');
+    // L'impression en cours n'a pas bougé, et rien n'a été lancé ni relancé.
+    expect(imprimante.fake.status).toMatchObject({ state: 'printing', filename: 'en-cours-synthetique-test.gcode' });
+    expect(imprimante.fake.calls).not.toContain('POST /printer/print/start');
+    expect(imprimante.fake.calls).not.toContain('POST /server/job_queue/start');
+    expect(imprimante.fake.calls.filter((c) => c.startsWith('POST /printer/'))).toEqual([]);
+    // Relue après l'ajout.
+    expect(imprimante.fake.calls.slice(-1)).toEqual(['GET /server/job_queue/status']);
+    expect(sortie?.texte).toBe(
+      "« boîte », version 1, est dans la file d'attente : boite-2026-11-23-1-v1.gcode. Rien n'est lancé, la file reste en pause. Quand le plateau sera vide, dis-moi « le plateau est vide, lance la suivante ».",
+    );
+    // Fin de l'impression en cours : la file en pause ne lance rien toute seule.
+    imprimante.fake.finishPrint();
+    expect(imprimante.fake.status.state).toBe('complete');
+    expect(imprimante.fake.queue).toHaveLength(1);
+  });
+
+  it('« mets-la dans la file » : carte refusée, rien envoyé ; deuxième pièce derrière la première', async () => {
+    const imprimante = new FausseImprimante('printing');
+    const d = deps({}, imprimante);
+    const messages: ChatMessage[] = [];
+    await dire(messages, 'Fais-moi une boîte de 80 par 50 par 30', d);
+    const non = await dire(messages, 'Mets-la dans la file', d, { confirm: async () => false });
+    expect(non?.texte).toBe("Rien n'a été ajouté à la file.");
     expect(imprimante.envois).toEqual([]);
+    expect(imprimante.fake.queue).toEqual([]);
+
+    let carte = '';
+    await dire(messages, 'mets la version 1 dans la file d’attente', d, { confirm: async (t) => ((carte = t), true) });
+    expect(carte).toMatch(/^Ajouter à la file d'attente « boîte », version 1\./);
+    await dire(messages, 'plus haute', d);
+    const deux = await dire(messages, 'ajoute-la à la file', d, { confirm: async () => true });
+    expect(deux?.texte).toContain('version 2, est dans la file d\'attente (place 2 sur 2)');
+    expect(imprimante.fake.queue.map((j) => j.filename)).toEqual(['boite-2026-11-23-1-v1.gcode', 'boite-2026-11-23-1-v2.gcode']);
+  });
+
+  it('même version deux fois : un nouveau nom, jamais le fichier en cours écrasé', async () => {
+    const imprimante = new FausseImprimante('printing');
+    imprimante.fake.status = { ...imprimante.fake.status, filename: 'boite-2026-11-23-1-v1.gcode' };
+    imprimante.fake.files.push({ path: 'boite-2026-11-23-1-v1.gcode', size: 10 });
+    const d = deps({}, imprimante);
+    const messages: ChatMessage[] = [];
+    await dire(messages, 'Fais-moi une boîte de 80 par 50 par 30', d);
+    await dire(messages, 'Mets-la dans la file', d, { confirm: async () => true });
+    expect(imprimante.envois).toEqual([{ name: 'boite-2026-11-23-1-v1-2.gcode', print: false }]);
+    expect(imprimante.fake.status.filename).toBe('boite-2026-11-23-1-v1.gcode');
+  });
+
+  it('passage automatique ou chargement au démarrage réglés : refus avant la carte, rien envoyé', async () => {
+    for (const reglage of [{ automatic_transition: 'True' }, { load_on_startup: 'true' }]) {
+      const imprimante = new FausseImprimante('printing');
+      imprimante.fake.jobQueue = reglage;
+      const d = deps({}, imprimante);
+      const messages: ChatMessage[] = [];
+      await dire(messages, 'Fais-moi une boîte de 80 par 50 par 30', d);
+      let carte = false;
+      const sortie = await dire(messages, 'Imprime-la', d, { confirm: async () => ((carte = true), true) });
+      expect(sortie?.texte).toBe(ATELIER_FILE_AUTO);
+      expect(carte).toBe(false);
+      expect(imprimante.envois).toEqual([]);
+    }
+    const sansFile = new FausseImprimante('printing');
+    sansFile.fake.jobQueue = null;
+    const messages: ChatMessage[] = [];
+    await dire(messages, 'Fais-moi une boîte de 80 par 50 par 30', deps({}, sansFile));
+    expect((await dire(messages, 'Imprime-la', deps({}, sansFile), { confirm: async () => true }))?.texte).toBe(ATELIER_FILE_ABSENTE);
+    expect(sansFile.envois).toEqual([]);
+  });
+
+  it('file laissée « ready » par quelqu’un : mise en pause avant l’ajout, l’impression en cours continue', async () => {
+    const imprimante = new FausseImprimante('printing');
+    imprimante.fake.queueState = 'ready';
+    const d = deps({}, imprimante);
+    const messages: ChatMessage[] = [];
+    await dire(messages, 'Fais-moi une boîte de 80 par 50 par 30', d);
+    const sortie = await dire(messages, 'Imprime-la', d, { confirm: async () => true });
+    expect(imprimante.fake.calls.indexOf('POST /server/job_queue/pause')).toBeLessThan(imprimante.fake.calls.indexOf('POST /server/files/upload'));
+    expect(imprimante.fake.queueState).toBe('paused');
+    expect(imprimante.fake.status.state).toBe('printing');
+    expect(sortie?.texte).toContain("J'ai mis la file en pause");
+  });
+
+  it('« le plateau est vide, lance la suivante » : seule façon de relancer, après une carte, imprimante libre', async () => {
+    const imprimante = new FausseImprimante('printing');
+    const d = deps({}, imprimante);
+    const messages: ChatMessage[] = [];
+    await dire(messages, 'Fais-moi une boîte de 80 par 50 par 30', d);
+    await dire(messages, 'Imprime-la', d, { confirm: async () => true });
+
+    // Sans « plateau vide », rien n'est relancé.
+    expect(await dire(messages, 'lance la suivante', d, { confirm: async () => true })).toBeNull();
+    // Impression encore en cours : refus, sans carte.
+    let carte = '';
+    const tot = await dire(messages, 'Le plateau est vide, lance la suivante', d, { confirm: async (t) => ((carte = t), true) });
+    expect(tot?.texte).toContain('encore en cours');
+    expect(carte).toBe('');
+    // Fin, carte refusée : rien.
+    imprimante.fake.finishPrint();
+    const non = await dire(messages, 'Le plateau est vide, lance la suivante', d, { confirm: async () => false });
+    expect(non?.texte).toBe("Rien n'a été lancé.");
+    expect(imprimante.fake.status.state).toBe('complete');
+    // Depuis une enceinte : jamais.
+    expect((await dire(messages, 'Le plateau est vide, lance la suivante', d, { place: 'enceinte', confirm: async () => true }))?.texte).toBe(SPEAKER_CANNOT_START);
+    // Accord : lancée directement, retirée de la file, la file reste en pause.
+    const oui = await dire(messages, 'Jarvis, le plateau est vide, lance la suivante', d, { confirm: async (t) => ((carte = t), true) });
+    expect(carte).toContain('boite-2026-11-23-1-v1.gcode');
+    expect(oui?.texte).toBe('Impression lancée : boite-2026-11-23-1-v1.gcode.');
+    expect(imprimante.fake.status).toMatchObject({ state: 'printing', filename: 'boite-2026-11-23-1-v1.gcode' });
+    expect(imprimante.fake.queue).toEqual([]);
+    expect(imprimante.fake.queueState).toBe('paused');
+    expect(imprimante.fake.calls).not.toContain('POST /server/job_queue/start');
+    // File vide ensuite.
+    imprimante.fake.finishPrint();
+    expect((await dire(messages, 'le plateau est vide, lance la suivante', d, { confirm: async () => true }))?.texte).toContain('vide');
   });
 
   it('jamais depuis une enceinte, et imprimante non réglée : le fichier est prêt, rien envoyé', async () => {

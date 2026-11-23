@@ -39,6 +39,17 @@ Jarvis Test installé n'a pas été touché : l'essai tourne dans un dossier à 
 2. **Plateau 300 × 300 × 300** (Klipper : X 316, Y 304, Z 300). À sa demande, le préréglage OrcaSlicer « MyKlipper 0.4 nozzle - Copie » a reçu `printable_area` 300 × 300 et `printable_height` 300 (le reste du fichier inchangé). Copie de l'ancien (`.json` et `.info`) : `C:\dev\jarvis-data\atelier\_sauvegardes\orca-2026-11-23\`. Vérifié : l'atelier lit 300 × 300 × 300, une boîte de 290 mm est acceptée (refusée à 250).
 3. **Imprimante** : une impression tourne ; rien n'est touché. Au « impression finie » de l'utilisateur : `[exclude_object]` dans `printer.cfg` (copie avant), redémarrage de Klipper, adresse `http://mainsailos.local` dans Jarvis Test.
 
+## 4 bis. File d'attente (23 novembre, soir)
+
+Demande de l'utilisateur : « mets-la dans la file », et « imprime-la » quand l'imprimante est occupée.
+
+- **Déroulé** (`tourAtelier.ts`, `mettreEnFile`) : STL recontrôlé, tranché ; réglages de la file lus (`GET /server/config`) ; **refus avant la carte** si `[job_queue]` manque, ou si `automatic_transition` ou `load_on_startup` est vrai (Jarvis ne les change jamais) ; carte « Ajouter à la file d'attente « boîte », version 1. … Rien ne sera lancé » (précédée de « L'imprimante est occupée. » pour « imprime-la ») ; envoi avec `print=false` sous un nom libre (jamais le fichier en cours) ; `POST /server/job_queue/job` ; **file relue** : le fichier doit y être et la file en pause, sinon c'est dit.
+- **Jamais l'impression en cours touchée** : aucun appel `/printer/*` pendant l'ajout. Une file laissée « ready » est mise en pause avant l'envoi (la pause de la file n'agit pas sur l'impression, vérifié dans `job_queue.py` de Moonraker). `job_queue/start` n'est jamais appelé.
+- **Relancer** : seulement « le plateau est vide, lance la suivante » (la phrase doit dire que le plateau est vide), imprimante libre, après une carte ; la première pièce est lancée directement (`/printer/print/start`) puis retirée de la file, qui reste en pause. Jamais depuis une enceinte.
+- **Moonraker relu dans son code** (`moonraker/components/job_queue.py`) : un ajout ne lance jamais rien ; la pièce suivante ne part seule que si `automatic_transition` est vrai et la file « ready », ou au redémarrage de Klipper si `load_on_startup` est vrai.
+- **Imprimante de l'utilisateur, lecture seule** (`GET` seulement, impression en cours) : `[job_queue]` présent, `automatic_transition: false`, `load_on_startup: false`, file vide et en pause.
+- Essais : faux Moonraker du cœur (`fakeMoonraker.testkit.ts`) qui suit `job_queue.py` (ajout, refus d'un fichier absent, passage automatique, démarrage de Klipper), avec le vrai client Moonraker ; `moonraker.test.ts` (2), `discussion.test.ts` (3), `tourAtelier.test.ts` (6, dont « impression déjà en cours » remplacé). **Pas encore essayé sur la vraie imprimante** : l'accord de l'utilisateur est demandé avant.
+
 ## 5. Hors de l'atelier, à signaler
 
 - `npm run build` et `package:win:test` s'arrêtent sur l'empreinte de la voix Piper Siwis (Hugging Face rend `b1d946fd…`, attendu `641d1ab0…`) : l'installateur de Test ne se construit pas tant que ce n'est pas réglé (agent Corrections).

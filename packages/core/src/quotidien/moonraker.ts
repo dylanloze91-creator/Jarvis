@@ -5,6 +5,10 @@
  * - https://moonraker.readthedocs.io/en/latest/web_api/#list-files
  * - https://moonraker.readthedocs.io/en/latest/web_api/#upload-file
  * - https://moonraker.readthedocs.io/en/latest/web_api/#printer-administration
+ * - https://moonraker.readthedocs.io/en/latest/web_api/#job-queue-apis (file d'attente ; formes relues
+ *   dans `moonraker/components/job_queue.py` : ajouter ne lance jamais rien ; la pièce suivante ne part
+ *   seule que si `automatic_transition` est vrai et la file « ready », ou au démarrage de Klipper si
+ *   `load_on_startup` est vrai)
  */
 import { checkRoverBaseUrl } from '../rover/url.js';
 
@@ -23,6 +27,28 @@ export interface PrintStatus {
 export interface PrinterFile {
   path: string;
   size: number;
+}
+
+/** Un travail de la file d'attente de Moonraker. */
+export interface QueuedJob {
+  filename: string;
+  jobId: string;
+}
+
+/** File d'attente : `state` vaut `paused`, `ready`, `loading` ou `starting`. */
+export interface QueueStatus {
+  state: string;
+  jobs: QueuedJob[];
+}
+
+/**
+ * Réglages de `[job_queue]` dans moonraker.conf. `active` faux : la section manque, la file n'existe pas.
+ * `passageAuto` = `automatic_transition`, `chargeAuDemarrage` = `load_on_startup` (faux par défaut).
+ */
+export interface QueueSettings {
+  active: boolean;
+  passageAuto: boolean;
+  chargeAuDemarrage: boolean;
 }
 
 export class MoonrakerError extends Error {
@@ -68,6 +94,39 @@ export class MoonrakerClient {
     await this.request('/server/files/upload', { method: 'POST', body: data });
   }
 
+  /** Réglages de la file, lus dans la configuration chargée par Moonraker (`GET /server/config`). */
+  async queueSettings(): Promise<QueueSettings> {
+    const body = await this.json<{ result?: { config?: Record<string, Record<string, unknown> | undefined> } }>('/server/config');
+    const section = body.result?.config?.job_queue;
+    if (!section || typeof section !== 'object') return { active: false, passageAuto: false, chargeAuDemarrage: false };
+    return {
+      active: true,
+      passageAuto: vrai(section.automatic_transition),
+      chargeAuDemarrage: vrai(section.load_on_startup),
+    };
+  }
+
+  async queueStatus(): Promise<QueueStatus> {
+    return readQueue(await this.json<QueueBody>('/server/job_queue/status'));
+  }
+
+  /** Met la file en pause : la pièce suivante ne part plus seule. L'impression en cours continue. */
+  async queuePause(): Promise<QueueStatus> {
+    const response = await this.request('/server/job_queue/pause', { method: 'POST', json: {} });
+    return readQueue((await response.json()) as QueueBody);
+  }
+
+  /** Ajoute un fichier déjà envoyé en fin de file. Moonraker ne lance rien à l'ajout. */
+  async queueAdd(filename: string): Promise<QueueStatus> {
+    const response = await this.request('/server/job_queue/job', { method: 'POST', json: { filenames: [filename], reset: false } });
+    return readQueue((await response.json()) as QueueBody);
+  }
+
+  async queueRemove(jobId: string): Promise<QueueStatus> {
+    const response = await this.request(`/server/job_queue/job?job_ids=${encodeURIComponent(jobId)}`, { method: 'DELETE' });
+    return readQueue((await response.json()) as QueueBody);
+  }
+
   async start(filename: string): Promise<PrintStatus> {
     await this.request('/printer/print/start', { method: 'POST', json: { filename } });
     return this.status();
@@ -105,6 +164,26 @@ export class MoonrakerClient {
     if (!response.ok) throw new MoonrakerError(`Moonraker a répondu ${response.status}.`);
     return response;
   }
+}
+
+interface QueueBody {
+  result?: { queued_jobs?: { filename?: string; job_id?: string }[]; queue_state?: string };
+}
+
+function readQueue(body: QueueBody): QueueStatus {
+  return {
+    state: body.result?.queue_state ?? 'unknown',
+    jobs: (body.result?.queued_jobs ?? [])
+      .map((job) => ({ filename: job.filename ?? '', jobId: job.job_id ?? '' }))
+      .filter((job) => job.filename && job.jobId),
+  };
+}
+
+/** Valeur de configuration lue comme Moonraker (`getboolean`) : booléen ou texte. */
+function vrai(value: unknown): boolean {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'string') return /^(?:true|yes|on|1)$/i.test(value.trim());
+  return false;
 }
 
 interface StatusTree {

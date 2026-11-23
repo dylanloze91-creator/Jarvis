@@ -7,6 +7,8 @@ import {
   mesuresAffichees,
   nomDossierPiece,
   phraseConfirmationAtelier,
+  phraseConfirmationFile,
+  plateauVideLanceSuivante,
   type AtelierEtat,
 } from './discussion.js';
 
@@ -168,6 +170,32 @@ describe('atelier dans la discussion : imprimer', () => {
   it('version absente : dit', () => {
     const d = deciderAtelier('imprime la version 7', boite);
     expect(d.kind).toBe('dire');
+  });
+
+  it('« mets-la dans la file » et ses variantes', () => {
+    for (const phrase of ['Mets-la dans la file', 'mets la dans la file d’attente', 'Jarvis, ajoute-la à la file', 'mets-la en file d’attente']) {
+      expect(deciderAtelier(phrase, boite)).toEqual({ kind: 'file', etat: boite, numero: 2 });
+    }
+    expect(deciderAtelier('mets la version 1 dans la file', piece('boite', {}, 1))).toMatchObject({ kind: 'file', numero: 1 });
+    expect(deciderAtelier('mets la version 7 dans la file', boite).kind).toBe('dire');
+    expect(deciderAtelier('mets-la dans la file', null).kind).toBe('rien');
+  });
+
+  it('relancer la file : seulement si la phrase dit que le plateau est vide', () => {
+    for (const phrase of ['Le plateau est vide, lance la suivante', 'Jarvis, plateau vide, lance la prochaine', 'le plateau est libre, imprime la suivante', 'Le plateau est vide. Lance la file.']) {
+      expect(deciderAtelier(phrase, null)).toEqual({ kind: 'lancerSuivante' });
+      expect(plateauVideLanceSuivante(phrase)).toBe(true);
+    }
+    for (const phrase of ['lance la suivante', 'lance la file', 'le plateau est vide', 'le plateau n’est pas vide, lance la suivante']) {
+      expect(deciderAtelier(phrase, null).kind).toBe('rien');
+    }
+  });
+
+  it('carte de la file d’attente', () => {
+    expect(phraseConfirmationFile('boîte', 1, null, true)).toBe(
+      "L'imprimante est occupée. Ajouter à la file d'attente « boîte », version 1. Rien ne sera lancé : l'impression en cours continue, et la file reste en pause jusqu'à ce que tu me dises que le plateau est vide.",
+    );
+    expect(phraseConfirmationFile('boîte', 1, null, false)).toMatch(/^Ajouter à la file d'attente/);
   });
 
   it('sans pièce à l’écran, « imprime » n’est pas pour l’atelier (lot B)', () => {

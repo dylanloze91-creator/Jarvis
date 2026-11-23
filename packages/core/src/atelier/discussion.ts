@@ -57,6 +57,10 @@ export type AtelierDecision =
       changement?: string;
     }
   | { kind: 'imprimer'; etat: Extract<AtelierEtat, { etape: 'piece' }>; numero: number }
+  /** « mets-la dans la file » : envoyée sans être lancée, ajoutée à la file d'attente de Moonraker. */
+  | { kind: 'file'; etat: Extract<AtelierEtat, { etape: 'piece' }>; numero: number }
+  /** « le plateau est vide, lance la suivante » : la première pièce de la file. */
+  | { kind: 'lancerSuivante' }
   | { kind: 'choisir'; etat: Extract<AtelierEtat, { etape: 'piece' }>; numero: number };
 
 /** Nombre de messages relus pour retrouver la pièce en cours. */
@@ -205,6 +209,27 @@ function numeroAImprimer(t: string, etat: Extract<AtelierEtat, { etape: 'piece' 
   if (nom && !plier(etat.nom).startsWith(nom.trim()) && !/^(?:version|v) ?\d+$/.test(nom.trim())) return null;
   return Number(m[1] ?? m[3] ?? etat.versionChoisie);
 }
+const FILE =
+  /^(?:mets|met|mettre|ajoute|ajouter|place)(?: (?:la|le|les))?(?: (?:version|v) ?(\d+))? (?:dans|a|en|sur) (?:la )?(?:file|liste) d attente$|^(?:mets|met|mettre|ajoute|ajouter|place)(?: (?:la|le|les))?(?: (?:version|v) ?(\d+))? (?:dans|a|en|sur) la file$/;
+
+/** Numéro de la version à mettre dans la file, ou `null`. */
+function numeroEnFile(t: string, etat: Extract<AtelierEtat, { etape: 'piece' }>): number | null {
+  const m = FILE.exec(t);
+  if (!m) return null;
+  return Number(m[1] ?? m[2] ?? etat.versionChoisie);
+}
+
+/**
+ * « le plateau est vide, lance la suivante » : la phrase doit dire que le plateau est vide **et**
+ * demander la pièce suivante de la file. Sans « plateau vide », la file n'est jamais relancée.
+ */
+export function plateauVideLanceSuivante(text: string): boolean {
+  const t = plier(text);
+  const vide = /\bplateau (?:est )?(?:bien |maintenant )?(?:vide|libre|degage)\b/.test(t);
+  const lance = /\b(?:lance|lances|lancer|imprime|demarre|demarrer)\b.*\b(?:suivante|suivant|prochaine|prochain|file|piece d apres)\b/.test(t);
+  return vide && lance;
+}
+
 const CHOISIR = /\b(?:reviens|retourne|revenir|garde|prends|choisis) (?:a )?la (?:version|v) ?(\d+)\b/;
 
 /**
@@ -223,7 +248,16 @@ export function deciderAtelier(text: string, precedent: AtelierEtat | null): Ate
       }
       return { kind: 'imprimer', etat: precedent, numero: imprimer };
     }
+    const enFile = numeroEnFile(t, precedent);
+    if (enFile !== null) {
+      if (!precedent.versions.some((v) => v.numero === enFile)) {
+        return { kind: 'dire', texte: `Il n'y a pas de version ${enFile}. Les versions sont : ${precedent.versions.map((v) => v.numero).join(', ')}.` };
+      }
+      return { kind: 'file', etat: precedent, numero: enFile };
+    }
   }
+
+  if (plateauVideLanceSuivante(text)) return { kind: 'lancerSuivante' };
 
   // Sinon, une nouvelle pièce passe avant tout.
   const nouvelle = demandePiece(text);
@@ -324,6 +358,18 @@ export function deciderAtelier(text: string, precedent: AtelierEtat | null): Ate
 export function nomDossierPiece(g: Gabarit, jour: string, numero: number): string {
   const base = plier(g.nom).replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
   return `${base}-${jour}-${numero}`;
+}
+
+/** Carte avant l'ajout à la file d'attente. `occupee` : la demande était « imprime-la ». */
+export function phraseConfirmationFile(nom: string, numero: number, tempsFilament: string | null, occupee: boolean): string {
+  const avant = occupee ? "L'imprimante est occupée. " : '';
+  const detail = tempsFilament ? ` ${tempsFilament}` : '';
+  return `${avant}Ajouter à la file d'attente « ${nom} », version ${numero}.${detail} Rien ne sera lancé : l'impression en cours continue, et la file reste en pause jusqu'à ce que tu me dises que le plateau est vide.`;
+}
+
+/** Carte avant de lancer la première pièce de la file. */
+export function phraseConfirmationSuivante(fichier: string): string {
+  return `Lancer la première pièce de la file : ${fichier}. Tu m'as dit que le plateau est vide : vérifie-le une dernière fois.`;
 }
 
 /** Phrase de la carte de confirmation avant l'impression. */
