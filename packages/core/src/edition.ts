@@ -72,6 +72,11 @@ export interface Edition {
    * appelleront Jarvis (base + 8) ; rien ne l'ouvre encore.
    */
   appendices?: { port: number };
+  /**
+   * Atelier 3D dans la discussion (pièces, écran 3D, impression par carte).
+   * Absent dans Live : la discussion ne change pas.
+   */
+  atelier?: boolean;
 }
 
 const PHONE_OFFSET = 6;
@@ -128,6 +133,7 @@ export const TEST_EDITION: Edition = {
   keepModelsWarm: true,
   keepToolResults: true,
   appendices: { port: 53224 + APPENDICE_OFFSET },
+  atelier: true,
 };
 
 export function readEditionId(input: { env?: string; baked?: string } = {}): EditionId {

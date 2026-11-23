@@ -115,6 +115,7 @@ import { ChatSession } from './session.js';
 import { CarnetHub } from './carnet/hub.js';
 import { createMorningBriefing } from './quotidien/morning.js';
 import { runPrinterReply } from './quotidien/printerReply.js';
+import { creerAtelierPC, dossierAtelier, lireFichierAtelier } from './atelier/atelierPC.js';
 import { CarnetFile } from './carnet/file.js';
 import { appendTeamValidation, type TeamValidationPayload } from './orchestra/teamValidation.js';
 import { PhoneService } from './phone/service.js';
@@ -487,6 +488,9 @@ function settingsForWindow(): Settings {
  * `appendices_stop` (donc par le journal d'audit). Rien à arrêter : `null`, la phrase suit le
  * chemin d'avant. Jarvis Live n'a pas cette fonction (`undefined`).
  */
+/** Atelier 3D dans la discussion : Jarvis Test seulement (`undefined` dans Live). */
+const atelierReply = edition().atelier ? creerAtelierPC(() => settings) : undefined;
+
 const stopAllReply = edition().appendices
   ? async (input: { text: string }): Promise<string | null> => {
       if (!isStopAllPhrase(input.text) || !appendices.canStop()) return null;
@@ -541,6 +545,7 @@ const session = new ChatSession({
   notes: notesReply,
   routines: routineReply,
   printer: printerReply,
+  atelier: atelierReply,
   stopAll: stopAllReply,
   voiceStarts,
 });
@@ -571,6 +576,7 @@ const phoneSession = new ChatSession({
   notes: notesReply,
   routines: routineReply,
   printer: printerReply,
+  atelier: atelierReply,
   stopAll: stopAllReply,
 });
 const questionnaire = QuestionnaireStore.inUserData(() => app.getPath('userData'));
@@ -673,6 +679,7 @@ const speakers = new SpeakerService({
       notes: notesReply,
       routines: routineReply,
       printer: printerReply,
+      atelier: atelierReply,
       stopAll: stopAllReply,
     });
     return {
@@ -1182,6 +1189,21 @@ function registerIpc(): void {
     } finally {
       chatActivity.end();
     }
+  });
+  // Atelier 3D (Jarvis Test) : la fenêtre ne lit que les fichiers des pièces de l'atelier.
+  ipcMain.handle(IpcChannel.atelierFichier, async (_event, dossier: unknown, fichier: unknown) => {
+    if (!edition().atelier || typeof dossier !== 'string' || typeof fichier !== 'string') return { ok: false, error: 'Fichier refusé.' };
+    try {
+      return { ok: true, data: await lireFichierAtelier(dossier, fichier) };
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+  ipcMain.handle(IpcChannel.atelierOuvrirDossier, async (_event, dossier: unknown) => {
+    const chemin = edition().atelier && typeof dossier === 'string' ? dossierAtelier(dossier) : null;
+    if (!chemin) return { ok: false, error: 'Dossier refusé.' };
+    const error = await shell.openPath(chemin);
+    return error ? { ok: false, error } : { ok: true };
   });
   // Module images : l'interface ne peut ouvrir que les fichiers du dossier des images de Jarvis.
   ipcMain.handle(IpcChannel.imagesOpen, async (_event, path: unknown) => {

@@ -34,6 +34,7 @@ import type {
   WakeStatsSummary,
   WakeVerifierModel,
 } from '@jarvis/core';
+import type { AtelierEtat } from '@jarvis/core';
 import type { LocalLearningRuntimeStatus } from '@jarvis/core';
 import type { DirectProjectDefaults, ImageFormat, ImageProject } from '@jarvis/core';
 import type { DeveloperApi } from './developerIpc.js';
@@ -101,6 +102,9 @@ export const IpcChannel = {
   settingsRoverStatus: 'settings:rover-status',
   settingsImagesStatus: 'settings:images-status',
   imagesOpen: 'images:open',
+  /** Atelier 3D (Jarvis Test) : fichier d'une pièce (STL de l'écran 3D), et son dossier. */
+  atelierFichier: 'atelier:fichier',
+  atelierOuvrirDossier: 'atelier:ouvrir-dossier',
   imagesDirectCatalog: 'images:direct-catalog',
   imagesDirectGenerate: 'images:direct-generate',
   imagesDirectCancel: 'images:direct-cancel',
@@ -720,6 +724,8 @@ export type ChatEvent =
    * ressemblait à une image. Le bouton « Envoyer à Imager » renvoie `/image <texte>`.
    */
   | { type: 'imager_offer'; text: string }
+  /** Atelier 3D (Jarvis Test) : une pièce rendue, à afficher en 3D sous la réponse `messageId`. */
+  | { type: 'atelier'; messageId: string; etat: AtelierEtat }
   | { type: 'done'; conversationId: string; messages: ChatMessage[] };
 
 export type WindowChrome = 'compact' | 'dashboard';
@@ -927,6 +933,14 @@ export interface JarvisApi {
     /** Panneau ouvert ou fermé (option « garder Forge chargé »). */
     directPanel(open: boolean): Promise<void>;
     onDirectEvent(listener: (event: ImagerDirectEvent) => void): () => void;
+  };
+  /**
+   * Atelier 3D (Jarvis Test). Absent de l'aperçu hors Electron. Seulement les fichiers des
+   * dossiers de pièces, sous le dossier de l'atelier (nom simple, vérifié côté main).
+   */
+  atelier?: {
+    fichier(dossier: string, fichier: string): Promise<{ ok: true; data: Uint8Array } | { ok: false; error: string }>;
+    ouvrirDossier(dossier: string): Promise<{ ok: true } | { ok: false; error: string }>;
   };
   settings: {
     get(): Promise<{ settings: Settings; status: RuntimeStatus }>;

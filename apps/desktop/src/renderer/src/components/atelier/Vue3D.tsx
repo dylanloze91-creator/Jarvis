@@ -40,7 +40,6 @@ export function Vue3D({ stl, maillage, className, plateau }: Vue3DProps) {
       visionneuseRef.current = null;
     };
     // Le plateau ne change pas pendant que l'écran est ouvert : la visionneuse est créée une fois.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {

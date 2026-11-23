@@ -80,6 +80,7 @@ import {
   type OrchestraTeam,
   type ModelPlace,
   type AuditLogStore,
+  type AtelierEtat,
   type ChatMessage,
   type ConfirmationRequest,
   type Conversation,
@@ -268,6 +269,18 @@ interface SessionDeps {
     confirm: (summary: string) => Promise<boolean>;
     execute: (name: string, args: Record<string, string | number>) => Promise<{ ok: boolean; content: string }>;
   }) => Promise<string | null>;
+  /**
+   * Atelier 3D (Jarvis Test seulement) : « fais-moi une boîte », questions, versions, « imprime-la ».
+   * Règles seules, avant l'imprimante du lot B et tout modèle. `null` : la phrase n'est pas pour
+   * l'atelier. Absent (Jarvis Live) : rien ne change.
+   */
+  atelier?: (input: {
+    text: string;
+    messages: readonly ChatMessage[];
+    place: 'fenetre' | 'telephone' | 'enceinte';
+    confirm: (summary: string) => Promise<boolean>;
+    progress: (message: string) => void;
+  }) => Promise<{ texte: string; etat?: AtelierEtat } | null>;
   /** Imprimante. Absent ou coupée : le tour suit le chemin d'avant. */
   printer?: (input: {
     text: string;
@@ -547,8 +560,37 @@ export class ChatSession {
             },
           }).catch(() => null)
         : null;
+    const atelierCallId = randomId();
+    let atelierStarted = false;
+    const atelierReply =
+      !briefingText && !notesText && !routineText && this.deps.atelier
+        ? await this.deps.atelier({
+            text: input.text,
+            messages: conversation.messages,
+            place: input.place?.kind ?? 'fenetre',
+            confirm: (summary) =>
+              this.askUser(
+                sender,
+                emit,
+                { callId: randomId(), toolName: 'atelier', title: 'Atelier 3D', details: summary, forced: true },
+                controller.signal,
+              ),
+            progress: (message) => {
+              if (!atelierStarted) {
+                atelierStarted = true;
+                emit({ type: 'tool_start', callId: atelierCallId, toolName: 'atelier', summary: message });
+              } else emit({ type: 'tool_progress', callId: atelierCallId, message });
+            },
+          }).catch((error: unknown): { texte: string; etat?: AtelierEtat } => ({
+            texte: `L'atelier a eu un problème : ${error instanceof Error ? error.message : String(error)}`,
+          }))
+        : null;
+    if (atelierStarted) {
+      emit({ type: 'tool_result', callId: atelierCallId, toolName: 'atelier', status: 'ok', content: 'Fait.' });
+    }
+    const atelierText = atelierReply?.texte ?? null;
     const printerText =
-      !briefingText && !notesText && !routineText && settings.printer?.enabled === true && this.deps.printer
+      !atelierText && !briefingText && !notesText && !routineText && settings.printer?.enabled === true && this.deps.printer
         ? await this.deps.printer({
             text: input.text,
             place: input.place?.kind ?? 'fenetre',
@@ -561,12 +603,12 @@ export class ChatSession {
               ),
           }).catch(() => null)
         : null;
-    const healthIntent = !briefingText && !notesText && !routineText && !printerText && looksLikeHealthIntent(input.text);
+    const healthIntent = !briefingText && !notesText && !routineText && !atelierText && !printerText && looksLikeHealthIntent(input.text);
     const orchestra = activeOrchestra(settings);
     const routeGap: { kind: 'illisible' | 'silence' | null } = { kind: null };
-    const routed = !briefingText && !notesText && !routineText && !printerText && !healthIntent && Boolean(orchestra);
+    const routed = !briefingText && !notesText && !routineText && !atelierText && !printerText && !healthIntent && Boolean(orchestra);
     if (routed) clock.startRouting();
-    const route = !briefingText && !notesText && !routineText && !printerText && !healthIntent && orchestra
+    const route = !briefingText && !notesText && !routineText && !atelierText && !printerText && !healthIntent && orchestra
       ? await this.routeTurn(
           settings,
           orchestra,
@@ -629,6 +671,8 @@ export class ChatSession {
       run = fixedReply(notesText);
     } else if (routineText) {
       run = fixedReply(routineText);
+    } else if (atelierText) {
+      run = fixedReply(atelierText);
     } else if (printerText) {
       run = fixedReply(printerText);
     } else if (healthIntent) {
@@ -890,6 +934,16 @@ export class ChatSession {
 
     if (superseded()) return;
 
+    // Atelier 3D : l'état (question ou pièce) est posé sur la réponse ; une pièce s'affiche en 3D.
+    const atelierEtat = atelierReply?.etat;
+    if (atelierEtat && !controller.signal.aborted) {
+      const reponse = [...messages].reverse().find((message) => message.role === 'assistant' && message.content.trim());
+      if (reponse && reponse !== userMessage) {
+        reponse.atelier = atelierEtat;
+        if (atelierEtat.etape === 'piece') emit({ type: 'atelier', messageId: reponse.id, etat: atelierEtat });
+      }
+    }
+
     // Mode direct : le modèle a répondu sans Imager alors que la demande ressemblait à une image → bouton « Envoyer à Imager ».
     if (
       this.deps.images?.isEnabled() &&
@@ -910,7 +964,7 @@ export class ChatSession {
       place: input.place,
       route: routeNotee(route, orchestra),
       health: healthIntent,
-      fixedReply: Boolean(briefingText || notesText || routineText || printerText),
+      fixedReply: Boolean(briefingText || notesText || routineText || atelierText || printerText),
       directMission: directMissionTake,
       chatProviderId: settings.provider,
       chatModel: resolveChatModel(settings),

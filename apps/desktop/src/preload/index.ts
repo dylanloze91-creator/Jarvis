@@ -61,6 +61,10 @@ const api: JarvisApi = {
       ipcRenderer.invoke(IpcChannel.orchestraValidateTeam, input),
     routerScore: () => ipcRenderer.invoke(IpcChannel.orchestraRouterScore),
   },
+  atelier: {
+    fichier: (dossier: string, fichier: string) => ipcRenderer.invoke(IpcChannel.atelierFichier, dossier, fichier),
+    ouvrirDossier: (dossier: string) => ipcRenderer.invoke(IpcChannel.atelierOuvrirDossier, dossier),
+  },
   images: {
     open: (path: string) => ipcRenderer.invoke(IpcChannel.imagesOpen, path),
     directCatalog: () => ipcRenderer.invoke(IpcChannel.imagesDirectCatalog),
