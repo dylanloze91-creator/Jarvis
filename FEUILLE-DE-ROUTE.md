@@ -20,6 +20,12 @@ Ce fichier ne contient ni secret, ni donnée personnelle, ni nom de réseau : le
   1. **le travail en cours de Claude Code** : la Live 5.0.80 (corrections), puis Jarvis Développeur facile ;
   2. **l'atelier 3D** : Jarvis dessine une pièce à partir de quelques mots, la montre, prépare le fichier et l'imprime avec l'accord de l'utilisateur (`docs/specs/atelier-3d.md`). Il s'appuie sur l'imprimante sous surveillance, qui passe donc avec lui. Claude (le chat) en écrit le cœur en parallèle ; Claude Code le branche ensuite.
   Tout le reste attend derrière ces deux priorités.
+- **L'équipe de Claude Code** (décision de l'utilisateur du 23 novembre) : plusieurs sessions de Claude Code travaillent en même temps sur le PC, **une par fonctionnalité**, chacune dans sa propre copie du projet (`claude --worktree <nom>`), pilotées depuis le téléphone. **L'atelier 3D passe en tête** :
+  - **Agent Atelier** (session `atelier`, sa copie) : l'atelier 3D, de la phrase à l'impression (OpenSCAD, OrcaSlicer, branchement, écran 3D écrit par Claude le chat) ;
+  - **Agent Corrections** (dossier principal `C:\dev\Jarvis`) : la Live 5.0.80, puis les défauts de Jarvis Test ; c'est **le seul qui réunit le travail des autres** dans `claude/dev` ;
+  - **Agent Imprimante** (session `imprimante`, plus tard) : brancher la surveillance de l'imprimante, une fois l'atelier branché ;
+  - **Claude (le chat)** : chef d'équipe, relit, écrit dans le cloud ce qui n'a pas besoin du PC.
+  Règles : chacun s'inscrit dans `AGENTS-COORDINATION.md` et ne touche pas aux fichiers d'un autre ; **un seul agent à la fois** se sert de Jarvis Test, d'Ollama et de la carte graphique (il le réserve dans le fichier de coordination, et le libère après) ; aucun agent ne commite le dossier `.claude/worktrees/` ; trois agents au plus.
 - **Trois chantiers côte à côte** (décision de l'utilisateur du 17 novembre) :
   - **Jarvis** (Live et Test) : l'appli elle-même, cette feuille de route telle quelle ;
   - **Jarvis Development** (branche longue `claude/jarvis-development`) : les **appendices** de Jarvis, c'est-à-dire ses yeux, ses bras, ses jambes, ses sens et ses mains sur la maison, avec leurs programmes et leur électronique. Cahier : `docs/specs/jarvis-development.md` ; matériel : `docs/materiel/electronique-appendices.md` ;
