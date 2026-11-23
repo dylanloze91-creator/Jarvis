@@ -186,3 +186,11 @@ Branche `claude/corrections-5080-suite` lancée sans rien installer (`electron-v
 Essais : `packages/core/src/essais-5080-23nov.test.ts` (phrases écrites pour l'essai), assertion ajoutée dans `tools/spotify.test.ts`.
 
 **Non corrigé, nouveauté à décider :** jouer une playlist ou un album (« mets la playlist … »). À faire d'abord dans Jarvis Test.
+
+### Deuxième passage (23 novembre, 17 h)
+
+- **E6 bon** : « Dis-moi les informations sur mon PC » → `get_system_info` sans modèle, vraies valeurs.
+- **E11 pas bon** : « Mets pause sur Spotify » a bien mis en pause, sans modèle. Mais « Mets play sur Spotify » (écrit « Mes play » par Whisper) a lancé une recherche de morceau « Mes play » et la question de l'appareil. **Corrigé** : `RESUME_PHRASE` (`media/playIntent.ts`) accepte « play », « mets / remets / mes play », « mets en lecture », avec une fin « sur Spotify » ou « s'il te plaît » ; `isPlaybackControlOnly` et `isMusicIntent` la reconnaissent avant la recherche. « Mets Play Hard de David Guetta sur Spotify » reste un titre. Test : `essais-5080-23nov.test.ts`.
+- **E16 fait** : heure sans modèle (« Il est 17 h 18. »), blague par le modèle.
+- **E17 fait** : image en 266 s ; le 7B a été rechargé à 17 h 08 avec `-c 8192`, comme le chat : pas de rechargement en trop. Un `qwen2.5:1.5b` en `-c 4096` à 17 h 22 ne vient pas de la Live (aucun réglage ne le nomme ; même suite d'appels que le test du vrai modèle du labo, qui ne tourne plus sur cette branche sans `JARVIS_LAB_REAL=1`).
+- Vu en passant, non corrigé : « Peux-tu augmenter le volume de l'enceinte ? » a reçu un refus du modèle alors que `spotify_set_volume` existe ; « Elle en est où, l'image ? » a reçu une réponse inventée (« en cours »).
