@@ -33,12 +33,11 @@ Jarvis Test installé n'a pas été touché : l'essai tourne dans un dossier à 
 - Historique : discussion rouverte, écrans 3D réaffichés.
 - **Pas essayé** : la carte de confirmation et l'envoi à Moonraker en vrai (impression en cours chez l'utilisateur, lecture seule demandée) ; couverts par les essais automatiques (faux Moonraker : carte, refus, impression en cours, enceinte).
 
-## 4. À décider par l'utilisateur
+## 4. Décisions de l'utilisateur (23 novembre, soir)
 
-1. **Plaque** : sans réglage, OrcaSlicer en ligne de commande prend la **Cool Plate (lit 60 °C)**. La carte l'affiche. Laquelle utilises-tu ?
-2. **Limite 300** : Klipper autorise X 316, Y 304, Z 300 ; le préréglage OrcaSlicer dit 250. Gardé à 250.
-3. **`[exclude_object]`** absent de la configuration Klipper (les objets déclarés par OrcaSlicer ne servent pas encore).
-4. **Imprimante dans Jarvis Test** : `printer.baseUrl` (`http://mainsailos.local`) à régler dans Réglages → Services → Imprimante, quand l'impression en cours sera finie.
+1. **Plaque : Textured PEI.** L'atelier tranche avec `--curr-bed-type "Textured PEI Plate"` (`PLAQUE_ORCA`, `atelierPC.ts`). Vérifié en vrai : `; curr_bed_type = Textured PEI Plate`, `PRINT_START EXTRUDER=245 BED=80`.
+2. **Plateau 300 × 300 × 300** (Klipper : X 316, Y 304, Z 300). À sa demande, le préréglage OrcaSlicer « MyKlipper 0.4 nozzle - Copie » a reçu `printable_area` 300 × 300 et `printable_height` 300 (le reste du fichier inchangé). Copie de l'ancien (`.json` et `.info`) : `C:\dev\jarvis-datatelier\_sauvegardes\orca-2026-11-23\`. Vérifié : l'atelier lit 300 × 300 × 300, une boîte de 290 mm est acceptée (refusée à 250).
+3. **Imprimante** : une impression tourne ; rien n'est touché. Au « impression finie » de l'utilisateur : `[exclude_object]` dans `printer.cfg` (copie avant), redémarrage de Klipper, adresse `http://mainsailos.local` dans Jarvis Test.
 
 ## 5. Hors de l'atelier, à signaler
 

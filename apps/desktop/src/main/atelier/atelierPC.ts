@@ -13,10 +13,17 @@ import { nomSimple, tourAtelier, type AtelierEntree, type AtelierSortie } from '
 export const ATELIER_RACINE = process.platform === 'win32' ? 'C:\\dev\\jarvis-data\\atelier' : join(process.cwd(), 'jarvis-data', 'atelier');
 
 /**
- * Limite quand le préréglage OrcaSlicer ne se lit pas : 250 mm, la surface réglée aujourd'hui
- * chez l'utilisateur (sa décision : garder 250 tant qu'il n'a pas répondu pour 300).
+ * Limite quand le préréglage OrcaSlicer ne se lit pas : 250 mm, plus petite que le plateau réel
+ * (300 × 300 × 300, confirmé par Klipper et réglé dans OrcaSlicer le 23 novembre). Normalement,
+ * la limite est celle du préréglage.
  */
 export const LIMITE_PRUDENTE: VolumeImpression = { x: 250, y: 250, z: 250 };
+
+/**
+ * Plaque posée sur l'imprimante (choix de l'utilisateur, 23 novembre) : nom attendu par
+ * `--curr-bed-type` d'OrcaSlicer. Elle fixe la température du lit lue dans son filament.
+ */
+export const PLAQUE_ORCA = 'Textured PEI Plate';
 
 /** Préréglages d'OrcaSlicer de l'utilisateur (lus seulement) : `%APPDATA%\OrcaSlicer` de son compte. */
 export const ORCA_RACINE = join(homedir(), 'AppData', 'Roaming', 'OrcaSlicer');
@@ -56,7 +63,7 @@ export function creerAtelierPC(getSettings: () => Settings, racine = ATELIER_RAC
             const raison = error instanceof Error ? error.message : String(error);
             return { ok: false, message: `Je n'ai pas pu lire tes préréglages OrcaSlicer : ${raison}`, gcode: null, infos: null };
           }
-          return trancher(orca, stl, copies, sortie);
+          return trancher(orca, stl, copies, sortie, PLAQUE_ORCA);
         },
       },
     });
