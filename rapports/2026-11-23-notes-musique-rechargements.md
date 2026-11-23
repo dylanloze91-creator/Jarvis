@@ -150,7 +150,7 @@ Le 20 novembre à 10:27, un `/api/generate` de 5,9 s (le préchauffage) précèd
 - « actuel » : Mémoire `qwen3.5:4b` et Code `jarvis-coder` sur la carte ;
 - « 7B » : `JARVIS_BANC_EQUIPES=memoire=qwen2.5:7b@carte,code=qwen2.5:7b@carte`.
 
-Résultats : `C:\dev\jarvis-dataitesseanc\p2p3-*.json`.
+Résultats : `C:/dev/jarvis-data/vitesse/banc/p2p3-*.json`.
 
 | | actuel 1 | actuel 2 | 7B 1 | 7B 2 |
 | --- | ---: | ---: | ---: | ---: |
