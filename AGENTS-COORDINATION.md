@@ -102,6 +102,6 @@ Une seule carte (RTX 2060 6 Go) : un seul agent à la fois lance le banc (`npm r
 
 | État | Par qui | Pour quoi | Depuis |
 | --- | --- | --- | --- |
-| libre | — | — | — |
+| occupée | Claude Code (agent Atelier) | Jarvis Test d'essai (dossier à part) : premier essai de la file d'attente sur la vraie imprimante, avec l'accord de l'utilisateur ; Ollama peut être chargé par Jarvis Test | 2026-11-23 |
 
 Pour réserver : passer l'état à `occupée`, remplir les colonnes, commiter et pousser **avant** de lancer. Pour libérer : remettre `libre` et `—`, commiter et pousser.
