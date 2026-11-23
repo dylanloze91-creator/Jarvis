@@ -98,14 +98,43 @@ export function isSpotifyPreviousPhrase(prompt: string): boolean {
   return Boolean(trimmed) && !NOT_A_TRACK.test(trimmed) && PREVIOUS_PHRASE.test(trimmed);
 }
 
+/**
+ * 23 novembre 2026 (quatrième passage) : à l'enceinte, Whisper écrit « Mets sur pause, potifie. »,
+ * « Mais sur Play, sur Spotify. », « M'éplay ». Les règles exactes ci-dessus ratent ces formes :
+ * on relit aussi la phrase sans accents ni ponctuation, sans « Jarvis » en tête, sans « s'il te
+ * plaît » ni « (sur) Spotify » (même déformé : spotifie, potifie…) en fin. Ce qui reste doit être
+ * exactement « [mets|mes|mais|me|m] [sur|en] pause » ou « … play | lecture ». Rien d'autre.
+ */
+const SPOTIFY_HEARD = String.raw`s?pot+[iy]f(?:y|ie|i|aie|aille)?`;
+function foldedControl(prompt: string): 'pause' | 'resume' | null {
+  let text = prompt
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .toLowerCase()
+    .replace(/['’]/g, '')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  text = text.replace(/^jarvis\s+/, '');
+  text = text.replace(/\s+sil te plait$/, '');
+  text = text.replace(new RegExp(String.raw`(?:\s+(?:sur|a|de|dans))?\s+${SPOTIFY_HEARD}$`), '');
+  text = text.replace(/\s+(?:la\s+)?musique$/, '').trim();
+  const head = String.raw`^(?:(?:re)?(?:mets?|mes|mais|me|m)\s*)?(?:(?:sur|en)\s+)?`;
+  if (new RegExp(`${head}pauses?$`).test(text)) return 'pause';
+  if (new RegExp(`${head}(?:play|plays|lecture)$`).test(text)) return 'resume';
+  return null;
+}
+
 export function isSpotifyPausePhrase(prompt: string): boolean {
   const trimmed = prompt.trim();
-  return Boolean(trimmed) && !NOT_A_TRACK.test(trimmed) && PAUSE_PHRASE.test(trimmed);
+  if (!trimmed || NOT_A_TRACK.test(trimmed)) return false;
+  return PAUSE_PHRASE.test(trimmed) || foldedControl(trimmed) === 'pause';
 }
 
 export function isSpotifyResumePhrase(prompt: string): boolean {
   const trimmed = prompt.trim();
-  return Boolean(trimmed) && !NOT_A_TRACK.test(trimmed) && RESUME_PHRASE.test(trimmed);
+  if (!trimmed || NOT_A_TRACK.test(trimmed)) return false;
+  return RESUME_PHRASE.test(trimmed) || foldedControl(trimmed) === 'resume';
 }
 
 export function isMusicIntent(prompt: string): boolean {

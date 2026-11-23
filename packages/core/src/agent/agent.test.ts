@@ -927,6 +927,31 @@ describe('question Spotify « Devialet ou PC ? »', () => {
     clearSpotifyDeviceAsks();
   });
 
+  it('« mets sur play » pendant la question reprend la lecture, sans reposer la question', async () => {
+    clearSpotifyDeviceAsks();
+    rememberSpotifyDeviceAsk(pending);
+    const seen: Array<{ query: string; hint: SpotifyPlayDeviceHint | null }> = [];
+    let resumed = 0;
+    const resumeTool = defineTool({
+      name: 'spotify_resume',
+      description: 'Reprendre.',
+      risk: 'safe',
+      schema: z.object({}),
+      execute: async () => {
+        resumed += 1;
+        return { ok: true, content: 'Lecture reprise.' };
+      },
+    });
+    const provider = new ScriptedProvider([]);
+    const agent = agentFor(new ToolManager().register(playTool(seen)).register(resumeTool), provider, 5_000);
+    await collect(agent, 'Jarvis, mets sur play, spotifie.');
+    expect(resumed).toBe(1);
+    expect(seen).toEqual([]);
+    expect(provider.requests).toHaveLength(0);
+    expect(peekSpotifyDeviceAsk(pending.sessionId, 5_000)).toBeNull();
+    clearSpotifyDeviceAsks();
+  });
+
   it('une réponse floue relance une fois, puis l’appareil du réglage', async () => {
     clearSpotifyDeviceAsks();
     rememberSpotifyDeviceAsk(pending);

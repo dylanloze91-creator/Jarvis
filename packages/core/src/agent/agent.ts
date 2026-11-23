@@ -719,7 +719,13 @@ export class Agent {
       clearSpotifyDeviceAsk(sessionId);
       return { kind: 'halt' };
     }
+    // 23 novembre 2026 : « mets play » dit pendant la question de l'appareil reposait la question.
+    // Un ordre de lecture clair (reprise, pause, suivant, précédent) passe avant la réponse attendue.
     if (
+      isSpotifyPausePhrase(prompt) ||
+      isSpotifyResumePhrase(prompt) ||
+      isSpotifyNextPhrase(prompt) ||
+      isSpotifyPreviousPhrase(prompt) ||
       extractSpotifyPlayQuery(prompt) ||
       extractSpotifyTransferTarget(prompt) ||
       isCurrentTrackQuestion(prompt)

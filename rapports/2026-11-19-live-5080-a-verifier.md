@@ -199,3 +199,8 @@ Essais : `packages/core/src/essais-5080-23nov.test.ts` (phrases écrites pour l'
 
 - **E11 à moitié bon** : pause, morceau suivant (« Morses suivantes ») et morceau précédent bons, sans modèle. « Mets play sur Spotify » a été écrit « M'éplay » par Whisper et a lancé « Quarantine » de E-Play. **Corrigé** : devant « play », la règle accepte aussi « mes », « mais », « mé » et « m'é », collé ou non. Test : `essais-5080-23nov.test.ts`.
 - Suite complète : `workflow.test.ts` (modèle de code) a échoué une fois sous la charge, puis 9 sur 9 seul ; sans rapport avec la correction.
+
+### Quatrième passage (23 novembre, 19 h 20)
+
+- **Play bof** : « pause sur Spotify » bon ; trois ratés venus de Whisper : « Mets sur pause, potifie » a lancé un morceau ; « Mais sur Play, sur Spotify » a été pris pour un titre ; « Mes play » dit pendant la question « Sur la Phantom… ou sur le PC ? » a reposé la question (réponse floue).
+- **Corrigé** : `isSpotifyPausePhrase` / `isSpotifyResumePhrase` relisent aussi la phrase sans accents ni ponctuation, sans « Jarvis », « s'il te plaît », « la musique » ni « (sur) Spotify » même déformé (spotifie, potifie, spotifaille) ; il doit rester exactement « [mets|mes|mais|me|m] [sur|en] pause » ou « … play | lecture ». Pendant la question de l'appareil, pause, reprise, suivant et précédent passent avant la réponse attendue (`agent.ts`). Tests : `essais-5080-23nov.test.ts`, `agent.test.ts`.
