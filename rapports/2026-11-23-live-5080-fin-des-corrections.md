@@ -64,3 +64,11 @@ Fichiers modifiés le 23 : agent/expressRules.ts, agent/agent.ts, media/playInte
 Prêt à fusionner : OUI pour la Live après ton « publie »
 Testé en vrai (à la voix, sur le PC) : FAIT avec ta voix à la vraie enceinte, sauf le 5e passage (pause / play après retrait des mots de remplissage), non réessayé
 ```
+
+## Publication préparée, pas faite (23 novembre, 21 h 50)
+
+- **Voix Piper Siwis** : le fichier de ce PC a l'empreinte épinglée (`641d1ab0…baf99`, 63 201 294 octets), la même que dans la Live 5.0.79 installée. Rien n'a été retéléchargé ni écrasé. Hugging Face sert maintenant un autre fichier (`b1d946fd…63ef`, 63 221 984 octets, et un `.onnx.json` de 6 369 octets au lieu de 4 875) : seule une machine sans ces fichiers bloquerait. Changer l'empreinte demande d'écouter la nouvelle voix et de relire sa licence : hors de la Live.
+- **Installateur** : `apps/desktop/release/Jarvis-Setup-5.0.80.exe` fabriqué (`npm run package:win`, `--publish never`), `latest.yml` annonce 5.0.80, programme de l'enceinte présent (étiquette 5.0.79, rien à flasher), un seul modèle Whisper.
+- **Contrôles** : construction, types, style, tests (cœur 219 fichiers, bureau 163 fichiers et 4 ignorés par leur propre condition) verts.
+- **Git** : `main` est contenue dans la branche (fusion en avance rapide) ; l'étiquette `v5.0.80` n'existe pas ; `gh` est connecté. `claude/live-5080` est avancée au même commit que `claude/corrections-5080-suite`.
+- **Quand tu dis « publie »** : fusion de `claude/live-5080` dans `main`, puis `bash release.sh` depuis `main`.
