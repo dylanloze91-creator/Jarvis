@@ -5,6 +5,7 @@ import {
   checkExpressRules,
   expressRuleMatches,
   foldForRule,
+  expressToolRule,
   matchExpressRules,
   type ExpressRule,
 } from './expressRules.js';
@@ -99,6 +100,12 @@ describe('règles express de Jarvis (EXPRESS_RULES)', () => {
 
   it('chaque règle a ses essais pour et contre, et aucun n’échoue', () => {
     expect(checkExpressRules(EXPRESS_RULES, { existing: dejaRegle })).toEqual([]);
+  });
+
+  it('« mon-pc » ne masque pas l’appel direct de « infos-pc »', () => {
+    expect(expressToolRule(EXPRESS_RULES, 'Donne-moi les informations sur mon PC', TOUTES)?.id).toBe('infos-pc');
+    expect(matchExpressRules(EXPRESS_RULES, 'Ferme Chrome sur mon ordinateur', TOUTES)).toEqual({ team: 'pc', rule: 'mon-pc' });
+    expect(expressToolRule(EXPRESS_RULES, 'Ferme Chrome sur mon ordinateur', TOUTES)).toBeNull();
   });
 
   it('chaque règle vise une équipe qui existe', () => {
