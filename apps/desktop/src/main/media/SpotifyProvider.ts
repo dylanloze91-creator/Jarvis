@@ -9,6 +9,7 @@ import {
   redactSecrets,
   searchQueryVariants,
   type MediaProvider,
+  type MediaCollection,
   type MediaTrack,
   type PlaybackState,
   type SpotifyPlayDeviceHint,
@@ -73,8 +74,31 @@ type SpotifyDevicesResponse = {
   devices?: SpotifyDevice[];
 };
 
+type SpotifyCollectionItem = {
+  uri: string;
+  name: string;
+  owner?: { display_name?: string | null };
+  artists?: Array<{ name: string }>;
+} | null;
+
+type SpotifyCollectionSearch = {
+  playlists?: { items?: SpotifyCollectionItem[] };
+  albums?: { items?: SpotifyCollectionItem[] };
+};
+
+/** Comparaison de noms sans casse, accents ni ponctuation. */
+function foldName(text: string): string {
+  return text
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
 type SpotifyPlayback = {
   is_playing?: boolean;
+  context?: { uri?: string | null } | null;
   item?: {
     uri?: string;
     name?: string;
@@ -334,6 +358,83 @@ export class SpotifyProvider implements MediaProvider {
     }
 
     throw new Error(this.silentPlaybackMessage(state, device, diagnostic(state), trackUri));
+  }
+
+  /**
+   * Playlist ou album (24 novembre 2026). « ma playlist » regarde d'abord les playlists de
+   * l'utilisateur (`/me/playlists`) ; sinon, la recherche de Spotify. `null` : rien trouvé.
+   */
+  async searchCollection(
+    kind: 'playlist' | 'album',
+    query: string,
+    options: { mine?: boolean } = {},
+  ): Promise<MediaCollection | null> {
+    const toCollection = (item: NonNullable<SpotifyCollectionItem>, mine: boolean): MediaCollection => ({
+      kind,
+      uri: item.uri,
+      name: item.name,
+      by:
+        kind === 'album'
+          ? (item.artists ?? []).map((artist) => artist.name)
+          : item.owner?.display_name
+            ? [item.owner.display_name]
+            : [],
+      ...(mine ? { mine: true } : {}),
+    });
+    const wanted = foldName(query);
+    if (kind === 'playlist' && options.mine) {
+      try {
+        const mine = await this.request<{ items?: SpotifyCollectionItem[] }>('/me/playlists?limit=50', { method: 'GET' });
+        const items = (mine.items ?? []).filter((item): item is NonNullable<SpotifyCollectionItem> => Boolean(item?.uri));
+        const exact = items.find((item) => foldName(item.name) === wanted);
+        const close = exact ?? items.find((item) => foldName(item.name).includes(wanted) || wanted.includes(foldName(item.name)));
+        if (close) return toCollection(close, true);
+      } catch (error) {
+        if (!(error instanceof SpotifyApiError && [400, 401, 403].includes(error.status))) throw error;
+      }
+    }
+    for (const extra of [{ market: 'from_token' }, {}] as Array<Record<string, string>>) {
+      const params = new URLSearchParams({ q: query, type: kind, limit: '10', ...extra });
+      try {
+        const response = await this.request<SpotifyCollectionSearch>(`/search?${params}`, { method: 'GET' });
+        const list = (kind === 'playlist' ? response.playlists?.items : response.albums?.items) ?? [];
+        const items = list.filter((item): item is NonNullable<SpotifyCollectionItem> => Boolean(item?.uri));
+        const exact = items.find((item) => foldName(item.name) === wanted);
+        const pick = exact ?? items[0];
+        if (pick) return toCollection(pick, false);
+      } catch (error) {
+        if (error instanceof SpotifyApiError && (error.status === 400 || error.status === 403)) continue;
+        throw error;
+      }
+    }
+    return null;
+  }
+
+  /** Lance une playlist ou un album, puis vérifie que ce contexte joue vraiment sur l'appareil. */
+  async playCollection(contextUri: string, options: { deviceHint?: SpotifyPlayDeviceHint | null } = {}): Promise<void> {
+    const { device, devices } = await this.ensurePlaybackDevice(options.deviceHint ?? null);
+    const diagnostic = (state: SpotifyPlayback | null): string => formatPlaybackDiagnostic(devices, state, device);
+    await this.transferToDevice(device, false);
+    await this.sleep(this.pollIntervalMs);
+    let state: SpotifyPlayback | null = null;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        await this.putPlay(device.id!, { context_uri: contextUri, position_ms: 0 });
+      } catch (error) {
+        this.rethrowPlayError(error, diagnostic(state));
+      }
+      const deadline = Date.now() + this.playbackVerifyMs;
+      while (true) {
+        state = await this.fetchPlaybackSnapshot();
+        if (this.isAudibleOnDevice(state, device.id!) && state?.context?.uri === contextUri) {
+          await this.ensureAudibleVolume(state, device.id!);
+          return;
+        }
+        if (Date.now() >= deadline) break;
+        await this.sleep(this.pollIntervalMs);
+      }
+    }
+    throw new Error(this.silentPlaybackMessage(state, device, diagnostic(state)));
   }
 
   private rethrowPlayError(error: unknown, diagnostic: string): never {

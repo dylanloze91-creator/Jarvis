@@ -91,6 +91,8 @@ import {
   type ToolCall,
   type ToolManager,
   parseImageCommand,
+  imageStatusReply,
+  isImageStatusQuestion,
   detectDirectImageRequest,
   guessProject,
   directFollowUp,
@@ -525,8 +527,19 @@ export class ChatSession {
     // « Arrête tout » passe avant le briefing, les notes, le chef d'orchestre et tout modèle.
     // Sa phrase suit ensuite le chemin des réponses fixes (celui du briefing).
     const stopAllText = this.deps.stopAll ? await this.deps.stopAll({ text: input.text }).catch(() => null) : null;
+    // 24 novembre 2026 : « elle en est où, l'image ? » se répond d'après l'état réel du service des
+    // images, sans modèle (il répondait « en cours » sans rien savoir). Sans état, Jarvis le dit.
+    const imageStatusText =
+      !stopAllText && isImageStatusQuestion(input.text)
+        ? imageStatusReply(
+            this.deps.images?.isEnabled() ? this.deps.images.jobReport() : null,
+            Date.now(),
+            Boolean(this.deps.images?.isEnabled()),
+          )
+        : null;
     const briefingText =
       stopAllText ??
+      imageStatusText ??
       (settings.briefing?.enabled === true && this.deps.briefing
         ? await this.deps.briefing({ text: input.text, voice: input.place?.kind === 'enceinte' }).catch(() => null)
         : null);

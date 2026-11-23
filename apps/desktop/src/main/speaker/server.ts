@@ -184,6 +184,8 @@ interface ChatOutcome {
   conversationId: string | null;
   missionProposal: boolean;
   tools: string[];
+  /** Texte rendu par chaque outil de `tools`, dans le même ordre (volume réellement appliqué…). */
+  toolContents: string[];
   path: SpeakerChronoPath;
   firstAt: number | null;
   /** Texte du dernier message assistant quand le chat n'a rien diffusé en deltas. */
@@ -638,8 +640,8 @@ export class SpeakerServer {
               mark.firstTextMs = Math.max(0, outcome.firstAt - started);
             }
             if (reflexPhrase || outcome.refused) return;
-            for (const toolName of outcome.tools) {
-              const phrase = speakerReflexPhrase(toolName, decision.text);
+            for (const [index, toolName] of outcome.tools.entries()) {
+              const phrase = speakerReflexPhrase(toolName, decision.text, outcome.toolContents[index]);
               if (!phrase) continue;
               reflexPhrase = phrase;
               mark.path = 'reflexe';
@@ -941,6 +943,7 @@ export class SpeakerServer {
       conversationId,
       missionProposal: false,
       tools: [],
+      toolContents: [],
       path: 'cerveau',
       firstAt: null,
       fromMessages: '',
@@ -971,7 +974,10 @@ export class SpeakerServer {
           case 'tool_result':
             // 5.0.77 : « Sur la Devialet ou sur le PC ? » est un résultat « ok » de spotify_play qui
             // n'a rien lancé : pas de phrase réflexe « C'est parti » à sa place, la question est dite.
-            if (event.status === 'ok' && !isSpotifyDeviceQuestion(event.content)) outcome.tools.push(event.toolName);
+            if (event.status === 'ok' && !isSpotifyDeviceQuestion(event.content)) {
+              outcome.tools.push(event.toolName);
+              outcome.toolContents.push(event.content);
+            }
             hooks?.onUpdate?.(outcome, false);
             break;
           case 'mission_proposal':

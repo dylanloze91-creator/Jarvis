@@ -1,6 +1,6 @@
 import { copyFile, mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { existsSync, readdirSync } from 'node:fs';
-import { extname, join, resolve } from 'node:path';
+import { basename, extname, join, resolve } from 'node:path';
 import {
   BRAIN_KEEP_ALIVE,
   type OllamaLoadOptions,
@@ -49,6 +49,7 @@ import {
   type DirectImageRequest,
   type DirectProjectDefaults,
   type ImageFormat,
+  type ImageJobReport,
   type Txt2ImgPayload,
   type Txt2ImgResponse,
   type ImagePreset,
@@ -239,6 +240,8 @@ export interface ImagesServiceDeps {
 export class ImagesService {
   private processes = new Map<string, ForgeProcess>();
   private busy: Promise<unknown> | null = null;
+  /** Image en cours ou dernière image (24 novembre 2026) : « elle en est où, l'image ? » lit ceci, rien d'autre. */
+  private job: ImageJobReport = { state: 'none' };
   /** Panneau « Imager direct » ouvert dans la fenêtre. */
   private directPanelOpen = false;
   /** Forge gardé chargé après une image directe (panneau ouvert + option), à libérer à la fermeture. */
@@ -328,6 +331,42 @@ export class ImagesService {
   /** Une image est en cours : la carte graphique lui est réservée. */
   isBusy(): boolean {
     return this.busy !== null;
+  }
+
+  /** État réel de l'image en cours ou de la dernière (copie). */
+  jobReport(): ImageJobReport {
+    return { ...this.job, ...(this.job.files ? { files: [...this.job.files] } : {}) };
+  }
+
+  /** Suit l'étape et l'avancement de Forge sans rien changer à ce que reçoit l'appelant. */
+  private track<T extends { onProgress?: (message: string) => void; onProgressValue?: (value: number, etaSeconds: number) => void }>(context: T): T {
+    this.job = { state: 'running', startedAt: Date.now() };
+    return {
+      ...context,
+      onProgress: (message: string) => {
+        if (this.job.state === 'running') this.job.stage = message;
+        context.onProgress?.(message);
+      },
+      onProgressValue: (value: number, etaSeconds: number) => {
+        if (this.job.state === 'running') {
+          this.job.progress = value;
+          this.job.etaSeconds = etaSeconds;
+        }
+        context.onProgressValue?.(value, etaSeconds);
+      },
+    };
+  }
+
+  private finishJob(files: Array<{ png: string }> | null, error?: unknown): void {
+    const startedAt = this.job.startedAt;
+    this.job = files
+      ? { state: 'done', ...(startedAt !== undefined ? { startedAt } : {}), finishedAt: Date.now(), files: files.map((file) => basename(file.png)) }
+      : {
+          state: 'failed',
+          ...(startedAt !== undefined ? { startedAt } : {}),
+          finishedAt: Date.now(),
+          error: error instanceof Error ? error.message : String(error),
+        };
   }
 
   presetsPath(): string {
@@ -426,10 +465,15 @@ export class ImagesService {
    */
   async generate(request: ImageRequest, context: { onProgress?: (message: string) => void; signal?: AbortSignal } = {}): Promise<ImagesResult> {
     if (this.busy) throw new ForgeError('http', 'Une image est déjà en cours de génération : attends qu’elle finisse.');
-    const work = this.generateNow(request, context);
+    const work = this.generateNow(request, this.track(context));
     this.busy = work.catch(() => undefined);
     try {
-      return await work;
+      const result = await work;
+      this.finishJob(result.files);
+      return result;
+    } catch (error) {
+      this.finishJob(null, error);
+      throw error;
     } finally {
       this.busy = null;
     }
@@ -810,10 +854,15 @@ export class ImagesService {
    */
   async generateDirect(request: DirectGenerateInput, context: DirectContext = {}): Promise<DirectResult> {
     if (this.busy) throw new ForgeError('http', 'Une image est déjà en cours de génération : attends qu’elle finisse.');
-    const work = this.generateDirectNow(request, context);
+    const work = this.generateDirectNow(request, this.track(context));
     this.busy = work.catch(() => undefined);
     try {
-      return await work;
+      const result = await work;
+      this.finishJob(result.files);
+      return result;
+    } catch (error) {
+      this.finishJob(null, error);
+      throw error;
     } finally {
       this.busy = null;
     }

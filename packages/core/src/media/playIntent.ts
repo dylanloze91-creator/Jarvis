@@ -10,6 +10,8 @@
 
 import { looksLikeImageIntent } from '../images/intent.js';
 import { isCurrentTrackQuestion } from './currentTrackIntent.js';
+import { extractSpotifyCollectionRequest } from './collectionIntent.js';
+import { parseSpotifyVolumeCommand } from './volumeIntent.js';
 import {
   extractSpotifyPlayDeviceHintFromQuery,
   extractSpotifyTransferTarget,
@@ -154,6 +156,7 @@ export function isMusicIntent(prompt: string): boolean {
   if (!trimmed) return false;
   if (OPEN_SPOTIFY_ONLY.test(trimmed)) return false;
   if (isCurrentTrackQuestion(trimmed)) return true;
+  if (extractSpotifyCollectionRequest(trimmed)) return true;
   if (isSpotifyPausePhrase(trimmed)) return true;
   if (isSpotifyResumePhrase(trimmed)) return true;
   if (extractSpotifyPlayQuery(trimmed)) return true;
@@ -168,6 +171,7 @@ export function isMusicIntent(prompt: string): boolean {
   }
   if (/\bshuffle\b|mode al[ée]atoire/.test(normalized)) return true;
   if (/\bvolume\b/.test(normalized)) return true;
+  if (parseSpotifyVolumeCommand(prompt)) return true;
   if (/^(?:jarvis[,:]?\s*)?pause\b/iu.test(trimmed) && !NOT_A_TRACK.test(trimmed)) return true;
   // 5.0.77 : « stop la musique », « coupe la musique », « éteins la musique » (dits à l'enceinte)
   // partaient au cerveau au lieu de l'équipe Musique.
@@ -218,6 +222,8 @@ export function extractSpotifyPlayQuery(prompt: string): string | null {
   // Une demande d'image (« génère une image de Hinata de Naruto ») n'est jamais un morceau :
   // dite à l'enceinte, elle commençait par une majuscule et « … de Naruto » passait pour « titre de artiste ».
   if (looksLikeImageIntent(trimmed)) return null;
+  // 24 novembre 2026 : une playlist ou un album a son propre chemin (`extractSpotifyCollectionRequest`).
+  if (extractSpotifyCollectionRequest(trimmed)) return null;
   if (isCurrentTrackQuestion(trimmed)) return null;
   if (isPlaybackControlOnly(trimmed)) return null;
   if (isSpotifyTransferPhrase(trimmed)) return null;
@@ -280,6 +286,7 @@ function isPlaybackControlOnly(prompt: string): boolean {
   if (isSpotifyResumePhrase(prompt)) return true;
   const normalized = prompt.toLowerCase();
   if (/\bvolume\b/.test(normalized)) return true;
+  if (parseSpotifyVolumeCommand(prompt)) return true;
   if (/^(?:jarvis[,:]?\s*)?(?:pause|reprend(?:s|re)?)\b/iu.test(prompt)) return true;
   if (/morceau suivant|morceau pr[ée]c[ée]dent|mode al[ée]atoire|\bshuffle\b/.test(normalized)) {
     return true;
