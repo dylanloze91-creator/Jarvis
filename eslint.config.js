@@ -16,6 +16,8 @@ export default tseslint.config(
       // Environnement Python et sources llama.cpp installés par training/setup-windows.ps1 : code tiers, non commité.
       'training/.venv/**',
       'training/llama.cpp/**',
+      // Copies de travail des autres agents (git worktree) : leur code n'est pas celui de cette branche.
+      '.claude/worktrees/**',
     ],
   },
   js.configs.recommended,

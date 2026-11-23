@@ -643,3 +643,4 @@ export * from './quotidien/briefing.js';
 export * from './quotidien/notes.js';
 export * from './quotidien/routines.js';
 export * from './quotidien/moonraker.js';
+export * from './vitesse/options.js';

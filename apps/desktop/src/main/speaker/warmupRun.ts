@@ -14,8 +14,13 @@ export async function warmOllamaModels(
   settings: SpeakerWarmupSettings,
   baseUrl: string,
   fetchImpl: typeof fetch = fetch,
+  /** Jarvis Test : options de chargement de chaque modèle, comme le chat les envoie. */
+  optionsFor?: (model: string) => OllamaLoadRequest['options'],
 ): Promise<OllamaLoadRequest[]> {
-  const requests = speakerWarmupRequests(settings);
+  const requests = speakerWarmupRequests(settings).map((request) => {
+    const options = optionsFor?.(request.model);
+    return options ? { ...request, options } : request;
+  });
   const root = baseUrl.replace(/\/+$/, '') || 'http://127.0.0.1:11434';
   for (const body of requests) {
     if (!isOllamaLoadOnly(body)) throw new Error('Le préchauffage ne doit rien générer.');
