@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { fabriquer, gabarit } from './gabarits.js';
 import { aplatirPreset, imprimanteChoisie, rendreCompatible, volumeImprimante, type PresetOrca } from './orcaPresets.js';
 
 describe('préréglages d’OrcaSlicer (copies pour la ligne de commande)', () => {
@@ -46,6 +47,17 @@ describe('préréglages d’OrcaSlicer (copies pour la ligne de commande)', () =
   it('compatibilité : ajoute l’imprimante de l’utilisateur sans rien retirer', () => {
     expect(rendreCompatible({ compatible_printers: ['A'] }, 'A - Copie')).toEqual({ compatible_printers: ['A', 'A - Copie'] });
     expect(rendreCompatible({ compatible_printers: [] }, 'X')).toEqual({ compatible_printers: [] });
+  });
+
+  it('la limite de l’atelier suit la surface réglée dans OrcaSlicer', () => {
+    const volume = volumeImprimante(aplatirPreset(copie, 'machine', trouver).json)!;
+    const boite = gabarit('boite')!;
+    const grande = { longueur: 280, largeur: 100, hauteur: 40 };
+    expect(fabriquer(boite, grande).ok).toBe(true);
+    const refus = fabriquer(boite, grande, volume);
+    expect(refus.ok).toBe(false);
+    if (!refus.ok) expect(refus.erreurs.join(' ')).toContain('250 × 250 × 250');
+    expect(fabriquer(boite, { longueur: 240, largeur: 100, hauteur: 40 }, volume).ok).toBe(true);
   });
 
   it('imprimante choisie dans OrcaSlicer.conf', () => {

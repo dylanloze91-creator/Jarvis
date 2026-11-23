@@ -453,7 +453,18 @@ function unite(mesure: MesureNombre, x: number): string {
  * Complète avec les valeurs proposées, vérifie les bornes et l'impression, puis écrit la pièce.
  * Une mesure hors bornes n'est jamais ramenée en silence : c'est une erreur dite.
  */
-export function fabriquer(g: Gabarit, donnees: Valeurs): Piece {
+export interface VolumeImpression {
+  x: number;
+  y: number;
+  z: number;
+}
+
+/**
+ * `volume` : la surface réellement réglée dans le trancheur de l'utilisateur (lue dans son
+ * préréglage d'imprimante OrcaSlicer), pour que l'atelier ne propose jamais une pièce que le
+ * trancheur refuserait. Absent : le volume de la fiche de l'Ender 3 S1 Plus.
+ */
+export function fabriquer(g: Gabarit, donnees: Valeurs, volume: VolumeImpression = ENDER3_S1_PLUS_VOLUME): Piece {
   const valeurs: Valeurs = {};
   const erreurs: string[] = [];
   for (const mesure of g.mesures) {
@@ -473,7 +484,7 @@ export function fabriquer(g: Gabarit, donnees: Valeurs): Piece {
   if (erreurs.length) return { ok: false, gabarit: g, erreurs };
   erreurs.push(...g.verifier(valeurs));
   const taille = g.taille(valeurs);
-  const V = ENDER3_S1_PLUS_VOLUME;
+  const V = volume;
   if (taille[0] > V.x || taille[1] > V.y || taille[2] > V.z) {
     erreurs.push(`La pièce ne tient pas dans l’imprimante (${taille.map((x) => Math.ceil(x)).join(' × ')} mm pour ${V.x} × ${V.y} × ${V.z} mm).`);
   }
