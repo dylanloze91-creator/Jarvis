@@ -80,6 +80,22 @@ describe('gabarits', () => {
     expect(support.ok).toBe(false);
   });
 
+  it('support de téléphone : les cotes annoncées sont celles mesurées sur le STL d’OpenSCAD', () => {
+    // Mesures relevées sur les STL rendus par OpenSCAD 2021.01 (atelier:rendre, 23 novembre).
+    // Avant : hauteur annoncée 4 mm trop haute (77,94 mesuré, 81,94 annoncé).
+    const cas: [Valeurs, [number, number, number]][] = [
+      [{}, [90, 80, 77.94]],
+      [{ angle: 45, base: 120 }, [120, 80, 63.64]],
+      [{ angle: 75 }, [90, 80, 86.93]],
+      [{ angle: 40, dos: 160, rainure: 25, base: 110 }, [154.14, 80, 102.85]],
+    ];
+    for (const [valeurs, attendu] of cas) {
+      const piece = fabriquer(g('support_telephone'), valeurs);
+      if (!piece.ok) throw new Error(piece.erreurs.join(' '));
+      piece.taille.forEach((x, i) => expect(x).toBeCloseTo(attendu[i]!, 1));
+    }
+  });
+
   it('nombre de cases entier', () => {
     const piece = fabriquer(g('bac'), { colonnes: 2.5 });
     expect(piece.ok).toBe(false);

@@ -78,6 +78,7 @@ const VARIANTES = [
   ['cale', 'pointe', { bas: 0 }],
   ['support_telephone', '45deg', { angle: 45, base: 120 }],
   ['support_telephone', '75deg', { angle: 75 }],
+  ['support_telephone', 'dos-long', { angle: 40, dos: 160, rainure: 25, base: 110 }],
   ['boite', 'grande', { longueur: 200, largeur: 150, hauteur: 80 }],
   ['boite_couvercle', 'petite', { longueur: 40, largeur: 30, hauteur: 20 }],
   ['porte_etiquette', 'large', { largeur: 120, hauteur: 40 }],

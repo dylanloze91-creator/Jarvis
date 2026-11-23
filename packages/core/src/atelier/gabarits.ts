@@ -321,11 +321,16 @@ const supportTelephone: Gabarit = {
     m('base', 'profondeur de la base', 40, 160, 90, ['base', 'profondeur', 'profond']),
   ],
   suite: ['largeur', 'dos', 'base'],
+  // Même géométrie que `scad` : le dossier (t × dos) tourne de (90° − angle) autour de son coin
+  // bas, en x = t + rainure. Son coin haut arrière monte à dos·sin(angle) ; en longueur, il
+  // avance de dos·cos(angle) + t·sin(angle). La lèvre avant monte à t + lip.
   taille: (v) => {
     const t = 4;
+    const lip = 12;
     const a = num(v, 'angle') * RAD;
-    const top = t + num(v, 'rainure') + num(v, 'dos') * Math.cos(a) + t;
-    return [Math.max(num(v, 'base'), top), num(v, 'largeur'), num(v, 'dos') * Math.sin(a) + t];
+    const dos = num(v, 'dos');
+    const bout = t + num(v, 'rainure') + dos * Math.cos(a) + t * Math.sin(a);
+    return [Math.max(num(v, 'base'), bout), num(v, 'largeur'), Math.max(dos * Math.sin(a), t + lip)];
   },
   verifier: (v) => {
     const a = num(v, 'angle') * RAD;
