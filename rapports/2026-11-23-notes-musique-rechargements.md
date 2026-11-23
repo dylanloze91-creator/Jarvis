@@ -142,6 +142,42 @@ Le 20 novembre à 10:27, un `/api/generate` de 5,9 s (le préchauffage) précèd
 
 **Vu en passant** : le lint officiel compte 71 erreurs dans `.claude/worktrees/atelier`, une copie de travail **verrouillée** de `claude/atelier-3d` créée à 12:21 par une autre session. Je n'y ai pas touché. Sans ce dossier, le lint est vert.
 
+## 8. P1 fait ; P2 et P3 passés au banc (23 novembre, après-midi)
+
+**P1 fait** : le test du vrai modèle de `lab.test.ts` ne tourne plus que sur demande (`JARVIS_LAB_REAL=1`). Vérifié : passage de `lab.test.ts` sans aucun chargement dans le journal d'Ollama. Le contrôle de style ignore aussi `.claude/worktrees/` (dans `eslint.config.js` et `.gitignore`, sur cette branche et sur celle de la Live).
+
+**Banc de vitesse** (`npm run banc:vitesse`) : 29 demandes types, vraie session, réglages de Jarvis Test (lus seulement), vrai Ollama, départ à froid. Quatre passages en alternance :
+- « actuel » : Mémoire `qwen3.5:4b` et Code `jarvis-coder` sur la carte ;
+- « 7B » : `JARVIS_BANC_EQUIPES=memoire=qwen2.5:7b@carte,code=qwen2.5:7b@carte`.
+
+Résultats : `C:\dev\jarvis-dataitesseanc\p2p3-*.json`.
+
+| | actuel 1 | actuel 2 | 7B 1 | 7B 2 |
+| --- | ---: | ---: | ---: | ---: |
+| Temps de chargement en tout | 36,9 s | 36,9 s | 0,3 s | 0,3 s |
+| Tours qui attendent un chargement | 7 | 7 | 0 | 0 |
+| Durée totale des 29 demandes | 242 s | 269 s | 231 s | 255 s |
+
+La durée totale varie surtout avec les recherches sur Internet (d'un passage à l'autre, ± 25 s) ; les chargements, eux, disparaissent.
+
+Les tours concernés (durée du tour, dont chargement) :
+
+| Demande | Équipe | actuel | 7B |
+| --- | --- | --- | --- |
+| g1 mémoire, projets | Mémoire | 8,3 s (5,1) / 7,8 s (4,8) | 4,3 s / 4,0 s |
+| c3 fenêtre active (après g1) | PC | 20,4 s (5,5) / 20,0 s (5,7) | 13,0 s / 14,5 s |
+| i1 code, inverser une chaîne | Code | 8,3 s (5,5) / 8,3 s (5,5) | 3,2 s / 3,2 s |
+| j1 résumé (après i1) | Conversation | 10,6 s (5,2) / 10,2 s (5,3) | 3,6 s / 2,8 s |
+| i2 code, majuscules | Code | 7,3 s (5,5) / 8,0 s (5,5) | 2,4 s / 2,4 s |
+| g2 mémoire, voiture | Mémoire | 6,9 s (4,7) / 6,9 s (4,7) | 4,1 s / 3,8 s |
+| m1 recherche (après g2) | Internet | 11,9 s (5,2) / 13,8 s (5,3) | 6,9 s / 7,1 s |
+
+**Qualité** :
+- Mémoire : `search_jarvis_memory` est appelé à chaque demande dans les quatre passages. Avec `qwen3.5:4b`, le premier appel de g1 échoue (mauvais arguments) puis le second réussit, dans les deux passages ; avec le 7B, il réussit du premier coup. Les réponses disent la même chose. **Limite** : le banc part d'une mémoire vide, il mesure l'appel de l'outil, pas la qualité d'un vrai souvenir retrouvé.
+- Code : réponses justes des deux côtés (`chaine[::-1]`, `.upper()`). Le 7B ajoute une phrase d'explication. **Limite** : deux questions courtes ; une explication longue ou un vrai programme n'est pas mesuré ici.
+
+**Conclusion** : P2 et P3 retirent environ 5 s sur chaque tour Mémoire ou Code, et autant sur le tour qui suit, sans perte vue au banc. Le changement se fait dans les réglages de Jarvis Test (Réglages, Le cerveau de Jarvis, Chef d'orchestre : Mémoire et Code sur `qwen2.5:7b`, carte). Je ne l'ai pas fait : ce sont tes réglages.
+
 ## 6. Vérification
 
 RAPPORT DE VÉRIFICATION

@@ -99,6 +99,6 @@ Une seule carte (RTX 2060 6 Go) : un seul agent à la fois lance le banc (`npm r
 
 | État | Par qui | Pour quoi | Depuis |
 | --- | --- | --- | --- |
-| occupée | Claude Code (`claude/idees-openjarvis`) | banc de vitesse : équipes Mémoire et Code sur le 7B (P2, P3) | 2026-11-23 14:30 |
+| libre | — | — | — |
 
 Pour réserver : passer l'état à `occupée`, remplir les colonnes, commiter et pousser **avant** de lancer. Pour libérer : remettre `libre` et `—`, commiter et pousser.
