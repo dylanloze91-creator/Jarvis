@@ -28,7 +28,17 @@ export function speakerReflexPhrase(toolName: string, userText: string, toolResu
       return 'Morceau précédent.';
     case 'spotify_set_shuffle':
       return SHUFFLE_OFF.test(userText) ? 'Lecture dans l’ordre.' : 'Lecture aléatoire.';
-    case 'spotify_set_volume': {
+    case 'spotify_set_volume':
+    case 'spotify_volume_step': {
+      // 24 novembre 2026 : le volume dit est celui que Spotify a vraiment appliqué (plafond de
+      // l'enceinte compris), pas le chiffre demandé.
+      const applied = toolResult ? /(\d{1,3}) %/.exec(toolResult) : null;
+      if (applied) {
+        const value = Math.min(100, Number(applied[1]));
+        return /plafond/.test(toolResult ?? '') ? `Volume à ${value}, c’est le maximum pour l’enceinte.` : `Volume à ${value}.`;
+      }
+      if (toolResult && /d[ée]j[àa] [àa] z[ée]ro/.test(toolResult)) return 'Le volume est déjà à zéro.';
+      if (toolName === 'spotify_volume_step') return 'Volume réglé.';
       const match = /(\d{1,3})/.exec(userText);
       if (!match) return 'Volume réglé.';
       const value = Math.min(100, Number(match[1]));

@@ -227,6 +227,12 @@ export {
   searchQueryVariants,
 } from './media/playIntent.js';
 export {
+  parseSpotifyVolumeCommand,
+  steppedVolume,
+  VOLUME_STEP,
+  type SpotifyVolumeCommand,
+} from './media/volumeIntent.js';
+export {
   extractSpotifyPlayDeviceHint,
   extractSpotifyPlayDeviceHintFromQuery,
   extractSpotifyTransferTarget,
@@ -647,3 +653,5 @@ export * from './quotidien/notes.js';
 export * from './quotidien/routines.js';
 export * from './quotidien/moonraker.js';
 export * from './vitesse/options.js';
+export { imageStatusReply, isImageStatusQuestion, type ImageJobReport } from './images/jobStatus.js';
+export { extractSpotifyCollectionRequest, type SpotifyCollectionKind, type SpotifyCollectionRequest } from './media/collectionIntent.js';

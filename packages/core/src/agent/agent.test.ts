@@ -1091,3 +1091,42 @@ describe('« en ce moment » sur mon PC n’est pas une recherche Internet (20 n
     expect(expressTeam({ text: 'Pourquoi mon PC est lent en ce moment ?', history: [], available: toutes, now: new Date('2026-11-20T10:00:00') })).toBeNull();
   });
 });
+
+describe('Spotify : volume, playlists et albums sans modèle (24 novembre 2026)', () => {
+  // Phrases écrites pour l'essai, jamais celles de l'utilisateur.
+  function outil(name: string, seen: Array<{ name: string; args: Record<string, unknown> }>) {
+    return defineTool({
+      name,
+      description: name,
+      risk: 'safe',
+      internal: name !== 'spotify_set_volume',
+      schema: z.record(z.string(), z.unknown()),
+      execute: async (args) => {
+        seen.push({ name, args });
+        return { ok: true, content: `${name} fait.` };
+      },
+    });
+  }
+
+  it('chaque phrase appelle son outil, le modèle jamais', async () => {
+    const cases: Array<[string, string, Record<string, unknown>]> = [
+      ['Mets le volume à 40', 'spotify_set_volume', { percent: 40 }],
+      ['Monte le son de l’enceinte', 'spotify_volume_step', { direction: 'up' }],
+      ['Jarvis, moins fort', 'spotify_volume_step', { direction: 'down' }],
+      ['Mets la playlist Chill du dimanche', 'spotify_play_collection', { kind: 'playlist', query: 'Chill du dimanche', mine: false }],
+      ['Lance ma playlist Sport', 'spotify_play_collection', { kind: 'playlist', query: 'Sport', mine: true }],
+      ['Joue l’album Discovery de Daft Punk', 'spotify_play_collection', { kind: 'album', query: 'Discovery de Daft Punk' }],
+    ];
+    for (const [phrase, name, args] of cases) {
+      const seen: Array<{ name: string; args: Record<string, unknown> }> = [];
+      const tools = new ToolManager().registerAll(
+        ['spotify_set_volume', 'spotify_volume_step', 'spotify_play_collection', 'spotify_play'].map((tool) => outil(tool, seen)),
+      );
+      const provider = new ScriptedProvider([]);
+      await collect(new Agent(provider, tools, { systemPrompt: 'test' }), phrase);
+      expect(seen.map((entry) => entry.name), phrase).toEqual([name]);
+      expect(seen[0]?.args, phrase).toMatchObject(args);
+      expect(provider.requests, phrase).toHaveLength(0);
+    }
+  });
+});

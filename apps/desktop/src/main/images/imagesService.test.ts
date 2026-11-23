@@ -261,6 +261,36 @@ describe('ImagesService — mode direct (sans le modèle de langage)', () => {
     expect(world.calls.at(-1)).toBe('ollama:qwen2.5:7b:30m');
     expect(world.calls).toContain('forge:kill');
   });
+
+  it('« où en est l’image ? » : l’état suivi est le vrai (rien, en cours avec l’étape, fini, raté) — 24 novembre 2026', async () => {
+    const world: World = { forgeUp: false, loaded: ['qwen2.5:7b'], calls: [], txt2imgPayloads: [] };
+    const { svc } = service(world, {}, join(root, 'Forge-direct-suivi'));
+    expect(svc.jobReport()).toEqual({ state: 'none' });
+    const seen: string[] = [];
+    const run = svc.generateDirect(
+      { prompt: 'a cat', negative: '', project: 'perso', improve: false },
+      {
+        onProgress: (message) => {
+          seen.push(message);
+          const report = svc.jobReport();
+          expect(report.state).toBe('running');
+          expect(report.stage).toBe(message);
+        },
+      },
+    );
+    expect(svc.jobReport().state).toBe('running');
+    await run;
+    expect(seen.length).toBeGreaterThan(0);
+    const done = svc.jobReport();
+    expect(done.state).toBe('done');
+    expect(done.files?.[0]).toMatch(/\.png$/);
+    expect(done.files?.[0]).not.toMatch(/[\/]/);
+
+    const failing: World = { forgeUp: false, loaded: ['qwen2.5:7b'], calls: [], txt2imgPayloads: [], failTxt2img: true };
+    const broken = service(failing, {}, join(root, 'Forge-direct-suivi-2')).svc;
+    await expect(broken.generateDirect({ prompt: 'a cat', negative: '', project: 'perso', improve: false })).rejects.toThrow();
+    expect(broken.jobReport()).toMatchObject({ state: 'failed', error: expect.stringMatching(/500/) });
+  });
 });
 
 describe('ImagesService', () => {

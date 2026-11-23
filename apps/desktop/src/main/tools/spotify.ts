@@ -8,6 +8,7 @@ import {
   clearSpotifyDeviceAsk,
   rememberSpotifyDeviceAsk,
   spotifyDeviceQuestion,
+  steppedVolume,
   stripSpotifyPlayDeviceSuffix,
   takeSpotifyPlayDeviceHint,
   type Settings,
@@ -409,6 +410,114 @@ export function createSpotifyTools(deps: SpotifyToolsDeps) {
         }
         return { ok: true, content: `Volume Spotify réglé à ${percent} %.` };
       } catch (error) {
+        if (isNoActiveDevice(error)) return { ok: false, outcome: 'recoverable', content: NO_ACTIVE_DEVICE_MESSAGE };
+        return { ok: false, content: `Spotify : ${describeError(error)}` };
+      }
+    },
+  });
+
+  /**
+   * Playlist ou album (24 novembre 2026) : outil interne, appelé par l'agent quand la phrase est
+   * clairement « mets la playlist … » ou « mets l'album … » (`extractSpotifyCollectionRequest`).
+   * La lecture est vérifiée (ce contexte joue sur l'appareil), jamais annoncée sans preuve.
+   */
+  const spotifyPlayCollectionTool = defineTool({
+    name: 'spotify_play_collection',
+    description: 'Lance une playlist ou un album Spotify (interne, jamais proposé au modèle).',
+    risk: 'safe',
+    internal: true,
+    schema: z.object({
+      kind: z.enum(['playlist', 'album']),
+      query: z.string().min(1).max(200),
+      mine: z.boolean().optional(),
+      /** Le nom tel que dit, avec l'appareil éventuel (« Été 2024 sur la Devialet »). */
+      said: z.string().max(240).optional(),
+    }),
+    summarize: ({ kind, query }) => `Lancer ${kind === 'album' ? 'l’album' : 'la playlist'} « ${query} » sur Spotify.`,
+    execute: async ({ kind, query, mine, said }) => {
+      const provider = getSpotify();
+      const label = kind === 'album' ? 'album' : 'playlist';
+      if (typeof provider.searchCollection !== 'function' || typeof provider.playCollection !== 'function') {
+        return { ok: false, content: `Je ne sais pas encore lancer une ${label} avec ce lecteur.` };
+      }
+      try {
+        let devices: ConnectDevice[] = [];
+        const spoken = said ?? query;
+        if (extractSpotifyPlayDeviceHintFromQuery(spoken)?.kind === 'named') {
+          try {
+            devices = await listVisibleDevices(provider);
+          } catch {
+            devices = [];
+          }
+        }
+        const { deviceHint } = resolvePlayDeviceHint(spoken, devices);
+        const found = await provider.searchCollection(kind, query, { mine: mine === true });
+        if (!found) {
+          return {
+            ok: false,
+            content:
+              kind === 'album'
+                ? `Aucun album trouvé sur Spotify pour « ${query} ».`
+                : mine
+                  ? `Je n'ai pas trouvé la playlist « ${query} », ni dans tes playlists ni sur Spotify.`
+                  : `Aucune playlist trouvée sur Spotify pour « ${query} ».`,
+          };
+        }
+        await provider.playCollection(found.uri, { deviceHint });
+        const playback = await provider.getPlaybackState();
+        const where = playback?.deviceName ? ` sur « ${playback.deviceName} »` : '';
+        const by = found.by.length ? ` — ${found.by.join(', ')}` : '';
+        const name = kind === 'album' ? `l'album ${found.name}${by}` : `la playlist ${found.name}${found.mine ? ' (une des tiennes)' : by ? ` (de ${found.by.join(', ')})` : ''}`;
+        const now = playback?.track ? ` En ce moment : ${playback.track.title} — ${playback.track.artists.join(', ')}.` : '';
+        return { ok: true, content: `Lecture${where} : ${name}.${now}`, data: found };
+      } catch (error) {
+        return { ok: false, content: describeSpotifyFailure(error) };
+      }
+    },
+  });
+
+  /**
+   * « Plus fort » / « moins fort » dits à la voix (24 novembre 2026) : outil interne, absent du
+   * catalogue du modèle, appelé seulement par l'agent quand la phrase est clairement un geste de
+   * volume (`parseSpotifyVolumeCommand`). Le plafond de l'enceinte reste celui du fournisseur.
+   */
+  const spotifyVolumeStepTool = defineTool({
+    name: 'spotify_volume_step',
+    description: 'Monte ou baisse le volume Spotify d’un cran (interne, jamais proposé au modèle).',
+    risk: 'safe',
+    internal: true,
+    schema: z.object({
+      direction: z.enum(['up', 'down']),
+    }),
+    summarize: ({ direction }) => (direction === 'up' ? 'Monter le volume Spotify.' : 'Baisser le volume Spotify.'),
+    execute: async ({ direction }) => {
+      try {
+        const before = await getSpotify().getPlaybackState();
+        if (!before || before.volumePercent === undefined || before.volumePercent === null) {
+          return { ok: false, outcome: 'recoverable', content: NO_ACTIVE_DEVICE_MESSAGE };
+        }
+        const wanted = steppedVolume(before.volumePercent, direction);
+        if (wanted === before.volumePercent) {
+          return {
+            ok: true,
+            content: direction === 'up' ? `Le volume est déjà au maximum (${wanted} %).` : 'Le volume est déjà à zéro.',
+          };
+        }
+        await getSpotify().setVolume(wanted);
+        const after = await getSpotify().getPlaybackState();
+        const applied = after?.volumePercent ?? wanted;
+        if (direction === 'up' && applied <= before.volumePercent) {
+          return {
+            ok: true,
+            content: `Volume Spotify réglé à ${applied} % : c'est le plafond de sécurité de l'enceinte.`,
+          };
+        }
+        if (applied < wanted) {
+          return { ok: true, content: `Volume Spotify réglé à ${applied} % (plafond de sécurité pour l'enceinte).` };
+        }
+        return { ok: true, content: `Volume Spotify réglé à ${applied} %.` };
+      } catch (error) {
+        if (isNoActiveDevice(error)) return { ok: false, outcome: 'recoverable', content: NO_ACTIVE_DEVICE_MESSAGE };
         return { ok: false, content: `Spotify : ${describeError(error)}` };
       }
     },
@@ -524,5 +633,8 @@ export function createSpotifyTools(deps: SpotifyToolsDeps) {
   if (spotifyTransferAvailable(deps.getSettings)) {
     tools.splice(tools.length - 1, 0, spotifyTransferTool);
   }
+  // Outils internes (24 novembre 2026), seulement quand Spotify est réglé : sans identifiant
+  // client ils ne serviraient à rien, et la liste d'outils d'une installation neuve ne change pas.
+  if ((deps.getSettings().spotifyClientId ?? '').trim()) tools.push(spotifyVolumeStepTool, spotifyPlayCollectionTool);
   return tools;
 }

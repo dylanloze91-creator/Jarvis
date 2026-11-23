@@ -20,6 +20,8 @@ import {
   isSpotifyPreviousPhrase,
   isSpotifyResumePhrase,
 } from '../media/playIntent.js';
+import { parseSpotifyVolumeCommand } from '../media/volumeIntent.js';
+import { extractSpotifyCollectionRequest } from '../media/collectionIntent.js';
 import {
   clearSpotifyDeviceAsk,
   clearSpotifyDeviceAskSuppression,
@@ -737,6 +739,8 @@ export class Agent {
       isSpotifyNextPhrase(prompt) ||
       isSpotifyPreviousPhrase(prompt) ||
       extractSpotifyPlayQuery(prompt) ||
+      extractSpotifyCollectionRequest(prompt) ||
+      parseSpotifyVolumeCommand(prompt) ||
       extractSpotifyTransferTarget(prompt) ||
       isCurrentTrackQuestion(prompt)
     ) {
@@ -796,12 +800,27 @@ export class Agent {
     // 20 novembre 2026 : suivant et précédent aussi, sans attendre le petit modèle.
     if (isSpotifyNextPhrase(prompt)) return this.forcedCall('spotify_next', {});
     if (isSpotifyPreviousPhrase(prompt)) return this.forcedCall('spotify_previous', {});
+    // 24 novembre 2026 : le volume dit à la voix part sans modèle (le modèle refusait de le régler).
+    const volume = parseSpotifyVolumeCommand(prompt);
+    if (volume?.kind === 'set') return this.forcedCall('spotify_set_volume', { percent: volume.percent });
+    if (volume?.kind === 'step') return this.forcedCall('spotify_volume_step', { direction: volume.direction });
 
     const transfer = extractSpotifyTransferTarget(prompt);
     if (transfer)
       return this.forcedCall('spotify_transfer', {
         target: transfer.kind === 'named' ? transfer.name : transfer.kind,
       });
+
+    // 24 novembre 2026 : playlists et albums, sans modèle, avant les morceaux.
+    const collection = extractSpotifyCollectionRequest(prompt);
+    if (collection) {
+      return this.forcedCall('spotify_play_collection', {
+        kind: collection.kind,
+        query: collection.query,
+        mine: collection.mine,
+        said: collection.withDevice,
+      });
+    }
 
     const query = extractSpotifyPlayQuery(prompt);
     if (!query) return null;
