@@ -252,10 +252,11 @@ export function createSpotifyTools(deps: SpotifyToolsDeps) {
         const playback = await getSpotify().getPlaybackState();
         const where = playback?.deviceName;
         const artists = track.artists.join(', ');
-        const verified = ' Lecture vérifiée : is_playing=true et URI confirmée.';
+        // 23 novembre 2026 : la phrase « Lecture vérifiée : is_playing=true et URI confirmée. »
+        // était lue telle quelle par l'enceinte. La réponse ne garde que ce qui se dit.
         const content = where
-          ? `Lecture sur « ${where} » : ${track.title} — ${artists}.${verified}`
-          : `Lecture lancée sur Spotify : ${track.title} — ${artists}.${verified}`;
+          ? `Lecture sur « ${where} » : ${track.title} — ${artists}.`
+          : `Lecture lancée sur Spotify : ${track.title} — ${artists}.`;
 
         return {
           ok: true,
