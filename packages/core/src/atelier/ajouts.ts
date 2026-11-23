@@ -15,9 +15,10 @@
  * Pur : aucune dépendance, aucun accès disque.
  */
 import type { Valeurs } from './gabarits.js';
+import { composant, composantNomme, geometrieCarte, poserCarte, prochaineMesure, PLOT_CARTE, questionMesure, type MesuresComposant, type MesuresComposants, type Paroi } from './composants.js';
 import { AVANT_TROU, choisirVisM3, INSERT_M3, PAROI_INSERT_MIN, VIS_M3_FRAISEE, VIS_M3_PASSAGE, type VisCarte } from './visserie.js';
 
-export type GenreAjout = 'bossages' | 'plots' | 'nervure' | 'rebord' | 'emboitement';
+export type GenreAjout = 'bossages' | 'plots' | 'nervure' | 'rebord' | 'emboitement' | 'composant';
 
 export interface Ajout {
   genre: GenreAjout;
@@ -38,6 +39,11 @@ export interface Ajout {
   sens?: 'longueur' | 'largeur';
   /** Nervure : épaisseur. Rebord : épaisseur du couvercle posé dessus (boîte sans couvercle). */
   epaisseur?: number;
+  /** Composant de la bibliothèque (`composants.ts`) posé dans la boîte, et la paroi de ses prises. */
+  composant?: string;
+  ports?: Paroi;
+  /** Mesures de l'utilisateur pour un composant « à mesurer », recopiées à la pose (la pièce reste juste même si le fichier change). */
+  mesures?: MesuresComposant;
 }
 
 /** Rebord intérieur : largeur d'appui et épaisseur, chanfrein à 45° dessous (sans support). */
@@ -54,7 +60,9 @@ const ENTAILLE_JEU = 0.6;
 const PLOT_DIAMETRE: Record<VisCarte, number> = { M2: 5, 'M2.5': 6 };
 const PLOT_HAUTEUR = 5;
 
-const GENRES: readonly GenreAjout[] = ['bossages', 'plots', 'nervure', 'rebord', 'emboitement'];
+const GENRES: readonly GenreAjout[] = ['bossages', 'plots', 'nervure', 'rebord', 'emboitement', 'composant'];
+
+const PAROI_TEXTE: Record<Paroi, string> = { arriere: 'vers l’arrière', avant: 'vers l’avant', gauche: 'vers la gauche', droite: 'vers la droite' };
 
 // ---------------------------------------------------------------------------------------------
 // Rangement dans les mesures
@@ -120,6 +128,10 @@ export function direAjout(a: Ajout): string {
       return a.epaisseur !== undefined ? `un rebord intérieur pour un couvercle de ${mm(a.epaisseur)} mm` : 'un rebord intérieur qui porte le couvercle';
     case 'emboitement':
       return `un couvercle qui s’emboîte (lèvre de ${mm(LEVRE_EP)} mm, ${mm(LEVRE_JEU)} mm de jeu par côté)`;
+    case 'composant': {
+      const c = a.composant ? composant(a.composant) : undefined;
+      return `${c ? `le ${c.nom}` : 'une carte'} sur ses plots, prises ${PAROI_TEXTE[a.ports ?? 'arriere']}`;
+    }
   }
 }
 
@@ -382,6 +394,26 @@ export function placerAjouts(gabaritId: string, v: Valeurs): AjoutsPlaces {
       case 'emboitement':
         if (!b.couvercle) out.erreurs.push('Cette boîte n’a pas de couvercle : demande-moi « une boîte avec couvercle ».');
         break;
+      case 'composant': {
+        const c = a.composant ? composant(a.composant) : undefined;
+        const g = c ? geometrieCarte(c, a.mesures ? { [c.id]: a.mesures } : {}) : null;
+        if (!c || !g) {
+          out.erreurs.push(`${quoi} : je n’ai pas ses cotes.`);
+          continue;
+        }
+        const pose = poserCarte(`le ${c.nom}`, g, { L, W, H, e, f: fond, zHaut: Math.min(zHaut, zLevre) }, a.ports ?? 'arriere');
+        if (pose.erreurs.length) {
+          out.erreurs.push(...pose.erreurs);
+          continue;
+        }
+        out.plus.push(...pose.plus.map((x) => x.scad));
+        out.moins.push(...pose.moins.map((x) => x.scad));
+        const vis = g.trous[0]?.vis ?? 'M2.5';
+        const longueur = Math.round(g.epaisseur + PLOT_CARTE - 0.6 + 0.1);
+        out.notes.push(`${majuscule(c.nom)} : ${g.trous.length} vis autotaraudeuses ${vis.replace('.', ',')} × ${longueur} (${mm(longueur - g.epaisseur)} mm dans les plots).`);
+        out.notes.push(...pose.incertitudes);
+        break;
+      }
     }
   }
   return out;
@@ -451,8 +483,7 @@ function lireOp(genre: GenreAjout, s: string, avant: string): OpAjout {
     }
     case 'plots': {
       if (CARTE.test(`${avant} ${s}`)) {
-        op.refus =
-          'Je ne connais pas encore les cartes comme le Raspberry Pi 5 : ça viendra avec la bibliothèque de composants. En attendant, donne-moi l’écart des trous, par exemple « 4 plots M2,5 avec un entraxe de 58 par 49 ».';
+        op.refus = `Je ne connais pas cette carte. Je connais : ${CARTES_CONNUES}. Pour une autre, donne-moi l’écart des trous, par exemple « 4 plots M2,5 avec un entraxe de 58 par 49 ».`;
         break;
       }
       if (/\bm2\.5\b|\bm25\b/.test(s)) c.vis = 'M2.5';
@@ -488,6 +519,28 @@ function lireOp(genre: GenreAjout, s: string, avant: string): OpAjout {
   return op;
 }
 
+/** Les cartes qu'on sait poser, pour les phrases. */
+const CARTES_CONNUES = 'le Raspberry Pi 5, et après mesure au pied à coulisse : l’ESP32-S3 sur sa carte à borniers, l’ampli MAX98357A et le petit écran OLED';
+
+/** « ports vers l'arrière », « prises sur le côté droit », « USB à gauche » : la paroi des prises. */
+export function lirePorts(t: string): Paroi | undefined {
+  const m = /\b(?:ports?|prises?|connecteurs?|usb)\b(?: [a-z0-9]+){0,4}? (?:vers l |a l |sur l |de l |cote |du cote |sur le cote |vers la |a |sur la )?(arriere|avant|gauche|droite?)\b/.exec(t);
+  if (!m) return undefined;
+  return m[1] === 'droit' ? 'droite' : (m[1] as Paroi);
+}
+
+function lireComposant(t: string, id: string): OpAjout {
+  const c = composant(id)!;
+  if (/\b(?:enleve|enlever|retire|retirer|supprime|supprimer|vire|sans)\b/.test(t)) return { action: 'enlever', genre: 'composant', champs: { genre: 'composant', composant: id } };
+  const op: OpAjout = { action: 'ajouter', genre: 'composant', champs: { genre: 'composant', composant: id } };
+  const ports = lirePorts(t);
+  if (ports) op.champs.ports = ports;
+  if (!c.carte) {
+    op.refus = `Je sais poser les cartes (${CARTES_CONNUES}) sur leurs plots. ${majuscule(c.nom)} se tient autrement (logement et retenues pour l’écran, chariot réglable pour la caméra) : ça viendra avec le boîtier électronique.`;
+  }
+  return op;
+}
+
 function lirePlace(s: string, c: Partial<Ajout>): void {
   const g = new RegExp(String.raw`\b${N} ?(?:mm )?(?:du bord |de la |du cote |du )?gauche\b`).exec(s);
   const av = new RegExp(String.raw`\b${N} ?(?:mm )?(?:du bord |de l |du cote |du )?avant\b`).exec(s);
@@ -501,6 +554,18 @@ function lirePlace(s: string, c: Partial<Ajout>): void {
  */
 export function lireAjouts(t: string): { ops: OpAjout[]; reste: string } {
   const texte = ` ${t} `;
+  // Un composant de la bibliothèque posé dans la boîte : « mets des plots pour un Raspberry Pi 5
+  // dans le fond, ports vers l'arrière », « pose l'ESP32 dans la boîte ». Toute la phrase est pour lui.
+  const nomme = composantNomme(texte);
+  if (nomme && (/\bplots?\b/.test(texte) || /\b(?:mets|met|mettre|pose|poser|place|placer|ajoute|ajouter|installe|range|enleve|retire|supprime)\b/.test(texte))) {
+    // Le reste de la phrase garde ses mesures (« une boîte de 120 par 80 par 40 avec un Raspberry Pi 5 ») ;
+    // le nom du composant (et son « 5 »), les prises et les plots partent.
+    const reste = texte
+      .replace(new RegExp(nomme.mots.source, 'g'), ' ')
+      .replace(/\b(?:ports?|prises?|connecteurs?|usb)\b(?: [a-z0-9]+){0,4}? (?:vers l |a l |sur l |de l |cote |du cote |sur le cote |vers la |a |sur la )?(?:arriere|avant|gauche|droite?)\b/, ' ')
+      .replace(/\b(?:des |les |de |4 |quatre )?plots?\b/, ' ');
+    return { ops: [lireComposant(texte, nomme.id)], reste: reste.replace(/\s+/g, ' ').trim() };
+  }
   const ops: OpAjout[] = [];
   let reste = texte;
   for (const [genre, re] of MOTS_GENRES) {
@@ -548,7 +613,8 @@ export function appliquerAjouts(
   g: { id: string; nom: string },
   v: Valeurs,
   ops: readonly OpAjout[],
-): { ajouts: Ajout[]; changements: string[]; erreurs: string[] } {
+  mesures: MesuresComposants = {},
+): { ajouts: Ajout[]; changements: string[]; erreurs: string[]; question?: { composant: string; champ: string; texte: string } } {
   const existants = ajoutsDe(v);
   const erreurs: string[] = [];
   const changements: string[] = [];
@@ -559,6 +625,20 @@ export function appliquerAjouts(
   for (const op of ops) {
     if (op.refus) {
       erreurs.push(op.refus);
+      continue;
+    }
+    // Un composant « à mesurer » ne sert pas tant que ses mesures ne sont pas toutes données.
+    if (op.genre === 'composant' && op.action === 'ajouter' && op.champs.composant) {
+      const c = composant(op.champs.composant)!;
+      const q = prochaineMesure(c, mesures);
+      if (q) return { ajouts: [...existants], changements: [], erreurs: [], question: { composant: c.id, champ: q.champ, texte: questionMesure(c, q, mesures) } };
+      if (c.etat === 'a_mesurer') op.champs.mesures = { ...(mesures[c.id] ?? {}) };
+      // Un composant de chaque sorte : le reposer remplace l'ancien (autres prises, nouvelles mesures).
+      const ancien = liste.filter((a) => a.genre === 'composant' && a.composant === c.id);
+      liste = liste.filter((a) => !ancien.includes(a));
+      const nouveau: Ajout = { ...op.champs, genre: 'composant' };
+      liste.push(nouveau);
+      changements.push(ancien.length ? `${majuscule(direAjout(ancien[0]!))} → ${direAjout(nouveau)}` : `Ajout : ${direAjout(nouveau)}`);
       continue;
     }
     const visees = liste.filter((a) => a.genre === op.genre);

@@ -73,10 +73,12 @@ describe('ajouts : lire les phrases', () => {
     expect(lire('4 plots M2 entraxe 20 x 30, à 15 mm de la gauche et 12 mm de l’avant').ops[0]!.champs).toMatchObject({ vis: 'M2', entraxe: [20, 30], depuisGauche: 15, depuisAvant: 12 });
   });
 
-  it('« mets des plots pour un Raspberry Pi 5 » : refusé poliment à cette étape', () => {
+  it('« mets des plots pour un Raspberry Pi 5 » : la carte de la bibliothèque (étape 2) ; une carte inconnue est dite', () => {
     const r = appliquer(BOITE, valeurs(), 'mets des plots pour un Raspberry Pi 5 dans le fond, ports vers l’arrière');
-    expect(r.erreurs[0]).toMatch(/^Je ne connais pas encore les cartes comme le Raspberry Pi 5/);
-    expect(r.ajouts).toEqual([]);
+    expect(r.erreurs).toEqual([]);
+    expect(r.ajouts).toEqual([{ genre: 'composant', composant: 'raspberry_pi_5', ports: 'arriere' }]);
+    const inconnue = appliquer(BOITE, valeurs(), 'mets des plots pour un Arduino');
+    expect(inconnue.erreurs[0]).toMatch(/^Je ne connais pas cette carte\. Je connais : le Raspberry Pi 5/);
   });
 
   it('nervure : sens, hauteur, épaisseur', () => {

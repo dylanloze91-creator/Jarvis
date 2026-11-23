@@ -9,3 +9,7 @@ export * from './decoupes.js';
 export * from './ajouts.js';
 export * from './visserie.js';
 export * from './impression.js';
+export * from './csg.js';
+export * from './composantsDonnees.js';
+export * from './composants.js';
+export * from './tenir.js';

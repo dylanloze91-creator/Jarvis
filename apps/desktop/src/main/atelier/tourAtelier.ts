@@ -15,10 +15,13 @@
  *   carte, et seulement imprimante libre.
  */
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
+  ajouterMesure,
   controlerImpression,
+  ecrireFichierMesures,
+  lireFichierMesures,
   controlerStl,
   dernierAtelier,
   deciderAtelier,
@@ -34,6 +37,7 @@ import {
   SPEAKER_CANNOT_START,
   type AtelierEtat,
   type AtelierVersionInfo,
+  type MesuresComposants,
   type ChatMessage,
   type InfosGcode,
   type PrintStatus,
@@ -77,6 +81,27 @@ export interface AtelierDeps {
   imprimante(): ImprimanteAtelier | null;
   /** Jour local `AAAA-MM-JJ`. */
   jour(): string;
+  /**
+   * Mesures de composants données par l'utilisateur. Absent : `composants-mesures.json` dans le
+   * dossier de l'atelier (`C:\dev\jarvis-data\atelier\composants-mesures.json`).
+   */
+  mesures?: { lire(): Promise<MesuresComposants>; ecrire(m: MesuresComposants): Promise<void> };
+}
+
+/** Fichier des mesures de composants, dans le dossier de l'atelier. */
+export const FICHIER_MESURES = 'composants-mesures.json';
+
+function mesuresParFichier(racine: string): NonNullable<AtelierDeps['mesures']> {
+  const chemin = join(racine, FICHIER_MESURES);
+  return {
+    lire: async () => (existsSync(chemin) ? lireFichierMesures(await readFile(chemin, 'utf8')) : {}),
+    ecrire: async (m) => {
+      await mkdir(racine, { recursive: true });
+      const temp = `${chemin}.tmp`;
+      await writeFile(temp, ecrireFichierMesures(m), 'utf8');
+      await rename(temp, chemin);
+    },
+  };
 }
 
 export interface AtelierEntree {
@@ -153,10 +178,23 @@ function avecVersion(etat: EtatPiece, version: AtelierVersionInfo, choisie = ver
 /** Un tour d'atelier. `null` : la phrase n'est pas pour l'atelier, le tour suit son chemin. */
 export async function tourAtelier(input: AtelierEntree, deps: AtelierDeps): Promise<AtelierSortie | null> {
   const precedent = dernierAtelier(input.messages);
-  const decision = deciderAtelier(input.text, precedent);
+  const fichierMesures = deps.mesures ?? mesuresParFichier(deps.racine);
+  let mesures = await fichierMesures.lire();
+  let decision = deciderAtelier(input.text, precedent, { mesures });
+  // Une mesure de composant donnée : gardée tout de suite (elle sert ensuite partout), puis la
+  // phrase d'avant est relue (question suivante, ou la pièce).
+  for (let i = 0; decision.kind === 'mesure' && i < 3; i += 1) {
+    const ajout = ajouterMesure(mesures, decision.composant, decision.champ, decision.valeur);
+    if (ajout.erreur) return precedent ? { texte: ajout.erreur, etat: precedent } : { texte: ajout.erreur };
+    mesures = ajout.mesures;
+    await fichierMesures.ecrire(mesures);
+    decision = deciderAtelier(decision.reprise.texte, decision.reprise.piece, { mesures });
+  }
   const voix = input.place === 'enceinte';
 
   switch (decision.kind) {
+    case 'mesure':
+      return { texte: 'Mesure gardée.' };
     case 'rien':
       return null;
     case 'dire':

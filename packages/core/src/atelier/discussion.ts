@@ -10,6 +10,7 @@
 import { estChoix, gabarit, GABARITS, type Gabarit, type Mesure, type MesureNombre, type Valeurs } from './gabarits.js';
 import { appliquerDecoupes, avecDecoupes, decoupesAffichees, decoupesDe, lireDecoupes, sePerce } from './decoupes.js';
 import { ajoutsAffiches, appliquerAjouts, avecAjouts, lireAjouts } from './ajouts.js';
+import { ajouterMesure, composant, lireMesure, questionMesure, type MesuresComposants } from './composants.js';
 import { comprendre, lireMesures, lireReponse, plier, prochaineQuestion } from './lecture.js';
 
 /** Une version rendue de la pièce. Les fichiers sont des noms simples, dans le dossier de la pièce. */
@@ -33,6 +34,11 @@ export interface AtelierVersionInfo {
 
 export type AtelierEtat =
   | { etape: 'question'; gabarit: string; valeurs: Valeurs; mesure: string }
+  /**
+   * Une mesure de composant demandée (pied à coulisse). `reprise` : la phrase à relire une fois la
+   * mesure gardée, avec la pièce qui était à l'écran.
+   */
+  | { etape: 'mesure'; composant: string; champ: string; reprise: { texte: string; piece: Extract<AtelierEtat, { etape: 'piece' }> | null } }
   | {
       etape: 'piece';
       gabarit: string;
@@ -62,7 +68,17 @@ export type AtelierDecision =
   | { kind: 'file'; etat: Extract<AtelierEtat, { etape: 'piece' }>; numero: number }
   /** « le plateau est vide, lance la suivante » : la première pièce de la file. */
   | { kind: 'lancerSuivante' }
-  | { kind: 'choisir'; etat: Extract<AtelierEtat, { etape: 'piece' }>; numero: number };
+  | { kind: 'choisir'; etat: Extract<AtelierEtat, { etape: 'piece' }>; numero: number }
+  /**
+   * Une mesure donnée : le PC la garde (`composants-mesures.json`), puis relit `reprise.texte` avec
+   * `reprise.piece` et les mesures à jour (question suivante, ou la pièce).
+   */
+  | { kind: 'mesure'; composant: string; champ: string; valeur: number; reprise: { texte: string; piece: Extract<AtelierEtat, { etape: 'piece' }> | null } };
+
+/** Ce que le PC sait en plus de la discussion : les mesures de composants données par l'utilisateur. */
+export interface ContexteAtelier {
+  mesures?: MesuresComposants;
+}
 
 /** Nombre de messages relus pour retrouver la pièce en cours. */
 const RECUL = 8;
@@ -126,7 +142,10 @@ export function piecesConnues(): string {
 }
 
 /** Nouvelle pièce demandée ? (règles seules). */
-export function demandePiece(text: string): { gabarit: Gabarit | null; valeurs: Valeurs; erreurs?: string[] } | null {
+export function demandePiece(
+  text: string,
+  mesures: MesuresComposants = {},
+): { gabarit: Gabarit | null; valeurs: Valeurs; erreurs?: string[]; question?: { composant: string; champ: string; texte: string } } | null {
   const t = plier(text).replace(/^jarvis ,? ?/, '');
   const commande = DEMANDE.test(t) || VOULOIR.test(t);
   if (!commande) return null;
@@ -144,7 +163,8 @@ export function demandePiece(text: string): { gabarit: Gabarit | null; valeurs: 
     if (!ajouts.length && !opsMatiere.length) return { gabarit: g, valeurs: demande.valeurs };
     let valeurs = lireMesures(lu.reste, g).valeurs;
     if (opsMatiere.length) {
-      const m = appliquerAjouts(g, valeurs, opsMatiere);
+      const m = appliquerAjouts(g, valeurs, opsMatiere, mesures);
+      if (m.question) return { gabarit: g, valeurs, question: m.question };
       if (m.erreurs.length) return { gabarit: g, valeurs, erreurs: m.erreurs };
       valeurs = avecAjouts(valeurs, m.ajouts);
     }
@@ -247,8 +267,25 @@ const CHOISIR = /\b(?:reviens|retourne|revenir|garde|prends|choisis) (?:a )?la (
  * Que faire de cette phrase, sachant le dernier état de l'atelier dans la discussion ?
  * `rien` : la phrase n'est pas pour l'atelier, le tour suit son chemin habituel.
  */
-export function deciderAtelier(text: string, precedent: AtelierEtat | null): AtelierDecision {
+export function deciderAtelier(text: string, precedent: AtelierEtat | null, contexte: ContexteAtelier = {}): AtelierDecision {
   const t = plier(text).replace(/^jarvis ,? ?/, '');
+  const mesures = contexte.mesures ?? {};
+
+  // Une mesure de composant demandée : un nombre est la réponse, « laisse tomber » arrête.
+  if (precedent?.etape === 'mesure') {
+    const c = composant(precedent.composant);
+    if (ANNULER.test(t)) return { kind: 'dire', texte: "D'accord, je laisse tomber. Les mesures déjà données sont gardées." };
+    const valeur = t.split(' ').length <= 6 ? lireMesure(t) : null;
+    if (c && valeur !== null) {
+      const essai = ajouterMesure(mesures, c.id, precedent.champ, valeur);
+      if (essai.erreur) {
+        const q = c.aMesurer?.find((x) => x.champ === precedent.champ);
+        return { kind: 'dire', texte: `${essai.erreur} ${q ? questionMesure(c, q, mesures) : ''}`.trim(), etat: precedent };
+      }
+      return { kind: 'mesure', composant: c.id, champ: precedent.champ, valeur, reprise: precedent.reprise };
+    }
+    // Pas une mesure : la phrase suit son chemin (la question reste posée une fois).
+  }
 
   // Une pièce à l'écran : « imprime-la », « imprime la boîte » passe avant une nouvelle demande.
   if (precedent?.etape === 'piece') {
@@ -271,8 +308,12 @@ export function deciderAtelier(text: string, precedent: AtelierEtat | null): Ate
   if (plateauVideLanceSuivante(text)) return { kind: 'lancerSuivante' };
 
   // Sinon, une nouvelle pièce passe avant tout.
-  const nouvelle = demandePiece(text);
+  const nouvelle = demandePiece(text, mesures);
   if (nouvelle) {
+    if (nouvelle.question) {
+      const q = nouvelle.question;
+      return { kind: 'dire', texte: q.texte, etat: { etape: 'mesure', composant: q.composant, champ: q.champ, reprise: { texte: text, piece: null } } };
+    }
     if (!nouvelle.gabarit) {
       return {
         kind: 'dire',
@@ -285,7 +326,7 @@ export function deciderAtelier(text: string, precedent: AtelierEtat | null): Ate
     return demanderOuFabriquer(nouvelle.gabarit, nouvelle.valeurs, `${majuscule(nouvelle.gabarit.nom)}, d'accord. `);
   }
 
-  if (!precedent) return { kind: 'rien' };
+  if (!precedent || precedent.etape === 'mesure') return { kind: 'rien' };
   const g = gabarit(precedent.gabarit);
   if (!g) return { kind: 'rien' };
 
@@ -329,7 +370,11 @@ export function deciderAtelier(text: string, precedent: AtelierEtat | null): Ate
   // couvercle s'emboîte ». Les découpes sont lues dans ce qui reste.
   const matiere = court ? lireAjouts(t) : { ops: [], reste: t };
   if (matiere.ops.length) {
-    const r = appliquerAjouts(g, valeurs, matiere.ops);
+    const r = appliquerAjouts(g, valeurs, matiere.ops, mesures);
+    if (r.question) {
+      const q = r.question;
+      return { kind: 'dire', texte: q.texte, etat: { etape: 'mesure', composant: q.composant, champ: q.champ, reprise: { texte: text, piece: precedent } } };
+    }
     if (r.erreurs.length) return { kind: 'dire', texte: `${r.erreurs.join(' ')} La version ${actuelle.numero} reste à l'écran.` };
     valeurs = avecAjouts(valeurs, r.ajouts);
     changementsDecoupes.push(...r.changements);
