@@ -49,8 +49,13 @@ const SPELLING_ALIASES: Array<[RegExp, string]> = [
  * Un « stop » ou « arrête » seul n'est pas pris (stop de quoi ?) : il faut le mot musique, Spotify,
  * son, morceau, chanson ou lecture ; « pause » seul suffit.
  */
+/**
+ * 23 novembre 2026 : « Mets pause sur Spotify » lançait un morceau nommé « pause » (« … sur Spotify »
+ * = un titre), et Whisper écrit souvent « mets pause » en « mes pauses ». La pause accepte maintenant
+ * « mets pause », « mes pauses » et une fin « sur Spotify » ou « la musique ».
+ */
 const PAUSE_PHRASE =
-  /^(?:jarvis[,:]?\s*)?(?:pause|mets?\s+en\s+pause|(?:mets?\s+)?(?:la\s+)?(?:musique|spotify)\s+en\s+pause|(?:stop(?:pe)?|arr[êe]te|coupe|[ée]teins)\s+(?:la|le|ma|mon)?\s*(?:musique|spotify|son|morceau|chanson|lecture))\s*[.!]?\s*$/iu;
+  /^(?:jarvis[,:]?\s*)?(?:pause|(?:mets?|mes)\s+(?:en\s+)?pauses?|(?:mets?\s+)?(?:la\s+)?(?:musique|spotify)\s+en\s+pause|(?:stop(?:pe)?|arr[êe]te|coupe|[ée]teins)\s+(?:la|le|ma|mon)?\s*(?:musique|spotify|son|morceau|chanson|lecture))(?:\s+(?:sur|à|a|de)\s+spotify|\s+(?:la\s+)?musique)?(?:\s+s['’]il\s+te\s+pla[iî]t)?\s*[.!]?\s*$/iu;
 const RESUME_PHRASE =
   /^(?:jarvis[,:]?\s*)?(?:reprend(?:s|re)?(?:\s+(?:la|le|ma|mon)?\s*(?:musique|spotify|lecture|morceau|chanson))?|(?:relance|remets)\s+(?:la|le|ma|mon)?\s*(?:musique|spotify|lecture|morceau|chanson))\s*[.!]?\s*$/iu;
 
@@ -102,6 +107,7 @@ export function isMusicIntent(prompt: string): boolean {
   if (!trimmed) return false;
   if (OPEN_SPOTIFY_ONLY.test(trimmed)) return false;
   if (isCurrentTrackQuestion(trimmed)) return true;
+  if (isSpotifyPausePhrase(trimmed)) return true;
   if (extractSpotifyPlayQuery(trimmed)) return true;
   if (isSpotifyTransferPhrase(trimmed) && extractSpotifyTransferTarget(trimmed)) return true;
 
@@ -222,6 +228,7 @@ export function extractSpotifyPlayQuery(prompt: string): string | null {
 }
 
 function isPlaybackControlOnly(prompt: string): boolean {
+  if (isSpotifyPausePhrase(prompt)) return true;
   const normalized = prompt.toLowerCase();
   if (/\bvolume\b/.test(normalized)) return true;
   if (/^(?:jarvis[,:]?\s*)?(?:pause|reprend(?:s|re)?)\b/iu.test(prompt)) return true;

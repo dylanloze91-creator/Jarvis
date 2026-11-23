@@ -164,3 +164,25 @@ Prêt à fusionner : NON, pas avant tes essais et ton « publie »
 À corriger : § 7, « Ce qui coince » (fenêtre active à la voix, fiche rejetée à tort, Spotify)
 Testé en vrai (à la voix, sur le PC) : FAIT par Claude Code le 20 novembre (fenêtre, fausse enceinte, Spotify sur le PC ; § 7). PAS FAIT avec ta voix sur la vraie enceinte
 ```
+
+## 9. Essais avec toi, 23 novembre 2026
+
+Branche `claude/corrections-5080-suite` lancée sans rien installer (`electron-vite dev`), Jarvis Live 5.0.79 arrêté, tes vraies données. Copie de sécurité avant : `C:\dev\jarvis-data\sauvegardes\live-avant-essais-5080-2026-11-23`. Phrases dites par toi à la vraie enceinte ; résultats lus dans le journal d'audit, l'historique et la mémoire.
+
+| # | Résultat |
+| --- | --- |
+| E2 | **réussi** 3 sur 3 à ta voix, y compris quand Whisper a compris une phrase abîmée : « Fenêtre active : … » |
+| E5 | **réussi** : plus d'Internet, Jarvis propose un diagnostic |
+| E6 | **raté, grave** : Whisper a entendu « une information ou les informations sur mon PC ». L'empêchement « où » de la règle, une fois les accents retirés, prenait aussi « ou » : la phrase est partie au modèle, qui a **inventé** un processeur, une mémoire et un disque, sans outil |
+| E8 | **réussi** : aucune autre fiche n'a changé (comparé à la copie de sécurité). La fiche est « candidate », pas « validated » : ta phrase répondait à une question de Jarvis, c'est la règle voulue |
+| E11 | **raté** : (a) « mets pause sur Spotify », écrit « Mes pauses sur Spotify » par Whisper, a lancé un morceau (« … sur Spotify » = un titre ; même « Mets pause sur Spotify » bien transcrit cherchait « pause ») ; (b) « mets la playlist … » joue un morceau seul : Jarvis ne cherche que des morceaux ; (c) l'enceinte a lu « Lecture vérifiée : is_playing=true et URI confirmée. » |
+
+### Corrigé le 23 novembre (avec ton accord)
+
+1. **Règle « informations sur mon PC »** (`agent/expressRules.ts`) : l'empêchement « où » est remplacé par des questions de lieu (« où est », « où sont », « où se », « où trouver », « où voir », « par où », « d'où ») ; « ou » ne bloque plus. Deux phrases « pour » et une « contre » ajoutées.
+2. **Pause** (`media/playIntent.ts`) : « mets pause », « mes pauses » (Whisper), « pause sur Spotify », « … la musique » mettent en pause sans modèle, jamais une recherche de morceau. Un vrai titre (« Pause Café de … ») reste un titre.
+3. **Réponse de `spotify_play`** (`tools/spotify.ts`) : la phrase technique est retirée ; il reste « Lecture sur « … » : titre — artiste. ».
+
+Essais : `packages/core/src/essais-5080-23nov.test.ts` (phrases écrites pour l'essai), assertion ajoutée dans `tools/spotify.test.ts`.
+
+**Non corrigé, nouveauté à décider :** jouer une playlist ou un album (« mets la playlist … »). À faire d'abord dans Jarvis Test.

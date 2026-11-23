@@ -96,6 +96,8 @@ describe('createSpotifyTools', () => {
     expect(result.content).toContain('Lecture lancée sur Spotify');
     expect(result.content).toContain('Get Lucky');
     expect(result.content).toContain('Daft Punk');
+    // 23 novembre 2026 : l'enceinte lisait « is_playing=true et URI confirmée ».
+    expect(result.content).not.toMatch(/is_playing|URI|vérifiée/);
   });
 
   it('spotify_play répond clairement, sans lancer de lecture, quand aucun morceau ne correspond', async () => {

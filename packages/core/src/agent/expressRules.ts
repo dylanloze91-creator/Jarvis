@@ -106,7 +106,15 @@ export const EXPRESS_RULES: readonly ExpressRule[] = [
       // Une question précise ou une explication : le modèle répond, avec ses outils.
       'pourquoi',
       'comment',
-      'où',
+      // 23 novembre 2026 : « où » seul, une fois les accents retirés, prenait aussi « ou »
+      // (« une information ou les informations sur mon PC » partait au modèle, qui inventait).
+      'où est',
+      'où sont',
+      'où se',
+      'où trouver',
+      'où voir',
+      'par où',
+      'd’où',
       'processus',
       'fenêtre',
       'erreurs',
@@ -125,6 +133,8 @@ export const EXPRESS_RULES: readonly ExpressRule[] = [
       'Les informations système',
       'Tu peux me donner les informations de mon ordinateur ?',
       'Dis-moi l’état du PC',
+      'Un résumé ou les informations sur mon PC, s’il te plaît',
+      'Les infos du PC ou son état, au choix',
     ],
     contre: [
       'Cherche sur Internet les informations sur mon PC',
@@ -132,6 +142,7 @@ export const EXPRESS_RULES: readonly ExpressRule[] = [
       'Pourquoi l’état de mon PC est aussi lent ?',
       'Envoie les informations sur mon PC par mail',
       'Où sont rangées les informations sur mon PC ?',
+      'Où se trouvent les informations sur mon ordinateur ?',
       'Affiche les informations sur mon PC sur l’enceinte',
       'Quelle fenêtre est active sur mon PC ?',
       'Ouvre le Bloc-notes',
