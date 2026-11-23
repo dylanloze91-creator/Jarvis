@@ -126,6 +126,8 @@ export const IpcChannel = {
   yeuxGarder: 'yeux:garder',
   yeuxAllumer: 'yeux:allumer',
   yeuxBrancher: 'yeux:brancher',
+  yeuxRegler: 'yeux:regler',
+  yeuxWebcams: 'yeux:webcams',
   imagesDirectCatalog: 'images:direct-catalog',
   imagesDirectGenerate: 'images:direct-generate',
   imagesDirectCancel: 'images:direct-cancel',
@@ -974,6 +976,8 @@ export interface JarvisApi {
     garder(photoId: string): Promise<{ ok: true; chemin: string } | { ok: false; error: string }>;
     allumer(id: string, allume: boolean): Promise<{ ok: true } | { ok: false; error: string }>;
     brancher(id: string, adresse: string, jeton: string): Promise<{ ok: true } | { ok: false; error: string }>;
+    regler(id: string, reglage: { piece?: string; camera?: string }): Promise<{ ok: true } | { ok: false; error: string }>;
+    webcams(): Promise<{ id: string; nom: string }[]>;
   };
   settings: {
     get(): Promise<{ settings: Settings; status: RuntimeStatus }>;

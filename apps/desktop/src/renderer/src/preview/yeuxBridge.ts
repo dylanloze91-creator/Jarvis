@@ -13,7 +13,7 @@ function image(texte: string, couleur: string): Uint8Array {
 export function createPreviewYeuxApi(): NonNullable<JarvisApi['yeux']> {
   const yeux: Oeil[] = [
     { id: 'imprimante', nom: 'Imprimante', piece: 'atelier', genre: 'klipper', allume: true },
-    { id: 'bureau', nom: 'Bureau', piece: 'bureau', genre: 'pc', allume: false },
+    { id: 'webcam', nom: 'Webcam du PC', piece: 'bureau', genre: 'pc', allume: false },
     { id: 'rover-avant', nom: 'Rover avant', piece: 'mobile', genre: 'reseau', allume: true },
     { id: 'hub', nom: 'Hub', piece: 'bureau', genre: 'reseau', allume: true },
   ];
@@ -54,5 +54,11 @@ export function createPreviewYeuxApi(): NonNullable<JarvisApi['yeux']> {
       return { ok: true };
     },
     brancher: async () => ({ ok: false, error: 'Aperçu : rien à brancher.' }),
+    regler: async (id, reglage) => {
+      const oeil = yeux.find((o) => o.id === id);
+      if (oeil && reglage.piece) oeil.piece = reglage.piece;
+      return { ok: true };
+    },
+    webcams: async () => [{ id: 'fausse', nom: 'Webcam d’aperçu' }],
   };
 }

@@ -85,6 +85,12 @@ export function verifierOeil(brut: unknown): VerificationOeil {
 }
 
 /** Les yeux prévus, présents dès le départ : le rover et le hub ne sont pas encore branchés. */
+/** L'iPhone : jamais de prise à distance, il garde la dernière photo envoyée depuis l'appli. */
+export const OEIL_IPHONE: Oeil = { id: 'iphone', nom: 'iPhone', piece: 'mobile', genre: 'telephone', allume: true };
+
+/** La webcam du PC : coupée par défaut (cahier, § 3.2). */
+export const OEIL_WEBCAM: Oeil = { id: 'webcam', nom: 'Webcam du PC', piece: 'bureau', genre: 'pc', allume: false };
+
 export const YEUX_PREVUS: readonly Oeil[] = [
   { id: 'rover-avant', nom: 'Rover avant', piece: 'mobile', genre: 'reseau', allume: true },
   { id: 'rover-pince', nom: 'Rover pince', piece: 'mobile', genre: 'reseau', allume: true },
@@ -199,9 +205,9 @@ export function trouverOeil(cible: string, yeux: readonly Oeil[]): Oeil | null {
   if (/^(?:impression|imprimante|impression en cours)$/.test(c)) return yeux.find((o) => o.genre === 'klipper') ?? null;
   if (/^(?:iphone|telephone|portable)$/.test(c)) return yeux.find((o) => o.genre === 'telephone') ?? null;
   if (/^(?:webcam|webcam du pc|pc)$/.test(c)) return yeux.find((o) => o.genre === 'pc') ?? null;
-  return (
-    yeux.find((o) => plier(o.nom) === c) ??
-    yeux.find((o) => plier(o.piece) === c) ??
-    null
-  );
+  const parNom = yeux.find((o) => plier(o.nom) === c);
+  if (parNom) return parNom;
+  // Par la pièce : d'abord un œil allumé et branché (« le bureau » = la webcam, pas le hub prévu).
+  const parPiece = yeux.filter((o) => plier(o.piece) === c);
+  return parPiece.find((o) => o.allume && (o.genre !== 'reseau' || Boolean(o.adresse))) ?? parPiece[0] ?? null;
 }

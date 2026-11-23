@@ -65,6 +65,46 @@ export function YeuxEcran({ onSend }: { onSend?: (text: string) => void }) {
   );
 }
 
+/** Webcam du PC : la pièce (bureau ou salon, jamais une chambre) et l'appareil. */
+function ReglageWebcam({ oeil, onChange, onMessage }: { oeil: Oeil; onChange: () => void; onMessage: (m: string) => void }) {
+  const api = window.jarvis.yeux;
+  const [appareils, setAppareils] = useState<{ id: string; nom: string }[] | null>(null);
+  const regler = (reglage: { piece?: string; camera?: string }) => {
+    void api?.regler(oeil.id, reglage).then((r) => {
+      if (!r.ok) onMessage(r.error);
+      onChange();
+    });
+  };
+  return (
+    <div className="flex flex-wrap items-center gap-3 text-xs text-slate-200">
+      <label className="flex items-center gap-2">
+        Pièce
+        <select className="rounded border border-white/10 bg-slate-900 px-1" value={oeil.piece} onChange={(e) => regler({ piece: e.target.value })}>
+          <option value="bureau">bureau</option>
+          <option value="salon">salon</option>
+        </select>
+      </label>
+      {appareils ? (
+        <label className="flex items-center gap-2">
+          Webcam
+          <select className="rounded border border-white/10 bg-slate-900 px-1" value={oeil.camera ?? ''} onChange={(e) => regler({ camera: e.target.value })}>
+            <option value="">par défaut</option>
+            {appareils.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.nom}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : (
+        <button type="button" className="quick-btn" disabled={!api} onClick={() => void api?.webcams().then(setAppareils)}>
+          Choisir la webcam
+        </button>
+      )}
+    </div>
+  );
+}
+
 function phraseMontrer(oeil: Oeil): string {
   if (oeil.genre === 'klipper') return "Montre-moi l'impression";
   return `Montre-moi la caméra ${/^[aeiouyh]/i.test(oeil.nom) ? "de l'" : 'du '}${oeil.nom}`;
@@ -80,7 +120,8 @@ function CarteOeil({ oeil, onSend, onChange }: { oeil: Oeil; onSend?: (text: str
   const visible = useVisible();
   const api = window.jarvis.yeux;
   const pasBranche = oeil.genre === 'reseau' && !oeil.adresse;
-  const regarde = Boolean(api) && oeil.allume && !pasBranche && visible;
+  // Le témoin dit qu'une caméra regarde ; jamais pour l'iPhone (Jarvis n'allume pas sa caméra).
+  const regarde = Boolean(api) && oeil.allume && !pasBranche && visible && oeil.genre !== 'telephone';
 
   const rafraichisseur = useMemo(
     () =>
@@ -117,7 +158,8 @@ function CarteOeil({ oeil, onSend, onChange }: { oeil: Oeil; onSend?: (text: str
     if (!oeil.allume) setAffiche(null);
   }, [oeil.allume]);
 
-  const figee = imageFigee(affiche?.prisA ?? null, maintenant);
+  // L'iPhone envoie une photo fixe : pas de bandeau « figée » (son heure reste affichée).
+  const figee = oeil.genre !== 'telephone' && imageFigee(affiche?.prisA ?? null, maintenant);
   const etat = vue?.etat ?? null;
 
   return (
@@ -174,6 +216,7 @@ function CarteOeil({ oeil, onSend, onChange }: { oeil: Oeil; onSend?: (text: str
             <figcaption className="px-3 py-1.5 text-xs text-slate-400">Image de {heurePhoto(affiche.prisA)}</figcaption>
           ) : null}
         </figure>
+        {oeil.genre === 'pc' ? <ReglageWebcam oeil={oeil} onChange={onChange} onMessage={setMessage} /> : null}
         {pasBranche ? (
           <div className="flex flex-col gap-2 text-xs text-slate-200">
             <p className="text-slate-400">Adresse de sa caméra sur le réseau local (contrat des yeux : /api/oeil/hello et /api/oeil/photo).</p>

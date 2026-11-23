@@ -14,6 +14,8 @@ import { join } from 'node:path';
 import {
   checkRoverBaseUrl,
   etatCarte,
+  OEIL_IPHONE,
+  OEIL_WEBCAM,
   OeilReseau,
   prendrePhotoOeil,
   repondreYeux,
@@ -31,6 +33,7 @@ import {
   type TravailEnFile,
 } from '@jarvis/core';
 import type { YeuxStore } from './store.js';
+import type { WebcamApi } from './webcam.js';
 
 /** Au plus 20 photos en mémoire, 30 minutes chacune. */
 export const PHOTOS_MAX = 20;
@@ -108,6 +111,12 @@ export interface YeuxPC {
   vue(id: string): Promise<ResultatVue>;
   /** Interrupteur de l'écran « Yeux » : coupé = aucune prise, plus jamais d'image montrée. */
   allumer(id: string, allume: boolean): Promise<Resultat>;
+  /** Pièce (webcam : bureau ou salon) et appareil choisi. Une chambre est refusée. */
+  regler(id: string, reglage: { piece?: string; camera?: string }): Promise<Resultat>;
+  /** Webcams du PC (identifiant, nom), pour choisir l'appareil. */
+  webcams(): Promise<{ id: string; nom: string }[]>;
+  /** Photo envoyée depuis l'appli du téléphone (« Montrer à Jarvis »), gardée en mémoire. */
+  recevoirPhotoTelephone(photo: { octets: Uint8Array; type: 'image/jpeg' | 'image/png'; appareil: string }): Promise<Resultat>;
   /** Brancher une caméra réseau (rover, hub…) : son « hello » doit répondre avant d'être gardée. */
   brancher(id: string, adresse: string, jeton: string): Promise<Resultat>;
   /** « Garder cette photo » : la seule écriture sur le disque, dans `userData/yeux/photos/`. */
@@ -131,6 +140,11 @@ export interface YeuxPCOptions {
   chiffre?: Chiffre;
   fetchImpl?: typeof fetch;
   dossierPhotos?: () => string;
+  /** Webcam du PC (fenêtre cachée dédiée). Absente : pas d'œil « Webcam du PC ». */
+  webcam?: WebcamApi;
+  /** Téléphone relié possible : l'œil « iPhone » existe (photos envoyées depuis l'appli). */
+  telephone?: boolean;
+  maintenant?: () => number;
 }
 
 export function creerYeuxPC(options: YeuxPCOptions): YeuxPC {
@@ -141,6 +155,11 @@ export function creerYeuxPC(options: YeuxPCOptions): YeuxPC {
   const ecran = new PhotosEnMemoire(Date.now, 6);
   // Sans chiffrement du système, le jeton reste en mémoire seulement (à redonner après un redémarrage).
   const jetonsEnMemoire = new Map<string, string>();
+  const maintenant = options.maintenant ?? Date.now;
+  // Dernière photo de l'iPhone : en mémoire seulement, 30 minutes au plus.
+  let photoTelephone: PhotoYeux | null = null;
+  const telephoneRecente = (): PhotoYeux | null =>
+    photoTelephone && maintenant() - photoTelephone.prisA <= PHOTO_DUREE_MS ? photoTelephone : null;
 
   const klipper = () => {
     const settings = getSettings();
@@ -165,6 +184,8 @@ export function creerYeuxPC(options: YeuxPCOptions): YeuxPC {
         ...(settings.yeux?.camera ? { camera: settings.yeux.camera } : {}),
       });
     }
+    if (options.webcam) parId.set(OEIL_WEBCAM.id, { ...OEIL_WEBCAM });
+    if (options.telephone) parId.set(OEIL_IPHONE.id, { ...OEIL_IPHONE });
     for (const prevu of YEUX_PREVUS) parId.set(prevu.id, { ...prevu });
     for (const { jetonScelle: _jeton, ...oeil } of await enregistres()) {
       if (oeil.id === 'imprimante' && !parId.has('imprimante')) continue;
@@ -190,6 +211,8 @@ export function creerYeuxPC(options: YeuxPCOptions): YeuxPC {
     for (const oeil of await tousLesYeux()) if (oeil.genre === 'reseau' && oeil.adresse) jetons.set(oeil.id, await jeton(oeil.id));
     return {
       ...(imprimanteReglee(getSettings()) ? { klipper } : {}),
+      ...(options.webcam ? { pc: (oeil: Oeil) => options.webcam!.photo(oeil.camera, oeil.nom) } : {}),
+      telephone: () => telephoneRecente(),
       reseau: (oeil) => new OeilReseau(oeil.adresse ?? '', jetons.get(oeil.id) ?? '', fetchImpl),
     };
   }
@@ -244,7 +267,32 @@ export function creerYeuxPC(options: YeuxPCOptions): YeuxPC {
       if (!oeil) return { ok: false, error: 'Œil inconnu.' };
       const deja = (await enregistres()).find((o) => o.id === id);
       const r = await store.mettre({ ...(deja ?? oeil), allume });
+      // Webcam coupée : le flux s'arrête tout de suite, le voyant s'éteint.
+      if (!allume && oeil.genre === 'pc') options.webcam?.fermer();
       return r.ok ? { ok: true } : { ok: false, error: r.raison };
+    },
+    async regler(id, reglage) {
+      const oeil = await trouver(id);
+      if (!oeil) return { ok: false, error: 'Œil inconnu.' };
+      const deja = (await enregistres()).find((o) => o.id === id);
+      const { camera: _camera, ...base } = deja ?? oeil;
+      const camera = reglage.camera !== undefined ? reglage.camera : oeil.camera;
+      const r = await store.mettre({
+        ...base,
+        ...(reglage.piece !== undefined ? { piece: reglage.piece } : {}),
+        ...(camera ? { camera } : {}),
+      });
+      return r.ok ? { ok: true } : { ok: false, error: r.raison };
+    },
+    async recevoirPhotoTelephone(photo) {
+      if (!yeuxActifs(getSettings(), editionYeux) || !options.telephone) return { ok: false, error: 'Les yeux sont coupés sur le PC.' };
+      const oeil = await trouver(OEIL_IPHONE.id);
+      if (!oeil?.allume) return { ok: false, error: 'La caméra « iPhone » est coupée dans l’écran « Yeux » du PC.' };
+      photoTelephone = { octets: photo.octets, type: photo.type, prisA: maintenant(), taille: photo.octets.byteLength, camera: oeil.nom };
+      return { ok: true };
+    },
+    async webcams() {
+      return options.webcam ? options.webcam.appareils() : [];
     },
     async brancher(id, adresse, jetonClair) {
       const oeil = await trouver(id);

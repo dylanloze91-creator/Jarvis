@@ -118,6 +118,8 @@ import { runPrinterReply } from './quotidien/printerReply.js';
 import { creerAtelierPC, dossierAtelier, lireFichierAtelier } from './atelier/atelierPC.js';
 import { creerYeuxPC } from './yeux/yeuxPC.js';
 import { YeuxStore } from './yeux/store.js';
+import { creerWebcam } from './yeux/webcam.js';
+import { ouvrirFenetreWebcam } from './yeux/webcamFenetre.js';
 import { CarnetFile } from './carnet/file.js';
 import { appendTeamValidation, type TeamValidationPayload } from './orchestra/teamValidation.js';
 import { PhoneService } from './phone/service.js';
@@ -504,6 +506,9 @@ const yeuxPC = edition().yeux
         open: (sealed) => safeStorage.decryptString(Buffer.from(sealed, 'base64')),
       },
       dossierPhotos: () => join(app.getPath('userData'), 'yeux', 'photos'),
+      // Webcam du PC : fenêtre cachée dédiée, ouverte à la demande, fermée 5 s après la dernière photo.
+      webcam: creerWebcam(ouvrirFenetreWebcam),
+      telephone: true,
     })
   : null;
 const yeuxReply = yeuxPC ? (input: { text: string; place: 'fenetre' | 'telephone' | 'enceinte' }) => yeuxPC.tour(input) : undefined;
@@ -623,6 +628,17 @@ const phone = new PhoneService({
     phoneVoiceMode(settings.voice.ttsProvider, await piper.isReady(settings.voice.ttsVoice || undefined)),
   synthesizeSpeech: async (text: string) =>
     piper.synthesizeWav({ text, voiceId: settings.voice.ttsVoice || undefined }),
+  // Les yeux (Jarvis Test) : photo de l'iPhone reçue, et photos de Jarvis par lien à usage unique.
+  ...(yeuxPC
+    ? {
+        recevoirPhoto: (photo: { octets: Uint8Array; type: 'image/jpeg' | 'image/png'; appareil: string }) =>
+          yeuxPC.recevoirPhotoTelephone(photo).then((r) => (r.ok ? { ok: true as const } : { ok: false as const, error: r.error })),
+        photoYeux: (photoId: string) => {
+          const photo = yeuxPC.photos.lire(photoId);
+          return photo ? { type: photo.type, data: photo.octets } : null;
+        },
+      }
+    : {}),
   log: (line) => console.info(line),
   broadcast: (status) => {
     const contents = overlay?.browserWindow.webContents;
@@ -1226,6 +1242,17 @@ function registerIpc(): void {
   ipcMain.handle(IpcChannel.yeuxAllumer, (_event, id: unknown, allume: unknown) =>
     yeuxPC && idOeil(id) && typeof allume === 'boolean' ? yeuxPC.allumer(id, allume) : { ok: false, error: 'Refusé.' },
   );
+  ipcMain.handle(IpcChannel.yeuxRegler, (_event, id: unknown, reglage: unknown) => {
+    if (!yeuxPC || !idOeil(id) || !reglage || typeof reglage !== 'object') return { ok: false, error: 'Refusé.' };
+    const { piece, camera } = reglage as { piece?: unknown; camera?: unknown };
+    if (piece !== undefined && (typeof piece !== 'string' || piece.length > 40)) return { ok: false, error: 'Refusé.' };
+    if (camera !== undefined && (typeof camera !== 'string' || camera.length > 200)) return { ok: false, error: 'Refusé.' };
+    return yeuxPC.regler(id, {
+      ...(typeof piece === 'string' ? { piece } : {}),
+      ...(typeof camera === 'string' ? { camera } : {}),
+    });
+  });
+  ipcMain.handle(IpcChannel.yeuxWebcams, () => (yeuxPC ? yeuxPC.webcams() : []));
   ipcMain.handle(IpcChannel.yeuxBrancher, (_event, id: unknown, adresse: unknown, jeton: unknown) =>
     yeuxPC && idOeil(id) && typeof adresse === 'string' && adresse.length <= 200 && typeof jeton === 'string' && jeton.length <= 512
       ? yeuxPC.brancher(id, adresse.trim(), jeton.trim())

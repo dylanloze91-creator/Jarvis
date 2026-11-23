@@ -215,6 +215,25 @@ describe('les yeux dans la session', () => {
     expect(await readFile(join(userData, `yeux-${numero}.json`), 'utf8')).not.toContain('secret');
   });
 
+  it('iPhone : la dernière photo envoyée, en mémoire ; refusée si l’œil est coupé ; jamais de prise à distance', async () => {
+    const settings = core.parseSettings({ yeux: { enabled: true } });
+    numero += 1;
+    const store = new YeuxStore(() => join(userData, `yeux-${numero}.json`));
+    let t = 1_000_000;
+    const yeuxPC = creerYeuxPC({ getSettings: () => settings, editionYeux: true, store, telephone: true, maintenant: () => t });
+    expect((await yeuxPC.yeux()).map((o) => o.id)).toContain('iphone');
+    const avant = await yeuxPC.tour({ text: "Montre-moi l'iPhone", place: 'fenetre' });
+    expect(avant?.photo).toBeNull();
+    expect(avant?.texte).toMatch(/Montrer à Jarvis/);
+    expect(await yeuxPC.recevoirPhotoTelephone({ octets: JPEG, type: 'image/jpeg', appareil: 'iPhone de Dylan' })).toEqual({ ok: true });
+    const apres = await yeuxPC.tour({ text: "Montre-moi l'iPhone", place: 'fenetre' });
+    expect(apres?.photo?.camera).toBe('iPhone');
+    t += 30 * 60_000 + 1;
+    expect((await yeuxPC.tour({ text: "Montre-moi l'iPhone", place: 'fenetre' }))?.photo).toBeNull();
+    await yeuxPC.allumer('iphone', false);
+    expect((await yeuxPC.recevoirPhotoTelephone({ octets: JPEG, type: 'image/jpeg', appareil: 'x' })).ok).toBe(false);
+  });
+
   it('jamais de caméra dans une chambre, même par le fichier', async () => {
     const { writeFile } = await import('node:fs/promises');
     numero += 1;

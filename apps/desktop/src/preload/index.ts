@@ -73,6 +73,8 @@ const api: JarvisApi = {
     garder: (photoId: string) => ipcRenderer.invoke(IpcChannel.yeuxGarder, photoId),
     allumer: (id: string, allume: boolean) => ipcRenderer.invoke(IpcChannel.yeuxAllumer, id, allume),
     brancher: (id: string, adresse: string, jeton: string) => ipcRenderer.invoke(IpcChannel.yeuxBrancher, id, adresse, jeton),
+    regler: (id: string, reglage: { piece?: string; camera?: string }) => ipcRenderer.invoke(IpcChannel.yeuxRegler, id, reglage),
+    webcams: () => ipcRenderer.invoke(IpcChannel.yeuxWebcams),
   },
   images: {
     open: (path: string) => ipcRenderer.invoke(IpcChannel.imagesOpen, path),
