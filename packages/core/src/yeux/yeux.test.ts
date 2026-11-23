@@ -2,8 +2,13 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
 import { lectureSeule, typeDesOctets, YeuxImprimante, type EtatYeux } from './imprimante.js';
+import { trouverOeil } from './contrat.js';
 import { etatCarte, heurePhoto, imageFigee, intentionYeux, phraseEnceinte, phraseEtat } from './phrases.js';
 import { repondreYeux } from './reponse.js';
+import type { Oeil } from './contrat.js';
+
+const IMPRIMANTE: Oeil = { id: 'imprimante', nom: 'Imprimante', piece: 'atelier', genre: 'klipper', allume: true };
+const YEUX = [IMPRIMANTE];
 
 /** Une petite « image » JPEG : seuls les premiers octets comptent pour le contrôle du type. */
 const JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, ...new Array(4000).fill(7), 0xff, 0xd9]);
@@ -185,8 +190,8 @@ describe('yeux : prendre une photo (lecture seule)', () => {
     await yeux.prendrePhoto();
     await yeux.etat();
     await yeux.file();
-    await repondreYeux({ texte: "Montre-moi l'impression", lieu: 'fenetre' }, () => yeux);
-    await repondreYeux({ texte: "Montre-moi l'impression", lieu: 'enceinte' }, () => yeux);
+    await repondreYeux({ texte: "Montre-moi l'impression", lieu: 'fenetre', yeux: YEUX }, { klipper: () => yeux });
+    await repondreYeux({ texte: "Montre-moi l'impression", lieu: 'enceinte', yeux: YEUX }, { klipper: () => yeux });
     expect(faux.methodes.length).toBeGreaterThan(8);
     expect(new Set(faux.methodes)).toEqual(new Set(['GET']));
     expect(faux.chemins.some((c) => /pause|cancel|start|emergency|gcode\/script|job_queue\/(start|pause|job)/.test(c))).toBe(false);
@@ -222,17 +227,21 @@ describe('yeux : « montre-moi l’impression »', () => {
       "Peux-tu me montrer l'impression s'il te plaît ?",
       "Montre-moi l’impression stp",
     ]) {
-      expect(intentionYeux(phrase), phrase).toEqual({ kind: 'montrer', avecEtat: true });
+      const intention = intentionYeux(phrase);
+      expect(intention?.kind, phrase).toBe('montrer');
+      expect(intention && trouverOeil(intention.cible, YEUX), phrase).toBe(IMPRIMANTE);
     }
   });
 
   it('laisse passer le reste (lancer, annuler, autres demandes)', () => {
+    for (const phrase of ['Montre-moi une photo de chat', "Montre-moi l'impression de ce document dans Word", 'Montre-moi le salon']) {
+      const intention = intentionYeux(phrase);
+      expect(intention && trouverOeil(intention.cible, YEUX), phrase).toBeNull();
+    }
     for (const phrase of [
       "Annule l'impression",
       "Mets l'impression en pause",
       "Lance l'impression",
-      'Montre-moi une photo de chat',
-      "Montre-moi l'impression de ce document dans Word",
       "Est-ce que l'impression se passe bien ?",
       "imprime-la",
       '',
@@ -266,7 +275,10 @@ describe('yeux : « montre-moi l’impression »', () => {
   it('fenêtre : photo + état + heure de la photo', async () => {
     const faux = await fauxMoonraker();
     const prisA = new Date(2026, 10, 23, 21, 14, 5).getTime();
-    const r = await repondreYeux({ texte: "Montre-moi l'impression", lieu: 'fenetre' }, () => new YeuxImprimante(faux.url, '', fetch, 5_000, () => prisA));
+    const r = await repondreYeux(
+      { texte: "Montre-moi l'impression", lieu: 'fenetre', yeux: YEUX },
+      { klipper: () => new YeuxImprimante(faux.url, '', fetch, 5_000, () => prisA) },
+    );
     expect(r?.photo?.type).toBe('image/jpeg');
     expect(r?.texte).toBe('50 %, il reste 50 min, couche 12 sur 80, buse 215 °C, plateau 60 °C. Photo prise à 21 h 14 min 05 s.');
     expect(heurePhoto(prisA)).toBe('21 h 14 min 05 s');
@@ -274,14 +286,14 @@ describe('yeux : « montre-moi l’impression »', () => {
 
   it('enceinte : phrase courte ; la photo part dans la discussion, pas vers l’enceinte', async () => {
     const faux = await fauxMoonraker();
-    const r = await repondreYeux({ texte: "Jarvis, montre-moi l'impression", lieu: 'enceinte' }, () => new YeuxImprimante(faux.url));
+    const r = await repondreYeux({ texte: "Jarvis, montre-moi l'impression", lieu: 'enceinte', yeux: YEUX }, { klipper: () => new YeuxImprimante(faux.url) });
     expect(r?.texte).toBe('50 %, il reste 50 min. La photo est sur le PC.');
     expect(r?.photo).not.toBeNull();
   });
 
   it("caméra en panne : l'état seul, et la raison ; jamais une autre image", async () => {
     const faux = await fauxMoonraker({ camera: () => undefined });
-    const r = await repondreYeux({ texte: "Montre-moi l'impression", lieu: 'fenetre' }, () => new YeuxImprimante(faux.url, '', fetch, 200));
+    const r = await repondreYeux({ texte: "Montre-moi l'impression", lieu: 'fenetre', yeux: YEUX }, { klipper: () => new YeuxImprimante(faux.url, '', fetch, 200) });
     expect(r?.photo).toBeNull();
     expect(r?.texte).toBe('50 %, il reste 50 min, couche 12 sur 80, buse 215 °C, plateau 60 °C. Pas de photo : la caméra ne répond pas (plus de 5 secondes).');
   });
@@ -316,10 +328,7 @@ describe('yeux : « montre-moi l’impression »', () => {
 
   it("phrase qui n'est pas pour les yeux : null, l'imprimante n'est pas appelée", async () => {
     let ouverte = false;
-    const r = await repondreYeux({ texte: 'Quelle heure est-il ?', lieu: 'fenetre' }, () => {
-      ouverte = true;
-      throw new Error('jamais');
-    });
+    const r = await repondreYeux({ texte: 'Quelle heure est-il ?', lieu: 'fenetre', yeux: YEUX }, { klipper: () => { ouverte = true; throw new Error('jamais'); } });
     expect(r).toBeNull();
     expect(ouverte).toBe(false);
   });

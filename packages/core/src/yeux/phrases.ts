@@ -5,7 +5,8 @@
 import { formatPrintDuration } from '../quotidien/moonraker.js';
 import type { EtatYeux } from './imprimante.js';
 
-export type IntentionYeux = { kind: 'montrer'; avecEtat: boolean };
+/** `cible` : ce qui est nommé (« l impression », « le bureau ») ; à retrouver dans le registre des yeux. */
+export type IntentionYeux = { kind: 'montrer'; cible: string };
 
 function plier(texte: string): string {
   return texte
@@ -22,7 +23,7 @@ const AMORCE = /^(?:(?:hey|eh|ok|bon|dis|alors)\s+)?(?:jarvis\s+)?(?:(?:est ce q
 const POLITESSE = /\s+(?:s il te plait|s il vous plait|stp|svp|merci|jarvis)$/;
 
 const MONTRER =
-  /^(?:montre|montres|montrez|fais voir|fait voir|faire voir|me montrer|montrer|affiche)(?:\s+moi)?\s+(?:l |la |le )?(?:impression|imprimante|camera de l imprimante|camera de l impression|impression en cours)$/;
+  /^(?:montre|montres|montrez|fais voir|fait voir|faire voir|me montrer|montrer|affiche)(?:\s+moi)?\s+(?:(?:la |l )?(?:camera|webcam)\s+(?:de la |de l |du |des |de |d )?)?(.+)$/;
 const OU_EN_EST = /^ou en est l impression(?: en cours)?$/;
 
 /** `null` : la phrase n'est pas pour les yeux, le tour continue. */
@@ -30,8 +31,9 @@ export function intentionYeux(texte: string): IntentionYeux | null {
   let n = plier(texte).replace(AMORCE, '');
   for (let i = 0; i < 2; i += 1) n = n.replace(POLITESSE, '').trim();
   if (!n) return null;
-  if (OU_EN_EST.test(n)) return { kind: 'montrer', avecEtat: true };
-  if (MONTRER.test(n)) return { kind: 'montrer', avecEtat: true };
+  if (OU_EN_EST.test(n)) return { kind: 'montrer', cible: 'impression' };
+  const montrer = MONTRER.exec(n);
+  if (montrer?.[1]) return { kind: 'montrer', cible: montrer[1].trim() };
   return null;
 }
 

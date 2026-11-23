@@ -106,6 +106,49 @@ async function lireBorne(response: Response, max: number): Promise<Uint8Array | 
   return octets;
 }
 
+/**
+ * Une image par `GET`, bornée : délai, aucune redirection, 5 Mo, JPEG ou PNG vérifié aux octets.
+ * Partagée par tous les yeux qui passent par le réseau (Klipper, œil réseau). Jamais d'exception.
+ */
+export async function lireImage(
+  fetchImpl: typeof fetch,
+  adresse: string,
+  headers: Record<string, string>,
+  delaiMs: number,
+  maintenant: () => number,
+  camera: string,
+): Promise<ResultatPhoto> {
+  let response: Response;
+  try {
+    response = await lectureSeule(fetchImpl)(adresse, {
+      method: 'GET',
+      headers,
+      redirect: 'error',
+      signal: AbortSignal.timeout(delaiMs),
+    });
+  } catch (error) {
+    return { ok: false, raison: raisonReseau(error) };
+  }
+  if (response.status >= 300 && response.status < 400) return { ok: false, raison: 'La caméra a renvoyé ailleurs : refusé.' };
+  if (response.status === 401 || response.status === 403) return { ok: false, raison: 'La caméra a refusé la clé.' };
+  if (!response.ok) return { ok: false, raison: `La caméra a répondu ${response.status}.` };
+  const annonce = Number(response.headers.get('content-length') ?? '0');
+  if (annonce > YEUX_IMAGE_MAX) return { ok: false, raison: "L'image de la caméra est trop grande (plus de 5 Mo)." };
+  let octets: Uint8Array | null;
+  try {
+    octets = await lireBorne(response, YEUX_IMAGE_MAX);
+  } catch (error) {
+    return { ok: false, raison: raisonReseau(error) };
+  }
+  if (!octets) return { ok: false, raison: "L'image de la caméra est trop grande (plus de 5 Mo)." };
+  const typeAnnonce = (response.headers.get('content-type') ?? '').split(';')[0]!.trim().toLowerCase();
+  const type = typeDesOctets(octets);
+  if (!type || (typeAnnonce && typeAnnonce !== type)) {
+    return { ok: false, raison: "La caméra n'a pas envoyé une image (JPEG ou PNG)." };
+  }
+  return { ok: true, photo: { octets, type, prisA: maintenant(), taille: octets.byteLength, camera } };
+}
+
 export class YeuxImprimante {
   readonly origin: string;
   private readonly fetchImpl: typeof fetch;
@@ -169,29 +212,7 @@ export class YeuxImprimante {
     if (!choisie) return { ok: false, raison: 'Aucune caméra activée dans Mainsail.' };
     const adresse = snapshotAddress(this.origin, choisie.snapshotUrl);
     if (!adresse) return { ok: false, raison: "L'adresse de la caméra n'est pas sur le réseau local : refusée." };
-    let response: Response;
-    try {
-      response = await this.lire(adresse, false);
-    } catch (error) {
-      return { ok: false, raison: raisonReseau(error) };
-    }
-    if (response.status >= 300 && response.status < 400) return { ok: false, raison: 'La caméra a renvoyé ailleurs : refusé.' };
-    if (!response.ok) return { ok: false, raison: `La caméra a répondu ${response.status}.` };
-    const annonce = Number(response.headers.get('content-length') ?? '0');
-    if (annonce > YEUX_IMAGE_MAX) return { ok: false, raison: "L'image de la caméra est trop grande (plus de 5 Mo)." };
-    let octets: Uint8Array | null;
-    try {
-      octets = await lireBorne(response, YEUX_IMAGE_MAX);
-    } catch (error) {
-      return { ok: false, raison: raisonReseau(error) };
-    }
-    if (!octets) return { ok: false, raison: "L'image de la caméra est trop grande (plus de 5 Mo)." };
-    const typeAnnonce = (response.headers.get('content-type') ?? '').split(';')[0]!.trim().toLowerCase();
-    const type = typeDesOctets(octets);
-    if (!type || (typeAnnonce && typeAnnonce !== type)) {
-      return { ok: false, raison: "La caméra n'a pas envoyé une image (JPEG ou PNG)." };
-    }
-    return { ok: true, photo: { octets, type, prisA: this.maintenant(), taille: octets.byteLength, camera: choisie.name } };
+    return lireImage(this.fetchImpl, adresse, {}, this.delaiMs, this.maintenant, choisie.name);
   }
 
   async etat(): Promise<EtatYeux> {

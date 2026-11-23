@@ -32,7 +32,9 @@ const { SpotifyBridge } = await import('./media/SpotifyBridge.js');
 const { SiteBlockBridge } = await import('./siteblock/SiteBlockBridge.js');
 const { PersonalizationStore } = await import('./personalization.js');
 const { KnowledgeStore } = await import('./knowledge.js');
-const { creerYeuxPC, PhotosEnMemoire, yeuxActifs } = await import('./yeux/yeuxPC.js');
+const { creerYeuxPC, PhotosEnMemoire } = await import('./yeux/yeuxPC.js');
+const { YeuxStore } = await import('./yeux/store.js');
+let numero = 0;
 
 const JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, ...new Array(3000).fill(9), 0xff, 0xd9]);
 const methodes: string[] = [];
@@ -108,7 +110,9 @@ function setup(options: { yeux?: Record<string, unknown> | undefined; edition?: 
     send: (_channel: string, event: ChatEvent) => events.push(event),
   } as unknown as Electron.WebContents;
   const store = new core.InMemoryConversationStore();
-  const yeuxPC = creerYeuxPC(getSettings, options.edition ?? true);
+  numero += 1;
+  const yeuxStore = new YeuxStore(() => join(userData, `yeux-${numero}.json`));
+  const yeuxPC = creerYeuxPC({ getSettings, editionYeux: options.edition ?? true, store: yeuxStore });
   const session = new ChatSession({
     registry,
     tools,
@@ -138,7 +142,7 @@ describe('les yeux dans la session', () => {
     expect(modelCalls).toEqual([]);
     const reponse = messages.at(-1)!;
     expect(reponse.content).toMatch(/^50 %, il reste 50 min, buse 255 °C, plateau 80 °C\. Photo prise à \d+ h \d{2} min \d{2} s\.$/);
-    expect(reponse.yeux?.camera).toBe('cam');
+    expect(reponse.yeux?.camera).toBe('Imprimante');
     expect(Object.keys(reponse.yeux!).sort()).toEqual(['camera', 'photoId', 'prisA']);
     expect(JSON.stringify(messages)).not.toMatch(/base64|\/9j\//);
     expect(events).toContainEqual({ type: 'yeux', messageId: reponse.id, photo: reponse.yeux });
@@ -173,10 +177,57 @@ describe('les yeux dans la session', () => {
     expect(methodes).toEqual([]);
   });
 
-  it('réglages : sans défaut, et adresse hors réseau local refusée', () => {
+  it('réglages : sans défaut ; registre : imprimante, rover et hub prévus', async () => {
     expect('yeux' in core.parseSettings({})).toBe(false);
-    const loin = core.parseSettings({ printer: { baseUrl: 'http://8.8.8.8' }, yeux: { enabled: true } });
-    expect(yeuxActifs(loin, true)).toBe(false);
+    const { yeuxPC } = setup({ yeux: { enabled: true } });
+    expect((await yeuxPC.yeux()).map((o) => o.id)).toEqual(['imprimante', 'rover-avant', 'rover-pince', 'hub']);
+    const vue = await yeuxPC.vue('hub');
+    expect(vue.ok && vue.vue.raisonPhoto).toBe("« Hub » n'est pas encore branché.");
+  });
+
+  it('interrupteur : une caméra coupée ne prend plus rien, et c’est dit', async () => {
+    methodes.length = 0;
+    const { yeuxPC, say } = setup({ yeux: { enabled: true } });
+    expect(await yeuxPC.allumer('imprimante', false)).toEqual({ ok: true });
+    const vue = await yeuxPC.vue('imprimante');
+    expect(vue.ok && vue.vue.photo).toBeNull();
+    expect(vue.ok && vue.vue.raisonPhoto).toBe('La caméra « Imprimante » est coupée.');
+    const messages = await say("Montre-moi l'impression");
+    expect(messages.at(-1)!.content).toContain('Pas de photo : la caméra « Imprimante » est coupée.');
+    expect(messages.at(-1)!.yeux).toBeUndefined();
+    expect(methodes.filter((m) => m !== 'GET')).toEqual([]);
+  });
+
+  it('brancher le rover avant (faux œil réseau) : hello vérifié, puis photo par la phrase', async () => {
+    const faux = new core.FakeOeil('http://rover.local:8770', 'secret', 'Rover avant');
+    const settings = core.parseSettings({ provider: 'ollama', model: 'qwen2.5:7b', yeux: { enabled: true } });
+    numero += 1;
+    const store = new YeuxStore(() => join(userData, `yeux-${numero}.json`));
+    const yeuxPC = creerYeuxPC({ getSettings: () => settings, editionYeux: true, store, fetchImpl: faux.fetch });
+    expect((await yeuxPC.brancher('rover-avant', 'http://rover.local:8770', 'mauvais')).ok).toBe(false);
+    expect(await yeuxPC.brancher('rover-avant', 'http://8.8.8.8:8770', 'secret')).toMatchObject({ ok: false });
+    expect(await yeuxPC.brancher('rover-avant', 'http://rover.local:8770', 'secret')).toEqual({ ok: true });
+    const r = await yeuxPC.tour({ text: 'Montre-moi la caméra du rover avant', place: 'fenetre' });
+    expect(r?.photo?.camera).toBe('Rover avant');
+    expect(faux.requetes.every((q) => q.methode === 'GET')).toBe(true);
+    // Sans chiffrement du système (essai), le jeton n'est jamais écrit en clair sur le disque.
+    const { readFile } = await import('node:fs/promises');
+    expect(await readFile(join(userData, `yeux-${numero}.json`), 'utf8')).not.toContain('secret');
+  });
+
+  it('jamais de caméra dans une chambre, même par le fichier', async () => {
+    const { writeFile } = await import('node:fs/promises');
+    numero += 1;
+    const fichier = join(userData, `yeux-${numero}.json`);
+    await writeFile(fichier, JSON.stringify({ yeux: [{ id: 'nuit', nom: 'Nuit', piece: 'Chambre', genre: 'reseau', allume: true, adresse: 'http://cam.local' }] }));
+    const store = new YeuxStore(() => fichier);
+    const settings = core.parseSettings({ yeux: { enabled: true } });
+    const yeuxPC = creerYeuxPC({ getSettings: () => settings, editionYeux: true, store });
+    expect((await yeuxPC.yeux()).some((o) => o.id === 'nuit')).toBe(false);
+    expect(await store.mettre({ id: 'nuit', nom: 'Nuit', piece: 'chambre', genre: 'pc', allume: false })).toEqual({
+      ok: false,
+      raison: 'Jamais de caméra dans une chambre : refusé.',
+    });
   });
 
   it('photos en mémoire : 30 minutes, 20 au plus', () => {

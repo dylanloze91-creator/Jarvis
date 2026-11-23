@@ -62,6 +62,7 @@ function initialViewFromScene(): View {
     return 'settings';
   }
   if (scene === 'developer') return 'developer';
+  if (scene === 'yeux') return 'yeux';
   return 'chat';
 }
 

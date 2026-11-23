@@ -117,6 +117,7 @@ import { createMorningBriefing } from './quotidien/morning.js';
 import { runPrinterReply } from './quotidien/printerReply.js';
 import { creerAtelierPC, dossierAtelier, lireFichierAtelier } from './atelier/atelierPC.js';
 import { creerYeuxPC } from './yeux/yeuxPC.js';
+import { YeuxStore } from './yeux/store.js';
 import { CarnetFile } from './carnet/file.js';
 import { appendTeamValidation, type TeamValidationPayload } from './orchestra/teamValidation.js';
 import { PhoneService } from './phone/service.js';
@@ -493,7 +494,17 @@ function settingsForWindow(): Settings {
 const atelierReply = edition().atelier ? creerAtelierPC(() => settings) : undefined;
 // Les yeux (Jarvis Test) : caméra de l'imprimante en lecture seule, photos en mémoire seulement.
 const yeuxPC = edition().yeux
-  ? creerYeuxPC(() => settings, true, fetch, () => join(app.getPath('userData'), 'yeux', 'photos'))
+  ? creerYeuxPC({
+      getSettings: () => settings,
+      editionYeux: true,
+      store: YeuxStore.inUserData(() => app.getPath('userData')),
+      chiffre: {
+        available: () => safeStorage.isEncryptionAvailable(),
+        seal: (plain) => safeStorage.encryptString(plain).toString('base64'),
+        open: (sealed) => safeStorage.decryptString(Buffer.from(sealed, 'base64')),
+      },
+      dossierPhotos: () => join(app.getPath('userData'), 'yeux', 'photos'),
+    })
   : null;
 const yeuxReply = yeuxPC ? (input: { text: string; place: 'fenetre' | 'telephone' | 'enceinte' }) => yeuxPC.tour(input) : undefined;
 
@@ -1207,7 +1218,19 @@ function registerIpc(): void {
     return { ok: true, type: photo.type, data: photo.octets, prisA: photo.prisA };
   });
   ipcMain.handle(IpcChannel.yeuxDisponible, () => Boolean(yeuxPC?.disponible()));
-  ipcMain.handle(IpcChannel.yeuxVue, () => (yeuxPC ? yeuxPC.vue() : { ok: false, error: 'Les yeux sont coupés.' }));
+  const idOeil = (id: unknown): id is string => typeof id === 'string' && /^[a-z0-9][a-z0-9-]{1,39}$/.test(id);
+  ipcMain.handle(IpcChannel.yeuxListe, () => (yeuxPC ? yeuxPC.yeux() : []));
+  ipcMain.handle(IpcChannel.yeuxVue, (_event, id: unknown) =>
+    yeuxPC && idOeil(id) ? yeuxPC.vue(id) : { ok: false, error: 'Les yeux sont coupés.' },
+  );
+  ipcMain.handle(IpcChannel.yeuxAllumer, (_event, id: unknown, allume: unknown) =>
+    yeuxPC && idOeil(id) && typeof allume === 'boolean' ? yeuxPC.allumer(id, allume) : { ok: false, error: 'Refusé.' },
+  );
+  ipcMain.handle(IpcChannel.yeuxBrancher, (_event, id: unknown, adresse: unknown, jeton: unknown) =>
+    yeuxPC && idOeil(id) && typeof adresse === 'string' && adresse.length <= 200 && typeof jeton === 'string' && jeton.length <= 512
+      ? yeuxPC.brancher(id, adresse.trim(), jeton.trim())
+      : { ok: false, error: 'Refusé.' },
+  );
   ipcMain.handle(IpcChannel.yeuxGarder, (_event, photoId: unknown) => {
     if (!yeuxPC || typeof photoId !== 'string' || !/^[0-9a-f-]{36}$/.test(photoId)) return { ok: false, error: 'Photo refusée.' };
     return yeuxPC.garder(photoId);

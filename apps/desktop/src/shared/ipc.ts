@@ -34,19 +34,19 @@ import type {
   WakeStatsSummary,
   WakeVerifierModel,
 } from '@jarvis/core';
-import type { AtelierEtat, EtatCarte, PhotoDiscussion } from '@jarvis/core';
+import type { AtelierEtat, EtatCarte, Oeil, PhotoDiscussion } from '@jarvis/core';
 
-/** Écran « Yeux » : une carte par œil (aujourd'hui l'imprimante). Données seulement, lecture seule. */
+/** Écran « Yeux » : une carte par œil. Données seulement, lecture seule. */
 export interface VueOeilYeux {
-  id: string;
-  nom: string;
+  oeil: Oeil;
+  branche: boolean;
   photo: (PhotoDiscussion & { type: string; data: Uint8Array }) | null;
   raisonPhoto: string | null;
   etat: EtatCarte | null;
   raisonEtat: string | null;
   file: string[];
 }
-export type ResultatVueYeux = { ok: true; oeil: VueOeilYeux } | { ok: false; error: string };
+export type ResultatVueYeux = { ok: true; vue: VueOeilYeux } | { ok: false; error: string };
 import type { LocalLearningRuntimeStatus } from '@jarvis/core';
 import type { DirectProjectDefaults, ImageFormat, ImageProject } from '@jarvis/core';
 import type { DeveloperApi } from './developerIpc.js';
@@ -121,8 +121,11 @@ export const IpcChannel = {
   yeuxPhoto: 'yeux:photo',
   /** Écran « Yeux » : disponible, une vue (image + état + file, lecture seule), garder une photo. */
   yeuxDisponible: 'yeux:disponible',
+  yeuxListe: 'yeux:liste',
   yeuxVue: 'yeux:vue',
   yeuxGarder: 'yeux:garder',
+  yeuxAllumer: 'yeux:allumer',
+  yeuxBrancher: 'yeux:brancher',
   imagesDirectCatalog: 'images:direct-catalog',
   imagesDirectGenerate: 'images:direct-generate',
   imagesDirectCancel: 'images:direct-cancel',
@@ -966,8 +969,11 @@ export interface JarvisApi {
   yeux?: {
     photo(photoId: string): Promise<{ ok: true; type: string; data: Uint8Array; prisA: number } | { ok: false; error: string }>;
     disponible(): Promise<boolean>;
-    vue(): Promise<ResultatVueYeux>;
+    liste(): Promise<Oeil[]>;
+    vue(id: string): Promise<ResultatVueYeux>;
     garder(photoId: string): Promise<{ ok: true; chemin: string } | { ok: false; error: string }>;
+    allumer(id: string, allume: boolean): Promise<{ ok: true } | { ok: false; error: string }>;
+    brancher(id: string, adresse: string, jeton: string): Promise<{ ok: true } | { ok: false; error: string }>;
   };
   settings: {
     get(): Promise<{ settings: Settings; status: RuntimeStatus }>;

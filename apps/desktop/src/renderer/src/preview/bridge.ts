@@ -22,6 +22,7 @@ import type {
 } from '../../../shared/ipc';
 import desktopPackage from '../../../../package.json' with { type: 'json' };
 import { createPreviewDeveloperApi } from './developerBridge';
+import { createPreviewYeuxApi } from './yeuxBridge';
 
 /**
  * Pont de prévisualisation : utilisé uniquement quand le preload Electron
@@ -510,6 +511,7 @@ export function installPreviewBridge(): void {
       onEvent: () => () => undefined,
     },
     developer: createPreviewDeveloperApi(search.get('scene'), () => settings.developer.enabled),
+    ...(search.get('scene') === 'yeux' ? { yeux: createPreviewYeuxApi() } : {}),
     health: {
       current: async () => previewHealth(search.get('scene')),
       refresh: async () => previewHealth(search.get('scene')),
