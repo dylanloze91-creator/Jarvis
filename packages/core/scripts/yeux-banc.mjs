@@ -99,7 +99,6 @@ try {
     for (const m of await charges()) await decharger(m.name);
     const lignes = [];
     let vram = 0;
-    let total = 0;
     const t0 = Date.now();
     for (const photo of photos) {
       const image = (await readFile(join(dossier, photo.classe, photo.fichier))).toString('base64');
@@ -124,7 +123,6 @@ try {
         const duree = Date.now() - debut;
         const lu = erreur ? null : q.lire(texte);
         lignes.push({ modele, classe: photo.classe, fichier: photo.fichier, question: id, attendu, lu, juste: lu === attendu, duree, texte, erreur });
-        total += duree;
         if (vram === 0) vram = (await charges()).find((m) => m.name.startsWith(modele.split(':')[0]))?.vram ?? 0;
         process.stdout.write('.');
       }
