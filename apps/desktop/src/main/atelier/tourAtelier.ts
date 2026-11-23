@@ -18,6 +18,7 @@ import { existsSync } from 'node:fs';
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
+  controlerImpression,
   controlerStl,
   dernierAtelier,
   deciderAtelier,
@@ -187,7 +188,10 @@ export async function tourAtelier(input: AtelierEntree, deps: AtelierDeps): Prom
       input.progress?.('OpenSCAD dessine la pièce…');
       const rendu = await deps.programmes.rendreStl(openscad, scad, stl);
       if (!rendu.ok) return { texte: `${rendu.message} Le fichier .scad est gardé dans ${chemin}.` };
-      const controle = controlerStl(lireStl(new Uint8Array(await readFile(stl))), piece.taille);
+      const maillage = lireStl(new Uint8Array(await readFile(stl)));
+      const controle = controlerStl(maillage, piece.taille);
+      // Imprimable sans support, posée telle quelle ? (surplombs de plus de 45°, ponts de plus de 25 mm)
+      const impression = controlerImpression(maillage, decision.gabarit.nom);
       const image = (await deps.programmes.rendreImage(openscad, scad, join(chemin, `v${numero}.png`))).ok ? `v${numero}.png` : undefined;
 
       const version: AtelierVersionInfo = {
@@ -211,7 +215,10 @@ export async function tourAtelier(input: AtelierEntree, deps: AtelierDeps): Prom
             versionChoisie: numero,
             plateau: { x: volume.x, y: volume.y },
           };
-      const probleme = controle.ok ? '' : ` Attention : ${controle.problemes.join(' ')}`;
+      const probleme = [
+        controle.ok ? '' : ` Attention : ${controle.problemes.join(' ')}`,
+        impression.ok ? '' : ` Sans support, ça risque de mal s’imprimer : ${impression.problemes.join(' ')}`,
+      ].join('');
       if (voix) return { texte: `C'est prêt : ${version.fiche} Regarde l'écran du PC.${probleme}`, etat };
       const quoi = decision.changement ? `Version ${numero} (${decision.changement}). ` : '';
       const suite = controle.ok

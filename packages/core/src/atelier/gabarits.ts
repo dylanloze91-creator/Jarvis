@@ -9,6 +9,7 @@
  * Pur : aucune dépendance, aucun accès disque. Unités : millimètres et degrés.
  */
 
+import { ajoutsDe, couvercleDe, direAjout, placerAjouts } from './ajouts.js';
 import { decoupesDe, direDecoupe, placerDecoupes } from './decoupes.js';
 
 /** Volume d'impression de l'Ender 3 S1 Plus (fiche Creality) : 300 × 300 × 300 mm. */
@@ -136,6 +137,9 @@ const boiteCouvercle: Gabarit = {
   suite: ['longueur', 'largeur', 'hauteur'],
   taille: (v) => {
     const L = num(v, 'longueur');
+    const c = couvercleDe(v);
+    // Couvercle posé sur un rebord intérieur : une plaque plus petite que la boîte, sans lèvre.
+    if (c.plat) return [2 * L + 10 - 2 * num(v, 'paroi') - 2 * c.jeu, num(v, 'largeur'), num(v, 'hauteur')];
     return [2 * L + 10, num(v, 'largeur'), Math.max(num(v, 'hauteur'), num(v, 'couvercle') + num(v, 'rebord'))];
   },
   verifier: (v) => {
@@ -152,17 +156,26 @@ const boiteCouvercle: Gabarit = {
     const L = num(v, 'longueur');
     const W = num(v, 'largeur');
     const e = num(v, 'paroi');
-    const j = num(v, 'jeu');
     const t = num(v, 'couvercle');
     const r = num(v, 'rebord');
+    // La lèvre : épaisseur et jeu par côté (la paroi et le jeu réglé, ou l'emboîtement de 1,2 mm).
+    const c = couvercleDe(v);
+    const j = c.jeu;
+    const k = c.levre;
     const li = L - 2 * e - 2 * j;
     const wi = W - 2 * e - 2 * j;
+    const boite = HEADER + '// La boîte\n' + boiteCreuse(L, W, num(v, 'hauteur'), e, num(v, 'fond'));
+    if (c.plat) {
+      return (
+        boite +
+        '// Le couvercle, à côté : une plaque posée sur le rebord intérieur\n' +
+        `translate([${scadNombre(L + 10)}, ${scadNombre(e + j)}, 0]) cube([${scadNombre(li)}, ${scadNombre(wi)}, ${scadNombre(t)}]);\n`
+      );
+    }
     return (
-      HEADER +
-      '// La boîte\n' +
-      boiteCreuse(L, W, num(v, 'hauteur'), e, num(v, 'fond')) +
+      boite +
       '// Le couvercle, à côté\n' +
-      `translate([${scadNombre(L + 10)}, 0, 0]) union() {\n  cube([${scadNombre(L)}, ${scadNombre(W)}, ${scadNombre(t)}]);\n  translate([${scadNombre(e + j)}, ${scadNombre(e + j)}, ${scadNombre(t)}]) difference() {\n    cube([${scadNombre(li)}, ${scadNombre(wi)}, ${scadNombre(r)}]);\n    translate([${scadNombre(e)}, ${scadNombre(e)}, -1]) cube([${scadNombre(li - 2 * e)}, ${scadNombre(wi - 2 * e)}, ${scadNombre(r + 2)}]);\n  }\n}\n`
+      `translate([${scadNombre(L + 10)}, 0, 0]) union() {\n  cube([${scadNombre(L)}, ${scadNombre(W)}, ${scadNombre(t)}]);\n  translate([${scadNombre(e + j)}, ${scadNombre(e + j)}, ${scadNombre(t)}]) difference() {\n    cube([${scadNombre(li)}, ${scadNombre(wi)}, ${scadNombre(r)}]);\n    translate([${scadNombre(k)}, ${scadNombre(k)}, -1]) cube([${scadNombre(li - 2 * k)}, ${scadNombre(wi - 2 * k)}, ${scadNombre(r + 2)}]);\n  }\n}\n`
     );
   },
 };
@@ -448,7 +461,7 @@ export function gabarit(id: string): Gabarit | undefined {
 }
 
 export type Piece =
-  | { ok: true; gabarit: Gabarit; valeurs: Valeurs; taille: [number, number, number]; scad: string }
+  | { ok: true; gabarit: Gabarit; valeurs: Valeurs; taille: [number, number, number]; scad: string; notes?: string[] }
   | { ok: false; gabarit: Gabarit; erreurs: string[] };
 
 function unite(mesure: MesureNombre, x: number): string {
@@ -491,31 +504,51 @@ export function fabriquer(g: Gabarit, donnees: Valeurs, volume: VolumeImpression
   if (erreurs.length) return { ok: false, gabarit: g, erreurs };
   // Les découpes (trous, ouvertures, encoches) suivent les versions avec les mesures.
   if (typeof donnees.decoupes === 'string' && donnees.decoupes) valeurs.decoupes = donnees.decoupes;
+  // Les ajouts (bossages, plots, nervures, rebord, emboîtement) aussi.
+  if (typeof donnees.ajouts === 'string' && donnees.ajouts) valeurs.ajouts = donnees.ajouts;
   erreurs.push(...g.verifier(valeurs));
   const decoupes = placerDecoupes(g.id, g.nom, valeurs, decoupesDe(valeurs));
   erreurs.push(...decoupes.erreurs);
+  const ajouts = placerAjouts(g.id, valeurs);
+  erreurs.push(...ajouts.erreurs);
   const taille = g.taille(valeurs);
   const V = volume;
   if (taille[0] > V.x || taille[1] > V.y || taille[2] > V.z) {
     erreurs.push(`La pièce ne tient pas dans l’imprimante (${taille.map((x) => Math.ceil(x)).join(' × ')} mm pour ${V.x} × ${V.y} × ${V.z} mm).`);
   }
   if (erreurs.length) return { ok: false, gabarit: g, erreurs };
-  return { ok: true, gabarit: g, valeurs, taille, scad: avecLesDecoupes(g.scad(valeurs), decoupes.scad) };
+  return {
+    ok: true,
+    gabarit: g,
+    valeurs,
+    taille,
+    scad: avecLesDecoupes(g.scad(valeurs), [...decoupes.scad, ...ajouts.moins], ajouts.plus),
+    ...(ajouts.notes.length ? { notes: ajouts.notes } : {}),
+  };
 }
 
-/** La pièce moins ses découpes : `difference() { pièce ; découpes }`. Sans découpe : la pièce telle quelle. */
-function avecLesDecoupes(scad: string, decoupes: string[]): string {
-  if (!decoupes.length) return scad;
+/**
+ * La pièce, plus ses ajouts, moins ses découpes : `difference() { union() { pièce ; ajouts } ;
+ * découpes }`. Sans ajout ni découpe : la pièce telle quelle.
+ */
+function avecLesDecoupes(scad: string, decoupes: string[], ajouts: string[] = []): string {
+  if (!decoupes.length && !ajouts.length) return scad;
   const corps = scad.startsWith(HEADER) ? scad.slice(HEADER.length) : scad;
   const retrait = (texte: string) => texte.replace(/^(?=.)/gm, '    ');
-  return `${HEADER}// La pièce, moins ses découpes (trous, ouvertures, encoches)\ndifference() {\n  union() {\n${retrait(corps)}  }\n${decoupes.map((d) => `  ${d}\n`).join('')}}\n`;
+  const plus = ajouts.map((a) => `    ${a}\n`).join('');
+  return `${HEADER}// La pièce${ajouts.length ? ', plus ses ajouts' : ''}, moins ses découpes (trous, ouvertures, encoches)\ndifference() {\n  union() {\n${retrait(corps)}${plus}  }\n${decoupes.map((d) => `  ${d}\n`).join('')}}\n`;
 }
 
 /** Une phrase qui résume la pièce : « Boîte de 80 × 50 × 30 mm, parois de 2 mm. » */
 export function fichePiece(piece: Extract<Piece, { ok: true }>): string {
   const [x, y, z] = piece.taille.map((v) => String(Math.round(v * 10) / 10).replace('.', ','));
   const nom = piece.gabarit.nom;
-  const fiche = `${nom[0]!.toUpperCase()}${nom.slice(1)} de ${x} × ${y} × ${z} mm.`;
+  const base = `${nom[0]!.toUpperCase()}${nom.slice(1)} de ${x} × ${y} × ${z} mm.`;
+  // Les ajouts, puis les vis à prévoir (« Couvercle : 4 vis M3 × 6 à tête fraisée… »).
+  const ajouts = ajoutsDe(piece.valeurs);
+  const avecAjouts = ajouts.length === 1 ? ` Avec ${direAjout(ajouts[0]!)}.` : ajouts.length > 1 ? ` Avec ${ajouts.map(direAjout).join(', ')}.` : '';
+  const notes = piece.notes?.length ? ` ${piece.notes.join(' ')}` : '';
+  const fiche = `${base}${avecAjouts}${notes}`;
   const decoupes = decoupesDe(piece.valeurs);
   if (!decoupes.length) return fiche;
   const creux = ['boite', 'boite_couvercle', 'bac'].includes(piece.gabarit.id);

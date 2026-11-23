@@ -153,6 +153,27 @@ describe('atelier dans la discussion, côté PC', () => {
     expect(rendus).toHaveLength(0);
   });
 
+  it('pièce qui ne s’imprime pas sans support : dit, avec l’endroit', async () => {
+    // Faux OpenSCAD : une « table » de 80 × 50 × 30, plateau tenu par deux pieds à 60 mm l'un de l'autre.
+    const morceau = (x0: number, x1: number, z0: number, z1: number) => {
+      const p = [[x0, 0, z0], [x1, 0, z0], [x1, 50, z0], [x0, 50, z0], [x0, 0, z1], [x1, 0, z1], [x1, 50, z1], [x0, 50, z1]] as const;
+      const faces = [[0, 2, 1], [0, 3, 2], [4, 5, 6], [4, 6, 7], [0, 1, 5], [0, 5, 4], [1, 2, 6], [1, 6, 5], [2, 3, 7], [2, 7, 6], [3, 0, 4], [3, 4, 7]];
+      return faces.flatMap((f) => f.flatMap((i) => [...p[i]!]));
+    };
+    const d = deps({
+      programmes: {
+        ...deps().programmes,
+        rendreStl: async (_exe, _scad, stl) => {
+          await writeFile(stl, ecrireStlBinaire([...morceau(0, 10, 0, 27), ...morceau(70, 80, 0, 27), ...morceau(0, 80, 27, 30)]));
+          return { ok: true, message: 'Pièce dessinée.' };
+        },
+      },
+    });
+    const sortie = await dire([], 'Fais-moi une boîte de 80 par 50 par 30', d);
+    expect(sortie?.texte).toMatch(/Sans support, ça risque de mal s’imprimer : Boîte : pont de (?:59,5|6\d(?:,\d)?) mm sans appui \(25 mm au plus\), à 27 mm de haut/);
+    expect(sortie?.etat).toMatchObject({ etape: 'piece' });
+  });
+
   it('sans OpenSCAD : dit, rien inventé', async () => {
     const sortie = await dire([], 'Fais-moi une boîte de 80 par 50 par 30', deps({ programmes: { ...deps().programmes, openscad: () => null } }));
     expect(sortie).toEqual({ texte: ATELIER_SANS_OPENSCAD });

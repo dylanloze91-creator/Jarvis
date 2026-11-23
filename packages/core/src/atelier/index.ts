@@ -6,3 +6,6 @@ export * from './orcaPresets.js';
 export * from './vue3d.js';
 export * from './discussion.js';
 export * from './decoupes.js';
+export * from './ajouts.js';
+export * from './visserie.js';
+export * from './impression.js';

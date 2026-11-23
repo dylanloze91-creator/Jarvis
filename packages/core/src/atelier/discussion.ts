@@ -9,6 +9,7 @@
  */
 import { estChoix, gabarit, GABARITS, type Gabarit, type Mesure, type MesureNombre, type Valeurs } from './gabarits.js';
 import { appliquerDecoupes, avecDecoupes, decoupesAffichees, decoupesDe, lireDecoupes, sePerce } from './decoupes.js';
+import { ajoutsAffiches, appliquerAjouts, avecAjouts, lireAjouts } from './ajouts.js';
 import { comprendre, lireMesures, lireReponse, plier, prochaineQuestion } from './lecture.js';
 
 /** Une version rendue de la pièce. Les fichiers sont des noms simples, dans le dossier de la pièce. */
@@ -110,7 +111,7 @@ export function valeurDite(mesure: Mesure, valeur: number | string): string {
 /** Les mesures affichées à côté de la pièce. */
 export function mesuresAffichees(g: Gabarit, valeurs: Valeurs): { nom: string; valeur: string }[] {
   const mesures = g.mesures.filter((m) => m.id in valeurs).map((m) => ({ nom: majuscule(m.nom), valeur: valeurDite(m, valeurs[m.id]!) }));
-  return [...mesures, ...decoupesAffichees(g.id, valeurs)];
+  return [...mesures, ...ajoutsAffiches(valeurs), ...decoupesAffichees(g.id, valeurs)];
 }
 
 /** La pièce a déjà sa propre mesure « trou » (entretoise, équerre) : un trou sans face, c'est elle. */
@@ -134,10 +135,20 @@ export function demandePiece(text: string): { gabarit: Gabarit | null; valeurs: 
     // « … avec un trou de 8 à l'arrière » : les découpes sont lues à part, et retirées de la
     // phrase avant de lire les mesures (le 8 n'est pas une longueur).
     const g = demande.gabarit;
-    const lu = lireDecoupes(plier(text), { exigerFace: aSonTrou(g) });
+    // « … avec quatre bossages à insert M3 » : les ajouts de matière aussi, lus avant les découpes
+    // (« l'avant-trou » des plots n'est pas un trou à percer).
+    const matiere = lireAjouts(plier(text));
+    const opsMatiere = matiere.ops.filter((op) => op.action !== 'enlever');
+    const lu = lireDecoupes(matiere.reste, { exigerFace: aSonTrou(g) });
     const ajouts = lu.ops.filter((op) => op.action !== 'enlever');
-    if (!ajouts.length) return { gabarit: g, valeurs: demande.valeurs };
-    const valeurs = lireMesures(lu.reste, g).valeurs;
+    if (!ajouts.length && !opsMatiere.length) return { gabarit: g, valeurs: demande.valeurs };
+    let valeurs = lireMesures(lu.reste, g).valeurs;
+    if (opsMatiere.length) {
+      const m = appliquerAjouts(g, valeurs, opsMatiere);
+      if (m.erreurs.length) return { gabarit: g, valeurs, erreurs: m.erreurs };
+      valeurs = avecAjouts(valeurs, m.ajouts);
+    }
+    if (!ajouts.length) return { gabarit: g, valeurs };
     const r = appliquerDecoupes(g, [], ajouts);
     if (r.erreurs.length) return { gabarit: g, valeurs, erreurs: r.erreurs };
     return { gabarit: g, valeurs: avecDecoupes(valeurs, r.decoupes) };
@@ -313,7 +324,18 @@ export function deciderAtelier(text: string, precedent: AtelierEtat | null): Ate
   // Dans une phrase de 25 mots au plus (« j'ai un trou dans mon emploi du temps » reste au chat).
   const changementsDecoupes: string[] = [];
   let resteTexte = text;
-  const lu = t.split(' ').length <= 25 ? lireDecoupes(t, { exigerFace: aSonTrou(g) }) : { ops: [], reste: t };
+  const court = t.split(' ').length <= 25;
+  // Matière ajoutée d'abord : « ajoute quatre bossages », « le bossage plus haut », « fais que le
+  // couvercle s'emboîte ». Les découpes sont lues dans ce qui reste.
+  const matiere = court ? lireAjouts(t) : { ops: [], reste: t };
+  if (matiere.ops.length) {
+    const r = appliquerAjouts(g, valeurs, matiere.ops);
+    if (r.erreurs.length) return { kind: 'dire', texte: `${r.erreurs.join(' ')} La version ${actuelle.numero} reste à l'écran.` };
+    valeurs = avecAjouts(valeurs, r.ajouts);
+    changementsDecoupes.push(...r.changements);
+    resteTexte = matiere.reste;
+  }
+  const lu = court ? lireDecoupes(matiere.reste, { exigerFace: aSonTrou(g) }) : { ops: [], reste: t };
   if (lu.ops.length) {
     if (!sePerce(g.id)) {
       const r = appliquerDecoupes(g, [], lu.ops);
@@ -334,7 +356,7 @@ export function deciderAtelier(text: string, precedent: AtelierEtat | null): Ate
   Object.assign(valeurs, dites);
 
   // « Le trou plus haut » parle de la découpe, pas de la hauteur de la pièce.
-  for (const regle of lu.ops.length ? [] : RELATIFS) {
+  for (const regle of lu.ops.length || matiere.ops.length ? [] : RELATIFS) {
     if (!regle.mots.test(t)) continue;
     const id = regle.ids.find((x) => g.mesures.some((m) => m.id === x && !estChoix(m)) && !(x in dites));
     if (!id) continue;
