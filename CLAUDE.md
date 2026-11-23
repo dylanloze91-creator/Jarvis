@@ -1073,6 +1073,28 @@ Tout est réservé à Jarvis Test par deux champs facultatifs de la table d'édi
 - le journal du tour et `vitesse.md` ne contiennent aucune phrase ; les demandes du banc n'entrent dans aucune conversation ni aucun jeu d'entraînement ;
 - une règle express n'entre pas sans ses essais pour et contre.
 
+## Socle des appendices (branche `claude/socle-appendices`, Jarvis Test seulement, coupé par défaut)
+
+Étape 0 du cahier Jarvis Development (`docs/specs/jarvis-development.md`, section 3, sur `claude/jarvis-development`). Partie de `claude/dev`, parce que la fusion de `claude/dev` dans `claude/jarvis-development` a un conflit dans `AGENTS-COORDINATION.md` (annulée, à résoudre avec l'utilisateur). Rapport : `rapports/2026-11-19-socle-appendices.md`. **Pas de fusion, pas de publication. Rien n'a été essayé dans la fenêtre ni à la voix.**
+
+Tout est réservé à Jarvis Test par le champ facultatif `appendices` de la table d'édition (`packages/core/src/edition.ts`, absent de Live ; `port` = base + 8, réservé au futur pont, rien ne l'ouvre). Live, le chat sans appendice relié, les `__golden__` et `parseSettings({})` ne changent pas.
+
+- **Contrat, version 1** (`packages/core/src/appendices/contract.ts`, pur) : un appendice qui agit est un petit serveur que Jarvis appelle (`GET /api/sante`, `GET /api/hello` avec jeton, `GET /api/etat`, `POST /api/<capacité>` avec jeton, `POST /api/stop` sans jeton, `POST /api/arret_urgence`). `parseAppendiceHello` refuse une autre version du contrat, un genre inconnu, une capacité au nom réservé ou en double. `checkAppendiceBaseUrl` : réseau local seulement, comme le robot. `describeAppendiceAction` : « terminé » n'est une réussite que si l'appendice joint une `mesure` ; sinon « je ne peux pas dire que c'est fait ».
+- **Accord** : `APPENDICE_POLICY.everyActionConfirmed = true`. Les décisions de l'utilisateur (lumières, chauffage, caméras, bouton « Oui », alertes) ne sont pas prises : chaque action demande une carte, quel que soit le risque. C'est le seul endroit où cette règle s'écrit.
+- **Registre** (`apps/desktop/src/main/appendices/store.ts`) : `userData/appendices.json`, hors de `settings.json`, écriture sûre, 20 au plus. Le jeton est chiffré par `safeStorage` (`tokenSealed`) ; sans chiffrement il reste en mémoire. Il n'est jamais envoyé à la fenêtre.
+- **Service** (`service.ts`, `client.ts`) : relier (présentation lue avec le jeton), retirer, relire l'état sur demande (aucune boucle en fond), action, stop, arrêt d'urgence relu sur l'appendice. Une action annulée, trop lente, sans résultat lisible ou coupée en route envoie `/api/stop`.
+- **Outils** (`tools/appendices.ts`, fin de catalogue, équipe PC) : `appendices_etat`, `appendices_stop`, `appendice_arret_urgence` (`safe`) ; `appendice_action` et `appendice_relacher_urgence` (`confirm` + `forceConfirm`). Absents tant que le registre est coupé ou vide ; `appendices_stop` reste dès qu'il y a quelque chose à arrêter.
+- **« Jarvis, arrête tout »** (`core/appendices/stopAll.ts`, `SessionDeps.stopAll`) : règles seulement, avant le briefing, les notes, le chef d'orchestre et tout modèle ; stop à chaque appendice inscrit et au robot s'il est réglé ; passe par `appendices_stop` et le journal d'audit ; rien à arrêter = la phrase suit le chemin d'avant. La phrase entière doit être l'ordre (« arrête tout ce bruit » ne l'est pas).
+- **Faux appendice** : `node apps/desktop/scripts/fake-appendice.mjs` (simulation, affiche adresse et jeton) ; les tests l'importent par `appendices/fakeAppendice.testkit.ts`.
+- **Interface** : Réglages → Appendices (`components/AppendicesSettings.tsx`), visible dans Test seulement, appliqué tout de suite ; IPC `appendices:*`.
+
+À ne pas casser :
+
+- sans appendice relié, catalogue, chemins et réponses sont ceux d'avant (`appendices-session.test.ts`) ; Live n'a rien de tout cela ;
+- une action d'appendice ne part jamais sans carte tant que `APPENDICE_POLICY` le dit ; l'arrêt et l'arrêt d'urgence n'attendent jamais ; relâcher l'arrêt d'urgence demande une carte ;
+- « terminé » sans mesure n'est jamais dit comme fait ; un appendice muet est nommé, avec le rappel du bouton physique ;
+- le jeton n'est jamais écrit en clair, ni envoyé à la fenêtre, ni dans un journal ;
+- aucun port n'est écrit en dur : celui du pont vient de la table d'édition.
 ## Correction des outils de l'équipe PC (branche `claude/correction-outils-pc`, Jarvis Test `5.1.0-test.2`)
 
 Partie de `claude/dev`. Rapport et chiffres : `rapports/2026-11-19-correction-outils-pc.md`. **Pas de fusion dans `main`, pas de publication, Live non touché.**

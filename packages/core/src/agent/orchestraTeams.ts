@@ -78,6 +78,8 @@ export const TEAM_SPECS: Record<OrchestraTeam, TeamSpec> = {
       'get_current_time',
       // Proposé seulement si une enceinte est reliée (`isAvailable`).
       'afficher_sur_enceinte',
+      // Proposés seulement dans Jarvis Test, registre activé et un appendice relié (`isAvailable`).
+      'appendice*',
     ],
     prompt:
       'Tu agis sur le PC avec les outils fournis. Choisis l’outil le plus simple qui fait la demande ; n’utilise run_command que si aucun autre outil ne convient.',

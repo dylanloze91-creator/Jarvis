@@ -33,6 +33,7 @@
     "lab:clean": "tsc -p tsconfig.json && node scripts/lab-clean.mjs",
     "lab:prepare": "tsc -p tsconfig.json && node scripts/lab-prepare.mjs",
     "lab:compare": "tsc -p tsconfig.json && node scripts/lab-compare.mjs",
+    "atelier:rendre": "tsc -p tsconfig.json && node scripts/atelier-rendre.mjs",
     "trieur:extraire": "tsc -p tsconfig.json && node scripts/trieur-extraire.mjs",
     "trieur:trier": "tsc -p tsconfig.json && node scripts/trieur-trier.mjs",
     "trieur:banc": "tsc -p tsconfig.json && node scripts/trieur-banc.mjs",

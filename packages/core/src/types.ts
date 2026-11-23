@@ -1,3 +1,4 @@
+import type { AtelierEtat } from './atelier/discussion.js';
 import type { ToolCategory } from './tools/types.js';
 import type { ChatMissionEnvelope } from './developer/chatMissions/envelope.js';
 
@@ -85,6 +86,8 @@ export interface ChatMessage {
   direct?: 'image';
   /** Message utilisateur direct : la consigne réellement confiée à Imager (sert aux suites « la même en anime »). */
   directPrompt?: string;
+  /** Atelier 3D (Jarvis Test) : question en cours, ou pièce rendue avec ses versions (écran 3D). */
+  atelier?: AtelierEtat;
   createdAt: number;
 }
 

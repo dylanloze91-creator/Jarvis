@@ -1,0 +1,400 @@
+/**
+ * Atelier 3D dans la discussion de Jarvis Test, côté PC : la décision vient du cœur
+ * (`deciderAtelier`, règles seules), ce fichier fait le travail.
+ *
+ * - pièce : OpenSCAD rend `v<N>.stl` (et `v<N>.png`) dans `<atelier>/<pièce>/`, le STL est
+ *   contrôlé (fermé, aux cotes du gabarit) ; chaque changement crée une version, l'ancienne reste ;
+ * - imprimer : jamais depuis une enceinte ; OrcaSlicer tranche avec les copies des préréglages de
+ *   l'utilisateur (lus, jamais modifiés), temps et filament lus dans le fichier produit, puis
+ *   **carte de confirmation**, et seulement après, envoi à Moonraker ;
+ * - file d'attente (« mets-la dans la file », ou « imprime-la » quand l'imprimante est occupée) :
+ *   même préparation, carte « Ajouter à la file d'attente », envoi **sans lancer**, ajout à la file de
+ *   Moonraker, puis relecture de la file. Jamais l'impression en cours touchée, jamais le passage
+ *   automatique activé (refus si moonraker.conf l'a), file toujours laissée en pause ;
+ * - « le plateau est vide, lance la suivante » : seule façon de lancer une pièce de la file, après une
+ *   carte, et seulement imprimante libre.
+ */
+import { existsSync } from 'node:fs';
+import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import {
+  controlerStl,
+  dernierAtelier,
+  deciderAtelier,
+  fabriquer,
+  fichePiece,
+  lireStl,
+  mesuresAffichees,
+  nomDossierPiece,
+  phraseConfirmationAtelier,
+  phraseConfirmationFile,
+  phraseConfirmationSuivante,
+  phraseTempsFilament,
+  SPEAKER_CANNOT_START,
+  type AtelierEtat,
+  type AtelierVersionInfo,
+  type ChatMessage,
+  type InfosGcode,
+  type PrintStatus,
+  type QueueSettings,
+  type QueueStatus,
+  type VolumeImpression,
+} from '@jarvis/core';
+
+type EtatPiece = Extract<AtelierEtat, { etape: 'piece' }>;
+
+/** Ce que l'imprimante doit savoir faire pour l'atelier (le client Moonraker du lot B suffit). */
+export interface ImprimanteAtelier {
+  status(): Promise<PrintStatus>;
+  upload(name: string, bytes: Uint8Array, print: boolean): Promise<void>;
+  files(): Promise<{ path: string }[]>;
+  /** Lance un fichier déjà sur l'imprimante (`/printer/print/start`), jamais par la file. */
+  start(filename: string): Promise<PrintStatus>;
+  queueSettings(): Promise<QueueSettings>;
+  queueStatus(): Promise<QueueStatus>;
+  queuePause(): Promise<QueueStatus>;
+  queueAdd(filename: string): Promise<QueueStatus>;
+  queueRemove(jobId: string): Promise<QueueStatus>;
+}
+
+export interface ProgrammesAtelier {
+  /** Chemin d'OpenSCAD, ou `null` s'il n'est pas installé. */
+  openscad(): string | null;
+  rendreStl(openscad: string, scad: string, stl: string): Promise<{ ok: boolean; message: string }>;
+  rendreImage(openscad: string, scad: string, png: string): Promise<{ ok: boolean }>;
+  /** Tranche le STL ; `ok: false` avec une phrase si OrcaSlicer manque ou échoue. */
+  trancher(stl: string, sortie: string): Promise<{ ok: boolean; message: string; gcode: string | null; infos: InfosGcode | null }>;
+}
+
+export interface AtelierDeps {
+  /** Dossier de l'atelier (`C:\dev\jarvis-data\atelier`). */
+  racine: string;
+  programmes: ProgrammesAtelier;
+  /** Limite de la pièce : la surface réglée dans le préréglage OrcaSlicer de l'utilisateur. */
+  volume(): Promise<VolumeImpression>;
+  /** Imprimante réglée et activée, sinon `null`. */
+  imprimante(): ImprimanteAtelier | null;
+  /** Jour local `AAAA-MM-JJ`. */
+  jour(): string;
+}
+
+export interface AtelierEntree {
+  text: string;
+  messages: readonly ChatMessage[];
+  place: 'fenetre' | 'telephone' | 'enceinte';
+  confirm: (summary: string) => Promise<boolean>;
+  /** « OpenSCAD dessine la pièce… », pour la discussion. */
+  progress?: (message: string) => void;
+}
+
+export interface AtelierSortie {
+  texte: string;
+  /** État à poser sur la réponse : question en cours, ou pièce à afficher en 3D. */
+  etat?: AtelierEtat;
+}
+
+export const ATELIER_SANS_OPENSCAD =
+  "OpenSCAD n'est pas installé sur ce PC : je ne peux pas dessiner la pièce. Installe-le (winget install --id=OpenSCAD.OpenSCAD -e), puis redemande-la.";
+export const ATELIER_IMPRIMANTE_ABSENTE =
+  "Le fichier est prêt, mais l'imprimante n'est pas réglée dans Jarvis (Réglages → Services → Imprimante) : je n'envoie rien.";
+export const ATELIER_IMPRIMANTE_MUETTE = "L'imprimante ne répond pas : je n'envoie rien.";
+export const ATELIER_FILE_ABSENTE =
+  "La file d'attente n'est pas activée dans Moonraker (section [job_queue] de moonraker.conf) : je n'envoie rien.";
+export const ATELIER_FILE_AUTO =
+  "La file d'attente de Moonraker est réglée pour lancer une pièce toute seule (automatic_transition ou load_on_startup dans moonraker.conf) : je n'y ajoute rien. Mets ces deux réglages à False, puis redemande-le-moi.";
+const OCCUPEE = new Set(['printing', 'paused']);
+
+/** Nom libre sur l'imprimante : jamais le fichier en cours, jamais un fichier déjà là. */
+function nomLibre(base: string, pris: Set<string>): string {
+  if (!pris.has(`${base}.gcode`)) return `${base}.gcode`;
+  for (let n = 2; ; n += 1) if (!pris.has(`${base}-${n}.gcode`)) return `${base}-${n}.gcode`;
+}
+
+function position(file: QueueStatus, nom: string): string {
+  const i = file.jobs.findIndex((j) => j.filename === nom);
+  return file.jobs.length > 1 ? ` (place ${i + 1} sur ${file.jobs.length})` : '';
+}
+
+/** Nom de fichier simple : ni chemin, ni `..`. */
+export function nomSimple(nom: string): boolean {
+  return /^[a-z0-9][a-z0-9._-]*$/i.test(nom) && !nom.includes('..');
+}
+
+async function dossierLibre(racine: string, base: (n: number) => string): Promise<string> {
+  const pris = new Set(existsSync(racine) ? await readdir(racine) : []);
+  for (let n = 1; ; n += 1) {
+    const nom = base(n);
+    if (!pris.has(nom)) return nom;
+  }
+}
+
+function detailCarte(infos: InfosGcode | null): string | null {
+  if (!infos) return null;
+  const morceaux = [phraseTempsFilament(infos)];
+  const reglages = [
+    infos.plateau ? `Plaque : ${infos.plateau}` : null,
+    infos.lit !== null ? `lit ${infos.lit} °C` : null,
+    infos.buse !== null ? `buse ${infos.buse} °C` : null,
+    infos.filament ? `filament ${infos.filament}` : null,
+  ].filter(Boolean);
+  if (reglages.length) morceaux.push(`${reglages.join(', ')}.`);
+  return morceaux.filter(Boolean).join(' ') || null;
+}
+
+function avecVersion(etat: EtatPiece, version: AtelierVersionInfo, choisie = version.numero): EtatPiece {
+  return {
+    ...etat,
+    versions: [...etat.versions.filter((v) => v.numero !== version.numero), version].sort((a, b) => a.numero - b.numero),
+    versionChoisie: choisie,
+  };
+}
+
+/** Un tour d'atelier. `null` : la phrase n'est pas pour l'atelier, le tour suit son chemin. */
+export async function tourAtelier(input: AtelierEntree, deps: AtelierDeps): Promise<AtelierSortie | null> {
+  const precedent = dernierAtelier(input.messages);
+  const decision = deciderAtelier(input.text, precedent);
+  const voix = input.place === 'enceinte';
+
+  switch (decision.kind) {
+    case 'rien':
+      return null;
+    case 'dire':
+      return decision.etat ? { texte: decision.texte, etat: decision.etat } : { texte: decision.texte };
+    case 'choisir':
+      return {
+        texte: `Version ${decision.numero} à l'écran.`,
+        etat: { ...decision.etat, versionChoisie: decision.numero },
+      };
+    case 'fabriquer': {
+      const volume = await deps.volume();
+      const piece = fabriquer(decision.gabarit, decision.valeurs, volume);
+      if (!piece.ok) {
+        const reste = decision.base ? ` La version ${decision.base.versionChoisie} reste à l'écran.` : '';
+        return { texte: `${piece.erreurs.join(' ')}${reste}` };
+      }
+      const openscad = deps.programmes.openscad();
+      if (!openscad) return { texte: ATELIER_SANS_OPENSCAD };
+
+      const dossier =
+        decision.base?.dossier ?? (await dossierLibre(deps.racine, (n) => nomDossierPiece(decision.gabarit, deps.jour(), n)));
+      const chemin = join(deps.racine, dossier);
+      await mkdir(chemin, { recursive: true });
+      const numero = decision.base ? Math.max(...decision.base.versions.map((v) => v.numero)) + 1 : 1;
+      const scad = join(chemin, `v${numero}.scad`);
+      const stl = join(chemin, `v${numero}.stl`);
+      await writeFile(scad, piece.scad, 'utf8');
+
+      input.progress?.('OpenSCAD dessine la pièce…');
+      const rendu = await deps.programmes.rendreStl(openscad, scad, stl);
+      if (!rendu.ok) return { texte: `${rendu.message} Le fichier .scad est gardé dans ${chemin}.` };
+      const controle = controlerStl(lireStl(new Uint8Array(await readFile(stl))), piece.taille);
+      const image = (await deps.programmes.rendreImage(openscad, scad, join(chemin, `v${numero}.png`))).ok ? `v${numero}.png` : undefined;
+
+      const version: AtelierVersionInfo = {
+        numero,
+        valeurs: piece.valeurs,
+        fiche: fichePiece(piece),
+        mesures: mesuresAffichees(decision.gabarit, piece.valeurs),
+        taille: piece.taille,
+        stl: `v${numero}.stl`,
+        ...(image ? { image } : {}),
+        ...(decision.changement ? { changement: decision.changement } : {}),
+      };
+      const etat: EtatPiece = decision.base
+        ? avecVersion(decision.base, version)
+        : {
+            etape: 'piece',
+            gabarit: decision.gabarit.id,
+            nom: decision.gabarit.nom,
+            dossier,
+            versions: [version],
+            versionChoisie: numero,
+            plateau: { x: volume.x, y: volume.y },
+          };
+      const probleme = controle.ok ? '' : ` Attention : ${controle.problemes.join(' ')}`;
+      if (voix) return { texte: `C'est prêt : ${version.fiche} Regarde l'écran du PC.${probleme}`, etat };
+      const quoi = decision.changement ? `Version ${numero} (${decision.changement}). ` : '';
+      const suite = controle.ok
+        ? ' La pièce est à l’écran : tourne-la à la souris. Dis-moi ce qu’il faut changer, ou « imprime-la ».'
+        : '';
+      return { texte: `${quoi}${version.fiche}${probleme}${suite}`, etat };
+    }
+    case 'lancerSuivante':
+      return lancerSuivante(input, deps);
+    case 'file':
+    case 'imprimer': {
+      if (input.place === 'enceinte') return { texte: SPEAKER_CANNOT_START };
+      const { etat, numero } = decision;
+      const version = etat.versions.find((v) => v.numero === numero)!;
+      if (!version.stl) return { texte: `La version ${numero} n'a pas de fichier de pièce.` };
+      const chemin = join(deps.racine, etat.dossier);
+      const stl = join(chemin, version.stl);
+      if (!existsSync(stl)) return { texte: `Je ne retrouve plus le fichier de la version ${numero} dans ${chemin}.` };
+      const controle = controlerStl(lireStl(new Uint8Array(await readFile(stl))), version.taille);
+      if (!controle.ok) return { texte: `Je n'imprime pas la version ${numero} : ${controle.problemes.join(' ')}` };
+
+      input.progress?.('OrcaSlicer prépare le fichier d’impression…');
+      const tranche = await deps.programmes.trancher(stl, join(chemin, `v${numero}-tranche`));
+      if (!tranche.ok || !tranche.gcode) return { texte: tranche.message };
+      const detail = detailCarte(tranche.infos);
+      const misAJour = avecVersion(
+        etat,
+        {
+          ...version,
+          ...(tranche.infos?.dureeTexte ? { temps: tranche.infos.dureeTexte } : {}),
+          ...(tranche.infos?.filamentG != null ? { filament: `${String(Math.round(tranche.infos.filamentG * 10) / 10).replace('.', ',')} g` } : {}),
+        },
+        numero,
+      );
+
+      const imprimante = deps.imprimante();
+      if (!imprimante) return { texte: `${detail ? `${detail} ` : ''}${ATELIER_IMPRIMANTE_ABSENTE} (${tranche.gcode})`, etat: misAJour };
+      let statut: PrintStatus;
+      try {
+        statut = await imprimante.status();
+      } catch {
+        return { texte: ATELIER_IMPRIMANTE_MUETTE, etat: misAJour };
+      }
+      if (decision.kind === 'file' || OCCUPEE.has(statut.state)) {
+        const texte = await mettreEnFile(input, imprimante, {
+          nom: etat.nom,
+          numero,
+          base: `${etat.dossier}-v${numero}`,
+          gcode: tranche.gcode,
+          detail,
+          occupee: decision.kind === 'imprimer',
+        });
+        return { texte, etat: misAJour };
+      }
+      if (!(await input.confirm(phraseConfirmationAtelier(etat.nom, numero, detail)))) {
+        return { texte: "Rien n'a été lancé.", etat: misAJour };
+      }
+      const nomFichier = `${etat.dossier}-v${numero}.gcode`;
+      try {
+        await imprimante.upload(nomFichier, new Uint8Array(await readFile(tranche.gcode)), true);
+      } catch {
+        return { texte: ATELIER_IMPRIMANTE_MUETTE, etat: misAJour };
+      }
+      // « Lancée » seulement si l'imprimante le dit.
+      try {
+        const apres = await imprimante.status();
+        if (apres.state === 'printing') return { texte: `Impression lancée : ${nomFichier}.`, etat: misAJour };
+        return { texte: `Fichier envoyé (${nomFichier}), mais l'imprimante dit « ${apres.state} » : vérifie sur l'imprimante.`, etat: misAJour };
+      } catch {
+        return { texte: `Fichier envoyé (${nomFichier}), mais l'imprimante ne répond plus : vérifie sur l'imprimante.`, etat: misAJour };
+      }
+    }
+  }
+}
+
+/** Ajout à la file d'attente : carte, envoi sans lancer, ajout, relecture. Renvoie la phrase de fin. */
+async function mettreEnFile(
+  input: AtelierEntree,
+  imprimante: ImprimanteAtelier,
+  piece: { nom: string; numero: number; base: string; gcode: string; detail: string | null; occupee: boolean },
+): Promise<string> {
+  let avant: QueueStatus;
+  let pris: Set<string>;
+  try {
+    const reglages = await imprimante.queueSettings();
+    if (!reglages.active) return ATELIER_FILE_ABSENTE;
+    if (reglages.passageAuto || reglages.chargeAuDemarrage) return ATELIER_FILE_AUTO;
+    avant = await imprimante.queueStatus();
+    const statut = await imprimante.status();
+    pris = new Set([...(await imprimante.files()).map((f) => f.path), statut.filename].filter(Boolean));
+  } catch {
+    return ATELIER_IMPRIMANTE_MUETTE;
+  }
+  // « loading » ou « starting » : Moonraker est en train de lancer une pièce de la file ; on n'y touche pas.
+  if (avant.state !== 'paused' && avant.state !== 'ready') {
+    return `La file d'attente est en train de lancer une pièce (« ${avant.state} ») : je n'y touche pas. Redemande-le-moi dans un instant.`;
+  }
+  if (!(await input.confirm(phraseConfirmationFile(piece.nom, piece.numero, piece.detail, piece.occupee)))) {
+    return "Rien n'a été ajouté à la file.";
+  }
+
+  const nomFichier = nomLibre(piece.base, pris);
+  let pauseFaite = false;
+  try {
+    // Une file « ready » pourrait lancer une pièce seule ; la pause ne touche pas l'impression en cours.
+    if (avant.state !== 'paused') {
+      await imprimante.queuePause();
+      pauseFaite = true;
+    }
+    await imprimante.upload(nomFichier, new Uint8Array(await readFile(piece.gcode)), false);
+  } catch {
+    return ATELIER_IMPRIMANTE_MUETTE;
+  }
+  try {
+    await imprimante.queueAdd(nomFichier);
+  } catch {
+    return `Le fichier ${nomFichier} est sur l'imprimante, mais Moonraker a refusé de l'ajouter à la file : rien n'est lancé.`;
+  }
+
+  let apres: QueueStatus;
+  try {
+    apres = await imprimante.queueStatus();
+  } catch {
+    return `Fichier ${nomFichier} envoyé et ajouté, mais je n'ai pas pu relire la file : vérifie dans Mainsail.`;
+  }
+  const compte = (file: QueueStatus) => file.jobs.filter((j) => j.filename === nomFichier).length;
+  if (compte(apres) <= compte(avant)) {
+    return `Fichier ${nomFichier} envoyé, mais je ne le vois pas dans la file : vérifie dans Mainsail. Rien n'est lancé.`;
+  }
+  if (apres.state !== 'paused') {
+    try {
+      apres = await imprimante.queuePause();
+    } catch {
+      /* dit ci-dessous */
+    }
+    if (apres.state !== 'paused') {
+      return `« ${piece.nom} », version ${piece.numero}, est dans la file, mais la file n'est pas en pause (« ${apres.state} ») : mets-la en pause dans Mainsail.`;
+    }
+    pauseFaite = true;
+  }
+  const pause = pauseFaite ? " J'ai mis la file en pause pour qu'aucune pièce ne parte seule." : '';
+  return `« ${piece.nom} », version ${piece.numero}, est dans la file d'attente${position(apres, nomFichier)} : ${nomFichier}. Rien n'est lancé, la file reste en pause.${pause} Quand le plateau sera vide, dis-moi « le plateau est vide, lance la suivante ».`;
+}
+
+/** « le plateau est vide, lance la suivante » : la première pièce de la file, après une carte. */
+async function lancerSuivante(input: AtelierEntree, deps: AtelierDeps): Promise<AtelierSortie> {
+  if (input.place === 'enceinte') return { texte: SPEAKER_CANNOT_START };
+  const imprimante = deps.imprimante();
+  if (!imprimante) return { texte: "L'imprimante n'est pas réglée dans Jarvis (Réglages → Services → Imprimante) : je ne lance rien." };
+  let file: QueueStatus;
+  try {
+    const statut = await imprimante.status();
+    if (OCCUPEE.has(statut.state)) {
+      return { texte: 'Une impression est encore en cours : je ne lance rien. Redis-le-moi quand elle sera finie et le plateau vide.' };
+    }
+    if (!(await imprimante.queueSettings()).active) return { texte: ATELIER_FILE_ABSENTE };
+    file = await imprimante.queueStatus();
+  } catch {
+    return { texte: "L'imprimante ne répond pas : je ne lance rien." };
+  }
+  const premier = file.jobs[0];
+  if (!premier) return { texte: "La file d'attente est vide : il n'y a rien à lancer." };
+  if (file.state !== 'paused' && file.state !== 'ready') {
+    return { texte: `La file d'attente est déjà en train de lancer une pièce (« ${file.state} ») : je n'y touche pas.` };
+  }
+  if (!(await input.confirm(phraseConfirmationSuivante(premier.filename)))) return { texte: "Rien n'a été lancé." };
+
+  let statut: PrintStatus;
+  try {
+    // Lancée directement, sans `job_queue/start` : la file reste en pause, la suivante ne partira pas seule.
+    statut = await imprimante.start(premier.filename);
+  } catch {
+    return { texte: "L'imprimante n'a pas accepté le lancement : rien n'est parti, la pièce reste dans la file." };
+  }
+  let retiree: boolean;
+  try {
+    retiree = !(await imprimante.queueRemove(premier.jobId)).jobs.some((j) => j.jobId === premier.jobId);
+  } catch {
+    retiree = false;
+  }
+  const encore = retiree ? '' : " Attention : elle est encore dans la file, retire-la dans Mainsail pour ne pas l'imprimer deux fois.";
+  const reste = file.jobs.length - 1;
+  const suite = reste > 0 ? ` Il reste ${reste} pièce${reste > 1 ? 's' : ''} dans la file, en pause.` : '';
+  if (statut.state === 'printing') return { texte: `Impression lancée : ${premier.filename}.${suite}${encore}` };
+  return { texte: `Demande envoyée pour ${premier.filename}, mais l'imprimante dit « ${statut.state} » : vérifie sur l'imprimante.${encore}` };
+}

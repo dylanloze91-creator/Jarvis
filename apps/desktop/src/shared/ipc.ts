@@ -34,6 +34,7 @@ import type {
   WakeStatsSummary,
   WakeVerifierModel,
 } from '@jarvis/core';
+import type { AtelierEtat } from '@jarvis/core';
 import type { LocalLearningRuntimeStatus } from '@jarvis/core';
 import type { DirectProjectDefaults, ImageFormat, ImageProject } from '@jarvis/core';
 import type { DeveloperApi } from './developerIpc.js';
@@ -101,6 +102,9 @@ export const IpcChannel = {
   settingsRoverStatus: 'settings:rover-status',
   settingsImagesStatus: 'settings:images-status',
   imagesOpen: 'images:open',
+  /** Atelier 3D (Jarvis Test) : fichier d'une pièce (STL de l'écran 3D), et son dossier. */
+  atelierFichier: 'atelier:fichier',
+  atelierOuvrirDossier: 'atelier:ouvrir-dossier',
   imagesDirectCatalog: 'images:direct-catalog',
   imagesDirectGenerate: 'images:direct-generate',
   imagesDirectCancel: 'images:direct-cancel',
@@ -192,6 +196,11 @@ export const IpcChannel = {
   routinesList: 'routines:list',
   routinesSave: 'routines:save',
   printerTest: 'printer:test',
+  appendicesStatus: 'appendices:status',
+  appendicesSetEnabled: 'appendices:set-enabled',
+  appendicesAdd: 'appendices:add',
+  appendicesRemove: 'appendices:remove',
+  appendicesStopAll: 'appendices:stop-all',
   phoneStatus: 'phone:status',
   phoneSetEnabled: 'phone:set-enabled',
   phoneStartPairing: 'phone:start-pairing',
@@ -316,6 +325,42 @@ export interface SpeakerTranscribeResult {
 }
 
 /** 5.0.63 — Jarvis sur le téléphone : état montré dans Réglages → Téléphone. */
+/** Un appendice relié à Jarvis Test (Jarvis Development). Jamais de jeton ici. */
+export interface AppendiceView {
+  id: string;
+  genre: 'oeil' | 'bras' | 'jambes' | 'oreille' | 'sens' | 'main' | 'ecran' | 'energie';
+  nom: string;
+  piece?: string;
+  risque: 'lire' | 'agir' | 'bouger';
+  capacites: Array<{ nom: string; description?: string; risque: 'lire' | 'agir' | 'bouger' }>;
+  version: string;
+  baseUrl: string;
+  /** Faux : le jeton est à redonner (pas de chiffrement sur ce PC, ou fichier venu d'ailleurs). */
+  hasToken: boolean;
+  etat?: 'pret' | 'occupe' | 'arrete' | 'arret_urgence' | 'erreur';
+  reachable?: boolean;
+  lastSeenAt?: number;
+  error?: string;
+}
+
+export interface AppendiceStatus {
+  /** Faux dans Jarvis Live : les appendices n'existent que dans Jarvis Test. */
+  allowed: boolean;
+  enabled: boolean;
+  /** Faux : le jeton ne peut pas être gardé chiffré, il reste en mémoire. */
+  encryption: boolean;
+  max: number;
+  appendices: AppendiceView[];
+}
+
+export type AppendiceAddReply = { ok: true; status: AppendiceStatus } | { ok: false; sentence: string; status: AppendiceStatus };
+
+export interface AppendiceStopAllReply {
+  /** Phrase à afficher ; vide s'il n'y avait rien à arrêter. */
+  sentence: string;
+  status: AppendiceStatus;
+}
+
 export interface PhoneStatus {
   /** Interrupteur « Accès depuis le téléphone » (coupé par défaut). */
   enabled: boolean;
@@ -679,6 +724,8 @@ export type ChatEvent =
    * ressemblait à une image. Le bouton « Envoyer à Imager » renvoie `/image <texte>`.
    */
   | { type: 'imager_offer'; text: string }
+  /** Atelier 3D (Jarvis Test) : une pièce rendue, à afficher en 3D sous la réponse `messageId`. */
+  | { type: 'atelier'; messageId: string; etat: AtelierEtat }
   | { type: 'done'; conversationId: string; messages: ChatMessage[] };
 
 export type WindowChrome = 'compact' | 'dashboard';
@@ -887,6 +934,14 @@ export interface JarvisApi {
     directPanel(open: boolean): Promise<void>;
     onDirectEvent(listener: (event: ImagerDirectEvent) => void): () => void;
   };
+  /**
+   * Atelier 3D (Jarvis Test). Absent de l'aperçu hors Electron. Seulement les fichiers des
+   * dossiers de pièces, sous le dossier de l'atelier (nom simple, vérifié côté main).
+   */
+  atelier?: {
+    fichier(dossier: string, fichier: string): Promise<{ ok: true; data: Uint8Array } | { ok: false; error: string }>;
+    ouvrirDossier(dossier: string): Promise<{ ok: true } | { ok: false; error: string }>;
+  };
   settings: {
     get(): Promise<{ settings: Settings; status: RuntimeStatus }>;
     set(patch: Partial<Settings>): Promise<{ settings: Settings; status: RuntimeStatus }>;
@@ -1014,6 +1069,15 @@ export interface JarvisApi {
     onTranscribe(listener: (request: YoutubeTranscribeRequest) => void): () => void;
     reportProgress(payload: YoutubeTranscribeProgress): void;
     reportResult(payload: YoutubeTranscribeResult): void;
+  };
+  /** Appendices de Jarvis (Jarvis Test seulement) : registre et « Tout arrêter ». */
+  appendices: {
+    /** `refresh` : relit l'état de chaque appendice avant de répondre. */
+    status(refresh?: boolean): Promise<AppendiceStatus>;
+    setEnabled(enabled: boolean): Promise<AppendiceStatus>;
+    add(input: { baseUrl: string; token: string }): Promise<AppendiceAddReply>;
+    remove(id: string): Promise<AppendiceStatus>;
+    stopAll(): Promise<AppendiceStopAllReply>;
   };
   /** 5.0.63 — accès depuis le téléphone (Tailscale). */
   phone: {

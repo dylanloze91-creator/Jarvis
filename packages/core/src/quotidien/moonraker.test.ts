@@ -47,6 +47,37 @@ describe('Moonraker', () => {
     expect(fake.calls).toContain('POST /server/files/upload');
   });
 
+  it('file d’attente : réglages, envoi sans lancer, ajout, relecture, retrait ; l’impression en cours ne bouge pas', async () => {
+    const fake = new FakeMoonraker();
+    const printer = client(fake);
+    expect(await printer.queueSettings()).toEqual({ active: true, passageAuto: false, chargeAuDemarrage: false });
+    fake.status = { ...fake.status, state: 'printing', filename: 'synthetique-test.gcode', progress: 0.4 };
+    await printer.upload('synthetique-test-2.gcode', new Uint8Array([1]), false);
+    expect((await printer.status()).filename).toBe('synthetique-test.gcode');
+    const ajout = await printer.queueAdd('synthetique-test-2.gcode');
+    expect(ajout.jobs.map((j) => j.filename)).toEqual(['synthetique-test-2.gcode']);
+    expect(ajout.state).toBe('paused');
+    expect(await printer.queueStatus()).toEqual(ajout);
+    expect(fake.calls).not.toContain('POST /server/job_queue/start');
+    expect(fake.calls).not.toContain('POST /printer/print/start');
+    // Fin de l'impression : la file en pause ne lance rien.
+    fake.finishPrint();
+    expect((await printer.status()).state).toBe('complete');
+    const vide = await printer.queueRemove(ajout.jobs[0]!.jobId);
+    expect(vide.jobs).toEqual([]);
+    // Fichier absent de l'imprimante : Moonraker refuse l'ajout.
+    await expect(printer.queueAdd('absent.gcode')).rejects.toThrow(MoonrakerError);
+  });
+
+  it('file d’attente : passage automatique et chargement au démarrage lus ; section absente', async () => {
+    const fake = new FakeMoonraker();
+    fake.jobQueue = { automatic_transition: 'True', load_on_startup: 'false' };
+    expect(await client(fake).queueSettings()).toEqual({ active: true, passageAuto: true, chargeAuDemarrage: false });
+    fake.jobQueue = null;
+    expect((await client(fake).queueSettings()).active).toBe(false);
+    await expect(client(fake).queueStatus()).rejects.toThrow(MoonrakerError);
+  });
+
   it('phrases express, enceinte, fin signalée une seule fois', async () => {
     expect(printerIntent("où en est l'impression")?.kind).toBe('status');
     expect(printerIntent("mets l'impression en pause")?.kind).toBe('pause');

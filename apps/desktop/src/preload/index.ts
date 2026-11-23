@@ -61,6 +61,10 @@ const api: JarvisApi = {
       ipcRenderer.invoke(IpcChannel.orchestraValidateTeam, input),
     routerScore: () => ipcRenderer.invoke(IpcChannel.orchestraRouterScore),
   },
+  atelier: {
+    fichier: (dossier: string, fichier: string) => ipcRenderer.invoke(IpcChannel.atelierFichier, dossier, fichier),
+    ouvrirDossier: (dossier: string) => ipcRenderer.invoke(IpcChannel.atelierOuvrirDossier, dossier),
+  },
   images: {
     open: (path: string) => ipcRenderer.invoke(IpcChannel.imagesOpen, path),
     directCatalog: () => ipcRenderer.invoke(IpcChannel.imagesDirectCatalog),
@@ -199,6 +203,13 @@ const api: JarvisApi = {
       ipcRenderer.on(IpcChannel.updateEvent, handler);
       return () => ipcRenderer.removeListener(IpcChannel.updateEvent, handler);
     },
+  },
+  appendices: {
+    status: (refresh?: boolean) => ipcRenderer.invoke(IpcChannel.appendicesStatus, refresh === true),
+    setEnabled: (enabled: boolean) => ipcRenderer.invoke(IpcChannel.appendicesSetEnabled, enabled),
+    add: (input: { baseUrl: string; token: string }) => ipcRenderer.invoke(IpcChannel.appendicesAdd, input),
+    remove: (id: string) => ipcRenderer.invoke(IpcChannel.appendicesRemove, id),
+    stopAll: () => ipcRenderer.invoke(IpcChannel.appendicesStopAll),
   },
   phone: {
     status: () => ipcRenderer.invoke(IpcChannel.phoneStatus),

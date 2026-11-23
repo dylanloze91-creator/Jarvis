@@ -75,6 +75,8 @@ import {
   startPrintWatch,
   withMessages,
   HealthScreenWatch,
+  buildAuditEntry,
+  isStopAllPhrase,
 } from '@jarvis/core';
 import {
   NotesBook,
@@ -101,7 +103,11 @@ import {
 import { FileAuditLogStore } from './audit-store.js';
 import { SpotifyBridge } from './media/SpotifyBridge.js';
 import { SiteBlockBridge } from './siteblock/SiteBlockBridge.js';
+import { randomUUID } from 'node:crypto';
 import { RoverClient } from './rover/RoverClient.js';
+import { AppendiceService } from './appendices/service.js';
+import { AppendiceStore } from './appendices/store.js';
+import { APPENDICES_STOP_TOOL } from './tools/appendices.js';
 import { ImagesService } from './images/ImagesService.js';
 import { createGoogleRuntime } from './google/runtime.js';
 import { PersonalizationStore } from './personalization.js';
@@ -110,6 +116,7 @@ import { ChatSession } from './session.js';
 import { CarnetHub } from './carnet/hub.js';
 import { createMorningBriefing } from './quotidien/morning.js';
 import { runPrinterReply } from './quotidien/printerReply.js';
+import { creerAtelierPC, dossierAtelier, lireFichierAtelier } from './atelier/atelierPC.js';
 import { CarnetFile } from './carnet/file.js';
 import { appendTeamValidation, type TeamValidationPayload } from './orchestra/teamValidation.js';
 import { PhoneService } from './phone/service.js';
@@ -256,6 +263,26 @@ localLearning.armPeriodic();
 const spotify = new SpotifyBridge(() => settings);
 const siteBlock = new SiteBlockBridge(() => settings);
 const rover = new RoverClient(() => settings);
+// Appendices de Jarvis (Jarvis Development) : Jarvis Test seulement, coupés par défaut. Dans Live,
+// `allowed` est faux : aucun outil, aucune requête, aucun fichier.
+const appendices = new AppendiceService(AppendiceStore.inUserData(() => app.getPath('userData')), {
+  allowed: Boolean(edition().appendices),
+  cipher: {
+    available: () => safeStorage.isEncryptionAvailable(),
+    seal: (plain) => safeStorage.encryptString(plain).toString('base64'),
+    open: (sealed) => safeStorage.decryptString(Buffer.from(sealed, 'base64')),
+  },
+  // « Arrête tout » arrête aussi le robot, s'il est réglé.
+  extraStops: [
+    {
+      name: 'Robot',
+      configured: () => rover.isConfigured(),
+      stop: async () => {
+        await rover.stop();
+      },
+    },
+  ],
+});
 // Module images : Forge (Stable Diffusion) lancé au besoin, modèle de langage déchargé puis rechargé.
 const images = new ImagesService({
   getSettings: () => settings,
@@ -407,6 +434,7 @@ function buildTools(): ToolManager {
       show: (target, info) => speakers.server.showOnSpeaker(target, info),
     },
     spotifyConnected: () => spotify.connectedNow(),
+    ...(edition().appendices ? { appendices } : {}),
     notes: notesBook,
     routines: {
       book: routineBook,
@@ -461,6 +489,28 @@ function settingsForWindow(): Settings {
   return maskSecrets(settings, vault.secretsNow());
 }
 
+/**
+ * « Jarvis, arrête tout » : règles seulement, avant tout modèle. L'arrêt passe par l'outil
+ * `appendices_stop` (donc par le journal d'audit). Rien à arrêter : `null`, la phrase suit le
+ * chemin d'avant. Jarvis Live n'a pas cette fonction (`undefined`).
+ */
+/** Atelier 3D dans la discussion : Jarvis Test seulement (`undefined` dans Live). */
+const atelierReply = edition().atelier ? creerAtelierPC(() => settings) : undefined;
+
+const stopAllReply = edition().appendices
+  ? async (input: { text: string }): Promise<string | null> => {
+      if (!isStopAllPhrase(input.text) || !appendices.canStop()) return null;
+      const outcome = await tools.execute(
+        { id: randomUUID(), name: APPENDICES_STOP_TOOL, arguments: {} },
+        { requestConfirmation: async () => false },
+      );
+      void auditLog.append(buildAuditEntry(outcome)).catch((error: unknown) => {
+        console.warn('[jarvis] journal d’audit : arrêt général non inscrit', error);
+      });
+      return outcome.content || null;
+    }
+  : undefined;
+
 /** Actif dans Test, coupé dans Live, tant que l'interrupteur n'a pas été touché. */
 const carnet = new CarnetHub(edition().id, new CarnetFile(() => app.getPath('userData')));
 const morningBriefing = createMorningBriefing(() => app.getPath('userData'), () => settings, {
@@ -501,6 +551,8 @@ const session = new ChatSession({
   notes: notesReply,
   routines: routineReply,
   printer: printerReply,
+  atelier: atelierReply,
+  stopAll: stopAllReply,
   voiceStarts,
 });
 
@@ -530,6 +582,8 @@ const phoneSession = new ChatSession({
   notes: notesReply,
   routines: routineReply,
   printer: printerReply,
+  atelier: atelierReply,
+  stopAll: stopAllReply,
 });
 const questionnaire = QuestionnaireStore.inUserData(() => app.getPath('userData'));
 const phone = new PhoneService({
@@ -632,6 +686,8 @@ const speakers = new SpeakerService({
       notes: notesReply,
       routines: routineReply,
       printer: printerReply,
+      atelier: atelierReply,
+      stopAll: stopAllReply,
     });
     return {
       send: async (sender, input) => {
@@ -804,6 +860,7 @@ async function bootstrap(): Promise<void> {
   settings = migrated.memory;
   setSettingsDiskStripsSecrets(vault.encryptionAvailable());
   if (migrated.changed) await writeSettings(migrated.disk);
+  await appendices.load().catch(() => undefined);
   tools = buildTools();
   await refreshRoutineCount();
   syncPrintWatch();
@@ -1139,6 +1196,21 @@ function registerIpc(): void {
     } finally {
       chatActivity.end();
     }
+  });
+  // Atelier 3D (Jarvis Test) : la fenêtre ne lit que les fichiers des pièces de l'atelier.
+  ipcMain.handle(IpcChannel.atelierFichier, async (_event, dossier: unknown, fichier: unknown) => {
+    if (!edition().atelier || typeof dossier !== 'string' || typeof fichier !== 'string') return { ok: false, error: 'Fichier refusé.' };
+    try {
+      return { ok: true, data: await lireFichierAtelier(dossier, fichier) };
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+  ipcMain.handle(IpcChannel.atelierOuvrirDossier, async (_event, dossier: unknown) => {
+    const chemin = edition().atelier && typeof dossier === 'string' ? dossierAtelier(dossier) : null;
+    if (!chemin) return { ok: false, error: 'Dossier refusé.' };
+    const error = await shell.openPath(chemin);
+    return error ? { ok: false, error } : { ok: true };
   });
   // Module images : l'interface ne peut ouvrir que les fichiers du dossier des images de Jarvis.
   ipcMain.handle(IpcChannel.imagesOpen, async (_event, path: unknown) => {
@@ -1580,6 +1652,25 @@ function registerIpc(): void {
     if (typeof level === 'number' && Number.isFinite(level)) listeningIndicator?.setLevel(level);
   });
 
+  // Appendices (Jarvis Test seulement). Dans Live, le service répond « non permis » et ne fait rien.
+  ipcMain.handle(IpcChannel.appendicesStatus, (_event, refresh: unknown) =>
+    refresh === true ? appendices.refresh() : appendices.status(),
+  );
+  ipcMain.handle(IpcChannel.appendicesSetEnabled, (_event, enabled: unknown) => appendices.setEnabled(enabled === true));
+  ipcMain.handle(IpcChannel.appendicesAdd, async (_event, input: unknown) => {
+    const data = input && typeof input === 'object' ? (input as { baseUrl?: unknown; token?: unknown }) : {};
+    const baseUrl = typeof data.baseUrl === 'string' ? data.baseUrl.slice(0, 200) : '';
+    const token = typeof data.token === 'string' ? data.token.slice(0, 512) : '';
+    const result = await appendices.add({ baseUrl, token });
+    return result.ok ? { ok: true, status: appendices.status() } : { ok: false, sentence: result.sentence, status: appendices.status() };
+  });
+  ipcMain.handle(IpcChannel.appendicesRemove, (_event, id: unknown) =>
+    typeof id === 'string' ? appendices.remove(id.slice(0, 60)) : appendices.status(),
+  );
+  ipcMain.handle(IpcChannel.appendicesStopAll, async () => {
+    const sentence = (await stopAllReply?.({ text: 'arrête tout' }).catch(() => null)) ?? '';
+    return { sentence, status: await appendices.refresh() };
+  });
   ipcMain.handle(IpcChannel.phoneStatus, () => phone.status());
   ipcMain.handle(IpcChannel.phoneSetEnabled, (_event, enabled: unknown) => phone.setEnabled(enabled === true));
   ipcMain.handle(IpcChannel.phoneStartPairing, () => phone.startPairing());
