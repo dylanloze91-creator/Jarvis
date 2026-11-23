@@ -623,6 +623,7 @@ export * from './vitesse/chrono.js';
 export * from './vitesse/resume.js';
 export * from './vitesse/banc.js';
 export * from './vitesse/chauds.js';
+export * from './vitesse/options.js';
 export * from './vitesse/promptTail.js';
 export * from './speaker/reflex.js';
 export * from './speaker/warmup.js';

@@ -4,6 +4,7 @@ import {
   parseRefinedPrompt,
   refineRetryMessage,
   refineUserMessage,
+  type OllamaLoadOptions,
   type RefineInput,
 } from '@jarvis/core';
 
@@ -32,6 +33,8 @@ export class PromptRefiner {
   constructor(
     private readonly baseUrl: string,
     private readonly fetchImpl: typeof fetch = fetch,
+    /** Jarvis Test : mêmes `num_ctx` / `num_gpu` que le chat, sinon Ollama recharge le modèle. */
+    private readonly optionsFor?: (model: string) => OllamaLoadOptions,
   ) {}
 
   async refine(input: RefineInput, model: string, signal?: AbortSignal): Promise<RefineOutcome> {
@@ -78,7 +81,7 @@ export class PromptRefiner {
         stream: false,
         format: 'json',
         // Le modèle reste chargé comme avant : rien ne change à son keep_alive.
-        options: { temperature: 0.3, num_predict: 260 },
+        options: { temperature: 0.3, num_predict: 260, ...(this.optionsFor ? this.optionsFor(model) : {}) },
         messages,
       }),
       signal: AbortSignal.any(signals),

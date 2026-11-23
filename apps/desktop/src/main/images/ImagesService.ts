@@ -3,6 +3,7 @@ import { existsSync, readdirSync } from 'node:fs';
 import { extname, join, resolve } from 'node:path';
 import {
   BRAIN_KEEP_ALIVE,
+  type OllamaLoadOptions,
   DEFAULT_IMAGES_ROOT_WINDOWS,
   DEFAULT_PRESETS,
   DIRECT_SAMPLERS,
@@ -224,6 +225,11 @@ export interface ImagesServiceDeps {
   processDeps?: ForgeProcessDeps;
   /** Attente avant le second essai après un 500 de Forge (tests : 0). */
   forgeRetryDelayMs?: number;
+  /**
+   * Jarvis Test : `num_ctx` / `num_gpu` envoyés pour un modèle, les mêmes que le chat. Absent : rien
+   * n'est envoyé, Ollama prend son défaut (comportement d'avant).
+   */
+  ollamaOptions?: (model: string) => OllamaLoadOptions;
 }
 
 /**
@@ -468,7 +474,7 @@ export class ImagesService {
     // Format : celui demandé, sinon celui de la photo de départ, sinon celui du type (personne → portrait, scène → paysage) s'il convient au projet.
     const format = request.format ?? (init ? closestFormatForAspect(init.width, init.height) : defaultFormatFor(rules, subjectType, preset));
     const ollamaUrl = this.deps.ollamaUrl ?? (settings.baseUrl?.trim() || 'http://127.0.0.1:11434');
-    const ollama = new OllamaControl(ollamaUrl, this.deps.fetchImpl);
+    const ollama = new OllamaControl(ollamaUrl, this.deps.fetchImpl, this.deps.ollamaOptions);
 
     // Reformulation en consigne SDXL par le modèle de langage, tant qu'il est encore chargé.
     let refined: RefineOutcome | null = null;
@@ -477,7 +483,7 @@ export class ImagesService {
       const model = pickBrainModel(settings, loaded.map((entry) => entry.name));
       if (model) {
         context.onProgress?.('Je traduis ta demande en consigne pour Stable Diffusion…');
-        refined = await new PromptRefiner(ollamaUrl, this.deps.fetchImpl).refine(
+        refined = await new PromptRefiner(ollamaUrl, this.deps.fetchImpl, this.deps.ollamaOptions).refine(
           {
             prompt: request.prompt,
             project: request.project,
@@ -826,7 +832,7 @@ export class ImagesService {
     const preset = presets[request.project];
     const improve = request.improve ?? rules.direct.ameliorer;
     const ollamaUrl = this.deps.ollamaUrl ?? (settings.baseUrl?.trim() || 'http://127.0.0.1:11434');
-    const ollama = new OllamaControl(ollamaUrl, this.deps.fetchImpl);
+    const ollama = new OllamaControl(ollamaUrl, this.deps.fetchImpl, this.deps.ollamaOptions);
 
     // Modèle : celui du panneau (fichier), sinon pour « améliorer » le choix d'Imager selon le rendu, sinon le modèle courant de Forge.
     const byFile = Object.entries(rules.checkpoints).find(([, profile]) => profile.fichier.toLowerCase() === request.checkpoint?.toLowerCase());

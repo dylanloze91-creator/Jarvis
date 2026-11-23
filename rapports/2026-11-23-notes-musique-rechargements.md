@@ -82,7 +82,7 @@ Rappel : **Live et Test partagent le même Ollama** et la même carte de 6 Go. L
 2. **Jarvis Test met les équipes Mémoire et Code sur la carte** (Live les met sur le processeur).
    - La carte ne peut pas tenir le 7B à côté : chaque tour Mémoire ou Code évince le cerveau, et le tour suivant le recharge.
    - Dans le journal du tour de Test, 4 tours sur 37 ont attendu un chargement, pour **48 s en tout**. Mémoire : 12,1 s ; Code : 5,1 + 5,5 s, puis 3,6 + 16,3 s ; le tour PC qui suit : 5,7 s.
-3. **Le 7B avec un contexte de 4 096** : 10 chargements, sans doute un programme de développement ou un essai qui ne précise pas le contexte (4 096 est le défaut d'Ollama). Chaque fois, le retour à 8 192 recharge le 7B. Non identifié (aucun aujourd'hui) : ce n'est ni le chat, ni YouTube (qui utilise le 3B).
+3. **Le 7B avec un contexte de 4 096** : 10 chargements. Chaque fois, le retour à 8 192 recharge le 7B. Cause trouvée ensuite, voir la section 7 : trois appels de Jarvis qui ne précisaient pas le contexte.
 
 ### Vitesse mesurée des modèles d'équipe
 
@@ -112,14 +112,45 @@ Recommandation : P1 tout de suite ; P2 et P3 après un passage du banc avec ces 
 
 À ne pas faire : toucher aux variables du serveur Ollama (règle de Jarvis), ou baisser le contexte du 7B (les consignes et les outils de l'équipe PC en ont besoin).
 
+## 7. Options alignées (Jarvis Test)
+
+Ollama recharge un modèle déjà en mémoire dès qu'on l'appelle avec un autre `num_ctx` ou `num_gpu`.
+
+**Relevé des appels au 7B.** Le tri du cerveau, le trieur, la vérification « c'est à Jarvis ? », les équipes et les modèles gardés chauds envoient tous `num_ctx 8192`, et `num_gpu 0` seulement sur le processeur. Le bilan de santé n'appelle aucun modèle. Trois appels n'envoyaient **aucune option**, et Ollama prenait son défaut, 4 096 :
+
+1. **le préchauffage des enceintes** (`speaker/warmup.ts`, `warmupRun.ts`) : à chaque réveil d'une enceinte, au plus une fois toutes les 10 s. Avec « Garder Jarvis éveillé », il garde ce 7B en 4 096 indéfiniment ;
+2. **le rechargement du modèle après une image, et le déchargement avant** (`images/OllamaControl.ts`) ;
+3. **la reformulation d'Imager** (`images/PromptRefiner.ts`).
+
+Le 20 novembre à 10:27, un `/api/generate` de 5,9 s (le préchauffage) précède bien un 7B en 4 096.
+
+**Correction, Jarvis Test seulement** (champ d'édition `alignOllamaOptions`, absent de Live) :
+- `ollamaLoadOptions(réglages, modèle)` (`packages/core/src/vitesse/options.ts`) rend les options que la session enverrait pour ce modèle : 8 192, et `num_gpu 0` si son équipe ou le trieur est sur le processeur. Sans chef d'orchestre, ce sont celles du chat (profil de la machine).
+- Les trois appels s'en servent.
+- Live envoie les mêmes requêtes qu'avant.
+
+**Nouvelle mesure** (vrai Ollama, réglages de Jarvis Test lus seulement). Une demande du chat, puis le préchauffage d'enceinte tel que Jarvis Test le construit, puis une nouvelle demande du chat :
+
+| | Préchauffage | Demande suivante du chat | Démarrages du 7B (journal d'Ollama) |
+| --- | ---: | ---: | ---: |
+| Avant (sans options) | 5,8 s | 6,2 s | 2 (4 096, puis 8 192) |
+| Après (options alignées) | 0,01 s | 0,28 s | 0 |
+
+**Gain** : environ 6 s sur la réponse **de chaque phrase dite à une enceinte** quand le 7B était déjà prêt, et 5,8 s de carte occupée en moins au réveil. Autour d'une image : un rechargement en moins avant, et un après.
+
+**Live a le même défaut** (`speakerWarmup` et « Garder Jarvis éveillé » y sont actifs) : à porter dans une Live sur ta décision.
+
+**Vu en passant** : le lint officiel compte 71 erreurs dans `.claude/worktrees/atelier`, une copie de travail **verrouillée** de `claude/atelier-3d` créée à 12:21 par une autre session. Je n'y ai pas touché. Sans ce dossier, le lint est vert.
+
 ## 6. Vérification
 
 RAPPORT DE VÉRIFICATION
 
 - Construction : FAIT (cœur construit).
 - Types (`npm run typecheck`) : FAIT, vert.
-- Style (`npm run lint`) : FAIT, vert.
-- Tests : FAIT. Cœur 2 747 sur 2 747. Bureau :
+- Style (`npm run lint`) : FAIT, vert sur cette branche (71 erreurs dans la copie de travail `.claude/worktrees/atelier` d'une autre session, hors de ce travail).
+- Tests : FAIT. Après l'alignement des options : cœur 2 752 sur 2 752, bureau 904 sur 904 (8 ignorés), suite complète au repos. Avant :
+  cœur 2 747 sur 2 747. Bureau :
   - pendant ma mesure sur le processeur, 5 essais ont dépassé leur délai de 5 s ;
   - repassés seuls, machine au repos, ils sont tous verts (33 sur 33) ;
   - suite complète au repos : 898 sur 900 (8 ignorés), les 2 restants dans `sandbox.test.ts` (délai git sous charge), verts au passage suivant.

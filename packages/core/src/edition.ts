@@ -66,6 +66,12 @@ export interface Edition {
   keepModelsWarm?: boolean;
   /** Mémoire courte des résultats d'outils de lecture (quelques minutes). */
   keepToolResults?: boolean;
+  /**
+   * Préchauffage des enceintes, rechargement après une image et reformulation d'Imager envoient
+   * les mêmes `num_ctx` / `num_gpu` que le chat (`ollamaLoadOptions`), pour qu'Ollama ne
+   * recharge pas le modèle. Absent dans Live.
+   */
+  alignOllamaOptions?: boolean;
 }
 
 const PHONE_OFFSET = 6;
@@ -119,6 +125,7 @@ export const TEST_EDITION: Edition = {
   badge: { label: 'TEST', color: '#E07A1F' },
   keepModelsWarm: true,
   keepToolResults: true,
+  alignOllamaOptions: true,
 };
 
 export function readEditionId(input: { env?: string; baked?: string } = {}): EditionId {

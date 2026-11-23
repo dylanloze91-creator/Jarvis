@@ -16,6 +16,8 @@ export interface OllamaLoadRequest {
   prompt: '';
   keep_alive: string | number;
   stream: false;
+  /** Jarvis Test : mêmes `num_ctx` / `num_gpu` que le chat (`ollamaLoadOptions`). */
+  options?: { num_ctx: number; num_gpu?: number };
 }
 
 export interface SpeakerWarmupSettings {

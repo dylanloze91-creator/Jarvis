@@ -1,3 +1,5 @@
+import type { OllamaLoadOptions } from '@jarvis/core';
+
 /**
  * Décharger et recharger les modèles d'Ollama autour d'une génération d'image :
  * la RTX 2060 (6 Go) ne peut pas garder le 7B et SDXL en même temps.
@@ -14,6 +16,8 @@ export class OllamaControl {
   constructor(
     private readonly baseUrl: string = 'http://127.0.0.1:11434',
     private readonly fetchImpl: typeof fetch = fetch,
+    /** Jarvis Test : mêmes `num_ctx` / `num_gpu` que le chat, sinon Ollama recharge le modèle. */
+    private readonly optionsFor?: (model: string) => OllamaLoadOptions,
   ) {}
 
   /** Modèles actuellement chargés (`/api/ps`). Ollama arrêté : liste vide. */
@@ -59,7 +63,12 @@ export class OllamaControl {
     const response = await this.fetchImpl(`${this.baseUrl}/api/generate`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ model, keep_alive: keepAlive, stream: false }),
+      body: JSON.stringify({
+        model,
+        keep_alive: keepAlive,
+        stream: false,
+        ...(this.optionsFor ? { options: this.optionsFor(model) } : {}),
+      }),
       signal: AbortSignal.timeout(timeoutMs),
     });
     if (!response.ok) throw new Error(`Ollama a répondu ${response.status}`);
