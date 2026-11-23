@@ -56,8 +56,14 @@ const SPELLING_ALIASES: Array<[RegExp, string]> = [
  */
 const PAUSE_PHRASE =
   /^(?:jarvis[,:]?\s*)?(?:pause|(?:mets?|mes)\s+(?:en\s+)?pauses?|(?:mets?\s+)?(?:la\s+)?(?:musique|spotify)\s+en\s+pause|(?:stop(?:pe)?|arr[êe]te|coupe|[ée]teins)\s+(?:la|le|ma|mon)?\s*(?:musique|spotify|son|morceau|chanson|lecture))(?:\s+(?:sur|à|a|de)\s+spotify|\s+(?:la\s+)?musique)?(?:\s+s['’]il\s+te\s+pla[iî]t)?\s*[.!]?\s*$/iu;
+/**
+ * 23 novembre 2026 (deuxième passage) : « Mets play sur Spotify », que Whisper écrit « Mes play »,
+ * lançait un morceau « Mes play ». « play », « mets play », « remets play », « mets en lecture » et
+ * une fin « sur Spotify » reprennent maintenant la lecture, comme « reprends ». Un morceau qui
+ * s'appellerait seulement « Play » se demande avec son artiste.
+ */
 const RESUME_PHRASE =
-  /^(?:jarvis[,:]?\s*)?(?:reprend(?:s|re)?(?:\s+(?:la|le|ma|mon)?\s*(?:musique|spotify|lecture|morceau|chanson))?|(?:relance|remets)\s+(?:la|le|ma|mon)?\s*(?:musique|spotify|lecture|morceau|chanson))\s*[.!]?\s*$/iu;
+  /^(?:jarvis[,:]?\s*)?(?:reprend(?:s|re)?(?:\s+(?:la|le|ma|mon)?\s*(?:musique|spotify|lecture|morceau|chanson))?|(?:relance|remets)\s+(?:la|le|ma|mon)?\s*(?:musique|spotify|lecture|morceau|chanson)|(?:(?:re)?mets?|mes)\s+(?:play|plays|en\s+lecture)|play)(?:\s+(?:sur|à|a|de)\s+spotify|\s+(?:la\s+)?musique)?(?:\s+s['’]il\s+te\s+pla[iî]t)?\s*[.!]?\s*$/iu;
 
 /**
  * 20 novembre 2026 : « morceau suivant », « précédent » partaient au petit modèle de l'équipe
@@ -108,6 +114,7 @@ export function isMusicIntent(prompt: string): boolean {
   if (OPEN_SPOTIFY_ONLY.test(trimmed)) return false;
   if (isCurrentTrackQuestion(trimmed)) return true;
   if (isSpotifyPausePhrase(trimmed)) return true;
+  if (isSpotifyResumePhrase(trimmed)) return true;
   if (extractSpotifyPlayQuery(trimmed)) return true;
   if (isSpotifyTransferPhrase(trimmed) && extractSpotifyTransferTarget(trimmed)) return true;
 
@@ -229,6 +236,7 @@ export function extractSpotifyPlayQuery(prompt: string): string | null {
 
 function isPlaybackControlOnly(prompt: string): boolean {
   if (isSpotifyPausePhrase(prompt)) return true;
+  if (isSpotifyResumePhrase(prompt)) return true;
   const normalized = prompt.toLowerCase();
   if (/\bvolume\b/.test(normalized)) return true;
   if (/^(?:jarvis[,:]?\s*)?(?:pause|reprend(?:s|re)?)\b/iu.test(prompt)) return true;
