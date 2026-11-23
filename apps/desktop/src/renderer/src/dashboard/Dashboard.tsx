@@ -16,6 +16,7 @@ import {
   Workflow,
   AppWindow,
   Code2,
+  Eye,
   ImagePlus,
   type LucideIcon,
 } from 'lucide-react';
@@ -26,6 +27,7 @@ import { HistoryPanel } from '@/components/HistoryPanel';
 import { UnifiedJarvisChat } from '@/components/UnifiedJarvisChat';
 import { DeveloperSimpleView } from '@/components/developer/DeveloperSimpleView';
 import { ImagerDirectPanel } from '@/components/ImagerDirectPanel';
+import { YeuxEcran } from '@/components/yeux/YeuxEcran';
 import { SetupGuideView } from '@/components/SetupGuideView';
 import { HealthBanner } from '@/components/HealthBanner';
 import { SettingsPanel, openSettingsAt, openSettingsOnTab } from '@/components/SettingsPanel';
@@ -45,7 +47,7 @@ import { CarnetSundayLine, CarnetWeekCard } from '@/carnet/CarnetWeekCard';
 import { NotesHome } from '@/components/NotesHome';
 import './dashboard.css';
 
-type View = 'chat' | 'developer' | 'imager' | 'history' | 'settings' | 'audit' | 'setup-guide';
+type View = 'chat' | 'developer' | 'imager' | 'yeux' | 'history' | 'settings' | 'audit' | 'setup-guide';
 
 interface FunctionCard {
   id: string;
@@ -259,6 +261,12 @@ export function Dashboard({
     setView(next);
   };
 
+  // Les yeux (Jarvis Test) : entrée cachée tant qu'aucune caméra n'est réglée.
+  const [yeuxDispo, setYeuxDispo] = useState(false);
+  useEffect(() => {
+    void window.jarvis.yeux?.disponible().then(setYeuxDispo, () => setYeuxDispo(false));
+  }, [view, settings]);
+
   useEffect(() => {
     void window.jarvis.questionnaire.get().then((state) => {
       setPreferredServices(state.preferredServices);
@@ -332,6 +340,9 @@ export function Dashboard({
               active={view === 'imager'}
               onClick={() => navigate(view === 'imager' ? 'chat' : 'imager')}
             />
+          ) : null}
+          {yeuxDispo ? (
+            <SideButton label="Yeux" icon={Eye} active={view === 'yeux'} onClick={() => navigate(view === 'yeux' ? 'chat' : 'yeux')} />
           ) : null}
           <SideButton label="Réglages" icon={SettingsIcon} active={view === 'settings'} onClick={() => navigate(view === 'settings' ? 'chat' : 'settings')} />
           <SideButton
@@ -470,6 +481,18 @@ export function Dashboard({
               Retour à l’accueil
             </button>
             <ImagerDirectPanel />
+          </section>
+        ) : view === 'yeux' ? (
+          <section className="dash-panel flex min-h-0 flex-1 flex-col overflow-hidden">
+            <button type="button" className="panel-back" onClick={() => setView('chat')}>
+              Retour à l’accueil
+            </button>
+            <YeuxEcran
+              onSend={(text) => {
+                navigate('chat');
+                sendText(text);
+              }}
+            />
           </section>
         ) : view === 'developer' ? (
           <section className="dash-panel flex min-h-0 flex-1 flex-col overflow-hidden">

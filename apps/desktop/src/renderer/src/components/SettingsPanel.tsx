@@ -680,7 +680,12 @@ export function SettingsPanel({
           'printer',
           'Imprimante 3D',
           'Moonraker, réseau local',
-          <PrinterSettingsSection value={draft.printer} onChange={(printer) => patch({ printer })} />,
+          <PrinterSettingsSection
+            value={draft.printer}
+            onChange={(printer) => patch({ printer })}
+            yeux={draft.yeux}
+            onYeuxChange={(yeux) => patch({ yeux })}
+          />,
         )}
         {accordion(
           'routines',

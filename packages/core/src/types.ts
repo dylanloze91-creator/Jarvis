@@ -63,6 +63,13 @@ export interface ChatAttachment {
   kind: 'image';
 }
 
+/** Photo des yeux de Jarvis rattachée à une réponse (l'image reste en mémoire dans le PC). */
+export interface PhotoDiscussion {
+  photoId: string;
+  prisA: number;
+  camera: string;
+}
+
 export interface ChatMessage {
   id: string;
   role: MessageRole;
@@ -88,6 +95,11 @@ export interface ChatMessage {
   directPrompt?: string;
   /** Atelier 3D (Jarvis Test) : question en cours, ou pièce rendue avec ses versions (écran 3D). */
   atelier?: AtelierEtat;
+  /**
+   * Les yeux de Jarvis (Jarvis Test) : une photo de la caméra de l'imprimante sous la réponse.
+   * Seulement sa référence et son heure : l'image vit en mémoire, jamais dans l'historique.
+   */
+  yeux?: PhotoDiscussion;
   createdAt: number;
 }
 

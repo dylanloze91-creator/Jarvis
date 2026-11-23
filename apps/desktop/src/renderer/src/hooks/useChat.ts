@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { AtelierEtat, ChatAttachment, ChatMessage, ChatMissionEnvelope, Conversation } from '@jarvis/core';
+import type { AtelierEtat, PhotoDiscussion, ChatAttachment, ChatMessage, ChatMissionEnvelope, Conversation } from '@jarvis/core';
 import type { ChatAttachmentInput, ChatEvent } from '../../../shared/ipc';
 
 export type ChatItem =
@@ -38,7 +38,9 @@ export type ChatItem =
   | { kind: 'imager_offer'; id: string; text: string }
   | { kind: 'chat_mission'; id: string; envelope: ChatMissionEnvelope }
   /** Atelier 3D : la pièce en 3D, sous la réponse qui la décrit. */
-  | { kind: 'atelier'; id: string; etat: Extract<AtelierEtat, { etape: 'piece' }> };
+  | { kind: 'atelier'; id: string; etat: Extract<AtelierEtat, { etape: 'piece' }> }
+  /** Les yeux (Jarvis Test) : la photo de la caméra de l'imprimante, sous la réponse. */
+  | { kind: 'yeux'; id: string; photo: PhotoDiscussion };
 
 export interface PendingConfirmation {
   requestId: string;
@@ -157,6 +159,11 @@ export function useChat(options: UseChatOptions = {}) {
           const etat = event.etat;
           if (etat.etape !== 'piece') break;
           setItems((current) => [...closeStreaming(current), { kind: 'atelier', id: `atelier-${event.messageId}`, etat }]);
+          break;
+        }
+        case 'yeux': {
+          const photo = event.photo;
+          setItems((current) => [...closeStreaming(current), { kind: 'yeux', id: `yeux-${event.messageId}`, photo }]);
           break;
         }
         case 'mission_update': {
@@ -299,6 +306,7 @@ export function toItems(messages: ChatMessage[]): ChatItem[] {
     } else if (message.role === 'assistant' && message.content.trim().length > 0) {
       items.push({ kind: 'assistant', id: message.id, text: message.content, streaming: false });
       if (message.atelier?.etape === 'piece') items.push({ kind: 'atelier', id: `atelier-${message.id}`, etat: message.atelier });
+      if (message.yeux) items.push({ kind: 'yeux', id: `yeux-${message.id}`, photo: message.yeux });
     } else if (message.chatMission) {
       items.push({ kind: 'chat_mission', id: message.id, envelope: message.chatMission });
     } else if (message.role === 'tool') {

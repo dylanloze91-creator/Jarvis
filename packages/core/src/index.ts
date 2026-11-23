@@ -631,6 +631,7 @@ export * from './rover/index.js';
 export * from './appendices/index.js';
 export * from './impression/index.js';
 export * from './atelier/index.js';
+export * from './yeux/index.js';
 export * from './images/index.js';
 export * from './developer/index.js';
 export * from './onboarding/index.js';

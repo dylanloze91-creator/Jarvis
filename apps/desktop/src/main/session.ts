@@ -81,6 +81,7 @@ import {
   type ModelPlace,
   type AuditLogStore,
   type AtelierEtat,
+  type PhotoDiscussion,
   type ChatMessage,
   type ConfirmationRequest,
   type Conversation,
@@ -281,6 +282,14 @@ interface SessionDeps {
     confirm: (summary: string) => Promise<boolean>;
     progress: (message: string) => void;
   }) => Promise<{ texte: string; etat?: AtelierEtat } | null>;
+  /**
+   * Les yeux de Jarvis (Jarvis Test) : « montre-moi l'impression » = photo de la caméra de
+   * l'imprimante + phrase d'état, lecture seule, sans modèle. Absent ou `null` : chemin d'avant.
+   */
+  yeux?: (input: {
+    text: string;
+    place: 'fenetre' | 'telephone' | 'enceinte';
+  }) => Promise<{ texte: string; photo: PhotoDiscussion | null } | null>;
   /** Imprimante. Absent ou coupée : le tour suit le chemin d'avant. */
   printer?: (input: {
     text: string;
@@ -589,8 +598,13 @@ export class ChatSession {
       emit({ type: 'tool_result', callId: atelierCallId, toolName: 'atelier', status: 'ok', content: 'Fait.' });
     }
     const atelierText = atelierReply?.texte ?? null;
-    const printerText =
-      !atelierText && !briefingText && !notesText && !routineText && settings.printer?.enabled === true && this.deps.printer
+    const yeuxReply =
+      !atelierText && !briefingText && !notesText && !routineText && this.deps.yeux
+        ? await this.deps.yeux({ text: input.text, place: input.place?.kind ?? 'fenetre' }).catch(() => null)
+        : null;
+    const printerText = yeuxReply
+      ? yeuxReply.texte
+      : !atelierText && !briefingText && !notesText && !routineText && settings.printer?.enabled === true && this.deps.printer
         ? await this.deps.printer({
             text: input.text,
             place: input.place?.kind ?? 'fenetre',
@@ -941,6 +955,16 @@ export class ChatSession {
       if (reponse && reponse !== userMessage) {
         reponse.atelier = atelierEtat;
         if (atelierEtat.etape === 'piece') emit({ type: 'atelier', messageId: reponse.id, etat: atelierEtat });
+      }
+    }
+
+    // Les yeux : la photo (sa référence seulement) est posée sur la réponse et s'affiche dessous.
+    const yeuxPhoto = yeuxReply?.photo;
+    if (yeuxPhoto && !controller.signal.aborted) {
+      const reponse = [...messages].reverse().find((message) => message.role === 'assistant' && message.content.trim());
+      if (reponse && reponse !== userMessage) {
+        reponse.yeux = yeuxPhoto;
+        emit({ type: 'yeux', messageId: reponse.id, photo: yeuxPhoto });
       }
     }
 

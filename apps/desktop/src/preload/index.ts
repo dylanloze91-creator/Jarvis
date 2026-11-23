@@ -65,6 +65,12 @@ const api: JarvisApi = {
     fichier: (dossier: string, fichier: string) => ipcRenderer.invoke(IpcChannel.atelierFichier, dossier, fichier),
     ouvrirDossier: (dossier: string) => ipcRenderer.invoke(IpcChannel.atelierOuvrirDossier, dossier),
   },
+  yeux: {
+    photo: (photoId: string) => ipcRenderer.invoke(IpcChannel.yeuxPhoto, photoId),
+    disponible: () => ipcRenderer.invoke(IpcChannel.yeuxDisponible),
+    vue: () => ipcRenderer.invoke(IpcChannel.yeuxVue),
+    garder: (photoId: string) => ipcRenderer.invoke(IpcChannel.yeuxGarder, photoId),
+  },
   images: {
     open: (path: string) => ipcRenderer.invoke(IpcChannel.imagesOpen, path),
     directCatalog: () => ipcRenderer.invoke(IpcChannel.imagesDirectCatalog),
