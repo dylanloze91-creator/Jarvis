@@ -4,8 +4,13 @@
  * express proposées, chacune passée à la porte sur tout l'historique. Aucun modèle, aucun réseau.
  * Les phrases ne sont pas affichées ici ; elles restent dans les fichiers du dossier de données.
  *
- *   npm run ameliorer --workspace @jarvis/core -- \
- *     --conversations <dossier> [--carnet <rates.jsonl>] [--regle <regle.json>] [--dir C:\dev\jarvis-data]
+ *   npm run build --workspace @jarvis/core
+ *   cd packages/core
+ *   node scripts/ameliorer.mjs --conversations "%APPDATA%\Jarvis Test\conversations" \
+ *     --carnet "%APPDATA%\Jarvis Test\carnet\rates.jsonl" [--regle <regle.json>] [--dir C:\dev\jarvis-data]
+ *
+ * Avec `npm run ameliorer -- …`, npm coupe un chemin qui contient un espace (« Jarvis Test ») :
+ * lancer le script directement, comme ci-dessus. Aucune conversation lue = arrêt avec un message.
  */
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -31,7 +36,7 @@ try {
 }
 
 const AIDE =
-  'npm run ameliorer --workspace @jarvis/core -- --conversations <dossier> [--carnet <rates.jsonl>] [--regle <regle.json>] [--dir C:\\dev\\jarvis-data]';
+  'node scripts/ameliorer.mjs --conversations "<dossier>" [--carnet "<rates.jsonl>"] [--regle <regle.json>] [--dir C:\\dev\\jarvis-data]  (depuis packages/core, après npm run build --workspace @jarvis/core)';
 
 function parseArgs(argv) {
   const conversations = [];

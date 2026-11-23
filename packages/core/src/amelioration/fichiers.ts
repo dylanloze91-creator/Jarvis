@@ -105,6 +105,16 @@ export async function ameliorer(options: OptionsAmelioration = {}): Promise<Resu
     }
   }
 
+  if (conversations === 0) {
+    // Essai du 23 novembre : `npm run ameliorer -- --conversations "%APPDATA%\Jarvis Test\…"` coupait
+    // le chemin à l'espace, et le script écrivait un rapport vide au lieu de le dire.
+    throw new Error(
+      `Aucune conversation lue (${dossiersAbsents} dossier(s) introuvable(s), ${sautees} fichier(s) illisible(s)). ` +
+        'Vérifie le chemin. S’il contient un espace (« Jarvis Test »), lance le script directement : ' +
+        'cd packages/core puis node scripts/ameliorer.mjs --conversations "<dossier>".',
+    );
+  }
+
   const rates: RateLu[] = [];
   let carnetLignes = 0;
   let carnetAbsent = false;

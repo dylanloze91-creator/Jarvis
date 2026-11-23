@@ -312,6 +312,11 @@ describe('rapport et fichiers', () => {
     expect(await readFile(resultat.fichiers!.exemples, 'utf8')).toContain('Lyon');
   });
 
+  it('s’arrête avec un message quand aucune conversation n’est lue (chemin coupé à l’espace)', async () => {
+    const base = await mkdtemp(join(tmpdir(), 'amelioration-vide-'));
+    await expect(ameliorer({ conversations: [join(base, 'Jarvis')], dir: join(base, 'donnees') })).rejects.toThrow('Aucune conversation lue');
+  });
+
   it('refuse d’écrire dans le dépôt', async () => {
     const base = await mkdtemp(join(tmpdir(), 'amelioration-depot-'));
     await expect(ameliorer({ conversations: [join(base, 'x')], dir: join(base, 'depot', 'donnees'), depot: join(base, 'depot') })).rejects.toThrow('dépôt');
