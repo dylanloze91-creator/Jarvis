@@ -101,6 +101,6 @@ Une seule carte (RTX 2060 6 Go) : un seul agent à la fois lance le banc (`npm r
 
 | État | Par qui | Pour quoi | Depuis |
 | --- | --- | --- | --- |
-| libre | — | — | — |
+| occupée | Claude Code (agent Atelier, `claude/atelier-3d`) | `npm test` complet (charge qwen2.5:1.5b) puis Jarvis Test en développement pour essayer l'atelier 3D (Ollama du chat) ; pas de banc | 2026-11-23 |
 
 Pour réserver : passer l'état à `occupée`, remplir les colonnes, commiter et pousser **avant** de lancer. Pour libérer : remettre `libre` et `—`, commiter et pousser.
