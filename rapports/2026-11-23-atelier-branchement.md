@@ -37,7 +37,7 @@ Jarvis Test installé n'a pas été touché : l'essai tourne dans un dossier à 
 
 1. **Plaque : Textured PEI.** L'atelier tranche avec `--curr-bed-type "Textured PEI Plate"` (`PLAQUE_ORCA`, `atelierPC.ts`). Vérifié en vrai : `; curr_bed_type = Textured PEI Plate`, `PRINT_START EXTRUDER=245 BED=80`.
 2. **Plateau 300 × 300 × 300** (Klipper : X 316, Y 304, Z 300). À sa demande, le préréglage OrcaSlicer « MyKlipper 0.4 nozzle - Copie » a reçu `printable_area` 300 × 300 et `printable_height` 300 (le reste du fichier inchangé). Copie de l'ancien (`.json` et `.info`) : `C:\dev\jarvis-data\atelier\_sauvegardes\orca-2026-11-23\`. Vérifié : l'atelier lit 300 × 300 × 300, une boîte de 290 mm est acceptée (refusée à 250).
-3. **Imprimante** : une impression tourne ; rien n'est touché. Au « impression finie » de l'utilisateur : `[exclude_object]` dans `printer.cfg` (copie avant), redémarrage de Klipper, adresse `http://mainsailos.local` dans Jarvis Test.
+3. **Imprimante** : une impression tourne ; rien n'est touché. `[exclude_object]` était déjà dans `printer.cfg`, ajouté par l'utilisateur lui-même : Jarvis n'a rien à y écrire. Vérifié en lecture seule (`GET /printer/objects/query?exclude_object`, 23 novembre au soir) : Klipper l'a chargé, l'objet `exclude_object` répond et liste déjà l'objet de l'impression en cours (`BAC_ARD.STL_ID_0_COPY_0`). Aucun redémarrage de Klipper nécessaire. Reste, au « impression finie » de l'utilisateur : l'adresse `http://mainsailos.local` dans Jarvis Test.
 
 ## 4 bis. File d'attente (23 novembre, soir)
 
