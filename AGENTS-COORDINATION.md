@@ -15,6 +15,7 @@ Statuts possibles : `en cours`, `en pause`, `bloqué`, `terminé`.
 
 | Agent | Branche | Tâche | Fichiers concernés | Début | Statut |
 | --- | --- | --- | --- | --- | --- |
+| Claude Code (agent Yeux, copie `.claude/worktrees/yeux`) | `claude/yeux-etape-1` | Les yeux de Jarvis, étape 1 (`docs/specs/yeux-etape-1.md`) : chemin de l'image de la caméra de l'imprimante (processus principal, en mémoire) et « montre-moi l'impression » (règle express, photo dans la discussion), puis l'écran « Yeux » ; Jarvis Test seulement, coupé par défaut ; **lecture seule sur l'imprimante** (GET seulement, une impression est en cours) ; pas de fusion, pas de publication | `packages/core/src/yeux/` (à créer), `apps/desktop/src/main/yeux/` (à créer), `apps/desktop/src/renderer/src/yeux/` (à créer), crochet `eyes` dans `session.ts` | 2026-11-23 | en cours |
 | Claude Code (agent Atelier, copie `.claude/worktrees/atelier`) | `claude/atelier-3d` | Atelier 3D, priorité n° 1 (décision du 23 novembre) : contrôles officiels, étapes d'installation d'OpenSCAD et d'OrcaSlicer, rendu des 10 pièces par défaut (STL fermés, cotes), tranche en ligne de commande avec les préréglages de l'utilisateur (lus, jamais modifiés), puis branchement dans la discussion de Jarvis Test ; aucune impression lancée, pas de fusion (l'agent Corrections fusionne dans `claude/dev`), pas de publication | `packages/core/src/atelier/`, `apps/desktop/src/main/atelier/` (à créer), `scripts/atelier-*` (à créer) | 2026-11-23 | en cours : étapes 1 à 5 faites (OpenSCAD 24 sur 24, tranchage avec les préréglages de l'utilisateur, atelier branché dans la discussion de Jarvis Test avec l'écran 3D) ; rapport `rapports/2026-11-23-atelier-branchement.md` ; un Jarvis Test d'essai tourne dans un dossier à part (pas celui de l'installé), à fermer après l'essai avec l'utilisateur |
 | Claude (le chat) | `claude/atelier-decoupes` | Atelier 3D, les découpes (partie de `claude/atelier-3d`) : trous, ouvertures (« encadrements ») et encoches dits en français (« un trou de 8 à l'arrière pour le câble », « enlève le trou », « le trou plus gros »), une nouvelle version à chaque changement. Cœur seulement (`decoupes.ts`, branché dans `fabriquer` et `deciderAtelier`), rien côté PC à changer. Rapport `rapports/2026-11-23-atelier-decoupes.md` | — | 2026-11-23 | terminé (à fusionner dans `claude/atelier-3d` par l'agent Atelier, puis rendu OpenSCAD sur le PC) |
 | Claude (le chat) | `claude/atelier-ecran-3d` | Atelier 3D, l'écran 3D (partie de `claude/atelier-3d`) : lecture et contrôle des STL, vue 3D WebGL sans bibliothèque, écran « Atelier » avec versions et impression par carte. Rien de branché. Rapport `rapports/2026-11-23-atelier-ecran-3d.md` | — | 2026-11-23 | terminé (à fusionner dans `claude/atelier-3d` par l'agent Atelier) |
@@ -95,6 +96,14 @@ Statuts possibles : `en cours`, `en pause`, `bloqué`, `terminé`.
 | Cursor | `cursor/carnet-des-rates` | Carnet des ratés (détection, règle express, fichier local, revue, préparation pour Claude). Base `origin/cursor/deux-jarvis` (pas fusionnée dans main). Pas de fusion, pas de publication, version inchangée. Rapport `rapports/2026-11-12-carnet-des-rates.md`. | — | 2026-11-12 | terminé |
 | Cursor | `cursor/lot-b-quotidien` | Lot B, le quotidien : briefing, notes, routines, imprimante 3D. Base `origin/cursor/carnet-des-rates` (main est encore en 5.0.76, pas de fusion de la bourse). Pas de fusion dans main, pas de publication, version inchangée. Rapport `rapports/2026-11-12-lot-b-quotidien.md`. | — | 2026-11-12 | terminé |
 | Cursor | `cursor/jeu-conversations` | Jeu d'entraînement tiré des conversations : journal du tour dans Jarvis Test, préparation sans modèle. Pas de fusion, pas de publication. Rapport `rapports/2026-11-16-jeu-conversations.md`. | — | 2026-11-16 | terminé |
+
+## Ressource Jarvis Test
+
+Une seule fenêtre de Jarvis Test de développement à la fois pour les essais avec l'utilisateur (le Jarvis Test installé, celui de l'utilisateur, n'est jamais modifié par un agent).
+
+| État | Par qui | Pour quoi | Depuis |
+| --- | --- | --- | --- |
+| occupée | Claude Code (agent Yeux) | essai de « montre-moi l'impression » et de l'écran « Yeux » : Jarvis Test de développement dans un dossier de données à part, port de débogage 9223, lecture seule sur l'imprimante | 2026-11-23 |
 
 ## Ressource GPU / Ollama
 
