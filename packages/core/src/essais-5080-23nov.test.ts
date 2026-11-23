@@ -59,6 +59,10 @@ describe('Spotify : « mets pause » met en pause, jamais un morceau nommé « p
     for (const text of [
       'Mets play sur Spotify',
       'Mes play sur Spotify.',
+      'M’éplay sur Spotify.',
+      "M'é play sur Spotify",
+      'Mais play sur Spotify',
+      'Mé play',
       'Remets play',
       'Play',
       'Jarvis, mets en lecture sur Spotify',

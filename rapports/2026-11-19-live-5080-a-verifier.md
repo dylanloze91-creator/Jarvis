@@ -194,3 +194,8 @@ Essais : `packages/core/src/essais-5080-23nov.test.ts` (phrases écrites pour l'
 - **E16 fait** : heure sans modèle (« Il est 17 h 18. »), blague par le modèle.
 - **E17 fait** : image en 266 s ; le 7B a été rechargé à 17 h 08 avec `-c 8192`, comme le chat : pas de rechargement en trop. Un `qwen2.5:1.5b` en `-c 4096` à 17 h 22 ne vient pas de la Live (aucun réglage ne le nomme ; même suite d'appels que le test du vrai modèle du labo, qui ne tourne plus sur cette branche sans `JARVIS_LAB_REAL=1`).
 - Vu en passant, non corrigé : « Peux-tu augmenter le volume de l'enceinte ? » a reçu un refus du modèle alors que `spotify_set_volume` existe ; « Elle en est où, l'image ? » a reçu une réponse inventée (« en cours »).
+
+### Troisième passage (23 novembre, 18 h 50)
+
+- **E11 à moitié bon** : pause, morceau suivant (« Morses suivantes ») et morceau précédent bons, sans modèle. « Mets play sur Spotify » a été écrit « M'éplay » par Whisper et a lancé « Quarantine » de E-Play. **Corrigé** : devant « play », la règle accepte aussi « mes », « mais », « mé » et « m'é », collé ou non. Test : `essais-5080-23nov.test.ts`.
+- Suite complète : `workflow.test.ts` (modèle de code) a échoué une fois sous la charge, puis 9 sur 9 seul ; sans rapport avec la correction.
