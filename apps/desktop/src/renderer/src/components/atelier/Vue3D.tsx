@@ -8,10 +8,12 @@ export interface Vue3DProps {
   maillage?: Maillage | null;
   /** Classe de hauteur Tailwind (défaut : h-[420px]). */
   className?: string;
+  /** Taille du plateau dessiné, en mm (défaut : volume de l'Ender 3 S1 Plus du cœur). Lue à la création. */
+  plateau?: { x: number; y: number };
 }
 
 /** Vue 3D d'une pièce sur le plateau : tourner, zoomer, cotes en millimètres. */
-export function Vue3D({ stl, maillage, className }: Vue3DProps) {
+export function Vue3D({ stl, maillage, className, plateau }: Vue3DProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const visionneuseRef = useRef<Visionneuse | null>(null);
   const [disponible, setDisponible] = useState(true);
@@ -30,13 +32,15 @@ export function Vue3D({ stl, maillage, className }: Vue3DProps) {
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const visionneuse = new Visionneuse(canvas, { onCotes: setCotesEcran });
+    const visionneuse = new Visionneuse(canvas, { onCotes: setCotesEcran, plateau });
     visionneuseRef.current = visionneuse;
     setDisponible(visionneuse.disponible);
     return () => {
       visionneuse.detruire();
       visionneuseRef.current = null;
     };
+    // Le plateau ne change pas pendant que l'écran est ouvert : la visionneuse est créée une fois.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {

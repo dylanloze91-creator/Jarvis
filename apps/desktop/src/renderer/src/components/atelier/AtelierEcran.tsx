@@ -14,10 +14,12 @@ export interface AtelierEcranProps {
   onOuvrirDossier?: (numero: number) => void;
   /** Message d'état : « OpenSCAD rend la pièce… », « Tranchage en cours… ». */
   message?: string | null;
+  /** Plateau dessiné (mm) : le même que la limite de l'atelier. */
+  plateau?: { x: number; y: number };
 }
 
 /** L'écran « Atelier » : la pièce en 3D, ses mesures, ses versions, et l'impression (avec carte). */
-export function AtelierEcran({ nomPiece, versions, versionChoisie, onChoisirVersion, onImprimer, onOuvrirDossier, message }: AtelierEcranProps) {
+export function AtelierEcran({ nomPiece, versions, versionChoisie, onChoisirVersion, onImprimer, onOuvrirDossier, message, plateau }: AtelierEcranProps) {
   const version = versions.find((v) => v.numero === versionChoisie) ?? versions[versions.length - 1];
   const etat = useMemo(() => etatVersion(version), [version]);
   const bloque = raisonPasImprimable(version, etat);
@@ -25,7 +27,7 @@ export function AtelierEcran({ nomPiece, versions, versionChoisie, onChoisirVers
   return (
     <section className="flex w-full flex-col gap-3 text-sm text-slate-100 lg:flex-row">
       <div className="min-w-0 flex-1">
-        <Vue3D maillage={etat.maillage} className="h-[460px]" />
+        <Vue3D maillage={etat.maillage} className="h-[460px]" plateau={plateau} />
         {message ? <p className="mt-2 text-xs text-cyan-200">{message}</p> : null}
       </div>
 
