@@ -1,0 +1,34 @@
+# Copier vers config.toml (ce fichier-là n'est pas versionné). installer.sh le fait et remplit le jeton.
+# Le même programme sert au rover et au hub : seul ce fichier change.
+
+# Nom et pièce, tels qu'ils apparaîtront dans l'écran « Yeux » de Jarvis.
+# Jamais de caméra dans une chambre : le programme refuse de démarrer.
+nom = "Rover avant"
+piece = "mobile"
+
+# Adresse d'écoute : 0.0.0.0 = toutes les interfaces du Pi. Seul le réseau local est servi.
+hote = "0.0.0.0"
+port = 8770
+
+# Jeton à recopier dans Jarvis (écran « Yeux » → la carte → « Brancher »). 32 caractères au moins.
+jeton = ""
+
+# "picamera2" = Camera Module 3 (Wide) ; "fausse" = essai sans caméra.
+camera = "picamera2"
+# Pi 5 : connecteur caméra 0 ou 1 (deux caméras CSI possibles).
+numero_camera = 0
+# Taille de la photo (Camera Module 3 Wide : 4608 × 2592 au plus). 1920 × 1080 reste loin des 5 Mo.
+largeur = 1920
+hauteur = 1080
+qualite = 85
+# 180 si la caméra est montée à l'envers.
+rotation = 0
+
+# Témoin lumineux (LED + résistance entre la broche et la masse), allumé tant que la caméra tourne.
+# Numéro BCM, par exemple 17. Vide : pas de témoin (le voyant n'existe pas sur la Camera Module 3).
+# temoin_gpio = 17
+# Interrupteur de coupure (entre la broche et la masse) : fermé = caméra coupée, rien n'est pris.
+# coupure_gpio = 27
+
+# La caméra s'éteint après ce nombre de secondes sans photo.
+repos_s = 5.0
