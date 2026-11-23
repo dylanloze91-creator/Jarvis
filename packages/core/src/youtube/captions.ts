@@ -1,10 +1,7 @@
-import { parseYoutubeVideoId } from './url.js';
+import { parseYoutubeVideoId, youtubeUrlProblem } from './url.js';
 
 export const NO_CAPTIONS_ERROR =
   "Cette vidéo n'a pas de sous-titres, donc je ne peux pas encore la résumer.";
-
-const INVALID_URL_ERROR =
-  "Ce lien n'est pas une adresse YouTube reconnue (watch, youtu.be, Shorts ou live).";
 
 const FETCH_TIMEOUT_MS = 8_000;
 const MAX_CAPTION_TRACKS = 4;
@@ -165,7 +162,7 @@ export async function fetchYoutubeTranscript(
   fetchImpl: typeof fetch = globalThis.fetch,
 ): Promise<YoutubeTranscriptResult> {
   const videoId = parseYoutubeVideoId(rawUrl);
-  if (!videoId) return { ok: false, content: INVALID_URL_ERROR };
+  if (!videoId) return { ok: false, content: youtubeUrlProblem(rawUrl) };
 
   let title: string | undefined;
   let sawPlayer = false;

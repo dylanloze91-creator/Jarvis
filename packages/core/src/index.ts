@@ -286,7 +286,7 @@ export {
 export { FinnhubMarketDataProvider, finnhubDescriptor } from './market/providers/finnhub.js';
 export { MarketDataProviderRegistry, createDefaultMarketDataRegistry } from './market/registry.js';
 
-export { extractYoutubeUrl, parseYoutubeVideoId } from './youtube/url.js';
+export { extractYoutubeUrl, parseYoutubeVideoId, youtubeUrlProblem, INVALID_YOUTUBE_URL_MESSAGE } from './youtube/url.js';
 export {
   NO_CAPTIONS_ERROR,
   captionTracksFromPlayer,

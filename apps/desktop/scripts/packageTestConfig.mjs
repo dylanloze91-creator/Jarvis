@@ -19,6 +19,8 @@ export const testBuilder = {
   // `@jarvisdesktop-updater` ; partagé, chacun pouvait effacer le téléchargement de l'autre.
   // Les données de Test ne dépendent pas de ce nom (`userData` fixé à « Jarvis Test »).
   packageName: 'jarvis-test',
+  // L'installateur ferme lui-même Jarvis Test avant de copier (essai A1 du 18 novembre).
+  nsisInclude: 'scripts/installer-test.nsh',
 };
 
 export function testBuilderCliArgs() {
@@ -36,5 +38,6 @@ export function testBuilderCliArgs() {
     `-c.directories.output=${testBuilder.output}`,
     `-c.publish.channel=${testBuilder.channel}`,
     `-c.extraMetadata.name=${testBuilder.packageName}`,
+    `-c.nsis.include=${testBuilder.nsisInclude}`,
   ];
 }

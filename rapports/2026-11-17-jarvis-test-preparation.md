@@ -42,10 +42,12 @@ Branche `claude/dev`, faite par Claude Code sur le PC Windows pendant la nuit, s
 
 ## Essais à faire avec moi
 
-1. **Installer** `Jarvis-Test-Setup-5.1.0-test.1.exe` (celui de cette nuit). Live reste en 5.0.78, au même endroit.
-2. **Premier lancement de Test**, Live ouvert. Pastille orange TEST et question « Copier mes réglages de Jarvis Live ? ». Accepter, puis vérifier que le modèle et la personnalisation y sont : ça vérifie le dossier `@jarvis\desktop`. Live ne doit pas avoir changé.
-3. **Live garde ses fonctions.** Ctrl+Espace et « Jarvis » à la voix ne réveillent que Live. Test : Ctrl+Alt+Espace. Les enceintes, le téléphone et le mot de réveil de Test affichent « Réservé à Jarvis Live ».
-4. **Notes** dans Test : activer les notes, dire « Note : acheter deux litres de lait », puis « Qu'est-ce qu'il y a sur ma liste ? ». Un fichier `notes.json` et son `.bak` apparaissent dans `%APPDATA%\Jarvis Test`.
+> Énoncés corrigés le 19 novembre, après les essais du 18 (`rapports/2026-11-18-jarvis-test-essais.md`) : essais 1 à 4.
+
+1. **Installer** le dernier `Jarvis-Test-Setup-5.1.0-test.N.exe`. Si Jarvis Test tourne (icône près de l'horloge), l'installateur le ferme lui-même depuis le 19 novembre ; avec un installateur plus ancien, le quitter d'abord par son icône, « Quitter ». Après l'installation, vérifier le numéro dans Réglages → Application. Live ne change pas, au même endroit.
+2. **Premier lancement de Test**, Live ouvert. Pastille orange TEST et question « Copier mes réglages de Jarvis Live ? ». Accepter, puis vérifier que le modèle et la personnalisation y sont : ça vérifie le dossier `@jarvis\desktop`. Live ne doit pas avoir changé. **La question ne se pose qu'une fois** : si elle a déjà reçu une réponse sur ce PC, elle ne revient pas, et seuls la pastille, le modèle et la personnalisation se vérifient.
+3. **Live garde ses fonctions.** Ctrl+Espace et « Jarvis » à la voix ne réveillent que Live. Test : Ctrl+Alt+Espace, **après avoir cliqué « Activer quand même » sur le raccourci dans les réglages de Test** (sans cela, Test n'a aucun raccourci : c'est voulu). Les enceintes, le téléphone et le mot de réveil de Test affichent « Réservé à Jarvis Live ».
+4. **Notes** dans Test : activer les notes, dire « Note : acheter deux litres de lait », puis « Qu'est-ce qu'il y a sur ma liste ? » (reconnue depuis le 19 novembre ; avant, seule « Ma liste » l'était). La liste est relue tout de suite, sans modèle. Un fichier `notes.json` et son `.bak` apparaissent dans `%APPDATA%\Jarvis Test`.
 5. **Journal du tour** dans Test : poser une question, puis vérifier que la conversation enregistrée porte `turnLog`, et qu'une note y est marquée `provider: aucun`. Dans Live : pas de `turnLog`.
 6. **Correction d'équipe, dans Live** : « Ouvre le Bloc-notes », puis « non ». La pastille ne doit pas reprendre l'équipe du premier tour.
 7. **Carnet** dans Test : dire « non, c'est faux » après une réponse. Le raté est noté (Réglages, « ratés de la semaine »).

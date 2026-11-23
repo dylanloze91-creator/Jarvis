@@ -64,11 +64,6 @@ export interface Edition {
    * Absent dans Live : rien ne change pour elle.
    */
   keepModelsWarm?: boolean;
-  /**
-   * Ligne d'heure des équipes placée dans la demande du tour, pas dans le message système :
-   * Ollama ne relit plus les outils et l'historique à chaque nouvelle minute.
-   */
-  clockAfterHistory?: boolean;
   /** Mémoire courte des résultats d'outils de lecture (quelques minutes). */
   keepToolResults?: boolean;
   /**
@@ -131,7 +126,6 @@ export const TEST_EDITION: Edition = {
   allowPrerelease: true,
   badge: { label: 'TEST', color: '#E07A1F' },
   keepModelsWarm: true,
-  clockAfterHistory: true,
   keepToolResults: true,
   appendices: { port: 53224 + APPENDICE_OFFSET },
 };

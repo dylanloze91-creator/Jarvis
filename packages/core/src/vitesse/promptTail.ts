@@ -1,6 +1,14 @@
 /**
  * Note de fin de tour (mission « Jarvis plus rapide, sans nouveau modèle »).
  *
+ * **Plus utilisée depuis le 19 novembre 2026.** Avec la personnalisation de l'utilisateur (prénom,
+ * « réponds court »), la note placée devant la demande faisait répondre le modèle à la note au
+ * lieu d'appeler l'outil : informations du PC 2 fois sur 10, contre 10 sur 10 avec la ligne
+ * d'heure dans le message système (`rapports/2026-11-19-correction-outils-pc.md`). La ligne
+ * d'heure est revenue dans le message système pour toutes les équipes. Ce fichier reste pour
+ * mémoire et pour ses tests ; ne pas le rebrancher sans la décision de l'utilisateur et sans
+ * repasser `banc:outils-pc`.
+ *
  * Ollama garde en mémoire le début d'un prompt déjà lu : tant que ce début ne change pas, il
  * n'est pas relu. La ligne d'heure change chaque minute ; placée dans le message système, elle
  * faisait relire tout ce qui la suit (les outils de l'équipe et tout l'historique) à chaque

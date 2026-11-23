@@ -155,12 +155,11 @@ it(
   'banc de vitesse',
   async () => {
     process.env.JARVIS_EDITION = 'test';
-    // JARVIS_BANC_SANS=chauds,heure,memoire : couper un outil de vitesse pour ce passage seulement,
+    // JARVIS_BANC_SANS=chauds,memoire : couper un outil de vitesse pour ce passage seulement,
     // afin de mesurer chaque outil avec et sans lui (la table d'édition n'est changée que dans le banc).
     const sans = (process.env.JARVIS_BANC_SANS ?? '').split(',').map((name) => name.trim());
-    const table = core.TEST_EDITION as { keepModelsWarm?: boolean; clockAfterHistory?: boolean; keepToolResults?: boolean };
+    const table = core.TEST_EDITION as { keepModelsWarm?: boolean; keepToolResults?: boolean };
     if (sans.includes('chauds')) table.keepModelsWarm = false;
-    if (sans.includes('heure')) table.clockAfterHistory = false;
     if (sans.includes('memoire')) table.keepToolResults = false;
     const label = (process.env.JARVIS_BANC_LABEL ?? 'passage').replace(/[^\w.-]+/g, '-');
     const settings = reglagesDeJarvisTest();

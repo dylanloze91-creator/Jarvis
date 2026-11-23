@@ -1,6 +1,6 @@
 {
   "name": "@jarvis/desktop",
-  "version": "5.1.0-test.1",
+  "version": "5.1.0-test.2",
   "private": true,
   "description": "Application de bureau Jarvis (Electron)",
   "main": "./out/main/index.js",
@@ -16,6 +16,7 @@
     "setup:speaker-firmware": "node scripts/setup-speaker-firmware.mjs",
     "test:firmware": "sh ../../firmware/jarvis-speaker/test/run.sh",
     "banc:vitesse": "vitest run --config vitest.banc.config.ts src/main/vitesse/banc-vitesse.banc.ts",
+    "banc:outils-pc": "vitest run --config vitest.banc.config.ts src/main/vitesse/banc-outils-pc.banc.ts",
     "banc:outils": "vitest run --config vitest.banc.config.ts src/main/vitesse/outils-taille.banc.ts",
     "package:win": "npm run build && node scripts/setup-piper.mjs --target win-x64 && node scripts/verify-piper-windows-bundle.mjs && electron-builder --win --publish never",
     "package:win:test": "npm run build && node scripts/generate-icons.mjs --test && node scripts/setup-piper.mjs --target win-x64 && node scripts/verify-piper-windows-bundle.mjs && node scripts/package-test.mjs",

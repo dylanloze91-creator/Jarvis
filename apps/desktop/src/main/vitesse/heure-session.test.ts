@@ -15,8 +15,10 @@ import { ChatSession } from '../session.js';
 import { stubLocalLearning } from '../test/localLearningStub.js';
 
 /**
- * Ligne d'heure des équipes : en tête de la demande dans Jarvis Test (le début du prompt reste
- * le même d'une minute à l'autre), dans le message système dans Jarvis Live (comme avant).
+ * Ligne d'heure des équipes : dans le message système, dans Jarvis Test comme dans Jarvis Live.
+ * Jarvis Test l'a placée en tête de la demande du 17 au 19 novembre : avec la personnalisation de
+ * l'utilisateur, le modèle répondait alors à la note au lieu d'appeler l'outil (banc
+ * `banc-outils-pc.banc.ts`, rapport `rapports/2026-11-19-correction-outils-pc.md`).
  */
 const PRECEDENT = process.env.JARVIS_EDITION;
 
@@ -72,42 +74,31 @@ async function tours(editionId: 'test' | 'live', texts: string[]) {
 }
 
 describe('ligne d’heure des équipes', () => {
-  it('Jarvis Test : en tête de la demande du tour, plus dans le message système', async () => {
-    const { requests, saved } = await tours('test', ['Raconte-moi une histoire courte']);
+  it.each(['test', 'live'] as const)('Jarvis %s : la ligne est dans le message système, la demande part telle quelle', async (editionId) => {
+    const { requests, saved } = await tours(editionId, ['Donne-moi les informations sur mon PC']);
     expect(requests).toHaveLength(1);
     const request = requests[0]!;
-    expect(request.system).not.toContain(HEURE);
-    const last = request.messages.at(-1)!;
-    expect(last.role).toBe('user');
-    expect(last.content.startsWith(`${TURN_NOTE_LABEL} ${HEURE}`)).toBe(true);
-    expect(last.content.endsWith('\n\nRaconte-moi une histoire courte')).toBe(true);
-    expect(last.content).toContain('jamais une estimation.');
-    // Ce qui est affiché et enregistré ne porte pas la note.
-    const users = saved?.messages.filter((message) => message.role === 'user') ?? [];
-    expect(users.map((message) => message.content)).toEqual(['Raconte-moi une histoire courte']);
+    expect(request.system).toContain(HEURE);
+    // Le modèle lit la demande de l'utilisateur, et rien d'autre : une note placée devant elle
+    // faisait répondre sans appeler l'outil (défaut du 18 novembre).
+    expect(request.messages.at(-1)).toMatchObject({ role: 'user', content: 'Donne-moi les informations sur mon PC' });
+    expect(JSON.stringify(request.messages)).not.toContain(TURN_NOTE_LABEL);
+    expect(JSON.stringify(request.messages)).not.toContain(HEURE);
     expect(JSON.stringify(saved)).not.toContain(TURN_NOTE_LABEL);
   });
 
-  it('Jarvis Test : au tour suivant, le message système est le même et l’ancienne demande n’a plus la note', async () => {
+  it('Jarvis Test : au tour suivant non plus, aucune demande ne porte de note', async () => {
     const { requests } = await tours('test', ['Raconte-moi une histoire courte', 'Et une autre, plus drôle']);
     expect(requests).toHaveLength(2);
-    expect(requests[1]!.system).toBe(requests[0]!.system);
+    expect(requests[1]!.system).toContain(HEURE);
     const users = requests[1]!.messages.filter((message) => message.role === 'user');
-    expect(users[0]!.content).toBe('Raconte-moi une histoire courte');
-    expect(users[1]!.content).toContain(HEURE);
+    expect(users.map((message) => message.content)).toEqual(['Raconte-moi une histoire courte', 'Et une autre, plus drôle']);
   });
 
-  it('Jarvis Test : une demande qui parle de temps garde la ligne dans le message système, comme avant', async () => {
+  it('Jarvis Test : une demande qui parle de temps a la ligne au même endroit', async () => {
     const { requests } = await tours('test', ['Dis-moi, il est déjà tard là, non ?']);
     expect(requests).toHaveLength(1);
     expect(requests[0]!.system).toContain(HEURE);
     expect(requests[0]!.messages.at(-1)!.content).toBe('Dis-moi, il est déjà tard là, non ?');
-  });
-
-  it('Jarvis Live : comme avant, la ligne est dans le message système et la demande ne change pas', async () => {
-    const { requests } = await tours('live', ['Raconte-moi une histoire courte']);
-    expect(requests).toHaveLength(1);
-    expect(requests[0]!.system).toContain(HEURE);
-    expect(requests[0]!.messages.at(-1)!.content).toBe('Raconte-moi une histoire courte');
   });
 });
