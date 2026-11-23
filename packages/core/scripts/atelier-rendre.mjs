@@ -21,7 +21,7 @@ import { join, resolve } from 'node:path';
 
 const here = new URL('.', import.meta.url);
 const atelier = await import(new URL('../dist/atelier/index.js', here).href);
-const { GABARITS, gabarit, fabriquer, analyserStl, ecartsDeCotes } = atelier;
+const { GABARITS, gabarit, fabriquer, lireStl, controlerStl } = atelier;
 
 const args = process.argv.slice(2);
 const opt = (name) => {
@@ -113,31 +113,27 @@ for (const [id, nom, valeurs] of essais) {
   }
   let a;
   try {
-    a = analyserStl(new Uint8Array(await readFile(`${base}.stl`)));
+    a = controlerStl(lireStl(new Uint8Array(await readFile(`${base}.stl`))), piece.taille);
   } catch (e) {
     resultats.push({ id, nom, ok: false, raison: `STL illisible : ${e.message}` });
     continue;
   }
-  const ecarts = ecartsDeCotes(a.taille, piece.taille);
   let image = null;
   if (!sansImage) {
     const png = await lancer(openscad, ['-o', `${base}.png`, '--imgsize=800,600', '--viewall', '--autocenter', '--colorscheme=Tomorrow', `${base}.scad`]);
     image = png.code === 0 && existsSync(`${base}.png`) ? `${base}.png` : `échec (${png.code}) ${png.sortie.trim().slice(-200)}`;
   }
-  const ok = a.fermee && ecarts.length === 0 && a.volume > 0 && avertissements.length === 0;
+  const ok = a.ok && avertissements.length === 0;
   resultats.push({
     id,
     nom,
     ok,
     fermee: a.fermee,
-    aretesLibres: a.aretesLibres,
-    aretesMultiples: a.aretesMultiples,
-    aretesMalOrientees: a.aretesMalOrientees,
+    aretesOuvertes: a.aretesOuvertes,
     triangles: a.triangles,
-    volumeMm3: Math.round(a.volume),
     mesure: a.taille.map((x) => Math.round(x * 100) / 100),
     attendu: piece.taille.map((x) => Math.round(x * 100) / 100),
-    ecarts,
+    problemes: a.problemes,
     avertissements,
     secondes: Math.round(rendu.ms / 100) / 10,
     image,
@@ -146,7 +142,7 @@ for (const [id, nom, valeurs] of essais) {
 
 for (const r of resultats) {
   const etat = r.ok ? 'OK ' : 'NON';
-  const detail = r.raison ?? `${r.fermee ? 'fermée' : `ouverte (libres ${r.aretesLibres}, multiples ${r.aretesMultiples}, retournées ${r.aretesMalOrientees})`}, ${r.mesure.join(' × ')} mm (attendu ${r.attendu.join(' × ')}), ${r.secondes} s${r.ecarts.length ? ` — ${r.ecarts.join(' ')}` : ''}${r.avertissements.length ? ` — ${r.avertissements.join(' | ')}` : ''}`;
+  const detail = r.raison ?? `${r.fermee ? 'fermée' : `ouverte (${r.aretesOuvertes} arêtes)`}, ${r.mesure.join(' × ')} mm (attendu ${r.attendu.join(' × ')}), ${r.secondes} s${r.problemes.length ? ` — ${r.problemes.join(' ')}` : ''}${r.avertissements.length ? ` — ${r.avertissements.join(' | ')}` : ''}`;
   console.log(`${etat} ${r.id} (${r.nom}) : ${detail}`);
 }
 await writeFile(join(dir, 'resultats.json'), JSON.stringify({ openscad: version.sortie.trim(), date: new Date().toISOString(), resultats }, null, 2), 'utf8');
