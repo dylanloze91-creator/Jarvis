@@ -35,6 +35,10 @@ Ollama recharge un modèle déjà en mémoire dès qu'on l'appelle avec un autre
 
 `eslint.config.js` ignore `.claude/worktrees/**` et `.gitignore` ignore `.claude/worktrees/` : plusieurs agents travaillent en même temps, chacun dans sa copie de travail sous `.claude/worktrees/`, et le contrôle de style comptait leur code (71 erreurs le 23 novembre).
 
+## Le test du vrai modèle du labo seulement sur demande (P1)
+
+`packages/core/src/developer/lab.test.ts`, « appelle le modèle réel » : il chargeait `qwen2.5:1.5b` dans le vrai Ollama à chaque `npm test` (donc à chaque `release.sh`) et évinçait le 7B du cerveau (22 fois en 10 jours dans les journaux d'Ollama). Il ne tourne plus qu'avec `JARVIS_LAB_REAL=1`, comme sur `claude/idees-openjarvis`. Fichier : 10 tests passés, 1 ignoré.
+
 RAPPORT DE VÉRIFICATION
 
 - Construction : FAIT (cœur construit).
