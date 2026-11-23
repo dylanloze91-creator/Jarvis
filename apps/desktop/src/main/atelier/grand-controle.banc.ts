@@ -137,7 +137,9 @@ function parPhrases(phrases: string[]): { valeurs: Valeurs; id: string } | strin
   let etat = null as Extract<AtelierEtat, { etape: 'piece' }> | null;
   let dernier: { valeurs: Valeurs; id: string } | null = null;
   for (const phrase of phrases) {
-    const d = deciderAtelier(phrase, etat, { mesures: MESURES_ESSAI });
+    let d = deciderAtelier(phrase, etat, { mesures: MESURES_ESSAI });
+    // Une question de l'atelier (mesure manquante) : « oui », la proposition, comme le dirait l'utilisateur.
+    for (let i = 0; i < 6 && d.kind === 'dire' && d.etat?.etape === 'question'; i += 1) d = deciderAtelier('oui', d.etat, { mesures: MESURES_ESSAI });
     if (d.kind !== 'fabriquer') return `« ${phrase} » : ${d.kind === 'dire' ? d.texte : d.kind}`;
     const p = fabriquer(d.gabarit, d.valeurs);
     if (!p.ok) return `« ${phrase} » : ${p.erreurs.join(' ')}`;
