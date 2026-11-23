@@ -121,7 +121,7 @@ for (const [id, nom, valeurs] of essais) {
   }
   let image = null;
   if (!sansImage) {
-    const png = await lancer(openscad, ['-o', `${base}.png`, '--imgsize=800,600', '--viewall', '--autocenter', '--colorscheme=Tomorrow', `${base}.scad`]);
+    const png = await lancer(openscad, ['--render', '-o', `${base}.png`, '--imgsize=800,600', '--viewall', '--autocenter', '--colorscheme=Tomorrow', `${base}.scad`]);
     image = png.code === 0 && existsSync(`${base}.png`) ? `${base}.png` : `échec (${png.code}) ${png.sortie.trim().slice(-200)}`;
   }
   const ok = a.ok && avertissements.length === 0;

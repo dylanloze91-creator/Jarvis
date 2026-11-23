@@ -69,7 +69,7 @@ export async function rendreStl(openscad: string, scad: string, stl: string): Pr
 
 /** Pièce `.scad` → image `.png`, vue d'ensemble de trois quarts. */
 export async function rendreImage(openscad: string, scad: string, png: string): Promise<ResultatProgramme> {
-  const r = await run(openscad, ['-o', png, '--imgsize=800,600', '--viewall', '--autocenter', '--colorscheme=Tomorrow', scad], {
+  const r = await run(openscad, ['--render', '-o', png, '--imgsize=800,600', '--viewall', '--autocenter', '--colorscheme=Tomorrow', scad], {
     timeoutMs: DELAI_OPENSCAD_MS,
     maxOutputChars: 4_000,
   });
