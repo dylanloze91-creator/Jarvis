@@ -2,6 +2,7 @@
  * Atelier 3D, branchement sur ce PC : dossier de l'atelier, OpenSCAD, OrcaSlicer (copies des
  * préréglages de l'utilisateur), limite de la pièce et imprimante du lot B.
  */
+import { homedir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
 import { readFile } from 'node:fs/promises';
 import { checkRoverBaseUrl, MoonrakerClient, type Settings, type VolumeImpression } from '@jarvis/core';
@@ -17,7 +18,10 @@ export const ATELIER_RACINE = process.platform === 'win32' ? 'C:\\dev\\jarvis-da
  */
 export const LIMITE_PRUDENTE: VolumeImpression = { x: 250, y: 250, z: 250 };
 
-export function creerAtelierPC(getSettings: () => Settings, racine = ATELIER_RACINE): (input: AtelierEntree) => Promise<AtelierSortie | null> {
+/** Préréglages d'OrcaSlicer de l'utilisateur (lus seulement) : `%APPDATA%\OrcaSlicer` de son compte. */
+export const ORCA_RACINE = join(homedir(), 'AppData', 'Roaming', 'OrcaSlicer');
+
+export function creerAtelierPC(getSettings: () => Settings, racine = ATELIER_RACINE, racineOrca = ORCA_RACINE): (input: AtelierEntree) => Promise<AtelierSortie | null> {
   const dossierOrca = join(racine, '_orca');
   return (input) =>
     tourAtelier(input, {
@@ -28,7 +32,7 @@ export function creerAtelierPC(getSettings: () => Settings, racine = ATELIER_RAC
       },
       volume: async () => {
         try {
-          return (await preparerPresetsOrca(dossierOrca)).volume ?? LIMITE_PRUDENTE;
+          return (await preparerPresetsOrca(dossierOrca, {}, racineOrca)).volume ?? LIMITE_PRUDENTE;
         } catch {
           return LIMITE_PRUDENTE;
         }
@@ -47,7 +51,7 @@ export function creerAtelierPC(getSettings: () => Settings, racine = ATELIER_RAC
           if (!orca) return { ok: false, message: "OrcaSlicer n'est pas installé : je ne peux pas préparer le fichier d'impression.", gcode: null, infos: null };
           let copies;
           try {
-            copies = await preparerPresetsOrca(dossierOrca);
+            copies = await preparerPresetsOrca(dossierOrca, {}, racineOrca);
           } catch (error) {
             const raison = error instanceof Error ? error.message : String(error);
             return { ok: false, message: `Je n'ai pas pu lire tes préréglages OrcaSlicer : ${raison}`, gcode: null, infos: null };
