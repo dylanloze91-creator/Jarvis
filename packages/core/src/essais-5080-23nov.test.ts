@@ -51,6 +51,8 @@ describe('Spotify : « mets pause » met en pause, jamais un morceau nommé « p
       'Mets sur pause, spotifie.',
       'Jarvis, met sur pause sur potifaille',
       'Mes en pause, s’il te plaît',
+      'Pose, sur Spotify.',
+      'Ok, juste pause',
     ]) {
       expect(isSpotifyPausePhrase(text), text).toBe(true);
       expect(extractSpotifyPlayQuery(text), text).toBeNull();
@@ -69,6 +71,8 @@ describe('Spotify : « mets pause » met en pause, jamais un morceau nommé « p
       "M'é play sur Spotify",
       'Mais play sur Spotify',
       'Mé play',
+      'Juste play, sur Spotify',
+      'Allez, play.',
       'Remets play',
       'Play',
       'Jarvis, mets en lecture sur Spotify',
@@ -91,5 +95,7 @@ describe('Spotify : « mets pause » met en pause, jamais un morceau nommé « p
     expect(isSpotifyPausePhrase('Mets la pause déjeuner dans mon agenda')).toBe(false);
     expect(isSpotifyPausePhrase('Mets Pause Café sur Spotify')).toBe(false);
     expect(isSpotifyResumePhrase('Mets Play With Fire sur Spotify')).toBe(false);
+    expect(isSpotifyPausePhrase('Pose une question à Spotify')).toBe(false);
+    expect(isSpotifyPausePhrase('Mets une pause de cinq minutes')).toBe(false);
   });
 });

@@ -204,3 +204,9 @@ Essais : `packages/core/src/essais-5080-23nov.test.ts` (phrases écrites pour l'
 
 - **Play bof** : « pause sur Spotify » bon ; trois ratés venus de Whisper : « Mets sur pause, potifie » a lancé un morceau ; « Mais sur Play, sur Spotify » a été pris pour un titre ; « Mes play » dit pendant la question « Sur la Phantom… ou sur le PC ? » a reposé la question (réponse floue).
 - **Corrigé** : `isSpotifyPausePhrase` / `isSpotifyResumePhrase` relisent aussi la phrase sans accents ni ponctuation, sans « Jarvis », « s'il te plaît », « la musique » ni « (sur) Spotify » même déformé (spotifie, potifie, spotifaille) ; il doit rester exactement « [mets|mes|mais|me|m] [sur|en] pause » ou « … play | lecture ». Pendant la question de l'appareil, pause, reprise, suivant et précédent passent avant la réponse attendue (`agent.ts`). Tests : `essais-5080-23nov.test.ts`, `agent.test.ts`.
+
+### Cinquième passage (23 novembre, 19 h 50)
+
+- **Toujours pas** : Whisper a écrit « Pose sur Spotify » (lancé « Poséidon »), « Juste play sur Spotify » (lancé « Juste une minute »), « Mes play sur ce pays » (parti au modèle). Pause dite proprement : bonne.
+- **Corrigé autrement** : au lieu d'ajouter chaque faute, les mots de remplissage (juste, mets, mes, mais, sur, en, allez, ok…) sont retirés ; s'il ne reste qu'un mot, pause / pose ou play / lecture, c'est le geste. « Pose une question », « Mets une pause de cinq minutes » restent hors du geste.
+- **Non corrigé** : « Spotify » entendu « ce pays ». Conseil : dire « reprends la musique » (mots français, mieux transcrits) plutôt que « play ».
