@@ -119,11 +119,23 @@ function foldedControl(prompt: string): 'pause' | 'resume' | null {
   text = text.replace(/\s+sil te plait$/, '');
   text = text.replace(new RegExp(String.raw`(?:\s+(?:sur|a|de|dans))?\s+${SPOTIFY_HEARD}$`), '');
   text = text.replace(/\s+(?:la\s+)?musique$/, '').trim();
-  const head = String.raw`^(?:(?:re)?(?:mets?|mes|mais|me|m)\s*)?(?:(?:sur|en)\s+)?`;
-  if (new RegExp(`${head}pauses?$`).test(text)) return 'pause';
-  if (new RegExp(`${head}(?:play|plays|lecture)$`).test(text)) return 'resume';
+  // Cinquième passage : « Pose sur Spotify », « Juste play sur Spotify ». Plutôt qu'une faute de
+  // plus à chaque essai : les mots de remplissage sont retirés ; s'il ne reste qu'un mot, et que
+  // c'est pause (ou « pose », sa faute la plus courante) ou play, c'est le geste.
+  const words = text
+    // « M'éplay » devient « meplay » une fois plié : on recolle l'espace.
+    .replace(/^(?:re)?m(?:e|es|ets?)?(?=(?:pauses?|pose|plays?)$)/, '$& ')
+    .split(' ')
+    .filter((word) => word && !CONTROL_FILLERS.has(word));
+  if (words.length !== 1) return null;
+  const [word] = words;
+  if (word === 'pause' || word === 'pauses' || word === 'pose') return 'pause';
+  if (word === 'play' || word === 'plays' || word === 'lecture') return 'resume';
   return null;
 }
+const CONTROL_FILLERS = new Set([
+  'juste', 'mets', 'met', 'mes', 'mais', 'me', 'm', 'remets', 'remet', 'sur', 'en', 'allez', 'ok', 'bon', 'vas', 'y',
+]);
 
 export function isSpotifyPausePhrase(prompt: string): boolean {
   const trimmed = prompt.trim();
