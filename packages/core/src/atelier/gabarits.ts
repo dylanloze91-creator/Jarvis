@@ -9,6 +9,8 @@
  * Pur : aucune dépendance, aucun accès disque. Unités : millimètres et degrés.
  */
 
+import { decoupesDe, direDecoupe, placerDecoupes } from './decoupes.js';
+
 /** Volume d'impression de l'Ender 3 S1 Plus (fiche Creality) : 300 × 300 × 300 mm. */
 export const ENDER3_S1_PLUS_VOLUME = { x: 300, y: 300, z: 300 } as const;
 
@@ -487,19 +489,38 @@ export function fabriquer(g: Gabarit, donnees: Valeurs, volume: VolumeImpression
     valeurs[mesure.id] = value;
   }
   if (erreurs.length) return { ok: false, gabarit: g, erreurs };
+  // Les découpes (trous, ouvertures, encoches) suivent les versions avec les mesures.
+  if (typeof donnees.decoupes === 'string' && donnees.decoupes) valeurs.decoupes = donnees.decoupes;
   erreurs.push(...g.verifier(valeurs));
+  const decoupes = placerDecoupes(g.id, g.nom, valeurs, decoupesDe(valeurs));
+  erreurs.push(...decoupes.erreurs);
   const taille = g.taille(valeurs);
   const V = volume;
   if (taille[0] > V.x || taille[1] > V.y || taille[2] > V.z) {
     erreurs.push(`La pièce ne tient pas dans l’imprimante (${taille.map((x) => Math.ceil(x)).join(' × ')} mm pour ${V.x} × ${V.y} × ${V.z} mm).`);
   }
   if (erreurs.length) return { ok: false, gabarit: g, erreurs };
-  return { ok: true, gabarit: g, valeurs, taille, scad: g.scad(valeurs) };
+  return { ok: true, gabarit: g, valeurs, taille, scad: avecLesDecoupes(g.scad(valeurs), decoupes.scad) };
+}
+
+/** La pièce moins ses découpes : `difference() { pièce ; découpes }`. Sans découpe : la pièce telle quelle. */
+function avecLesDecoupes(scad: string, decoupes: string[]): string {
+  if (!decoupes.length) return scad;
+  const corps = scad.startsWith(HEADER) ? scad.slice(HEADER.length) : scad;
+  const retrait = (texte: string) => texte.replace(/^(?=.)/gm, '    ');
+  return `${HEADER}// La pièce, moins ses découpes (trous, ouvertures, encoches)\ndifference() {\n  union() {\n${retrait(corps)}  }\n${decoupes.map((d) => `  ${d}\n`).join('')}}\n`;
 }
 
 /** Une phrase qui résume la pièce : « Boîte de 80 × 50 × 30 mm, parois de 2 mm. » */
 export function fichePiece(piece: Extract<Piece, { ok: true }>): string {
   const [x, y, z] = piece.taille.map((v) => String(Math.round(v * 10) / 10).replace('.', ','));
   const nom = piece.gabarit.nom;
-  return `${nom[0]!.toUpperCase()}${nom.slice(1)} de ${x} × ${y} × ${z} mm.`;
+  const fiche = `${nom[0]!.toUpperCase()}${nom.slice(1)} de ${x} × ${y} × ${z} mm.`;
+  const decoupes = decoupesDe(piece.valeurs);
+  if (!decoupes.length) return fiche;
+  const creux = ['boite', 'boite_couvercle', 'bac'].includes(piece.gabarit.id);
+  if (decoupes.length > 1) return `${fiche} Avec ${decoupes.length} découpes.`;
+  const d = decoupes[0]!;
+  const article = d.nombre > 1 ? '' : d.forme === 'rond' ? 'un ' : 'une ';
+  return `${fiche} Avec ${article}${direDecoupe(d, creux)}.`;
 }

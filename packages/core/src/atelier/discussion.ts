@@ -8,6 +8,7 @@
  * ici, seulement des décisions.
  */
 import { estChoix, gabarit, GABARITS, type Gabarit, type Mesure, type MesureNombre, type Valeurs } from './gabarits.js';
+import { appliquerDecoupes, avecDecoupes, decoupesAffichees, decoupesDe, lireDecoupes, sePerce } from './decoupes.js';
 import { comprendre, lireMesures, lireReponse, plier, prochaineQuestion } from './lecture.js';
 
 /** Une version rendue de la pièce. Les fichiers sont des noms simples, dans le dossier de la pièce. */
@@ -104,7 +105,13 @@ export function valeurDite(mesure: Mesure, valeur: number | string): string {
 
 /** Les mesures affichées à côté de la pièce. */
 export function mesuresAffichees(g: Gabarit, valeurs: Valeurs): { nom: string; valeur: string }[] {
-  return g.mesures.filter((m) => m.id in valeurs).map((m) => ({ nom: majuscule(m.nom), valeur: valeurDite(m, valeurs[m.id]!) }));
+  const mesures = g.mesures.filter((m) => m.id in valeurs).map((m) => ({ nom: majuscule(m.nom), valeur: valeurDite(m, valeurs[m.id]!) }));
+  return [...mesures, ...decoupesAffichees(g.id, valeurs)];
+}
+
+/** La pièce a déjà sa propre mesure « trou » (entretoise, équerre) : un trou sans face, c'est elle. */
+function aSonTrou(g: Gabarit): boolean {
+  return g.mesures.some((m) => m.id === 'trou' || m.id === 'vis');
 }
 
 /** Liste des pièces que l'atelier sait faire, pour une demande hors bibliothèque. */
@@ -114,12 +121,23 @@ export function piecesConnues(): string {
 }
 
 /** Nouvelle pièce demandée ? (règles seules). */
-export function demandePiece(text: string): { gabarit: Gabarit | null; valeurs: Valeurs } | null {
+export function demandePiece(text: string): { gabarit: Gabarit | null; valeurs: Valeurs; erreurs?: string[] } | null {
   const t = plier(text).replace(/^jarvis ,? ?/, '');
   const commande = DEMANDE.test(t) || VOULOIR.test(t);
   if (!commande) return null;
   const demande = comprendre(text);
-  if (demande.gabarit) return { gabarit: demande.gabarit, valeurs: demande.valeurs };
+  if (demande.gabarit) {
+    // « … avec un trou de 8 à l'arrière » : les découpes sont lues à part, et retirées de la
+    // phrase avant de lire les mesures (le 8 n'est pas une longueur).
+    const g = demande.gabarit;
+    const lu = lireDecoupes(plier(text), { exigerFace: aSonTrou(g) });
+    const ajouts = lu.ops.filter((op) => op.action !== 'enlever');
+    if (!ajouts.length) return { gabarit: g, valeurs: demande.valeurs };
+    const valeurs = lireMesures(lu.reste, g).valeurs;
+    const r = appliquerDecoupes(g, [], ajouts);
+    if (r.erreurs.length) return { gabarit: g, valeurs, erreurs: r.erreurs };
+    return { gabarit: g, valeurs: avecDecoupes(valeurs, r.decoupes) };
+  }
   // Verbe d'atelier sans pièce connue : seulement si la phrase parle d'impression 3D
   // (« dessine-moi un chat » reste une image).
   return EN_3D.test(t) ? { gabarit: null, valeurs: {} } : null;
@@ -216,6 +234,9 @@ export function deciderAtelier(text: string, precedent: AtelierEtat | null): Ate
         texte: `Je ne sais pas encore dessiner ça. Je sais faire : ${piecesConnues()}. Dis-moi laquelle s'en approche.`,
       };
     }
+    if (nouvelle.erreurs?.length) {
+      return { kind: 'dire', texte: `${nouvelle.erreurs.join(' ')} Redis-moi la pièce sans cette découpe, ou ailleurs.` };
+    }
     return demanderOuFabriquer(nouvelle.gabarit, nouvelle.valeurs, `${majuscule(nouvelle.gabarit.nom)}, d'accord. `);
   }
 
@@ -252,15 +273,34 @@ export function deciderAtelier(text: string, precedent: AtelierEtat | null): Ate
 
   const actuelle = precedent.versions.find((v) => v.numero === precedent.versionChoisie) ?? precedent.versions[precedent.versions.length - 1];
   if (!actuelle) return { kind: 'rien' };
-  const valeurs: Valeurs = { ...actuelle.valeurs };
+  let valeurs: Valeurs = { ...actuelle.valeurs };
+
+  // Découpes : « ajoute un trou de 8 à l'arrière », « enlève l'encoche », « le trou plus gros ».
+  // Dans une phrase de 25 mots au plus (« j'ai un trou dans mon emploi du temps » reste au chat).
+  const changementsDecoupes: string[] = [];
+  let resteTexte = text;
+  const lu = t.split(' ').length <= 25 ? lireDecoupes(t, { exigerFace: aSonTrou(g) }) : { ops: [], reste: t };
+  if (lu.ops.length) {
+    if (!sePerce(g.id)) {
+      const r = appliquerDecoupes(g, [], lu.ops);
+      return { kind: 'dire', texte: `${r.erreurs.join(' ')} La version ${actuelle.numero} reste à l'écran.` };
+    }
+    const r = appliquerDecoupes(g, decoupesDe(valeurs), lu.ops);
+    if (r.erreurs.length) return { kind: 'dire', texte: `${r.erreurs.join(' ')} La version ${actuelle.numero} reste à l'écran.` };
+    valeurs = avecDecoupes(valeurs, r.decoupes);
+    changementsDecoupes.push(...r.changements);
+    resteTexte = lu.reste;
+  }
 
   // Mesures dites : « hauteur 40 », « trou de 5 mm ». Seulement dans une phrase courte, pour ne pas
   // prendre « mets le minuteur à 10 minutes » pour une mesure.
-  const mots = t.split(' ').filter((m) => m !== ',').length;
-  const dites = mots <= 10 ? lireMesures(text, g).valeurs : {};
+  const tReste = plier(resteTexte).replace(/^jarvis ,? ?/, '');
+  const mots = tReste.split(' ').filter((m) => m !== ',').length;
+  const dites = mots <= 10 ? lireMesures(resteTexte, g).valeurs : {};
   Object.assign(valeurs, dites);
 
-  for (const regle of RELATIFS) {
+  // « Le trou plus haut » parle de la découpe, pas de la hauteur de la pièce.
+  for (const regle of lu.ops.length ? [] : RELATIFS) {
     if (!regle.mots.test(t)) continue;
     const id = regle.ids.find((x) => g.mesures.some((m) => m.id === x && !estChoix(m)) && !(x in dites));
     if (!id) continue;
@@ -270,7 +310,7 @@ export function deciderAtelier(text: string, precedent: AtelierEtat | null): Ate
     valeurs[id] = relatif(mesure, courante, plus);
   }
 
-  const changement = changementDe(g, actuelle.valeurs, valeurs);
+  const changement = [changementDe(g, actuelle.valeurs, valeurs), ...changementsDecoupes].filter(Boolean).join(', ');
   if (!changement) return { kind: 'rien' };
   for (const m of g.mesures) {
     if (!(m.id in valeurs) || valeurs[m.id] === actuelle.valeurs[m.id]) continue;
