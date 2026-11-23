@@ -626,3 +626,4 @@ export * from './health/index.js';
 export * from './backup/index.js';
 export * from './vault/index.js';
 export * from './privacy/index.js';
+export * from './vitesse/options.js';

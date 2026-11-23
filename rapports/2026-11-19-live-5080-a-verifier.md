@@ -73,6 +73,17 @@ Deux façons, au choix :
 | E14 | « Quelle heure est-il ? », « Le cours de l'action Airbus », « Combien font 12 fois 37 ? » | comme avant, sans modèle |
 | E15 | Une question à l'enceinte, et Ctrl+Espace | comme avant |
 
+### F. Options Ollama alignées (ajout du 23 novembre)
+
+Le préchauffage des enceintes, le déchargement / rechargement d'Imager et sa reformulation envoient maintenant les mêmes `num_ctx` / `num_gpu` que le chat. Avant, Ollama prenait 4 096 et rechargeait le 7B deux fois (5,8 s, puis 6,2 s sur la réponse). Rapport : `rapports/2026-11-23-live-5080-options-ollama.md`.
+
+| # | Essai | Attendu |
+| --- | --- | --- |
+| E16 | Une question dans la fenêtre, puis tout de suite « Jarvis, quelle heure est-il ? » à l'enceinte, puis « Jarvis, raconte-moi une blague courte » à l'enceinte | la blague arrive sans attente de rechargement (pas de « trou » de 5 à 6 s de plus que d'habitude) |
+| E17 | Une image (« génère une image d'un vélo rouge »), puis une question dans la fenêtre | la question répond sans second rechargement du modèle après celui qui suit l'image |
+
+Contrôle sans rien lancer : dans `%LOCALAPPDATA%\Ollama\server.log`, aucune ligne `starting llama-server` avec `-c 4096` pour le 7B pendant ces essais.
+
 ## 5. Ce que je n'ai pas pu vérifier
 
 - Rien n'a été essayé dans la fenêtre ni à la voix : le banc passe par la vraie session et le vrai Ollama, sans fenêtre.

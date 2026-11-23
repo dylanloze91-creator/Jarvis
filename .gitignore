@@ -48,3 +48,6 @@ Jarvis_images/
 # Construction de Jarvis Test (dossiers produits sur le PC).
 release-test/
 apps/desktop/build-test/
+
+# Copies de travail des agents (git worktree) : plusieurs agents travaillent en même temps.
+.claude/worktrees/

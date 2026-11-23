@@ -28,6 +28,7 @@ import {
   createDefaultRegistry,
   createWebSearchRegistry,
   ollamaDescriptor,
+  ollamaLoadOptions,
   parseSettings,
   sanitizeQuestionnaireSetPatch,
   searchOpenMeteoPlaces,
@@ -215,7 +216,12 @@ const spotify = new SpotifyBridge(() => settings);
 const siteBlock = new SiteBlockBridge(() => settings);
 const rover = new RoverClient(() => settings);
 // Module images : Forge (Stable Diffusion) lancé au besoin, modèle de langage déchargé puis rechargé.
-const images = new ImagesService({ getSettings: () => settings, log: (line) => console.info(line) });
+const images = new ImagesService({
+  getSettings: () => settings,
+  log: (line) => console.info(line),
+  // Rechargement après une image et reformulation : mêmes options que le chat.
+  ollamaOptions: (model: string) => ollamaLoadOptions(settings, model),
+});
 // Jetons chiffrés par safeStorage (DPAPI), consentement dans le navigateur système.
 const google = createGoogleRuntime({
   userDataPath: () => app.getPath('userData'),
@@ -392,7 +398,8 @@ async function warmSpeakerSide(): Promise<void> {
       ? settings.baseUrl.trim()
       : (ollamaDescriptor.defaultBaseUrl ?? 'http://127.0.0.1:11434');
   if (speakerStaysAwake(settings) || speakerWarmupEnabled(settings)) {
-    await warmOllamaModels(settings, base);
+    // Mêmes options que le chat, sinon Ollama recharge le modèle (contexte 4 096 par défaut).
+    await warmOllamaModels(settings, base, fetch, (model) => ollamaLoadOptions(settings, model));
   }
   if (speakerWarmupEnabled(settings) || speakerUsesPiper(settings)) {
     await piper.warm(settings.voice.ttsVoice || undefined);
