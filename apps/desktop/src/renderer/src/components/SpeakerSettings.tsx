@@ -426,8 +426,15 @@ export function SpeakerSettingsSection() {
                       setInstallStep('error');
                       if (opensDiagnostic(result.failedStep)) setDiagnose(true);
                     }
-                  } catch {
-                    setFailure({ sentence: 'Je n’arrive pas à ouvrir la carte.', button: 'Réessayer' });
+                  } catch (error) {
+                    // NotFoundError : aucune carte Espressif seule sur l'USB (débranchée, câble de charge seule, ou deux cartes).
+                    const missing = error instanceof Error && error.name === 'NotFoundError';
+                    setFailure({
+                      sentence: missing
+                        ? 'Je ne trouve pas la carte. Branche-la seule, avec un câble qui transmet les données.'
+                        : 'Je n’arrive pas à ouvrir la carte.',
+                      button: 'Réessayer',
+                    });
                     setInstallStep('error');
                   } finally {
                     chosen.pass = '';

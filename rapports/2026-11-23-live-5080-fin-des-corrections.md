@@ -72,3 +72,15 @@ Testé en vrai (à la voix, sur le PC) : FAIT avec ta voix à la vraie enceinte,
 - **Contrôles** : construction, types, style, tests (cœur 219 fichiers, bureau 163 fichiers et 4 ignorés par leur propre condition) verts.
 - **Git** : `main` est contenue dans la branche (fusion en avance rapide) ; l'étiquette `v5.0.80` n'existe pas ; `gh` est connecté. `claude/live-5080` est avancée au même commit que `claude/corrections-5080-suite`.
 - **Quand tu dis « publie »** : fusion de `claude/live-5080` dans `main`, puis `bash release.sh` depuis `main`.
+
+## Installation d'une enceinte par USB (23 novembre, 23 h 30)
+
+Tu as signalé que l'installation automatique par USB ne marchait pas. Essayée sur la carte neuve branchée (COM10, MAC 98:c3:77:ac:a2:08, flash 16 Mo), avec le vrai code de Jarvis, jusqu'à l'écran du Wi-Fi (7 réseaux trouvés). Cinq causes, toutes corrigées :
+
+1. La carte n'était jamais choisie : Electron donne l'identifiant USB en texte (« 12346 »), Jarvis cherchait un nombre ailleurs, et la fenêtre attendait un choix qu'elle n'affiche pas : l'installation restait bloquée.
+2. « qio » écrit dans l'en-tête faisait redémarrer en boucle une carte dont la puce flash n'a pas encore le QIO.
+3. Après l'écriture, esptool-js 0.7.1 ne remet pas la carte à zéro : elle restait muette.
+4. La carte répond deux fois à chaque commande : la réponse de « hello » était prise pour celle du scan, et ainsi de suite ; la configuration échouait et la carte était effacée.
+5. Programme de la carte : « scan » faisait déborder la pile (redémarrage), puis était refusé parce que la radio essayait de se connecter à un réseau factice. Programme refabriqué en 5.0.80.
+
+Reste à faire avec toi : la fin (mot de passe Wi-Fi, essai du PC et de la voix), seulement possible avec ton mot de passe. **L'installateur 5.0.80 fabriqué à 21 h 50 est périmé** : il doit être refait avant la publication. La carte branchée porte maintenant le programme 5.0.80, non installé (LED « à installer »).

@@ -53,12 +53,16 @@ static void reconnect_now(void *arg) {
 static void on_wifi_event(void *arg, esp_event_base_t base, int32_t id, void *data) {
     (void)arg;
     (void)data;
+    // Carte pas encore installée : la radio sert seulement au « scan » du câble USB.
+    // Se connecter au réseau factice de net_radio() faisait refuser ce scan
+    // (« STA is connecting, scan are not allowed », 23 novembre).
     if (base == WIFI_EVENT && id == WIFI_EVENT_STA_START) {
-        esp_wifi_connect();
+        if (jarvis_cfg.configured) esp_wifi_connect();
     } else if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED) {
         wifi_event_sta_disconnected_t *disc = (wifi_event_sta_disconnected_t *)data;
         if (disc) last_wifi_reason = disc->reason;
         xEventGroupClearBits(wifi_events, WIFI_CONNECTED_BIT);
+        if (!jarvis_cfg.configured) return;
         retries++;
         // Reconnexion sans fin, de plus en plus espacée (1 s → 30 s) : la box peut redémarrer.
         int wait_ms = retries < 5 ? 1000 : (retries < 20 ? 5000 : 30000);
@@ -534,6 +538,10 @@ bool net_radio(void) {
     if (!was) {
         jarvis_cfg.configured = false;
         memcpy(jarvis_cfg.ssid, saved_ssid, sizeof(saved_ssid));
+        // La radio démarrée a pu commencer à se connecter au réseau factice : on l'arrête,
+        // sinon le scan est refusé. Le gestionnaire ne relance rien tant que la carte n'est pas installée.
+        if (reconnect_timer) esp_timer_stop(reconnect_timer);
+        esp_wifi_disconnect();
     }
     return wifi_events != NULL;
 }

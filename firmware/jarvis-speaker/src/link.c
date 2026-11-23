@@ -22,6 +22,8 @@
 
 static bool usb_ready;
 
+#define LINK_TASK_STACK (16 * 1024)
+
 static void say(const char *json) {
     char line[700];
     if (prov_reply(line, sizeof(line), json) < 0) return;
@@ -263,7 +265,9 @@ void link_start(void) {
         .rx_buffer_size = 256,
     };
     usb_ready = usb_serial_jtag_driver_install(&usb) == ESP_OK;
-    xTaskCreate(stdin_task, "link-uart", 6144, NULL, 4, NULL);
-    if (usb_ready) xTaskCreate(usb_task, "link-usb", 6144, NULL, 4, NULL);
+    // Les commandes tournent dans ces tâches : « scan » y démarre le Wi-Fi et « test » le réseau.
+    // Avec 6 Ko, « scan » reçu par l'USB débordait la pile et la carte redémarrait (23 novembre).
+    xTaskCreate(stdin_task, "link-uart", LINK_TASK_STACK, NULL, 4, NULL);
+    if (usb_ready) xTaskCreate(usb_task, "link-usb", LINK_TASK_STACK, NULL, 4, NULL);
     xTaskCreate(boot_task, "boot", 3072, NULL, 3, NULL);
 }

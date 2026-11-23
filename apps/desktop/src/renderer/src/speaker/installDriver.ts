@@ -18,6 +18,13 @@ import {
 /** Délais du test, alignés sur la carte, avec une marge. */
 export const TEST_STEP_TIMEOUT_MS = [25_000, 12_000, 8_000, 20_000] as const;
 export const SCAN_TIMEOUT_MS = 5_000;
+/** « hello » est renvoyé à ce rythme : une carte qui redémarre perd la ligne reçue pendant son démarrage. */
+export const HELLO_RESEND_MS = 1_500;
+/**
+ * La carte écrit chaque réponse deux fois sur l'USB natif (console et liaison).
+ * Une copie identique reçue dans ce délai est la même réponse, pas la suivante.
+ */
+export const DUPLICATE_WINDOW_MS = 1_000;
 
 export interface SerialLink {
   write(text: string): Promise<void>;
@@ -68,7 +75,7 @@ export interface InstallRequest {
 }
 
 export async function installSpeaker(request: InstallRequest): Promise<SetupResult> {
-  const buffer = { text: '', seen: 0 };
+  const buffer = { text: '', seen: 0, lastRaw: '', lastAt: 0 };
   const paired: { current: InstallPairing | null } = { current: null };
   let wifi = request.wifi;
   let mac = '';
@@ -84,19 +91,40 @@ export async function installSpeaker(request: InstallRequest): Promise<SetupResu
       const chunk = await request.link.read(Math.max(1, Math.min(40, deadline - Date.now())));
       if (chunk) buffer.text += chunk;
       const parsed = takeJarvisMessages(buffer.text);
-      if (parsed.messages.length > buffer.seen) {
+      while (parsed.messages.length > buffer.seen) {
         const message = parsed.messages[buffer.seen];
         buffer.seen += 1;
-        return message?.json ?? null;
+        if (!message) continue;
+        const now = Date.now();
+        if (message.raw === buffer.lastRaw && now - buffer.lastAt < DUPLICATE_WINDOW_MS) continue;
+        buffer.lastRaw = message.raw;
+        buffer.lastAt = now;
+        return message.json;
       }
     }
     return null;
   };
 
+  /** Ce qui est déjà arrivé avant une commande n'en est pas la réponse. */
+  const skipStale = (): void => {
+    buffer.seen = takeJarvisMessages(buffer.text).messages.length;
+  };
+
   const command = async (line: string, timeoutMs: number): Promise<Record<string, unknown> | null> => {
     note(line);
+    skipStale();
     await request.link.write(line.endsWith('\n') ? line : `${line}\n`);
     return pull(timeoutMs);
+  };
+
+  const sayHello = async (timeoutMs: number): Promise<Record<string, unknown> | null> => {
+    const deadline = Date.now() + timeoutMs;
+    for (;;) {
+      const left = deadline - Date.now();
+      if (left <= 0) return null;
+      const json = await command('hello', Math.min(HELLO_RESEND_MS, left));
+      if (json && typeof json.fw === 'string') return json;
+    }
   };
 
   const ensurePair = async (): Promise<InstallPairing | null> => {
@@ -106,12 +134,12 @@ export async function installSpeaker(request: InstallRequest): Promise<SetupResu
     return paired.current;
   };
 
-  if (request.wifiOnly) return changeWifiOnly(request, command, pull, note);
+  if (request.wifiOnly) return changeWifiOnly(request, command, pull, note, sayHello, skipStale);
 
   const result = await runSpeakerSetup(
     {
       hello: async (timeoutMs) => {
-        const json = await command('hello', timeoutMs);
+        const json = await sayHello(timeoutMs);
         if (!json || typeof json.fw !== 'string') return null;
         mac = typeof json.mac === 'string' ? json.mac : mac;
         fw = json.fw;
@@ -154,6 +182,7 @@ export async function installSpeaker(request: InstallRequest): Promise<SetupResu
       },
       test: async () => {
         note('test');
+        skipStale();
         await request.link.write('test\n');
         const steps: Array<{ step: 'wifi' | 'pc' | 'bridge' | 'voice'; ok: boolean; error?: string }> = [];
         for (let index = 0; index < 4; index += 1) {
@@ -199,8 +228,10 @@ async function changeWifiOnly(
   command: (line: string, timeoutMs: number) => Promise<Record<string, unknown> | null>,
   pull: (timeoutMs: number) => Promise<Record<string, unknown> | null>,
   note: (line: string) => void,
+  sayHello: (timeoutMs: number) => Promise<Record<string, unknown> | null>,
+  skipStale: () => void,
 ): Promise<SetupResult> {
-  const hello = await command('hello', request.helloTimeoutMs ?? 1500);
+  const hello = await sayHello(request.helloTimeoutMs ?? 1500);
   if (!hello || typeof hello.fw !== 'string') {
     return { ok: false, failure: { sentence: 'Je ne reconnais pas encore cette carte.', button: 'Réessayer' }, mac: null };
   }
@@ -214,6 +245,7 @@ async function changeWifiOnly(
     return { ok: false, failure: { sentence: 'Le Wi-Fi n’a pas été changé.', button: 'Réessayer' }, mac: null };
   }
   note('test');
+  skipStale();
   await request.link.write('test\n');
   for (let index = 0; index < 4; index += 1) {
     const step = await pull(TEST_STEP_TIMEOUT_MS[index] ?? 20_000);

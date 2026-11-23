@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { autoEspressif, rankSerialPorts } from './ports.js';
+import { autoEspressif, candidateVendorId, rankSerialPorts } from './ports.js';
 import {
   buildConfigLine,
   failureCopy,
@@ -102,5 +102,19 @@ describe('ports série', () => {
       { portId: 'd', usbVendorId: 0x303a, portName: 'COM6' },
     ]);
     expect(autoEspressif(two)).toBeNull();
+  });
+
+  it('lit la forme d’Electron : vendorId en texte décimal (relevé sur le PC le 23 novembre)', () => {
+    // Liste rendue par `select-serial-port` : la carte sur COM10, des ports Bluetooth sans identifiant.
+    const ranked = rankSerialPorts([
+      { portId: 'casque', portName: 'A4:B6:1E:B8:53:5E' },
+      { portId: 'carte', portName: 'COM10', vendorId: '12346', productId: '4097' },
+      { portId: 'bt3', portName: 'COM3' },
+      { portId: 'bt4', portName: 'COM4' },
+    ]);
+    expect(ranked[0]).toMatchObject({ portId: 'carte', vendorId: 0x303a, label: 'Carte ESP32-S3 (COM10)', espressif: true });
+    expect(autoEspressif(ranked)?.portId).toBe('carte');
+    expect(candidateVendorId({ portId: 'x', vendorId: '0x303A' })).toBe(0x303a);
+    expect(candidateVendorId({ portId: 'x', vendorId: 'abc' })).toBeUndefined();
   });
 });

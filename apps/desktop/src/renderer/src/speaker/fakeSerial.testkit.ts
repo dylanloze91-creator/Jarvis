@@ -17,6 +17,10 @@ export interface FakeCardOptions {
   networks?: Array<{ ssid: string; rssi: number; secure: boolean }>;
   configError?: string;
   steps?: Array<{ step: string; ok: boolean; error?: string; ip?: string; rssi?: number; host?: string; via?: string }>;
+  /** Comme la vraie carte sur l'USB natif : chaque réponse arrive deux fois (console, puis liaison). */
+  echoTwice?: boolean;
+  /** Après l'écriture, la carte redémarre et perd ce nombre de « hello » reçus pendant son démarrage. */
+  lostHellosAfterFlash?: number;
 }
 
 export class FakeSpeakerLink implements SerialLink {
@@ -24,6 +28,7 @@ export class FakeSpeakerLink implements SerialLink {
   flashed = false;
   forgotten = 0;
   private pending = '';
+  private lostHellos = 0;
 
   constructor(private readonly options: FakeCardOptions = {}) {}
 
@@ -31,6 +36,10 @@ export class FakeSpeakerLink implements SerialLink {
     this.sent.push(text);
     const command = text.trim().split(/\s/)[0] ?? '';
     if (command === 'hello') {
+      if (this.flashed && this.lostHellos > 0) {
+        this.lostHellos -= 1;
+        return;
+      }
       const hello = this.flashed ? (this.options.afterFlash ?? null) : (this.options.beforeFlash ?? null);
       if (hello) this.enqueue(hello);
       return;
@@ -68,9 +77,11 @@ export class FakeSpeakerLink implements SerialLink {
 
   markFlashed(): void {
     this.flashed = true;
+    this.lostHellos = this.options.lostHellosAfterFlash ?? 0;
   }
 
   private enqueue(json: unknown): void {
     this.pending += `I (12) jarvis: journal bruité synthetique-test\nJARVIS> ${JSON.stringify(json)}\n`;
+    if (this.options.echoTwice) this.pending += `JARVIS> ${JSON.stringify(json)}\r\n`;
   }
 }

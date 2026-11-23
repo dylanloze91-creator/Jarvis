@@ -80,6 +80,33 @@ describe('Installer programme la carte (faux port, esptool simulé)', () => {
     expect(link.forgotten).toBe(0);
   });
 
+  it('vraie carte sur l’USB natif : réponses en double et « hello » perdu au redémarrage (essai du 23 novembre)', async () => {
+    // Avant : la copie de la réponse « hello » était prise pour celle du scan, le scan pour
+    // celle de la configuration, et l'installation échouait en effaçant la carte.
+    const link = new FakeSpeakerLink({
+      beforeFlash: null,
+      afterFlash: { fw: '5.0.75', mac: 'aa:bb:cc:dd:ee:ff', configured: false },
+      echoTwice: true,
+      lostHellosAfterFlash: 1,
+      networks: [{ ssid: 'synthetique-test', rssi: -40, secure: true }],
+    });
+    const chip = flasher(link);
+    const seen: string[][] = [];
+    const { run, committed } = request(link, chip, {
+      helloAfterFlashMs: 4_000,
+      chooseWifi: async (networks) => {
+        seen.push(networks.map((item) => item.ssid));
+        return { name: 'Salon', ssid: 'synthetique-test', pass: PASS };
+      },
+    });
+    const result = await run;
+    expect(result).toMatchObject({ ok: true, mac: 'aa:bb:cc:dd:ee:ff' });
+    expect(seen).toEqual([['synthetique-test']]);
+    expect(link.sent.filter((line) => line.startsWith('hello')).length).toBeGreaterThanOrEqual(3);
+    expect(committed).toEqual(['spk-1:5.0.75']);
+    expect(link.forgotten).toBe(0);
+  });
+
   it('saute l’écriture si la même version répond déjà', async () => {
     const link = new FakeSpeakerLink({
       beforeFlash: { fw: '5.0.75', mac: 'aa:bb:cc:dd:ee:ff', configured: true },

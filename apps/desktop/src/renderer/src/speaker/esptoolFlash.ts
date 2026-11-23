@@ -43,6 +43,9 @@ function chipName(described: string): string {
   return described.split(' ')[0] || described;
 }
 
+/** Durée de RTS levé pour remettre la carte à zéro après l'écriture. */
+export const RESET_PULSE_MS = 150;
+
 /** esptool-js 0.7.1 ouvre lui-même un port fermé. */
 export function esptoolFlasher(getPort: () => UsbPort, images: readonly FlashImage[]): ChipFlasher {
   let loader: ESPLoader | null = null;
@@ -64,8 +67,12 @@ export function esptoolFlasher(getPort: () => UsbPort, images: readonly FlashIma
       if (!loader) return false;
       const options: FlashOptions = {
         fileArray: images.map((image) => ({ data: image.data, address: image.address })),
-        flashMode: 'qio',
-        flashFreq: '80m',
+        // Les en-têtes du programme sont gardés tels quels (DIO, 80 MHz) : c'est le
+        // second chargeur qui passe en QIO. Écrire « qio » dans l'en-tête faisait
+        // redémarrer en boucle une carte dont la puce flash n'avait pas encore le QIO
+        // activé (essai du 23 novembre : `ets_loader.c 78`, chien de garde).
+        flashMode: 'keep',
+        flashFreq: 'keep',
         flashSize: 'keep',
         eraseAll: false,
         compress: true,
@@ -80,8 +87,16 @@ export function esptoolFlasher(getPort: () => UsbPort, images: readonly FlashIma
       }
     },
     async reboot() {
+      // `after('hard_reset')` d'esptool-js 0.7.1 ne fait que relâcher RTS : la carte
+      // restait dans le programme de téléversement et ne répondait plus (23 novembre).
+      // Remise à zéro faite ici : DTR relâché (démarrage normal), RTS levé puis relâché.
       try {
-        await loader?.after('hard_reset');
+        const transport = loader?.transport;
+        if (transport) {
+          await transport.setSignals(false, true);
+          await new Promise((resolve) => setTimeout(resolve, RESET_PULSE_MS));
+          await transport.setSignals(false, false);
+        }
       } catch {
         // La carte a pu redémarrer toute seule.
       }

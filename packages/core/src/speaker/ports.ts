@@ -4,7 +4,22 @@ export interface SerialCandidate {
   portId: string;
   usbVendorId?: number;
   usbProductId?: number;
+  /** Forme d'Electron (`select-serial-port`) : identifiant en texte décimal, « 12346 » pour 0x303a. */
+  vendorId?: string | number;
+  productId?: string | number;
   portName?: string;
+}
+
+/** Identifiant USB d'un port, qu'il vienne de Web Serial (nombre) ou d'Electron (texte décimal, ou « 0x… »). */
+export function candidateVendorId(port: SerialCandidate): number | undefined {
+  if (typeof port.usbVendorId === 'number') return port.usbVendorId;
+  const raw = port.vendorId;
+  if (typeof raw === 'number') return Number.isInteger(raw) ? raw : undefined;
+  if (typeof raw !== 'string') return undefined;
+  const text = raw.trim().toLowerCase();
+  if (/^0x[0-9a-f]{1,4}$/.test(text)) return Number.parseInt(text.slice(2), 16);
+  if (/^\d{1,5}$/.test(text)) return Number.parseInt(text, 10);
+  return undefined;
 }
 
 export interface RankedPort {
@@ -29,13 +44,16 @@ export function portLabel(vendorId: number | undefined, portName: string | undef
 
 export function rankSerialPorts(ports: readonly SerialCandidate[]): RankedPort[] {
   return ports
-    .map((port) => ({
-      portId: port.portId,
-      ...(port.usbVendorId !== undefined ? { vendorId: port.usbVendorId } : {}),
-      label: portLabel(port.usbVendorId, port.portName),
-      espressif: port.usbVendorId === 0x303a,
-      preferred: port.usbVendorId !== undefined && BRIDGES[port.usbVendorId] !== undefined,
-    }))
+    .map((port) => {
+      const vendorId = candidateVendorId(port);
+      return {
+        portId: port.portId,
+        ...(vendorId !== undefined ? { vendorId } : {}),
+        label: portLabel(vendorId, port.portName),
+        espressif: vendorId === 0x303a,
+        preferred: vendorId !== undefined && BRIDGES[vendorId] !== undefined,
+      };
+    })
     .sort((a, b) => Number(b.espressif) - Number(a.espressif) || Number(b.preferred) - Number(a.preferred) || a.label.localeCompare(b.label, 'fr'))
     .map(({ preferred: _preferred, ...port }) => port);
 }

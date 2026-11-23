@@ -43,7 +43,6 @@ export function bindSerialAccess(
   isJarvisOrigin: (origin: string) => boolean,
   onList?: (ports: RankedPort[]) => void,
 ): { pick(portId: string): void } {
-  let waiting: ((portId: string) => void) | null = null;
   // Le troisième argument est l'origine, jamais le type de média : il n'est pas lu.
   session.setPermissionCheckHandler((webContents, permission, _requestingOrigin, details) =>
     combinePermissionCheck(permission, details?.mediaType, isJarvisWindow(webContents), allowOther),
@@ -61,14 +60,14 @@ export function bindSerialAccess(
       callback(only.portId);
       return;
     }
-    waiting = callback;
     onList?.(ranked);
+    // La fenêtre n'affiche pas de liste de ports : attendre un choix bloquait
+    // l'installation pour toujours (23 novembre). Sans une seule carte Espressif,
+    // la demande est refusée tout de suite et l'écran le dit.
+    callback('');
   });
   return {
-    pick(portId: string) {
-      const callback = waiting;
-      waiting = null;
-      callback?.(portId);
-    },
+    /** Gardé pour le canal IPC : plus aucune demande n'attend un choix. */
+    pick(_portId: string) {},
   };
 }

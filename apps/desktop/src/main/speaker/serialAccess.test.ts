@@ -7,7 +7,7 @@ describe('accès série', () => {
     // Le faux de session suit la vraie signature d'Electron :
     // (webContents, permission, requestingOrigin, details), `mediaType` dans `details`.
     type Check = PermissionCheckHandler;
-    type Select = (event: { preventDefault(): void }, ports: Array<{ portId: string; usbVendorId?: number; portName?: string }>, webContents: unknown, callback: (portId: string) => void) => void;
+    type Select = (event: { preventDefault(): void }, ports: Array<{ portId: string; usbVendorId?: number; vendorId?: string; productId?: string; portName?: string }>, webContents: unknown, callback: (portId: string) => void) => void;
     const seen: {
       check: Check | null;
       device: ((details: { deviceType: string; origin?: string }) => boolean) | null;
@@ -55,5 +55,27 @@ describe('accès série', () => {
     expect(chosen).toEqual(['com5']);
     seen.select?.({ preventDefault() {} }, [{ portId: 'com5', usbVendorId: 0x303a, portName: 'COM5' }], other, (portId) => chosen.push(portId));
     expect(chosen).toEqual(['com5', '']);
+    // Forme réelle d'Electron (relevée le 23 novembre) : vendorId en texte décimal, ports Bluetooth sans identifiant.
+    const electronPorts = [
+      { portId: 'casque', portName: 'A4:B6:1E:B8:53:5E' },
+      { portId: 'carte', portName: 'COM10', vendorId: '12346', productId: '4097' },
+      { portId: 'bt', portName: 'COM3' },
+    ];
+    seen.select?.({ preventDefault() {} }, electronPorts, ours, (portId) => chosen.push(portId));
+    expect(chosen.at(-1)).toBe('carte');
+    // Sans carte Espressif (ou avec deux), la demande n'attend pas un choix que personne n'affiche.
+    seen.select?.({ preventDefault() {} }, [{ portId: 'bt', portName: 'COM3' }], ours, (portId) => chosen.push(portId));
+    expect(chosen.at(-1)).toBe('');
+    seen.select?.(
+      { preventDefault() {} },
+      [
+        { portId: 'a', usbVendorId: 0x303a, portName: 'COM5' },
+        { portId: 'b', usbVendorId: 0x303a, portName: 'COM6' },
+      ],
+      ours,
+      (portId) => chosen.push(portId),
+    );
+    expect(chosen.at(-1)).toBe('');
+    expect(chosen).toHaveLength(5);
   });
 });
