@@ -725,7 +725,7 @@ export function deciderAtelier(text: string, precedentDonne: AtelierEtat | null,
   if (!actuelle) return { kind: 'rien' };
   // « ouais vas-y », « ok super » juste après une pièce : rien à valider, l'atelier le dit (sinon la
   // phrase partirait au cerveau, qui ne connaît pas la pièce).
-  if (ACQUIESCEMENT.test(tn)) {
+  if (ACQUIESCEMENT.test(t.replace(/\s*,\s*/g, ' ').trim())) {
     return {
       kind: 'dire',
       texte: `La version ${actuelle.numero} est faite. Dis-moi ce qu'il faut changer, ou « mets-la dans la file ».`,
