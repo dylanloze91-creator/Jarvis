@@ -106,6 +106,48 @@ const DEMANDE = new RegExp(
 );
 const VOULOIR = /^(?:jarvis )?(?:je voudrais|j aimerais|il me faut|j ai besoin d) (?:un|une|des)\b/;
 const EN_3D = /\b(?:en 3d|imprimante 3d|impression 3d|a imprimer|pour l imprimante)\b/;
+/**
+ * Une pièce nommée sans verbe : « une boîte de 100 par 60 par 30 pour un Raspberry Pi ». Il faut
+ * l'article en tête, une pièce connue et une cote (« 100 par 60 », « 12 cm ») : « une boîte de
+ * 6 œufs » n'en est pas une.
+ */
+const SANS_VERBE = /^(?:jarvis )?(?:un|une) /;
+const COTE = /\d+(?:\.\d+)? ?(?:mm|millimetres?|cm|centimetres?|x|par|sur|fois)\b/;
+/**
+ * Objet d'atelier que la bibliothèque n'a pas (encore) : la demande vient quand même à l'atelier,
+ * qui dit ce qu'il sait faire, au lieu de partir au cerveau. Le mot doit suivre l'article
+ * (« dessine-moi un support ») : « dessine-moi un chat sur un support » reste une image.
+ */
+const OBJET_ATELIER =
+  /^(?:(?:petit|petite|grand|grande|nouveau|nouvelle|autre|vrai|bon|bonne) )?(?:boitiers?|boites?|coffrets?|supports?|caches?|passe cables?|serre cables?|range cables?|guide cables?|socles?|coques?|etuis?|facades?|adaptateurs?|clips?|attaches?|chassis|pieds?|pieces?(?! (?:de theatre|de monnaie|montee|jointe|d identite)))\b/;
+/** Questions : « quelle fenêtre est active ? » ne perce pas de fenêtre dans la pièce à l'écran. */
+const QUESTION = /^(?:quel|quelle|quels|quelles|qu est ce|qu est ce que|pourquoi|comment|combien|ou est|ou sont|c est quoi|a quoi|qui)\b/;
+/**
+ * Ordre de changement sur la pièce à l'écran. S'il ne donne rien de lisible, l'atelier répond quand
+ * même (ce qu'il sait faire) : la phrase ne part pas au cerveau, qui ne connaît pas la pièce.
+ */
+const ORDRE =
+  /^(?:ajoute|ajouter|rajoute|mets|met|mettre|fais|fait|faire|enleve|retire|supprime|agrandis|agrandir|grandis|retrecis|reduis|elargis|allonge|raccourcis|deplace|decale|perce|change|modifie|augmente|diminue|baisse|remonte|descends|tourne|arrondis|epaissis|affine|creuse|bouche)\b/;
+/**
+ * Ce qui ne vise jamais la pièce à l'écran, même avec « fenêtre », « écran » ou « câble » dedans :
+ * un verbe d'un autre domaine en tête (« ferme la fenêtre », « branche le câble »), ou un sujet
+ * d'un autre domaine (« mets l'écran en veille », « ouvre la fenêtre de Spotify »).
+ */
+const VERBE_AUTRE =
+  /^(?:ferme|fermer|ouvre|ouvrir|eteins|allume|lance|joue|affiche|montre|branche|debranche|cherche|lis|envoie|ecris|appelle|redemarre|demarre|arrete|coupe|regarde|dis|explique|traduis|calcule|rappelle|note|enregistre|sauvegarde|copie|colle|installe|telecharge|active|desactive|connecte|deconnecte|mute|baisse le son|monte le son)\b/;
+const SUJET_AUTRE =
+  /\b(?:en veille|en route|en marche|en pause|en lecture|en sourdine|plein ecran|capture|photo|robot|musique|chanson|morceau|volume|son|minuteur|alarme|reveil|rendez vous|agenda|mail|mails|message|lumiere|lampe|chauffage|spotify|youtube|navigateur|application|appli|programme|fichier|dossier|document|onglet|bloc notes|television|tele|pc|ordinateur|telephone portable)\b/;
+/** « agrandis-la », « mets-la plus haute » : le pronom vise la pièce (« mets la musique » non). */
+const PRONOM_PIECE = /^\S+ (?:la|le|les|lui)(?: (?:plus|moins|un peu|tres|en|a|au|de|pour|sur|\d)\b|$)/;
+/** Ce dont parle une pièce : faces, matière, découpes, composants qu'elle tient. */
+const VOCABULAIRE_PIECE =
+  /\b(?:pieces?|boites?|boitiers?|couvercles?|parois?|fond|dessus|dessous|devant|avant|arriere|cote|cotes|gauche|droite|bords?|coins?|trous?|fentes?|encoches?|fenetres?|ouvertures?|decoupes?|passages?|aerations?|grilles?|ventilations?|cables?|prises?|ports?|plots?|bossages?|inserts?|vis|nervures?|rebords?|levres?|emboitements?|raspberry|rpi|pi ?5|esp ?32|arduino|cartes?|ecrans?|cameras?|objectifs?|haut parleurs?|micros?|ampli|oled|ventilateurs?|leds?|boutons?|aimants?|pieds?|charnieres?)\b/;
+/** Mots qui ne disent rien d'autre que la pièce : « fais-la en 100 par 60 », « mets 50 ». */
+const MOTS_NEUTRES = new Set(
+  'jarvis mets met mettre fais fait faire la le les l lui a au aux de du des d en et un une plutot stp s il te plait plus moins peu tres change changer modifie passe passer mm cm millimetre millimetres centimetre centimetres x par sur fois ok oui alors bon euh maintenant je veux voudrais prefere qu elle soit fasse pour avec'.split(
+    ' ',
+  ),
+);
 const ANNULER = /^(?:annule|laisse tomber|oublie|stop|arrete|non merci|pas la peine)\b/;
 const OUI = /^(?:oui|ok|d accord|ca me va|vas y|va pour ca|parfait|c est bon|ca marche)\b/;
 
@@ -147,9 +189,10 @@ export function demandePiece(
   mesures: MesuresComposants = {},
 ): { gabarit: Gabarit | null; valeurs: Valeurs; erreurs?: string[]; question?: { composant: string; champ: string; texte: string } } | null {
   const t = plier(text).replace(/^jarvis ,? ?/, '');
-  const commande = DEMANDE.test(t) || VOULOIR.test(t);
-  if (!commande) return null;
+  const verbe = DEMANDE.exec(t) ?? VOULOIR.exec(t);
   const demande = comprendre(text);
+  const sansVerbe = !verbe && SANS_VERBE.test(t) && demande.gabarit !== null && COTE.test(t);
+  if (!verbe && !sansVerbe) return null;
   if (demande.gabarit) {
     // « … avec un trou de 8 à l'arrière » : les découpes sont lues à part, et retirées de la
     // phrase avant de lire les mesures (le 8 n'est pas une longueur).
@@ -173,9 +216,12 @@ export function demandePiece(
     if (r.erreurs.length) return { gabarit: g, valeurs, erreurs: r.erreurs };
     return { gabarit: g, valeurs: avecDecoupes(valeurs, r.decoupes) };
   }
-  // Verbe d'atelier sans pièce connue : seulement si la phrase parle d'impression 3D
-  // (« dessine-moi un chat » reste une image).
-  return EN_3D.test(t) ? { gabarit: null, valeurs: {} } : null;
+  // Verbe d'atelier sans pièce connue : seulement si la phrase parle d'impression 3D, ou si l'objet
+  // demandé est un objet d'atelier (« imprime-moi un support pour mon écran », « un passe-câble »).
+  // « Dessine-moi un chat » reste une image.
+  // `DEMANDE` et `VOULOIR` s'arrêtent après l'article : ce qui suit est l'objet demandé.
+  const objet = verbe ? t.slice(verbe[0].length).trim() : '';
+  return EN_3D.test(t) || OBJET_ATELIER.test(objet) ? { gabarit: null, valeurs: {} } : null;
 }
 
 function horsBornes(mesure: Mesure, valeur: number | string): string | null {
@@ -262,6 +308,50 @@ export function plateauVideLanceSuivante(text: string): boolean {
 }
 
 const CHOISIR = /\b(?:reviens|retourne|revenir|garde|prends|choisis) (?:a )?la (?:version|v) ?(\d+)\b/;
+
+/** Les mots de la pièce et de ses mesures, pliés et coupés en mots. */
+function motsDeLaPiece(g: Gabarit): Set<string> {
+  const mots = [...g.mots, g.nom, ...g.mesures.flatMap((m) => [m.nom, ...(estChoix(m) ? m.options.flatMap((o) => o.mots) : m.mots)])];
+  return new Set(mots.flatMap((m) => plier(m).split(' ')));
+}
+
+/** La phrase nomme autre chose que la pièce (« le volume », « le minuteur ») ? */
+function parleDAutreChose(t: string, g: Gabarit): boolean {
+  const piece = motsDeLaPiece(g);
+  return t
+    .split(' ')
+    .filter((mot) => /^[a-z]{2,}$/.test(mot))
+    .some((mot) => !MOTS_NEUTRES.has(mot) && !piece.has(mot) && !VOCABULAIRE_PIECE.test(mot));
+}
+
+/** Seulement les mesures dont le nom est dit dans la phrase (« hauteur 50 », « 80 de long »). */
+function nommees(valeurs: Valeurs, t: string, g: Gabarit): Valeurs {
+  const dits = new Set(t.split(' '));
+  const garde: Valeurs = {};
+  for (const [id, valeur] of Object.entries(valeurs)) {
+    const mesure = g.mesures.find((m) => m.id === id);
+    // Une mesure à choix (« carré ») se dit toujours par son nom : elle est gardée telle quelle.
+    if (!mesure || estChoix(mesure)) {
+      garde[id] = valeur;
+      continue;
+    }
+    if (mesure.mots.some((mot) => plier(mot).split(' ').every((x) => dits.has(x)))) garde[id] = valeur;
+  }
+  return garde;
+}
+
+/** « ajoute des aérations », « agrandis-la pour que le Pi rentre » : un ordre qui vise la pièce. */
+function ordreSurPiece(t: string): boolean {
+  return ORDRE.test(t) && (PRONOM_PIECE.test(t) || VOCABULAIRE_PIECE.test(t));
+}
+
+/**
+ * La phrase est-elle pour l'atelier, vu la discussion ? Sert à la faire passer avant les autres
+ * règles sans modèle (le mode direct d'Imager prendrait « dessine-moi un boîtier »).
+ */
+export function pourAtelier(text: string, messages: readonly { role: string; atelier?: AtelierEtat }[], contexte: ContexteAtelier = {}): boolean {
+  return deciderAtelier(text, dernierAtelier(messages), contexte).kind !== 'rien';
+}
 
 /**
  * Que faire de cette phrase, sachant le dernier état de l'atelier dans la discussion ?
@@ -359,6 +449,9 @@ export function deciderAtelier(text: string, precedent: AtelierEtat | null, cont
 
   const actuelle = precedent.versions.find((v) => v.numero === precedent.versionChoisie) ?? precedent.versions[precedent.versions.length - 1];
   if (!actuelle) return { kind: 'rien' };
+  // Une question (« quelle fenêtre est active ? ») ne change pas la pièce : elle suit son chemin.
+  // Un ordre pour un autre domaine (« ferme la fenêtre », « mets l'écran en veille ») non plus.
+  if (QUESTION.test(t) || VERBE_AUTRE.test(t) || SUJET_AUTRE.test(t)) return { kind: 'rien' };
   let valeurs: Valeurs = { ...actuelle.valeurs };
 
   // Découpes : « ajoute un trou de 8 à l'arrière », « enlève l'encoche », « le trou plus gros ».
@@ -366,9 +459,11 @@ export function deciderAtelier(text: string, precedent: AtelierEtat | null, cont
   const changementsDecoupes: string[] = [];
   let resteTexte = text;
   const court = t.split(' ').length <= 25;
+  // « fais passer le câble par le côté gauche » = un passage de câble sur ce côté.
+  const tPiece = t.replace(/^(?:fais|fait|faire) (?:passer|sortir) (?:le |les |un |des )?(cables?)\b (?:par|sur|a|au|vers|de) /, 'ajoute un passage de $1 sur ');
   // Matière ajoutée d'abord : « ajoute quatre bossages », « le bossage plus haut », « fais que le
   // couvercle s'emboîte ». Les découpes sont lues dans ce qui reste.
-  const matiere = court ? lireAjouts(t) : { ops: [], reste: t };
+  const matiere = court ? lireAjouts(tPiece) : { ops: [], reste: tPiece };
   if (matiere.ops.length) {
     const r = appliquerAjouts(g, valeurs, matiere.ops, mesures);
     if (r.question) {
@@ -397,7 +492,10 @@ export function deciderAtelier(text: string, precedent: AtelierEtat | null, cont
   // prendre « mets le minuteur à 10 minutes » pour une mesure.
   const tReste = plier(resteTexte).replace(/^jarvis ,? ?/, '');
   const mots = tReste.split(' ').filter((m) => m !== ',').length;
-  const dites = mots <= 10 ? lireMesures(resteTexte, g).valeurs : {};
+  const lues = mots <= 10 ? lireMesures(resteTexte, g).valeurs : {};
+  // Un nombre sans le nom de sa mesure ne vaut que si la phrase ne parle que de la pièce :
+  // « mets le volume à 90 » ne change pas la longueur, « fais-la en 100 par 60 » oui.
+  const dites = parleDAutreChose(tReste, g) ? nommees(lues, tReste, g) : lues;
   Object.assign(valeurs, dites);
 
   // « Le trou plus haut » parle de la découpe, pas de la hauteur de la pièce.
@@ -412,7 +510,17 @@ export function deciderAtelier(text: string, precedent: AtelierEtat | null, cont
   }
 
   const changement = [changementDe(g, actuelle.valeurs, valeurs), ...changementsDecoupes].filter(Boolean).join(', ');
-  if (!changement) return { kind: 'rien' };
+  if (!changement) {
+    // Un ordre sur la pièce que l'atelier ne sait pas lire : il le dit, la pièce reste à l'écran.
+    if (ordreSurPiece(t)) {
+      return {
+        kind: 'dire',
+        texte: `Je n'ai pas su faire ce changement sur la pièce. Sur la pièce à l'écran, je sais : changer une mesure (« hauteur 50 », « plus haut »), percer (« un trou de 8 à l'arrière », « une fenêtre sur le dessus », « un passage de câble à gauche ») et ajouter des plots pour une carte, des bossages, une nervure ou un rebord. La version ${actuelle.numero} reste à l'écran.`,
+        etat: precedent,
+      };
+    }
+    return { kind: 'rien' };
+  }
   for (const m of g.mesures) {
     if (!(m.id in valeurs) || valeurs[m.id] === actuelle.valeurs[m.id]) continue;
     const erreur = horsBornes(m, valeurs[m.id]!);

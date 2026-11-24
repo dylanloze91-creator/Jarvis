@@ -33,7 +33,7 @@ const { KnowledgeStore } = await import('./knowledge.js');
 
 afterAll(() => rmSync(userData, { recursive: true, force: true }));
 
-const PIECE: AtelierEtat = {
+const PIECE: Extract<AtelierEtat, { etape: 'piece' }> = {
   etape: 'piece',
   gabarit: 'boite',
   nom: 'boîte',
@@ -43,7 +43,7 @@ const PIECE: AtelierEtat = {
   versions: [{ numero: 1, valeurs: {}, fiche: 'Boîte de 80 × 50 × 30 mm.', mesures: [], taille: [80, 50, 30], stl: 'v1.stl' }],
 };
 
-function setup(wired = true) {
+function setup(wired = true, options: { imagerActif?: boolean; atelierReel?: boolean } = {}) {
   const settings = core.parseSettings({ provider: 'ollama', model: 'qwen2.5:7b' });
   const getSettings = () => settings;
   const modelCalls: string[] = [];
@@ -74,8 +74,28 @@ function setup(wired = true) {
   } as unknown as Electron.WebContents;
   const store = new core.InMemoryConversationStore();
   const vus: number[] = [];
+  const imagerAppels: string[] = [];
+  // Imager activé : le mode direct prendrait « dessine-moi … » avant tout modèle.
+  const images = {
+    isEnabled: () => true,
+    loadRules: async () => ({ rules: null }),
+    generateDirect: async (request: { prompt: string }) => {
+      imagerAppels.push(request.prompt);
+      throw new Error('Imager ne doit pas être appelé');
+    },
+  };
   const atelier = async (input: { text: string; messages: readonly unknown[]; progress: (m: string) => void }) => {
     vus.push(input.messages.length);
+    // `atelierReel` : la vraie décision de l'atelier (règles du cœur), sans OpenSCAD.
+    if (options.atelierReel) {
+      const messages = input.messages as Parameters<typeof core.dernierAtelier>[0];
+      const d = core.deciderAtelier(input.text, core.dernierAtelier(messages), { mesures: {} });
+      if (d.kind === 'rien') return null;
+      if (d.kind === 'dire') return { texte: d.texte, ...(d.etat ? { etat: d.etat } : {}) };
+      if (d.kind !== 'fabriquer') return { texte: d.kind };
+      const etat: AtelierEtat = { ...PIECE, versions: [{ ...PIECE.versions[0]!, valeurs: d.valeurs }] };
+      return { texte: `Pièce rendue (${d.changement ?? 'nouvelle'}).`, etat };
+    }
     if (!/boîte/.test(input.text)) return null;
     input.progress('OpenSCAD dessine la pièce…');
     return { texte: 'Boîte de 80 × 50 × 30 mm.', etat: PIECE };
@@ -91,6 +111,7 @@ function setup(wired = true) {
     knowledge: { indexConversation: async () => 0 } as never,
     localLearning: { recordTurn: async () => undefined } as never,
     ...(wired ? { atelier } : {}),
+    ...(options.imagerActif ? { images: images as never } : {}),
   });
   let conversationId: string | null = null;
   const say = async (text: string) => {
@@ -100,7 +121,7 @@ function setup(wired = true) {
     conversationId = saved[0]!.id;
     return (await store.get(conversationId))!.messages;
   };
-  return { modelCalls, say, events, vus };
+  return { modelCalls, say, events, vus, imagerAppels };
 }
 
 describe('atelier 3D dans la session', () => {
@@ -122,6 +143,47 @@ describe('atelier 3D dans la session', () => {
     expect(vus).toEqual([0, 2]);
     expect(suite.at(-1)?.content).toBe('Réponse du modèle.');
     expect(suite.at(-1)?.atelier).toBeUndefined();
+    expect(modelCalls).toHaveLength(1);
+  });
+
+  it("phrases de l'utilisateur (Jarvis Test, 23 et 24 novembre) : l'atelier, sans cerveau ni équipe", async () => {
+    const { modelCalls, say, events } = setup(true, { atelierReel: true, imagerActif: true });
+    for (const phrase of [
+      'Fais-moi une boîte de 80 par 50 par 30',
+      "Fais-moi une boîte de 120 par 80 par 40 avec des plots pour un Raspberry Pi 5, ports vers l'arrière",
+    ]) {
+      const messages = await say(phrase);
+      expect(messages.at(-1)?.atelier?.etape).toBe('piece');
+      expect(events.some((e) => e.type === 'route')).toBe(false);
+    }
+    expect(modelCalls).toEqual([]);
+  });
+
+  it('« Dessine-moi un boîtier… » va à l’atelier même avec Imager activé ; « dessine-moi un chat » reste à Imager', async () => {
+    const { modelCalls, say, imagerAppels } = setup(true, { atelierReel: true, imagerActif: true });
+    const messages = await say('Dessine-moi un boîtier pour un écran de 7 pouces');
+    expect(messages.at(-1)?.content).toMatch(/^Boîte, d'accord\./);
+    expect(imagerAppels).toEqual([]);
+    expect(modelCalls).toEqual([]);
+    await say('Dessine-moi un chat');
+    expect(imagerAppels).toHaveLength(1);
+  });
+
+  it('pièce à l’écran : câble, écran, Raspberry Pi vont à l’atelier ; le reste suit son chemin', async () => {
+    const { modelCalls, say } = setup(true, { atelierReel: true });
+    await say('Fais-moi une boîte de 120 par 80 par 40');
+    for (const phrase of [
+      'Fais passer le câble par le côté gauche',
+      "Fais une fenêtre pour l'écran sur le dessus",
+      "Mets des plots pour un Raspberry Pi 5 dans le fond, ports vers l'arrière",
+      'Ajoute des aérations sur les côtés',
+    ]) {
+      const messages = await say(phrase);
+      expect(messages.at(-1)?.atelier?.etape).toBe('piece');
+    }
+    expect(modelCalls).toEqual([]);
+    const autre = await say('Ferme la fenêtre');
+    expect(autre.at(-1)?.content).toBe('Réponse du modèle.');
     expect(modelCalls).toHaveLength(1);
   });
 
