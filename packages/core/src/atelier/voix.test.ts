@@ -105,6 +105,12 @@ describe('changer la pièce, à la voix', () => {
     expect(deciderAtelier(phrase, piece, {})).toMatchObject({ kind: 'dire', texte: expect.stringMatching(/^Version 2 : longueur 120 mm, largeur 94 mm, hauteur 40 mm/) });
   });
 
+  it.each(['ouais vas-y', 'ok super merci', "c'est bon", 'oui parfait'])('« %s » juste après une pièce : rien à valider, l’atelier le dit', (phrase) => {
+    expect(deciderAtelier(phrase, piece, {})).toMatchObject({ kind: 'dire', texte: "La version 2 est faite. Dis-moi ce qu'il faut changer, ou « mets-la dans la file »." });
+    // « fais-la plus haute » n'est pas un simple « ok ».
+    expect(deciderAtelier('fais-la plus haute', piece, {}).kind).toBe('fabriquer');
+  });
+
   it('les questions d’un autre sujet ne sont pas prises', () => {
     for (const phrase of ['combien de temps pour l’imprimer', 'il fait combien dehors', 'quelle heure est-il']) {
       expect(deciderAtelier(phrase, piece, {}).kind).toBe('rien');

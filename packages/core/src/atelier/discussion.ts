@@ -174,6 +174,9 @@ const MOTS_NEUTRES = new Set(
 /** Accord à une proposition, dit comme on parle : « pas de problème », « ouais vas-y », « nickel ». */
 const ACCORD =
   /^(?:(?:bah|ben|alors|bon|eh bien|ah|bien|ouais|oui|ok) )*(?:oui|ouais|ouai|ok|okay|d accord|daccord|vas y|va s y|go|allez|allez y|pas de (?:probleme|souci|soucis)|aucun (?:probleme|souci)|bien sur|evidemment|bien evidemment|parfait|nickel|top|super|ca marche|ca me va|ca roule|c est bon|c est parfait|carrement|exactement|tout a fait|volontiers|je veux bien|avec plaisir|fais le|fais la|fais comme ca|agrandis la|agrandis le|valide|je valide|c est ok|yes|d acc|dac|impec|impeccable|entendu|ca marche|vas y fonce|fonce)\b/;
+/** Un simple « ok » (et rien d'autre) : « ouais vas-y », « super merci », « c'est bon ». */
+const ACQUIESCEMENT =
+  /^(?=.*\b(?:oui|ouais|ok|okay|vas y|go|d accord|d acc|c est bon|ca marche|yes)\b)(?:(?:oui|ouais|ok|okay|d accord|vas y|go|super|parfait|nickel|top|merci|beaucoup|cool|c est bon|c est parfait|ca marche|ca me va|impec|impeccable|bien|tres|genial|yes|d acc|carrement|excellent|parfait|nickel)\s*)+$/;
 /** « fais en sorte que ça rentre », « agrandis-la pour que le Pi tienne » : c'est accepter d'agrandir. */
 const FAIRE_TENIR = /\b(?:fai[st] en sorte (?:que|qu)|pour que|faut que)\b.*\b(?:rentre|rentrent|tienne|tiennent|tient|passe|passent)\b|^agrandi[st]?\b/;
 /** Refus d'une proposition. */
@@ -720,6 +723,14 @@ export function deciderAtelier(text: string, precedentDonne: AtelierEtat | null,
 
   const actuelle = precedent.versions.find((v) => v.numero === precedent.versionChoisie) ?? precedent.versions[precedent.versions.length - 1];
   if (!actuelle) return { kind: 'rien' };
+  // « ouais vas-y », « ok super » juste après une pièce : rien à valider, l'atelier le dit (sinon la
+  // phrase partirait au cerveau, qui ne connaît pas la pièce).
+  if (ACQUIESCEMENT.test(tn)) {
+    return {
+      kind: 'dire',
+      texte: `La version ${actuelle.numero} est faite. Dis-moi ce qu'il faut changer, ou « mets-la dans la file ».`,
+    };
+  }
   // « elle fait combien de haut ? », « c'est quoi les dimensions ? » : les cotes de la version à l'écran.
   if ((QUESTION.test(tn) || QUESTION_TAILLE.test(tn)) && DIMENSIONS.test(tn) && !SUJET_AUTRE.test(tn) && !/\d/.test(tn)) {
     const cotes = actuelle.mesures.map((m) => `${m.nom.toLowerCase()} ${m.valeur}`).join(', ');
