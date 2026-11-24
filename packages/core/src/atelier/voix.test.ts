@@ -120,6 +120,28 @@ describe('changer la pièce, à la voix', () => {
     },
   );
 
+  // Essai de l'utilisateur, 24 novembre à 22 h : « Et un boîtier pour un esp32 » était parti au
+  // cerveau (taille inventée), « Dessine une version adaptée à l’esp32 » à l'équipe Code (refus).
+  it.each(['Et un boîtier pour un esp32', 'Dessine une version adaptée à l’esp32', 'fais la même pour un esp32', 'aussi une boîte pour mon ESP32'])(
+    '« %s » : nouvelle boîte pour l’ESP32, cotes demandées au pied à coulisse',
+    (phrase) => {
+      for (const etat of [piece, null]) {
+        expect(deciderAtelier(phrase, etat, {})).toMatchObject({ kind: 'dire', etat: { etape: 'mesure' } });
+      }
+    },
+  );
+
+  it('« une boîte de six œufs » ou « une boîte pour mes bijoux » sans verbe ne sont pas des demandes', () => {
+    expect(deciderAtelier('une boîte de six œufs', null, {}).kind).toBe('rien');
+    expect(deciderAtelier('et une boîte pour mes bijoux', null, {}).kind).toBe('rien');
+  });
+
+  // Même essai : « Rajoute un écran tactile avec une caméra » recevait « je n'ai pas su faire ce
+  // changement » ; l'écran et la caméra viennent avec le boîtier électronique, et l'atelier le dit.
+  it.each(['Rajoute un écran tactile avec une caméra', 'Rajoute un écran tactile', 'intègre une caméra'])('« %s » : l’atelier dit pourquoi pas encore', (phrase) => {
+    expect(deciderAtelier(phrase, piece, {})).toMatchObject({ kind: 'dire', texte: expect.stringMatching(/se tient autrement .*boîtier électronique/) });
+  });
+
   it('« montre-moi la file d’attente » n’est pas pour la pièce', () => {
     expect(deciderAtelier("montre moi la file d'attente", piece, {}).kind).not.toBe('choisir');
   });

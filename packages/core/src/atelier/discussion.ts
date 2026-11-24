@@ -244,15 +244,28 @@ export function demandePiece(
   text: string,
   mesures: MesuresComposants = {},
 ): { gabarit: Gabarit | null; valeurs: Valeurs; erreurs?: string[]; question?: { composant: string; champ: string; texte: string } } | null {
-  const t = plier(text).replace(/^jarvis ,? ?/, '');
+  // « Et un boîtier pour un ESP32 », « aussi une boîte… » : la suite d'une discussion (essai du 24 novembre).
+  const t = plier(text)
+    .replace(/^jarvis ,? ?/, '')
+    .replace(/^(?:et maintenant|et puis|et aussi|et|puis|aussi|maintenant|alors|bon) /, '');
   const verbe = DEMANDE.exec(t) ?? VOULOIR.exec(t);
   const demande = comprendre(text);
-  const sansVerbe = !verbe && demande.gabarit !== null && commenceParLaPiece(t, demande.gabarit) && COTE.test(t);
+  const carte = composantNomme(` ${plier(text)} `);
+  // Sans verbe, il faut une cote (« une boîte de 100 par 60 ») ou une carte connue (« un boîtier
+  // pour un ESP32 ») : « une boîte de 6 œufs » n'est pas une demande.
+  const sansVerbe =
+    !verbe && demande.gabarit !== null && commenceParLaPiece(t, demande.gabarit) && (COTE.test(t) || Boolean(carte && composant(carte.id)?.carte));
   if (!verbe && !sansVerbe) return null;
-  if (demande.gabarit) {
+  // « Dessine une version adaptée à l'ESP32 », « fais la même pour un Arduino » : une boîte pour
+  // cette carte (essai du 24 novembre : la phrase partait à l'équipe Code, qui refusait de dessiner).
+  const objetDemande = verbe ? t.slice(verbe[0].length).trim() : '';
+  const versionPourCarte =
+    verbe && carte && composant(carte.id)?.carte && /^(?:version|variante|copie|autre|meme|pareille)\b/.test(objetDemande.replace(/^(?:une |la |l )/, ''));
+  const gDemande = demande.gabarit ?? (versionPourCarte ? gabarit('boite') : undefined);
+  if (gDemande) {
     // « … avec un trou de 8 à l'arrière » : les découpes sont lues à part, et retirées de la
     // phrase avant de lire les mesures (le 8 n'est pas une longueur).
-    const g = demande.gabarit;
+    const g = gDemande;
     // « … avec quatre bossages à insert M3 » : les ajouts de matière aussi, lus avant les découpes
     // (« l'avant-trou » des plots n'est pas un trou à percer).
     // « un boîtier pour mon Raspberry Pi 5 » : la carte nommée va sur ses plots, même sans le mot.

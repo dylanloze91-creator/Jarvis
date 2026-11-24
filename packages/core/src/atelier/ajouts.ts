@@ -559,7 +559,8 @@ export function lireAjouts(t: string): { ops: OpAjout[]; reste: string } {
   // Un composant de la bibliothèque posé dans la boîte : « mets des plots pour un Raspberry Pi 5
   // dans le fond, ports vers l'arrière », « pose l'ESP32 dans la boîte ». Toute la phrase est pour lui.
   const nomme = composantNomme(texte);
-  if (nomme && (/\bplots?\b/.test(texte) || /\b(?:mets|met|mettre|pose|poser|place|placer|ajoute|ajouter|installe|range|enleve|retire|supprime)\b/.test(texte))) {
+  // « Rajoute un écran tactile » (essai du 24 novembre) : « rajoute » n'était pas lu.
+  if (nomme && (/\bplots?\b/.test(texte) || /\b(?:mets|met|mettre|pose|poser|place|placer|ajoute|ajouter|rajoute|rajouter|installe|installer|integre|integrer|monte|monter|fixe|fixer|range|enleve|retire|supprime)\b/.test(texte))) {
     // Le reste de la phrase garde ses mesures (« une boîte de 120 par 80 par 40 avec un Raspberry Pi 5 ») ;
     // le nom du composant (et son « 5 »), les prises et les plots partent.
     const reste = texte
