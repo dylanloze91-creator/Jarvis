@@ -28,8 +28,9 @@
 #define AMP_PIN_BCLK  15
 #define AMP_PIN_LRC   16
 #define AMP_PIN_DIN   17
-// Volume logiciel de 0 à 100 (le gain matériel de l'ampli se règle par sa broche GAIN).
-#define VOLUME        70
+// Volume logiciel en % (le gain matériel de l'ampli se règle par sa broche GAIN). Au-dessus de 100,
+// les crêtes sont arrondies (speaker_gain.h). 250 depuis le 24 novembre 2026 : ampli en 3,3 V.
+#define VOLUME        250
 
 // ---------------------------------------------------------------------------------------------
 // LED de la carte. L'ESP32-S3-DevKitC-1 d'Espressif a une LED RVB adressable (WS2812) sur GPIO 38

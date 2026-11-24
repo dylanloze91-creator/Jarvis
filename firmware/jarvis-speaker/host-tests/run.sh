@@ -24,3 +24,6 @@ ${CC:-gcc} -std=c99 -Wall -Wextra -Werror -Wconversion -O1 -fsanitize=address,un
 ${CXX:-g++} -std=c++17 -Wall -Wextra -Werror -O1 -fsanitize=address,undefined -I src -I include \
   host-tests/display_mascotte_test.cpp src/display_mascotte.cpp "$out/display_gfx.o" -lm -o "$out/display_mascotte_test"
 "$out/display_mascotte_test"
+${CC:-gcc} -std=c99 -Wall -Wextra -Werror -Wconversion -O1 -fsanitize=address,undefined -I include \
+  host-tests/speaker_gain_test.c -lm -o "$out/speaker_gain_test"
+"$out/speaker_gain_test"

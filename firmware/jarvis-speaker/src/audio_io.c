@@ -5,6 +5,7 @@
 
 #include "config.h"
 #include "mic_filter.h"
+#include "speaker_gain.h"
 #include "driver/i2s_std.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
@@ -101,7 +102,7 @@ void speaker_play(const int16_t *pcm, size_t samples) {
     while (done < samples) {
         size_t n = samples - done;
         if (n > PLAY_BLOCK) n = PLAY_BLOCK;
-        for (size_t i = 0; i < n; i++) play_block[i] = (int16_t)(((int32_t)pcm[done + i] * VOLUME) / 100);
+        for (size_t i = 0; i < n; i++) play_block[i] = speaker_gain_sample(pcm[done + i], VOLUME);
         size_t written = 0;
         i2s_channel_write(tx_chan, play_block, n * sizeof(int16_t), &written, pdMS_TO_TICKS(2000));
         done += n;
