@@ -270,6 +270,124 @@ export function ecrireFichierMesures(mesures: MesuresComposants): string {
   return `${JSON.stringify({ version: 1, note: 'Mesures prises au pied à coulisse par l’utilisateur (atelier 3D de Jarvis).', composants: mesures }, null, 2)}\n`;
 }
 
+// ---------------------------------------------------------------------------------------------
+// Cotes trouvées ailleurs (cap « chef de projet », § 3 et 5) : une recherche sur Internet, une fiche,
+// une autre équipe. Jamais sans source. Deux sources qui concordent → « sûre » ; une seule, ou des
+// sources en désaccord → « incertaine » : la mesure au pied à coulisse reste demandée.
+
+/** Une lecture d'une cote dans une source (page, PDF de plan, fiche). */
+export interface CoteLue {
+  valeur: number;
+  /** D'où vient le nombre : adresse ou nom du document. Obligatoire. */
+  source: string;
+}
+/** Les cotes trouvées, par composant et par champ (ceux des mesures à prendre). */
+export type CotesTrouvees = Record<string, Record<string, CoteLue[]>>;
+
+/** Écart sous lequel deux lectures concordent (mm). */
+export const CONCORDANCE_MM = 0.25;
+
+export interface EtatCoteTrouvee {
+  etat: 'sur' | 'incertain';
+  /** La valeur retenue : celle des sources qui concordent, ou la seule lue. Absente si désaccord. */
+  valeur?: number;
+  sources: string[];
+  /** Les valeurs lues, quand elles ne concordent pas. */
+  desaccord?: number[];
+}
+
+/** Ajoute une lecture (une par source : relire une source remplace sa lecture). Bornes de la mesure. */
+export function ajouterCoteTrouvee(cotes: CotesTrouvees, id: string, champ: string, lue: CoteLue): { cotes: CotesTrouvees; erreur?: string } {
+  const c = composant(id);
+  const q = c?.aMesurer?.find((x) => x.champ === champ);
+  if (!c || !q) return { cotes, erreur: 'Je ne connais pas cette cote.' };
+  if (!lue.source.trim()) return { cotes, erreur: 'Une cote trouvée doit dire d’où elle vient.' };
+  if (!Number.isFinite(lue.valeur) || lue.valeur < q.min || lue.valeur > q.max) {
+    return { cotes, erreur: `${fmt(lue.valeur)} mm pour ${q.nom} : ça me paraît faux (de ${fmt(q.min)} à ${fmt(q.max)} mm).` };
+  }
+  const avant = (cotes[id]?.[champ] ?? []).filter((x) => x.source !== lue.source);
+  return { cotes: { ...cotes, [id]: { ...(cotes[id] ?? {}), [champ]: [...avant, { valeur: lue.valeur, source: lue.source.trim() }] } } };
+}
+
+/** L'état d'une cote trouvée : sûre si deux sources différentes concordent. */
+export function etatCoteTrouvee(lues: readonly CoteLue[]): EtatCoteTrouvee {
+  const sources = [...new Set(lues.map((l) => l.source))];
+  for (const l of lues) {
+    const daccord = lues.filter((x) => Math.abs(x.valeur - l.valeur) <= CONCORDANCE_MM);
+    const differentes = new Set(daccord.map((x) => x.source));
+    if (differentes.size >= 2) {
+      const valeur = Math.round((daccord.reduce((s, x) => s + x.valeur, 0) / daccord.length) * 100) / 100;
+      return { etat: 'sur', valeur, sources: [...differentes] };
+    }
+  }
+  const valeurs = [...new Set(lues.map((l) => l.valeur))];
+  return valeurs.length === 1 ? { etat: 'incertain', valeur: valeurs[0]!, sources } : { etat: 'incertain', sources, desaccord: valeurs };
+}
+
+/**
+ * Les mesures à utiliser pour dessiner : celles de l'utilisateur d'abord, puis les cotes trouvées
+ * **sûres**. Une cote incertaine n'entre pas : elle reste à mesurer.
+ */
+export function fusionnerCotes(mesures: MesuresComposants, cotes: CotesTrouvees): MesuresComposants {
+  const out: MesuresComposants = { ...mesures };
+  for (const [id, champs] of Object.entries(cotes)) {
+    for (const [champ, lues] of Object.entries(champs)) {
+      if (typeof mesures[id]?.[champ] === 'number') continue;
+      const e = etatCoteTrouvee(lues);
+      if (e.etat === 'sur' && e.valeur !== undefined) out[id] = { ...(out[id] ?? {}), [champ]: e.valeur };
+    }
+  }
+  return out;
+}
+
+/** D'où viennent les cotes d'un composant, et ce qui n'y est pas sûr (pour le résultat d'une étape). */
+export function provenanceCotes(id: string, mesures: MesuresComposants, cotes: CotesTrouvees): { sources: string[]; incertitudes: string[] } {
+  const c = composant(id);
+  if (!c?.aMesurer) return { sources: [], incertitudes: [] };
+  const sources: string[] = [];
+  const incertitudes: string[] = [];
+  for (const q of c.aMesurer) {
+    if (typeof mesures[id]?.[q.champ] === 'number') {
+      sources.push(`${c.nom}, ${q.nom} : mesuré au pied à coulisse par l'utilisateur`);
+      continue;
+    }
+    const lues = cotes[id]?.[q.champ];
+    if (!lues?.length) continue;
+    const e = etatCoteTrouvee(lues);
+    if (e.etat === 'sur') sources.push(`${c.nom}, ${q.nom} : ${fmt(e.valeur!)} mm (${e.sources.join(' ; ')})`);
+    else if (e.desaccord) incertitudes.push(`${c.nom}, ${q.nom} : les sources ne concordent pas (${e.desaccord.map(fmt).join(' / ')} mm) — à mesurer.`);
+    else incertitudes.push(`${c.nom}, ${q.nom} : ${fmt(e.valeur!)} mm sur une seule source (${e.sources[0]}) — à mesurer.`);
+  }
+  return { sources, incertitudes };
+}
+
+/** Lecture tolérante du fichier des cotes trouvées : une lecture sans source ou hors bornes est ignorée. */
+export function lireFichierCotes(texte: string): CotesTrouvees {
+  let cotes: CotesTrouvees = {};
+  try {
+    const data = JSON.parse(texte) as { cotes?: unknown };
+    if (!data || typeof data !== 'object' || !data.cotes || typeof data.cotes !== 'object') return cotes;
+    for (const [id, champs] of Object.entries(data.cotes as Record<string, unknown>)) {
+      if (!champs || typeof champs !== 'object') continue;
+      for (const [champ, lues] of Object.entries(champs as Record<string, unknown>)) {
+        if (!Array.isArray(lues)) continue;
+        for (const l of lues as { valeur?: unknown; source?: unknown }[]) {
+          if (typeof l?.valeur !== 'number' || typeof l.source !== 'string') continue;
+          const r = ajouterCoteTrouvee(cotes, id, champ, { valeur: l.valeur, source: l.source });
+          if (!r.erreur) cotes = r.cotes;
+        }
+      }
+    }
+  } catch {
+    return {};
+  }
+  return cotes;
+}
+
+export function ecrireFichierCotes(cotes: CotesTrouvees): string {
+  return `${JSON.stringify({ version: 1, note: 'Cotes de composants trouvées par Jarvis (recherche, fiches), chacune avec sa source.', cotes }, null, 2)}\n`;
+}
+
 /** La géométrie d'une carte, si elle est connue (sûre, ou mesurée). */
 export function geometrieCarte(c: Composant, mesures: MesuresComposants): CarteGeometrie | null {
   if (!c.carte) return null;

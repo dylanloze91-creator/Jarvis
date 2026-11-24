@@ -15,22 +15,19 @@
  *   carte, et seulement imprimante libre.
  */
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, readdir, rename, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
-  agrandirPourTenir,
   ajouterMesure,
-  controlerImpression,
   ecrireFichierMesures,
+  fusionnerCotes,
+  lireFichierCotes,
   lireFichierMesures,
+  type CotesTrouvees,
   controlerStl,
   dernierAtelier,
   deciderAtelier,
-  fabriquer,
-  fichePiece,
   lireStl,
-  mesuresAffichees,
-  nomDossierPiece,
   phraseConfirmationAtelier,
   phraseConfirmationFile,
   phraseConfirmationSuivante,
@@ -47,6 +44,8 @@ import {
   type QueueStatus,
   type VolumeImpression,
 } from '@jarvis/core';
+
+import { ATELIER_SANS_OPENSCAD, fabriquerVersion } from './etapes.js';
 
 type EtatPiece = Extract<AtelierEtat, { etape: 'piece' }>;
 
@@ -98,10 +97,22 @@ export interface AtelierDeps {
    * suivante » ; « mets-la dans la file » reste permis. Absent : oui, comme avant.
    */
   telephonePeutLancer?: () => boolean;
+  /**
+   * Cotes de composants trouvées ailleurs (recherche, fiches), chacune avec sa source. Absent :
+   * `composants-cotes.json` dans le dossier de l'atelier, lu seulement.
+   */
+  cotes?: { lire(): Promise<CotesTrouvees> };
 }
 
 /** Fichier des mesures de composants, dans le dossier de l'atelier. */
 export const FICHIER_MESURES = 'composants-mesures.json';
+/** Fichier des cotes trouvées ailleurs, à côté (jamais mêlées aux mesures de l'utilisateur). */
+export const FICHIER_COTES = 'composants-cotes.json';
+
+function cotesParFichier(racine: string): NonNullable<AtelierDeps['cotes']> {
+  const chemin = join(racine, FICHIER_COTES);
+  return { lire: async () => (existsSync(chemin) ? lireFichierCotes(await readFile(chemin, 'utf8')) : {}) };
+}
 
 function mesuresParFichier(racine: string): NonNullable<AtelierDeps['mesures']> {
   const chemin = join(racine, FICHIER_MESURES);
@@ -131,8 +142,7 @@ export interface AtelierSortie {
   etat?: AtelierEtat;
 }
 
-export const ATELIER_SANS_OPENSCAD =
-  "OpenSCAD n'est pas installé sur ce PC : je ne peux pas dessiner la pièce. Installe-le (winget install --id=OpenSCAD.OpenSCAD -e), puis redemande-la.";
+export { ATELIER_SANS_OPENSCAD };
 export const ATELIER_IMPRIMANTE_ABSENTE =
   "Le fichier est prêt, mais l'imprimante n'est pas réglée dans Jarvis (Réglages → Services → Imprimante) : je n'envoie rien.";
 export const ATELIER_IMPRIMANTE_MUETTE = "L'imprimante ne répond pas : je n'envoie rien.";
@@ -158,13 +168,6 @@ export function nomSimple(nom: string): boolean {
   return /^[a-z0-9][a-z0-9._-]*$/i.test(nom) && !nom.includes('..');
 }
 
-async function dossierLibre(racine: string, base: (n: number) => string): Promise<string> {
-  const pris = new Set(existsSync(racine) ? await readdir(racine) : []);
-  for (let n = 1; ; n += 1) {
-    const nom = base(n);
-    if (!pris.has(nom)) return nom;
-  }
-}
 
 function detailCarte(infos: InfosGcode | null): string | null {
   if (!infos) return null;
@@ -197,7 +200,9 @@ export async function tourAtelier(input: AtelierEntree, deps: AtelierDeps): Prom
   const precedent = dernierAtelier(input.messages);
   const fichierMesures = deps.mesures ?? mesuresParFichier(deps.racine);
   let mesures = await fichierMesures.lire();
-  let decision = deciderAtelier(input.text, precedent, { mesures });
+  // Cotes trouvées ailleurs (recherche, fiches) : les sûres comblent ce que l'utilisateur n'a pas mesuré.
+  const cotes = await (deps.cotes ?? cotesParFichier(deps.racine)).lire().catch(() => ({}));
+  let decision = deciderAtelier(input.text, precedent, { mesures: fusionnerCotes(mesures, cotes) });
   // Une mesure de composant donnée : gardée tout de suite (elle sert ensuite partout), puis la
   // phrase d'avant est relue (question suivante, ou la pièce).
   for (let i = 0; decision.kind === 'mesure' && i < 3; i += 1) {
@@ -205,7 +210,7 @@ export async function tourAtelier(input: AtelierEntree, deps: AtelierDeps): Prom
     if (ajout.erreur) return precedent ? { texte: ajout.erreur, etat: precedent } : { texte: ajout.erreur };
     mesures = ajout.mesures;
     await fichierMesures.ecrire(mesures);
-    decision = deciderAtelier(decision.reprise.texte, decision.reprise.piece, { mesures });
+    decision = deciderAtelier(decision.reprise.texte, decision.reprise.piece, { mesures: fusionnerCotes(mesures, cotes) });
   }
   const voix = input.place === 'enceinte';
 
@@ -222,96 +227,36 @@ export async function tourAtelier(input: AtelierEntree, deps: AtelierDeps): Prom
         etat: { ...decision.etat, versionChoisie: decision.numero },
       };
     case 'fabriquer': {
-      const volume = await deps.volume();
-      const piece = fabriquer(decision.gabarit, decision.valeurs, volume);
-      if (!piece.ok) {
-        const reste = decision.base ? ` La version ${decision.base.versionChoisie} reste à l'écran.` : '';
+      // L'étape appelable (la même que celle du futur chef de projet) ; ici, elle devient des phrases.
+      const r = await fabriquerVersion(
+        { gabarit: decision.gabarit, valeurs: decision.valeurs, ...(decision.base ? { base: decision.base } : {}), ...(decision.changement ? { changement: decision.changement } : {}), mesures, cotes },
+        deps,
+        (a) => {
+          if (a.etape === 'dessin' || a.etape === 'images') input.progress?.(a.message);
+        },
+      );
+      const reste = decision.base ? ` La version ${decision.base.versionChoisie} reste à l'écran.` : '';
+      const proposition = r.produit?.proposition;
+      if (proposition) {
         // Une carte qui ne tient pas : Jarvis propose des cotes qui marchent (vérifiées), et attend « oui ».
-        const plus = agrandirPourTenir(decision.gabarit, decision.valeurs, piece.erreurs);
-        if (plus && fabriquer(decision.gabarit, plus.valeurs, volume).ok) {
-          return {
-            texte: `${piece.erreurs.join(' ')} Je l'agrandis à ${plus.texte} ? Dis « oui », ou redis-moi la pièce autrement.${reste}`,
-            etat: {
-              etape: 'proposition',
-              gabarit: decision.gabarit.id,
-              valeurs: plus.valeurs,
-              base: decision.base ?? null,
-              ...(decision.changement ? { changement: decision.changement } : {}),
-            },
-          };
-        }
-        return { texte: `${piece.erreurs.join(' ')}${reste}` };
-      }
-      const openscad = deps.programmes.openscad();
-      if (!openscad) return { texte: ATELIER_SANS_OPENSCAD };
-
-      const dossier =
-        decision.base?.dossier ?? (await dossierLibre(deps.racine, (n) => nomDossierPiece(decision.gabarit, deps.jour(), n)));
-      const chemin = join(deps.racine, dossier);
-      await mkdir(chemin, { recursive: true });
-      const numero = decision.base ? Math.max(...decision.base.versions.map((v) => v.numero)) + 1 : 1;
-      const scad = join(chemin, `v${numero}.scad`);
-      const stl = join(chemin, `v${numero}.stl`);
-      await writeFile(scad, piece.scad, 'utf8');
-
-      input.progress?.('OpenSCAD dessine la pièce…');
-      const rendu = await deps.programmes.rendreStl(openscad, scad, stl);
-      if (!rendu.ok) return { texte: `${rendu.message} Le fichier .scad est gardé dans ${chemin}.` };
-      const maillage = lireStl(new Uint8Array(await readFile(stl)));
-      const controle = controlerStl(maillage, piece.taille);
-      // Imprimable sans support, posée telle quelle ? (surplombs de plus de 45°, ponts de plus de 25 mm)
-      const impression = controlerImpression(maillage, decision.gabarit.nom);
-      input.progress?.('OpenSCAD fait les images de la pièce…');
-      const vues = deps.programmes.rendreVues
-        ? await deps.programmes.rendreVues(openscad, chemin, numero).catch(() => ({ troisQuarts: null, dessus: null }))
-        : null;
-      const image = vues
-        ? (vues.troisQuarts ?? undefined)
-        : (await deps.programmes.rendreImage(openscad, scad, join(chemin, `v${numero}.png`))).ok
-          ? `v${numero}.png`
-          : undefined;
-      const imageDessus = vues?.dessus ?? undefined;
-
-      const version: AtelierVersionInfo = {
-        numero,
-        valeurs: piece.valeurs,
-        fiche: fichePiece(piece),
-        mesures: mesuresAffichees(decision.gabarit, piece.valeurs),
-        taille: piece.taille,
-        stl: `v${numero}.stl`,
-        ...(image ? { image } : {}),
-        ...(imageDessus ? { imageDessus } : {}),
-        ...(decision.changement ? { changement: decision.changement } : {}),
-      };
-      // Le modèle a changé (boîte → boîte à couvercle) : la pièce prend le nouveau, les anciennes
-      // versions gardent le leur.
-      const base =
-        decision.base && decision.base.gabarit !== decision.gabarit.id
-          ? {
-              ...decision.base,
-              gabarit: decision.gabarit.id,
-              nom: decision.gabarit.nom,
-              versions: decision.base.versions.map((v) => (v.gabarit ? v : { ...v, gabarit: decision.base!.gabarit })),
-            }
-          : decision.base;
-      const etat: EtatPiece = base
-        ? avecVersion(base, version)
-        : {
-            etape: 'piece',
+        return {
+          texte: `${r.raison} Je l'agrandis à ${proposition.cotes} ? Dis « oui », ou redis-moi la pièce autrement.${reste}`,
+          etat: {
+            etape: 'proposition',
             gabarit: decision.gabarit.id,
-            nom: decision.gabarit.nom,
-            dossier,
-            versions: [version],
-            versionChoisie: numero,
-            plateau: { x: volume.x, y: volume.y },
-          };
-      const probleme = [
-        controle.ok ? '' : ` Attention : ${controle.problemes.join(' ')}`,
-        impression.ok ? '' : ` Sans support, ça risque de mal s’imprimer : ${impression.problemes.join(' ')}`,
-      ].join('');
+            valeurs: proposition.valeurs,
+            base: decision.base ?? null,
+            ...(decision.changement ? { changement: decision.changement } : {}),
+          },
+        };
+      }
+      const etat = r.produit?.etat;
+      const version = r.produit?.version;
+      if (!etat || !version) return { texte: r.raison === ATELIER_SANS_OPENSCAD || r.produit?.scad ? (r.raison ?? '') : `${r.raison ?? ''}${reste}` };
+      const probleme = [r.ok ? '' : ` Attention : ${r.raison}`, ...r.avertissements.filter((a) => a.startsWith('Sans support')).map((a) => ` ${a}`)].join('');
       if (voix) return { texte: `C'est prêt : ${version.fiche} Regarde l'écran du PC.${probleme}`, etat };
-      const quoi = decision.changement ? `Version ${numero} (${decision.changement}). ` : '';
-      const suite = !controle.ok
+      const quoi = decision.changement ? `Version ${version.numero} (${decision.changement}). ` : '';
+      const suite = !r.ok
         ? ''
         : input.place === 'telephone'
           ? ' Les images arrivent ci-dessous ; « Voir en 3D » pour la tourner au doigt. Dis-moi ce qu’il faut changer.'
