@@ -311,9 +311,11 @@ export async function tourAtelier(input: AtelierEntree, deps: AtelierDeps): Prom
       ].join('');
       if (voix) return { texte: `C'est prêt : ${version.fiche} Regarde l'écran du PC.${probleme}`, etat };
       const quoi = decision.changement ? `Version ${numero} (${decision.changement}). ` : '';
-      const suite = controle.ok
-        ? ' La pièce est à l’écran : tourne-la à la souris. Dis-moi ce qu’il faut changer, ou « imprime-la ».'
-        : '';
+      const suite = !controle.ok
+        ? ''
+        : input.place === 'telephone'
+          ? ' Les images arrivent ci-dessous ; « Voir en 3D » pour la tourner au doigt. Dis-moi ce qu’il faut changer.'
+          : ' La pièce est à l’écran : tourne-la à la souris. Dis-moi ce qu’il faut changer, ou « imprime-la ».';
       return { texte: `${quoi}${version.fiche}${probleme}${suite}`, etat };
     }
     case 'lancerSuivante':

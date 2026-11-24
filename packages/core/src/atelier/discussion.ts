@@ -7,10 +7,10 @@
  * Le rendu (OpenSCAD), le contrôle, le tranchage et l'imprimante sont faits ailleurs, côté PC ;
  * ici, seulement des décisions.
  */
-import { estChoix, gabarit, GABARITS, type Gabarit, type Mesure, type MesureNombre, type Valeurs } from './gabarits.js';
+import { estChoix, fabriquer, gabarit, GABARITS, type Gabarit, type Mesure, type MesureNombre, type Valeurs } from './gabarits.js';
 import { appliquerDecoupes, avecDecoupes, decoupesAffichees, decoupesDe, lireDecoupes, sePerce } from './decoupes.js';
 import { ajoutsAffiches, appliquerAjouts, avecAjouts, lireAjouts } from './ajouts.js';
-import { ajouterMesure, composant, lireMesure, questionMesure, type MesuresComposants } from './composants.js';
+import { ajouterMesure, composant, composantNomme, lireMesure, questionMesure, type MesuresComposants } from './composants.js';
 import { comprendre, lireMesures, lireReponse, plier, prochaineQuestion } from './lecture.js';
 
 /** Une version rendue de la pièce. Les fichiers sont des noms simples, dans le dossier de la pièce. */
@@ -123,14 +123,18 @@ const VERBES =
 const DEMANDE = new RegExp(
   `^(?:jarvis )?(?:(?:est ce que )?(?:tu peux|peux tu|pourrais tu|tu pourrais) )?(?:me |m )?${VERBES}(?: moi| nous)?(?: en 3d)? (?:un|une|des|deux|trois|quatre|le|la|mon|ma)\\b`,
 );
-const VOULOIR = /^(?:jarvis )?(?:je voudrais|j aimerais|il me faut|j ai besoin d) (?:un|une|des)\b/;
+const VOULOIR =
+  /^(?:jarvis )?(?:je voudrais|j aimerais|il me faut|il me faudrait|j ai besoin d|j aurais besoin d|je veux|je cherche|on va faire|on fait|on peut faire|on pourrait faire|tu me fais|tu peux me faire|fais nous) (?:un|une|des)\b/;
 const EN_3D = /\b(?:en 3d|imprimante 3d|impression 3d|a imprimer|pour l imprimante)\b/;
 /**
  * Une pièce nommée sans verbe : « une boîte de 100 par 60 par 30 pour un Raspberry Pi ». Il faut
  * l'article en tête, une pièce connue et une cote (« 100 par 60 », « 12 cm ») : « une boîte de
  * 6 œufs » n'en est pas une.
  */
-const SANS_VERBE = /^(?:jarvis )?(?:un|une) /;
+function commenceParLaPiece(t: string, g: Gabarit): boolean {
+  const debut = t.replace(/^(?:un|une) /, '');
+  return [...g.mots, g.nom].some((mot) => debut.startsWith(plier(mot)));
+}
 const COTE = /\d+(?:\.\d+)? ?(?:mm|millimetres?|cm|centimetres?|x|par|sur|fois)\b/;
 /**
  * Objet d'atelier que la bibliothèque n'a pas (encore) : la demande vient quand même à l'atelier,
@@ -167,8 +171,29 @@ const MOTS_NEUTRES = new Set(
     ' ',
   ),
 );
-/** « ajoute un couvercle », « mets-lui un couvercle qui s'emboîte » (sur une boîte à l'écran). */
-const COUVERCLE_AJOUTE = /^(?:ajoute|ajouter|rajoute|mets|met|mettre|fais|fait)\b.*\bcouvercle\b/;
+/** Accord à une proposition, dit comme on parle : « pas de problème », « ouais vas-y », « nickel ». */
+const ACCORD =
+  /^(?:(?:bah|ben|alors|bon|eh bien|ah|bien|ouais|oui|ok) )*(?:oui|ouais|ouai|ok|okay|d accord|daccord|vas y|va s y|go|allez|allez y|pas de (?:probleme|souci|soucis)|aucun (?:probleme|souci)|bien sur|evidemment|bien evidemment|parfait|nickel|top|super|ca marche|ca me va|ca roule|c est bon|c est parfait|carrement|exactement|tout a fait|volontiers|je veux bien|avec plaisir|fais le|fais la|fais comme ca|agrandis la|agrandis le|valide|je valide|c est ok|yes)\b/;
+/** « fais en sorte que ça rentre », « agrandis-la pour que le Pi tienne » : c'est accepter d'agrandir. */
+const FAIRE_TENIR = /\b(?:fai[st] en sorte (?:que|qu)|pour que|faut que)\b.*\b(?:rentre|rentrent|tienne|tiennent|tient|passe|passent)\b|^agrandi[st]?\b/;
+/** Refus d'une proposition. */
+const REFUS = /^(?:non|nan|pas (?:comme ca|d accord|question)|surtout pas|laisse tomber|annule|oublie|stop|non merci)\b/;
+/**
+ * « ajoute un couvercle », « et un couvercle aussi », « il faudrait un couvercle qui se clipse »
+ * (phrase déjà ramenée à un ordre), sur une boîte à l'écran. Pas « sans couvercle », ni une
+ * question sur le couvercle.
+ */
+function couvercleDemande(tn: string): boolean {
+  if (!/\bcouvercles?\b/.test(tn)) return false;
+  if (/\b(?:sans|enleve|retire|supprime|vire|pas de|plus de) (?:le |les |de |un |son )?couvercle/.test(tn)) return false;
+  if (/\bcouvercle (?:est|sera|fait|tient)\b/.test(tn)) return false;
+  return /^(?:ajoute|rajoute|mets|met|fais|fait|un|une|avec|et)\b/.test(tn);
+}
+/** « remets la version d'avant », « annule le dernier changement », « reviens en arrière ». */
+const VERSION_AVANT =
+  /\b(?:version (?:d avant|precedente)|annule (?:le |la |mon |ma |ce |cette )?(?:dernier |derniere )?(?:changement|modification)|reviens en arriere|retour en arriere|annule ca|defais (?:le|ca)|comme avant)\b/;
+/** « plus grande », « agrandis-la », « trop petite » sans dire la mesure. */
+const PLUS_GRANDE = /\b(?:plus grande?|plus grosse?|trop petite?|agrandis(?: la| le)?)\b/;
 const ANNULER = /^(?:annule|laisse tomber|oublie|stop|arrete|non merci|pas la peine)\b/;
 const OUI = /^(?:oui|ok|d accord|ca me va|vas y|va pour ca|parfait|c est bon|ca marche)\b/;
 
@@ -212,7 +237,7 @@ export function demandePiece(
   const t = plier(text).replace(/^jarvis ,? ?/, '');
   const verbe = DEMANDE.exec(t) ?? VOULOIR.exec(t);
   const demande = comprendre(text);
-  const sansVerbe = !verbe && SANS_VERBE.test(t) && demande.gabarit !== null && COTE.test(t);
+  const sansVerbe = !verbe && demande.gabarit !== null && commenceParLaPiece(t, demande.gabarit) && COTE.test(t);
   if (!verbe && !sansVerbe) return null;
   if (demande.gabarit) {
     // « … avec un trou de 8 à l'arrière » : les découpes sont lues à part, et retirées de la
@@ -220,7 +245,10 @@ export function demandePiece(
     const g = demande.gabarit;
     // « … avec quatre bossages à insert M3 » : les ajouts de matière aussi, lus avant les découpes
     // (« l'avant-trou » des plots n'est pas un trou à percer).
-    const matiere = lireAjouts(plier(text));
+    // « un boîtier pour mon Raspberry Pi 5 » : la carte nommée va sur ses plots, même sans le mot.
+    const nommee = ['boite', 'boite_couvercle'].includes(g.id) ? composantNomme(` ${plier(text)} `) : null;
+    const carteSansPlots = nommee && composant(nommee.id)?.carte && !/\bplots?\b/.test(plier(text));
+    const matiere = lireAjouts(carteSansPlots ? `${plier(text)} plots` : plier(text));
     const opsMatiere = matiere.ops.filter((op) => op.action !== 'enlever');
     const lu = lireDecoupes(matiere.reste, { exigerFace: aSonTrou(g) });
     const ajouts = lu.ops.filter((op) => op.action !== 'enlever');
@@ -330,6 +358,84 @@ export function plateauVideLanceSuivante(text: string): boolean {
 
 const CHOISIR = /\b(?:reviens|retourne|revenir|garde|prends|choisis) (?:a )?la (?:version|v) ?(\d+)\b/;
 
+const INFINITIFS: Record<string, string> = {
+  ajouter: 'ajoute', rajouter: 'rajoute', mettre: 'mets', remettre: 'remets', faire: 'fais', percer: 'perce',
+  agrandir: 'agrandis', elargir: 'elargis', allonger: 'allonge', rallonger: 'rallonge', augmenter: 'augmente',
+  diminuer: 'diminue', reduire: 'reduis', baisser: 'baisse', retirer: 'retire', enlever: 'enleve', supprimer: 'supprime',
+  imprimer: 'imprime', deplacer: 'deplace', creuser: 'creuse', rehausser: 'rehausse', raccourcir: 'raccourcis',
+};
+
+/**
+ * Une demande dite comme on parle, ramenée à l'ordre que lisent les règles :
+ * « tu peux ajouter un couvercle ? » → « ajoute un couvercle », « il faudrait un trou… » →
+ * « ajoute un trou… », « elle est trop basse » → « plus haute », « envoie-la à l'imprimante » →
+ * « imprime la ». Texte déjà plié ; rien d'autre ne change.
+ */
+export function normaliserOrdre(t: string): string {
+  let s = t.replace(/\s*,\s*$/, '').trim();
+  s = s.replace(/^(?:(?:bon|alors|ok|euh|et|aussi|maintenant|du coup|ensuite|puis|bah|ben|stp|jarvis)\s*,?\s+)+/, '');
+  s = s.replace(/\s*,?\s*(?:s il te plait|s il vous plait|stp|svp|merci|aussi)\s*$/, '');
+  s = s.replace(/^(?:est ce que |est ce qu )?(?:tu (?:peux|pourrais|veux bien|voudrais bien)|peux tu|pourrais tu|tu me|tu lui|tu nous)\s+(?:me |m |lui |nous )?/, '');
+  // « l imprimer » → « imprimer » (le pronom vise la pièce).
+  s = s.replace(/^(?:l |la |le )(?=[a-z]+er\b)/, '');
+  s = s.replace(
+    /^(?:il (?:me |nous |lui |y )?(?:faudrait|faut|manque)|j aimerais|je voudrais|je veux|ce serait bien d avoir|on pourrait (?:avoir|mettre|ajouter)|on peut (?:avoir|mettre|ajouter)|rajoute moi|ajoute moi|mets moi|mets lui|rajoute lui|ajoute lui)\s+(?=(?:un|une|des|deux|trois|quatre|le|la|les|l)\b)/,
+    'ajoute ',
+  );
+  s = s.replace(/^([a-z]+)\b/, (mot) => INFINITIFS[mot] ?? mot);
+  // « envoie-la à l'imprimante », « lance-la » : imprimer (« lance la suivante » reste à part).
+  s = s.replace(/^(?:envoie|envoyer|balance|lance)(?: la| le)? (?:a |vers |sur |dans )?l imprimante$/, 'imprime la');
+  // « (elle est) trop basse » → « plus haute », etc.
+  const trop: [RegExp, string][] = [
+    [/\btrop (?:basse|bas)\b/, 'plus haute'],
+    [/\btrop (?:haute|haut)\b/, 'moins haute'],
+    [/\btrop (?:etroite|etroit)\b/, 'plus large'],
+    [/\btrop large\b/, 'moins large'],
+    [/\btrop (?:courte|court)\b/, 'plus longue'],
+    [/\btrop (?:longue|long)\b/, 'moins longue'],
+    [/\btrop (?:fine|fin|mince)s?\b/, 'plus epaisse'],
+  ];
+  for (const [re, ordre] of trop) {
+    if (re.test(s) && /^(?:(?:elle|il|la boite|le boitier|la piece|c|ca) (?:est|fait) )?(?:un peu |beaucoup )?trop\b/.test(s)) return ordre;
+  }
+  // « aérations », « ventilation » : des trous d'aération.
+  if (!/\btrous?\b/.test(s)) s = s.replace(/\b(?:des |les )?(?:aerations?|ventilations?|grilles? d aeration)\b/, 'des trous d aeration');
+  return s.replace(/\s+/g, ' ').trim();
+}
+
+/** « augmente la hauteur de 10 mm », « 10 mm de plus en largeur », « plus haute de 5 » : ± N sur une mesure. */
+function lireDelta(t: string, g: Gabarit, valeurs: Valeurs): { id: string; avant: number; apres: number } | null {
+  const N = String.raw`(\d+(?:\.\d+)?) ?(mm|millimetres?|cm|centimetres?)?`;
+  const MOTS: Record<string, RegExp> = {
+    hauteur: /hauteur|haut|haute|profondeur|profond|profonde/,
+    largeur: /largeur|large/,
+    longueur: /longueur|long|longue/,
+  };
+  const PLUS = 'augmente|rallonge|allonge|elargis|rehausse|monte|agrandis|ajoute|rajoute|gagne|grandis';
+  const MOINS = 'diminue|baisse|reduis|raccourcis|retrecis|enleve|retire|descends|abaisse';
+  for (const [id, mot] of Object.entries(MOTS)) {
+    const m = g.mesures.find((x) => x.id === id);
+    if (!m || estChoix(m)) continue;
+    const w = mot.source;
+    const essais: [RegExp, 1 | -1][] = [
+      [new RegExp(String.raw`\b(?:${PLUS})\b(?: (?:la|le|l|sa|son))? (?:${w})\b(?: de la piece| de la boite)? de ${N}`), 1],
+      [new RegExp(String.raw`\b(?:${MOINS})\b(?: (?:la|le|l|sa|son))? (?:${w})\b(?: de la piece| de la boite)? de ${N}`), -1],
+      [new RegExp(String.raw`\bplus (?:${w})\b de ${N}`), 1],
+      [new RegExp(String.raw`\bmoins (?:${w})\b de ${N}`), -1],
+      [new RegExp(String.raw`${N} de plus (?:en |de |sur la |sur le )?(?:${w})\b`), 1],
+      [new RegExp(String.raw`${N} de moins (?:en |de |sur la |sur le )?(?:${w})\b`), -1],
+    ];
+    for (const [re, sens] of essais) {
+      const r = re.exec(t);
+      if (!r) continue;
+      const pas = Number(r[1]) * (r[2]?.startsWith('c') ? 10 : 1);
+      const avant = Number(valeurs[id] ?? m.defaut);
+      return { id, avant, apres: arrondi(avant + sens * pas) };
+    }
+  }
+  return null;
+}
+
 /** Les mots de la pièce et de ses mesures, pliés et coupés en mots. */
 function motsDeLaPiece(g: Gabarit): Set<string> {
   const mots = [...g.mots, g.nom, ...g.mesures.flatMap((m) => [m.nom, ...(estChoix(m) ? m.options.flatMap((o) => o.mots) : m.mots)])];
@@ -375,7 +481,13 @@ function lireMm(x: string): number {
  * `poserCarte` (« il faut 61 × 93,5 mm au moins », « il faut 31 mm au-dessus du fond, il y en a 25 »),
  * arrondies au millimètre au-dessus. Rien n'est rétréci. `null` : refus d'un autre genre.
  */
-export function agrandirPourTenir(g: Gabarit, valeurs: Valeurs, erreurs: readonly string[]): { valeurs: Valeurs; texte: string } | null {
+export function agrandirPourTenir(
+  g: Gabarit,
+  valeurs: Valeurs,
+  erreurs: readonly string[],
+  /** Boîte provisoire trop petite : les autres refus (prise qui sort de la paroi) en découlent, on les passe. */
+  ignorerAutres = false,
+): { valeurs: Valeurs; texte: string } | null {
   if (!['boite', 'boite_couvercle'].includes(g.id)) return null;
   const nouvelles: Valeurs = { ...valeurs };
   const L = Number(valeurs.longueur ?? 80);
@@ -397,11 +509,44 @@ export function agrandirPourTenir(g: Gabarit, valeurs: Valeurs, erreurs: readonl
       continue;
     }
     // Un autre refus (découpe, mesure hors bornes) : rien à proposer.
-    return null;
+    if (!ignorerAutres) return null;
   }
   if (!change) return null;
   const cotes = `${nombre(Number(nouvelles.longueur))} × ${nombre(Number(nouvelles.largeur))} × ${nombre(Number(nouvelles.hauteur ?? H))} mm`;
   return { valeurs: nouvelles, texte: cotes };
+}
+
+const COTES_BOITE = ['longueur', 'largeur', 'hauteur'] as const;
+
+/**
+ * « un boîtier pour mon Raspberry Pi 5 », sans toutes les cotes : au lieu de demander longueur,
+ * largeur et hauteur une à une (et de proposer des cotes où la carte ne tient pas), Jarvis propose
+ * la plus petite boîte qui la tient (cotes dites gardées) et attend « oui ». `null` : pas de carte,
+ * toutes les cotes dites, ou rien de sûr à proposer.
+ */
+function taillePourCarte(g: Gabarit, valeurs: Valeurs): AtelierDecision | null {
+  if (!['boite', 'boite_couvercle'].includes(g.id)) return null;
+  const carte = (JSON.parse(typeof valeurs.ajouts === 'string' ? valeurs.ajouts : '[]') as { genre?: string }[]).some((a) => a.genre === 'composant');
+  if (!carte || COTES_BOITE.every((id) => id in valeurs)) return null;
+  // Petites cotes provisoires pour ce qui n'a pas été dit : le refus dit ce qu'il faut au moins.
+  const essai: Valeurs = { ...valeurs };
+  for (const id of COTES_BOITE) if (!(id in essai)) essai[id] = 20;
+  let v = essai;
+  for (let i = 0; i < 3; i += 1) {
+    const p = fabriquer(g, v);
+    if (p.ok) break;
+    const plus = agrandirPourTenir(g, v, p.erreurs, true);
+    if (!plus) return null;
+    v = plus.valeurs;
+  }
+  if (!fabriquer(g, v).ok) return null;
+  const cotes = `${nombre(Number(v.longueur))} × ${nombre(Number(v.largeur))} × ${nombre(Number(v.hauteur))} mm`;
+  const avec = ajoutsAffiches(v).map((a) => a.valeur).join(', ');
+  return {
+    kind: 'dire',
+    texte: `${majuscule(g.nom)} avec ${avec} : je propose ${cotes}, la plus petite qui la tient. Dis « oui », ou donne-moi d'autres cotes.`,
+    etat: { etape: 'proposition', gabarit: g.id, valeurs: v, base: null },
+  };
 }
 
 /**
@@ -419,27 +564,42 @@ export function pourAtelier(text: string, messages: readonly { role: string; ate
 export function deciderAtelier(text: string, precedentDonne: AtelierEtat | null, contexte: ContexteAtelier = {}): AtelierDecision {
   const t = plier(text).replace(/^jarvis ,? ?/, '');
   const mesures = contexte.mesures ?? {};
-  let precedent = precedentDonne;
+  const precedent = precedentDonne;
+  // La même phrase ramenée à un ordre (« tu peux l'imprimer ? » → « imprime »), pour la pièce à l'écran.
+  const tn = normaliserOrdre(t);
 
   // D'autres cotes proposées (la carte ne tenait pas) : « oui » les prend, « non » garde la pièce
   // d'avant. Autre chose : la phrase est lue avec la pièce d'avant, la proposition est oubliée.
   if (precedent?.etape === 'proposition') {
-    const g = gabarit(precedent.gabarit);
-    if (g && OUI.test(t) && t.split(' ').length <= 6) {
+    const proposition = precedent;
+    const g = gabarit(proposition.gabarit);
+    if (g && !REFUS.test(t) && (ACCORD.test(t) || FAIRE_TENIR.test(t))) {
+      // « oui mais 100 de large » : les cotes nommées dans la même phrase comptent aussi.
+      const dites = /\d/.test(t) ? nommees(lireMesures(text, g).valeurs, t, g) : {};
       return {
         kind: 'fabriquer',
         gabarit: g,
-        valeurs: precedent.valeurs,
-        ...(precedent.base ? { base: precedent.base } : {}),
-        ...(precedent.changement ? { changement: precedent.changement } : {}),
+        valeurs: { ...proposition.valeurs, ...dites },
+        ...(proposition.base ? { base: proposition.base } : {}),
+        ...(proposition.changement ? { changement: proposition.changement } : {}),
       };
     }
-    if (ANNULER.test(t) || /^non\b/.test(t)) {
-      return precedent.base
-        ? { kind: 'dire', texte: `D'accord, je n'y touche pas. La version ${precedent.base.versionChoisie} reste à l'écran.`, etat: precedent.base }
-        : { kind: 'dire', texte: "D'accord, je laisse tomber cette pièce." };
+    if (REFUS.test(t)) {
+      const suite = ' Redis-moi la pièce comme tu la veux : d’autres cotes, ou les prises d’un autre côté.';
+      return proposition.base
+        ? { kind: 'dire', texte: `D'accord, je n'y touche pas. La version ${proposition.base.versionChoisie} reste à l'écran.${suite}`, etat: proposition.base }
+        : { kind: 'dire', texte: `D'accord, je ne la fais pas comme ça.${suite}` };
     }
-    precedent = precedent.base;
+    // Autre chose : la phrase est lue avec la pièce d'avant. Si elle parle encore de la pièce sans
+    // qu'aucune règle ne la comprenne, la proposition est redite plutôt que partir au cerveau.
+    const suite = deciderAtelier(text, proposition.base, contexte);
+    if (suite.kind !== 'rien' || !(VOCABULAIRE_PIECE.test(t) || /\b(?:imprim\w*|3d)\b/.test(t))) return suite;
+    const v = proposition.valeurs;
+    return {
+      kind: 'dire',
+      texte: `Je n'ai pas compris. Pour la ${g?.nom ?? 'pièce'} de ${nombre(Number(v.longueur))} × ${nombre(Number(v.largeur))} × ${nombre(Number(v.hauteur))} mm, dis « oui » ; sinon redis-moi la pièce autrement.`,
+      etat: proposition,
+    };
   }
 
   // Une mesure de composant demandée : un nombre est la réponse, « laisse tomber » arrête.
@@ -460,14 +620,14 @@ export function deciderAtelier(text: string, precedentDonne: AtelierEtat | null,
 
   // Une pièce à l'écran : « imprime-la », « imprime la boîte » passe avant une nouvelle demande.
   if (precedent?.etape === 'piece') {
-    const imprimer = numeroAImprimer(t, precedent);
+    const imprimer = numeroAImprimer(tn, precedent);
     if (imprimer !== null) {
       if (!precedent.versions.some((v) => v.numero === imprimer)) {
         return { kind: 'dire', texte: `Il n'y a pas de version ${imprimer}. Les versions sont : ${precedent.versions.map((v) => v.numero).join(', ')}.` };
       }
       return { kind: 'imprimer', etat: precedent, numero: imprimer };
     }
-    const enFile = numeroEnFile(t, precedent);
+    const enFile = numeroEnFile(tn, precedent);
     if (enFile !== null) {
       if (!precedent.versions.some((v) => v.numero === enFile)) {
         return { kind: 'dire', texte: `Il n'y a pas de version ${enFile}. Les versions sont : ${precedent.versions.map((v) => v.numero).join(', ')}.` };
@@ -494,6 +654,8 @@ export function deciderAtelier(text: string, precedentDonne: AtelierEtat | null,
     if (nouvelle.erreurs?.length) {
       return { kind: 'dire', texte: `${nouvelle.erreurs.join(' ')} Redis-moi la pièce sans cette découpe, ou ailleurs.` };
     }
+    const pourCarte = taillePourCarte(nouvelle.gabarit, nouvelle.valeurs);
+    if (pourCarte) return pourCarte;
     return demanderOuFabriquer(nouvelle.gabarit, nouvelle.valeurs, `${majuscule(nouvelle.gabarit.nom)}, d'accord. `);
   }
 
@@ -520,7 +682,7 @@ export function deciderAtelier(text: string, precedentDonne: AtelierEtat | null,
   }
 
   // Une pièce est à l'écran.
-  const choisir = CHOISIR.exec(t);
+  const choisir = CHOISIR.exec(tn);
   if (choisir) {
     const numero = Number(choisir[1]);
     if (!precedent.versions.some((v) => v.numero === numero)) {
@@ -528,12 +690,18 @@ export function deciderAtelier(text: string, precedentDonne: AtelierEtat | null,
     }
     return { kind: 'choisir', etat: precedent, numero };
   }
+  // « remets la version d'avant », « annule le dernier changement » : la version précédente.
+  if (VERSION_AVANT.test(tn)) {
+    const avant = precedent.versions.filter((v) => v.numero < precedent.versionChoisie).at(-1);
+    if (!avant) return { kind: 'dire', texte: `La version ${precedent.versionChoisie} est la première : il n'y a rien avant.`, etat: precedent };
+    return { kind: 'choisir', etat: precedent, numero: avant.numero };
+  }
 
   const actuelle = precedent.versions.find((v) => v.numero === precedent.versionChoisie) ?? precedent.versions[precedent.versions.length - 1];
   if (!actuelle) return { kind: 'rien' };
   // Une question (« quelle fenêtre est active ? ») ne change pas la pièce : elle suit son chemin.
   // Un ordre pour un autre domaine (« ferme la fenêtre », « mets l'écran en veille ») non plus.
-  if (QUESTION.test(t) || VERBE_AUTRE.test(t) || SUJET_AUTRE.test(t)) return { kind: 'rien' };
+  if (QUESTION.test(tn) || VERBE_AUTRE.test(tn) || SUJET_AUTRE.test(tn)) return { kind: 'rien' };
   let valeurs: Valeurs = { ...actuelle.valeurs };
   // La version à l'écran peut être d'un autre modèle que la pièce (boîte devenue boîte à couvercle).
   g = (actuelle.gabarit ? gabarit(actuelle.gabarit) : undefined) ?? g;
@@ -543,17 +711,21 @@ export function deciderAtelier(text: string, precedentDonne: AtelierEtat | null,
   const changementsDecoupes: string[] = [];
   // « ajoute un couvercle (qui s'emboîte) » sur une boîte : elle devient une boîte à couvercle, aux
   // mêmes cotes, avec ses trous et ses ajouts. L'emboîtement, s'il est dit, est lu ensuite.
-  if (g.id === 'boite' && COUVERCLE_AJOUTE.test(t)) {
+  if (g.id === 'boite' && couvercleDemande(tn)) {
     const avecCouvercle = gabarit('boite_couvercle');
     if (avecCouvercle) {
       g = avecCouvercle;
       changementsDecoupes.push('Couvercle ajouté');
     }
   }
-  let resteTexte = text;
+  let resteTexte = tn;
   const court = t.split(' ').length <= 25;
+  // « rends-la plus grande », « agrandis-la » sans dire dans quel sens : on demande.
+  if (PLUS_GRANDE.test(tn) && !lireDelta(tn, g, valeurs) && !/\b(?:longueur|largeur|hauteur|long|large|haut|profond)\w*\b/.test(tn)) {
+    return { kind: 'dire', texte: 'Plus longue, plus large ou plus haute ? Dis-moi aussi de combien, par exemple « 10 mm plus haute ».', etat: precedent };
+  }
   // « fais passer le câble par le côté gauche » = un passage de câble sur ce côté.
-  const tPiece = t.replace(/^(?:fais|fait|faire) (?:passer|sortir) (?:le |les |un |des )?(cables?)\b (?:par|sur|a|au|vers|de) /, 'ajoute un passage de $1 sur ');
+  const tPiece = tn.replace(/^(?:fais|fait|faire) (?:passer|sortir) (?:le |les |un |des )?(cables?)\b (?:par|sur|a|au|vers|de) /, 'ajoute un passage de $1 sur ');
   // Matière ajoutée d'abord : « ajoute quatre bossages », « le bossage plus haut », « fais que le
   // couvercle s'emboîte ». Les découpes sont lues dans ce qui reste.
   const matiere = court ? lireAjouts(tPiece) : { ops: [], reste: tPiece };
@@ -585,27 +757,29 @@ export function deciderAtelier(text: string, precedentDonne: AtelierEtat | null,
   // prendre « mets le minuteur à 10 minutes » pour une mesure.
   const tReste = plier(resteTexte).replace(/^jarvis ,? ?/, '');
   const mots = tReste.split(' ').filter((m) => m !== ',').length;
-  const lues = mots <= 10 ? lireMesures(resteTexte, g).valeurs : {};
+  // « augmente la hauteur de 10 mm » : 10 de plus, pas une hauteur de 10.
+  const delta = lu.ops.length || matiere.ops.length ? null : lireDelta(tReste, g, valeurs);
+  const lues = delta ? { [delta.id]: delta.apres } : mots <= 10 ? lireMesures(resteTexte, g).valeurs : {};
   // Un nombre sans le nom de sa mesure ne vaut que si la phrase ne parle que de la pièce :
   // « mets le volume à 90 » ne change pas la longueur, « fais-la en 100 par 60 » oui.
-  const dites = parleDAutreChose(tReste, g) ? nommees(lues, tReste, g) : lues;
+  const dites = delta ? lues : parleDAutreChose(tReste, g) ? nommees(lues, tReste, g) : lues;
   Object.assign(valeurs, dites);
 
   // « Le trou plus haut » parle de la découpe, pas de la hauteur de la pièce.
-  for (const regle of lu.ops.length || matiere.ops.length ? [] : RELATIFS) {
-    if (!regle.mots.test(t)) continue;
+  for (const regle of lu.ops.length || matiere.ops.length || delta ? [] : RELATIFS) {
+    if (!regle.mots.test(tn)) continue;
     const id = regle.ids.find((x) => g.mesures.some((m) => m.id === x && !estChoix(m)) && !(x in dites));
     if (!id) continue;
     const mesure = g.mesures.find((m) => m.id === id) as MesureNombre;
     const courante = Number(valeurs[id] ?? mesure.defaut);
-    const plus = !PLUS_PETIT.test(t);
+    const plus = !PLUS_PETIT.test(tn);
     valeurs[id] = relatif(mesure, courante, plus);
   }
 
   const changement = [changementDe(g, actuelle.valeurs, valeurs), ...changementsDecoupes].filter(Boolean).join(', ');
   if (!changement) {
     // Un ordre sur la pièce que l'atelier ne sait pas lire : il le dit, la pièce reste à l'écran.
-    if (ordreSurPiece(t)) {
+    if (ordreSurPiece(tn)) {
       return {
         kind: 'dire',
         texte: `Je n'ai pas su faire ce changement sur la pièce. Sur la pièce à l'écran, je sais : changer une mesure (« hauteur 50 », « plus haut »), percer (« un trou de 8 à l'arrière », « une fenêtre sur le dessus », « un passage de câble à gauche ») et ajouter des plots pour une carte, des bossages, une nervure ou un rebord. La version ${actuelle.numero} reste à l'écran.`,

@@ -125,7 +125,7 @@ describe("routage vers l'atelier : changement de la pièce à l'écran", () => {
     });
   });
 
-  it.each(['Ajoute des aérations sur les côtés', 'Agrandis-la pour que le Raspberry Pi rentre'])(
+  it.each(['Arrondis les coins de la boîte', 'Ajoute une poignée sur le dessus'])(
     '« %s » : changement que l’atelier ne sait pas faire, il le dit et garde la pièce',
     (phrase) => {
       const d = deciderAtelier(phrase, piece, {});
@@ -158,7 +158,7 @@ describe('les trois phrases du téléphone (24 novembre au soir)', () => {
     expect(fabriquer(d1.gabarit, plus!.valeurs, V).ok).toBe(true);
 
     const proposition: AtelierEtat = { etape: 'proposition', gabarit: 'boite', valeurs: plus!.valeurs, base: null };
-    expect(deciderAtelier('non', proposition, {})).toMatchObject({ kind: 'dire', texte: "D'accord, je laisse tomber cette pièce." });
+    expect(deciderAtelier('non', proposition, {})).toMatchObject({ kind: 'dire', texte: expect.stringMatching(/^D'accord, je ne la fais pas comme ça\./) });
     const oui = deciderAtelier('oui', proposition, {});
     expect(oui).toMatchObject({ kind: 'fabriquer', valeurs: { largeur: 94 } });
     if (oui.kind !== 'fabriquer') throw new Error(oui.kind);

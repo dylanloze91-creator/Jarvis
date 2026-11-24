@@ -441,7 +441,7 @@ const MOTS_GENRES: [GenreAjout, RegExp][] = [
   ['plots', /\b(?:plots?|picots?)\b/],
   ['nervure', /\b(?:nervures?|renforts?)\b/],
   ['rebord', /\brebord (?:interieur|a l interieur|dedans|qui porte|qui tient|pour (?:le |un |poser |porter |tenir )?(?:le |un )?couvercle|porteur)\b|\bcouvercle (?:qui )?(?:pose|repose|posee|se pose) sur un rebord\b/],
-  ['emboitement', /\b(?:s emboite|s emboitent|s emboiter|emboite|emboitement|emboiter|emboitable)\b/],
+  ['emboitement', /\b(?:s emboite|s emboitent|s emboiter|emboite|emboitement|emboiter|emboitable|se clipse|se clippe|clipse|clippe|clipsable|s encastre|encastrable)\b/],
 ];
 const QUANTITES: Record<string, number> = { un: 1, une: 1, deux: 2, trois: 3, quatre: 4, cinq: 5, six: 6, huit: 8 };
 const RETRAIT = /\b(?:enleve|enlever|retire|retirer|supprime|supprimer|vire|virer|sans|pas de|plus de|efface)\b/;
@@ -524,9 +524,11 @@ const CARTES_CONNUES = 'le Raspberry Pi 5, et après mesure au pied à coulisse 
 
 /** « ports vers l'arrière », « prises sur le côté droit », « USB à gauche » : la paroi des prises. */
 export function lirePorts(t: string): Paroi | undefined {
-  const m = /\b(?:ports?|prises?|connecteurs?|usb)\b(?: [a-z0-9]+){0,4}? (?:vers l |a l |sur l |de l |cote |du cote |sur le cote |vers la |a |sur la )?(arriere|avant|gauche|droite?)\b/.exec(t);
+  const m = /\b(?:ports?|prises?|connecteurs?|usb)\b(?: [a-z0-9]+){0,4}? (?:vers l |a l |sur l |de l |cote |du cote |sur le cote |vers la |a |sur la |sur |vers |au )?(arriere|avant|gauche|droite?|derriere|devant|fond)\b/.exec(t);
   if (!m) return undefined;
-  return m[1] === 'droit' ? 'droite' : (m[1] as Paroi);
+  // « ports derrière » = à l'arrière, « devant » = à l'avant, « au fond » = à l'arrière.
+  const mot = m[1]!;
+  return mot === 'droit' ? 'droite' : mot === 'derriere' || mot === 'fond' ? 'arriere' : mot === 'devant' ? 'avant' : (mot as Paroi);
 }
 
 function lireComposant(t: string, id: string): OpAjout {
@@ -562,7 +564,7 @@ export function lireAjouts(t: string): { ops: OpAjout[]; reste: string } {
     // le nom du composant (et son « 5 »), les prises et les plots partent.
     const reste = texte
       .replace(new RegExp(nomme.mots.source, 'g'), ' ')
-      .replace(/\b(?:ports?|prises?|connecteurs?|usb)\b(?: [a-z0-9]+){0,4}? (?:vers l |a l |sur l |de l |cote |du cote |sur le cote |vers la |a |sur la )?(?:arriere|avant|gauche|droite?)\b/, ' ')
+      .replace(/\b(?:ports?|prises?|connecteurs?|usb)\b(?: [a-z0-9]+){0,4}? (?:vers l |a l |sur l |de l |cote |du cote |sur le cote |vers la |a |sur la |sur |vers |au )?(?:arriere|avant|gauche|droite?|derriere|devant|fond)\b/, ' ')
       .replace(/\b(?:des |les |de |4 |quatre )?plots?\b/, ' ');
     return { ops: [lireComposant(texte, nomme.id)], reste: reste.replace(/\s+/g, ' ').trim() };
   }
