@@ -103,6 +103,6 @@ Une seule carte (RTX 2060 6 Go) : un seul agent à la fois lance le banc (`npm r
 
 | État | Par qui | Pour quoi | Depuis |
 | --- | --- | --- | --- |
-| libre | — | — | — |
+| occupée | Claude Code (agent Atelier) | Jarvis Test de développement (dossier à part, sans imprimante ; l'installé n'est pas touché) et Ollama : rejouer les phrases de pièce de l'utilisateur (routage vers l'atelier), environ 20 min ; l'agent Yeux passe avant s'il en a besoin | 2026-11-24 |
 
 Pour réserver : passer l'état à `occupée`, remplir les colonnes, commiter et pousser **avant** de lancer. Pour libérer : remettre `libre` et `—`, commiter et pousser.
