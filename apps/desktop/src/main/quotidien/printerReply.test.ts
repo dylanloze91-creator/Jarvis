@@ -89,4 +89,21 @@ describe('imprimante éteinte (synthetique-test)', () => {
     const saved = await store.get(conversation.id);
     expect(saved?.messages.at(-1)?.content).toBe(PRINTER_CANCEL_SILENT);
   });
+
+  it('téléphone, printer.phoneStart faux : ni lancement ni reprise, sans carte ; l’état et l’annulation restent', async () => {
+    const fake = new FakeMoonraker();
+    const open = () => new core.MoonrakerClient('http://printer.local:7125', '', fake.fetch);
+    let cartes = 0;
+    const input = (text: string) => ({ text, place: 'telephone' as const, confirm: async () => (cartes += 1, true) });
+    const lancer = "lance l'impression de synthetique-test.gcode";
+    expect(core.printerIntent(lancer)?.kind).toBe('start');
+    expect(await runPrinterReply(input(lancer), open, () => false)).toBe(core.PHONE_CANNOT_START);
+    expect(await runPrinterReply(input("reprends l'impression"), open, () => false)).toBe(core.PHONE_CANNOT_START);
+    expect(cartes).toBe(0);
+    expect(fake.calls.filter((call) => /print\/(start|resume)/.test(call))).toEqual([]);
+    expect(await runPrinterReply(input("annule l'impression"), open, () => false)).toBe('Impression annulée.');
+    // Réglage absent : comme avant, la carte est posée.
+    await runPrinterReply(input(lancer), open);
+    expect(cartes).toBe(1);
+  });
 });

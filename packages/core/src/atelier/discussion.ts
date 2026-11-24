@@ -16,6 +16,11 @@ import { comprendre, lireMesures, lireReponse, plier, prochaineQuestion } from '
 /** Une version rendue de la pièce. Les fichiers sont des noms simples, dans le dossier de la pièce. */
 export interface AtelierVersionInfo {
   numero: number;
+  /**
+   * Modèle de cette version, s'il diffère de celui de la pièce (une boîte devenue boîte à couvercle).
+   * Absent : celui de la pièce.
+   */
+  gabarit?: string;
   valeurs: Valeurs;
   /** « Boîte de 80 × 50 × 30 mm. » */
   fiche: string;
@@ -24,7 +29,10 @@ export interface AtelierVersionInfo {
   taille: [number, number, number];
   /** `v2.stl` ; `null` si OpenSCAD n'a pas pu la rendre. */
   stl: string | null;
+  /** Vue de trois quarts (`v2.png`). */
   image?: string;
+  /** Vue de dessus (`v2-dessus.png`), pour le téléphone. */
+  imageDessus?: string;
   /** « Hauteur : 30 → 38 mm. » */
   changement?: string;
   /** Lus dans le fichier tranché, une fois tranchée. */
@@ -39,6 +47,17 @@ export type AtelierEtat =
    * mesure gardée, avec la pièce qui était à l'écran.
    */
   | { etape: 'mesure'; composant: string; champ: string; reprise: { texte: string; piece: Extract<AtelierEtat, { etape: 'piece' }> | null } }
+  /**
+   * La pièce demandée ne tenait pas (une carte trop grande pour la boîte) : Jarvis propose d'autres
+   * cotes et attend « oui ». `base` : la pièce qui était à l'écran, s'il y en avait une.
+   */
+  | {
+      etape: 'proposition';
+      gabarit: string;
+      valeurs: Valeurs;
+      base: Extract<AtelierEtat, { etape: 'piece' }> | null;
+      changement?: string;
+    }
   | {
       etape: 'piece';
       gabarit: string;
@@ -148,6 +167,8 @@ const MOTS_NEUTRES = new Set(
     ' ',
   ),
 );
+/** « ajoute un couvercle », « mets-lui un couvercle qui s'emboîte » (sur une boîte à l'écran). */
+const COUVERCLE_AJOUTE = /^(?:ajoute|ajouter|rajoute|mets|met|mettre|fais|fait)\b.*\bcouvercle\b/;
 const ANNULER = /^(?:annule|laisse tomber|oublie|stop|arrete|non merci|pas la peine)\b/;
 const OUI = /^(?:oui|ok|d accord|ca me va|vas y|va pour ca|parfait|c est bon|ca marche)\b/;
 
@@ -345,6 +366,44 @@ function ordreSurPiece(t: string): boolean {
   return ORDRE.test(t) && (PRONOM_PIECE.test(t) || VOCABULAIRE_PIECE.test(t));
 }
 
+function lireMm(x: string): number {
+  return Number(x.replace(',', '.'));
+}
+
+/**
+ * Une carte ne tenait pas dans la boîte : les cotes qui la feraient tenir, prises dans le refus de
+ * `poserCarte` (« il faut 61 × 93,5 mm au moins », « il faut 31 mm au-dessus du fond, il y en a 25 »),
+ * arrondies au millimètre au-dessus. Rien n'est rétréci. `null` : refus d'un autre genre.
+ */
+export function agrandirPourTenir(g: Gabarit, valeurs: Valeurs, erreurs: readonly string[]): { valeurs: Valeurs; texte: string } | null {
+  if (!['boite', 'boite_couvercle'].includes(g.id)) return null;
+  const nouvelles: Valeurs = { ...valeurs };
+  const L = Number(valeurs.longueur ?? 80);
+  const W = Number(valeurs.largeur ?? 50);
+  const H = Number(valeurs.hauteur ?? 30);
+  let change = false;
+  for (const erreur of erreurs) {
+    const fond = /ne tient pas dans le fond : il faut ([\d,.]+) × ([\d,.]+) mm au moins/.exec(erreur);
+    if (fond) {
+      nouvelles.longueur = Math.max(L, Math.ceil(lireMm(fond[1]!)));
+      nouvelles.largeur = Math.max(W, Math.ceil(lireMm(fond[2]!)));
+      change = true;
+      continue;
+    }
+    const haut = /trop basse\. Il faut ([\d,.]+) mm au-dessus du fond .*, il y en a ([\d,.]+)\./.exec(erreur);
+    if (haut) {
+      nouvelles.hauteur = Math.max(H, Math.ceil(H + lireMm(haut[1]!) - lireMm(haut[2]!)));
+      change = true;
+      continue;
+    }
+    // Un autre refus (découpe, mesure hors bornes) : rien à proposer.
+    return null;
+  }
+  if (!change) return null;
+  const cotes = `${nombre(Number(nouvelles.longueur))} × ${nombre(Number(nouvelles.largeur))} × ${nombre(Number(nouvelles.hauteur ?? H))} mm`;
+  return { valeurs: nouvelles, texte: cotes };
+}
+
 /**
  * La phrase est-elle pour l'atelier, vu la discussion ? Sert à la faire passer avant les autres
  * règles sans modèle (le mode direct d'Imager prendrait « dessine-moi un boîtier »).
@@ -357,9 +416,31 @@ export function pourAtelier(text: string, messages: readonly { role: string; ate
  * Que faire de cette phrase, sachant le dernier état de l'atelier dans la discussion ?
  * `rien` : la phrase n'est pas pour l'atelier, le tour suit son chemin habituel.
  */
-export function deciderAtelier(text: string, precedent: AtelierEtat | null, contexte: ContexteAtelier = {}): AtelierDecision {
+export function deciderAtelier(text: string, precedentDonne: AtelierEtat | null, contexte: ContexteAtelier = {}): AtelierDecision {
   const t = plier(text).replace(/^jarvis ,? ?/, '');
   const mesures = contexte.mesures ?? {};
+  let precedent = precedentDonne;
+
+  // D'autres cotes proposées (la carte ne tenait pas) : « oui » les prend, « non » garde la pièce
+  // d'avant. Autre chose : la phrase est lue avec la pièce d'avant, la proposition est oubliée.
+  if (precedent?.etape === 'proposition') {
+    const g = gabarit(precedent.gabarit);
+    if (g && OUI.test(t) && t.split(' ').length <= 6) {
+      return {
+        kind: 'fabriquer',
+        gabarit: g,
+        valeurs: precedent.valeurs,
+        ...(precedent.base ? { base: precedent.base } : {}),
+        ...(precedent.changement ? { changement: precedent.changement } : {}),
+      };
+    }
+    if (ANNULER.test(t) || /^non\b/.test(t)) {
+      return precedent.base
+        ? { kind: 'dire', texte: `D'accord, je n'y touche pas. La version ${precedent.base.versionChoisie} reste à l'écran.`, etat: precedent.base }
+        : { kind: 'dire', texte: "D'accord, je laisse tomber cette pièce." };
+    }
+    precedent = precedent.base;
+  }
 
   // Une mesure de composant demandée : un nombre est la réponse, « laisse tomber » arrête.
   if (precedent?.etape === 'mesure') {
@@ -417,8 +498,9 @@ export function deciderAtelier(text: string, precedent: AtelierEtat | null, cont
   }
 
   if (!precedent || precedent.etape === 'mesure') return { kind: 'rien' };
-  const g = gabarit(precedent.gabarit);
-  if (!g) return { kind: 'rien' };
+  const g0 = gabarit(precedent.gabarit);
+  if (!g0) return { kind: 'rien' };
+  let g: Gabarit = g0;
 
   if (precedent.etape === 'question') {
     if (ANNULER.test(t)) return { kind: 'dire', texte: "D'accord, je laisse tomber cette pièce." };
@@ -453,10 +535,21 @@ export function deciderAtelier(text: string, precedent: AtelierEtat | null, cont
   // Un ordre pour un autre domaine (« ferme la fenêtre », « mets l'écran en veille ») non plus.
   if (QUESTION.test(t) || VERBE_AUTRE.test(t) || SUJET_AUTRE.test(t)) return { kind: 'rien' };
   let valeurs: Valeurs = { ...actuelle.valeurs };
+  // La version à l'écran peut être d'un autre modèle que la pièce (boîte devenue boîte à couvercle).
+  g = (actuelle.gabarit ? gabarit(actuelle.gabarit) : undefined) ?? g;
 
   // Découpes : « ajoute un trou de 8 à l'arrière », « enlève l'encoche », « le trou plus gros ».
   // Dans une phrase de 25 mots au plus (« j'ai un trou dans mon emploi du temps » reste au chat).
   const changementsDecoupes: string[] = [];
+  // « ajoute un couvercle (qui s'emboîte) » sur une boîte : elle devient une boîte à couvercle, aux
+  // mêmes cotes, avec ses trous et ses ajouts. L'emboîtement, s'il est dit, est lu ensuite.
+  if (g.id === 'boite' && COUVERCLE_AJOUTE.test(t)) {
+    const avecCouvercle = gabarit('boite_couvercle');
+    if (avecCouvercle) {
+      g = avecCouvercle;
+      changementsDecoupes.push('Couvercle ajouté');
+    }
+  }
   let resteTexte = text;
   const court = t.split(' ').length <= 25;
   // « fais passer le câble par le côté gauche » = un passage de câble sur ce côté.

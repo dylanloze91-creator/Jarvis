@@ -556,6 +556,7 @@ export class ChatSession {
                 {
                   requestConfirmation: (request) => this.askUser(sender, emit, request, controller.signal),
                   fromSpeaker: input.place?.kind === 'enceinte',
+                  fromPhone: input.place?.kind === 'telephone',
                   signal: controller.signal,
                 },
               );
@@ -759,6 +760,7 @@ export class ChatSession {
         debug: settings.debugLogging,
         spotifyVoiceSessionId: this.spotifyVoiceSessionId,
         fromSpeaker: input.place?.kind === 'enceinte',
+        fromPhone: input.place?.kind === 'telephone',
         requestConfirmation: (request) => this.askUser(sender, emit, request, controller.signal),
       });
       if (route.expressTool) {
@@ -795,6 +797,7 @@ export class ChatSession {
         debug: settings.debugLogging,
         spotifyVoiceSessionId: this.spotifyVoiceSessionId,
         fromSpeaker: input.place?.kind === 'enceinte',
+        fromPhone: input.place?.kind === 'telephone',
         requestConfirmation: (request) => this.askUser(sender, emit, request, controller.signal),
       });
     }

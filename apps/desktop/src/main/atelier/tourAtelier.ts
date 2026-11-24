@@ -18,6 +18,7 @@ import { existsSync } from 'node:fs';
 import { mkdir, readFile, readdir, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
+  agrandirPourTenir,
   ajouterMesure,
   controlerImpression,
   ecrireFichierMesures,
@@ -34,6 +35,7 @@ import {
   phraseConfirmationFile,
   phraseConfirmationSuivante,
   phraseTempsFilament,
+  PHONE_CANNOT_START,
   SPEAKER_CANNOT_START,
   type AtelierEtat,
   type AtelierVersionInfo,
@@ -67,6 +69,11 @@ export interface ProgrammesAtelier {
   openscad(): string | null;
   rendreStl(openscad: string, scad: string, stl: string): Promise<{ ok: boolean; message: string }>;
   rendreImage(openscad: string, scad: string, png: string): Promise<{ ok: boolean }>;
+  /**
+   * Les deux vues lues dans le STL (trois quarts, dessus) : noms des images faites, ou `null`.
+   * Absent : l'ancienne image de trois quarts par `rendreImage`.
+   */
+  rendreVues?(openscad: string, dossier: string, numero: number): Promise<{ troisQuarts: string | null; dessus: string | null }>;
   /** Tranche le STL ; `ok: false` avec une phrase si OrcaSlicer manque ou échoue. */
   trancher(stl: string, sortie: string): Promise<{ ok: boolean; message: string; gcode: string | null; infos: InfosGcode | null }>;
 }
@@ -86,6 +93,11 @@ export interface AtelierDeps {
    * dossier de l'atelier (`C:\dev\jarvis-data\atelier\composants-mesures.json`).
    */
   mesures?: { lire(): Promise<MesuresComposants>; ecrire(m: MesuresComposants): Promise<void> };
+  /**
+   * Réglage `printer.phoneStart` : faux = depuis le téléphone, ni « imprime-la » ni « lance la
+   * suivante » ; « mets-la dans la file » reste permis. Absent : oui, comme avant.
+   */
+  telephonePeutLancer?: () => boolean;
 }
 
 /** Fichier des mesures de composants, dans le dossier de l'atelier. */
@@ -175,6 +187,11 @@ function avecVersion(etat: EtatPiece, version: AtelierVersionInfo, choisie = ver
   };
 }
 
+/** Lancement refusé depuis le téléphone quand le réglage le coupe. */
+function telephoneBloque(input: AtelierEntree, deps: AtelierDeps): boolean {
+  return input.place === 'telephone' && deps.telephonePeutLancer?.() === false;
+}
+
 /** Un tour d'atelier. `null` : la phrase n'est pas pour l'atelier, le tour suit son chemin. */
 export async function tourAtelier(input: AtelierEntree, deps: AtelierDeps): Promise<AtelierSortie | null> {
   const precedent = dernierAtelier(input.messages);
@@ -209,6 +226,20 @@ export async function tourAtelier(input: AtelierEntree, deps: AtelierDeps): Prom
       const piece = fabriquer(decision.gabarit, decision.valeurs, volume);
       if (!piece.ok) {
         const reste = decision.base ? ` La version ${decision.base.versionChoisie} reste à l'écran.` : '';
+        // Une carte qui ne tient pas : Jarvis propose des cotes qui marchent (vérifiées), et attend « oui ».
+        const plus = agrandirPourTenir(decision.gabarit, decision.valeurs, piece.erreurs);
+        if (plus && fabriquer(decision.gabarit, plus.valeurs, volume).ok) {
+          return {
+            texte: `${piece.erreurs.join(' ')} Je l'agrandis à ${plus.texte} ? Dis « oui », ou redis-moi la pièce autrement.${reste}`,
+            etat: {
+              etape: 'proposition',
+              gabarit: decision.gabarit.id,
+              valeurs: plus.valeurs,
+              base: decision.base ?? null,
+              ...(decision.changement ? { changement: decision.changement } : {}),
+            },
+          };
+        }
         return { texte: `${piece.erreurs.join(' ')}${reste}` };
       }
       const openscad = deps.programmes.openscad();
@@ -230,7 +261,16 @@ export async function tourAtelier(input: AtelierEntree, deps: AtelierDeps): Prom
       const controle = controlerStl(maillage, piece.taille);
       // Imprimable sans support, posée telle quelle ? (surplombs de plus de 45°, ponts de plus de 25 mm)
       const impression = controlerImpression(maillage, decision.gabarit.nom);
-      const image = (await deps.programmes.rendreImage(openscad, scad, join(chemin, `v${numero}.png`))).ok ? `v${numero}.png` : undefined;
+      input.progress?.('OpenSCAD fait les images de la pièce…');
+      const vues = deps.programmes.rendreVues
+        ? await deps.programmes.rendreVues(openscad, chemin, numero).catch(() => ({ troisQuarts: null, dessus: null }))
+        : null;
+      const image = vues
+        ? (vues.troisQuarts ?? undefined)
+        : (await deps.programmes.rendreImage(openscad, scad, join(chemin, `v${numero}.png`))).ok
+          ? `v${numero}.png`
+          : undefined;
+      const imageDessus = vues?.dessus ?? undefined;
 
       const version: AtelierVersionInfo = {
         numero,
@@ -240,10 +280,22 @@ export async function tourAtelier(input: AtelierEntree, deps: AtelierDeps): Prom
         taille: piece.taille,
         stl: `v${numero}.stl`,
         ...(image ? { image } : {}),
+        ...(imageDessus ? { imageDessus } : {}),
         ...(decision.changement ? { changement: decision.changement } : {}),
       };
-      const etat: EtatPiece = decision.base
-        ? avecVersion(decision.base, version)
+      // Le modèle a changé (boîte → boîte à couvercle) : la pièce prend le nouveau, les anciennes
+      // versions gardent le leur.
+      const base =
+        decision.base && decision.base.gabarit !== decision.gabarit.id
+          ? {
+              ...decision.base,
+              gabarit: decision.gabarit.id,
+              nom: decision.gabarit.nom,
+              versions: decision.base.versions.map((v) => (v.gabarit ? v : { ...v, gabarit: decision.base!.gabarit })),
+            }
+          : decision.base;
+      const etat: EtatPiece = base
+        ? avecVersion(base, version)
         : {
             etape: 'piece',
             gabarit: decision.gabarit.id,
@@ -269,6 +321,7 @@ export async function tourAtelier(input: AtelierEntree, deps: AtelierDeps): Prom
     case 'file':
     case 'imprimer': {
       if (input.place === 'enceinte') return { texte: SPEAKER_CANNOT_START };
+      if (decision.kind === 'imprimer' && telephoneBloque(input, deps)) return { texte: PHONE_CANNOT_START, etat: decision.etat };
       const { etat, numero } = decision;
       const version = etat.versions.find((v) => v.numero === numero)!;
       if (!version.stl) return { texte: `La version ${numero} n'a pas de fichier de pièce.` };
@@ -404,6 +457,7 @@ async function mettreEnFile(
 /** « le plateau est vide, lance la suivante » : la première pièce de la file, après une carte. */
 async function lancerSuivante(input: AtelierEntree, deps: AtelierDeps): Promise<AtelierSortie> {
   if (input.place === 'enceinte') return { texte: SPEAKER_CANNOT_START };
+  if (telephoneBloque(input, deps)) return { texte: PHONE_CANNOT_START };
   const imprimante = deps.imprimante();
   if (!imprimante) return { texte: "L'imprimante n'est pas réglée dans Jarvis (Réglages → Services → Imprimante) : je ne lance rien." };
   let file: QueueStatus;

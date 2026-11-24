@@ -47,6 +47,8 @@ export interface ToolContext {
   spotifyVoiceSessionId?: string;
   /** Vrai quand le tour vient d'une enceinte. Un lancement ou un effacement peut être refusé. */
   fromSpeaker?: boolean;
+  /** Vrai quand le tour vient du téléphone (réglage `printer.phoneStart`). */
+  fromPhone?: boolean;
   /** Horloge du tour, pour l'échéance de la question Spotify. Défaut : l'heure du PC. */
   spotifyNowMs?: number;
   /**

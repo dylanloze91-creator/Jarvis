@@ -67,6 +67,27 @@ export async function rendreStl(openscad: string, scad: string, stl: string): Pr
   return { ok: true, message: 'Pièce dessinée.', detail };
 }
 
+/**
+ * Deux images de la pièce déjà rendue, lues dans son STL (rapide : aucun calcul de formes) :
+ * `v<N>.png` de trois quarts et `v<N>-dessus.png` vue de dessus, un peu inclinée. Le petit fichier
+ * `v<N>-vues.scad` n'importe que le STL voisin, par un nom simple.
+ */
+export async function rendreVues(openscad: string, dossier: string, numero: number): Promise<{ troisQuarts: string | null; dessus: string | null }> {
+  const scad = join(dossier, `v${numero}-vues.scad`);
+  await writeFile(scad, `import("v${numero}.stl", convexity = 6);\n`, 'utf8');
+  const vue = async (png: string, extra: string[]): Promise<string | null> => {
+    const r = await run(openscad, ['--render', '-o', join(dossier, png), '--imgsize=900,700', '--viewall', '--autocenter', '--colorscheme=Tomorrow', ...extra, scad], {
+      timeoutMs: DELAI_OPENSCAD_MS,
+      maxOutputChars: 4_000,
+    });
+    return r.code === 0 && existsSync(join(dossier, png)) ? png : null;
+  };
+  const troisQuarts = await vue(`v${numero}.png`, ['--camera=0,0,0,55,0,25,500']);
+  // Dessus incliné de 20° : tout à plat, l'éclairage rend un aplat sans relief (essai du 24 novembre).
+  const dessus = await vue(`v${numero}-dessus.png`, ['--camera=0,0,0,20,0,0,500']);
+  return { troisQuarts, dessus };
+}
+
 /** Pièce `.scad` → image `.png`, vue d'ensemble de trois quarts. */
 export async function rendreImage(openscad: string, scad: string, png: string): Promise<ResultatProgramme> {
   const r = await run(openscad, ['--render', '-o', png, '--imgsize=800,600', '--viewall', '--autocenter', '--colorscheme=Tomorrow', scad], {

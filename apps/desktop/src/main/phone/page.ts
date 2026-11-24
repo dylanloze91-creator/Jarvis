@@ -143,6 +143,15 @@ header { display: flex; align-items: center; justify-content: space-between; pad
 .route-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; max-width: 100%; }
 .route-actions { display: inline-flex; flex-wrap: wrap; gap: 4px; }
 .route-done { font-size: 12px; color: #6ee7b7; }
+.card.atelier figure { margin: 0 0 10px; }
+.card.atelier img { display: block; width: 100%; border-radius: 10px; background: #f8f9fa; }
+.card.atelier figcaption { font-size: 12px; color: var(--muted); margin-top: 4px; }
+.card.atelier dl { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; margin: 0 0 10px; font-size: 14px; }
+.card.atelier dt { color: var(--muted); }
+.card.atelier dd { margin: 0; }
+.card.atelier button { width: 100%; }
+.atelier-changement { color: var(--accent); font-size: 14px; }
+.atelier-3d { display: block; width: 100%; height: 280px; border-radius: 10px; touch-action: none; }
 .mic.listening { background: var(--danger); animation: pulse 1.2s infinite; }
 @keyframes pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(251, 113, 133, 0.6); } 50% { box-shadow: 0 0 0 10px rgba(251, 113, 133, 0); } }
 `;
@@ -582,6 +591,206 @@ export const PHONE_JS = String.raw`(function () {
     if (window.navigator.vibrate) window.navigator.vibrate(60);
   }
 
+  /* ---------- Atelier 3D : la pièce rendue ---------- */
+
+  /* Lien à usage unique, lu avec le jeton : un fichier (image PNG ou STL) en mémoire. */
+  function fichierAtelier(url) {
+    return api(url).then(function (response) {
+      if (response.status === 401) forgetDevice('Ce téléphone n’est plus relié. Demande un nouveau code sur le PC.');
+      if (!response.ok) throw new Error('expiré');
+      return response.arrayBuffer();
+    });
+  }
+
+  /* STL ASCII (OpenSCAD) ou binaire → liste de triangles [x1,y1,z1, x2,…]. */
+  function lireStl(buffer) {
+    var octets = new Uint8Array(buffer);
+    var debut = '';
+    for (var i = 0; i < Math.min(octets.length, 256); i += 1) debut += String.fromCharCode(octets[i]);
+    var triangles = [];
+    if (/^\s*solid/.test(debut) && debut.indexOf('facet') >= 0) {
+      var texte = new TextDecoder().decode(octets);
+      var nombre = '([-+0-9.eE]+)';
+      var re = new RegExp('vertex\\s+' + nombre + '\\s+' + nombre + '\\s+' + nombre, 'g');
+      var m;
+      while ((m = re.exec(texte))) triangles.push(+m[1], +m[2], +m[3]);
+    } else {
+      var vue = new DataView(buffer);
+      var n = vue.getUint32(80, true);
+      for (var t = 0; t < n; t += 1) {
+        var base = 84 + t * 50 + 12;
+        for (var k = 0; k < 9; k += 1) triangles.push(vue.getFloat32(base + k * 4, true));
+      }
+    }
+    return new Float32Array(triangles);
+  }
+
+  /* Vue 3D sur un canevas : rotation au doigt, triangles triés de loin en près, ombrage simple. */
+  function vue3d(conteneur, triangles) {
+    var canvas = document.createElement('canvas');
+    canvas.className = 'atelier-3d';
+    conteneur.appendChild(canvas);
+    var ctx = canvas.getContext('2d');
+    var min = [Infinity, Infinity, Infinity];
+    var max = [-Infinity, -Infinity, -Infinity];
+    for (var i = 0; i < triangles.length; i += 3) {
+      for (var a = 0; a < 3; a += 1) {
+        if (triangles[i + a] < min[a]) min[a] = triangles[i + a];
+        if (triangles[i + a] > max[a]) max[a] = triangles[i + a];
+      }
+    }
+    var centre = [(min[0] + max[0]) / 2, (min[1] + max[1]) / 2, (min[2] + max[2]) / 2];
+    var rayon = Math.max(max[0] - min[0], max[1] - min[1], max[2] - min[2]) || 1;
+    var lacet = -0.6;
+    var tangage = 1.0;
+    var n = triangles.length / 9;
+    var ordre = new Array(n);
+    var px = new Float32Array(n * 3);
+    var py = new Float32Array(n * 3);
+    var pz = new Float32Array(n * 3);
+    function dessiner() {
+      var ratio = window.devicePixelRatio || 1;
+      var largeur = canvas.clientWidth || 300;
+      var hauteur = canvas.clientHeight || 240;
+      canvas.width = Math.round(largeur * ratio);
+      canvas.height = Math.round(hauteur * ratio);
+      ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+      ctx.fillStyle = '#0c131c';
+      ctx.fillRect(0, 0, largeur, hauteur);
+      var cl = Math.cos(lacet), sl = Math.sin(lacet), ct = Math.cos(tangage), st = Math.sin(tangage);
+      var echelle = (Math.min(largeur, hauteur) * 0.8) / rayon;
+      for (var s = 0; s < n * 3; s += 1) {
+        var x = triangles[s * 3] - centre[0], y = triangles[s * 3 + 1] - centre[1], z = triangles[s * 3 + 2] - centre[2];
+        var x1 = x * cl - y * sl, y1 = x * sl + y * cl;
+        var y2 = y1 * ct - z * st, z2 = y1 * st + z * ct;
+        px[s] = largeur / 2 + x1 * echelle;
+        py[s] = hauteur / 2 - z2 * echelle;
+        pz[s] = y2;
+      }
+      for (var t = 0; t < n; t += 1) ordre[t] = t;
+      ordre.sort(function (p, q) {
+        return pz[q * 3] + pz[q * 3 + 1] + pz[q * 3 + 2] - (pz[p * 3] + pz[p * 3 + 1] + pz[p * 3 + 2]);
+      });
+      for (var o = 0; o < n; o += 1) {
+        var f = ordre[o] * 3;
+        var ux = px[f + 1] - px[f], uy = py[f + 1] - py[f], uz = pz[f + 1] - pz[f];
+        var vx = px[f + 2] - px[f], vy = py[f + 2] - py[f], vz = pz[f + 2] - pz[f];
+        var nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+        var norme = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1;
+        var lumiere = Math.abs((nx * 0.3 - ny * 0.6 - nz * 0.75) / norme);
+        var c = Math.round(60 + 160 * lumiere);
+        ctx.fillStyle = 'rgb(' + Math.round(c * 0.35) + ',' + Math.round(c * 0.75) + ',' + c + ')';
+        ctx.beginPath();
+        ctx.moveTo(px[f], py[f]);
+        ctx.lineTo(px[f + 1], py[f + 1]);
+        ctx.lineTo(px[f + 2], py[f + 2]);
+        ctx.closePath();
+        ctx.fill();
+      }
+    }
+    var dernier = null;
+    var prevu = false;
+    function plus_tard() {
+      if (prevu) return;
+      prevu = true;
+      window.requestAnimationFrame(function () {
+        prevu = false;
+        dessiner();
+      });
+    }
+    canvas.addEventListener('pointerdown', function (e) {
+      dernier = { x: e.clientX, y: e.clientY };
+      if (canvas.setPointerCapture) canvas.setPointerCapture(e.pointerId);
+    });
+    canvas.addEventListener('pointermove', function (e) {
+      if (!dernier) return;
+      lacet += (e.clientX - dernier.x) * 0.01;
+      tangage = Math.max(-1.5, Math.min(1.5, tangage + (e.clientY - dernier.y) * 0.01));
+      dernier = { x: e.clientX, y: e.clientY };
+      plus_tard();
+    });
+    function lacher() {
+      dernier = null;
+    }
+    canvas.addEventListener('pointerup', lacher);
+    canvas.addEventListener('pointercancel', lacher);
+    dessiner();
+  }
+
+  function atelierCard(event) {
+    var card = document.createElement('div');
+    card.className = 'card atelier';
+    var title = document.createElement('p');
+    title.className = 'card-title';
+    title.textContent = 'Atelier 3D · ' + event.nom + ', version ' + event.numero;
+    card.appendChild(title);
+    var fiche = document.createElement('p');
+    fiche.textContent = event.fiche;
+    card.appendChild(fiche);
+    if (event.changement) {
+      var changement = document.createElement('p');
+      changement.className = 'atelier-changement';
+      changement.textContent = 'Changement : ' + event.changement;
+      card.appendChild(changement);
+    }
+    (event.images || []).forEach(function (image) {
+      var figure = document.createElement('figure');
+      var legende = document.createElement('figcaption');
+      legende.textContent = image.vue === 'dessus' ? 'Vue de dessus' : 'Vue de trois quarts';
+      figure.appendChild(legende);
+      card.appendChild(figure);
+      fichierAtelier(image.url)
+        .then(function (buffer) {
+          var img = document.createElement('img');
+          img.alt = legende.textContent;
+          img.src = URL.createObjectURL(new Blob([buffer], { type: 'image/png' }));
+          figure.insertBefore(img, legende);
+          scrollDown();
+        })
+        .catch(function () {
+          legende.textContent += ' : image expirée, redemande la pièce.';
+        });
+    });
+    if (event.mesures && event.mesures.length) {
+      var liste = document.createElement('dl');
+      event.mesures.forEach(function (mesure) {
+        var nom = document.createElement('dt');
+        nom.textContent = mesure.nom;
+        var valeur = document.createElement('dd');
+        valeur.textContent = mesure.valeur;
+        liste.appendChild(nom);
+        liste.appendChild(valeur);
+      });
+      card.appendChild(liste);
+    }
+    if (event.modele) {
+      var bouton = document.createElement('button');
+      bouton.type = 'button';
+      bouton.className = 'ghost';
+      bouton.textContent = 'Préparation de la vue 3D…';
+      bouton.disabled = true;
+      card.appendChild(bouton);
+      /* Le lien expire vite : le STL est lu tout de suite, la vue s'ouvre au toucher. */
+      fichierAtelier(event.modele)
+        .then(function (buffer) {
+          var triangles = lireStl(buffer);
+          if (!triangles.length) throw new Error('vide');
+          bouton.textContent = 'Voir en 3D (tourne-la au doigt)';
+          bouton.disabled = false;
+          bouton.onclick = function () {
+            bouton.remove();
+            vue3d(card, triangles);
+            scrollDown();
+          };
+        })
+        .catch(function () {
+          bouton.textContent = 'Vue 3D indisponible';
+        });
+    }
+    list.appendChild(card);
+    scrollDown();
+  }
+
   function submitRouteValidation(validation, chosenTeam, onDone) {
     api('/api/validate-team', {
       phrase: validation.phrase,
@@ -691,6 +900,10 @@ export const PHONE_JS = String.raw`(function () {
       case 'confirm':
         current = null;
         confirmationCard(event);
+        break;
+      case 'atelier':
+        current = null;
+        atelierCard(event);
         break;
       case 'error':
         current = null;

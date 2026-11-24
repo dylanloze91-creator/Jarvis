@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { basename } from 'node:path';
 import { z } from 'zod';
 import {
+  PHONE_CANNOT_START,
   SPEAKER_CANNOT_START,
   defineTool,
   formatPrintStatus,
@@ -13,11 +14,15 @@ import {
 export interface PrinterToolDeps {
   isAvailable: () => boolean;
   client: () => MoonrakerClient;
+  /** Réglage `printer.phoneStart` : faux = rien ne se lance depuis le téléphone. Absent : oui. */
+  phoneMayStart?: () => boolean;
 }
 
-function speakerBlocked(context: ToolContext): { ok: false; content: string } | null {
-  if (!context.fromSpeaker) return null;
-  return { ok: false, content: SPEAKER_CANNOT_START };
+/** Lancement refusé depuis une enceinte, et depuis le téléphone si le réglage le coupe. */
+function speakerBlocked(context: ToolContext, deps: PrinterToolDeps): { ok: false; content: string } | null {
+  if (context.fromSpeaker) return { ok: false, content: SPEAKER_CANNOT_START };
+  if (context.fromPhone && deps.phoneMayStart?.() === false) return { ok: false, content: PHONE_CANNOT_START };
+  return null;
 }
 
 /** Outils absents du catalogue tant que l'adresse locale n'est pas activée. */
@@ -59,7 +64,7 @@ export function createPrinterTools(deps: PrinterToolDeps) {
       describeCommand: ({ path }) => path,
       ...gate,
       execute: async ({ path }, context) => {
-        const blocked = speakerBlocked(context);
+        const blocked = speakerBlocked(context, deps);
         if (blocked) return blocked;
         if (!path.toLowerCase().endsWith('.gcode')) return { ok: false, content: 'Je n’envoie qu’un fichier .gcode.' };
         const bytes = new Uint8Array(await readFile(path));
@@ -82,7 +87,7 @@ export function createPrinterTools(deps: PrinterToolDeps) {
       describeCommand: ({ filename }) => filename,
       ...gate,
       execute: async ({ filename }, context) => {
-        const blocked = speakerBlocked(context);
+        const blocked = speakerBlocked(context, deps);
         if (blocked) return blocked;
         const status = await deps.client().start(filename);
         if (status.state !== 'printing') return { ok: false, content: `Pas lancée : ${status.state}.` };
@@ -114,7 +119,7 @@ export function createPrinterTools(deps: PrinterToolDeps) {
       summarize: () => "Reprendre l'impression.",
       ...gate,
       execute: async (_input, context) => {
-        const blocked = speakerBlocked(context);
+        const blocked = speakerBlocked(context, deps);
         if (blocked) return blocked;
         const status = await deps.client().resume();
         if (status.state !== 'printing') return { ok: false, content: `Pas reprise : ${status.state}.` };

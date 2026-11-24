@@ -5,8 +5,8 @@
 import { homedir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
 import { readFile } from 'node:fs/promises';
-import { checkRoverBaseUrl, MoonrakerClient, type Settings, type VolumeImpression } from '@jarvis/core';
-import { preparerPresetsOrca, rendreImage, rendreStl, trancher, trouverOpenscad, trouverOrca } from './programmes.js';
+import { checkRoverBaseUrl, MoonrakerClient, phoneMayStartPrint, type Settings, type VolumeImpression } from '@jarvis/core';
+import { preparerPresetsOrca, rendreImage, rendreStl, rendreVues, trancher, trouverOpenscad, trouverOrca } from './programmes.js';
 import { nomSimple, tourAtelier, type AtelierEntree, type AtelierSortie } from './tourAtelier.js';
 
 /** Dossier des pièces (cahier de l'atelier) : hors du dépôt, à côté des autres données de Jarvis. */
@@ -44,6 +44,7 @@ export function creerAtelierPC(getSettings: () => Settings, racine = ATELIER_RAC
           return LIMITE_PRUDENTE;
         }
       },
+      telephonePeutLancer: () => phoneMayStartPrint(getSettings().printer),
       imprimante: () => {
         const printer = getSettings().printer;
         if (printer?.enabled !== true || !printer.baseUrl || !checkRoverBaseUrl(printer.baseUrl).ok) return null;
@@ -53,6 +54,7 @@ export function creerAtelierPC(getSettings: () => Settings, racine = ATELIER_RAC
         openscad: () => trouverOpenscad(),
         rendreStl,
         rendreImage,
+        rendreVues,
         trancher: async (stl, sortie) => {
           const orca = trouverOrca();
           if (!orca) return { ok: false, message: "OrcaSlicer n'est pas installé : je ne peux pas préparer le fichier d'impression.", gcode: null, infos: null };
