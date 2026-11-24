@@ -195,6 +195,9 @@ function couvercleDemande(tn: string): boolean {
 /** « remets la version d'avant », « annule le dernier changement », « reviens en arrière ». */
 const VERSION_AVANT =
   /\b(?:version (?:d avant|precedente)|annule (?:le |la |mon |ma |ce |cette )?(?:dernier |derniere )?(?:changement|modification)|reviens en arriere|retour en arriere|annule ca|defais (?:le|ca)|comme avant)\b/;
+/** Revoir la pièce à l'écran : « réessaie », « remontre-la », « renvoie les images », « je ne la vois pas ». */
+const REMONTRER =
+  /^(?:re ?essa(?:ie|ye|yer)|recommence|remontre(?: la| le| moi)*|montre(?: la| le| moi)+|renvoie(?: la| le| moi)*(?: les)?(?: images?| photos?)?|redonne(?: moi)?(?: les)? images?|je (?:ne )?(?:la |le )?vois (?:pas|rien)|(?:les )?images? (?:ne )?(?:s affiche(?:nt)? pas|n arrive(?:nt)? pas))\b/;
 /** Question sur la taille de la pièce. */
 const DIMENSIONS = /\b(?:dimensions?|taille|mesures?|cotes|grande|haute?|large|longue?|epaisse|hauteur|largeur|longueur)\b/;
 /** Une question, même posée sans mot interrogatif en tête : « elle fait combien de haut ? ». */
@@ -714,6 +717,9 @@ export function deciderAtelier(text: string, precedentDonne: AtelierEtat | null,
     }
     return { kind: 'choisir', etat: precedent, numero };
   }
+  // « réessaie », « remontre-la », « renvoie les images » : la même version, renvoyée telle quelle
+  // (nouvelles images sur le téléphone), sans rien redessiner.
+  if (REMONTRER.test(tn) && !/\b(?:file|imprimante|camera|ecran du pc)\b/.test(tn)) return { kind: 'choisir', etat: precedent, numero: precedent.versionChoisie };
   // « remets la version d'avant », « annule le dernier changement » : la version précédente.
   if (VERSION_AVANT.test(tn)) {
     const avant = precedent.versions.filter((v) => v.numero < precedent.versionChoisie).at(-1);

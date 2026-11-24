@@ -111,6 +111,19 @@ describe('changer la pièce, à la voix', () => {
     expect(deciderAtelier('fais-la plus haute', piece, {}).kind).toBe('fabriquer');
   });
 
+  // Essai de l'utilisateur, 19 h 50 : « Reessaye » après la boîte était parti au cerveau, qui avait
+  // prétendu « ajuster la boîte » sans rien faire.
+  it.each(['Reessaye', 'réessaie', 'remontre-la moi', 'renvoie les images', 'je la vois pas', "les images s'affichent pas", 'montre-la'])(
+    '« %s » : la même version, renvoyée telle quelle',
+    (phrase) => {
+      expect(deciderAtelier(phrase, piece, {})).toMatchObject({ kind: 'choisir', numero: 2 });
+    },
+  );
+
+  it('« montre-moi la file d’attente » n’est pas pour la pièce', () => {
+    expect(deciderAtelier("montre moi la file d'attente", piece, {}).kind).not.toBe('choisir');
+  });
+
   it('les questions d’un autre sujet ne sont pas prises', () => {
     for (const phrase of ['combien de temps pour l’imprimer', 'il fait combien dehors', 'quelle heure est-il']) {
       expect(deciderAtelier(phrase, piece, {}).kind).toBe('rien');
