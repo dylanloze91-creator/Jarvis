@@ -13,7 +13,7 @@ import { estChoix, GABARITS, gabarit, type Gabarit, type Mesure, type MesureNomb
 
 /** Minuscules, sans accent ; virgule décimale changée en point ; les autres virgules gardées comme coupures. */
 export function plier(text: string): string {
-  return text
+  const base = text
     .toLowerCase()
     .normalize('NFD')
     .replace(/\p{M}/gu, '')
@@ -26,6 +26,94 @@ export function plier(text: string): string {
     .replace(/\.(?!\d)/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+  return nombresEnChiffres(parle(base));
+}
+
+/**
+ * Ce qu'une dictée ajoute ou abîme, retiré ou réparé (texte déjà plié) : « euh », « du coup »,
+ * « en fait », « hey Jarvis » en tête, « quoi » en fin ; « rasberry pie » → « raspberry pi ».
+ */
+function parle(t: string): string {
+  return t
+    .replace(/\b(?:euh+|heu+|hum+|bah|ben|genre|en fait|du coup|tu vois|voila|hein)\b/g, ' ')
+    .replace(/\brasp?berr(?:y|i|ie|ies)\b(?: (?:pie|pis|py|paille))?/g, 'raspberry pi')
+    .replace(/\braspberry pi pi\b/g, 'raspberry pi')
+    .replace(/\s*,?\s*\bquoi\s*$/, '')
+    .replace(/^(?:\s*,\s*)+/, '')
+    .replace(/\s+/g, ' ')
+    .replace(/^(?:(?:hey|he|eh|ok|dis|alors|bon) )?jarvis\b ?,? ?/, '')
+    .replace(/(?: ,)+(?= ,)/g, '')
+    .replace(/^(?:\s*,\s*)+/, '')
+    .trim();
+}
+
+const UNITES: Record<string, number> = {
+  zero: 0, un: 1, une: 1, deux: 2, trois: 3, quatre: 4, cinq: 5, six: 6, sept: 7, huit: 8, neuf: 9, dix: 10,
+  onze: 11, douze: 12, treize: 13, quatorze: 14, quinze: 15, seize: 16, vingt: 20, vingts: 20, trente: 30,
+  quarante: 40, cinquante: 50, soixante: 60, cent: 100, cents: 100, mille: 1000,
+};
+/** Après un petit nombre, ces mots restent en lettres : « quatre bossages », « deux trous », « les deux côtés ». */
+const COMPTES =
+  /^(?:trous?|plots?|bossages?|fentes?|encoches?|cases?|compartiments?|colonnes?|rangees?|vis|ouvertures?|fenetres?|decoupes?|nervures?|pieds?|crochets?|cotes|coins?|faces?|angles?|boites?|pieces?|versions?|fois|parois?|cartes?|prises?|ports?)$/;
+
+/**
+ * Nombres dits en lettres → chiffres : « cent vingt par quatre vingt » → « 120 par 80 »,
+ * « deux virgule cinq » → « 2.5 », « trou de huit » → « trou de 8 », « raspberry pi cinq » → « pi 5 ».
+ * « un » ou « une » seuls restent des articles ; un petit nombre devant ce qu'il compte reste en lettres.
+ */
+export function nombresEnChiffres(t: string): string {
+  const mots = t.split(' ');
+  const sortie: string[] = [];
+  for (let i = 0; i < mots.length; ) {
+    if (!(mots[i]! in UNITES)) {
+      sortie.push(mots[i]!);
+      i += 1;
+      continue;
+    }
+    // La plus longue suite de mots-nombres (avec « et » dans « vingt et un »).
+    let j = i;
+    let total = 0;
+    let courant = 0;
+    let precedent = -1;
+    while (j < mots.length) {
+      const mot = mots[j]!;
+      if (mot === 'et' && j > i && j + 1 < mots.length && (mots[j + 1] === 'un' || mots[j + 1] === 'une' || mots[j + 1] === 'demi') && precedent >= 20) {
+        j += 1;
+        continue;
+      }
+      if (!(mot in UNITES)) break;
+      const v = UNITES[mot]!;
+      if (v === 1000) {
+        total += (courant || 1) * 1000;
+        courant = 0;
+      } else if (v === 100) {
+        courant = (courant || 1) * 100;
+      } else if (v === 20 && precedent === 4 && courant % 100 === 4) {
+        courant = courant - 4 + 80; // « quatre vingt »
+      } else {
+        courant += v;
+      }
+      precedent = v;
+      j += 1;
+    }
+    let valeur = total + courant;
+    // « virgule cinq », « et demi ».
+    if (mots[j] === 'virgule' && mots[j + 1] !== undefined && (mots[j + 1]! in UNITES || /^\d+$/.test(mots[j + 1]!))) {
+      const dec = /^\d+$/.test(mots[j + 1]!) ? mots[j + 1]! : String(UNITES[mots[j + 1]!]);
+      valeur = Number(`${valeur}.${dec}`);
+      j += 2;
+    } else if (mots[j] === 'et' && mots[j + 1] === 'demi') {
+      valeur += 0.5;
+      j += 2;
+    }
+    const seul = j - i === 1;
+    const article = seul && (mots[i] === 'un' || mots[i] === 'une');
+    const compte = valeur <= 10 && j < mots.length && COMPTES.test(mots[j]!);
+    if (article || compte) sortie.push(...mots.slice(i, j));
+    else sortie.push(String(valeur));
+    i = j;
+  }
+  return sortie.join(' ');
 }
 
 function motsPlies(mots: string[]): string[] {

@@ -173,7 +173,7 @@ const MOTS_NEUTRES = new Set(
 );
 /** Accord à une proposition, dit comme on parle : « pas de problème », « ouais vas-y », « nickel ». */
 const ACCORD =
-  /^(?:(?:bah|ben|alors|bon|eh bien|ah|bien|ouais|oui|ok) )*(?:oui|ouais|ouai|ok|okay|d accord|daccord|vas y|va s y|go|allez|allez y|pas de (?:probleme|souci|soucis)|aucun (?:probleme|souci)|bien sur|evidemment|bien evidemment|parfait|nickel|top|super|ca marche|ca me va|ca roule|c est bon|c est parfait|carrement|exactement|tout a fait|volontiers|je veux bien|avec plaisir|fais le|fais la|fais comme ca|agrandis la|agrandis le|valide|je valide|c est ok|yes)\b/;
+  /^(?:(?:bah|ben|alors|bon|eh bien|ah|bien|ouais|oui|ok) )*(?:oui|ouais|ouai|ok|okay|d accord|daccord|vas y|va s y|go|allez|allez y|pas de (?:probleme|souci|soucis)|aucun (?:probleme|souci)|bien sur|evidemment|bien evidemment|parfait|nickel|top|super|ca marche|ca me va|ca roule|c est bon|c est parfait|carrement|exactement|tout a fait|volontiers|je veux bien|avec plaisir|fais le|fais la|fais comme ca|agrandis la|agrandis le|valide|je valide|c est ok|yes|d acc|dac|impec|impeccable|entendu|ca marche|vas y fonce|fonce)\b/;
 /** « fais en sorte que ça rentre », « agrandis-la pour que le Pi tienne » : c'est accepter d'agrandir. */
 const FAIRE_TENIR = /\b(?:fai[st] en sorte (?:que|qu)|pour que|faut que)\b.*\b(?:rentre|rentrent|tienne|tiennent|tient|passe|passent)\b|^agrandi[st]?\b/;
 /** Refus d'une proposition. */
@@ -192,6 +192,10 @@ function couvercleDemande(tn: string): boolean {
 /** « remets la version d'avant », « annule le dernier changement », « reviens en arrière ». */
 const VERSION_AVANT =
   /\b(?:version (?:d avant|precedente)|annule (?:le |la |mon |ma |ce |cette )?(?:dernier |derniere )?(?:changement|modification)|reviens en arriere|retour en arriere|annule ca|defais (?:le|ca)|comme avant)\b/;
+/** Question sur la taille de la pièce. */
+const DIMENSIONS = /\b(?:dimensions?|taille|mesures?|cotes|grande|haute?|large|longue?|epaisse|hauteur|largeur|longueur)\b/;
+/** Une question, même posée sans mot interrogatif en tête : « elle fait combien de haut ? ». */
+const QUESTION_TAILLE = /\bcombien\b|^(?:c est quoi|quelles? sont|donne moi|dis moi)\b/;
 /** « plus grande », « agrandis-la », « trop petite » sans dire la mesure. */
 const PLUS_GRANDE = /\b(?:plus grande?|plus grosse?|trop petite?|agrandis(?: la| le)?)\b/;
 const ANNULER = /^(?:annule|laisse tomber|oublie|stop|arrete|non merci|pas la peine)\b/;
@@ -336,7 +340,7 @@ function numeroAImprimer(t: string, etat: Extract<AtelierEtat, { etape: 'piece' 
   return Number(m[1] ?? m[3] ?? etat.versionChoisie);
 }
 const FILE =
-  /^(?:mets|met|mettre|ajoute|ajouter|place)(?: (?:la|le|les))?(?: (?:version|v) ?(\d+))? (?:dans|a|en|sur) (?:la )?(?:file|liste) d attente$|^(?:mets|met|mettre|ajoute|ajouter|place)(?: (?:la|le|les))?(?: (?:version|v) ?(\d+))? (?:dans|a|en|sur) la file$/;
+  /^(?:mets|met|mettre|ajoute|ajouter|rajoute|place|envoie|envoyer|balance)(?: (?:la|le|les))?(?: (?:version|v) ?(\d+))? (?:dans|a|en|sur) (?:la )?(?:file|liste) d attente$|^(?:mets|met|mettre|ajoute|ajouter|rajoute|place|envoie|envoyer|balance)(?: (?:la|le|les))?(?: (?:version|v) ?(\d+))? (?:dans|a|en|sur) la file$/;
 
 /** Numéro de la version à mettre dans la file, ou `null`. */
 function numeroEnFile(t: string, etat: Extract<AtelierEtat, { etape: 'piece' }>): number | null {
@@ -424,6 +428,9 @@ function lireDelta(t: string, g: Gabarit, valeurs: Valeurs): { id: string; avant
       [new RegExp(String.raw`\bmoins (?:${w})\b de ${N}`), -1],
       [new RegExp(String.raw`${N} de plus (?:en |de |sur la |sur le )?(?:${w})\b`), 1],
       [new RegExp(String.raw`${N} de moins (?:en |de |sur la |sur le )?(?:${w})\b`), -1],
+      // « agrandis de 2 cm en hauteur », « baisse de 5 en hauteur ».
+      [new RegExp(String.raw`\b(?:${PLUS})\b(?: (?:la|le|l))? de ${N} (?:en |de |sur la |sur le |dans la )(?:${w})\b`), 1],
+      [new RegExp(String.raw`\b(?:${MOINS})\b(?: (?:la|le|l))? de ${N} (?:en |de |sur la |sur le |dans la )(?:${w})\b`), -1],
     ];
     for (const [re, sens] of essais) {
       const r = re.exec(t);
@@ -434,6 +441,20 @@ function lireDelta(t: string, g: Gabarit, valeurs: Valeurs): { id: string; avant
     }
   }
   return null;
+}
+
+/** Une seule mesure nommée et un seul nombre dans la phrase : ce nombre est pour elle. */
+function mesureSeule(t: string, g: Gabarit): Valeurs | null {
+  const nombres = [...t.matchAll(/(\d+(?:\.\d+)?) ?(cm|centimetres?)?\b/g)];
+  if (nombres.length !== 1) return null;
+  const dits = ` ${t} `;
+  const nommees = new Set(
+    g.mesures.filter((m) => !estChoix(m) && m.mots.some((mot) => dits.includes(` ${plier(mot)} `))).map((m) => m.id),
+  );
+  if (nommees.size !== 1) return null;
+  const [id] = [...nommees];
+  const n = nombres[0]!;
+  return { [id!]: Number(n[1]) * (n[2] ? 10 : 1) };
 }
 
 /** Les mots de la pièce et de ses mesures, pliés et coupés en mots. */
@@ -699,6 +720,11 @@ export function deciderAtelier(text: string, precedentDonne: AtelierEtat | null,
 
   const actuelle = precedent.versions.find((v) => v.numero === precedent.versionChoisie) ?? precedent.versions[precedent.versions.length - 1];
   if (!actuelle) return { kind: 'rien' };
+  // « elle fait combien de haut ? », « c'est quoi les dimensions ? » : les cotes de la version à l'écran.
+  if ((QUESTION.test(tn) || QUESTION_TAILLE.test(tn)) && DIMENSIONS.test(tn) && !SUJET_AUTRE.test(tn) && !/\d/.test(tn)) {
+    const cotes = actuelle.mesures.map((m) => `${m.nom.toLowerCase()} ${m.valeur}`).join(', ');
+    return { kind: 'dire', texte: `Version ${actuelle.numero} : ${cotes}.` };
+  }
   // Une question (« quelle fenêtre est active ? ») ne change pas la pièce : elle suit son chemin.
   // Un ordre pour un autre domaine (« ferme la fenêtre », « mets l'écran en veille ») non plus.
   if (QUESTION.test(tn) || VERBE_AUTRE.test(tn) || SUJET_AUTRE.test(tn)) return { kind: 'rien' };
@@ -759,7 +785,9 @@ export function deciderAtelier(text: string, precedentDonne: AtelierEtat | null,
   const mots = tReste.split(' ').filter((m) => m !== ',').length;
   // « augmente la hauteur de 10 mm » : 10 de plus, pas une hauteur de 10.
   const delta = lu.ops.length || matiere.ops.length ? null : lireDelta(tReste, g, valeurs);
-  const lues = delta ? { [delta.id]: delta.apres } : mots <= 10 ? lireMesures(resteTexte, g).valeurs : {};
+  // « mets la hauteur à 50 », « la hauteur mets-la à 50 » : une seule mesure nommée, un seul nombre.
+  const seule = delta || lu.ops.length || matiere.ops.length ? null : mesureSeule(tReste, g);
+  const lues = delta ? { [delta.id]: delta.apres } : seule ? seule : mots <= 16 ? lireMesures(resteTexte, g).valeurs : {};
   // Un nombre sans le nom de sa mesure ne vaut que si la phrase ne parle que de la pièce :
   // « mets le volume à 90 » ne change pas la longueur, « fais-la en 100 par 60 » oui.
   const dites = delta ? lues : parleDAutreChose(tReste, g) ? nommees(lues, tReste, g) : lues;
