@@ -99,11 +99,11 @@ function cotesDesComposants(valeurs: Valeurs, mesures: MesuresComposants, cotes:
     const c = composant(a.composant);
     if (!c) continue;
     if (c.etat === 'a_mesurer') {
-      const p = provenanceCotes(c.id, mesures, cotes);
+      const p = provenanceCotes(c.id, mesures, cotes, { uneSource: true });
       sources.push(...p.sources);
       incertitudes.push(...p.incertitudes);
     } else sources.push(...c.sources.map((s) => `${c.nom} : ${s}`));
-    const g = geometrieCarte(c, fusionnerCotes(mesures, cotes));
+    const g = geometrieCarte(c, fusionnerCotes(mesures, cotes, { uneSource: true }));
     if (g) incertitudes.push(...g.incertitudes.map((i) => `${c.nom} — ${i}`));
   }
   return { sources: [...new Set(sources)], incertitudes: [...new Set(incertitudes)] };

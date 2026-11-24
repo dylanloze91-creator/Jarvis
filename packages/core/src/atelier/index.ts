@@ -14,3 +14,4 @@ export * from './composantsDonnees.js';
 export * from './composants.js';
 export * from './tenir.js';
 export * from './etape.js';
+export * from './rechercheCotes.js';

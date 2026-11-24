@@ -5,7 +5,22 @@
 import { homedir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
 import { readFile } from 'node:fs/promises';
-import { checkRoverBaseUrl, MoonrakerClient, phoneMayStartPrint, type Settings, type VolumeImpression } from '@jarvis/core';
+import {
+  assessHtml,
+  checkRoverBaseUrl,
+  extractReadableText,
+  fetchPublicText,
+  MoonrakerClient,
+  phoneMayStartPrint,
+  resolveLocalSummaryModel,
+  searchWithFallback,
+  webProviderOrder,
+  type SearchProviderRegistry,
+  type Settings,
+  type VolumeImpression,
+} from '@jarvis/core';
+import { guardUrl } from '../tools/web.js';
+import type { DepsChercherCotes } from './chercherCotes.js';
 import { preparerPresetsOrca, rendreImage, rendreStl, rendreVues, trancher, trouverOpenscad, trouverOrca } from './programmes.js';
 import { nomSimple, tourAtelier, type AtelierEntree, type AtelierSortie } from './tourAtelier.js';
 
@@ -28,11 +43,66 @@ export const PLAQUE_ORCA = 'Textured PEI Plate';
 /** Préréglages d'OrcaSlicer de l'utilisateur (lus seulement) : `%APPDATA%\OrcaSlicer` de son compte. */
 export const ORCA_RACINE = join(homedir(), 'AppData', 'Roaming', 'OrcaSlicer');
 
-export function creerAtelierPC(getSettings: () => Settings, racine = ATELIER_RACINE, racineOrca = ORCA_RACINE): (input: AtelierEntree) => Promise<AtelierSortie | null> {
+/**
+ * Recherche des cotes d'un composant sur Internet, branchée sur ce PC : moteurs de recherche de
+ * Jarvis (sans clé, avec repli), lecture des pages publiques (mêmes gardes que `fetch_page`), et le
+ * modèle local (le cerveau du chef d'orchestre, sinon celui du chat) en JSON, température 0.
+ */
+export function rechercheCotesPC(getSettings: () => Settings, searchRegistry: SearchProviderRegistry): DepsChercherCotes {
+  return {
+    chercher: async (query) => {
+      const settings = getSettings();
+      const config = { provider: settings.searchProvider, apiKey: settings.searchApiKey };
+      const r = await searchWithFallback(searchRegistry, webProviderOrder(searchRegistry, config), config, { query, limit: 6 });
+      return r.results.map((x) => x.url);
+    },
+    lire: async (url, signal) => {
+      const fetched = await fetchPublicText(url, { timeoutMs: 12_000, maxRedirects: 5, readLimit: 2_000_000, ...(signal ? { signal } : {}), guard: guardUrl });
+      if (!fetched.ok) return null;
+      const page = extractReadableText(fetched.text, 60_000);
+      const a = assessHtml(fetched.text, page.text);
+      if (a.antiBot || a.invalidHtml || a.empty || !page.text) return null;
+      // Le titre en première ligne : il dit souvent de quelle carte parle la page.
+      return page.title ? `${page.title}\n${page.text}` : page.text;
+    },
+    modele: async (systeme, demande, signal) => {
+      const settings = getSettings();
+      const local = resolveLocalSummaryModel(settings);
+      const model = settings.orchestra?.enabled && settings.orchestra.brain ? settings.orchestra.brain : local.model;
+      const res = await fetch(`${local.baseUrl}/api/chat`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          model,
+          stream: false,
+          format: 'json',
+          messages: [
+            { role: 'system', content: systeme },
+            { role: 'user', content: demande },
+          ],
+          options: { temperature: 0, num_predict: 800, num_ctx: 8192 },
+        }),
+        ...(signal ? { signal } : {}),
+      });
+      if (!res.ok) throw new Error(`Ollama a répondu HTTP ${res.status} (${model})`);
+      const payload = (await res.json()) as { message?: { content?: string } };
+      return payload.message?.content ?? '';
+    },
+  };
+}
+
+export function creerAtelierPC(
+  getSettings: () => Settings,
+  racine = ATELIER_RACINE,
+  racineOrca = ORCA_RACINE,
+  searchRegistry?: SearchProviderRegistry,
+): (input: AtelierEntree) => Promise<AtelierSortie | null> {
   const dossierOrca = join(racine, '_orca');
+  const recherche = searchRegistry ? rechercheCotesPC(getSettings, searchRegistry) : undefined;
   return (input) =>
     tourAtelier(input, {
       racine,
+      ...(recherche ? { chercherCotes: recherche } : {}),
       jour: () => {
         const d = new Date();
         return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;

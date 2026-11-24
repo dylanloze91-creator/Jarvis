@@ -468,7 +468,7 @@ export const fetchPageTool = defineTool({
   },
 });
 
-async function guardUrl(rawUrl: string): Promise<{ allowed: boolean; reason?: string }> {
+export async function guardUrl(rawUrl: string): Promise<{ allowed: boolean; reason?: string }> {
   const safety = checkUrlSafety(rawUrl);
   if (!safety.allowed) return safety;
 

@@ -19,11 +19,15 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   ajouterMesure,
+  ecrireFichierCotes,
   ecrireFichierMesures,
   fusionnerCotes,
   lireFichierCotes,
   lireFichierMesures,
+  lireRecherchesCotes,
   type CotesTrouvees,
+  type RecherchesCotes,
+  type ResultatEtape,
   controlerStl,
   dernierAtelier,
   deciderAtelier,
@@ -46,6 +50,7 @@ import {
 } from '@jarvis/core';
 
 import { ATELIER_SANS_OPENSCAD, fabriquerVersion } from './etapes.js';
+import { chercherCotes, type CotesCherchees, type DepsChercherCotes } from './chercherCotes.js';
 
 type EtatPiece = Extract<AtelierEtat, { etape: 'piece' }>;
 
@@ -101,7 +106,18 @@ export interface AtelierDeps {
    * Cotes de composants trouvées ailleurs (recherche, fiches), chacune avec sa source. Absent :
    * `composants-cotes.json` dans le dossier de l'atelier, lu seulement.
    */
-  cotes?: { lire(): Promise<CotesTrouvees> };
+  cotes?: {
+    lire(): Promise<CotesTrouvees>;
+    /** Recherches déjà faites, par composant. Absent : aucune. */
+    lireRecherches?(): Promise<RecherchesCotes>;
+    /** Garde les cotes trouvées et les recherches. Absent : rien n'est gardé. */
+    ecrire?(cotes: CotesTrouvees, recherches: RecherchesCotes): Promise<void>;
+  };
+  /**
+   * Chercher les cotes d'un composant sur Internet (recherche, lecture des pages, modèle local qui
+   * propose, Jarvis qui vérifie). Absent : le pied à coulisse, comme avant.
+   */
+  chercherCotes?: DepsChercherCotes;
 }
 
 /** Fichier des mesures de composants, dans le dossier de l'atelier. */
@@ -111,7 +127,26 @@ export const FICHIER_COTES = 'composants-cotes.json';
 
 function cotesParFichier(racine: string): NonNullable<AtelierDeps['cotes']> {
   const chemin = join(racine, FICHIER_COTES);
-  return { lire: async () => (existsSync(chemin) ? lireFichierCotes(await readFile(chemin, 'utf8')) : {}) };
+  return {
+    lire: async () => (existsSync(chemin) ? lireFichierCotes(await readFile(chemin, 'utf8')) : {}),
+    lireRecherches: async () => (existsSync(chemin) ? lireRecherchesCotes(await readFile(chemin, 'utf8')) : {}),
+    ecrire: async (cotes, recherches) => {
+      await mkdir(racine, { recursive: true });
+      const temp = `${chemin}.tmp`;
+      await writeFile(temp, ecrireFichierCotes(cotes, recherches), 'utf8');
+      await rename(temp, chemin);
+    },
+  };
+}
+
+/** Ce que la recherche a donné, en quelques phrases (la suite dit ce qui se passe ensuite). */
+export function phraseRecherche(r: ResultatEtape<CotesCherchees>, voix: boolean): string {
+  if (!r.ok) return r.raison ?? "Je n'ai rien trouvé.";
+  if (voix) return `${r.raison} Le détail est sur le PC.`;
+  const morceaux = [r.raison ?? ''];
+  if (r.sources.length) morceaux.push(`Sûres (deux sites d'accord) : ${r.sources.join(' ; ')}.`);
+  if (r.incertitudes.length) morceaux.push(`À vérifier quand tu auras la pièce : ${r.incertitudes.join(' ; ')}.`);
+  return morceaux.join(' ');
 }
 
 function mesuresParFichier(racine: string): NonNullable<AtelierDeps['mesures']> {
@@ -200,9 +235,13 @@ export async function tourAtelier(input: AtelierEntree, deps: AtelierDeps): Prom
   const precedent = dernierAtelier(input.messages);
   const fichierMesures = deps.mesures ?? mesuresParFichier(deps.racine);
   let mesures = await fichierMesures.lire();
-  // Cotes trouvées ailleurs (recherche, fiches) : les sûres comblent ce que l'utilisateur n'a pas mesuré.
-  const cotes = await (deps.cotes ?? cotesParFichier(deps.racine)).lire().catch(() => ({}));
-  let decision = deciderAtelier(input.text, precedent, { mesures: fusionnerCotes(mesures, cotes) });
+  // Cotes trouvées sur Internet : elles comblent ce que l'utilisateur n'a pas mesuré (sûres, ou d'une
+  // seule source et dites « à vérifier »).
+  const fichierCotes = deps.cotes ?? cotesParFichier(deps.racine);
+  const cotes: CotesTrouvees = await fichierCotes.lire().catch(() => ({}));
+  const recherches: RecherchesCotes = await (fichierCotes.lireRecherches?.() ?? Promise.resolve({})).catch(() => ({}));
+  const contexte = () => ({ mesures: fusionnerCotes(mesures, cotes, { uneSource: true }), rechercheCotes: Boolean(deps.chercherCotes), cherches: Object.keys(recherches) });
+  let decision = deciderAtelier(input.text, precedent, contexte());
   // Une mesure de composant donnée : gardée tout de suite (elle sert ensuite partout), puis la
   // phrase d'avant est relue (question suivante, ou la pièce).
   for (let i = 0; decision.kind === 'mesure' && i < 3; i += 1) {
@@ -210,13 +249,41 @@ export async function tourAtelier(input: AtelierEntree, deps: AtelierDeps): Prom
     if (ajout.erreur) return precedent ? { texte: ajout.erreur, etat: precedent } : { texte: ajout.erreur };
     mesures = ajout.mesures;
     await fichierMesures.ecrire(mesures);
-    decision = deciderAtelier(decision.reprise.texte, decision.reprise.piece, { mesures: fusionnerCotes(mesures, cotes) });
+    decision = deciderAtelier(decision.reprise.texte, decision.reprise.piece, contexte());
+  }
+  // Le modèle exact donné : les cotes sont cherchées sur Internet, gardées avec leurs sources, puis la
+  // demande d'avant est relue (la pièce, ou ce qui manque encore au pied à coulisse).
+  if (decision.kind === 'chercherCotes' && deps.chercherCotes) {
+    const d = decision;
+    input.progress?.(`Je cherche les cotes de « ${d.produit} » sur Internet…`);
+    const r = await chercherCotes({ composant: d.composant, produit: d.produit, cotes }, deps.chercherCotes, (a) => {
+      if (a.etape === 'recherche' || a.etape === 'lecture') input.progress?.(a.message);
+    });
+    const apres = r.produit?.cotes ?? cotes;
+    const faites = { ...recherches, [d.composant]: { produit: d.produit, jour: deps.jour(), manquants: r.produit?.manquants ?? [] } };
+    try {
+      await fichierCotes.ecrire?.(apres, faites);
+    } catch {
+      /* gardées pour ce tour seulement */
+    }
+    Object.assign(cotes, apres);
+    Object.assign(recherches, faites);
+    const resume = phraseRecherche(r, input.place === 'enceinte');
+    const suite = await tourAtelier(
+      { ...input, text: d.reprise.texte, messages: d.reprise.piece ? [{ role: 'assistant', content: '', atelier: d.reprise.piece } as ChatMessage] : [] },
+      { ...deps, cotes: { lire: async () => cotes, lireRecherches: async () => recherches } },
+    );
+    if (!suite) return { texte: resume };
+    return { ...suite, texte: `${resume} ${suite.texte}` };
   }
   const voix = input.place === 'enceinte';
 
   switch (decision.kind) {
     case 'mesure':
       return { texte: 'Mesure gardée.' };
+    case 'chercherCotes':
+      // Pas de recherche sur ce PC : le pied à coulisse.
+      return { texte: "Je ne peux pas chercher sur Internet d'ici. Si tu as la pièce, dis « je la mesure »." };
     case 'rien':
       return null;
     case 'dire':

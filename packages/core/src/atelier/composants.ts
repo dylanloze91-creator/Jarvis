@@ -314,34 +314,70 @@ export function etatCoteTrouvee(lues: readonly CoteLue[]): EtatCoteTrouvee {
   const sources = [...new Set(lues.map((l) => l.source))];
   for (const l of lues) {
     const daccord = lues.filter((x) => Math.abs(x.valeur - l.valeur) <= CONCORDANCE_MM);
-    const differentes = new Set(daccord.map((x) => x.source));
-    if (differentes.size >= 2) {
+    // Deux pages d'un même site ne comptent que pour une.
+    if (new Set(daccord.map((x) => siteDeSource(x.source))).size >= 2) {
       const valeur = Math.round((daccord.reduce((s, x) => s + x.valeur, 0) / daccord.length) * 100) / 100;
-      return { etat: 'sur', valeur, sources: [...differentes] };
+      return { etat: 'sur', valeur, sources: [...new Set(daccord.map((x) => x.source))] };
     }
   }
   const valeurs = [...new Set(lues.map((l) => l.valeur))];
   return valeurs.length === 1 ? { etat: 'incertain', valeur: valeurs[0]!, sources } : { etat: 'incertain', sources, desaccord: valeurs };
 }
 
+/** Le site d'une source (« https://www.espressif.com/… » → « espressif.com »). */
+export function siteDeSource(source: string): string {
+  try {
+    return new URL(source).hostname.replace(/^www\./, '').toLowerCase();
+  } catch {
+    return source.trim().toLowerCase();
+  }
+}
+
+/** Champs d'encombrement : quand les sources ne concordent pas, le plus grand est sans danger (boîte un peu plus grande). */
+export const CHAMPS_ENCOMBREMENT: readonly string[] = ['longueur', 'largeur', 'hauteur_dessus'];
+
+export interface OptionsFusion {
+  /**
+   * Cotes trouvées sur Internet pour une pièce qu'on n'a pas en main (demande de l'utilisateur,
+   * 24 novembre) : une cote d'une seule source sert aussi (« à vérifier à réception »), et un
+   * encombrement en désaccord prend la plus grande valeur. Un trou en désaccord reste manquant.
+   */
+  uneSource?: boolean;
+}
+
+/**
+ * Un encombrement en désaccord : la plus grande valeur, seulement si les lectures restent proches
+ * (20 % d'écart au plus). Au-delà, l'une d'elles est fausse (vu le 25 novembre : 12 et 70 mm pour la
+ * hauteur d'une même carte) : rien n'est pris, la cote reste à trouver.
+ */
+export function plusGrandeSiProches(champ: string, desaccord: readonly number[] | undefined): number | undefined {
+  if (!desaccord?.length || !CHAMPS_ENCOMBREMENT.includes(champ)) return undefined;
+  const max = Math.max(...desaccord);
+  return max <= Math.min(...desaccord) * 1.2 ? max : undefined;
+}
+
 /**
  * Les mesures à utiliser pour dessiner : celles de l'utilisateur d'abord, puis les cotes trouvées
- * **sûres**. Une cote incertaine n'entre pas : elle reste à mesurer.
+ * **sûres**. Sans `uneSource`, une cote incertaine n'entre pas : elle reste à mesurer.
  */
-export function fusionnerCotes(mesures: MesuresComposants, cotes: CotesTrouvees): MesuresComposants {
+export function fusionnerCotes(mesures: MesuresComposants, cotes: CotesTrouvees, options: OptionsFusion = {}): MesuresComposants {
   const out: MesuresComposants = { ...mesures };
   for (const [id, champs] of Object.entries(cotes)) {
     for (const [champ, lues] of Object.entries(champs)) {
       if (typeof mesures[id]?.[champ] === 'number') continue;
       const e = etatCoteTrouvee(lues);
-      if (e.etat === 'sur' && e.valeur !== undefined) out[id] = { ...(out[id] ?? {}), [champ]: e.valeur };
+      let valeur: number | undefined;
+      if (e.etat === 'sur') valeur = e.valeur;
+      else if (options.uneSource && e.valeur !== undefined) valeur = e.valeur;
+      else if (options.uneSource) valeur = plusGrandeSiProches(champ, e.desaccord);
+      if (valeur !== undefined) out[id] = { ...(out[id] ?? {}), [champ]: valeur };
     }
   }
   return out;
 }
 
 /** D'où viennent les cotes d'un composant, et ce qui n'y est pas sûr (pour le résultat d'une étape). */
-export function provenanceCotes(id: string, mesures: MesuresComposants, cotes: CotesTrouvees): { sources: string[]; incertitudes: string[] } {
+export function provenanceCotes(id: string, mesures: MesuresComposants, cotes: CotesTrouvees, options: OptionsFusion = {}): { sources: string[]; incertitudes: string[] } {
   const c = composant(id);
   if (!c?.aMesurer) return { sources: [], incertitudes: [] };
   const sources: string[] = [];
@@ -355,7 +391,11 @@ export function provenanceCotes(id: string, mesures: MesuresComposants, cotes: C
     if (!lues?.length) continue;
     const e = etatCoteTrouvee(lues);
     if (e.etat === 'sur') sources.push(`${c.nom}, ${q.nom} : ${fmt(e.valeur!)} mm (${e.sources.join(' ; ')})`);
-    else if (e.desaccord) incertitudes.push(`${c.nom}, ${q.nom} : les sources ne concordent pas (${e.desaccord.map(fmt).join(' / ')} mm) — à mesurer.`);
+    else if (options.uneSource && e.desaccord && plusGrandeSiProches(q.champ, e.desaccord) !== undefined) {
+      incertitudes.push(`${c.nom}, ${q.nom} : les sources ne concordent pas (${e.desaccord.map(fmt).join(' / ')} mm), j'ai pris la plus grande — à vérifier quand tu auras la pièce (${e.sources.join(' ; ')}).`);
+    } else if (e.valeur !== undefined && options.uneSource) {
+      incertitudes.push(`${c.nom}, ${q.nom} : ${fmt(e.valeur)} mm sur une seule source (${e.sources[0]}) — à vérifier quand tu auras la pièce.`);
+    } else if (e.desaccord) incertitudes.push(`${c.nom}, ${q.nom} : les sources ne concordent pas (${e.desaccord.map(fmt).join(' / ')} mm) — à mesurer.`);
     else incertitudes.push(`${c.nom}, ${q.nom} : ${fmt(e.valeur!)} mm sur une seule source (${e.sources[0]}) — à mesurer.`);
   }
   return { sources, incertitudes };
@@ -384,8 +424,26 @@ export function lireFichierCotes(texte: string): CotesTrouvees {
   return cotes;
 }
 
-export function ecrireFichierCotes(cotes: CotesTrouvees): string {
-  return `${JSON.stringify({ version: 1, note: 'Cotes de composants trouvées par Jarvis (recherche, fiches), chacune avec sa source.', cotes }, null, 2)}\n`;
+/** Les recherches déjà faites, par composant : le produit cherché, le jour, ce qui manquait encore. */
+export type RecherchesCotes = Record<string, { produit: string; jour: string; manquants: string[] }>;
+
+export function lireRecherchesCotes(texte: string): RecherchesCotes {
+  const out: RecherchesCotes = {};
+  try {
+    const data = JSON.parse(texte) as { recherches?: unknown };
+    if (!data || typeof data !== 'object' || !data.recherches || typeof data.recherches !== 'object') return out;
+    for (const [id, r] of Object.entries(data.recherches as Record<string, { produit?: unknown; jour?: unknown; manquants?: unknown }>)) {
+      if (!composant(id) || typeof r?.produit !== 'string' || typeof r.jour !== 'string') continue;
+      out[id] = { produit: r.produit, jour: r.jour, manquants: Array.isArray(r.manquants) ? r.manquants.filter((x): x is string => typeof x === 'string') : [] };
+    }
+  } catch {
+    return {};
+  }
+  return out;
+}
+
+export function ecrireFichierCotes(cotes: CotesTrouvees, recherches: RecherchesCotes = {}): string {
+  return `${JSON.stringify({ version: 1, note: 'Cotes de composants trouvées par Jarvis (recherche, fiches), chacune avec sa source.', cotes, recherches }, null, 2)}\n`;
 }
 
 /** La géométrie d'une carte, si elle est connue (sûre, ou mesurée). */

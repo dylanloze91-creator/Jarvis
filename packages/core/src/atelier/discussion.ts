@@ -10,7 +10,8 @@
 import { estChoix, fabriquer, gabarit, GABARITS, type Gabarit, type Mesure, type MesureNombre, type Valeurs } from './gabarits.js';
 import { appliquerDecoupes, avecDecoupes, decoupesAffichees, decoupesDe, lireDecoupes, sePerce } from './decoupes.js';
 import { ajoutsAffiches, appliquerAjouts, avecAjouts, lireAjouts } from './ajouts.js';
-import { ajouterMesure, composant, composantNomme, lireMesure, questionMesure, type MesuresComposants } from './composants.js';
+import { ajouterMesure, composant, composantNomme, lireMesure, prochaineMesure, questionMesure, type MesuresComposants } from './composants.js';
+import { liensDits } from './rechercheCotes.js';
 import { comprendre, lireMesures, lireReponse, plier, prochaineQuestion } from './lecture.js';
 
 /** Une version rendue de la pièce. Les fichiers sont des noms simples, dans le dossier de la pièce. */
@@ -47,6 +48,11 @@ export type AtelierEtat =
    * mesure gardée, avec la pièce qui était à l'écran.
    */
   | { etape: 'mesure'; composant: string; champ: string; reprise: { texte: string; piece: Extract<AtelierEtat, { etape: 'piece' }> | null } }
+  /**
+   * Les cotes d'un composant manquent : Jarvis a demandé le modèle exact, pour les chercher sur
+   * Internet (demande de l'utilisateur, 24 novembre). `reprise` comme pour une mesure.
+   */
+  | { etape: 'produit'; composant: string; reprise: { texte: string; piece: Extract<AtelierEtat, { etape: 'piece' }> | null } }
   /**
    * La pièce demandée ne tenait pas (une carte trop grande pour la boîte) : Jarvis propose d'autres
    * cotes et attend « oui ». `base` : la pièce qui était à l'écran, s'il y en avait une.
@@ -92,11 +98,66 @@ export type AtelierDecision =
    * Une mesure donnée : le PC la garde (`composants-mesures.json`), puis relit `reprise.texte` avec
    * `reprise.piece` et les mesures à jour (question suivante, ou la pièce).
    */
-  | { kind: 'mesure'; composant: string; champ: string; valeur: number; reprise: { texte: string; piece: Extract<AtelierEtat, { etape: 'piece' }> | null } };
+  | { kind: 'mesure'; composant: string; champ: string; valeur: number; reprise: { texte: string; piece: Extract<AtelierEtat, { etape: 'piece' }> | null } }
+  /**
+   * Chercher sur Internet les cotes de `composant`, pour le produit dit par l'utilisateur (référence,
+   * ou lien), puis relire `reprise.texte` avec `reprise.piece` et les cotes trouvées.
+   */
+  | { kind: 'chercherCotes'; composant: string; produit: string; reprise: { texte: string; piece: Extract<AtelierEtat, { etape: 'piece' }> | null } };
 
 /** Ce que le PC sait en plus de la discussion : les mesures de composants données par l'utilisateur. */
 export interface ContexteAtelier {
+  /** Mesures de l'utilisateur, complétées des cotes trouvées. */
   mesures?: MesuresComposants;
+  /** Vrai : le PC sait chercher des cotes sur Internet. Une cote manquante fait alors demander le modèle exact. */
+  rechercheCotes?: boolean;
+  /** Composants déjà cherchés sur Internet (le pied à coulisse ne sert plus qu'à ce qui manque encore). */
+  cherches?: readonly string[];
+}
+
+type Reprise = { texte: string; piece: Extract<AtelierEtat, { etape: 'piece' }> | null };
+
+/**
+ * Une mesure de composant manque. Si le PC sait chercher et que rien n'a encore été cherché (ni
+ * mesuré) pour ce composant : le modèle exact est demandé, pour chercher ses cotes. Sinon, la mesure
+ * au pied à coulisse, précédée de ce que la recherche n'a pas trouvé.
+ */
+function questionComposant(q: { composant: string; champ: string; texte: string }, reprise: Reprise, contexte: ContexteAtelier): AtelierDecision {
+  const c = composant(q.composant);
+  const dejaLa = Object.keys(contexte.mesures?.[q.composant] ?? {}).length > 0;
+  const cherche = (contexte.cherches ?? []).includes(q.composant);
+  if (c && contexte.rechercheCotes && !cherche && !dejaLa) {
+    return { kind: 'dire', texte: questionProduit(c.nom), etat: { etape: 'produit', composant: c.id, reprise } };
+  }
+  const texte = cherche
+    ? `Internet ne m'a pas donné toutes les cotes. Si tu as la pièce, mesure ce qui manque ; sinon colle-moi le lien d'un plan ou d'une fiche (« cherche avec ce lien : … »). ${q.texte}`
+    : q.texte;
+  return { kind: 'dire', texte, etat: { etape: 'mesure', composant: q.composant, champ: q.champ, reprise } };
+}
+
+export function questionProduit(nom: string): string {
+  return (
+    "Je n'ai pas de cotes fiables pour cette carte. C'est quel modèle exactement ? Donne-moi sa référence " +
+    "(celle écrite sur la carte ou sur la page du vendeur), ou colle le lien de la page où tu l'achètes : je cherche ses cotes sur Internet. " +
+    `Si c'est celle de ma liste (${nom}), dis « celle de ta liste » ; si tu l'as sous la main et préfères la mesurer, dis « je la mesure ».`
+  );
+}
+
+const MESURER_SOI_MEME = /\b(?:je (?:la |le |les )?mesure|je vais (?:la |le |les )?mesurer|pied a coulisse|je l ai (?:sous la main|ici|devant moi))\b/;
+const CELLE_DE_LA_LISTE = /^(?:oui |ok |bah |ben )?(?:c est )?(?:celle|celui|la meme|le meme) (?:de ta liste|de la liste|que tu as|que t as|de l enceinte|qui est dans ta liste)\b|^(?:oui )?celle la\b/;
+/** Ce que dit l'utilisateur après la question du modèle exact. */
+function lireProduit(text: string, t: string, nom: string): string | null {
+  // Un lien d'abord : « celle-là : https://… » vise la page donnée, pas la carte de la liste.
+  if (liensDits(text).length) return text.trim();
+  if (CELLE_DE_LA_LISTE.test(t)) return nom;
+  const mots = t.split(' ').filter(Boolean);
+  if (mots.length === 0 || mots.length > 16) return null;
+  // « c'est une ESP32 DevKit V1 » → « ESP32 DevKit V1 ».
+  return text
+    .trim()
+    .replace(/^(?:jarvis\s*,?\s*)?(?:euh\s+)?(?:(?:c'?est|c’est|ce sera|il s'?agit d'?)\s*)?(?:une?|la|le|l'|l’)?\s*(?:carte\s+|module\s+)?/i, '')
+    .replace(/[.!?]+$/, '')
+    .trim() || null;
 }
 
 /** Nombre de messages relus pour retrouver la pièce en cours. */
@@ -642,6 +703,20 @@ export function deciderAtelier(text: string, precedentDonne: AtelierEtat | null,
     };
   }
 
+  // Le modèle exact demandé : la réponse est le produit à chercher, « je la mesure » passe au pied à
+  // coulisse, « laisse tomber » arrête.
+  if (precedent?.etape === 'produit') {
+    const c = composant(precedent.composant);
+    if (ANNULER.test(t)) return { kind: 'dire', texte: "D'accord, je laisse tomber." };
+    if (c && MESURER_SOI_MEME.test(t)) {
+      const q = prochaineMesure(c, mesures);
+      if (q) return { kind: 'dire', texte: questionMesure(c, q, mesures), etat: { etape: 'mesure', composant: c.id, champ: q.champ, reprise: precedent.reprise } };
+    }
+    const produit = c ? lireProduit(text, t, c.nom) : null;
+    if (c && produit) return { kind: 'chercherCotes', composant: c.id, produit, reprise: precedent.reprise };
+    // Autre chose : la phrase suit son chemin (la question reste posée une fois).
+  }
+
   // Une mesure de composant demandée : un nombre est la réponse, « laisse tomber » arrête.
   if (precedent?.etape === 'mesure') {
     const c = composant(precedent.composant);
@@ -682,8 +757,7 @@ export function deciderAtelier(text: string, precedentDonne: AtelierEtat | null,
   const nouvelle = demandePiece(text, mesures);
   if (nouvelle) {
     if (nouvelle.question) {
-      const q = nouvelle.question;
-      return { kind: 'dire', texte: q.texte, etat: { etape: 'mesure', composant: q.composant, champ: q.champ, reprise: { texte: text, piece: null } } };
+      return questionComposant(nouvelle.question, { texte: text, piece: null }, contexte);
     }
     if (!nouvelle.gabarit) {
       return {
@@ -699,7 +773,7 @@ export function deciderAtelier(text: string, precedentDonne: AtelierEtat | null,
     return demanderOuFabriquer(nouvelle.gabarit, nouvelle.valeurs, `${majuscule(nouvelle.gabarit.nom)}, d'accord. `);
   }
 
-  if (!precedent || precedent.etape === 'mesure') return { kind: 'rien' };
+  if (!precedent || precedent.etape === 'mesure' || precedent.etape === 'produit') return { kind: 'rien' };
   const g0 = gabarit(precedent.gabarit);
   if (!g0) return { kind: 'rien' };
   let g: Gabarit = g0;
@@ -788,8 +862,7 @@ export function deciderAtelier(text: string, precedentDonne: AtelierEtat | null,
   if (matiere.ops.length) {
     const r = appliquerAjouts(g, valeurs, matiere.ops, mesures);
     if (r.question) {
-      const q = r.question;
-      return { kind: 'dire', texte: q.texte, etat: { etape: 'mesure', composant: q.composant, champ: q.champ, reprise: { texte: text, piece: precedent } } };
+      return questionComposant(r.question, { texte: text, piece: precedent }, contexte);
     }
     if (r.erreurs.length) return { kind: 'dire', texte: `${r.erreurs.join(' ')} La version ${actuelle.numero} reste à l'écran.` };
     valeurs = avecAjouts(valeurs, r.ajouts);

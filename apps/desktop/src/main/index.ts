@@ -495,7 +495,7 @@ function settingsForWindow(): Settings {
  * chemin d'avant. Jarvis Live n'a pas cette fonction (`undefined`).
  */
 /** Atelier 3D dans la discussion : Jarvis Test seulement (`undefined` dans Live). */
-const atelierReply = edition().atelier ? creerAtelierPC(() => settings) : undefined;
+const atelierReply = edition().atelier ? creerAtelierPC(() => settings, undefined, undefined, searchRegistry) : undefined;
 
 const stopAllReply = edition().appendices
   ? async (input: { text: string }): Promise<string | null> => {
