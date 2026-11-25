@@ -416,7 +416,17 @@ export async function tourAtelier(input: AtelierEntree, deps: AtelierDeps): Prom
       }
       const etat = r.produit?.etat;
       const version = r.produit?.version;
-      if (!etat || !version) return { texte: r.raison === ATELIER_SANS_OPENSCAD || r.produit?.scad ? (r.raison ?? '') : `${r.raison ?? ''}${reste}` };
+      if (!etat || !version) {
+        const texte = r.raison === ATELIER_SANS_OPENSCAD || r.produit?.scad ? (r.raison ?? '') : `${r.raison ?? ''}${reste}`;
+        // Une nouvelle pièce refusée pour ses cotes (trop grande pour le plateau, hors limites) : la
+        // question reste ouverte, « bon alors 250 par 200 par 100 » la refait (sinon la phrase partait
+        // à un modèle, qui répondait comme si la boîte existait).
+        const premiere = decision.gabarit.suite[0];
+        if (!decision.base && premiere && r.raison !== ATELIER_SANS_OPENSCAD && !r.produit?.scad) {
+          return { texte: `${texte} Redis-moi les cotes.`, etat: { etape: 'question', gabarit: decision.gabarit.id, valeurs: {}, mesure: premiere } };
+        }
+        return { texte };
+      }
       const probleme = [r.ok ? '' : ` Attention : ${r.raison}`, ...r.avertissements.filter((a) => a.startsWith('Sans support')).map((a) => ` ${a}`)].join('');
       if (voix) return { texte: `C'est prêt : ${version.fiche} Regarde l'écran du PC.${probleme}`, etat };
       const quoi = decision.changement ? `Version ${version.numero} (${decision.changement}). ` : '';
