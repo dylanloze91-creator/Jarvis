@@ -64,6 +64,8 @@ export const PHONE_HTML = String.raw`<!doctype html>
   <p id="tip" class="tip" hidden>Astuce : le micro du clavier permet de dicter.</p>
   <form id="composer" class="composer" autocomplete="off">
     <button id="mic" type="button" class="icon mic" aria-label="Parler">🎤</button>
+    <button id="eye" type="button" class="icon" aria-label="Montrer à Jarvis">📷</button>
+    <input id="eye-file" type="file" accept="image/*" capture="environment" hidden>
     <textarea id="input" rows="1" placeholder="Demande à Jarvis…" enterkeyhint="send"></textarea>
     <button id="send" type="submit" class="send" aria-label="Envoyer">➤</button>
   </form>
@@ -115,6 +117,9 @@ header { display: flex; align-items: center; justify-content: space-between; pad
 .status { margin: 0; font-size: 12px; color: var(--muted); }
 .status.bad { color: var(--danger); }
 .header-actions { display: flex; gap: 2px; }
+.eye-photo { margin: 0; align-self: flex-start; max-width: 92%; border-radius: 14px; overflow: hidden; border: 1px solid rgba(80, 220, 255, 0.25); }
+.eye-photo img { display: block; width: 100%; }
+.eye-photo figcaption { font-size: 12px; opacity: 0.7; padding: 4px 8px; }
 .messages { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 16px 12px; display: flex; flex-direction: column; gap: 10px; }
 .msg { max-width: 86%; padding: 10px 14px; border-radius: 18px; white-space: pre-wrap; word-wrap: break-word; overflow-wrap: anywhere; }
 .msg.user { align-self: flex-end; background: var(--accent); color: #031018; border-bottom-right-radius: 6px; }
@@ -897,6 +902,10 @@ export const PHONE_JS = String.raw`(function () {
         current = null;
         missionProposalCard(event);
         break;
+      case 'yeux':
+        current = null;
+        eyePhoto(event);
+        break;
       case 'confirm':
         current = null;
         confirmationCard(event);
@@ -928,6 +937,91 @@ export const PHONE_JS = String.raw`(function () {
       default:
         break;
     }
+  }
+
+  // Les yeux : une photo de Jarvis arrive par un lien à usage unique, lu avec le jeton du téléphone.
+  function eyePhoto(event) {
+    if (typeof event.image !== 'string' || event.image.indexOf('/api/oeil/image/') !== 0) return;
+    var figure = document.createElement('figure');
+    figure.className = 'eye-photo';
+    var caption = document.createElement('figcaption');
+    caption.textContent = 'Caméra « ' + (event.camera || '') + ' » · photo prise à ' + new Date(event.prisA).toLocaleTimeString('fr-FR');
+    figure.appendChild(caption);
+    $('messages').appendChild(figure);
+    scrollDown();
+    fetch(event.image, { headers: { Authorization: 'Bearer ' + token } })
+      .then(function (response) {
+        if (!response.ok) throw new Error('expirée');
+        return response.blob();
+      })
+      .then(function (blob) {
+        var img = document.createElement('img');
+        img.alt = 'Photo de la caméra';
+        img.src = URL.createObjectURL(blob);
+        figure.insertBefore(img, caption);
+        scrollDown();
+      })
+      .catch(function () {
+        caption.textContent = 'Photo plus disponible (lien expiré) : elle est dans la discussion sur le PC.';
+      });
+  }
+
+  // « Montrer à Jarvis » : l'appareil photo de l'iPhone, une photo à la fois, réduite à 1600 px.
+  function shrinkPhoto(file) {
+    return new Promise(function (resolve, reject) {
+      var url = URL.createObjectURL(file);
+      var img = new Image();
+      img.onload = function () {
+        var scale = Math.min(1, 1600 / Math.max(img.width, img.height));
+        var canvas = document.createElement('canvas');
+        canvas.width = Math.round(img.width * scale);
+        canvas.height = Math.round(img.height * scale);
+        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+        URL.revokeObjectURL(url);
+        canvas.toBlob(function (blob) {
+          if (blob) resolve(blob);
+          else reject(new Error('photo illisible'));
+        }, 'image/jpeg', 0.85);
+      };
+      img.onerror = function () {
+        URL.revokeObjectURL(url);
+        reject(new Error('photo illisible'));
+      };
+      img.src = url;
+    });
+  }
+
+  function showToJarvis(file) {
+    var note = bubble('note', 'Photo en route vers Jarvis…');
+    shrinkPhoto(file)
+      .then(function (blob) {
+        if (blob.size > 5 * 1024 * 1024) throw new Error('Photo trop grande.');
+        return fetch('/api/oeil/photo', {
+          method: 'POST',
+          headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'image/jpeg' },
+          body: blob,
+        });
+      })
+      .then(function (response) {
+        if (response.status === 401) {
+          forgetDevice('Ce téléphone n’est plus relié. Demande un nouveau code sur le PC.');
+          return;
+        }
+        return response.json().then(function (data) {
+          if (!response.ok) throw new Error(data.error || 'Photo refusée.');
+          var question = input.value.trim();
+          note.textContent = question
+            ? 'Photo envoyée : Jarvis la regarde.'
+            : 'Photo envoyée. Pose ta question (dans les 5 minutes) : Jarvis regardera la photo.';
+          if (question) {
+            input.value = '';
+            send(question, 'text');
+          }
+        });
+      })
+      .catch(function (error) {
+        note.textContent = 'Photo non envoyée : ' + (error && error.message ? error.message : 'erreur');
+      });
   }
 
   function setBusy(value) {
@@ -1106,6 +1200,14 @@ export const PHONE_JS = String.raw`(function () {
     }
   });
   $('new').addEventListener('click', newConversation);
+  $('eye').addEventListener('click', function () {
+    $('eye-file').click();
+  });
+  $('eye-file').addEventListener('change', function () {
+    var file = this.files && this.files[0];
+    this.value = '';
+    if (file) showToJarvis(file);
+  });
   $('speak').addEventListener('click', function () {
     speakReplies = !speakReplies;
     save(SPEAK_KEY, speakReplies ? 'on' : 'off');

@@ -45,7 +45,7 @@ import { MachineSetupFlow } from '@/components/MachineSetupFlow';
 import { MachineSetupScreen, previewMachineDecision } from '@/components/MachineSetupScreen';
 import type { RuntimeStatus, ToolInfo } from '../../shared/ipc';
 
-type View = 'chat' | 'developer' | 'imager' | 'history' | 'settings' | 'audit' | 'setup-guide';
+type View = 'chat' | 'developer' | 'imager' | 'yeux' | 'history' | 'settings' | 'audit' | 'setup-guide';
 const HEADER_HEIGHT = 52;
 const VIEW_KICKER_HEIGHT = 46;
 const MIN_COMPACT_HEIGHT = 400;
@@ -62,6 +62,7 @@ function initialViewFromScene(): View {
     return 'settings';
   }
   if (scene === 'developer') return 'developer';
+  if (scene === 'yeux') return 'yeux';
   return 'chat';
 }
 

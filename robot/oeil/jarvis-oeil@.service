@@ -1,0 +1,21 @@
+[Unit]
+Description=Oeil de Jarvis (%i)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=jarvis-oeil
+Group=video
+SupplementaryGroups=gpio
+WorkingDirectory=/opt/jarvis-oeil
+ExecStart=/opt/jarvis-oeil/.venv/bin/python -m jarvis_oeil --config /etc/jarvis-oeil/%i.toml
+Restart=always
+RestartSec=2
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

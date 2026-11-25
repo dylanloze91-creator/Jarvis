@@ -65,6 +65,17 @@ const api: JarvisApi = {
     fichier: (dossier: string, fichier: string) => ipcRenderer.invoke(IpcChannel.atelierFichier, dossier, fichier),
     ouvrirDossier: (dossier: string) => ipcRenderer.invoke(IpcChannel.atelierOuvrirDossier, dossier),
   },
+  yeux: {
+    photo: (photoId: string) => ipcRenderer.invoke(IpcChannel.yeuxPhoto, photoId),
+    disponible: () => ipcRenderer.invoke(IpcChannel.yeuxDisponible),
+    liste: () => ipcRenderer.invoke(IpcChannel.yeuxListe),
+    vue: (id: string) => ipcRenderer.invoke(IpcChannel.yeuxVue, id),
+    garder: (photoId: string) => ipcRenderer.invoke(IpcChannel.yeuxGarder, photoId),
+    allumer: (id: string, allume: boolean) => ipcRenderer.invoke(IpcChannel.yeuxAllumer, id, allume),
+    brancher: (id: string, adresse: string, jeton: string) => ipcRenderer.invoke(IpcChannel.yeuxBrancher, id, adresse, jeton),
+    regler: (id: string, reglage: { piece?: string; camera?: string }) => ipcRenderer.invoke(IpcChannel.yeuxRegler, id, reglage),
+    webcams: () => ipcRenderer.invoke(IpcChannel.yeuxWebcams),
+  },
   images: {
     open: (path: string) => ipcRenderer.invoke(IpcChannel.imagesOpen, path),
     directCatalog: () => ipcRenderer.invoke(IpcChannel.imagesDirectCatalog),

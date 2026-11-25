@@ -34,7 +34,19 @@ import type {
   WakeStatsSummary,
   WakeVerifierModel,
 } from '@jarvis/core';
-import type { AtelierEtat } from '@jarvis/core';
+import type { AtelierEtat, EtatCarte, Oeil, PhotoDiscussion } from '@jarvis/core';
+
+/** Écran « Yeux » : une carte par œil. Données seulement, lecture seule. */
+export interface VueOeilYeux {
+  oeil: Oeil;
+  branche: boolean;
+  photo: (PhotoDiscussion & { type: string; data: Uint8Array }) | null;
+  raisonPhoto: string | null;
+  etat: EtatCarte | null;
+  raisonEtat: string | null;
+  file: string[];
+}
+export type ResultatVueYeux = { ok: true; vue: VueOeilYeux } | { ok: false; error: string };
 import type { LocalLearningRuntimeStatus } from '@jarvis/core';
 import type { DirectProjectDefaults, ImageFormat, ImageProject } from '@jarvis/core';
 import type { DeveloperApi } from './developerIpc.js';
@@ -105,6 +117,17 @@ export const IpcChannel = {
   /** Atelier 3D (Jarvis Test) : fichier d'une pièce (STL de l'écran 3D), et son dossier. */
   atelierFichier: 'atelier:fichier',
   atelierOuvrirDossier: 'atelier:ouvrir-dossier',
+  /** Les yeux (Jarvis Test) : une photo gardée en mémoire dans le PC, par sa référence. */
+  yeuxPhoto: 'yeux:photo',
+  /** Écran « Yeux » : disponible, une vue (image + état + file, lecture seule), garder une photo. */
+  yeuxDisponible: 'yeux:disponible',
+  yeuxListe: 'yeux:liste',
+  yeuxVue: 'yeux:vue',
+  yeuxGarder: 'yeux:garder',
+  yeuxAllumer: 'yeux:allumer',
+  yeuxBrancher: 'yeux:brancher',
+  yeuxRegler: 'yeux:regler',
+  yeuxWebcams: 'yeux:webcams',
   imagesDirectCatalog: 'images:direct-catalog',
   imagesDirectGenerate: 'images:direct-generate',
   imagesDirectCancel: 'images:direct-cancel',
@@ -726,6 +749,8 @@ export type ChatEvent =
   | { type: 'imager_offer'; text: string }
   /** Atelier 3D (Jarvis Test) : une pièce rendue, à afficher en 3D sous la réponse `messageId`. */
   | { type: 'atelier'; messageId: string; etat: AtelierEtat }
+  /** Les yeux (Jarvis Test) : une photo de la caméra de l'imprimante sous la réponse `messageId`. */
+  | { type: 'yeux'; messageId: string; photo: PhotoDiscussion }
   | { type: 'done'; conversationId: string; messages: ChatMessage[] };
 
 export type WindowChrome = 'compact' | 'dashboard';
@@ -941,6 +966,18 @@ export interface JarvisApi {
   atelier?: {
     fichier(dossier: string, fichier: string): Promise<{ ok: true; data: Uint8Array } | { ok: false; error: string }>;
     ouvrirDossier(dossier: string): Promise<{ ok: true } | { ok: false; error: string }>;
+  };
+  /** Les yeux (Jarvis Test). Absent de l'aperçu hors Electron. Une photo en mémoire, par sa référence. */
+  yeux?: {
+    photo(photoId: string): Promise<{ ok: true; type: string; data: Uint8Array; prisA: number } | { ok: false; error: string }>;
+    disponible(): Promise<boolean>;
+    liste(): Promise<Oeil[]>;
+    vue(id: string): Promise<ResultatVueYeux>;
+    garder(photoId: string): Promise<{ ok: true; chemin: string } | { ok: false; error: string }>;
+    allumer(id: string, allume: boolean): Promise<{ ok: true } | { ok: false; error: string }>;
+    brancher(id: string, adresse: string, jeton: string): Promise<{ ok: true } | { ok: false; error: string }>;
+    regler(id: string, reglage: { piece?: string; camera?: string }): Promise<{ ok: true } | { ok: false; error: string }>;
+    webcams(): Promise<{ id: string; nom: string }[]>;
   };
   settings: {
     get(): Promise<{ settings: Settings; status: RuntimeStatus }>;

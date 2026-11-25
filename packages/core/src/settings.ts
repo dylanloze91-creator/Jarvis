@@ -346,6 +346,17 @@ export const settingsSchema = z.object({
     })
     .optional(),
   /**
+   * Les yeux de Jarvis (Jarvis Test) : la caméra de l'imprimante, en lecture seule, à l'adresse
+   * de `printer.baseUrl`. Facultatif, sans défaut : absent ou coupé, rien ne change.
+   * `camera` : nom de la caméra dans Mainsail (absent : la première activée).
+   */
+  yeux: z
+    .object({
+      enabled: z.boolean().optional(),
+      camera: z.string().max(100).optional(),
+    })
+    .optional(),
+  /**
    * Garder la fenêtre visible quand une autre application prend le focus.
    * Masquage uniquement via Ctrl+Espace, Échap, ou le bouton fermer.
    * Remplace l'ancien `hideOnBlur` (défaut true) : la clé historique est

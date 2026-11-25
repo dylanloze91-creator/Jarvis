@@ -77,6 +77,8 @@ export interface Edition {
    * Absent dans Live : la discussion ne change pas.
    */
   atelier?: boolean;
+  /** Les yeux de Jarvis (caméra de l'imprimante, lecture seule) : Jarvis Test seulement. */
+  yeux?: boolean;
 }
 
 const PHONE_OFFSET = 6;
@@ -134,6 +136,7 @@ export const TEST_EDITION: Edition = {
   keepToolResults: true,
   appendices: { port: 53224 + APPENDICE_OFFSET },
   atelier: true,
+  yeux: true,
 };
 
 export function readEditionId(input: { env?: string; baked?: string } = {}): EditionId {

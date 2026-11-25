@@ -10,6 +10,8 @@ import {
   phoneTeamValidationSchema,
   speechTextForSpeaker,
   type AtelierEtat,
+  typeDesOctets,
+  YEUX_IMAGE_MAX,
   type Conversation,
 } from '@jarvis/core';
 import type { ChatEvent, SendChatInput, TeamValidationInput } from '../../shared/ipc.js';
@@ -55,6 +57,12 @@ export interface PhoneServerDeps {
    * pièce sur le téléphone, le texte seulement.
    */
   fichierAtelier?: (dossier: string, fichier: string) => Promise<Uint8Array>;
+  /**
+   * Les yeux (Jarvis Test). `recevoirPhoto` : photo prise avec « Montrer à Jarvis » (œil iPhone,
+   * gardée en mémoire). `photoYeux` : une photo de Jarvis à afficher sur le téléphone. Absents : 404.
+   */
+  recevoirPhoto?: (photo: { octets: Uint8Array; type: 'image/jpeg' | 'image/png'; appareil: string }) => Promise<{ ok: true } | { ok: false; error: string }>;
+  photoYeux?: (photoId: string) => { type: string; data: Uint8Array } | null;
   log?: (line: string) => void;
   now?: () => number;
 }
@@ -84,6 +92,8 @@ export interface PhonePairing {
 
 const MAX_BODY = 64 * 1024;
 const MAX_HISTORY = 80;
+/** Lien d'une photo de Jarvis vers le téléphone : à usage unique, 2 minutes. */
+export const PHONE_IMAGE_TTL_MS = 2 * 60_000;
 
 const PAGE_POLICY = [
   "default-src 'none'",
@@ -140,6 +150,25 @@ async function readJson(req: IncomingMessage): Promise<unknown> {
   } catch {
     throw new HttpError(400, 'JSON illisible.');
   }
+}
+
+/** Corps brut d'une image : 5 Mo au plus, JPEG ou PNG vérifié aux octets. */
+async function readImage(req: IncomingMessage): Promise<{ octets: Uint8Array; type: 'image/jpeg' | 'image/png' }> {
+  const annonce = (req.headers['content-type'] ?? '').split(';')[0]!.trim().toLowerCase();
+  if (annonce !== 'image/jpeg' && annonce !== 'image/png') throw new HttpError(415, 'Seulement une photo (JPEG ou PNG).');
+  if (Number(req.headers['content-length'] ?? '0') > YEUX_IMAGE_MAX) throw new HttpError(413, 'Photo trop grande (5 Mo au plus).');
+  const morceaux: Buffer[] = [];
+  let taille = 0;
+  for await (const morceau of req) {
+    const buffer = morceau as Buffer;
+    taille += buffer.byteLength;
+    if (taille > YEUX_IMAGE_MAX) throw new HttpError(413, 'Photo trop grande (5 Mo au plus).');
+    morceaux.push(buffer);
+  }
+  const octets = new Uint8Array(Buffer.concat(morceaux));
+  const type = typeDesOctets(octets);
+  if (!type || type !== annonce) throw new HttpError(415, 'Ce n’est pas une photo (JPEG ou PNG).');
+  return { octets, type };
 }
 
 function bearer(req: IncomingMessage): string | null {
@@ -305,6 +334,25 @@ export class PhoneServer {
       res.end(Buffer.from(octets));
       return;
     }
+    if (path === '/api/oeil/photo' && method === 'POST') {
+      if (!this.deps.recevoirPhoto) throw new HttpError(404, 'Introuvable.');
+      const photo = await readImage(req);
+      const result = await this.deps.recevoirPhoto({ ...photo, appareil: device.name });
+      if (!result.ok) throw new HttpError(400, result.error);
+      this.deps.log?.(`[téléphone] photo reçue de ${device.name} (${photo.octets.byteLength} octets)`);
+      return sendJson(res, 200, { ok: true });
+    }
+    if (path.startsWith('/api/oeil/image/') && method === 'GET') {
+      const cle = path.slice('/api/oeil/image/'.length);
+      const lien = /^[0-9a-f]{32}$/.test(cle) ? this.images.get(cle) : undefined;
+      this.images.delete(cle);
+      if (!lien || this.now() > lien.expire || lien.appareil !== device.id) throw new HttpError(404, 'Photo expirée.');
+      const photo = this.deps.photoYeux?.(lien.photoId);
+      if (!photo) throw new HttpError(404, 'Photo expirée.');
+      res.writeHead(200, { 'Content-Type': photo.type, 'Content-Length': photo.data.byteLength, 'Cache-Control': 'no-store' });
+      res.end(Buffer.from(photo.data));
+      return;
+    }
     if (path === '/api/speak' && method === 'POST') {
       if ((await this.deps.phoneVoice()) !== 'piper') throw new HttpError(503, 'La voix Piper n’est pas disponible sur ce PC.');
       if (!this.deps.synthesizeSpeech) throw new HttpError(503, 'Synthèse vocale indisponible.');
@@ -382,6 +430,20 @@ export class PhoneServer {
     };
   }
 
+  private readonly images = new Map<string, { photoId: string; appareil: string; expire: number }>();
+
+  private lienImage(
+    photo: { photoId: string; prisA: number; camera: string },
+    device: PhoneDevice,
+  ): { type: 'yeux'; image: string; prisA: number; camera: string } | null {
+    if (!this.deps.photoYeux) return null;
+    const maintenant = this.now();
+    for (const [cle, lien] of this.images) if (maintenant > lien.expire) this.images.delete(cle);
+    const cle = randomBytes(16).toString('hex');
+    this.images.set(cle, { photoId: photo.photoId, appareil: device.id, expire: maintenant + PHONE_IMAGE_TTL_MS });
+    return { type: 'yeux', image: `/api/oeil/image/${cle}`, prisA: photo.prisA, camera: photo.camera };
+  }
+
   private async pair(body: unknown, res: ServerResponse): Promise<void> {
     const parsed = phonePairRequestSchema.safeParse(body);
     const pairing = this.pairing;
@@ -428,14 +490,17 @@ export class PhoneServer {
         if (closed || res.writableEnded) return;
         // Une pièce de l'atelier part comme une carte avec des liens à usage unique, jamais l'état
         // brut (dossier, noms de fichiers). Sans lecteur de fichiers, elle n'est pas envoyée.
+        // Une photo des yeux part comme un lien à usage unique, jamais l'image ni sa référence.
         const sortie =
           event.type === 'atelier'
             ? event.etat.etape === 'piece'
               ? this.cartePiece(event.etat, device)
               : null
-            : event.type === 'done'
-              ? { ...event, messages: event.messages.map(({ atelier: _atelier, ...message }) => message) }
-              : event;
+            : event.type === 'yeux'
+              ? this.lienImage(event.photo, device)
+              : event.type === 'done'
+                ? { ...event, messages: event.messages.map(({ atelier: _atelier, ...message }) => message) }
+                : event;
         if (sortie) res.write(`${JSON.stringify(sortie)}\n`);
       },
       once: (_event, listener) => {

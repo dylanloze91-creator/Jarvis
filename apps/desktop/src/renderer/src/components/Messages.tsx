@@ -8,6 +8,7 @@ import { ChatMissionBlock } from '@/components/chat/ChatMissionBlock';
 import { SourcesLine } from '@/components/SourcesLine';
 import { toolLabel } from '@/lib/toolLabels';
 import { AtelierDiscussion } from './atelier/AtelierDiscussion';
+import { YeuxPhoto } from './yeux/YeuxPhoto';
 import { cn } from '@/lib/utils';
 
 export function Messages({
@@ -129,6 +130,10 @@ function Item({ item, onSend, onDislike }: { item: ChatItem; onSend?: (text: str
 
   if (item.kind === 'atelier') {
     return <AtelierDiscussion etat={item.etat} {...(onSend ? { onSend } : {})} />;
+  }
+
+  if (item.kind === 'yeux') {
+    return <YeuxPhoto photo={item.photo} />;
   }
 
   if (item.kind === 'chat_mission') {

@@ -82,6 +82,7 @@ import {
   type AuditLogStore,
   type AtelierEtat,
   pourAtelier,
+  type PhotoDiscussion,
   type ChatMessage,
   type ConfirmationRequest,
   type Conversation,
@@ -100,6 +101,7 @@ import {
   stripDirectTurns,
   isDirectImageMessage,
   looksLikeImageIntent,
+  photoPourLesYeux,
   isImageToolName,
   type ImageProject,
   type CarnetHow,
@@ -284,6 +286,29 @@ interface SessionDeps {
     confirm: (summary: string) => Promise<boolean>;
     progress: (message: string) => void;
   }) => Promise<{ texte: string; etat?: AtelierEtat } | null>;
+  /**
+   * Les yeux de Jarvis (Jarvis Test) : « montre-moi l'impression » = photo de la caméra de
+   * l'imprimante + phrase d'état, lecture seule, sans modèle. Absent ou `null` : chemin d'avant.
+   */
+  yeux?: (input: {
+    text: string;
+    place: 'fenetre' | 'telephone' | 'enceinte';
+  }) => Promise<{ texte: string; photo: PhotoDiscussion | null } | null>;
+  /**
+   * Les yeux, étape 2 (Jarvis Test) : une photo et une question sur n'importe quel sujet. La photo
+   * jointe reste en mémoire (jamais sur le disque, jamais envoyée au modèle du chat) ; sur le
+   * téléphone, la dernière photo de « Montrer à Jarvis ». Absent : chemin d'avant.
+   */
+  regarder?: {
+    garderPhotoJointe(photo: { octets: Uint8Array; type: 'image/jpeg' | 'image/png' }): PhotoDiscussion | null;
+    regarder(input: {
+      text: string;
+      place: 'fenetre' | 'telephone' | 'enceinte';
+      photoId: string | null;
+      avancement?: (message: string) => void;
+      signal?: AbortSignal;
+    }): Promise<{ texte: string; photo: PhotoDiscussion } | null>;
+  };
   /** Imprimante. Absent ou coupée : le tour suit le chemin d'avant. */
   printer?: (input: {
     text: string;
@@ -492,8 +517,10 @@ export class ChatSession {
     const settings = this.deps.getSettings();
     const conversation = await this.loadConversation(input.conversationId);
     conversationId = conversation.id;
+    // Les yeux (étape 2) : une photo jointe avec une question passe aux yeux, en mémoire seulement.
+    const photoJointe = this.photoPourLesYeux(input);
     // Photos jointes : enregistrées sur le disque avant le tour ; seul leur chemin ira au modèle.
-    const attachments = await this.saveAttachments(input);
+    const attachments = photoJointe ? [] : await this.saveAttachments(input);
     this.deps.noteUserTurn?.({ text: input.text, attachments });
     // Mode direct de Jarvis Imager : `/image …` ou une demande repérée par règles part à Imager sans
     // aucun modèle de langage ; le tour est marqué `direct` et jamais renvoyé au modèle ensuite.
@@ -502,6 +529,7 @@ export class ChatSession {
     const direct = attachments.length || pourLAtelier ? null : await this.directImageRequest(input.text, conversation.messages);
     const userMessage = createMessage('user', input.text, {
       ...(attachments.length ? { attachments } : {}),
+      ...(photoJointe ? { yeux: photoJointe } : {}),
       ...(direct ? { direct: 'image' as const, directPrompt: direct.prompt } : {}),
     });
     const messages: ChatMessage[] = [...conversation.messages, userMessage];
@@ -540,9 +568,14 @@ export class ChatSession {
             Boolean(this.deps.images?.isEnabled()),
           )
         : null;
+    // Les yeux (étape 2) : la photo jointe, ou sur le téléphone celle de « Montrer à Jarvis », et la
+    // question. Sa réponse suit ensuite le chemin des réponses fixes (celui du briefing).
+    const regardText =
+      stopAllText || imageStatusText ? null : await this.regarderTour(input, photoJointe, userMessage, emit, controller.signal);
     const briefingText =
       stopAllText ??
       imageStatusText ??
+      regardText ??
       (settings.briefing?.enabled === true && this.deps.briefing
         ? await this.deps.briefing({ text: input.text, voice: input.place?.kind === 'enceinte' }).catch(() => null)
         : null);
@@ -606,8 +639,13 @@ export class ChatSession {
       emit({ type: 'tool_result', callId: atelierCallId, toolName: 'atelier', status: 'ok', content: 'Fait.' });
     }
     const atelierText = atelierReply?.texte ?? null;
-    const printerText =
-      !atelierText && !briefingText && !notesText && !routineText && settings.printer?.enabled === true && this.deps.printer
+    const yeuxReply =
+      !atelierText && !briefingText && !notesText && !routineText && this.deps.yeux
+        ? await this.deps.yeux({ text: input.text, place: input.place?.kind ?? 'fenetre' }).catch(() => null)
+        : null;
+    const printerText = yeuxReply
+      ? yeuxReply.texte
+      : !atelierText && !briefingText && !notesText && !routineText && settings.printer?.enabled === true && this.deps.printer
         ? await this.deps.printer({
             text: input.text,
             place: input.place?.kind ?? 'fenetre',
@@ -963,6 +1001,16 @@ export class ChatSession {
       }
     }
 
+    // Les yeux : la photo (sa référence seulement) est posée sur la réponse et s'affiche dessous.
+    const yeuxPhoto = yeuxReply?.photo;
+    if (yeuxPhoto && !controller.signal.aborted) {
+      const reponse = [...messages].reverse().find((message) => message.role === 'assistant' && message.content.trim());
+      if (reponse && reponse !== userMessage) {
+        reponse.yeux = yeuxPhoto;
+        emit({ type: 'yeux', messageId: reponse.id, photo: yeuxPhoto });
+      }
+    }
+
     // Mode direct : le modèle a répondu sans Imager alors que la demande ressemblait à une image → bouton « Envoyer à Imager ».
     if (
       this.deps.images?.isEnabled() &&
@@ -1252,6 +1300,54 @@ export class ChatSession {
     const verdict = parseAddresseeReply(reply);
     if (settings.debugLogging) debugLog(true, 'voix', `destinataire (modèle) : ${verdict === 'yes' ? 'Jarvis' : 'autre'}`);
     return verdict === 'yes';
+  }
+
+  /**
+   * Les yeux, étape 2 : la première photo jointe (JPEG ou PNG) d'un message qui n'est pas une demande
+   * d'image est gardée en mémoire pour les yeux. `null` : yeux absents ou coupés, pas de photo, ou une
+   * demande pour Jarvis Imager (le chemin d'avant).
+   */
+  private photoPourLesYeux(input: SendChatInput): PhotoDiscussion | null {
+    const list = input.attachments ?? [];
+    if (!list.length || !this.deps.regarder || !photoPourLesYeux(input.text)) return null;
+    if (list.length > MAX_ATTACHMENTS_PER_MESSAGE) return null;
+    const premiere = list.find((item) => item.mime === 'image/jpeg' || item.mime === 'image/png');
+    if (!premiere) return null;
+    const octets = Buffer.from(premiere.dataBase64, 'base64');
+    return this.deps.regarder.garderPhotoJointe({ octets: new Uint8Array(octets), type: premiere.mime as 'image/jpeg' | 'image/png' });
+  }
+
+  /** Regarde la photo et répond (étape 2 des yeux) ; `null` : pas de photo pour cette question. */
+  private async regarderTour(
+    input: SendChatInput,
+    photoJointe: PhotoDiscussion | null,
+    userMessage: ChatMessage,
+    emit: (event: ChatEvent) => void,
+    signal: AbortSignal,
+  ): Promise<string | null> {
+    if (!this.deps.regarder) return null;
+    const place = input.place?.kind ?? 'fenetre';
+    if (!photoJointe && place !== 'telephone') return null;
+    const callId = randomId();
+    let commence = false;
+    const avancement = (message: string) => {
+      if (!commence) {
+        commence = true;
+        emit({ type: 'tool_start', callId, toolName: 'regarder', summary: message });
+      } else emit({ type: 'tool_progress', callId, message });
+    };
+    try {
+      const r = await this.deps.regarder.regarder({ text: input.text, place, photoId: photoJointe?.photoId ?? null, avancement, signal });
+      if (!r) return null;
+      if (!userMessage.yeux) userMessage.yeux = r.photo;
+      if (commence) emit({ type: 'tool_result', callId, toolName: 'regarder', status: 'ok', content: 'Fait.' });
+      return r.texte;
+    } catch (error) {
+      if (commence) emit({ type: 'tool_result', callId, toolName: 'regarder', status: 'error', content: 'Échec.' });
+      if (signal.aborted) throw error;
+      const raison = error instanceof Error ? error.message : String(error);
+      return `Je n'ai pas pu regarder la photo : ${raison}. Vérifie qu'Ollama tourne et que le modèle de vision est installé.`;
+    }
   }
 
   /** Photos jointes du message : enregistrées par le module images, 3 au plus ; refus clair sinon. */

@@ -118,6 +118,11 @@ import { CarnetHub } from './carnet/hub.js';
 import { createMorningBriefing } from './quotidien/morning.js';
 import { runPrinterReply } from './quotidien/printerReply.js';
 import { creerAtelierPC, dossierAtelier, lireFichierAtelier } from './atelier/atelierPC.js';
+import { creerYeuxPC } from './yeux/yeuxPC.js';
+import { creerRegarder } from './yeux/regarder.js';
+import { YeuxStore } from './yeux/store.js';
+import { creerWebcam } from './yeux/webcam.js';
+import { ouvrirFenetreWebcam } from './yeux/webcamFenetre.js';
 import { CarnetFile } from './carnet/file.js';
 import { appendTeamValidation, type TeamValidationPayload } from './orchestra/teamValidation.js';
 import { PhoneService } from './phone/service.js';
@@ -502,6 +507,32 @@ function settingsForWindow(): Settings {
  */
 /** Atelier 3D dans la discussion : Jarvis Test seulement (`undefined` dans Live). */
 const atelierReply = edition().atelier ? creerAtelierPC(() => settings, undefined, undefined, searchRegistry) : undefined;
+// Les yeux (Jarvis Test) : caméra de l'imprimante en lecture seule, photos en mémoire seulement.
+const yeuxPC = edition().yeux
+  ? creerYeuxPC({
+      getSettings: () => settings,
+      editionYeux: true,
+      store: YeuxStore.inUserData(() => app.getPath('userData')),
+      chiffre: {
+        available: () => safeStorage.isEncryptionAvailable(),
+        seal: (plain) => safeStorage.encryptString(plain).toString('base64'),
+        open: (sealed) => safeStorage.decryptString(Buffer.from(sealed, 'base64')),
+      },
+      dossierPhotos: () => join(app.getPath('userData'), 'yeux', 'photos'),
+      // Webcam du PC : fenêtre cachée dédiée, ouverte à la demande, fermée 5 s après la dernière photo.
+      webcam: creerWebcam(ouvrirFenetreWebcam),
+      telephone: true,
+      // Étape 2 : regarder une photo et répondre (modèle de vision, recherche web vérifiée, modèle du chat).
+      regarder: creerRegarder({ getSettings: () => settings, searchRegistry }),
+    })
+  : null;
+const yeuxReply = yeuxPC ? (input: { text: string; place: 'fenetre' | 'telephone' | 'enceinte' }) => yeuxPC.tour(input) : undefined;
+const regarderYeux = yeuxPC
+  ? {
+      garderPhotoJointe: (photo: { octets: Uint8Array; type: 'image/jpeg' | 'image/png' }) => yeuxPC.garderPhotoJointe(photo),
+      regarder: (input: Parameters<typeof yeuxPC.regarder>[0]) => yeuxPC.regarder(input),
+    }
+  : undefined;
 
 const stopAllReply = edition().appendices
   ? async (input: { text: string }): Promise<string | null> => {
@@ -558,6 +589,8 @@ const session = new ChatSession({
   routines: routineReply,
   printer: printerReply,
   atelier: atelierReply,
+  yeux: yeuxReply,
+  regarder: regarderYeux,
   stopAll: stopAllReply,
   voiceStarts,
 });
@@ -589,6 +622,8 @@ const phoneSession = new ChatSession({
   routines: routineReply,
   printer: printerReply,
   atelier: atelierReply,
+  yeux: yeuxReply,
+  regarder: regarderYeux,
   stopAll: stopAllReply,
 });
 const questionnaire = QuestionnaireStore.inUserData(() => app.getPath('userData'));
@@ -618,6 +653,17 @@ const phone = new PhoneService({
     piper.synthesizeWav({ text, voiceId: settings.voice.ttsVoice || undefined }),
   // Atelier 3D (Jarvis Test) : images et STL d'une pièce, par liens à usage unique.
   ...(atelierReply ? { fichierAtelier: (dossier: string, fichier: string) => lireFichierAtelier(dossier, fichier) } : {}),
+  // Les yeux (Jarvis Test) : photo de l'iPhone reçue, et photos de Jarvis par lien à usage unique.
+  ...(yeuxPC
+    ? {
+        recevoirPhoto: (photo: { octets: Uint8Array; type: 'image/jpeg' | 'image/png'; appareil: string }) =>
+          yeuxPC.recevoirPhotoTelephone(photo).then((r) => (r.ok ? { ok: true as const } : { ok: false as const, error: r.error })),
+        photoYeux: (photoId: string) => {
+          const photo = yeuxPC.photos.lire(photoId);
+          return photo ? { type: photo.type, data: photo.octets } : null;
+        },
+      }
+    : {}),
   log: (line) => console.info(line),
   broadcast: (status) => {
     const contents = overlay?.browserWindow.webContents;
@@ -695,6 +741,7 @@ const speakers = new SpeakerService({
       routines: routineReply,
       printer: printerReply,
       atelier: atelierReply,
+      yeux: yeuxReply,
       stopAll: stopAllReply,
     });
     return {
@@ -1205,6 +1252,43 @@ function registerIpc(): void {
       chatActivity.end();
     }
   });
+  // Les yeux (Jarvis Test) : la fenêtre lit une photo gardée en mémoire, par sa référence seulement.
+  ipcMain.handle(IpcChannel.yeuxPhoto, (_event, photoId: unknown) => {
+    if (!yeuxPC || typeof photoId !== 'string' || !/^[0-9a-f-]{36}$/.test(photoId)) return { ok: false, error: 'Photo refusée.' };
+    const photo = yeuxPC.photos.lire(photoId);
+    if (!photo) return { ok: false, error: 'Photo plus disponible (elle n’est gardée que 30 minutes, en mémoire).' };
+    return { ok: true, type: photo.type, data: photo.octets, prisA: photo.prisA };
+  });
+  ipcMain.handle(IpcChannel.yeuxDisponible, () => Boolean(yeuxPC?.disponible()));
+  const idOeil = (id: unknown): id is string => typeof id === 'string' && /^[a-z0-9][a-z0-9-]{1,39}$/.test(id);
+  ipcMain.handle(IpcChannel.yeuxListe, () => (yeuxPC ? yeuxPC.yeux() : []));
+  ipcMain.handle(IpcChannel.yeuxVue, (_event, id: unknown) =>
+    yeuxPC && idOeil(id) ? yeuxPC.vue(id) : { ok: false, error: 'Les yeux sont coupés.' },
+  );
+  ipcMain.handle(IpcChannel.yeuxAllumer, (_event, id: unknown, allume: unknown) =>
+    yeuxPC && idOeil(id) && typeof allume === 'boolean' ? yeuxPC.allumer(id, allume) : { ok: false, error: 'Refusé.' },
+  );
+  ipcMain.handle(IpcChannel.yeuxRegler, (_event, id: unknown, reglage: unknown) => {
+    if (!yeuxPC || !idOeil(id) || !reglage || typeof reglage !== 'object') return { ok: false, error: 'Refusé.' };
+    const { piece, camera } = reglage as { piece?: unknown; camera?: unknown };
+    if (piece !== undefined && (typeof piece !== 'string' || piece.length > 40)) return { ok: false, error: 'Refusé.' };
+    if (camera !== undefined && (typeof camera !== 'string' || camera.length > 200)) return { ok: false, error: 'Refusé.' };
+    return yeuxPC.regler(id, {
+      ...(typeof piece === 'string' ? { piece } : {}),
+      ...(typeof camera === 'string' ? { camera } : {}),
+    });
+  });
+  ipcMain.handle(IpcChannel.yeuxWebcams, () => (yeuxPC ? yeuxPC.webcams() : []));
+  ipcMain.handle(IpcChannel.yeuxBrancher, (_event, id: unknown, adresse: unknown, jeton: unknown) =>
+    yeuxPC && idOeil(id) && typeof adresse === 'string' && adresse.length <= 200 && typeof jeton === 'string' && jeton.length <= 512
+      ? yeuxPC.brancher(id, adresse.trim(), jeton.trim())
+      : { ok: false, error: 'Refusé.' },
+  );
+  ipcMain.handle(IpcChannel.yeuxGarder, (_event, photoId: unknown) => {
+    if (!yeuxPC || typeof photoId !== 'string' || !/^[0-9a-f-]{36}$/.test(photoId)) return { ok: false, error: 'Photo refusée.' };
+    return yeuxPC.garder(photoId);
+  });
+
   // Atelier 3D (Jarvis Test) : la fenêtre ne lit que les fichiers des pièces de l'atelier.
   ipcMain.handle(IpcChannel.atelierFichier, async (_event, dossier: unknown, fichier: unknown) => {
     if (!edition().atelier || typeof dossier !== 'string' || typeof fichier !== 'string') return { ok: false, error: 'Fichier refusé.' };
