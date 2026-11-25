@@ -108,7 +108,7 @@ import {
 } from '@jarvis/core';
 import { describeDirectResult, type ImagesService } from './images/ImagesService.js';
 import type { ChatEvent, RuntimeStatus, SendChatInput } from '../shared/ipc.js';
-import { IpcChannel } from '../shared/ipc.js';
+import { IpcChannel, VIDEO_JOINTE_MIME } from '../shared/ipc.js';
 import { canOfferTeamValidation, validationPathForHow } from './orchestra/teamValidation.js';
 import { journaliserTour, type RouteNotee } from './turnJournal.js';
 import type { PersonalizationStore } from './personalization.js';
@@ -298,10 +298,13 @@ interface SessionDeps {
    */
   regarder?: {
     garderPhotoJointe(photo: { octets: Uint8Array; type: 'image/jpeg' | 'image/png' }): PhotoDiscussion | null;
+    /** Point 4 : une vidéo jointe (images clés et son tirés par la fenêtre), en mémoire seulement. */
+    garderVideoJointe?(video: unknown): { photo: PhotoDiscussion; videoId: string } | { erreur: string } | null;
     regarder(input: {
       text: string;
       place: 'fenetre' | 'telephone' | 'enceinte';
       photoId: string | null;
+      videoId?: string | null;
       avancement?: (message: string) => void;
       signal?: AbortSignal;
     }): Promise<{ texte: string; photo: PhotoDiscussion } | null>;
@@ -524,7 +527,7 @@ export class ChatSession {
     const direct = attachments.length ? null : await this.directImageRequest(input.text, conversation.messages);
     const userMessage = createMessage('user', input.text, {
       ...(attachments.length ? { attachments } : {}),
-      ...(photoJointe ? { yeux: photoJointe } : {}),
+      ...(photoJointe ? { yeux: photoJointe.photo } : {}),
       ...(direct ? { direct: 'image' as const, directPrompt: direct.prompt } : {}),
     });
     const messages: ChatMessage[] = [...conversation.messages, userMessage];
@@ -1287,20 +1290,29 @@ export class ChatSession {
    * d'image est gardée en mémoire pour les yeux. `null` : yeux absents ou coupés, pas de photo, ou une
    * demande pour Jarvis Imager (le chemin d'avant).
    */
-  private photoPourLesYeux(input: SendChatInput): PhotoDiscussion | null {
+  private photoPourLesYeux(input: SendChatInput): { photo: PhotoDiscussion; videoId?: string } | null {
     const list = input.attachments ?? [];
+    // Point 4 : une vidéo jointe ne va qu'aux yeux (jamais enregistrée, jamais à Imager).
+    const video = list.find((item) => item.mime === VIDEO_JOINTE_MIME);
+    if (video) {
+      const r = this.deps.regarder?.garderVideoJointe?.(video.video) ?? null;
+      if (!r) throw new Error('Les vidéos jointes demandent les yeux de Jarvis Test (écran « Yeux »).');
+      if ('erreur' in r) throw new Error(`Vidéo refusée : ${r.erreur}.`);
+      return r;
+    }
     if (!list.length || !this.deps.regarder || !photoPourLesYeux(input.text)) return null;
     if (list.length > MAX_ATTACHMENTS_PER_MESSAGE) return null;
     const premiere = list.find((item) => item.mime === 'image/jpeg' || item.mime === 'image/png');
     if (!premiere) return null;
     const octets = Buffer.from(premiere.dataBase64, 'base64');
-    return this.deps.regarder.garderPhotoJointe({ octets: new Uint8Array(octets), type: premiere.mime as 'image/jpeg' | 'image/png' });
+    const photo = this.deps.regarder.garderPhotoJointe({ octets: new Uint8Array(octets), type: premiere.mime as 'image/jpeg' | 'image/png' });
+    return photo ? { photo } : null;
   }
 
   /** Regarde la photo et répond (étape 2 des yeux) ; `null` : pas de photo pour cette question. */
   private async regarderTour(
     input: SendChatInput,
-    photoJointe: PhotoDiscussion | null,
+    photoJointe: { photo: PhotoDiscussion; videoId?: string } | null,
     userMessage: ChatMessage,
     emit: (event: ChatEvent) => void,
     signal: AbortSignal,
@@ -1317,7 +1329,14 @@ export class ChatSession {
       } else emit({ type: 'tool_progress', callId, message });
     };
     try {
-      const r = await this.deps.regarder.regarder({ text: input.text, place, photoId: photoJointe?.photoId ?? null, avancement, signal });
+      const r = await this.deps.regarder.regarder({
+        text: input.text,
+        place,
+        photoId: photoJointe?.photo.photoId ?? null,
+        ...(photoJointe?.videoId ? { videoId: photoJointe.videoId } : {}),
+        avancement,
+        signal,
+      });
       if (!r) return null;
       if (!userMessage.yeux) userMessage.yeux = r.photo;
       if (commence) emit({ type: 'tool_result', callId, toolName: 'regarder', status: 'ok', content: 'Fait.' });
@@ -1326,7 +1345,7 @@ export class ChatSession {
       if (commence) emit({ type: 'tool_result', callId, toolName: 'regarder', status: 'error', content: 'Échec.' });
       if (signal.aborted) throw error;
       const raison = error instanceof Error ? error.message : String(error);
-      return `Je n'ai pas pu regarder la photo : ${raison}. Vérifie qu'Ollama tourne et que le modèle de vision est installé.`;
+      return `Je n'ai pas pu regarder ${photoJointe?.videoId ? 'la vidéo' : 'la photo'} : ${raison}. Vérifie qu'Ollama tourne et que le modèle de vision est installé.`;
     }
   }
 

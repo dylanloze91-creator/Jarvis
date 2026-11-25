@@ -34,7 +34,7 @@ import type {
   WakeStatsSummary,
   WakeVerifierModel,
 } from '@jarvis/core';
-import type { AtelierEtat, EtatCarte, Oeil, PhotoDiscussion } from '@jarvis/core';
+import type { AtelierEtat, EtatCarte, Oeil, PhotoDiscussion, VideoJointe } from '@jarvis/core';
 
 /** Écran « Yeux » : une carte par œil. Données seulement, lecture seule. */
 export interface VueOeilYeux {
@@ -503,7 +503,15 @@ export interface ChatAttachmentInput {
   name: string;
   mime: string;
   dataBase64: string;
+  /**
+   * Les yeux, point 4 : une vidéo lue par la fenêtre (images clés et son), jamais le fichier lui-même.
+   * Seulement avec `mime` = `VIDEO_JOINTE_MIME` ; `dataBase64` est alors la première image (aperçu).
+   */
+  video?: VideoJointe;
 }
+
+/** Type d'une pièce jointe « vidéo lue par la fenêtre » (images clés et son, pas le fichier). */
+export const VIDEO_JOINTE_MIME = 'video/x-jarvis-images';
 
 export interface SpotifyStatus {
   /** Un identifiant client Spotify est renseigné dans les réglages. */

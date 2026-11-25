@@ -13,7 +13,20 @@
  *
  * La photo n'est jamais écrite sur le disque ici : elle est envoyée au modèle de vision en mémoire.
  */
+import { readFile } from 'node:fs/promises';
+import { join, resolve } from 'node:path';
 import {
+  comparerCablage,
+  consigneCablage,
+  demandeCablage,
+  FICHIER_REFERENCE_ENCEINTE,
+  lireReponseCablage,
+  questionCablage,
+  referenceDemandee,
+  referenceEnceinte,
+  reponseCablage,
+  type ComparaisonCablage,
+  type LectureCablage,
   assessHtml,
   chercherReference,
   consigneReponseYeux,
@@ -60,6 +73,8 @@ export interface SortieRegarder {
   vision: LectureVision;
   recherches: RechercheReference[];
   modeleVision: string;
+  /** Point 3 : présent quand la photo a été comparée à un câblage de référence. */
+  cablage?: { lecture: LectureCablage; comparaison: ComparaisonCablage };
   /** Vrai si le modèle du chat a écrit la réponse ; faux : réponse assemblée sans lui. */
   parLeChat: boolean;
 }
@@ -73,6 +88,25 @@ export interface OptionsRegarder {
   /** Recherche web branchée autrement (essais). Absente : moteurs de Jarvis et pages publiques. */
   recherche?: Omit<DepsRechercheReference, 'modele'>;
   maintenant?: () => number;
+  /**
+   * Dossiers où chercher la copie de Jarvis (pour `firmware/jarvis-speaker/include/config.h`). Absent :
+   * `developer.repoPath`, puis le dossier courant et ses deux parents.
+   */
+  racines?: () => string[];
+}
+
+/** Lit la référence de l'enceinte dans la première copie de Jarvis trouvée ; null si aucune. */
+export async function lireReferenceEnceinte(racines: readonly string[]): Promise<{ texte: string; chemin: string } | null> {
+  for (const racine of racines) {
+    if (!racine) continue;
+    const chemin = join(racine, FICHIER_REFERENCE_ENCEINTE);
+    try {
+      return { texte: await readFile(chemin, 'utf8'), chemin };
+    } catch {
+      // essayer la suivante
+    }
+  }
+  return null;
 }
 
 function base64(octets: Uint8Array): string {
@@ -142,22 +176,47 @@ export function creerRegarder(options: OptionsRegarder): Regarder {
     for (const m of await ollama.loaded()) {
       if (m.name !== modeleVision) await ollama.unload(m.name);
     }
-    const brut = await chat(
-      baseUrl,
-      {
-        model: modeleVision,
-        format: 'json',
-        keep_alive: 0,
-        messages: [
-          { role: 'system', content: consigneVision() },
-          { role: 'user', content: demandeVision(question), images: [base64(entree.photo.octets)] },
-        ],
-        options: { temperature: 0, num_ctx: 4096, num_predict: 700 },
-      },
-      VISION_DELAI_MS,
-      entree.signal,
-    );
-    const vision = lireReponseVision(brut);
+    let noteReference = '';
+    const voir = (consigne: string, demande: string, numPredict: number) =>
+      chat(
+        baseUrl,
+        {
+          model: modeleVision,
+          format: 'json',
+          keep_alive: 0,
+          messages: [
+            { role: 'system', content: consigne },
+            { role: 'user', content: demande, images: [base64(entree.photo.octets)] },
+          ],
+          options: { temperature: 0, num_ctx: 4096, num_predict: numPredict },
+        },
+        VISION_DELAI_MS,
+        entree.signal,
+      );
+
+    // Point 3 : « mon câblage de l'enceinte est bon ? » → comparaison à config.h, sans modèle du chat.
+    if (questionCablage(question) && referenceDemandee(question) === 'enceinte') {
+      const racines = options.racines?.() ?? [settings.developer?.repoPath ?? '', process.cwd(), resolve(process.cwd(), '..'), resolve(process.cwd(), '..', '..')];
+      const source = await lireReferenceEnceinte(racines);
+      if (source) {
+        avance('Je suis les fils et je compare à la référence de l’enceinte…');
+        const reference = referenceEnceinte(source.texte);
+        const lecture = lireReponseCablage(await voir(consigneCablage(reference), demandeCablage(question), 900));
+        const comparaison = comparerCablage(reference, lecture.fils);
+        return {
+          texte: reponseCablage({ comparaison, lecture, modeleVision, oral: entree.oral }),
+          vision: { description: lecture.description, texteLu: [], reponse: '', doutes: lecture.doutes, brute: lecture.brute },
+          recherches: [],
+          modeleVision,
+          cablage: { lecture, comparaison },
+          parLeChat: false,
+        };
+      }
+      noteReference = `Je n'ai pas trouvé la référence de l'enceinte (\`${FICHIER_REFERENCE_ENCEINTE}\`) : je regarde sans comparer.`;
+      avance(noteReference);
+    }
+
+    const vision = lireReponseVision(await voir(consigneVision(), demandeVision(question), 700));
 
     // 2. Les références lues sur la photo partent en recherche web ; celles de la question seulement
     //    si la photo n'en montre aucune (« c'est bien un INMP441 ? » sur une photo sans texte lisible).
@@ -218,7 +277,13 @@ export function creerRegarder(options: OptionsRegarder): Regarder {
       texte = reponseYeuxSansModele({ vision, recherches });
     }
     return {
-      texte: finirReponseYeux({ texte, question, recherches, modeleVision, oral: entree.oral }),
+      texte: finirReponseYeux({
+        texte: noteReference ? `${noteReference}\n\n${texte}` : texte,
+        question,
+        recherches,
+        modeleVision,
+        oral: entree.oral,
+      }),
       vision,
       recherches,
       modeleVision,

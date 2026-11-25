@@ -19,6 +19,7 @@
     "banc:outils-pc": "vitest run --config vitest.banc.config.ts src/main/vitesse/banc-outils-pc.banc.ts",
     "banc:outils": "vitest run --config vitest.banc.config.ts src/main/vitesse/outils-taille.banc.ts",
     "banc:regarder": "vitest run --config vitest.banc.config.ts src/main/yeux/regarder.banc.ts",
+    "banc:examen": "vitest run --config vitest.banc.config.ts src/main/yeux/examen.banc.ts",
     "package:win": "npm run build && node scripts/setup-piper.mjs --target win-x64 && node scripts/verify-piper-windows-bundle.mjs && electron-builder --win --publish never",
     "package:win:test": "npm run build && node scripts/generate-icons.mjs --test && node scripts/setup-piper.mjs --target win-x64 && node scripts/verify-piper-windows-bundle.mjs && node scripts/package-test.mjs",
     "package:win:publish": "npm run build && electron-builder --win --publish always",

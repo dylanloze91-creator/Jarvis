@@ -3,6 +3,7 @@ import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it, vi } from 'vitest';
 import type { ChatEvent } from '../shared/ipc.js';
 
@@ -208,7 +209,7 @@ describe('le regard : vision, recherche vérifiée, réponse', () => {
     'It operates from a 2.5V to 5.5V supply.',
   ].join('\n');
 
-  async function fauxOllama(options: { chatEnPanne?: boolean } = {}) {
+  async function fauxOllama(options: { chatEnPanne?: boolean; vision?: string } = {}) {
     const appels: { chemin: string; corps: Record<string, unknown> }[] = [];
     const server: Server = createServer((req, res) => {
       let data = '';
@@ -222,7 +223,9 @@ describe('le regard : vision, recherche vérifiée, réponse', () => {
         const model = corps.model as string;
         const messages = corps.messages as { role: string; content: string }[];
         let content = '';
-        if (model === 'gemma3:4b') {
+        if (model === 'gemma3:4b' && options.vision) {
+          content = options.vision;
+        } else if (model === 'gemma3:4b') {
           content = JSON.stringify({ description: 'Une petite carte violette.', texte_lu: ['MAX98357A', 'GAIN', 'VIN'], reponse: 'Un ampli audio.', doutes: ['photo un peu floue'] });
         } else if (corps.format === 'json') {
           content = JSON.stringify({ faits: [{ fait: "S'alimente de 2,5 à 5,5 V", extrait: 'It operates from a 2.5V to 5.5V supply.' }, { fait: 'Donne 10 W', extrait: 'It operates from a 2.5V' }] });
@@ -241,10 +244,11 @@ describe('le regard : vision, recherche vérifiée, réponse', () => {
     return { appels, url, fermer: () => new Promise<void>((done) => server.close(() => done())) };
   }
 
-  function regarderAvec(url: string) {
+  function regarderAvec(url: string, racines?: string[]) {
     const settings = core.parseSettings({ provider: 'ollama', model: 'qwen2.5:7b', baseUrl: url });
     return creerRegarder({
       getSettings: () => settings,
+      ...(racines ? { racines: () => racines } : {}),
       searchRegistry: core.createDefaultSearchRegistry(),
       recherche: {
         chercher: async () => ['https://www.analog.com/max98357a', 'https://exemple.fr/autre'],
@@ -286,6 +290,46 @@ describe('le regard : vision, recherche vérifiée, réponse', () => {
       expect(r.texte).toContain('Un ampli audio.');
       expect(r.texte).toContain("MAX98357A : S'alimente de 2,5 à 5,5 V (d'après analog.com)");
       expect(r.texte).not.toContain('10 W');
+    } finally {
+      await o.fermer();
+    }
+  });
+
+  const DEPOT = fileURLToPath(new URL('../../../../', import.meta.url));
+
+  it('câblage de l’enceinte : comparé à config.h, sans recherche ni modèle du chat', async () => {
+    const vision = JSON.stringify({
+      description: 'Une ESP32-S3 et un micro INMP441.',
+      fils: [
+        { couleur: 'jaune', module: 'INMP441', broche: 'SCK', carte: 'GPIO4', sur: true },
+        { couleur: 'vert', module: 'INMP441', broche: 'WS', carte: 'GPIO7', sur: true },
+      ],
+      doutes: [],
+    });
+    const o = await fauxOllama({ vision });
+    try {
+      const r = await regarderAvec(o.url, [DEPOT])({ photo, question: "mon câblage du micro de l'enceinte est bon ?", oral: false });
+      const appelVision = o.appels.find((a) => a.corps.model === 'gemma3:4b')!;
+      const consigne = (appelVision.corps.messages as { content: string }[])[0]!.content;
+      expect(consigne).toContain('INMP441');
+      expect(consigne).not.toMatch(/GPIO ?4\b|\b15\b/);
+      expect(o.appels.filter((a) => a.corps.model === 'qwen2.5:7b' && a.chemin === '/api/chat')).toEqual([]);
+      expect(r.parLeChat).toBe(false);
+      expect(r.recherches).toEqual([]);
+      expect(r.cablage!.comparaison.liaisons.find((l) => l.liaison.broche === 'WS')!.etat).toBe('different');
+      expect(r.texte).toContain('micro INMP441 WS : attendu GPIO 5, je vois GPIO 7 (MIC_PIN_WS = 5)');
+      expect(r.texte).toContain(core.RAPPEL_CABLAGE);
+    } finally {
+      await o.fermer();
+    }
+  });
+
+  it('référence introuvable : regard ordinaire, et c’est dit', async () => {
+    const o = await fauxOllama();
+    try {
+      const r = await regarderAvec(o.url, [join(DEPOT, 'pas-la')])({ photo, question: "le câblage de l'enceinte est bon ?", oral: false });
+      expect(r.cablage).toBeUndefined();
+      expect(r.texte).toContain("Je n'ai pas trouvé la référence de l'enceinte");
     } finally {
       await o.fermer();
     }

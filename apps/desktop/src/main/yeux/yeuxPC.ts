@@ -15,6 +15,7 @@ import {
   checkRoverBaseUrl,
   etatCarte,
   intentionYeux,
+  lireVideoJointe,
   OEIL_IPHONE,
   OEIL_WEBCAM,
   OeilReseau,
@@ -32,8 +33,10 @@ import {
   type ResultatPhoto,
   type Settings,
   type TravailEnFile,
+  type VideoYeux,
 } from '@jarvis/core';
 import type { Regarder } from './regarder.js';
+import type { RegarderVideo } from './regarderVideo.js';
 import type { YeuxStore } from './store.js';
 import type { WebcamApi } from './webcam.js';
 
@@ -42,6 +45,9 @@ export const PHOTOS_MAX = 20;
 export const PHOTO_DUREE_MS = 30 * 60_000;
 /** Une photo de l'iPhone sert à la question qui suit, si elle arrive dans les 5 minutes. */
 export const PHOTO_QUESTION_MS = 5 * 60_000;
+
+/** Au plus 3 vidéos en mémoire (images clés et son), 30 minutes chacune. */
+export const VIDEOS_MAX = 3;
 
 export class PhotosEnMemoire {
   private readonly photos = new Map<string, PhotoYeux>();
@@ -133,6 +139,13 @@ export interface YeuxPC {
    */
   garderPhotoJointe(photo: { octets: Uint8Array; type: 'image/jpeg' | 'image/png' }): PhotoDiscussion | null;
   /**
+   * Point 4 : une vidéo jointe (images clés et son tirés par la fenêtre), gardée en mémoire seulement.
+   * Sa première image sert d'aperçu dans la discussion. `null` : yeux coupés ou regard absent.
+   */
+  garderVideoJointe(video: unknown): { photo: PhotoDiscussion; videoId: string } | { erreur: string } | null;
+  /** Point 4 : vidéo envoyée depuis l'appli du téléphone, gardée en mémoire (5 minutes pour la question). */
+  recevoirVideoTelephone(video: unknown, appareil: string): Promise<Resultat>;
+  /**
    * Étape 2 : regarder une photo et répondre à la question. La photo jointe (`photoId`), sinon, sur le
    * téléphone, la dernière photo de l'iPhone pas encore regardée (5 minutes au plus). `null` : pas de
    * photo pour cette question, ou yeux coupés.
@@ -141,6 +154,8 @@ export interface YeuxPC {
     text: string;
     place: LieuYeux;
     photoId: string | null;
+    /** Point 4 : la vidéo jointe à ce message (sa première image est `photoId`). */
+    videoId?: string | null;
     avancement?: (message: string) => void;
     signal?: AbortSignal;
   }): Promise<{ texte: string; photo: PhotoDiscussion } | null>;
@@ -167,6 +182,8 @@ export interface YeuxPCOptions {
   telephone?: boolean;
   /** Étape 2 : regarder une photo et répondre (modèle de vision, recherche web, modèle du chat). */
   regarder?: Regarder;
+  /** Point 4 : regarder une vidéo (images clés, son par Whisper, modèle du chat). */
+  regarderVideo?: RegarderVideo;
   maintenant?: () => number;
 }
 
@@ -183,6 +200,19 @@ export function creerYeuxPC(options: YeuxPCOptions): YeuxPC {
   let photoTelephone: PhotoYeux | null = null;
   // Elle sert une fois à la question qui suit (« Montrer à Jarvis » puis la question).
   let photoTelephoneRegardee = false;
+  // Vidéos jointes (fenêtre) : en mémoire, 3 au plus, 30 minutes.
+  const videos = new Map<string, VideoYeux>();
+  const nettoyerVideos = () => {
+    for (const [id, v] of videos) if (maintenant() - v.recuA > PHOTO_DUREE_MS) videos.delete(id);
+    while (videos.size > VIDEOS_MAX) videos.delete(videos.keys().next().value!);
+  };
+  // Dernière vidéo de l'iPhone : même règle que la photo (une fois, 5 minutes pour la question).
+  let videoTelephone: VideoYeux | null = null;
+  const decoder = (b: string) => new Uint8Array(Buffer.from(b, 'base64'));
+  const apercu = (video: VideoYeux, camera: string): PhotoYeux => {
+    const premiere = video.images[0]!;
+    return { octets: premiere.octets, type: 'image/jpeg', prisA: video.recuA, taille: premiere.octets.byteLength, camera };
+  };
   const telephoneRecente = (): PhotoYeux | null =>
     photoTelephone && maintenant() - photoTelephone.prisA <= PHOTO_DUREE_MS ? photoTelephone : null;
 
@@ -315,6 +345,19 @@ export function creerYeuxPC(options: YeuxPCOptions): YeuxPC {
       if (!oeil?.allume) return { ok: false, error: 'La caméra « iPhone » est coupée dans l’écran « Yeux » du PC.' };
       photoTelephone = { octets: photo.octets, type: photo.type, prisA: maintenant(), taille: photo.octets.byteLength, camera: oeil.nom };
       photoTelephoneRegardee = false;
+      videoTelephone = null;
+      return { ok: true };
+    },
+    async recevoirVideoTelephone(video, appareil) {
+      if (!yeuxActifs(getSettings(), editionYeux) || !options.telephone || !options.regarderVideo) return { ok: false, error: 'Les yeux sont coupés sur le PC.' };
+      const oeil = await trouver(OEIL_IPHONE.id);
+      if (!oeil?.allume) return { ok: false, error: 'La caméra « iPhone » est coupée dans l’écran « Yeux » du PC.' };
+      const lu = lireVideoJointe(video, decoder, maintenant());
+      if (!lu.ok) return { ok: false, error: `Vidéo refusée : ${lu.raison}.` };
+      videoTelephone = lu.video;
+      // La photo de départ devient l'aperçu de la vidéo : la question qui suit est pour la vidéo.
+      photoTelephone = apercu(lu.video, `${oeil.nom} (vidéo, ${appareil})`.slice(0, 80));
+      photoTelephoneRegardee = false;
       return { ok: true };
     },
     async webcams() {
@@ -356,11 +399,28 @@ export function creerYeuxPC(options: YeuxPCOptions): YeuxPC {
       if (!yeuxActifs(getSettings(), editionYeux) || !options.regarder) return null;
       return photos.garder({ octets: photo.octets, type: photo.type, prisA: maintenant(), taille: photo.octets.byteLength, camera: 'Photo jointe' });
     },
+    garderVideoJointe(video) {
+      if (!yeuxActifs(getSettings(), editionYeux) || !options.regarderVideo) return null;
+      const lu = lireVideoJointe(video, decoder, maintenant());
+      if (!lu.ok) return { erreur: lu.raison };
+      nettoyerVideos();
+      const videoId = randomUUID();
+      videos.set(videoId, lu.video);
+      nettoyerVideos();
+      return { photo: photos.garder(apercu(lu.video, 'Vidéo jointe')), videoId };
+    },
     async regarder(input) {
       if (!yeuxActifs(getSettings(), editionYeux) || !options.regarder) return null;
       let photo: PhotoYeux | null = null;
       let ref: PhotoDiscussion | null = null;
-      if (input.photoId) {
+      let video: VideoYeux | null = null;
+      if (input.videoId) {
+        video = videos.get(input.videoId) ?? null;
+        const photoId = input.photoId ?? input.videoId;
+        if (!video || !options.regarderVideo)
+          return { texte: 'Je n’ai plus cette vidéo (elle n’est gardée que 30 minutes, en mémoire). Renvoie-la.', photo: { photoId, prisA: maintenant(), camera: 'Vidéo jointe' } };
+        ref = { photoId, prisA: video.recuA, camera: 'Vidéo jointe' };
+      } else if (input.photoId) {
         photo = photos.lire(input.photoId);
         if (!photo) return { texte: 'Je n’ai plus cette photo (elle n’est gardée que 30 minutes, en mémoire). Renvoie-la.', photo: { photoId: input.photoId, prisA: maintenant(), camera: 'Photo jointe' } };
         ref = { photoId: input.photoId, prisA: photo.prisA, camera: photo.camera };
@@ -371,6 +431,18 @@ export function creerYeuxPC(options: YeuxPCOptions): YeuxPC {
         photoTelephoneRegardee = true;
         photo = recente;
         ref = photos.garder(recente);
+        if (videoTelephone && options.regarderVideo) video = videoTelephone;
+        videoTelephone = null;
+      }
+      if (video && ref && options.regarderVideo) {
+        const r = await options.regarderVideo({
+          video,
+          question: input.text,
+          oral: input.place === 'enceinte',
+          ...(input.avancement ? { avancement: input.avancement } : {}),
+          ...(input.signal ? { signal: input.signal } : {}),
+        });
+        return { texte: r.texte, photo: ref };
       }
       if (!photo || !ref) return null;
       const r = await options.regarder({
