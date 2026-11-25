@@ -119,6 +119,6 @@ Une seule carte (RTX 2060 6 Go) : un seul agent à la fois lance le banc (`npm r
 
 | État | Par qui | Pour quoi | Depuis |
 | --- | --- | --- | --- |
-| occupée | Claude Code (agent Atelier) | Jarvis Test d'essai de l'atelier (copie `.claude/worktrees/atelier`, dossier de données à part ; ni la Live ni le Jarvis Test installé) et Ollama, essai de l'utilisateur depuis son iPhone : téléphone sur 127.0.0.1:53140, publié par `tailscale serve` en HTTPS sur le port 8443 (la publication de la Live sur 443 → 53130 ne change pas). Jusqu’à la fin de l’essai, au plus tard le 26 novembre au matin (l’utilisateur garde l’accès iPhone pour le soir du 25) ; l'agent Yeux passe avant s'il en a besoin | 2026-11-24 |
+| libre | — | — | — |
 
 Pour réserver : passer l'état à `occupée`, remplir les colonnes, commiter et pousser **avant** de lancer. Pour libérer : remettre `libre` et `—`, commiter et pousser.
