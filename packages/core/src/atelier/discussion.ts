@@ -120,6 +120,11 @@ export type AtelierEtat =
       versionChoisie: number;
       /** Plateau dessiné et limite de la pièce (mm). */
       plateau: { x: number; y: number };
+      /**
+       * Le dernier changement refusé (« rajoute un trou de 50 à l'arrière » : il ne tient pas), phrase
+       * déjà pliée : « bon alors de 10 » le redemande avec ce nombre, au lieu de changer la longueur.
+       */
+      refus?: string;
     };
 
 export type AtelierDecision =
@@ -165,6 +170,12 @@ export type AtelierDecision =
 export interface ContexteAtelier {
   /** Mesures de l'utilisateur, complétées des cotes trouvées. */
   mesures?: MesuresComposants;
+  /**
+   * Vrai : l'atelier est le seul à parler à l'imprimante (Jarvis Live). « imprime-la » sans pièce dans
+   * la discussion reçoit alors sa réponse. Faux ou absent (Jarvis Test) : la phrase suit son chemin,
+   * vers l'imprimante du lot B (« imprime le fichier… »).
+   */
+  sansAutreImprimante?: boolean;
   /** Vrai : le PC sait chercher des cotes sur Internet. Une cote manquante fait alors demander le modèle exact. */
   rechercheCotes?: boolean;
   /** Composants déjà cherchés sur Internet (le pied à coulisse ne sert plus qu'à ce qui manque encore). */
@@ -258,10 +269,26 @@ export function questionProduit(nom: string): string {
 
 const MESURER_SOI_MEME = /\b(?:je (?:la |le |les )?mesure|je vais (?:la |le |les )?mesurer|pied a coulisse|je l ai (?:sous la main|ici|devant moi))\b/;
 const CELLE_DE_LA_LISTE = /^(?:oui |ok |bah |ben )?(?:c est )?(?:celle|celui|la meme|le meme) (?:de ta liste|de la liste|que tu as|que t as|de l enceinte|qui est dans ta liste)\b|^(?:oui )?celle la\b/;
+/**
+ * « cherche avec ce lien : https://… » : le produit cherché reste le composant (ou ce que la phrase
+ * en dit), suivi du lien. Sinon la réponse parlait de « cherche avec ce lien : ».
+ */
+function produitAvecLien(text: string, nom: string): string {
+  const liens = liensDits(text);
+  let reste = text;
+  for (const lien of liens) reste = reste.replace(lien, ' ');
+  const dit = plier(reste)
+    .replace(/[^a-z0-9 ]+/g, ' ')
+    .replace(/(?:^| )(?:cherche|regarde|lis|prends|utilise|essaie|voici|voila|c est|avec|sur|dans|ce|cette|le|la|les|un|une|lien|liens|page|fiche|plan|site|url|ca|celle|la|stp|merci|et|pour|de|du)(?= |$)/g, ' ')
+    .replace(/ +/g, ' ')
+    .trim();
+  return `${dit.length >= 4 ? reste.replace(/[:\s]+$/g, '').trim() : nom} ${liens.join(' ')}`.trim();
+}
+
 /** Ce que dit l'utilisateur après la question du modèle exact. */
 function lireProduit(text: string, t: string, nom: string): string | null {
   // Un lien d'abord : « celle-là : https://… » vise la page donnée, pas la carte de la liste.
-  if (liensDits(text).length) return text.trim();
+  if (liensDits(text).length) return produitAvecLien(text, nom);
   if (CELLE_DE_LA_LISTE.test(t)) return nom;
   const mots = t.split(' ').filter(Boolean);
   if (mots.length === 0 || mots.length > 16) return null;
@@ -377,6 +404,11 @@ const FAIS_QUAND_MEME =
   /^(?:(?:bon|ok|oui|ouais|d accord|daccord|allez|vas y|alors) )*(?:(?:tu peux )?(?:me |m )?(?:le |la |les )?(?:dess?inn?e\w*|modelis\w*|fabriqu\w*|fai[st]|imprim\w*|continue|avance|lance)\b|vas y\b|go\b)|\bavec ce que (?:tu as|t as)\b|\bsans (?:ca|cette mesure|ces mesures)\b|\btant pis\b|\bfais sans\b/;
 /** Cartes souvent demandées que la bibliothèque n'a pas : la boîte est faite sans plots, et c'est dit. */
 const CARTE_INCONNUE = /\b(?:arduino(?: (?:uno|nano|mega|micro|leonardo))?|esp8266|nodemcu|wemos(?: d1)?|raspberry pi (?:pico|zero|0|3|4)|pi (?:pico|zero|0)|pico|jetson(?: nano)?|stm32|teensy|orange pi|banana pi|micro ?bit|beaglebone)\b/;
+/** « un truc pour ranger… », « une pièce pour tenir… » : l'objet est quand même précisé. */
+const OBJET_PRECIS = /\b(?:pour|qui|avec|comme)\b/;
+/** Ce qu'on demande avec « fais-moi un… » et qui n'est pas une pièce à imprimer. */
+const PAS_UNE_PIECE =
+  /\b(?:images?|photos?|dessins?|logos?|stickers?|resumes?|listes?|mails?|messages?|playlists?|recherches?|notes?|rappels?|cafes?|blagues?|histoires?|poemes?|points?|bilans?|recap\w*|calculs?|programmes?|scripts?|applis?|applications?|sites?|codes?|tableaux?|textes?|lettres?|plannings?|comptes? rendus?|tours?|pauses?|exemples?|tests?|essais?|copies?|sauvegardes?|captures?)\b/;
 /** « encore », « encore un peu » : le dernier changement relatif, une fois de plus. */
 const ENCORE = /^(?:encore(?: un peu| plus| une fois| pareil)?|un peu plus|pareil|continue)$/;
 /** Phrases très courtes qui ne répondent à aucune question de l'atelier. */
@@ -473,6 +505,8 @@ export function demandePiece(
   const t = plier(text)
     .replace(/^jarvis ,? ?/, '')
     .replace(/^(?:et maintenant|et puis|et aussi|et|puis|aussi|maintenant|alors|bon) /, '');
+  // « imprime le fichier boite.gcode », « imprime ce document » : un fichier, pas une pièce à dessiner.
+  if (/\b(?:gcode|fichiers?|documents?|pdf)\b/.test(t)) return null;
   const verbe = DEMANDE.exec(t) ?? VOULOIR.exec(t);
   const demande = comprendre(text);
   const carte = composantNomme(` ${plier(text)} `);
@@ -627,7 +661,7 @@ export function plateauVideLanceSuivante(text: string): boolean {
   return vide && lance;
 }
 
-const CHOISIR = /\b(?:reviens|retourne|revenir|garde|prends|choisis) (?:a )?la (?:version|v) ?(\d+)\b/;
+const CHOISIR = /\b(?:reviens|retourne|revenir|garde|prends|reprends|choisis|remets|repasse|montre(?: moi)?|affiche) (?:a |sur )?la (?:version|v) ?(\d+|une?)\b|^(?:la |plutot la )?(?:version|v) ?(\d+|une?)$/;
 
 const INFINITIFS: Record<string, string> = {
   ajouter: 'ajoute', rajouter: 'rajoute', mettre: 'mets', remettre: 'remets', faire: 'fais', percer: 'perce',
@@ -669,6 +703,8 @@ export function normaliserOrdre(t: string): string {
   for (const [re, ordre] of trop) {
     if (re.test(s) && /^(?:(?:elle|il|la boite|le boitier|la piece|c|ca) (?:est|fait) )?(?:un peu |beaucoup )?trop\b/.test(s)) return ordre;
   }
+  // « un trou … à 20 mm de hauteur » : la place du trou (à 20 mm du bas), pas la hauteur de la pièce.
+  if (/\b(?:trous?|ouvertures?|fenetres?|encoches?|passages?|fentes?)\b/.test(s)) s = s.replace(/\ba (\d+(?:\.\d+)? ?(?:mm|cm)?) ?de (?:hauteur|haut)\b/, 'a $1 du bas');
   // « aérations », « ventilation » : des trous d'aération.
   if (!/\btrous?\b/.test(s)) s = s.replace(/\b(?:des |les )?(?:aerations?|ventilations?|grilles? d aeration)\b/, 'des trous d aeration');
   return s.replace(/\s+/g, ' ').trim();
@@ -876,9 +912,32 @@ function ecranInconnu(text: string): string | null {
 function decider(text: string, precedentDonne: AtelierEtat | null, contexte: ContexteAtelier = {}): AtelierDecision {
   const t = plier(text).replace(/^jarvis ,? ?/, '');
   const mesures = contexte.mesures ?? {};
-  const precedent = precedentDonne;
+  let depart = precedentDonne;
   // La même phrase ramenée à un ordre (« tu peux l'imprimer ? » → « imprime »), pour la pièce à l'écran.
   const tn = normaliserOrdre(t);
+  // Un changement vient d'être refusé (« un trou de 50 : il ne tient pas ») : « bon alors de 10 »
+  // le redemande avec ce nombre. Toute autre phrase oublie le refus.
+  if (depart?.etape === 'piece' && depart.refus) {
+    const refuse = depart.refus;
+    const { refus: _refus, ...sansRefus } = depart;
+    depart = sansRefus;
+    const autre = /^(?:(?:bon|alors|ben|ok|et|non|plutot|du coup|sinon) )*(?:de |en |a )?(\d+(?:\.\d+)?)(?: ?(?:mm|cm))?(?: (?:alors|plutot|du coup|seulement|ca ira))*$/.exec(tn);
+    if (autre && /\d/.test(refuse)) {
+      return deciderAtelier(refuse.replace(/\d+(?:\.\d+)?/, autre[1]!), depart, contexte);
+    }
+  }
+  // « non plus large » juste après « plus haute » : la correction part de la version d'avant (on ne
+  // garde pas le changement qu'il vient de refuser).
+  if (depart?.etape === 'piece' && /^non ,? ?(?:pas (?:ca|comme ca) ,? ?)?(?:plutot )?(?:un peu )?(?:plus|moins) [a-z]+$/.test(t)) {
+    const piece = depart;
+    const courante = piece.versions.find((v) => v.numero === piece.versionChoisie);
+    const avant = piece.versions.filter((v) => v.numero < piece.versionChoisie).at(-1);
+    if (courante?.changement && avant) {
+      const suite = deciderAtelier(t.replace(/^non ,? ?(?:pas (?:ca|comme ca) ,? ?)?/, ''), { ...piece, versionChoisie: avant.numero }, contexte);
+      if (suite.kind === 'fabriquer') return { ...suite, base: piece, changement: `${suite.changement ?? ''} (à partir de la version ${avant.numero})` };
+    }
+  }
+  const precedent = depart;
 
   // D'autres cotes proposées (la carte ne tenait pas) : « oui » les prend, « non » garde la pièce
   // d'avant. Autre chose : la phrase est lue avec la pièce d'avant, la proposition est oubliée.
@@ -946,7 +1005,9 @@ function decider(text: string, precedentDonne: AtelierEtat | null, contexte: Con
     const c = composant(precedent.composant);
     if (ANNULER.test(t)) return { kind: 'dire', texte: "D'accord, je laisse tomber. Les mesures déjà données sont gardées." };
     // « cherche avec ce lien : https://… » : la page ou le plan donné est lu pour ce composant.
-    if (c && liensDits(text).length) return { kind: 'chercherCotes', recherches: [{ composant: c.id, produit: text.trim() }], reprise: precedent.reprise };
+    if (c && liensDits(text).length) {
+      return { kind: 'chercherCotes', recherches: [{ composant: c.id, produit: produitAvecLien(text, contexte.produits?.[c.id]?.produit ?? c.nom) }], reprise: precedent.reprise };
+    }
     const q = c?.aMesurer?.find((x) => x.champ === precedent.champ);
     // « prends large », « je ne sais pas » : une marge annoncée, seulement pour l'encombrement.
     if (c && q && SANS_LA_PIECE.test(t) && !/\d/.test(t)) {
@@ -1021,6 +1082,15 @@ function decider(text: string, precedentDonne: AtelierEtat | null, contexte: Con
   }
 
   if (plateauVideLanceSuivante(text)) return { kind: 'lancerSuivante' };
+  // « lance la suivante » avec une pièce de l'atelier dans la discussion, sans dire que le plateau est
+  // vide : on le demande (sinon la phrase partait à la musique, « morceau suivant »).
+  if (precedent?.etape === 'piece' && /^(?:lance|lances|lancer|imprime|demarre) (?:la |le )?(?:suivante?|prochaine?)(?: piece)?$/.test(tn)) {
+    return { kind: 'dire', texte: 'Pour lancer la pièce suivante de la file, dis-moi d’abord que le plateau est vide : « le plateau est vide, lance la suivante ».', etat: precedent };
+  }
+  // « imprime-la », « mets-la dans la file » sans aucune pièce dans la discussion.
+  if (contexte.sansAutreImprimante && precedent?.etape !== 'piece' && /^(?:imprime|imprimes)(?: (?:la|le|les))?$|^(?:mets|met|ajoute|rajoute|envoie) (?:la|le|les) (?:dans|a|en|sur) (?:la )?(?:file|liste)(?: d attente)?$/.test(tn)) {
+    return { kind: 'dire', texte: "Je n'ai pas de pièce à imprimer dans cette discussion. Demande-moi d'abord une pièce, par exemple « fais-moi une boîte de 80 par 50 par 30 »." };
+  }
 
   // Sinon, une nouvelle pièce passe avant tout.
   const produits = Object.fromEntries(Object.entries(contexte.produits ?? {}).map(([id, p]) => [id, p.produit]));
@@ -1031,6 +1101,9 @@ function decider(text: string, precedentDonne: AtelierEtat | null, contexte: Con
   if (nouvelle) {
     if (nouvelle.question) {
       return chercherOuDemander(text, nouvelle.question, { texte: text, piece: null }, contexte);
+    }
+    if (!nouvelle.gabarit && /\b(?:une piece|un truc|quelque chose|un objet|un machin|une chose)\b/.test(tn) && !OBJET_PRECIS.test(tn)) {
+      return { kind: 'dire', texte: `En 3D, je sais dessiner et préparer pour l'imprimante : ${piecesConnues()}, et un boîtier pour une carte électronique (Raspberry Pi 5, ESP32). Dis-moi laquelle, avec ses mesures si tu les as : « fais-moi une boîte de 80 par 50 par 30 ».`, etat: { etape: 'choix' } };
     }
     if (!nouvelle.gabarit) {
       return {
@@ -1056,6 +1129,22 @@ function decider(text: string, precedentDonne: AtelierEtat | null, contexte: Con
   // l'atelier dit ce qu'il sait faire (aucune équipe du chef d'orchestre ne le sait).
   if (CAPACITES.test(tn) || (ENVIE_3D.test(tn) && !SUJET_AUTRE.test(tn) && !/\b(?:document|page|pdf|fichier|photo|image|texte|mail|facture|feuille)s?\b/.test(tn))) {
     return { kind: 'dire', texte: `En 3D, je sais dessiner et préparer pour l'imprimante : ${piecesConnues()}, et un boîtier pour une carte électronique (Raspberry Pi 5, ESP32). Dis-moi laquelle, avec ses mesures si tu les as : « fais-moi une boîte de 80 par 50 par 30 ».`, etat: { etape: 'choix' } };
+  }
+  // Dans une discussion d'atelier (une pièce, une question), « fais-moi un pot de fleurs » demande une
+  // autre pièce : l'atelier dit qu'il ne sait pas la dessiner, au lieu de laisser un modèle répondre.
+  if (precedent && DEMANDE.test(tn) && !/\bdessin\w*\b/.test(tn) && /^(?:[a-z]+ ){1,4}?(?:un|une|des) /.test(tn) && !VOCABULAIRE_PIECE.test(tn) && !SUJET_AUTRE.test(tn) && !PAS_UNE_PIECE.test(tn) && tn.split(' ').length <= 12) {
+    return {
+      kind: 'dire',
+      texte: `Je ne sais pas encore dessiner ça. Je sais faire : ${piecesConnues()}. Dis-moi laquelle s'en approche.`,
+      etat: { etape: 'choix' },
+    };
+  }
+  // « rajoute un écran tactile avec une caméra » sans aucune pièce dans la discussion.
+  if (!precedent && /^(?:ajoute|rajoute)\b/.test(tn) && composantNomme(` ${tn} `)) {
+    return {
+      kind: 'dire',
+      texte: "Je n'ai pas de pièce à l'écran où le mettre. Demande-moi le boîtier en entier, par exemple « fais-moi un boîtier pour mon Raspberry Pi 5 avec l'écran tactile 7 pouces et la caméra ».",
+    };
   }
   // Jarvis vient de dire ce qu'il sait faire : le nom d'une pièce suffit (« bah une boîte alors »).
   if (precedent?.etape === 'choix') {
@@ -1139,7 +1228,8 @@ function decider(text: string, precedentDonne: AtelierEtat | null, contexte: Con
   // Une pièce est à l'écran.
   const choisir = CHOISIR.exec(tn);
   if (choisir) {
-    const numero = Number(choisir[1]);
+    const dite = choisir[1] ?? choisir[2] ?? '';
+    const numero = /^une?$/.test(dite) ? 1 : Number(dite);
     if (!precedent.versions.some((v) => v.numero === numero)) {
       return { kind: 'dire', texte: `Il n'y a pas de version ${numero}.` };
     }
@@ -1167,8 +1257,19 @@ function decider(text: string, precedentDonne: AtelierEtat | null, contexte: Con
   }
   // « elle fait combien de haut ? », « c'est quoi les dimensions ? » : les cotes de la version à l'écran.
   if ((QUESTION.test(tn) || QUESTION_TAILLE.test(tn)) && DIMENSIONS.test(tn) && !SUJET_AUTRE.test(tn) && !/\d/.test(tn)) {
+    // « elle fait combien de haut » : la hauteur seule ; « c'est quoi les dimensions » : tout.
+    const une = /\b(?:haute?|hauteur)\b/.test(tn) ? 'hauteur' : /\b(?:large|largeur)\b/.test(tn) ? 'largeur' : /\b(?:longue?|longueur)\b/.test(tn) ? 'longueur' : null;
+    const mesureDite = une ? g.mesures.find((m) => m.id === une) : undefined;
+    if (une && mesureDite && actuelle.valeurs[une] !== undefined) {
+      const toutes = actuelle.mesures.map((m) => `${m.nom.toLowerCase()} ${m.valeur}`).join(', ');
+      return {
+        kind: 'dire',
+        texte: `Version ${actuelle.numero} : ${valeurDite(mesureDite, actuelle.valeurs[une]!)} de ${une === 'hauteur' ? 'haut' : une === 'largeur' ? 'large' : 'long'}. Toutes les cotes : ${toutes}.`,
+        etat: precedent,
+      };
+    }
     const cotes = actuelle.mesures.map((m) => `${m.nom.toLowerCase()} ${m.valeur}`).join(', ');
-    return { kind: 'dire', texte: `Version ${actuelle.numero} : ${cotes}.` };
+    return { kind: 'dire', texte: `Version ${actuelle.numero} : ${cotes}.`, etat: precedent };
   }
   // Une question (« quelle fenêtre est active ? ») ne change pas la pièce : elle suit son chemin.
   // Un ordre pour un autre domaine (« ferme la fenêtre », « mets l'écran en veille ») non plus.
@@ -1225,7 +1326,7 @@ function decider(text: string, precedentDonne: AtelierEtat | null, contexte: Con
     if (r.question) {
       return chercherOuDemander(text, r.question, { texte: text, piece: precedent }, contexte);
     }
-    if (r.erreurs.length) return { kind: 'dire', texte: `${r.erreurs.join(' ')} La version ${actuelle.numero} reste à l'écran.` };
+    if (r.erreurs.length) return { kind: 'dire', texte: `${r.erreurs.join(' ')} La version ${actuelle.numero} reste à l'écran.`, etat: { ...precedent, refus: tn } };
     valeurs = avecAjouts(valeurs, r.ajouts);
     changementsDecoupes.push(...r.changements);
     resteTexte = matiere.reste;
@@ -1237,7 +1338,7 @@ function decider(text: string, precedentDonne: AtelierEtat | null, contexte: Con
       return { kind: 'dire', texte: `${r.erreurs.join(' ')} La version ${actuelle.numero} reste à l'écran.` };
     }
     const r = appliquerDecoupes(g, decoupesDe(valeurs), lu.ops);
-    if (r.erreurs.length) return { kind: 'dire', texte: `${r.erreurs.join(' ')} La version ${actuelle.numero} reste à l'écran.` };
+    if (r.erreurs.length) return { kind: 'dire', texte: `${r.erreurs.join(' ')} La version ${actuelle.numero} reste à l'écran.`, etat: { ...precedent, refus: tn } };
     valeurs = avecDecoupes(valeurs, r.decoupes);
     changementsDecoupes.push(...r.changements);
     resteTexte = lu.reste;
@@ -1255,6 +1356,17 @@ function decider(text: string, precedentDonne: AtelierEtat | null, contexte: Con
   // Un nombre sans le nom de sa mesure ne vaut que si la phrase ne parle que de la pièce :
   // « mets le volume à 90 » ne change pas la longueur, « fais-la en 100 par 60 » oui.
   const dites = delta ? lues : parleDAutreChose(tReste, g) ? nommees(lues, tReste, g) : lues;
+  // « bon alors 10 », « mets 50 » : un nombre seul, sans dire quelle mesure. On demande laquelle, au
+  // lieu de changer la longueur (essai de la nuit : la boîte de 60 était passée à 10 mm de long).
+  const nombresDits = tReste.match(/\d+(?:\.\d+)?/g) ?? [];
+  if (!delta && !seule && !lu.ops.length && !matiere.ops.length && nombresDits.length === 1 && Object.keys(dites).length === 1 && !Object.keys(nommees(lues, tReste, g)).length && !ENCORE.test(tn)) {
+    const n = nombresDits[0]!.replace('.', ',');
+    return {
+      kind: 'dire',
+      texte: `${n} pour quelle mesure ? Dis par exemple « hauteur ${n} », « largeur ${n} », ou « un trou de ${n} à l'arrière ».`,
+      etat: precedent,
+    };
+  }
   Object.assign(valeurs, dites);
 
   // « encore un peu » : la mesure changée par la version à l'écran, une fois de plus dans le même sens.
@@ -1330,3 +1442,12 @@ export function phraseConfirmationAtelier(nom: string, numero: number, tempsFila
   const detail = tempsFilament ? ` ${tempsFilament}` : '';
   return `Lancer l'impression de « ${nom} », version ${numero}.${detail} Vérifie que le plateau est vide.`;
 }
+
+/**
+ * Note ajoutée aux consignes des équipes du chef d'orchestre quand l'atelier existe (jamais au
+ * cerveau qui trie, jamais au chat sans orchestre). Sans elle, un modèle qui reçoit une phrase
+ * d'atelier mal lue répond « je ne peux pas imprimer », ou imite les réponses de l'atelier et invente
+ * une « version 2 » avec des cotes (nuit du 25 novembre).
+ */
+export const ATELIER_NOTE_EQUIPES =
+  "ATELIER 3D : Jarvis a un atelier qui dessine et prépare pour l'imprimante 3D des pièces simples (boîte, boîte avec couvercle, bac à compartiments, entretoise, équerre, crochet, support de téléphone, socle, porte-étiquette, cale, boîtier pour Raspberry Pi 5 ou ESP32). Ce n'est pas toi qui le fais : tu ne dessines, ne modifies et n'imprimes aucune pièce, tu n'annonces jamais de « version » ni de cotes de pièce, et tu ne dis jamais que Jarvis ne peut pas imprimer en 3D. Si l'utilisateur veut une pièce ou un changement sur sa pièce, réponds en une phrase qu'il le redise simplement à l'atelier, par exemple « fais-moi une boîte de 80 par 50 par 30 » ou « hauteur 40 ».";

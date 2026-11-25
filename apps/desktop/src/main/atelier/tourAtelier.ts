@@ -40,6 +40,8 @@ import {
   phraseConfirmationFile,
   phraseConfirmationSuivante,
   phraseTempsFilament,
+  normaliserOrdre,
+  plier,
   PHONE_CANNOT_START,
   SPEAKER_CANNOT_START,
   type AtelierEtat,
@@ -135,6 +137,11 @@ export interface AtelierDeps {
    * dans ce processus. Les essais en passent un plus court.
    */
   controlerBoitier?: (b: BoitierEcran, avancement: (part: number, quoi: string) => void) => Promise<ControleBoitier[]>;
+  /**
+   * Vrai (Jarvis Live) : l'atelier est le seul à parler à l'imprimante ; « imprime-la » sans pièce dans
+   * la discussion reçoit sa réponse au lieu de partir à un modèle. Absent (Jarvis Test) : le lot B.
+   */
+  sansAutreImprimante?: boolean;
 }
 
 /** Fichier des mesures de composants, dans le dossier de l'atelier. */
@@ -292,6 +299,7 @@ export async function tourAtelier(input: AtelierEntree, deps: AtelierDeps): Prom
   const contexte = () => ({
     mesures: fusionnerCotes(mesures, cotes, { uneSource: true }),
     rechercheCotes: Boolean(deps.chercherCotes),
+    ...(deps.sansAutreImprimante ? { sansAutreImprimante: true } : {}),
     cherches: Object.keys(recherches),
     produits: Object.fromEntries(Object.entries(recherches).map(([id, r]) => [id, { produit: r.produit, ...(r.plans ? { plans: true } : {}) }])),
   });
@@ -425,10 +433,21 @@ export async function tourAtelier(input: AtelierEntree, deps: AtelierDeps): Prom
         if (!decision.base && premiere && r.raison !== ATELIER_SANS_OPENSCAD && !r.produit?.scad) {
           return { texte: `${texte} Redis-moi les cotes.`, etat: { etape: 'question', gabarit: decision.gabarit.id, valeurs: {}, mesure: premiere } };
         }
+        // Un changement refusé sur la pièce à l'écran (« un trou de 50 : il ne tient pas ») : la phrase est
+        // gardée, « bon alors de 10 » la redemande avec ce nombre.
+        if (decision.base && r.raison !== ATELIER_SANS_OPENSCAD && !r.produit?.scad) {
+          return { texte, etat: { ...decision.base, refus: normaliserOrdre(plier(input.text)) } };
+        }
         return { texte };
       }
       const probleme = [r.ok ? '' : ` Attention : ${r.raison}`, ...r.avertissements.filter((a) => a.startsWith('Sans support')).map((a) => ` ${a}`)].join('');
-      if (voix) return { texte: `C'est prêt : ${version.fiche} Regarde l'écran du PC.${probleme}`, etat };
+      if (voix) {
+        // À l'oreille : la première phrase de la fiche seulement (les vis, le ventilateur et les marges
+        // restent à l'écran), et le changement quand c'en est un.
+        const courte = /^[^.]*\./.exec(version.fiche)?.[0] ?? version.fiche;
+        const dit = decision.changement ? `C'est fait, version ${version.numero} : ${decision.changement}. ${courte}` : `C'est prêt : ${courte}`;
+        return { texte: `${dit} Regarde l'écran du PC.${probleme}`, etat };
+      }
       const quoi = decision.changement ? `Version ${version.numero} (${decision.changement}). ` : '';
       const ensemble = Boolean(version.pieces?.length);
       const suite = !r.ok

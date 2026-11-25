@@ -149,7 +149,8 @@ describe('atelier dans la discussion, côté PC', () => {
   it('plus grande que la surface réglée : refusée, rien de rendu', async () => {
     const sortie = await dire([], 'Fais-moi une boîte de 280 par 100 par 40', deps());
     expect(sortie?.texte).toContain('250 × 250 × 250');
-    expect(sortie?.etat).toBeUndefined();
+    // La question reste ouverte : « bon alors 240 par 100 par 40 » refait la pièce (nuit du 25 novembre).
+    expect(sortie?.etat).toMatchObject({ etape: 'question', gabarit: 'boite' });
     expect(rendus).toHaveLength(0);
   });
 
@@ -379,7 +380,8 @@ describe('atelier dans la discussion, côté PC', () => {
     await dire(messages, 'Imprime-la', d, { confirm: async () => true });
 
     // Sans « plateau vide », rien n'est relancé.
-    expect(await dire(messages, 'lance la suivante', d, { confirm: async () => true })).toBeNull();
+    // (L'atelier le dit lui-même, au lieu de laisser la phrase partir à la musique : « morceau suivant ».)
+    expect((await dire(messages, 'lance la suivante', d, { confirm: async () => true }))?.texte).toContain('le plateau est vide');
     // Impression encore en cours : refus, sans carte.
     let carte = '';
     const tot = await dire(messages, 'Le plateau est vide, lance la suivante', d, { confirm: async (t) => ((carte = t), true) });

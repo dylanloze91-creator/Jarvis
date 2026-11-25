@@ -18,6 +18,8 @@ export function plier(text: string): string {
     .normalize('NFD')
     .replace(/\p{M}/gu, '')
     .replace(/(\d),(\d)/g, '$1.$2')
+    // « 15mn », « 200 mn » : « mm » tapé ou dicté de travers (jamais des minutes, dans l'atelier).
+    .replace(/(\d) ?mn\b/g, '$1 mm')
     .replace(/×/g, ' x ')
     .replace(/(\d)x(\d)/g, '$1 x $2')
     .replace(/['’`-]/g, ' ')

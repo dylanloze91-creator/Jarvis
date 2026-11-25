@@ -79,7 +79,7 @@ describe('chercherCotes (étape)', () => {
   it('rien de lisible : pas ok, et dit pourquoi', async () => {
     const r = await chercherCotes({ composant: ESP, produit: 'carte inconnue' }, { ...fauxInternet(), lire: async () => null });
     expect(r.ok).toBe(false);
-    expect(r.raison).toBe('Je n’ai trouvé aucune page lisible sur « carte inconnue ».'.replace('’', "'"));
+    expect(r.raison).toContain("Je n'ai rien pu lire sur Internet pour « carte inconnue »");
   });
 });
 

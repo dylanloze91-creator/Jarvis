@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { fabriquer, fichePiece, type Gabarit } from './gabarits.js';
-import { deciderAtelier, dernierAtelier, mesuresAffichees, type AtelierDecision, type AtelierEtat } from './discussion.js';
+import { deciderAtelier, dernierAtelier, mesuresAffichees, normaliserOrdre, type AtelierDecision, type AtelierEtat } from './discussion.js';
+import { plier } from './lecture.js';
 
 /**
  * L'atelier parlé comme l'utilisateur parle (mission de nuit du 25 au 26 novembre) : chaque phrase
@@ -20,8 +21,12 @@ function discussion(phrases: string[], contexte: Parameters<typeof deciderAtelie
     if (d.kind === 'fabriquer') {
       const g: Gabarit = d.gabarit;
       const p = fabriquer(g, d.valeurs, V);
-      if (!p.ok) continue;
       const base: Piece | undefined = d.base;
+      if (!p.ok) {
+        // Comme le PC : un changement refusé garde la phrase, pour « bon alors de 10 ».
+        if (base) etat = { ...base, refus: normaliserOrdre(plier(phrase)) };
+        continue;
+      }
       const versions = [
         ...(base?.versions ?? []),
         {
@@ -207,5 +212,96 @@ describe('la pièce reste à l’écran quelques demandes', () => {
     const question: AtelierEtat = { etape: 'question', gabarit: 'boite', valeurs: {}, mesure: 'longueur' };
     expect(dernierAtelier([{ role: 'user' }, { role: 'assistant', atelier: question }])).toBe(question);
     expect(dernierAtelier([{ role: 'user' }, { role: 'assistant', atelier: question }, ...tourModele])).toBeNull();
+  });
+});
+
+describe('deuxième série de la nuit', () => {
+  const boite = ['fais moi une boite de 60 par 40 par 20'];
+
+  it('un trou refusé, puis « bon alors de 10 » : le trou, pas la longueur de la boîte', () => {
+    const { decisions } = discussion([...boite, 'rajoute un trou de 50 a l arriere', 'bon alors de 10']);
+    expect(decisions[1]).toMatchObject({ kind: 'fabriquer' });
+    expect(decisions[2]).toMatchObject({ kind: 'fabriquer', valeurs: { longueur: 60, largeur: 40, hauteur: 20 } });
+    expect(decisions[2]?.kind === 'fabriquer' ? String(decisions[2].valeurs.decoupes) : '').toContain('"largeur":10');
+  });
+
+  it.each(['bon alors 25', 'mets 50', '30'])('« %s » seul : quelle mesure ? (la longueur ne change pas)', (phrase) => {
+    const d = derniere([...boite, phrase]);
+    expect(d).toMatchObject({ kind: 'dire', etat: { etape: 'piece' } });
+    expect(d.kind === 'dire' ? d.texte : '').toMatch(/pour quelle mesure/);
+  });
+
+  it('« fais-la en 60 par 60 » et « hauteur 25 » changent toujours la pièce', () => {
+    expect(derniere([...boite, 'fais la en 70 par 60'])).toMatchObject({ kind: 'fabriquer', valeurs: { longueur: 70, largeur: 60 } });
+    expect(derniere([...boite, 'hauteur 25'])).toMatchObject({ kind: 'fabriquer', valeurs: { hauteur: 25 } });
+  });
+
+  it('« non plus large » après « plus haute » repart de la version d’avant', () => {
+    const { decisions } = discussion(['fais moi une boite de 80 par 50 par 30', 'plus haute', 'non plus large']);
+    expect(decisions[2]).toMatchObject({ kind: 'fabriquer', valeurs: { hauteur: 30, largeur: 63 } });
+  });
+
+  it.each([
+    ['reprends la version une', 1],
+    ['la version 2', 2],
+    ['remets la version 1', 1],
+  ])('« %s »', (phrase, numero) => {
+    expect(derniere([...boite, 'plus haute', 'plus large', phrase])).toMatchObject({ kind: 'choisir', numero });
+  });
+
+  it('« la version 7 » : elle n’existe pas, et c’est dit', () => {
+    const d = derniere([...boite, 'la version 7']);
+    expect(d.kind === 'dire' ? d.texte : '').toMatch(/pas de version 7/);
+  });
+
+  it('« fait un trou de 15mn par 5mn a 20mn de hauteur sur la paroi la plus large »', () => {
+    const d = derniere(['fais moi une boite de 80 par 50 par 30', 'fait un trou de 15mn par 5mn a 20mn de hauteur sur la paroi la plus large']);
+    const decoupes = d.kind === 'fabriquer' ? String(d.valeurs.decoupes) : '';
+    expect(decoupes).toContain('"forme":"rect"');
+    expect(decoupes).toContain('"largeur":15');
+    expect(decoupes).toContain('"hauteur":5');
+    expect(decoupes).toContain('"mm":20');
+  });
+
+  it('« lance la suivante » avec une pièce : il faut dire que le plateau est vide', () => {
+    const d = derniere([...boite, 'lance la suivante']);
+    expect(d.kind === 'dire' ? d.texte : '').toMatch(/le plateau est vide/);
+    expect(deciderAtelier('lance la suivante', null, {})).toEqual({ kind: 'rien' });
+  });
+
+  it('« imprime-la » sans pièce : réponse de l’atelier dans la Live seulement', () => {
+    expect(deciderAtelier('imprime la', null, {})).toEqual({ kind: 'rien' });
+    const live = deciderAtelier('imprime la', null, { sansAutreImprimante: true });
+    expect(live.kind === 'dire' ? live.texte : '').toMatch(/pas de pièce à imprimer/);
+    expect(deciderAtelier('bon bah mets la dans la file', null, { sansAutreImprimante: true }).kind).toBe('dire');
+    // « imprime le fichier x.gcode », « imprime ce document » ne sont jamais pris.
+    expect(deciderAtelier('imprime le fichier boite.gcode', null, { sansAutreImprimante: true })).toEqual({ kind: 'rien' });
+  });
+
+  it('dans une discussion d’atelier, « fais-moi un pot de fleurs » reçoit la liste ; « dessine-moi un chat » reste une image', () => {
+    expect(derniere([...boite, 'fais moi un pot de fleurs'])).toMatchObject({ kind: 'dire', etat: { etape: 'choix' } });
+    expect(derniere([...boite, 'dessine moi un chat'])).toEqual({ kind: 'rien' });
+    expect(derniere([...boite, 'fais moi un resume de la journee'])).toEqual({ kind: 'rien' });
+    expect(deciderAtelier('fais moi un pot de fleurs', null, {})).toEqual({ kind: 'rien' });
+  });
+
+  it('« rajoute un ecran tactile avec une camera » sans pièce : l’atelier dit comment demander', () => {
+    const d = deciderAtelier('rajoute un ecran tactile avec une camera', null, {});
+    expect(d.kind === 'dire' ? d.texte : '').toMatch(/pas de pièce à l'écran/);
+  });
+
+  it('« cherche avec ce lien » garde le nom du composant devant le lien', () => {
+    const d = derniere(['un boitier pour mon esp32', 'cherche avec ce lien : https://exemple.test/fiche.html'], { rechercheCotes: true });
+    expect(d).toMatchObject({ kind: 'chercherCotes' });
+    const produit = d.kind === 'chercherCotes' ? d.recherches[0]!.produit : '';
+    expect(produit).toMatch(/^ESP32-S3 DevKitC-1 .* https:\/\/exemple\.test\/fiche\.html$/);
+  });
+
+  it('la boîte à couvercle se dit à ses cotes, pas à sa place sur le plateau', () => {
+    const d = deciderAtelier('je voudrais une boite avec couvercle de 100 par 60 par 40', null, {});
+    expect(d.kind).toBe('fabriquer');
+    if (d.kind !== 'fabriquer') return;
+    const p = fabriquer(d.gabarit, d.valeurs, V);
+    expect(p.ok && fichePiece(p)).toMatch(/^Boîte avec couvercle de 100 × 60 × 40 mm \(boîte et couvercle côte à côte sur le plateau : /);
   });
 });

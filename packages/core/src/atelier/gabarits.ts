@@ -631,7 +631,13 @@ function avecLesDecoupes(scad: string, decoupes: string[], ajouts: string[] = []
 export function fichePiece(piece: Extract<Piece, { ok: true }>): string {
   const [x, y, z] = piece.taille.map((v) => String(Math.round(v * 10) / 10).replace('.', ','));
   const nom = piece.gabarit.nom;
-  const base = `${nom[0]!.toUpperCase()}${nom.slice(1)} de ${x} × ${y} × ${z} mm.`;
+  // Boîte avec couvercle : la taille de la pièce compte la boîte et le couvercle côte à côte sur le
+  // plateau (« de 210 × 60 × 40 » pour une boîte de 100 de long). On dit les cotes de la boîte.
+  const dit = (id: string) => String(Math.round(Number(piece.valeurs[id]) * 10) / 10).replace('.', ',');
+  const base =
+    piece.gabarit.id === 'boite_couvercle' && ['longueur', 'largeur', 'hauteur'].every((id) => typeof piece.valeurs[id] === 'number')
+      ? `${nom[0]!.toUpperCase()}${nom.slice(1)} de ${dit('longueur')} × ${dit('largeur')} × ${dit('hauteur')} mm (boîte et couvercle côte à côte sur le plateau : ${x} × ${y} mm).`
+      : `${nom[0]!.toUpperCase()}${nom.slice(1)} de ${x} × ${y} × ${z} mm.`;
   // Les ajouts, puis les vis à prévoir (« Couvercle : 4 vis M3 × 6 à tête fraisée… »).
   const ajouts = ajoutsDe(piece.valeurs);
   const avecAjouts = ajouts.length === 1 ? ` Avec ${direAjout(ajouts[0]!)}.` : ajouts.length > 1 ? ` Avec ${ajouts.map(direAjout).join(', ')}.` : '';

@@ -241,7 +241,7 @@ describe('découpes : dans la discussion', () => {
 
   it('refus : la version reste à l’écran', () => {
     const d = deciderAtelier('enlève le trou', piece('boite', BOITE));
-    expect(d).toEqual({ kind: 'dire', texte: 'Cette pièce n’a pas de découpe à enlever. La version 1 reste à l\'écran.' });
+    expect(d).toMatchObject({ kind: 'dire', texte: 'Cette pièce n’a pas de découpe à enlever. La version 1 reste à l\'écran.' });
     const crochet = deciderAtelier('ajoute un trou de 5 à l’avant', piece('crochet', {}));
     expect(crochet.kind).toBe('dire');
   });

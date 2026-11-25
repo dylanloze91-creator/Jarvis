@@ -80,6 +80,7 @@ import {
   type OrchestraTeam,
   type ModelPlace,
   type AuditLogStore,
+  ATELIER_NOTE_EQUIPES,
   type AtelierEtat,
   pourAtelier,
   type PhotoDiscussion,
@@ -795,7 +796,8 @@ export class ChatSession {
       // la déplacer de nouveau sans la décision de l'utilisateur.
       const clockLine = clockLinePrompt(new Date());
       const agent = new Agent(clock.wrap(route.provider, 'reponse'), turnTools, {
-        systemPrompt: `${turn.systemPrompt}\n\n${teamPrompt(team, character, clockLine)}${missionPrompt}`,
+        // Atelier 3D : les équipes savent qu'il existe (elles ne dessinent rien elles-mêmes).
+        systemPrompt: `${turn.systemPrompt}\n\n${teamPrompt(team, character, clockLine)}${missionPrompt}${this.deps.atelier ? `\n\n${ATELIER_NOTE_EQUIPES}` : ''}`,
         temperature: settings.temperature,
         homeLocation: settings.homeLocation ?? null,
         allowedTools: (name) =>
