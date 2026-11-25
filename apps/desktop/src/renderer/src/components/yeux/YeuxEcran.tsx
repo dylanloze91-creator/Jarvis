@@ -58,8 +58,59 @@ export function YeuxEcran({ onSend }: { onSend?: (text: string) => void }) {
       </div>
       {erreur ? <p className="rounded-lg border border-amber-400/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">{erreur}</p> : null}
       {yeux?.length === 0 ? <p className="text-sm text-slate-400">Aucun œil pour l’instant.</p> : null}
+      {yeux?.some((o) => o.genre === 'pc') ? <InscrireWebcams yeux={yeux} onChange={recharger} onMessage={setErreur} /> : null}
       {yeux?.map((oeil) => (
         <CarteOeil key={oeil.id} oeil={oeil} onChange={recharger} {...(onSend ? { onSend } : {})} />
+      ))}
+    </div>
+  );
+}
+
+/** Webcams du PC : chaque appareil vu par Windows peut devenir un œil à part (coupé à l'inscription). */
+function InscrireWebcams({ yeux, onChange, onMessage }: { yeux: Oeil[]; onChange: () => void; onMessage: (m: string | null) => void }) {
+  const api = window.jarvis.yeux;
+  const [appareils, setAppareils] = useState<{ id: string; nom: string }[] | null>(null);
+  const [pieces, setPieces] = useState<Record<string, string>>({});
+  const inscrites = new Map(yeux.filter((o) => o.genre === 'pc' && o.camera).map((o) => [o.camera!, o.nom]));
+  return (
+    <div className="rounded-xl border border-white/10 bg-white/5 p-3 text-xs text-slate-200">
+      <div className="flex items-center justify-between gap-2">
+        <span className="font-medium">Webcams du PC</span>
+        <button type="button" className="quick-btn" disabled={!api} onClick={() => void api?.webcams().then(setAppareils)}>
+          Chercher les webcams
+        </button>
+      </div>
+      {appareils?.length === 0 ? <p className="mt-2 text-slate-400">Aucune webcam vue par Windows.</p> : null}
+      {appareils?.map((a) => (
+        <div key={a.id} className="mt-2 flex flex-wrap items-center gap-2">
+          <span className="min-w-0 flex-1 truncate">{a.nom}</span>
+          {inscrites.has(a.id) ? (
+            <span className="text-slate-400">inscrite (« {inscrites.get(a.id)} »)</span>
+          ) : (
+            <>
+              <select
+                className="rounded border border-white/10 bg-slate-900 px-1"
+                value={pieces[a.id] ?? 'bureau'}
+                onChange={(e) => setPieces({ ...pieces, [a.id]: e.target.value })}
+              >
+                <option value="bureau">bureau</option>
+                <option value="salon">salon</option>
+              </select>
+              <button
+                type="button"
+                className="quick-btn"
+                onClick={() =>
+                  void api?.ajouterWebcam(a.id, pieces[a.id] ?? 'bureau').then((r) => {
+                    onMessage(r.ok ? null : r.error);
+                    onChange();
+                  })
+                }
+              >
+                Inscrire comme œil
+              </button>
+            </>
+          )}
+        </div>
       ))}
     </div>
   );

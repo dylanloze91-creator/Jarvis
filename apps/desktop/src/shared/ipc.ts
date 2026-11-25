@@ -128,6 +128,7 @@ export const IpcChannel = {
   yeuxBrancher: 'yeux:brancher',
   yeuxRegler: 'yeux:regler',
   yeuxWebcams: 'yeux:webcams',
+  yeuxAjouterWebcam: 'yeux:ajouter-webcam',
   imagesDirectCatalog: 'images:direct-catalog',
   imagesDirectGenerate: 'images:direct-generate',
   imagesDirectCancel: 'images:direct-cancel',
@@ -986,6 +987,7 @@ export interface JarvisApi {
     brancher(id: string, adresse: string, jeton: string): Promise<{ ok: true } | { ok: false; error: string }>;
     regler(id: string, reglage: { piece?: string; camera?: string }): Promise<{ ok: true } | { ok: false; error: string }>;
     webcams(): Promise<{ id: string; nom: string }[]>;
+    ajouterWebcam(appareil: string, piece: string): Promise<{ ok: true; id: string } | { ok: false; error: string }>;
   };
   settings: {
     get(): Promise<{ settings: Settings; status: RuntimeStatus }>;

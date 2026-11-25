@@ -234,6 +234,44 @@ describe('les yeux dans la session', () => {
     expect((await yeuxPC.recevoirPhotoTelephone({ octets: JPEG, type: 'image/jpeg', appareil: 'x' })).ok).toBe(false);
   });
 
+  it('deux webcams du PC : deux yeux séparés, coupés, sous leur nom d’appareil ; « le bureau » prend la bonne', async () => {
+    const settings = core.parseSettings({ yeux: { enabled: true } });
+    numero += 1;
+    const store = new YeuxStore(() => join(userData, `yeux-${numero}.json`));
+    const prises: (string | undefined)[] = [];
+    const webcam = {
+      regarde: () => false,
+      fermer: () => undefined,
+      appareils: async () => [
+        { id: 'cam-a', nom: 'HD Pro Webcam C920 (046d:082d)' },
+        { id: 'cam-b', nom: 'USB2.0 HD UVC WebCam' },
+      ],
+      photo: async (deviceId: string | undefined, nom: string) => {
+        prises.push(deviceId);
+        return { ok: true as const, photo: { octets: JPEG, type: 'image/jpeg' as const, prisA: 1, taille: JPEG.length, camera: nom } };
+      },
+    };
+    const yeuxPC = creerYeuxPC({ getSettings: () => settings, editionYeux: true, store, webcam });
+    expect(await yeuxPC.ajouterWebcam('cam-a', 'bureau')).toEqual({ ok: true, id: 'webcam' });
+    expect(await yeuxPC.ajouterWebcam('cam-b', 'salon')).toEqual({ ok: true, id: 'webcam-2' });
+    expect((await yeuxPC.ajouterWebcam('cam-a', 'salon')).ok).toBe(false);
+    expect(await yeuxPC.ajouterWebcam('inconnue', 'bureau')).toMatchObject({ ok: false });
+    expect(await yeuxPC.ajouterWebcam('cam-b', 'chambre')).toEqual({ ok: false, error: 'Jamais de caméra dans une chambre : refusé.' });
+    const pc = (await yeuxPC.yeux()).filter((o) => o.genre === 'pc');
+    expect(pc.map((o) => [o.id, o.nom, o.piece, o.allume, o.camera])).toEqual([
+      ['webcam', 'HD Pro Webcam C920', 'bureau', false, 'cam-a'],
+      ['webcam-2', 'USB2.0 HD UVC WebCam', 'salon', false, 'cam-b'],
+    ]);
+    // Coupées : aucune prise.
+    expect((await yeuxPC.tour({ text: 'Montre-moi le bureau', place: 'fenetre' }))?.photo).toBeNull();
+    expect(prises).toEqual([]);
+    await yeuxPC.allumer('webcam', true);
+    await yeuxPC.allumer('webcam-2', true);
+    expect((await yeuxPC.tour({ text: 'Montre-moi le bureau', place: 'fenetre' }))?.photo?.camera).toBe('HD Pro Webcam C920');
+    expect((await yeuxPC.tour({ text: 'Montre-moi le salon', place: 'fenetre' }))?.photo?.camera).toBe('USB2.0 HD UVC WebCam');
+    expect(prises).toEqual(['cam-a', 'cam-b']);
+  });
+
   it('jamais de caméra dans une chambre, même par le fichier', async () => {
     const { writeFile } = await import('node:fs/promises');
     numero += 1;

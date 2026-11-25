@@ -60,5 +60,6 @@ export function createPreviewYeuxApi(): NonNullable<JarvisApi['yeux']> {
       return { ok: true };
     },
     webcams: async () => [{ id: 'fausse', nom: 'Webcam d’aperçu' }],
+    ajouterWebcam: async () => ({ ok: false, error: 'Aperçu : rien à inscrire.' }),
   };
 }

@@ -75,6 +75,7 @@ const api: JarvisApi = {
     brancher: (id: string, adresse: string, jeton: string) => ipcRenderer.invoke(IpcChannel.yeuxBrancher, id, adresse, jeton),
     regler: (id: string, reglage: { piece?: string; camera?: string }) => ipcRenderer.invoke(IpcChannel.yeuxRegler, id, reglage),
     webcams: () => ipcRenderer.invoke(IpcChannel.yeuxWebcams),
+    ajouterWebcam: (appareil: string, piece: string) => ipcRenderer.invoke(IpcChannel.yeuxAjouterWebcam, appareil, piece),
   },
   images: {
     open: (path: string) => ipcRenderer.invoke(IpcChannel.imagesOpen, path),

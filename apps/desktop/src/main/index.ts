@@ -1264,6 +1264,11 @@ function registerIpc(): void {
     });
   });
   ipcMain.handle(IpcChannel.yeuxWebcams, () => (yeuxPC ? yeuxPC.webcams() : []));
+  ipcMain.handle(IpcChannel.yeuxAjouterWebcam, (_event, appareil: unknown, piece: unknown) =>
+    yeuxPC && typeof appareil === 'string' && appareil.length > 0 && appareil.length <= 200 && typeof piece === 'string' && piece.length <= 40
+      ? yeuxPC.ajouterWebcam(appareil, piece)
+      : { ok: false, error: 'Refusé.' },
+  );
   ipcMain.handle(IpcChannel.yeuxBrancher, (_event, id: unknown, adresse: unknown, jeton: unknown) =>
     yeuxPC && idOeil(id) && typeof adresse === 'string' && adresse.length <= 200 && typeof jeton === 'string' && jeton.length <= 512
       ? yeuxPC.brancher(id, adresse.trim(), jeton.trim())

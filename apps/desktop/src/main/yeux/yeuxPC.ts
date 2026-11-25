@@ -19,6 +19,7 @@ import {
   OEIL_IPHONE,
   OEIL_WEBCAM,
   OeilReseau,
+  pieceInterdite,
   prendrePhotoOeil,
   repondreYeux,
   verifierOeil,
@@ -125,6 +126,12 @@ export interface YeuxPC {
   regler(id: string, reglage: { piece?: string; camera?: string }): Promise<Resultat>;
   /** Webcams du PC (identifiant, nom), pour choisir l'appareil. */
   webcams(): Promise<{ id: string; nom: string }[]>;
+  /**
+   * Inscrit une webcam du PC comme un œil à part (coupé), sous son nom d'appareil. La première prend
+   * la place de « Webcam du PC » si elle n'a pas encore d'appareil ; les suivantes deviennent
+   * `webcam-2`, `webcam-3`… Refus : chambre, appareil inconnu ou déjà inscrit.
+   */
+  ajouterWebcam(appareil: string, piece: string): Promise<{ ok: true; id: string } | { ok: false; error: string }>;
   /** Photo envoyée depuis l'appli du téléphone (« Montrer à Jarvis »), gardée en mémoire. */
   recevoirPhotoTelephone(photo: { octets: Uint8Array; type: 'image/jpeg' | 'image/png'; appareil: string }): Promise<Resultat>;
   /** Brancher une caméra réseau (rover, hub…) : son « hello » doit répondre avant d'être gardée. */
@@ -362,6 +369,28 @@ export function creerYeuxPC(options: YeuxPCOptions): YeuxPC {
     },
     async webcams() {
       return options.webcam ? options.webcam.appareils() : [];
+    },
+    async ajouterWebcam(appareil, piece) {
+      if (!options.webcam || !yeuxActifs(getSettings(), editionYeux)) return { ok: false, error: 'Les yeux sont coupés.' };
+      if (pieceInterdite(piece)) return { ok: false, error: 'Jamais de caméra dans une chambre : refusé.' };
+      const vu = (await options.webcam.appareils()).find((a) => a.id === appareil);
+      if (!vu) return { ok: false, error: 'Webcam introuvable : elle est débranchée, ou Windows ne la montre plus.' };
+      const yeux = await tousLesYeux();
+      const deja = yeux.find((o) => o.genre === 'pc' && o.camera === appareil);
+      if (deja) return { ok: false, error: `Cette webcam est déjà inscrite (« ${deja.nom} »).` };
+      const defaut = yeux.find((o) => o.id === OEIL_WEBCAM.id);
+      let id = OEIL_WEBCAM.id;
+      if (defaut?.camera) {
+        let n = 2;
+        while (yeux.some((o) => o.id === `webcam-${n}`)) n += 1;
+        id = `webcam-${n}`;
+      }
+      // Chromium ajoute l'identifiant USB au nom (« c922 Pro Stream Webcam (046d:085c) ») : retiré.
+      const nom = vu.nom.replace(/\s*\([0-9a-f]{4}:[0-9a-f]{4}\)\s*$/i, '').replace(/\s+/g, ' ').trim().slice(0, 40) || `Webcam ${id.replace('webcam-', '')}`;
+      const verif = verifierOeil({ id, nom, piece, genre: 'pc', allume: false, camera: appareil });
+      if (!verif.ok) return { ok: false, error: verif.raison };
+      const r = await store.mettre(verif.oeil);
+      return r.ok ? { ok: true, id } : { ok: false, error: r.raison };
     },
     async brancher(id, adresse, jetonClair) {
       const oeil = await trouver(id);
