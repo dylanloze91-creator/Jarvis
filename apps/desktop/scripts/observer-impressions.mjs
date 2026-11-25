@@ -280,13 +280,20 @@ async function demanderAuModele(jpeg) {
  */
 export function verdictModele(texte) {
   let t = (texte ?? '').toLowerCase().normalize('NFD').replace(/\p{M}/gu, '').replace(/’/g, "'");
+  // La question répétée (« … si l'impression se passe bien ») et les conditions (« il faudrait voir
+  // si … sans défauts ») ne sont pas un avis.
+  t = t.replace(/\bsi (l'impression|elle|tout) se passe bien/g, ' ').replace(/\b(il faudrait|faudrait|il faut|pour determiner|pour savoir)[^.]*\./g, ' ');
+  const prudent = /\b(difficile|impossible) (de|a) (dire|determiner|juger|savoir|evaluer)|je ne peux pas (dire|determiner|juger)|pas possible de (dire|determiner)/.test(t);
   t = t
     .replace(/\b(aucun|aucune|pas de|pas d'|sans|ni)\s+(signe[s]? (de |d')?|trace[s]? (de |d')?|)?(probleme|defaut|anomalie|souci|erreur|decollement|spaghetti|fil|warping)s?/g, ' RAS ')
     .replace(/\b(ne semble|ne parait|n'a l'air) pas (y avoir|presenter|avoir) (de |d')?(probleme|defaut|anomalie|souci)s?/g, ' RAS ');
   const alerte =
     /\b(ne se passe pas bien|se passe mal|pas bien|probleme|defaut|anomalie|souci|spaghetti|decoll|warping|gauchi|decal|sous[- ]?extrusion|filaments? qui pend|fils? d'ange|stringing|rate|echou|echec|inquiet|preoccup|mauvais)/.test(t);
   const ok = /\b(se passe bien|semble bien|bonne voie|correctement|normal|bien parti|tout va bien|oui\b|bonne qualite|propre|RAS)/i.test(t);
+  // Une réponse prudente n'est « ok » que si elle conclut clairement.
+  const conclutBien = /\b(probable|semble|parait|en conclusion|globalement)[^.]{0,40}(se passe(r)? bien|se deroule(r)? bien|correctement)|tout va bien/.test(t);
   if (alerte) return 'alerte';
+  if (prudent && !conclutBien) return 'incertain';
   if (ok) return 'ok';
   return 'incertain';
 }
@@ -559,7 +566,9 @@ function comparer(nom) {
   const journal = new Map(lireLignes(join(RACINE, nom, 'journal.jsonl')).map((p) => [p.n, p]));
   const c = { photos: 0, bonnesReponses: 0, faussesAlertes: 0, defautsManques: 0, incertains: 0, nonAnalysees: 0, details: [] };
   for (const e of etiquettes) {
-    const m = journal.get(e.n)?.modele;
+    const brut = journal.get(e.n)?.modele;
+    // Verdict relu à chaque comparaison : une règle corrigée vaut aussi pour les photos déjà prises.
+    const m = brut?.etat === 'fait' ? { ...brut, verdictLu: verdictModele(brut.reponse) } : brut;
     const defaut = e.etiquette !== 'bonne';
     let resultat;
     if (!m || m.etat !== 'fait') {
