@@ -15,6 +15,7 @@ Statuts possibles : `en cours`, `en pause`, `bloqué`, `terminé`.
 
 | Agent | Branche | Tâche | Fichiers concernés | Début | Statut |
 | --- | --- | --- | --- | --- | --- |
+| Claude Code (copie `C:\dev\Jarvis-nuit`) | `claude/dev` | Nuit du 25 au 26 novembre : ratés des essais de l'utilisateur dans Jarvis Test 5.1.0-test.3 (journal des tours lu seulement) ; ce qui vient de la fusion corrigé dans `claude/dev`, ce qui vient de l'atelier ou des yeux noté dans un rapport pour leurs agents ; phrases rejouées dans une copie d'essai (données copiées, Jarvis Test installé non touché). Pas de publication. | `apps/desktop/src/main/session.ts`, `packages/core/src/agent/`, rapport | 2026-11-25 | en cours |
 | Claude Code (copie `C:\dev\Jarvis-nuit`) | `claude/dev` | Fusion de `claude/atelier-boitiers` et `claude/yeux-etape-1` dans `claude/dev`, tous les tests, installateur de Jarvis Test ; téléphone de Jarvis Test sur 127.0.0.1:53140, adresse Tailscale :8443 (comme l'essai de l'agent Atelier ; Live inchangée). Rien de publié, Jarvis Test installé non modifié | — | 2026-11-25 | terminé : fusions faites (conflits : téléphone, session, bancs) ; build, types, style verts ; tests cœur 262 fichiers verts (après `printer.phoneStart` ajouté à la carte des réglages), bureau 193 verts et 4 ignorés ; version `5.1.0-test.3` ; installateur `apps/desktop/release-test/Jarvis-Test-Setup-5.1.0-test.3.exe` construit dans `C:\dev\Jarvis-nuit`, pas publié ; téléphone de Test sur 53140, adresse `https://<pc>.ts.net:8443/` (`tailscale serve --bg --https=8443 53140`, déjà en place) |
 | Claude Code (agent Nuit, copie `C:\dev\Jarvis-nuit`) | `claude/nuit-test-1124` | Nuit du 23 au 24 novembre, Jarvis Test seulement (rien dans Live, rien de publié) : volume de l'enceinte Spotify à la voix avec la limite de 70 ; « elle en est où, l'image ? » d'après le vrai état, jamais inventé ; playlists et albums Spotify. Jarvis Test, Ollama et la carte graphique réservés ci-dessous avant chaque essai ; l'agent Yeux passe en priorité. Ce qui demande l'accord de l'utilisateur est noté dans le rapport. | `packages/core/src/media/`, `apps/desktop/src/main/tools/spotify.ts`, `apps/desktop/src/main/media/SpotifyProvider.ts`, outil d'état des images | 2026-11-24 | terminé : volume à la voix (plafond de l'enceinte gardé), état réel de l'image (essayé avec une vraie image), playlists et albums ; rapport `rapports/2026-11-24-nuit-volume-image-playlists.md` ; à essayer avec l'utilisateur après connexion de Spotify dans Jarvis Test ; Jarvis Test, Ollama et la carte libérés |
 | Claude Code (agent Atelier, copie `.claude/worktrees/atelier`) | `claude/atelier-boitiers` | Atelier 3D : l'atelier dessine lui-même des boîtiers électroniques (mission du 23 novembre, `C:\dev\jarvis-data\missions\atelier-boitiers\`), partie de `claude/atelier-3d`. Étape 1 : découpes en millimètres, nouvelles formes, bossages, plots, nervures, rebords, emboîtement, contrôles de surplomb et de pont ; étape 2 : bibliothèque de composants ; étape 3 : « boîtier électronique » dessiné et vérifié seul (examen : le hub). Jarvis Test seulement, aucune impression, pas de fusion, pas de publication ; essai de l’utilisateur à la fin de chaque étape | `packages/core/src/atelier/`, `apps/desktop/src/main/atelier/` | 2026-11-23 | en cours : étape 1 faite (contrôles verts, 30 pièces sur 31 au rendu OpenSCAD réel, rapport `rapports/2026-11-23-atelier-boitiers-etape1.md`) ; Jarvis Test d’essai fermé, essai de l’utilisateur demain ; étape 2 faite cette nuit (bibliothèque de composants, Raspberry Pi 5 posé, manières de tenir, rapport `rapports/2026-11-24-atelier-boitiers-etape2.md`) ; grand contrôle au processeur seulement : 55 pièces sur 56 (la casse : support de téléphone à 40°, vrai surplomb) ; décisions et essai de l’utilisateur demain avant l’étape 3 ; carte graphique non utilisée |
@@ -111,7 +112,7 @@ Une seule fenêtre de Jarvis Test de développement à la fois pour les essais a
 
 | État | Par qui | Pour quoi | Depuis |
 | --- | --- | --- | --- |
-| libre | — | — | — |
+| occupée | Claude Code (`claude/dev`, copie `C:\dev\Jarvis-nuit`) | rejouer les phrases des essais du 25 novembre dans une copie d'essai | 2026-11-25 23:30 |
 
 ## Ressource GPU / Ollama
 
@@ -119,6 +120,6 @@ Une seule carte (RTX 2060 6 Go) : un seul agent à la fois lance le banc (`npm r
 
 | État | Par qui | Pour quoi | Depuis |
 | --- | --- | --- | --- |
-| libre | — | — | — |
+| occupée | Claude Code (`claude/dev`) | rejouer les phrases des essais du 25 novembre (qwen2.5:7b) | 2026-11-25 23:30 |
 
 Pour réserver : passer l'état à `occupée`, remplir les colonnes, commiter et pousser **avant** de lancer. Pour libérer : remettre `libre` et `—`, commiter et pousser.
