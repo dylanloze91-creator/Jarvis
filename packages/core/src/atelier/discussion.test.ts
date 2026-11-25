@@ -54,7 +54,7 @@ describe('atelier dans la discussion : démarrer', () => {
     expect(d.kind).toBe('dire');
     if (d.kind === 'dire') {
       expect(d.texte).toContain('Je ne sais pas encore dessiner ça');
-      expect(d.etat).toBeUndefined();
+      expect(d.etat).toEqual({ etape: 'choix' });
     }
   });
 

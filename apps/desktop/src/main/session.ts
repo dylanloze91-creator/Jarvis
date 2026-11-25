@@ -61,6 +61,7 @@ import {
   CODE_MISSION_TOOL_PROMPT,
   directMissionRequest,
   looksLikeHealthIntent,
+  ATELIER_NOTE_EQUIPES,
   pourAtelier,
   type AtelierEtat,
   looksLikeWrittenMissionProposal,
@@ -539,7 +540,8 @@ export class ChatSession {
           ? this.deps.tools.compose(createProposerMissionTool(chatMissionHub))
           : this.deps.tools;
       const agent = new Agent(route.provider, turnTools, {
-        systemPrompt: `${turn.systemPrompt}\n\n${teamPrompt(team, character, clockLinePrompt(new Date()))}${missionPrompt}`,
+        // Atelier 3D : les équipes savent qu'il existe (elles ne dessinent rien elles-mêmes).
+        systemPrompt: `${turn.systemPrompt}\n\n${teamPrompt(team, character, clockLinePrompt(new Date()))}${missionPrompt}${this.deps.atelier ? `\n\n${ATELIER_NOTE_EQUIPES}` : ''}`,
         temperature: settings.temperature,
         homeLocation: settings.homeLocation ?? null,
         allowedTools: (name) =>

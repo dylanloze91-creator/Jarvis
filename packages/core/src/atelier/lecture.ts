@@ -18,6 +18,8 @@ export function plier(text: string): string {
     .normalize('NFD')
     .replace(/\p{M}/gu, '')
     .replace(/(\d),(\d)/g, '$1.$2')
+    // « 15mn », « 200 mn » : « mm » tapé ou dicté de travers (jamais des minutes, dans l'atelier).
+    .replace(/(\d) ?mn\b/g, '$1 mm')
     .replace(/×/g, ' x ')
     .replace(/(\d)x(\d)/g, '$1 x $2')
     .replace(/['’`-]/g, ' ')
@@ -184,10 +186,22 @@ export function lireMesures(text: string, g: Gabarit): Lecture {
   const tousLesMots = paires.map((p) => echapper(p.mot)).join('|');
   const suiviDUnAutreMot = new RegExp(String.raw`^\s*(?:mm|millimetres?|cm|centimetres?|°|degres?)?\s*(?:de |d )?(?:${tousLesMots})\b`);
 
+  // 0) « 3 cases par 2 », « 4 compartiments sur 3 » : colonnes puis rangées.
+  if (nombres.some((m) => m.id === 'colonnes') && nombres.some((m) => m.id === 'rangees')) {
+    const grille = / (\d+) (?:cases?|compartiments?|colonnes?) (?:par|x|sur|fois) (\d+)(?: (?:cases?|compartiments?|rangees?|lignes?))? /.exec(t);
+    if (grille) {
+      poser('colonnes', Number(grille[1]));
+      poser('rangees', Number(grille[2]));
+      t = t.slice(0, grille.index) + ' ' + t.slice(grille.index + grille[0].length - 1);
+    }
+  }
   // 1) Le mot avant le nombre : « hauteur 30 », « trou de 4 », « incliné à 60° ».
   for (const { mesure, mot } of paires) {
     if (mesure.id in valeurs) continue;
-    const re = new RegExp(String.raw` ${echapper(mot)}${LIENS}\s+${NOMBRE}`);
+    // Un compte (« 3 cases ») ne se dit pas « cases de 3 » : « un bac à compartiments de 150 par 100 »
+    // donne une longueur, pas 150 colonnes.
+    const liens = mesure.entier ? '' : LIENS;
+    const re = new RegExp(String.raw` ${echapper(mot)}${liens}\s+${NOMBRE}`);
     const found = re.exec(t);
     if (!found) continue;
     const apres = t.slice(found.index + found[0].length);

@@ -49,6 +49,22 @@ export const ORCA_RACINE = join(homedir(), 'AppData', 'Roaming', 'OrcaSlicer');
  * Jarvis (sans clé, avec repli), lecture des pages publiques (mêmes gardes que `fetch_page`), et le
  * modèle local (le cerveau du chef d'orchestre, sinon celui du chat) en JSON, température 0.
  */
+/** Nom par défaut d'une imprimante sous MainsailOS, sur le réseau local. */
+export const ADRESSE_IMPRIMANTE_PAR_DEFAUT = 'http://mainsailos.local';
+
+/**
+ * Adresse de l'imprimante de l'atelier, ou `null` (rien n'est envoyé). Jarvis Test : seulement si
+ * l'imprimante est activée et son adresse réglée. Jarvis Live : l'adresse réglée, sinon celle par
+ * défaut ; `null` seulement si l'utilisateur a décoché l'envoi. Toujours une adresse du réseau local.
+ */
+export function adresseImprimante(printer: Settings['printer'], live: boolean): string | null {
+  const reglee = printer?.baseUrl?.trim() ?? '';
+  if (!live) return printer?.enabled === true && reglee && checkRoverBaseUrl(reglee).ok ? reglee : null;
+  if (printer?.enabled === false) return null;
+  const adresse = reglee || ADRESSE_IMPRIMANTE_PAR_DEFAUT;
+  return checkRoverBaseUrl(adresse).ok ? adresse : null;
+}
+
 export function rechercheCotesPC(getSettings: () => Settings, searchRegistry: SearchProviderRegistry): DepsChercherCotes {
   return {
     chercher: async (query) => {
@@ -178,6 +194,12 @@ export function creerAtelierPC(
   racine = ATELIER_RACINE,
   racineOrca = ORCA_RACINE,
   searchRegistry?: SearchProviderRegistry,
+  /**
+   * `live` (Jarvis Live) : l'atelier marche sans réglage. L'imprimante est jointe à
+   * `ADRESSE_IMPRIMANTE_PAR_DEFAUT` tant que rien n'est réglé (décochée dans les réglages : rien
+   * n'est envoyé), et l'atelier est le seul à lui parler.
+   */
+  options: { live?: boolean } = {},
 ): (input: AtelierEntree) => Promise<AtelierSortie | null> {
   const dossierOrca = join(racine, '_orca');
   const recherche = searchRegistry ? rechercheCotesPC(getSettings, searchRegistry) : undefined;
@@ -197,10 +219,11 @@ export function creerAtelierPC(
         }
       },
       telephonePeutLancer: () => phoneMayStartPrint(getSettings().printer),
+      ...(options.live ? { sansAutreImprimante: true } : {}),
       imprimante: () => {
         const printer = getSettings().printer;
-        if (printer?.enabled !== true || !printer.baseUrl || !checkRoverBaseUrl(printer.baseUrl).ok) return null;
-        return new MoonrakerClient(printer.baseUrl, printer.apiKey ?? '');
+        const adresse = adresseImprimante(printer, options.live === true);
+        return adresse ? new MoonrakerClient(adresse, printer?.apiKey ?? '') : null;
       },
       programmes: {
         openscad: () => trouverOpenscad(),

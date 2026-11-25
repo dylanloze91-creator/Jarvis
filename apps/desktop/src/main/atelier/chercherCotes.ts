@@ -318,7 +318,7 @@ export async function chercherCotes(
         ? `${trouves} cote${trouves > 1 ? 's' : ''} sur ${comptes} trouvée${trouves > 1 ? 's' : ''} sur Internet pour « ${produit} ».${trousDits}`
         : pages.length
           ? `J'ai lu ${pages.length} page${pages.length > 1 ? 's' : ''} sur « ${produit} », sans y trouver de cote écrite que je puisse vérifier.`
-          : `Je n'ai trouvé aucune page lisible sur « ${produit} ».`,
+          : `Je n'ai rien pu lire sur Internet pour « ${produit} » : les moteurs de recherche n'ont rien rendu cette fois, ou leurs pages ne se laissent pas lire. Réessaie plus tard, ou colle-moi le lien d'une fiche.`,
     produit: { cotes, manquants, pages, plans },
     sources: [...plans.map((p) => `plan du fabricant (${p.url}) : ${p.resume}`), ...sources],
     incertitudes,

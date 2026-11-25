@@ -57,9 +57,10 @@ export const DISCUSSIONS: DiscussionEssai[] = [
     tours: [
       { dire: 'fais moi une boite de 80 par 50 par 30', attendu: { piece: 'boite', taille: [80, 50, 30], version: 1 } },
       { dire: 'plus haute', attendu: { piece: 'boite', taille: [80, 50, null], version: 2, mesures: /Hauteur : (3[1-9]|[4-9]\d)/ } },
-      { dire: 'non plus large', attendu: { piece: 'boite', taille: [80, null, null], version: 3, mesures: /Largeur : (5[1-9]|[6-9]\d)/ } },
-      { dire: 'elle fait combien de haut la', attendu: { dit: /\d+(?:,\d)? mm/ } },
-      { dire: 'et en plus grand', attendu: { dit: /longueur|largeur|hauteur|plus grande|quelle/i } },
+      // « non » : la correction repart de la version d'avant (la hauteur revient à 30).
+      { dire: 'non plus large', attendu: { piece: 'boite', taille: [80, null, 30], version: 3, mesures: /Largeur : (5[1-9]|[6-9]\d)/ } },
+      { dire: 'elle fait combien de haut la', attendu: { dit: /30 mm de haut/ } },
+      { dire: 'et en plus grand', attendu: { dit: /Plus longue, plus large ou plus haute/ } },
       { dire: 'reviens a la version 1', attendu: { piece: 'boite', taille: [80, 50, 30], version: 1 } },
       { dire: 'hauteur 45', attendu: { piece: 'boite', taille: [80, 50, 45] } },
     ],
@@ -109,7 +110,7 @@ export const DISCUSSIONS: DiscussionEssai[] = [
     id: 'base-couvercle',
     fonction: 'pièces de base et versions',
     tours: [
-      { dire: 'je voudrais une boite avec couvercle de 100 par 60 par 40', attendu: { piece: 'boite_couvercle', taille: [null, null, null], mesures: /Longueur : 100.*Largeur : 60.*Hauteur : 40/ } },
+      { dire: 'je voudrais une boite avec couvercle de 100 par 60 par 40', attendu: { piece: 'boite_couvercle', taille: [null, null, null], mesures: /Longueur : 100.*Largeur : 60.*Hauteur : 40/, dit: /de 100 × 60 × 40 mm/ } },
       { dire: 'plus large de 2 cm', attendu: { piece: 'boite_couvercle', version: 2, mesures: /Largeur : 80/ } },
     ],
   },
@@ -227,7 +228,8 @@ export const DISCUSSIONS: DiscussionEssai[] = [
     id: 'flou-inconnu',
     fonction: 'demandes floues',
     tours: [
-      { dire: 'fais moi un pot de fleurs', attendu: { dit: QUOI_FAIRE } },
+      // Sans rien d'atelier avant, « fais-moi un… » reste au modèle, qui sait que l'atelier existe et le dit.
+      { dire: 'fais moi un pot de fleurs', attendu: { ailleurs: true, dit: /atelier|fais-moi|boîte/i } },
       { dire: 'imprime moi un support pour mon ecran', attendu: { dit: QUOI_FAIRE } },
       { dire: 'bah une boite alors', attendu: { question: /longueur/i } },
     ],
@@ -306,7 +308,7 @@ export const DISCUSSIONS: DiscussionEssai[] = [
     fonction: 'trous, encadrements, encoches',
     tours: [
       { dire: 'fais moi une boite de 80 par 50 par 30', attendu: { piece: 'boite', taille: [80, 50, 30] } },
-      { dire: 'fait un trou de 15mn par 5mn a 20mn de hauteur sur la paroi la plus large', attendu: { piece: 'boite', version: 2, mesures: /15/ } },
+      { dire: 'fait un trou de 15mn par 5mn a 20mn de hauteur sur la paroi la plus large', attendu: { piece: 'boite', taille: [80, 50, 30], version: 2, mesures: /15 × 5 mm/ } },
       { dire: 'met un trou de cinq a droite pour le cable', attendu: { piece: 'boite', version: 3, mesures: /5 mm/ } },
       { dire: 'joute une encoche de 10 sur le bord avant', attendu: { piece: 'boite', version: 4, mesures: /ncoche/ } },
       { dire: 'fais passer le cable par le cote gauche', attendu: { piece: 'boite', version: 5 } },
@@ -328,8 +330,10 @@ export const DISCUSSIONS: DiscussionEssai[] = [
     tours: [
       { dire: 'fais moi une boite de 60 par 40 par 20', attendu: { piece: 'boite', taille: [60, 40, 20] } },
       { dire: 'rajoute un trou de 50 a l arriere', attendu: { dit: /trop|ne tient pas|dépasse|plus petit|au plus|maximum/i } },
-      { dire: 'bon alors de 10', attendu: { piece: 'boite', version: 2, mesures: /10 mm/ } },
-      { dire: 'et deux trous de 3 sur le fond', attendu: { piece: 'boite', version: 3, mesures: /3 mm/ } },
+      { dire: 'bon alors de 10', attendu: { piece: 'boite', taille: [60, 40, 20], version: 2, mesures: /10 mm/ } },
+      { dire: 'et deux trous de 3 sur le fond', attendu: { piece: 'boite', taille: [60, 40, 20], version: 3, mesures: /3 mm/ } },
+      { dire: 'bon alors 25', attendu: { dit: /pour quelle mesure/ } },
+      { dire: 'hauteur 25', attendu: { piece: 'boite', taille: [60, 40, 25], version: 4 } },
     ],
   },
 
@@ -506,7 +510,7 @@ export const DISCUSSIONS: DiscussionEssai[] = [
     id: 'hub-refus',
     fonction: 'boîtier à écran (hub)',
     tours: [
-      { dire: 'rajoute un ecran tactile avec une camera', attendu: { dit: /./ } },
+      { dire: 'rajoute un ecran tactile avec une camera', attendu: { dit: /pas de pièce/ } },
       { dire: 'dessine moi un boitier pour un esp32 avec l ecran tactile 7 pouces', attendu: { dit: /Raspberry Pi 5/ } },
     ],
   },
@@ -527,15 +531,17 @@ export const DISCUSSIONS: DiscussionEssai[] = [
       { dire: 'fais moi une boite de 40 par 30 par 15', attendu: { piece: 'boite', taille: [40, 30, 15] } },
       { dire: 'du coup tu peux l imprimer', accord: false, attendu: { dit: /./ }, pasImprimante: ENVOI },
       { dire: 'plus haute', attendu: { piece: 'boite', version: 2 } },
-      { dire: 'imprime la version 1', accord: true, attendu: { dit: /version 1/ }, imprimante: ENVOI },
+      { dire: 'imprime la version 1', accord: true, attendu: { dit: /v1\.gcode/ }, imprimante: ENVOI },
     ],
   },
   {
     id: 'imprimer-rien',
     fonction: 'préparation et impression',
     tours: [
-      { dire: 'imprime la', attendu: { dit: /pièce|quoi|laquelle/i }, pasImprimante: ENVOI },
-      { dire: 'lance l impression', attendu: { dit: /pièce|quoi|laquelle/i }, pasImprimante: ENVOI },
+      // Dans Jarvis Test, « imprime » sans pièce reste à l'imprimante du lot B ; l'atelier ne le prend pas.
+      // (Dans la Live, où l'atelier est seul, il répond « pas de pièce » : essai du cœur.)
+      { dire: 'imprime la', attendu: { ailleurs: true }, pasImprimante: ENVOI },
+      { dire: 'bon bah mets la dans la file', attendu: { ailleurs: true }, pasImprimante: ENVOI },
     ],
   },
   {
@@ -586,8 +592,8 @@ export const DISCUSSIONS: DiscussionEssai[] = [
     fonction: 'depuis une enceinte',
     tours: [
       { dire: 'Fais-moi un boîtier pour mon Rasberry Pie 5.', lieu: 'enceinte', attendu: { question: /je propose/i } },
-      { dire: 'Oui.', lieu: 'enceinte', attendu: { piece: 'boite' } },
-      { dire: 'Rajoute un trou de huit à l’arrière.', lieu: 'enceinte', attendu: { dit: /./ } },
+      { dire: 'Oui.', lieu: 'enceinte', attendu: { piece: 'boite', dit: /^C'est prêt : Boîte de 61 × 94 × 28 mm\. Regarde/, pasDit: /Ventilateur|M2,5/ } },
+      { dire: 'Rajoute un trou de huit à l’arrière.', lieu: 'enceinte', attendu: { piece: 'boite', version: 2, dit: /trou de 8 mm à l’arrière/ } },
       { dire: 'Fais-moi un support de téléphone.', lieu: 'enceinte', attendu: { question: /inclinaison/i } },
       { dire: 'Soixante.', lieu: 'enceinte', attendu: { piece: 'support_telephone' } },
     ],
@@ -610,7 +616,7 @@ export const DISCUSSIONS: DiscussionEssai[] = [
       { dire: 'Fais-moi une boîte de 100 par 70 par 35', lieu: 'telephone', attendu: { piece: 'boite', taille: [100, 70, 35] } },
       { dire: 'Montre la moi', lieu: 'telephone', attendu: { piece: 'boite' } },
       { dire: 'Reessaye', lieu: 'telephone', attendu: { piece: 'boite' } },
-      { dire: 'ajoute un couvercle qui s’emboîte', lieu: 'telephone', attendu: { piece: 'boite_couvercle', version: 2 } },
+      { dire: 'ajoute un couvercle qui s’emboîte', lieu: 'telephone', attendu: { piece: 'boite_couvercle', version: 2, dit: /de 100 × 70 × 35 mm/ } },
       { dire: 'imprime-la', lieu: 'telephone', accord: true, attendu: { dit: /lancée|imprime/i }, imprimante: ENVOI },
     ],
   },
@@ -620,9 +626,36 @@ export const DISCUSSIONS: DiscussionEssai[] = [
     tours: [
       { dire: 'Je voudrais un boîtier pour mon Raspberry Pi 5', lieu: 'telephone', attendu: { question: /je propose/i } },
       { dire: 'Pas de problème', lieu: 'telephone', attendu: { piece: 'boite' } },
-      { dire: 'Tu peux ajouter un couvercle ?', lieu: 'telephone', attendu: { piece: 'boite_couvercle', version: 2 } },
+      // Le couvercle demande plus de hauteur au-dessus de la carte : l'atelier propose, on dit oui.
+      { dire: 'Tu peux ajouter un couvercle ?', lieu: 'telephone', attendu: { question: /agrandis/ } },
+      { dire: 'ouais vas-y', lieu: 'telephone', attendu: { piece: 'boite_couvercle', version: 2 } },
       { dire: 'je la vois pas', lieu: 'telephone', attendu: { piece: 'boite_couvercle' } },
-      { dire: 'c est quoi les dimensions', lieu: 'telephone', attendu: { dit: /\d+ × \d+/ } },
+      { dire: 'c est quoi les dimensions', lieu: 'telephone', attendu: { dit: /longueur \d+ mm/ } },
+    ],
+  },
+
+  {
+    id: 'corrections',
+    fonction: 'demandes floues',
+    tours: [
+      { dire: 'fais moi une boite de 100 par 80 par 40', attendu: { piece: 'boite', taille: [100, 80, 40] } },
+      { dire: 'mets 50', attendu: { dit: /pour quelle mesure/ } },
+      { dire: 'en hauteur', attendu: { dit: /./ } },
+      { dire: 'hauteur 50', attendu: { piece: 'boite', taille: [100, 80, 50] } },
+      { dire: 'plus longue', attendu: { piece: 'boite', taille: [null, 80, 50], mesures: /Longueur : 1[1-9]\d/ } },
+      { dire: 'non moins longue', attendu: { piece: 'boite', taille: [null, 80, 50], mesures: /Longueur : [89]\d\b/ } },
+      { dire: 'le couvercle a charniere', attendu: { dit: /pas su faire ce changement/ } },
+      { dire: 'fais moi un pot de fleurs', attendu: { dit: QUOI_FAIRE } },
+    ],
+  },
+  {
+    id: 'cartes-inconnues',
+    fonction: 'boîtiers électroniques',
+    tours: [
+      { dire: 'fais moi une boite pour mon raspberry pi 4', attendu: { question: /Je n'ai pas les cotes de « raspberry pi 4 »/, pasDit: /Raspberry Pi 5/ } },
+      { dire: '100 par 70 par 30', attendu: { piece: 'boite', taille: [100, 70, 30] } },
+      { dire: 'et un boitier pour un pi zero', attendu: { question: /Je n'ai pas les cotes/, pasDit: /Raspberry Pi 5/ } },
+      { dire: 'laisse tomber', attendu: { dit: /laisse tomber/i } },
     ],
   },
 

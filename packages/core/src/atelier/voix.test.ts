@@ -101,8 +101,15 @@ describe('changer la pièce, à la voix', () => {
     expect(deciderAtelier(phrase, piece, {}).kind).toBe('file');
   });
 
-  it.each(['elle fait combien de haut là', 'quelles sont les dimensions', 'c’est quoi la taille de la boîte'])('« %s » : les cotes de la version à l’écran', (phrase) => {
+  it.each(['quelles sont les dimensions', 'c’est quoi la taille de la boîte'])('« %s » : les cotes de la version à l’écran', (phrase) => {
     expect(deciderAtelier(phrase, piece, {})).toMatchObject({ kind: 'dire', texte: expect.stringMatching(/^Version 2 : longueur 120 mm, largeur 94 mm, hauteur 40 mm/) });
+  });
+
+  it('« elle fait combien de haut là » : la hauteur d’abord, puis toutes les cotes', () => {
+    expect(deciderAtelier('elle fait combien de haut là', piece, {})).toMatchObject({
+      kind: 'dire',
+      texte: expect.stringMatching(/^Version 2 : 40 mm de haut\. Toutes les cotes : longueur 120 mm, largeur 94 mm, hauteur 40 mm/),
+    });
   });
 
   it.each(['ouais vas-y', 'ok super merci', "c'est bon", 'oui parfait'])('« %s » juste après une pièce : rien à valider, l’atelier le dit', (phrase) => {

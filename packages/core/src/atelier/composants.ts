@@ -317,8 +317,10 @@ function ecranMesure(m: MesuresComposant): EcranGeometrie | null {
 }
 
 const MOTS: Record<string, RegExp> = {
-  raspberry_pi_5: /\b(?:raspberry(?: pi)?(?: 5)?|rpi ?5|pi ?5)\b/,
-  touch_display_2_7: /\b(?:ecran tactile|touch display|ecran (?:de )?7 pouces|ecran officiel)\b/,
+  // « raspberry pi 4 », « pi zero », « pico » ne sont pas le Pi 5 : autres prises, autre taille.
+  raspberry_pi_5: /\b(?:raspberry(?: pi)?(?: 5)?|rpi ?5|pi ?5)\b(?!(?: pi)? ?(?:[0-4]\b|zero|pico|400))/,
+  // « écran tactile 5 pouces » n'est pas l'écran officiel de 7 pouces.
+  touch_display_2_7: /\b(?:ecran tactile(?! (?:de )?(?:[0-689]|\d\d)(?:\.\d+)? ?pouces?)|touch display|ecran (?:de )?7 pouces|ecran officiel)\b/,
   camera_module_3_wide: /\b(?:camera(?: module)?(?: 3)?(?: (?:wide|grand angle))?)\b/,
   esp32_s3_devkitc_1_borniers: /\besp ?32\b/,
   max98357a: /\b(?:max ?98357a?|ampli(?:ficateur)?(?: i2s)?)\b/,

@@ -319,7 +319,7 @@ function settingsForWindow(): Settings {
 }
 
 /** Atelier 3D dans la discussion (5.0.81) : pièces dessinées par règles, OpenSCAD et OrcaSlicer s'ils sont installés. */
-const atelierReply = creerAtelierPC(() => settings, undefined, undefined, searchRegistry);
+const atelierReply = creerAtelierPC(() => settings, undefined, undefined, searchRegistry, { live: true });
 
 const session = new ChatSession({
   registry,
