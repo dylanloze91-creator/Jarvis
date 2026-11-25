@@ -103,7 +103,7 @@ Une seule fenêtre de Jarvis Test de développement à la fois pour les essais a
 
 | État | Par qui | Pour quoi | Depuis |
 | --- | --- | --- | --- |
-| occupée | Claude Code (agent Yeux) | essai réel des yeux, étape 2 point 1 (gemma3:4b puis qwen2.5:7b) | 2026-11-25 13:15 |
+| libre | — | — | — |
 
 ## Ressource GPU / Ollama
 
@@ -111,6 +111,6 @@ Une seule carte (RTX 2060 6 Go) : un seul agent à la fois lance le banc (`npm r
 
 | État | Par qui | Pour quoi | Depuis |
 | --- | --- | --- | --- |
-| libre | — | — | — |
+| occupée | Claude Code (agent Yeux) | essai réel des yeux, étape 2 point 1 (gemma3:4b puis qwen2.5:7b) | 2026-11-25 13:15 |
 
 Pour réserver : passer l'état à `occupée`, remplir les colonnes, commiter et pousser **avant** de lancer. Pour libérer : remettre `libre` et `—`, commiter et pousser.
