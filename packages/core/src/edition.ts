@@ -79,10 +79,22 @@ export interface Edition {
   atelier?: boolean;
   /** Les yeux de Jarvis (caméra de l'imprimante, lecture seule) : Jarvis Test seulement. */
   yeux?: boolean;
+  /**
+   * Port HTTPS de Tailscale qui publie le téléphone de cette édition. Absent (Live) : 443,
+   * l'adresse sans port. Test : 8443, pour ne jamais prendre la publication de Live.
+   */
+  phoneHttpsPort?: number;
 }
 
 const PHONE_OFFSET = 6;
 const SPEAKER_OFFSET = 7;
+/**
+ * Téléphone de Jarvis Test (25 novembre 2026, demande de l'utilisateur) : 127.0.0.1:53140, publié
+ * par `tailscale serve --bg --https=8443 53140`, comme l'essai de l'agent Atelier sur l'iPhone.
+ * La Live garde 53130 et l'adresse HTTPS sans port.
+ */
+const TEST_PHONE_PORT = 53140;
+const TEST_PHONE_HTTPS_PORT = 8443;
 /** Pont des appendices : à côté du téléphone (6) et des enceintes (7). Nulle part ailleurs. */
 const APPENDICE_OFFSET = 8;
 /** Adresses déjà enregistrées chez Spotify et Google. Elles ne suivent pas la base. */
@@ -125,7 +137,8 @@ export const TEST_EDITION: Edition = {
   shortcut: 'Control+Alt+Space',
   shortcutFallback: null,
   portBase: 53224,
-  ports: buildPorts(53224),
+  ports: { ...buildPorts(53224), phone: TEST_PHONE_PORT },
+  phoneHttpsPort: TEST_PHONE_HTTPS_PORT,
   reservedFunctions: RESERVED_FUNCTIONS,
   reservedOffByDefault: true,
   reservedPhrase: RESERVED_PHRASE,

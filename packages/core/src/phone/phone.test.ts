@@ -43,6 +43,11 @@ describe('téléphone (5.0.63)', () => {
     expect(tailscaleServeCommand()).toBe('tailscale serve --bg 53130');
     expect(phoneAppUrl('pc.tail.ts.net.')).toBe('https://pc.tail.ts.net/');
     expect(phoneAppUrl('pc.tail.ts.net', '012345')).toBe('https://pc.tail.ts.net/#code=012345');
+    // Jarvis Test : port HTTPS 8443, la publication de Live (443) ne change pas.
+    expect(tailscaleServeCommand(53140, 8443)).toBe('tailscale serve --bg --https=8443 53140');
+    expect(tailscaleServeCommand(53130, 443)).toBe('tailscale serve --bg 53130');
+    expect(phoneAppUrl('pc.tail.ts.net.', undefined, 8443)).toBe('https://pc.tail.ts.net:8443/');
+    expect(phoneAppUrl('pc.tail.ts.net', '012345', 8443)).toBe('https://pc.tail.ts.net:8443/#code=012345');
     expect(cleanDeviceName('iPhone de Dylan <script>')).toBe('iPhone de Dylan script');
     expect(cleanDeviceName('   ')).toBe('Téléphone');
   });

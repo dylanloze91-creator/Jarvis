@@ -630,6 +630,7 @@ const questionnaire = QuestionnaireStore.inUserData(() => app.getPath('userData'
 const phone = new PhoneService({
   store: PhoneStore.inUserData(() => app.getPath('userData')),
   port: edition().ports.phone,
+  ...(edition().phoneHttpsPort ? { httpsPort: edition().phoneHttpsPort } : {}),
   mayRun: () => reservedAllows(edition(), reservations, 'phone'),
   chat: {
     send: async (sender, input) => {

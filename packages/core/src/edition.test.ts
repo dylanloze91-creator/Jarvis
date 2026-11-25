@@ -60,7 +60,10 @@ describe('édition Test', () => {
     expect(TEST_EDITION.pinUserData).toBe(true);
     expect(TEST_EDITION.ports.phone).not.toBe(PHONE_PORT);
     expect(TEST_EDITION.ports.speaker).not.toBe(SPEAKER_PORT);
-    expect(TEST_EDITION.ports.phone).toBe(53230);
+    // 25 novembre 2026 : téléphone de Test sur 53140, publié par Tailscale en HTTPS sur 8443.
+    expect(TEST_EDITION.ports.phone).toBe(53140);
+    expect(TEST_EDITION.phoneHttpsPort).toBe(8443);
+    expect(LIVE_EDITION.phoneHttpsPort).toBeUndefined();
     expect(TEST_EDITION.ports.speaker).toBe(53231);
     expect(TEST_EDITION.ports.spotify).toBe(LIVE_EDITION.ports.spotify);
     expect(TEST_EDITION.ports.google).toBe(LIVE_EDITION.ports.google);

@@ -84,6 +84,8 @@ export const SETTINGS_FIELD_MAP: Record<string, SettingsFieldLocation> = {
   'printer.enabled': { category: 'services', subcategory: 'printer', highlight: 'printer-enabled' },
   'printer.baseUrl': { category: 'services', subcategory: 'printer', highlight: 'printer-url' },
   'printer.apiKey': { category: 'services', subcategory: 'printer', highlight: 'printer-key' },
+  // Atelier 3D : lancer une impression depuis le téléphone (absent = permis). Pas encore de contrôle à l'écran.
+  'printer.phoneStart': { category: 'services', subcategory: 'printer', highlight: 'printer-enabled' },
   'yeux.enabled': { category: 'services', subcategory: 'printer', highlight: 'yeux-enabled' },
   'yeux.camera': { category: 'services', subcategory: 'printer', highlight: 'yeux-camera' },
   'briefing.enabled': { category: 'moi', subcategory: 'briefing', highlight: 'briefing-enabled' },

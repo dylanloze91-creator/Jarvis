@@ -1,4 +1,4 @@
-import { PHONE_PORT, RESERVED_PHRASE, phoneAppUrl, tailscaleServeCommand } from '@jarvis/core';
+import { PHONE_HTTPS_PORT, PHONE_PORT, RESERVED_PHRASE, phoneAppUrl, tailscaleServeCommand } from '@jarvis/core';
 import type { PhoneStatus } from '../../shared/ipc.js';
 import { PhoneServer, type PhoneServerDeps } from './server.js';
 import type { PhoneStore } from './store.js';
@@ -11,6 +11,8 @@ import { readTailscale, type TailscaleRunner, type TailscaleState } from './tail
 export interface PhoneServiceDeps extends Omit<PhoneServerDeps, 'store' | 'onPaired'> {
   store: PhoneStore;
   port?: number;
+  /** Port HTTPS de Tailscale (absent : 443, Live). Jarvis Test : 8443. */
+  httpsPort?: number;
   /** Test : faux tant que l'utilisateur n'a pas activé la fonction réservée. */
   mayRun?: () => boolean;
   tailscale?: TailscaleRunner;
@@ -41,6 +43,10 @@ export class PhoneService {
 
   private get port(): number {
     return this.deps.port ?? PHONE_PORT;
+  }
+
+  private get httpsPort(): number {
+    return this.deps.httpsPort ?? PHONE_HTTPS_PORT;
   }
 
   private canRun(): boolean {
@@ -103,14 +109,14 @@ export class PhoneService {
         dnsName: tailscale.dnsName,
         served: tailscale.served,
       },
-      url: tailscale.dnsName ? phoneAppUrl(tailscale.dnsName) : null,
-      serveCommand: tailscaleServeCommand(this.port),
+      url: tailscale.dnsName ? phoneAppUrl(tailscale.dnsName, undefined, this.httpsPort) : null,
+      serveCommand: tailscaleServeCommand(this.port, this.httpsPort),
       devices: this.deps.store.devices(),
       pairing: pairing
         ? {
             code: pairing.code,
             expiresAt: pairing.expiresAt,
-            url: tailscale.dnsName ? phoneAppUrl(tailscale.dnsName, pairing.code) : null,
+            url: tailscale.dnsName ? phoneAppUrl(tailscale.dnsName, pairing.code, this.httpsPort) : null,
           }
         : null,
     };

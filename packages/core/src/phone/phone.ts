@@ -24,9 +24,17 @@ export const phoneSpeakRequestSchema = z.object({
   text: z.string().trim().min(1).max(PHONE_MAX_SPEAK_CHARS),
 });
 
-/** Commande à taper une fois dans PowerShell pour publier Jarvis sur le réseau Tailscale. */
-export function tailscaleServeCommand(port = PHONE_PORT): string {
-  return `tailscale serve --bg ${port}`;
+/** Port HTTPS de Tailscale par défaut (Live) : l'adresse s'écrit sans port. */
+export const PHONE_HTTPS_PORT = 443;
+
+/**
+ * Commande à taper une fois dans PowerShell pour publier Jarvis sur le réseau Tailscale.
+ * Un autre port HTTPS que 443 (Jarvis Test : 8443) ne remplace pas la publication de Live.
+ */
+export function tailscaleServeCommand(port = PHONE_PORT, httpsPort = PHONE_HTTPS_PORT): string {
+  return httpsPort === PHONE_HTTPS_PORT
+    ? `tailscale serve --bg ${port}`
+    : `tailscale serve --bg --https=${httpsPort} ${port}`;
 }
 
 export interface TailscaleSelf {
@@ -71,8 +79,9 @@ export function tailscaleServesPort(raw: string, port = PHONE_PORT): boolean {
 }
 
 /** Adresse de l'appli sur le téléphone ; avec un code, il est mis après `#` (jamais envoyé au serveur). */
-export function phoneAppUrl(dnsName: string, code?: string): string {
-  const base = `https://${dnsName.replace(/\.$/, '')}/`;
+export function phoneAppUrl(dnsName: string, code?: string, httpsPort = PHONE_HTTPS_PORT): string {
+  const host = dnsName.replace(/\.$/, '');
+  const base = httpsPort === PHONE_HTTPS_PORT ? `https://${host}/` : `https://${host}:${httpsPort}/`;
   return code ? `${base}#code=${code}` : base;
 }
 
