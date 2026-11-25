@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -287,5 +287,23 @@ describe('l’examen, avec un faux Internet', () => {
     const apres = JSON.parse(await readFile(join(racine, 'composants-cotes.json'), 'utf8'));
     expect(apres.cotes[ESP].hauteur_dessus).toEqual([{ valeur: 15, source: 'valeur large choisie par l’utilisateur, sans la pièce', choisie: true }]);
     await expect(readFile(join(racine, 'composants-mesures.json'), 'utf8')).rejects.toThrow();
+  });
+
+  it('d’anciennes mesures sans référence qui contredisent le plan : mises de côté (gardées), et c’est dit', async () => {
+    await writeFile(join(racine, 'composants-mesures.json'), JSON.stringify({ version: 1, composants: { [ESP]: { longueur: 73, largeur: 83, epaisseur: 1.6 } } }), 'utf8');
+    const d: AtelierDeps = {
+      racine,
+      jour: () => '2026-11-25',
+      volume: async () => ({ x: 250, y: 250, z: 250 }),
+      imprimante: () => null,
+      programmes: { openscad: () => null, rendreStl: async () => ({ ok: false, message: '' }), rendreImage: async () => ({ ok: false }), trancher: async () => ({ ok: false, message: '', gcode: null, infos: null }) },
+      chercherCotes: fauxInternetExamen(),
+    };
+    const r = await tourAtelier({ text: EXAMEN, messages: [], place: 'fenetre', confirm: async () => false }, d);
+    expect(r?.texte).toMatch(/J'ai mis de côté tes anciennes mesures \(73 mm, 83 mm\) : elles ne collent pas avec « ESP32-S3 DevKitC-1 » \(60 mm, 25 mm\)/);
+    const fichier = JSON.parse(await readFile(join(racine, 'composants-mesures.json'), 'utf8'));
+    // L'épaisseur, qui ne contredit rien, reste ; les deux autres sont gardées à part.
+    expect(fichier.composants[ESP]).toEqual({ epaisseur: 1.6 });
+    expect(fichier.mises_de_cote[ESP]).toEqual([{ champs: { longueur: 73, largeur: 83 }, raison: 'contredites par les cotes sûres de « ESP32-S3 DevKitC-1 » (2026-11-25)' }]);
   });
 });

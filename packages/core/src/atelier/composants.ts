@@ -508,6 +508,22 @@ export function lireFichierMesures(texte: string): MesuresComposants {
   }
 }
 
+/**
+ * Les mesures de l'utilisateur qui contredisent une cote **sûre** trouvée pour la référence qu'il vient
+ * de nommer (plus de 1 mm d'écart) : elles ont pu être prises sur une autre carte (une mesure n'a pas
+ * de référence). Elles sont mises de côté, jamais effacées, et c'est dit.
+ */
+export function mesuresContredites(id: string, mesures: MesuresComposants, cotes: CotesTrouvees, ecart = 1): { champ: string; mesure: number; trouvee: number }[] {
+  const out: { champ: string; mesure: number; trouvee: number }[] = [];
+  for (const [champ, mesure] of Object.entries(mesures[id] ?? {})) {
+    const lues = cotes[id]?.[champ];
+    if (!lues?.length) continue;
+    const e = etatCoteTrouvee(lues);
+    if (e.etat === 'sur' && e.valeur !== undefined && Math.abs(e.valeur - mesure) > ecart) out.push({ champ, mesure, trouvee: e.valeur });
+  }
+  return out;
+}
+
 export function ecrireFichierMesures(mesures: MesuresComposants): string {
   return `${JSON.stringify({ version: 1, note: 'Mesures prises au pied à coulisse par l’utilisateur (atelier 3D de Jarvis).', composants: mesures }, null, 2)}\n`;
 }

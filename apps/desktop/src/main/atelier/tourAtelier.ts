@@ -20,6 +20,7 @@ import { join } from 'node:path';
 import {
   ajouterCoteTrouvee,
   ajouterMesure,
+  mesuresContredites,
   SOURCE_LARGE,
   siteDeSource,
   ecrireFichierCotes,
@@ -99,7 +100,12 @@ export interface AtelierDeps {
    * Mesures de composants données par l'utilisateur. Absent : `composants-mesures.json` dans le
    * dossier de l'atelier (`C:\dev\jarvis-data\atelier\composants-mesures.json`).
    */
-  mesures?: { lire(): Promise<MesuresComposants>; ecrire(m: MesuresComposants): Promise<void> };
+  mesures?: {
+    lire(): Promise<MesuresComposants>;
+    ecrire(m: MesuresComposants): Promise<void>;
+    /** Met de côté des mesures (gardées dans le fichier, plus utilisées), avec la raison. */
+    mettreDeCote?(id: string, champs: Record<string, number>, raison: string): Promise<void>;
+  };
   /**
    * Réglage `printer.phoneStart` : faux = depuis le téléphone, ni « imprime-la » ni « lance la
    * suivante » ; « mets-la dans la file » reste permis. Absent : oui, comme avant.
@@ -165,13 +171,34 @@ export function phraseRecherche(r: ResultatEtape<CotesCherchees>, voix: boolean)
 
 function mesuresParFichier(racine: string): NonNullable<AtelierDeps['mesures']> {
   const chemin = join(racine, FICHIER_MESURES);
+  /** Le fichier tel quel (pour garder ce qui a été mis de côté). */
+  const brut = async (): Promise<Record<string, unknown>> => {
+    try {
+      return existsSync(chemin) ? (JSON.parse(await readFile(chemin, 'utf8')) as Record<string, unknown>) : {};
+    } catch {
+      return {};
+    }
+  };
+  const ecrireTout = async (m: MesuresComposants, deCote: unknown) => {
+    await mkdir(racine, { recursive: true });
+    const texte = ecrireFichierMesures(m);
+    const avecDeCote = deCote && typeof deCote === 'object' && Object.keys(deCote).length ? `${JSON.stringify({ ...JSON.parse(texte), mises_de_cote: deCote }, null, 2)}\n` : texte;
+    const temp = `${chemin}.tmp`;
+    await writeFile(temp, avecDeCote, 'utf8');
+    await rename(temp, chemin);
+  };
   return {
     lire: async () => (existsSync(chemin) ? lireFichierMesures(await readFile(chemin, 'utf8')) : {}),
-    ecrire: async (m) => {
-      await mkdir(racine, { recursive: true });
-      const temp = `${chemin}.tmp`;
-      await writeFile(temp, ecrireFichierMesures(m), 'utf8');
-      await rename(temp, chemin);
+    ecrire: async (m) => ecrireTout(m, (await brut()).mises_de_cote),
+    mettreDeCote: async (id, champs, raison) => {
+      const avant = await brut();
+      const actives = lireFichierMesures(JSON.stringify(avant));
+      const reste = Object.fromEntries(Object.entries(actives[id] ?? {}).filter(([k]) => !(k in champs)));
+      const m: MesuresComposants = { ...actives, [id]: reste };
+      if (!Object.keys(reste).length) delete m[id];
+      const deCote = { ...((avant.mises_de_cote as Record<string, unknown> | undefined) ?? {}) } as Record<string, { champs: Record<string, number>; raison: string }[]>;
+      deCote[id] = [...(Array.isArray(deCote[id]) ? deCote[id] : []), { champs, raison }];
+      await ecrireTout(m, deCote);
     },
   };
 }
@@ -314,6 +341,21 @@ export async function tourAtelier(input: AtelierEntree, deps: AtelierDeps): Prom
         /* gardées pour ce tour seulement */
       }
       resumes.push(phraseRecherche(r, input.place === 'enceinte'));
+      // D'anciennes mesures (sans référence) qui contredisent ce qui est sûr pour cette référence : mises de côté.
+      const contre = mesuresContredites(id, mesures, cotes);
+      if (contre.length) {
+        const champs = Object.fromEntries(contre.map((x) => [x.champ, x.mesure]));
+        try {
+          await fichierMesures.mettreDeCote?.(id, champs, `contredites par les cotes sûres de « ${produit} » (${deps.jour()})`);
+          const reste = Object.fromEntries(Object.entries(mesures[id] ?? {}).filter(([k]) => !(k in champs)));
+          mesures = { ...mesures, [id]: reste };
+          resumes.push(
+            `J'ai mis de côté tes anciennes mesures (${contre.map((x) => `${String(x.mesure).replace('.', ',')} mm`).join(', ')}) : elles ne collent pas avec « ${produit} » (${contre.map((x) => `${String(x.trouvee).replace('.', ',')} mm`).join(', ')}). Elles restent dans le fichier des mesures.`,
+          );
+        } catch {
+          /* le fichier n'a pas pu être écrit : les mesures restent */
+        }
+      }
     }
     const resume = resumes.join(' ');
     const suite = await tourAtelier(
