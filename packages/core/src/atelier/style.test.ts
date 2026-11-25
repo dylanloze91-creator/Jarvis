@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { fabriquer, fichePiece, type Gabarit } from './gabarits.js';
 import { deciderAtelier, dernierAtelier, mesuresAffichees, normaliserOrdre, type AtelierDecision, type AtelierEtat } from './discussion.js';
 import { plier } from './lecture.js';
+import { ajouterCoteTrouvee } from './composants.js';
 
 /**
  * L'atelier parlé comme l'utilisateur parle (mission de nuit du 25 au 26 novembre) : chaque phrase
@@ -303,5 +304,27 @@ describe('deuxième série de la nuit', () => {
     if (d.kind !== 'fabriquer') return;
     const p = fabriquer(d.gabarit, d.valeurs, V);
     expect(p.ok && fichePiece(p)).toMatch(/^Boîte avec couvercle de 100 × 60 × 40 mm \(boîte et couvercle côte à côte sur le plateau : /);
+  });
+});
+
+describe('cotes lues sur une page : vraisemblables ou pas gardées', () => {
+  // Les valeurs rendues par Internet le 25 novembre pour « esp32 S3 ».
+  const SOURCE = 'https://exemple.test/esp32';
+  const id = 'esp32_s3_devkitc_1_borniers';
+
+  it('53,7 mm au-dessus de la carte, 4,6 mm entre deux trous : refusés', () => {
+    expect(ajouterCoteTrouvee({}, id, 'hauteur_dessus', { valeur: 53.7, source: SOURCE }).erreur).toMatch(/trop haut/);
+    expect(ajouterCoteTrouvee({}, id, 'entraxe_y', { valeur: 4.6, source: SOURCE }).erreur).toMatch(/trop peu/);
+  });
+
+  it('un écart entre les trous plus grand que la carte : refusé', () => {
+    const avec = ajouterCoteTrouvee({}, id, 'largeur', { valeur: 23.7, source: SOURCE }).cotes;
+    expect(ajouterCoteTrouvee(avec, id, 'entraxe_y', { valeur: 23.7, source: 'https://autre.test/x' }).erreur).toMatch(/impossible/);
+  });
+
+  it('les cotes vraisemblables sont gardées ; le plan du fabricant n’est pas discuté', () => {
+    expect(ajouterCoteTrouvee({}, id, 'hauteur_dessus', { valeur: 12, source: SOURCE }).erreur).toBeUndefined();
+    expect(ajouterCoteTrouvee({}, id, 'entraxe_x', { valeur: 58, source: SOURCE }).erreur).toBeUndefined();
+    expect(ajouterCoteTrouvee({}, id, 'hauteur_dessus', { valeur: 45, source: SOURCE, plan: true }).erreur).toBeUndefined();
   });
 });

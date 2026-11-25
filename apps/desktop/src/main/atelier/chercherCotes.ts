@@ -297,6 +297,9 @@ export async function chercherCotes(
     if (!lues?.length) continue;
     const e = etatCoteTrouvee(lues);
     if (q.facultatif === 'plan') continue;
+    // Des trous de fixation trouvés à moitié ne servent pas (la carte tiendra dans des glissières) :
+    // leurs cotes ne sont pas dites, sinon la phrase « trous pas trouvés » est contredite juste après.
+    if (q.facultatif === 'fixation' && !trousTrouves) continue;
     if (e.etat === 'sur') sources.push(`${q.nom} : ${String(e.valeur).replace('.', ',')} mm (${lues.some((l) => l.plan) ? 'plan du fabricant : ' : ''}${e.sources.join(' ; ')})`);
     else if (e.valeur !== undefined) incertitudes.push(`${q.nom} : ${String(e.valeur).replace('.', ',')} mm, une seule source (${e.sources[0]})`);
     else if (e.desaccord) incertitudes.push(`${q.nom} : les sources ne concordent pas (${e.desaccord.join(' / ')} mm)`);
@@ -315,7 +318,7 @@ export async function chercherCotes(
     ok: trouves > 0,
     raison:
       trouves > 0
-        ? `${trouves} cote${trouves > 1 ? 's' : ''} sur ${comptes} trouvée${trouves > 1 ? 's' : ''} sur Internet pour « ${produit} ».${trousDits}`
+        ? `Sur Internet, pour « ${produit} », j'ai trouvé ${trouves} des ${comptes} cotes qu'il me faut.${trousDits}`
         : pages.length
           ? `J'ai lu ${pages.length} page${pages.length > 1 ? 's' : ''} sur « ${produit} », sans y trouver de cote écrite que je puisse vérifier.`
           : `Je n'ai rien pu lire sur Internet pour « ${produit} » : les moteurs de recherche n'ont rien rendu cette fois, ou leurs pages ne se laissent pas lire. Réessaie plus tard, ou colle-moi le lien d'une fiche.`,

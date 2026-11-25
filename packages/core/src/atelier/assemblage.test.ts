@@ -250,7 +250,7 @@ describe('sans la pièce : « prends large »', () => {
 
   it('une valeur large passe avant des pages qui se contredisent, mais reste « à vérifier »', () => {
     let c: CotesTrouvees = {};
-    for (const [v, s] of [[12, 'https://a.test'], [70, 'https://b.test']] as const) c = ajouterCoteTrouvee(c, ESP, 'hauteur_dessus', { valeur: v, source: s }).cotes;
+    for (const [v, s] of [[12, 'https://a.test'], [38, 'https://b.test']] as const) c = ajouterCoteTrouvee(c, ESP, 'hauteur_dessus', { valeur: v, source: s }).cotes;
     expect(fusionnerCotes({}, c, { uneSource: true })[ESP]).toBeUndefined();
     c = ajouterCoteTrouvee(c, ESP, 'hauteur_dessus', { valeur: 15, source: SOURCE_LARGE, choisie: true }).cotes;
     expect(fusionnerCotes({}, c, { uneSource: true })[ESP]).toEqual({ hauteur_dessus: 15 });

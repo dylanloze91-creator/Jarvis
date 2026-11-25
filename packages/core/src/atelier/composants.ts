@@ -568,6 +568,23 @@ export interface EtatCoteTrouvee {
   contredite?: number[];
 }
 
+/**
+ * Une cote lue sur une page, trop peu vraisemblable pour être gardée, même « à vérifier » :
+ * - plus de 40 mm de haut au-dessus d'une carte (aucun composant d'une carte de développement) ;
+ * - moins de 8 mm entre deux trous de fixation, de centre à centre ;
+ * - un écart entre les trous plus grand que la carte elle-même (toutes les lectures de sa taille).
+ * `null` : rien à redire.
+ */
+export function coteInvraisemblable(c: Composant, lues: Readonly<Record<string, readonly CoteLue[]>>, champ: string, valeur: number): string | null {
+  if (!c.carte && !c.ecran) return null;
+  if (champ === 'hauteur_dessus' && c.carte && !c.ecran && valeur > 40) return `${fmt(valeur)} mm au-dessus de la carte : trop haut pour être vrai.`;
+  if ((champ === 'entraxe_x' || champ === 'entraxe_y') && valeur < 8) return `${fmt(valeur)} mm entre deux trous de fixation : trop peu pour être vrai.`;
+  const cote = champ === 'entraxe_x' ? 'longueur' : champ === 'entraxe_y' ? 'largeur' : null;
+  const tailles = cote ? (lues[cote] ?? []).map((l) => l.valeur) : [];
+  if (cote && tailles.length && valeur >= Math.max(...tailles)) return `${fmt(valeur)} mm entre les trous, pour une carte de ${fmt(Math.max(...tailles))} mm : impossible.`;
+  return null;
+}
+
 /** Ajoute une lecture (une par source : relire une source remplace sa lecture). Bornes de la mesure. */
 export function ajouterCoteTrouvee(cotes: CotesTrouvees, id: string, champ: string, lue: CoteLue): { cotes: CotesTrouvees; erreur?: string } {
   const c = composant(id);
@@ -576,6 +593,13 @@ export function ajouterCoteTrouvee(cotes: CotesTrouvees, id: string, champ: stri
   if (!lue.source.trim()) return { cotes, erreur: 'Une cote trouvée doit dire d’où elle vient.' };
   if (!Number.isFinite(lue.valeur) || lue.valeur < q.min || lue.valeur > q.max) {
     return { cotes, erreur: `${fmt(lue.valeur)} mm pour ${q.nom} : ça me paraît faux (de ${fmt(q.min)} à ${fmt(q.max)} mm).` };
+  }
+  // Une cote lue sur une page (pas sur le plan du fabricant) doit aussi être vraisemblable : le
+  // 25 novembre, une page a donné 53,7 mm de haut au-dessus d'une carte ESP32 et 4,6 mm entre deux
+  // trous de fixation, gardés « à vérifier » et dits à l'utilisateur.
+  if (!lue.plan && !lue.choisie) {
+    const invraisemblable = coteInvraisemblable(c, cotes[id] ?? {}, champ, lue.valeur);
+    if (invraisemblable) return { cotes, erreur: invraisemblable };
   }
   const avant = (cotes[id]?.[champ] ?? []).filter((x) => x.source !== lue.source);
   const nouvelle: CoteLue = { valeur: lue.valeur, source: lue.source.trim(), ...(lue.plan ? { plan: true } : {}), ...(lue.choisie ? { choisie: true } : {}) };

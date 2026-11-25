@@ -76,10 +76,10 @@ describe('cotes de deux pages', () => {
     expect(p.incertitudes.join('\n')).toMatch(/écart entre les trous dans la longueur.*— à mesurer/);
   });
 
-  it('encombrement en désaccord trop grand (12 et 70 mm) : rien n’est pris', () => {
-    const c = ajoute(ajoute({}, 'hauteur_dessus', 12, 'https://a.test/1'), 'hauteur_dessus', 70, 'https://b.test/1');
+  it('encombrement en désaccord trop grand (12 et 38 mm) : rien n’est pris', () => {
+    const c = ajoute(ajoute({}, 'hauteur_dessus', 12, 'https://a.test/1'), 'hauteur_dessus', 38, 'https://b.test/1');
     expect(fusionnerCotes({}, c, { uneSource: true })[ESP]).toBeUndefined();
-    expect(provenanceCotes(ESP, {}, c, { uneSource: true }).incertitudes.join('\n')).toMatch(/ne concordent pas \(12 \/ 70 mm\) — à mesurer/);
+    expect(provenanceCotes(ESP, {}, c, { uneSource: true }).incertitudes.join('\n')).toMatch(/ne concordent pas \(12 \/ 38 mm\) — à mesurer/);
   });
 });
 
