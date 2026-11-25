@@ -32,6 +32,7 @@ import {
   type Valeurs,
 } from '@jarvis/core';
 import type { AtelierDeps } from './tourAtelier.js';
+import { fabriquerBoitierEcran } from './boitierEcranPC.js';
 
 type EtatPiece = Extract<AtelierEtat, { etape: 'piece' }>;
 
@@ -116,7 +117,7 @@ function cotesDesComposants(valeurs: Valeurs, mesures: MesuresComposants, cotes:
  */
 export async function fabriquerVersion(
   entree: EntreeVersion,
-  deps: Pick<AtelierDeps, 'racine' | 'programmes' | 'volume' | 'jour'>,
+  deps: Pick<AtelierDeps, 'racine' | 'programmes' | 'volume' | 'jour' | 'controlerBoitier'>,
   avancement: (a: Avancement) => void = () => undefined,
 ): Promise<ResultatEtape<VersionProduite>> {
   const g = typeof entree.gabarit === 'string' ? gabaritNomme(entree.gabarit) : entree.gabarit;
@@ -140,6 +141,8 @@ export async function fabriquerVersion(
   }
   const openscad = deps.programmes.openscad();
   if (!openscad) return resultatEtape({ ok: false, raison: ATELIER_SANS_OPENSCAD, sources, incertitudes });
+  // Un ensemble de pièces (boîtier à écran) : chaque pièce rendue et contrôlée, puis tout le boîtier.
+  if (g.id === 'boitier_ecran') return fabriquerBoitierEcran(g, piece.valeurs, piece.taille, entree, deps, volume, openscad, avancement, deps.controlerBoitier);
 
   const dossier = entree.base?.dossier ?? (await dossierLibre(deps.racine, (n) => nomDossierPiece(g, deps.jour(), n)));
   const chemin = join(deps.racine, dossier);

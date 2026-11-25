@@ -111,6 +111,9 @@ const wDosCarte = W_OBJECTIF + CAM.hauteur_totale.wide;
 const wChariot0 = wDosCarte + CAMERA.plotCam;
 const wChariot1 = wChariot0 + CAMERA.chariotEp;
 
+/** Profondeurs (w, depuis la face avant) des pièces de la caméra, pour le boîtier qui les porte. */
+export const PROFONDEURS_CAMERA = { volet0: wVolet0, volet1: wVolet1, objectif: W_OBJECTIF, dosCarte: wDosCarte, chariot0: wChariot0, chariot1: wChariot1 } as const;
+
 /** Le cache coulissant, à plat : x de 0 à 34 le long de la course, y par rapport à l'objectif, z = 0 côté face avant. */
 export function volet(): Forme {
   const k = CAMERA;

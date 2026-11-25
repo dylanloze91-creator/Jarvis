@@ -20,6 +20,10 @@ export interface VersionAtelier {
   filament?: string;
   /** Ce que la version a changé : « Hauteur 30 → 45 mm ». */
   changement?: string;
+  /** Un ensemble (boîtier à écran) : le boîtier éclaté, ses pièces et ses contrôles. */
+  eclate?: ArrayBuffer | Uint8Array | null;
+  pieces?: { titre: string; nombre: number; sens: string; temps?: string; filament?: string }[];
+  controles?: { total: number; ok: number };
 }
 
 export interface EtatVersion {

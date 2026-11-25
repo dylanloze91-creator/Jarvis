@@ -16,3 +16,5 @@ export * from './tenir.js';
 export * from './etape.js';
 export * from './rechercheCotes.js';
 export * from './plan.js';
+export * from './boitierEcran.js';
+export * from './bancBoitierEcran.js';

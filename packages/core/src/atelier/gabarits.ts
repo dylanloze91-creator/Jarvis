@@ -11,6 +11,7 @@
 
 import { ajoutsDe, couvercleDe, direAjout, placerAjouts } from './ajouts.js';
 import { decoupesDe, direDecoupe, placerDecoupes } from './decoupes.js';
+import { ANGLE_MAX, ANGLE_MIN, CHOIX_HUB, dessinerBoitierEcran, type ChoixBoitierEcran } from './boitierEcran.js';
 
 /** Volume d'impression de l'Ender 3 S1 Plus (fiche Creality) : 300 × 300 × 300 mm. */
 export const ENDER3_S1_PLUS_VOLUME = { x: 300, y: 300, z: 300 } as const;
@@ -57,6 +58,8 @@ export interface Gabarit {
   /** Ce qui empêche de l'imprimer, en phrases simples. Vide : tout va bien. */
   verifier(v: Valeurs): string[];
   scad(v: Valeurs): string;
+  /** Une phrase à ajouter à la fiche (sens d'impression inhabituel…), ou `null`. */
+  note?(v: Valeurs): string | null;
 }
 
 export function estChoix(m: Mesure): m is MesureChoix {
@@ -339,14 +342,15 @@ const supportTelephone: Gabarit = {
   // Même géométrie que `scad` : le dossier (t × dos) tourne de (90° − angle) autour de son coin
   // bas, en x = t + rainure. Son coin haut arrière monte à dos·sin(angle) ; en longueur, il
   // avance de dos·cos(angle) + t·sin(angle). La lèvre avant monte à t + lip.
+  // Sous 45°, la pièce s'imprime couchée sur le côté (voir `supportCouche`) : hauteur et largeur s'échangent.
   taille: (v) => {
-    const t = 4;
-    const lip = 12;
-    const a = num(v, 'angle') * RAD;
-    const dos = num(v, 'dos');
-    const bout = t + num(v, 'rainure') + dos * Math.cos(a) + t * Math.sin(a);
-    return [Math.max(num(v, 'base'), bout), num(v, 'largeur'), Math.max(dos * Math.sin(a), t + lip)];
+    const [x, y, z] = tailleSupportDebout(v);
+    return supportCouche(v) ? [x, z, y] : [x, y, z];
   },
+  note: (v) =>
+    supportCouche(v)
+      ? `Il s’imprime couché sur le côté (cotes dans ce sens) : à ${String(num(v, 'angle')).replace('.', ',')}°, le dossier debout pencherait trop pour s’imprimer sans support.`
+      : null,
   verifier: (v) => {
     const a = num(v, 'angle') * RAD;
     const reach = 4 + num(v, 'rainure') + num(v, 'dos') * Math.cos(a) * 0.6;
@@ -360,12 +364,32 @@ const supportTelephone: Gabarit = {
     const h = num(v, 'dos');
     const p = num(v, 'base');
     const tilt = 90 - num(v, 'angle');
-    return (
-      HEADER +
-      `intersection() {\n  union() {\n    cube([${scadNombre(p)}, ${scadNombre(w)}, ${scadNombre(t)}]);\n    cube([${scadNombre(t)}, ${scadNombre(w)}, ${scadNombre(t + lip)}]);\n    translate([${scadNombre(t + e)}, 0, 0]) rotate([0, ${scadNombre(tilt)}, 0]) cube([${scadNombre(t)}, ${scadNombre(w)}, ${scadNombre(h)}]);\n  }\n  translate([-1, -1, 0]) cube([1000, ${scadNombre(w + 2)}, 1000]);\n}\n`
-    );
+    const piece = `intersection() {\n  union() {\n    cube([${scadNombre(p)}, ${scadNombre(w)}, ${scadNombre(t)}]);\n    cube([${scadNombre(t)}, ${scadNombre(w)}, ${scadNombre(t + lip)}]);\n    translate([${scadNombre(t + e)}, 0, 0]) rotate([0, ${scadNombre(tilt)}, 0]) cube([${scadNombre(t)}, ${scadNombre(w)}, ${scadNombre(h)}]);\n  }\n  translate([-1, -1, 0]) cube([1000, ${scadNombre(w + 2)}, 1000]);\n}\n`;
+    if (!supportCouche(v)) return HEADER + piece;
+    // Couché sur le côté : son profil (le même sur toute la largeur) à plat sur le plateau.
+    const z = tailleSupportDebout(v)[2];
+    return `${HEADER}// Imprimé couché sur le côté : le dossier debout demanderait un support.\ntranslate([0, ${scadNombre(z)}, 0]) rotate([90, 0, 0]) {\n${piece}}\n`;
   },
 };
+
+/** Le support debout : longueur, largeur, hauteur. */
+function tailleSupportDebout(v: Valeurs): [number, number, number] {
+  const t = 4;
+  const lip = 12;
+  const a = num(v, 'angle') * RAD;
+  const dos = num(v, 'dos');
+  const bout = t + num(v, 'rainure') + dos * Math.cos(a) + t * Math.sin(a);
+  return [Math.max(num(v, 'base'), bout), num(v, 'largeur'), Math.max(dos * Math.sin(a), t + lip)];
+}
+
+/**
+ * Sous 45°, le dessous du dossier penche de plus de 45° : debout, il faudrait un support
+ * d'impression (grand contrôle du 24 novembre, variante à 40°). Le support est un profil tiré sur
+ * toute sa largeur : couché sur le côté, il s'imprime sans aucun surplomb.
+ */
+function supportCouche(v: Valeurs): boolean {
+  return num(v, 'angle') < 45;
+}
 
 const socle: Gabarit = {
   id: 'socle',
@@ -453,8 +477,72 @@ const cale: Gabarit = {
   },
 };
 
+/** Les choix d'un boîtier à écran, lus dans ses valeurs. */
+export function choixBoitierEcran(v: Valeurs): ChoixBoitierEcran {
+  return {
+    angle: typeof v.inclinaison === 'number' ? v.inclinaison : CHOIX_HUB.angle,
+    ports: v.ports === 'cote' ? 'cote' : 'arriere',
+    camera: v.camera !== 'non',
+    cache: v.cache !== 'non',
+  };
+}
+
+/**
+ * Le boîtier à écran (le hub de la mission des boîtiers) : un ensemble de pièces, dessiné par
+ * `boitierEcran.ts`. Il n'est pas rendu d'un seul bloc : chaque pièce a son fichier, et le
+ * contrôle complet (`bancBoitierEcran.ts`) passe avant de le montrer. `scad` écrit le boîtier monté.
+ */
+const boitierEcran: Gabarit = {
+  id: 'boitier_ecran',
+  nom: 'boîtier à écran',
+  description: 'Boîtier pour un Raspberry Pi 5 avec l’écran tactile 7 pouces (et la caméra) : écran incliné sur un socle.',
+  mots: ['boitier a ecran', 'boitier pour ecran tactile'],
+  mesures: [
+    m(
+      'inclinaison',
+      'inclinaison de l’écran',
+      ANGLE_MIN,
+      ANGLE_MAX,
+      CHOIX_HUB.angle,
+      ['inclinaison de l ecran', 'incline l ecran de', 'incline l ecran a', 'ecran incline de', 'ecran incline a', 'inclinaison', 'incline de', 'incline a', 'penche de', 'angle'],
+      { unite: '°' },
+    ),
+    {
+      id: 'ports',
+      nom: 'côté des prises',
+      options: [
+        { valeur: 'cote', mots: ['sur le cote', 'sur les cotes', 'sur le flanc', 'laterales', 'lateraux'] },
+        { valeur: 'arriere', mots: ['a l arriere', 'derriere', 'vers l arriere', 'au dos'] },
+      ],
+      defaut: 'arriere',
+    },
+    {
+      id: 'camera',
+      nom: 'caméra',
+      options: [
+        { valeur: 'non', mots: ['sans camera', 'pas de camera', 'enleve la camera', 'retire la camera'] },
+        { valeur: 'oui', mots: ['camera'] },
+      ],
+      defaut: 'non',
+    },
+    {
+      id: 'cache',
+      nom: 'cache de la caméra',
+      options: [
+        { valeur: 'non', mots: ['sans cache', 'pas de cache', 'enleve le cache', 'retire le cache'] },
+        { valeur: 'oui', mots: ['avec cache', 'avec un cache', 'remets le cache', 'ajoute un cache', 'ajoute le cache'] },
+      ],
+      defaut: 'oui',
+    },
+  ],
+  suite: [],
+  taille: (v) => dessinerBoitierEcran(choixBoitierEcran(v)).encombrement,
+  verifier: () => [],
+  scad: (v) => dessinerBoitierEcran(choixBoitierEcran(v)).scadAssemblage(),
+};
+
 /** Les gabarits, du plus précis au plus vague (« boîte avec couvercle » avant « boîte »). */
-export const GABARITS: readonly Gabarit[] = [boiteCouvercle, supportTelephone, porteEtiquette, bac, boite, entretoise, equerre, crochet, socle, cale];
+export const GABARITS: readonly Gabarit[] = [boitierEcran, boiteCouvercle, supportTelephone, porteEtiquette, bac, boite, entretoise, equerre, crochet, socle, cale];
 
 export function gabarit(id: string): Gabarit | undefined {
   return GABARITS.find((g) => g.id === id);
@@ -523,7 +611,7 @@ export function fabriquer(g: Gabarit, donnees: Valeurs, volume: VolumeImpression
     valeurs,
     taille,
     scad: avecLesDecoupes(g.scad(valeurs), [...decoupes.scad, ...ajouts.moins], ajouts.plus),
-    ...(ajouts.notes.length ? { notes: ajouts.notes } : {}),
+    ...(ajouts.notes.length || g.note?.(valeurs) ? { notes: [...ajouts.notes, ...(g.note?.(valeurs) ? [g.note(valeurs)!] : [])] } : {}),
   };
 }
 
