@@ -45,6 +45,16 @@ export class OllamaControl {
     return unloaded;
   }
 
+  /** Décharge un seul modèle (`keep_alive: 0`) ; vrai si Ollama a répondu. */
+  async unload(model: string): Promise<boolean> {
+    try {
+      await this.generate(model, 0, 30_000);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   /** Charge un modèle (requête vide) en le gardant `keepAlive` ; vrai si Ollama a répondu. */
   async preload(model: string, keepAlive: string | number): Promise<boolean> {
     try {

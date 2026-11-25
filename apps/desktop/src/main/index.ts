@@ -117,6 +117,7 @@ import { createMorningBriefing } from './quotidien/morning.js';
 import { runPrinterReply } from './quotidien/printerReply.js';
 import { creerAtelierPC, dossierAtelier, lireFichierAtelier } from './atelier/atelierPC.js';
 import { creerYeuxPC } from './yeux/yeuxPC.js';
+import { creerRegarder } from './yeux/regarder.js';
 import { YeuxStore } from './yeux/store.js';
 import { creerWebcam } from './yeux/webcam.js';
 import { ouvrirFenetreWebcam } from './yeux/webcamFenetre.js';
@@ -509,9 +510,17 @@ const yeuxPC = edition().yeux
       // Webcam du PC : fenêtre cachée dédiée, ouverte à la demande, fermée 5 s après la dernière photo.
       webcam: creerWebcam(ouvrirFenetreWebcam),
       telephone: true,
+      // Étape 2 : regarder une photo et répondre (modèle de vision, recherche web vérifiée, modèle du chat).
+      regarder: creerRegarder({ getSettings: () => settings, searchRegistry }),
     })
   : null;
 const yeuxReply = yeuxPC ? (input: { text: string; place: 'fenetre' | 'telephone' | 'enceinte' }) => yeuxPC.tour(input) : undefined;
+const regarderYeux = yeuxPC
+  ? {
+      garderPhotoJointe: (photo: { octets: Uint8Array; type: 'image/jpeg' | 'image/png' }) => yeuxPC.garderPhotoJointe(photo),
+      regarder: (input: Parameters<typeof yeuxPC.regarder>[0]) => yeuxPC.regarder(input),
+    }
+  : undefined;
 
 const stopAllReply = edition().appendices
   ? async (input: { text: string }): Promise<string | null> => {
@@ -569,6 +578,7 @@ const session = new ChatSession({
   printer: printerReply,
   atelier: atelierReply,
   yeux: yeuxReply,
+  regarder: regarderYeux,
   stopAll: stopAllReply,
   voiceStarts,
 });
@@ -601,6 +611,7 @@ const phoneSession = new ChatSession({
   printer: printerReply,
   atelier: atelierReply,
   yeux: yeuxReply,
+  regarder: regarderYeux,
   stopAll: stopAllReply,
 });
 const questionnaire = QuestionnaireStore.inUserData(() => app.getPath('userData'));

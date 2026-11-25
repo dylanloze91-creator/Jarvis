@@ -86,6 +86,8 @@ export function useChat(options: UseChatOptions = {}) {
               text: event.message.content,
               ...(event.message.attachments?.length ? { attachments: event.message.attachments } : {}),
             },
+            // Les yeux (étape 2) : la photo jointe montrée à Jarvis, gardée en mémoire seulement.
+            ...(event.message.yeux ? [{ kind: 'yeux' as const, id: `yeux-${event.message.id}`, photo: event.message.yeux }] : []),
           ]);
           break;
         }
@@ -303,6 +305,7 @@ export function toItems(messages: ChatMessage[]): ChatItem[] {
         text: message.content,
         ...(message.attachments?.length ? { attachments: message.attachments } : {}),
       });
+      if (message.yeux) items.push({ kind: 'yeux', id: `yeux-${message.id}`, photo: message.yeux });
     } else if (message.role === 'assistant' && message.content.trim().length > 0) {
       items.push({ kind: 'assistant', id: message.id, text: message.content, streaming: false });
       if (message.atelier?.etape === 'piece') items.push({ kind: 'atelier', id: `atelier-${message.id}`, etat: message.atelier });

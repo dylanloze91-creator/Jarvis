@@ -46,7 +46,9 @@ export function YeuxPhoto({ photo }: { photo: PhotoDiscussion }) {
             <div className="px-4 py-6 text-sm text-slate-300">{erreur ?? 'Chargement de la photo…'}</div>
           )}
           <figcaption className="px-3 py-1.5 text-xs text-slate-400">
-            Caméra « {photo.camera} » · photo prise à {heurePhoto(photo.prisA)}
+            {photo.camera === 'Photo jointe'
+              ? `Photo montrée à Jarvis · reçue à ${heurePhoto(photo.prisA)} · gardée 30 minutes en mémoire`
+              : `Caméra « ${photo.camera} » · photo prise à ${heurePhoto(photo.prisA)}`}
           </figcaption>
         </figure>
       </div>

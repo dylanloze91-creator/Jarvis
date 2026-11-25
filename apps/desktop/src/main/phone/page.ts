@@ -796,8 +796,10 @@ export const PHONE_JS = String.raw`(function () {
         }
         return response.json().then(function (data) {
           if (!response.ok) throw new Error(data.error || 'Photo refusée.');
-          note.textContent = 'Photo envoyée à Jarvis (écran « Yeux » du PC, carte iPhone).';
           var question = input.value.trim();
+          note.textContent = question
+            ? 'Photo envoyée : Jarvis la regarde.'
+            : 'Photo envoyée. Pose ta question (dans les 5 minutes) : Jarvis regardera la photo.';
           if (question) {
             input.value = '';
             send(question, 'text');

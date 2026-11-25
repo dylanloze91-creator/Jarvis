@@ -14,6 +14,7 @@ import { join } from 'node:path';
 import {
   checkRoverBaseUrl,
   etatCarte,
+  intentionYeux,
   OEIL_IPHONE,
   OEIL_WEBCAM,
   OeilReseau,
@@ -32,12 +33,15 @@ import {
   type Settings,
   type TravailEnFile,
 } from '@jarvis/core';
+import type { Regarder } from './regarder.js';
 import type { YeuxStore } from './store.js';
 import type { WebcamApi } from './webcam.js';
 
 /** Au plus 20 photos en mémoire, 30 minutes chacune. */
 export const PHOTOS_MAX = 20;
 export const PHOTO_DUREE_MS = 30 * 60_000;
+/** Une photo de l'iPhone sert à la question qui suit, si elle arrive dans les 5 minutes. */
+export const PHOTO_QUESTION_MS = 5 * 60_000;
 
 export class PhotosEnMemoire {
   private readonly photos = new Map<string, PhotoYeux>();
@@ -123,6 +127,23 @@ export interface YeuxPC {
   garder(photoId: string): Promise<{ ok: true; chemin: string } | { ok: false; error: string }>;
   /** Crochet de la session : `null` si la phrase n'est pas pour les yeux ou s'ils sont coupés. */
   tour(input: { text: string; place: LieuYeux }): Promise<{ texte: string; photo: PhotoDiscussion | null } | null>;
+  /**
+   * Étape 2 : une photo jointe dans la fenêtre, gardée en mémoire seulement (jamais écrite sur le
+   * disque). `null` : yeux coupés, ou regard absent.
+   */
+  garderPhotoJointe(photo: { octets: Uint8Array; type: 'image/jpeg' | 'image/png' }): PhotoDiscussion | null;
+  /**
+   * Étape 2 : regarder une photo et répondre à la question. La photo jointe (`photoId`), sinon, sur le
+   * téléphone, la dernière photo de l'iPhone pas encore regardée (5 minutes au plus). `null` : pas de
+   * photo pour cette question, ou yeux coupés.
+   */
+  regarder(input: {
+    text: string;
+    place: LieuYeux;
+    photoId: string | null;
+    avancement?: (message: string) => void;
+    signal?: AbortSignal;
+  }): Promise<{ texte: string; photo: PhotoDiscussion } | null>;
 }
 
 function nomDeFichier(oeil: string, prisA: number, type: string): string {
@@ -144,6 +165,8 @@ export interface YeuxPCOptions {
   webcam?: WebcamApi;
   /** Téléphone relié possible : l'œil « iPhone » existe (photos envoyées depuis l'appli). */
   telephone?: boolean;
+  /** Étape 2 : regarder une photo et répondre (modèle de vision, recherche web, modèle du chat). */
+  regarder?: Regarder;
   maintenant?: () => number;
 }
 
@@ -158,6 +181,8 @@ export function creerYeuxPC(options: YeuxPCOptions): YeuxPC {
   const maintenant = options.maintenant ?? Date.now;
   // Dernière photo de l'iPhone : en mémoire seulement, 30 minutes au plus.
   let photoTelephone: PhotoYeux | null = null;
+  // Elle sert une fois à la question qui suit (« Montrer à Jarvis » puis la question).
+  let photoTelephoneRegardee = false;
   const telephoneRecente = (): PhotoYeux | null =>
     photoTelephone && maintenant() - photoTelephone.prisA <= PHOTO_DUREE_MS ? photoTelephone : null;
 
@@ -289,6 +314,7 @@ export function creerYeuxPC(options: YeuxPCOptions): YeuxPC {
       const oeil = await trouver(OEIL_IPHONE.id);
       if (!oeil?.allume) return { ok: false, error: 'La caméra « iPhone » est coupée dans l’écran « Yeux » du PC.' };
       photoTelephone = { octets: photo.octets, type: photo.type, prisA: maintenant(), taille: photo.octets.byteLength, camera: oeil.nom };
+      photoTelephoneRegardee = false;
       return { ok: true };
     },
     async webcams() {
@@ -325,6 +351,36 @@ export function creerYeuxPC(options: YeuxPCOptions): YeuxPC {
       const reponse = await repondreYeux({ texte: input.text, lieu: input.place, yeux: await tousLesYeux() }, await deps());
       if (!reponse) return null;
       return { texte: reponse.texte, photo: reponse.photo ? photos.garder(reponse.photo) : null };
+    },
+    garderPhotoJointe(photo) {
+      if (!yeuxActifs(getSettings(), editionYeux) || !options.regarder) return null;
+      return photos.garder({ octets: photo.octets, type: photo.type, prisA: maintenant(), taille: photo.octets.byteLength, camera: 'Photo jointe' });
+    },
+    async regarder(input) {
+      if (!yeuxActifs(getSettings(), editionYeux) || !options.regarder) return null;
+      let photo: PhotoYeux | null = null;
+      let ref: PhotoDiscussion | null = null;
+      if (input.photoId) {
+        photo = photos.lire(input.photoId);
+        if (!photo) return { texte: 'Je n’ai plus cette photo (elle n’est gardée que 30 minutes, en mémoire). Renvoie-la.', photo: { photoId: input.photoId, prisA: maintenant(), camera: 'Photo jointe' } };
+        ref = { photoId: input.photoId, prisA: photo.prisA, camera: photo.camera };
+      } else if (input.place === 'telephone') {
+        const recente = telephoneRecente();
+        // « montre-moi l'impression » reste à l'étape 1 ; sinon la question qui suit la photo est pour elle.
+        if (!recente || photoTelephoneRegardee || maintenant() - recente.prisA > PHOTO_QUESTION_MS || intentionYeux(input.text)) return null;
+        photoTelephoneRegardee = true;
+        photo = recente;
+        ref = photos.garder(recente);
+      }
+      if (!photo || !ref) return null;
+      const r = await options.regarder({
+        photo,
+        question: input.text,
+        oral: input.place === 'enceinte',
+        ...(input.avancement ? { avancement: input.avancement } : {}),
+        ...(input.signal ? { signal: input.signal } : {}),
+      });
+      return { texte: r.texte, photo: ref };
     },
   };
 }
