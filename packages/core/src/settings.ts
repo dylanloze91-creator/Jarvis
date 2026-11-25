@@ -294,6 +294,23 @@ export const settingsSchema = z.object({
   /** Jeton Bearer affiché par l'installation du robot. Comme les autres clés : `settings.json` seulement. */
   roverToken: z.string().optional(),
   /**
+   * Imprimante 3D de l'atelier (Moonraker, réseau local). Absent : l'atelier prépare le fichier et
+   * n'envoie rien. Pas de défaut Zod : les réglages figés et un ancien `settings.json` ne gagnent pas de clé.
+   * `apiKey` est un secret : le coffre le retire du fichier de réglages.
+   */
+  printer: z
+    .object({
+      enabled: z.boolean().optional(),
+      baseUrl: z.string().max(300).optional(),
+      apiKey: z.string().max(200).optional(),
+      /**
+       * `false` : aucune impression lancée depuis le téléphone (la file d'attente reste permise, en
+       * pause). Absent : le téléphone peut lancer après une carte.
+       */
+      phoneStart: z.boolean().optional(),
+    })
+    .optional(),
+  /**
    * Lieu « Chez moi » pour météo et recherches locales sans ville nommée.
    * Pas de défaut Zod : les réglages figés et un ancien `settings.json` ne gagnent pas de clé.
    */

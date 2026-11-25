@@ -126,6 +126,10 @@ const api: JarvisApi = {
       return () => ipcRenderer.removeListener(IpcChannel.windowShown, handler);
     },
   },
+  atelier: {
+    fichier: (dossier: string, fichier: string) => ipcRenderer.invoke(IpcChannel.atelierFichier, dossier, fichier),
+    ouvrirDossier: (dossier: string) => ipcRenderer.invoke(IpcChannel.atelierOuvrirDossier, dossier),
+  },
   system: {
     snapshot: () => ipcRenderer.invoke(IpcChannel.systemSnapshot),
     copyText: (text: string) => ipcRenderer.invoke(IpcChannel.systemCopyText, text),

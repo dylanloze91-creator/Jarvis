@@ -627,3 +627,5 @@ export * from './backup/index.js';
 export * from './vault/index.js';
 export * from './privacy/index.js';
 export * from './vitesse/options.js';
+export * from './atelier/index.js';
+export * from './quotidien/moonraker.js';

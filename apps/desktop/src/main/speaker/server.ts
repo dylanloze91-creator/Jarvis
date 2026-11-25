@@ -1010,6 +1010,7 @@ export class SpeakerServer {
         source: 'voice',
         ...(followUp ? { followUp: true } : {}),
         ...(rulesOnly ? { rulesOnlyAddressee: true } : {}),
+        place: { kind: 'enceinte', name: state.speaker.name },
       })
       .then(() => ({ ...outcome, reply: outcome.reply.trim(), fromMessages }))
       .catch((error: unknown) => {

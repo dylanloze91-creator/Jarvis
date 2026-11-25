@@ -72,6 +72,7 @@ import { SpotifyBridge } from './media/SpotifyBridge.js';
 import { SiteBlockBridge } from './siteblock/SiteBlockBridge.js';
 import { RoverClient } from './rover/RoverClient.js';
 import { ImagesService } from './images/ImagesService.js';
+import { creerAtelierPC, dossierAtelier, lireFichierAtelier } from './atelier/atelierPC.js';
 import { createGoogleRuntime } from './google/runtime.js';
 import { PersonalizationStore } from './personalization.js';
 import { KnowledgeStore } from './knowledge.js';
@@ -317,6 +318,9 @@ function settingsForWindow(): Settings {
   return maskSecrets(settings, vault.secretsNow());
 }
 
+/** Atelier 3D dans la discussion (5.0.81) : pièces dessinées par règles, OpenSCAD et OrcaSlicer s'ils sont installés. */
+const atelierReply = creerAtelierPC(() => settings, undefined, undefined, searchRegistry);
+
 const session = new ChatSession({
   registry,
   get tools() {
@@ -338,6 +342,7 @@ const session = new ChatSession({
   // Module images : une photo jointe est enregistrée dans le dossier des images (sous _references).
   saveAttachment: (input) => images.saveReference(input),
   healthReport: () => healthMonitor?.run() ?? Promise.reject(new Error('bilan indisponible')),
+  atelier: atelierReply,
 });
 
 // 5.0.63 — téléphone : une session de chat à part (un tour sur le téléphone n'annule pas celui de
@@ -361,9 +366,12 @@ const phoneSession = new ChatSession({
     currentTurn.value = turn;
   },
   healthReport: () => healthMonitor?.run() ?? Promise.reject(new Error('bilan indisponible')),
+  atelier: atelierReply,
 });
 const questionnaire = QuestionnaireStore.inUserData(() => app.getPath('userData'));
 const phone = new PhoneService({
+  // Atelier 3D : images et STL d'une pièce, par liens à usage unique.
+  fichierAtelier: (dossier: string, fichier: string) => lireFichierAtelier(dossier, fichier),
   store: PhoneStore.inUserData(() => app.getPath('userData')),
   chat: {
     send: async (sender, input) => {
@@ -449,6 +457,7 @@ const speakers = new SpeakerService({
         currentTurn.value = turn;
       },
       healthReport: () => healthMonitor?.run() ?? Promise.reject(new Error('bilan indisponible')),
+      atelier: atelierReply,
     });
     return {
       send: async (sender, input) => {
@@ -795,6 +804,21 @@ function registerIpc(): void {
     }
   });
   // Module images : l'interface ne peut ouvrir que les fichiers du dossier des images de Jarvis.
+  // Atelier 3D : la fenêtre ne lit que les fichiers des pièces de l'atelier.
+  ipcMain.handle(IpcChannel.atelierFichier, async (_event, dossier: unknown, fichier: unknown) => {
+    if (typeof dossier !== 'string' || typeof fichier !== 'string') return { ok: false, error: 'Fichier refusé.' };
+    try {
+      return { ok: true, data: await lireFichierAtelier(dossier, fichier) };
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+  ipcMain.handle(IpcChannel.atelierOuvrirDossier, async (_event, dossier: unknown) => {
+    const chemin = typeof dossier === 'string' ? dossierAtelier(dossier) : null;
+    if (!chemin) return { ok: false, error: 'Dossier refusé.' };
+    const erreur = await shell.openPath(chemin);
+    return erreur ? { ok: false, error: erreur } : { ok: true };
+  });
   ipcMain.handle(IpcChannel.imagesOpen, async (_event, path: unknown) => {
     if (typeof path !== 'string' || path.length > 600) return { ok: false, error: 'Chemin invalide.' };
     if (!images.isInsideOutputRoot(path) || !/\.(png|jpe?g|webp|txt)$/i.test(path)) {

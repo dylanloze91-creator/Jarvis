@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { ChatAttachment, ChatMessage, ChatMissionEnvelope, Conversation } from '@jarvis/core';
+import type { AtelierEtat, ChatAttachment, ChatMessage, ChatMissionEnvelope, Conversation } from '@jarvis/core';
 import type { ChatAttachmentInput, ChatEvent } from '../../../shared/ipc';
 
 export type ChatItem =
@@ -36,7 +36,9 @@ export type ChatItem =
   | { kind: 'ignored'; id: string; text: string }
   /** Mode direct d'Imager : le modèle a répondu sans Imager à ce qui ressemblait à une demande d'image. */
   | { kind: 'imager_offer'; id: string; text: string }
-  | { kind: 'chat_mission'; id: string; envelope: ChatMissionEnvelope };
+  | { kind: 'chat_mission'; id: string; envelope: ChatMissionEnvelope }
+  /** Atelier 3D : la pièce en 3D, sous la réponse qui la décrit. */
+  | { kind: 'atelier'; id: string; etat: Extract<AtelierEtat, { etape: 'piece' }> };
 
 export interface PendingConfirmation {
   requestId: string;
@@ -144,6 +146,12 @@ export function useChat(options: UseChatOptions = {}) {
             { kind: 'chat_mission', id: event.message.id, envelope: event.message.chatMission! },
           ]);
           onAssistantFinal.current?.(event.voiceHint);
+          break;
+        }
+        case 'atelier': {
+          const etat = event.etat;
+          if (etat.etape !== 'piece') break;
+          setItems((current) => [...closeStreaming(current), { kind: 'atelier', id: `atelier-${event.messageId}`, etat }]);
           break;
         }
         case 'mission_update': {
@@ -285,6 +293,7 @@ export function toItems(messages: ChatMessage[]): ChatItem[] {
       });
     } else if (message.role === 'assistant' && message.content.trim().length > 0) {
       items.push({ kind: 'assistant', id: message.id, text: message.content, streaming: false });
+      if (message.atelier?.etape === 'piece') items.push({ kind: 'atelier', id: `atelier-${message.id}`, etat: message.atelier });
     } else if (message.chatMission) {
       items.push({ kind: 'chat_mission', id: message.id, envelope: message.chatMission });
     } else if (message.role === 'tool') {

@@ -1,3 +1,4 @@
+import { AtelierSettingsSection } from '@/components/AtelierSettingsSection';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   CONFIGURABLE_CATEGORIES,
@@ -384,6 +385,12 @@ export function SettingsPanel({
           'Jarvis Imager',
           'Images en local (Forge + SDXL)',
           <ImagesSettingsSection value={draft.images} onChange={(images) => patch({ images })} />,
+        )}
+        {accordion(
+          'printer',
+          'Atelier 3D',
+          'Pièces à imprimer, imprimante',
+          <AtelierSettingsSection value={draft.printer} onChange={(printer) => patch({ printer })} />,
         )}
         {accordion('phone', 'Téléphone', 'Jarvis via Tailscale', <PhoneSettingsSection />)}
         {accordion('speakers', 'Enceintes', 'Cartes ESP32 sur le Wi-Fi', <SpeakerSettingsSection />)}

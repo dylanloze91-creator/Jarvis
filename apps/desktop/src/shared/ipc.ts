@@ -30,6 +30,7 @@ import type {
   WakeVerifierModel,
 } from '@jarvis/core';
 import type { LocalLearningRuntimeStatus } from '@jarvis/core';
+import type { AtelierEtat } from '@jarvis/core';
 import type { DirectProjectDefaults, ImageFormat, ImageProject } from '@jarvis/core';
 import type { DeveloperApi } from './developerIpc.js';
 
@@ -70,6 +71,9 @@ export interface ListeningIndicatorState {
 
 export const IpcChannel = {
   chatSend: 'chat:send',
+  /** Atelier 3D : fichier d'une pièce (STL de l'écran 3D), et son dossier. */
+  atelierFichier: 'atelier:fichier',
+  atelierOuvrirDossier: 'atelier:ouvrir-dossier',
   chatCancel: 'chat:cancel',
   chatEvent: 'chat:event',
   confirmRespond: 'chat:confirm-respond',
@@ -370,6 +374,8 @@ export interface SendChatInput {
    * (`followUpAddressee`), jamais par un modèle. La fenêtre ne le met pas.
    */
   rulesOnlyAddressee?: boolean;
+  /** D'où vient la phrase (atelier 3D : rien ne se lance depuis une enceinte). Absent = la fenêtre. Jamais transmis au modèle. */
+  place?: { kind: 'fenetre' } | { kind: 'enceinte'; name: string } | { kind: 'telephone' };
   /** Module images : photos jointes (3 au plus, 20 Mo chacune), enregistrées par le processus principal. */
   attachments?: ChatAttachmentInput[];
 }
@@ -622,6 +628,8 @@ export type ChatEvent =
    * ressemblait à une image. Le bouton « Envoyer à Imager » renvoie `/image <texte>`.
    */
   | { type: 'imager_offer'; text: string }
+  /** Atelier 3D : une pièce rendue, à afficher en 3D sous la réponse `messageId`. */
+  | { type: 'atelier'; messageId: string; etat: AtelierEtat }
   | { type: 'done'; conversationId: string; messages: ChatMessage[] };
 
 export type WindowChrome = 'compact' | 'dashboard';
@@ -872,6 +880,14 @@ export interface JarvisApi {
     isVisible(): Promise<boolean>;
     /** Émis à chaque affichage. Ne pas rater un événement déjà parti : combiner avec `isVisible`. */
     onShown(listener: () => void): () => void;
+  };
+  /**
+   * Atelier 3D. Absent de l'aperçu hors Electron. Seulement les fichiers des dossiers de pièces,
+   * sous le dossier de l'atelier (nom simple, vérifié côté main).
+   */
+  atelier?: {
+    fichier(dossier: string, fichier: string): Promise<{ ok: true; data: Uint8Array } | { ok: false; error: string }>;
+    ouvrirDossier(dossier: string): Promise<{ ok: true } | { ok: false; error: string }>;
   };
   system: {
     /** Relevé réel. Les champs inconnus restent `null`. */

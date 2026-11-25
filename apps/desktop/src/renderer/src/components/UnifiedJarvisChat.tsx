@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { MessageSquare } from 'lucide-react';
 import { activePersona, personaGreeting, userFirstName, type Settings } from '@jarvis/core';
-import { unifiedChatSubmitTarget } from '@/components/unifiedChatSubmit';
+import { messagesPourAtelier, unifiedChatSubmitTarget } from '@/components/unifiedChatSubmit';
 import { cn } from '@/lib/utils';
 import { Composer } from '@/components/Composer';
 import { ConfirmationCard } from '@/components/ConfirmationCard';
@@ -65,6 +65,8 @@ export function UnifiedJarvisChat({
       cancelled = true;
     };
   }, [persona !== null]);
+  // Atelier 3D (5.0.81) : il passe avant le panneau Développeur (« fais une fenêtre pour l'écran »).
+  const editionTest = true;
   const scrollRef = useRef<HTMLDivElement>(null);
   const busy = chat.busy;
 
@@ -73,13 +75,14 @@ export function UnifiedJarvisChat({
       const trimmed = text.trim();
       // Une transcription d'une lettre est du bruit ; un texte tapé, même court, est voulu.
       if (trimmed.length === 0 || (source === 'voice' && trimmed.length < 2) || busy) return;
-      if (!attachments?.length && onOpenDeveloper && unifiedChatSubmitTarget(trimmed, settings) === 'developer') {
+      const atelier = editionTest ? messagesPourAtelier(chat.items) : null;
+      if (!attachments?.length && onOpenDeveloper && unifiedChatSubmitTarget(trimmed, settings, atelier) === 'developer') {
         onOpenDeveloper(trimmed);
         return;
       }
       chat.send(trimmed, source, attachments?.length ? { attachments } : {});
     },
-    [busy, chat, onOpenDeveloper, settings],
+    [busy, chat, onOpenDeveloper, settings, editionTest],
   );
 
   useEffect(() => {

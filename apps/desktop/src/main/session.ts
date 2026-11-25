@@ -61,6 +61,8 @@ import {
   CODE_MISSION_TOOL_PROMPT,
   directMissionRequest,
   looksLikeHealthIntent,
+  pourAtelier,
+  type AtelierEtat,
   looksLikeWrittenMissionProposal,
   missionFromUserPhrase,
   PROPOSER_MISSION_TOOL_NAME,
@@ -170,6 +172,17 @@ interface SessionDeps {
   saveAttachment?: (input: { name: string; mime: string; data: Buffer }) => Promise<ChatAttachment>;
   /** Bilan de santé, sans modèle. Absent : la phrase suit le chat habituel. */
   healthReport?: () => Promise<HealthReport>;
+  /**
+   * Atelier 3D : « fais-moi une boîte », questions, versions, « imprime-la ». Règles seules, avant
+   * tout modèle. `null` : la phrase n'est pas pour l'atelier. Absent : rien ne change.
+   */
+  atelier?: (input: {
+    text: string;
+    messages: readonly ChatMessage[];
+    place: 'fenetre' | 'telephone' | 'enceinte';
+    confirm: (summary: string) => Promise<boolean>;
+    progress: (message: string) => void;
+  }) => Promise<{ texte: string; etat?: AtelierEtat } | null>;
 }
 
 /**
@@ -361,7 +374,9 @@ export class ChatSession {
     this.deps.noteUserTurn?.({ text: input.text, attachments });
     // Mode direct de Jarvis Imager : `/image …` ou une demande repérée par règles part à Imager sans
     // aucun modèle de langage ; le tour est marqué `direct` et jamais renvoyé au modèle ensuite.
-    const direct = attachments.length ? null : await this.directImageRequest(input.text, conversation.messages);
+    // Atelier 3D : une demande de pièce passe avant (« dessine-moi un boîtier… »).
+    const pourLAtelier = Boolean(this.deps.atelier) && pourAtelier(input.text, conversation.messages);
+    const direct = attachments.length || pourLAtelier ? null : await this.directImageRequest(input.text, conversation.messages);
     const userMessage = createMessage('user', input.text, {
       ...(attachments.length ? { attachments } : {}),
       ...(direct ? { direct: 'image' as const, directPrompt: direct.prompt } : {}),
@@ -378,9 +393,39 @@ export class ChatSession {
     }
 
     const source = input.source ?? 'text';
-    const healthIntent = looksLikeHealthIntent(input.text);
+    const atelierCallId = randomId();
+    let atelierStarted = false;
+    const atelierReply = this.deps.atelier
+      ? await this.deps
+          .atelier({
+            text: input.text,
+            messages: conversation.messages,
+            place: input.place?.kind ?? 'fenetre',
+            confirm: (summary) =>
+              this.askUser(
+                sender,
+                emit,
+                { callId: randomId(), toolName: 'atelier', title: 'Atelier 3D', details: summary, forced: true },
+                controller.signal,
+              ),
+            progress: (message) => {
+              if (!atelierStarted) {
+                atelierStarted = true;
+                emit({ type: 'tool_start', callId: atelierCallId, toolName: 'atelier', summary: message });
+              } else emit({ type: 'tool_progress', callId: atelierCallId, message });
+            },
+          })
+          .catch((error: unknown): { texte: string; etat?: AtelierEtat } => ({
+            texte: `L'atelier a eu un problème : ${error instanceof Error ? error.message : String(error)}`,
+          }))
+      : null;
+    if (atelierStarted) {
+      emit({ type: 'tool_result', callId: atelierCallId, toolName: 'atelier', status: 'ok', content: 'Fait.' });
+    }
+    const atelierText = atelierReply?.texte ?? null;
+    const healthIntent = !atelierText && looksLikeHealthIntent(input.text);
     const orchestra = activeOrchestra(settings);
-    const route = !healthIntent && orchestra
+    const route = !atelierText && !healthIntent && orchestra
       ? await this.routeTurn(
           settings,
           orchestra,
@@ -434,7 +479,9 @@ export class ChatSession {
 
     let run: AsyncGenerator<AgentEvent>;
     let appendMissionProposal: (() => void) | null = null;
-    if (healthIntent) {
+    if (atelierText) {
+      run = fixedReply(atelierText);
+    } else if (healthIntent) {
       let reply = "Je n'ai pas pu faire le bilan.";
       if (this.deps.healthReport) {
         try {
@@ -679,6 +726,16 @@ export class ChatSession {
     }
 
     if (superseded()) return;
+
+    // Atelier 3D : l'état (question ou pièce) est posé sur la réponse ; une pièce s'affiche en 3D.
+    const atelierEtat = atelierReply?.etat;
+    if (atelierEtat && !controller.signal.aborted) {
+      const reponse = [...messages].reverse().find((message) => message.role === 'assistant' && message.content.trim());
+      if (reponse && reponse !== userMessage) {
+        reponse.atelier = atelierEtat;
+        if (atelierEtat.etape === 'piece') emit({ type: 'atelier', messageId: reponse.id, etat: atelierEtat });
+      }
+    }
 
     // Mode direct : le modèle a répondu sans Imager alors que la demande ressemblait à une image → bouton « Envoyer à Imager ».
     if (

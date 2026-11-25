@@ -1,3 +1,4 @@
+import type { AtelierEtat } from './atelier/discussion.js';
 import type { ToolCategory } from './tools/types.js';
 import type { ChatMissionEnvelope } from './developer/chatMissions/envelope.js';
 
@@ -77,6 +78,8 @@ export interface ChatMessage {
   toolStatus?: ToolCallOutcome['status'];
   /** 5.0.68 — carte mission, suivi ou rapport dans la discussion unifiée. */
   chatMission?: ChatMissionEnvelope;
+  /** Atelier 3D : question en cours, ou pièce rendue avec ses versions (écran 3D). */
+  atelier?: AtelierEtat;
   /** Mission Jarvis Développeur rattachée à ce message (historique). */
   missionId?: string;
   /** Mode direct de Jarvis Imager (`/image`, règles) : ce tour n'est jamais renvoyé au modèle de langage. */
