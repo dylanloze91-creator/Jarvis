@@ -73,9 +73,9 @@ describe('bibliothèque : les mesures de l’utilisateur', () => {
   it('une question à la fois, avec où poser le pied à coulisse', () => {
     const q = prochaineMesure(ESP, {})!;
     expect(q.champ).toBe('longueur');
-    expect(questionMesure(ESP, q, {})).toMatch(/^Je n’ai pas de cotes fiables pour ESP32-S3 .* il faut le mesurer au pied à coulisse \(9 mesures, une à la fois\)\. Mesure 1 sur 9 : la longueur de la carte, en millimètres\. Pour ça, pose les becs/);
+    expect(questionMesure(ESP, q, {})).toMatch(/^Je n’ai pas de cotes fiables pour ESP32-S3 .* il faut le mesurer au pied à coulisse \(5 mesures, une à la fois\)\. Mesure 1 sur 5 : la longueur de la carte, en millimètres\. Pour ça, pose les becs/);
     const m = ajouterMesure({}, ESP.id, 'longueur', 62).mesures;
-    expect(questionMesure(ESP, prochaineMesure(ESP, m)!, m)).toMatch(/^Mesure 2 sur 9 : la largeur de la carte/);
+    expect(questionMesure(ESP, prochaineMesure(ESP, m)!, m)).toMatch(/^Mesure 2 sur 5 : la largeur de la carte/);
     expect(prochaineMesure(PI, {})).toBeNull();
   });
 
@@ -211,10 +211,11 @@ describe('bibliothèque dans la discussion', () => {
     let mesures: MesuresComposants = {};
     let d = deciderAtelier(phrase, piece, { mesures });
     if (d.kind !== 'dire' || d.etat?.etape !== 'mesure') throw new Error(d.kind);
-    expect(d.texte).toMatch(/Mesure 1 sur 9 : la longueur de la carte/);
-    const reponses: Record<string, number> = { longueur: 62, largeur: 67, epaisseur: 1.6, trou_diametre: 3, entraxe_x: 55, entraxe_y: 60, trou_bord_x: 3.5, trou_bord_y: 3.5, hauteur_dessus: 15 };
+    expect(d.texte).toMatch(/Mesure 1 sur 5 : la longueur de la carte/);
+    // Les trous de fixation ne se demandent pas (sans eux, la carte tient dans des glissières).
+    const reponses: Record<string, number> = { longueur: 62, largeur: 67, epaisseur: 1.6, hauteur_dessus: 15, hauteur_dessous: 3 };
     let etat: AtelierEtat = d.etat;
-    for (let i = 0; i < 9; i += 1) {
+    for (let i = 0; i < 5; i += 1) {
       if (etat.etape !== 'mesure') throw new Error('pas une mesure');
       const r = deciderAtelier(`${reponses[etat.champ]} mm`, etat, { mesures });
       if (r.kind !== 'mesure') throw new Error(r.kind);
@@ -232,6 +233,6 @@ describe('bibliothèque dans la discussion', () => {
     if (d.kind !== 'dire' || d.etat?.etape !== 'mesure') throw new Error(d.kind);
     const r = deciderAtelier('900', d.etat);
     expect(r).toMatchObject({ kind: 'dire', etat: d.etat });
-    if (r.kind === 'dire') expect(r.texte).toMatch(/ça me paraît faux.*Mesure 1 sur 9/);
+    if (r.kind === 'dire') expect(r.texte).toMatch(/ça me paraît faux.*Mesure 1 sur 5/);
   });
 });

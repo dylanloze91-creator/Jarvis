@@ -21,6 +21,7 @@ import {
 } from '@jarvis/core';
 import { guardUrl } from '../tools/web.js';
 import type { DepsChercherCotes } from './chercherCotes.js';
+import { texteDuPdf } from './pdfTexte.js';
 import { preparerPresetsOrca, rendreImage, rendreStl, rendreVues, trancher, trouverOpenscad, trouverOrca } from './programmes.js';
 import { nomSimple, tourAtelier, type AtelierEntree, type AtelierSortie } from './tourAtelier.js';
 
@@ -63,7 +64,16 @@ export function rechercheCotesPC(getSettings: () => Settings, searchRegistry: Se
       const a = assessHtml(fetched.text, page.text);
       if (a.antiBot || a.invalidHtml || a.empty || !page.text) return null;
       // Le titre en première ligne : il dit souvent de quelle carte parle la page.
-      return page.title ? `${page.title}\n${page.text}` : page.text;
+      return { texte: page.title ? `${page.title}\n${page.text}` : page.text, liens: liensVersPlans(fetched.text, fetched.url ?? url) };
+    },
+    lirePlan: async (url, signal) => {
+      const octets = await telecharger(url, signal);
+      if (!octets) return null;
+      const debut = Buffer.from(octets.subarray(0, 1024)).toString('latin1');
+      if (debut.includes('%PDF')) return { genre: 'pdf', texte: texteDuPdf(octets) };
+      // Un DXF est du texte : « 0 SECTION » au début.
+      if (/^\s*0\s*\r?\n\s*SECTION/.test(debut)) return { genre: 'dxf', texte: Buffer.from(octets).toString('utf8') };
+      return null;
     },
     modele: async (systeme, demande, signal) => {
       const settings = getSettings();
@@ -89,6 +99,78 @@ export function rechercheCotesPC(getSettings: () => Settings, searchRegistry: Se
       return payload.message?.content ?? '';
     },
   };
+}
+
+/** Les liens d'une page vers un DXF ou un PDF, avec le texte du lien (adresses complètes). */
+export function liensVersPlans(html: string, base: string): { url: string; texte: string }[] {
+  const out: { url: string; texte: string }[] = [];
+  for (const m of html.matchAll(/<a\b[^>]*\bhref\s*=\s*["']([^"'#]+)["'][^>]*>([\s\S]*?)<\/a>/gi)) {
+    if (!/\.(?:dxf|pdf)(?:$|\?)/i.test(m[1]!)) continue;
+    try {
+      const url = new URL(m[1]!.replace(/&amp;/g, '&'), base).toString();
+      if (!/^https?:/.test(url) || out.some((x) => x.url === url)) continue;
+      out.push({ url, texte: m[2]!.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120) });
+    } catch {
+      /* adresse illisible : ignorée */
+    }
+    if (out.length >= 40) break;
+  }
+  return out;
+}
+
+/** Plans lus au plus : 8 Mo, 20 secondes. */
+const PLAN_MAX_OCTETS = 8_000_000;
+
+/**
+ * Télécharge un plan public (DXF, PDF) : mêmes gardes que `fetch_page` à chaque redirection (pas
+ * d'adresse privée), taille et durée bornées. `null` si refusé, trop gros ou en échec.
+ */
+async function telecharger(url: string, signal?: AbortSignal): Promise<Uint8Array | null> {
+  let courant = url;
+  const controle = new AbortController();
+  const minuterie = setTimeout(() => controle.abort(), 20_000);
+  const surAbandon = () => controle.abort();
+  signal?.addEventListener('abort', surAbandon, { once: true });
+  try {
+    for (let saut = 0; saut <= 5; saut += 1) {
+      const garde = await guardUrl(courant);
+      if (!garde.allowed) return null;
+      const res = await fetch(courant, { redirect: 'manual', signal: controle.signal, headers: { 'user-agent': 'Mozilla/5.0 (compatible; Jarvis; assistant personnel)' } });
+      if (res.status >= 300 && res.status < 400) {
+        const location = res.headers.get('location');
+        await res.body?.cancel().catch(() => undefined);
+        if (!location) return null;
+        courant = new URL(location, courant).toString();
+        continue;
+      }
+      if (!res.ok || !res.body) return null;
+      const annonce = Number(res.headers.get('content-length') ?? 0);
+      if (annonce > PLAN_MAX_OCTETS) {
+        await res.body.cancel().catch(() => undefined);
+        return null;
+      }
+      const morceaux: Uint8Array[] = [];
+      let total = 0;
+      const lecteur = res.body.getReader();
+      for (;;) {
+        const { done, value } = await lecteur.read();
+        if (done) break;
+        total += value.length;
+        if (total > PLAN_MAX_OCTETS) {
+          await lecteur.cancel().catch(() => undefined);
+          return null;
+        }
+        morceaux.push(value);
+      }
+      return new Uint8Array(Buffer.concat(morceaux));
+    }
+    return null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(minuterie);
+    signal?.removeEventListener('abort', surAbandon);
+  }
 }
 
 export function creerAtelierPC(

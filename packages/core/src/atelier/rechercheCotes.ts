@@ -21,7 +21,12 @@ export const CHAMPS_EN_ANGLAIS: Record<string, string> = {
   entraxe_y: 'distance between mounting hole centers along the width (in mm)',
   trou_bord_x: 'distance from a mounting hole center to the nearest short edge (in mm)',
   trou_bord_y: 'distance from a mounting hole center to the nearest long edge (in mm)',
-  hauteur_dessus: 'height of the tallest part above the top of the PCB (in mm)',
+  hauteur_dessus: 'height of the tallest part above the top of the PCB (in mm); for a display module: thickness of the glass panel above the PCB',
+  hauteur_dessous: 'height of what sticks out under the PCB: pin headers, solder joints (in mm)',
+  fenetre_largeur: 'display visual area (or active area) width, along the pin row (in mm)',
+  fenetre_hauteur: 'display visual area (or active area) height (in mm)',
+  fenetre_bord_x: 'distance from the left edge of the PCB to the left edge of the visual area (in mm)',
+  fenetre_bord_y: 'distance from the PCB edge with the pins to the nearest edge of the visual area (in mm)',
 };
 
 /** Une lecture proposée par le modèle : un champ, un nombre en mm, la phrase de la page. */
@@ -33,9 +38,30 @@ export interface LectureProposee {
 
 /** Les requêtes de recherche pour un produit (3 au plus, de la plus utile à la moins utile). */
 export function requetesCotes(produit: string): string[] {
-  const p = produit.replace(/https?:\/\/\S+/g, ' ').replace(/\s+/g, ' ').trim();
+  const p = produitEnAnglais(produit.replace(/https?:\/\/\S+/g, ' ')).replace(/\s+/g, ' ').trim();
   if (!p) return [];
-  return [`${p} dimensions mm`, `${p} mounting holes mm`, `${p} datasheet board size`];
+  // La dernière vise les plans des fabricants (DXF, PDF) : trous de fixation et place des prises.
+  return [`${p} dimensions mm`, `${p} mounting holes mm`, `${p} datasheet board size`, `${p} dxf mechanical drawing`];
+}
+
+/**
+ * La référence dite en français, en mots que les fiches anglaises emploient (« écran OLED 1,3 pouce
+ * I2C » → « OLED display 1.3 inch I2C ») : les recherches et le contrôle des pages en ont besoin.
+ */
+export function produitEnAnglais(produit: string): string {
+  return produit
+    .replace(/(\d),(\d)/g, '$1.$2')
+    .replace(/(^|[^\p{L}])(?:[ée]cran|afficheur)(?!\p{L})/giu, '$1display')
+    .replace(/\bpouces?\b/gi, 'inch')
+    .replace(/\bmicro(?:phone)?\b(?=.*\bi2s\b)/gi, 'microphone')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/** La taille d'un écran dite dans la référence (« 1,3 pouce », « 0.96" ») : une page doit dire la même. */
+function tailleDite(texte: string): string | null {
+  const m = /(\d+[.,]\d+)\s*(?:pouces?|inch(?:es)?|"|”|''|in\b)/i.exec(texte);
+  return m ? m[1]!.replace(',', '.') : null;
 }
 
 /** Les adresses écrites dans la réponse de l'utilisateur (« voilà le lien : https://… »). */
@@ -79,7 +105,7 @@ export function consigneLectureCotes(): string {
 
 export function demandeLectureCotes(produit: string, champs: readonly string[], url: string, passages: string): string {
   const liste = champs.map((c) => `- ${c}: ${CHAMPS_EN_ANGLAIS[c] ?? c}`).join('\n');
-  return `Product: ${produit}\nPage: ${url}\nFields wanted:\n${liste}\n\nExcerpt:\n"""\n${passages}\n"""`;
+  return `Product: ${produitEnAnglais(produit)}\nPage: ${url}\nFields wanted:\n${liste}\n\nExcerpt:\n"""\n${passages}\n"""`;
 }
 
 /** Lecture tolérante de la réponse du modèle (bloc ```json, texte autour). */
@@ -133,6 +159,7 @@ function nombresEnMm(s: string): number[] {
 export function verifierLectureCote(idComposant: string, texteLu: string, l: LectureProposee): string | null {
   const q: QuestionMesure | undefined = composant(idComposant)?.aMesurer?.find((x) => x.champ === l.champ);
   if (!q) return 'champ inconnu';
+  if (q.minMesure !== undefined && l.valeur < q.minMesure) return 'hors bornes';
   if (!(l.valeur >= q.min && l.valeur <= q.max)) return 'hors bornes';
   const extrait = comparable(l.extrait);
   if (extrait.length < 4 || extrait.length > 300) return 'extrait trop court ou trop long';
@@ -146,6 +173,7 @@ export { siteDeSource } from './composants.js';
 const MOTS_VIDES = new Set([
   'the', 'and', 'for', 'with', 'board', 'module', 'carte', 'avec', 'pour', 'des', 'les', 'une', 'version', 'broches', 'pins', 'pin',
   'dimensions', 'dimension', 'taille', 'size', 'kit', 'officiel', 'officielle', 'original', 'originale', 'sur',
+  'display', 'ecran', 'afficheur', 'inch', 'pouce', 'pouces',
 ]);
 
 function sansAccents(s: string): string {
@@ -154,7 +182,7 @@ function sansAccents(s: string): string {
 
 /** Les mots qui désignent le produit (« ESP32-S3-DevKitC-1 » → esp32, devkitc). */
 export function motsDuProduit(produit: string): string[] {
-  const mots = sansAccents(produit.replace(/https?:\/\/\S+/g, ' '))
+  const mots = sansAccents(produitEnAnglais(produit.replace(/https?:\/\/\S+/g, ' ')))
     .split(/[^a-z0-9]+/)
     .filter((m) => m.length >= 3 && /[a-z]/.test(m) && !MOTS_VIDES.has(m));
   return [...new Set(mots)];
@@ -166,8 +194,11 @@ export function motsDuProduit(produit: string): string[] {
  */
 export function pageDuProduit(texte: string, produit: string): boolean {
   const mots = motsDuProduit(produit);
+  // Une taille d'écran dite (« 1,3 pouce ») : la page doit dire la même (une page sur l'écran de 0,96 ne sert pas).
+  const taille = tailleDite(produitEnAnglais(produit));
+  if (taille && tailleDite(texte.replace(/(\d),(\d)/g, '$1.$2')) !== taille && !new RegExp(`${taille.replace('.', '[.,]')}\\s*(?:pouces?|inch|"|”|''|in\\b)`, 'i').test(texte)) return false;
   if (mots.length === 0) return true;
-  const page = sansAccents(texte).replace(/[^a-z0-9]+/g, '');
+  const page = sansAccents(texte).replace(/\biic\b/g, 'i2c').replace(/[^a-z0-9]+/g, '');
   return mots.filter((m) => page.includes(m)).length >= Math.ceil((mots.length * 2) / 3);
 }
 

@@ -68,7 +68,7 @@ describe('cotes trouvées ailleurs', () => {
 
   it('toutes les cotes de l’ESP32 trouvées et sûres : plus de question au pied à coulisse', () => {
     const valeurs: Record<string, number> = {
-      longueur: 63, largeur: 28, epaisseur: 1.6, trou_diametre: 3.2, entraxe_x: 57, entraxe_y: 22.6, trou_bord_x: 3, trou_bord_y: 2.7, hauteur_dessus: 12,
+      longueur: 63, largeur: 28, epaisseur: 1.6, trou_diametre: 3.2, entraxe_x: 57, entraxe_y: 22.6, trou_bord_x: 3, trou_bord_y: 2.7, hauteur_dessus: 12, hauteur_dessous: 3,
     };
     let cotes: CotesTrouvees = {};
     for (const [champ, v] of Object.entries(valeurs)) cotes = ajoute(ajoute(cotes, champ, v, A), champ, v, B);

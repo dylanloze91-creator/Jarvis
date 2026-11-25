@@ -179,16 +179,16 @@ describe('atelier dans la discussion, côté PC', () => {
     const d = deps();
     await dire(messages, 'Fais-moi une boîte de 120 par 100 par 40', d);
     const q1 = await dire(messages, 'mets des plots pour l’ESP32', d);
-    expect(q1?.texte).toMatch(/Mesure 1 sur 9 : la longueur de la carte/);
+    expect(q1?.texte).toMatch(/Mesure 1 sur 5 : la longueur de la carte/);
     expect(q1?.etat).toMatchObject({ etape: 'mesure', composant: 'esp32_s3_devkitc_1_borniers', champ: 'longueur' });
     const q2 = await dire(messages, '62', d);
-    expect(q2?.texte).toMatch(/^Mesure 2 sur 9 : la largeur de la carte/);
+    expect(q2?.texte).toMatch(/^Mesure 2 sur 5 : la largeur de la carte/);
     const fichier = JSON.parse(await readFile(join(racine, 'composants-mesures.json'), 'utf8'));
     expect(fichier.composants).toEqual({ esp32_s3_devkitc_1_borniers: { longueur: 62 } });
     // Une autre discussion le lendemain : la mesure déjà donnée n'est pas redemandée.
     const autre: ChatMessage[] = [];
     await dire(autre, 'Fais-moi une boîte de 120 par 100 par 40', d);
-    expect((await dire(autre, 'mets des plots pour l’ESP32', d))?.texte).toMatch(/^Mesure 2 sur 9/);
+    expect((await dire(autre, 'mets des plots pour l’ESP32', d))?.texte).toMatch(/^Mesure 2 sur 5/);
   });
 
   it('sans OpenSCAD : dit, rien inventé', async () => {

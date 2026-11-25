@@ -15,7 +15,7 @@
  * Pur : aucune dépendance, aucun accès disque.
  */
 import type { Valeurs } from './gabarits.js';
-import { composant, composantNomme, geometrieCarte, poserCarte, prochaineMesure, PLOT_CARTE, questionMesure, type MesuresComposant, type MesuresComposants, type Paroi } from './composants.js';
+import { composant, geometrieCarte, produitsNommes, geometrieEcran, poserCarte, prochaineMesure, questionMesure, type CartePosee, type EcranGeometrie, type MesuresComposant, type MesuresComposants, type Paroi } from './composants.js';
 import { AVANT_TROU, choisirVisM3, INSERT_M3, PAROI_INSERT_MIN, VIS_M3_FRAISEE, VIS_M3_PASSAGE, type VisCarte } from './visserie.js';
 
 export type GenreAjout = 'bossages' | 'plots' | 'nervure' | 'rebord' | 'emboitement' | 'composant';
@@ -44,6 +44,8 @@ export interface Ajout {
   ports?: Paroi;
   /** Mesures de l'utilisateur pour un composant « à mesurer », recopiées à la pose (la pièce reste juste même si le fichier change). */
   mesures?: MesuresComposant;
+  /** La référence cherchée pour ce composant (« ESP32-S3 DevKitC-1 ») : c'est elle que la fiche nomme. */
+  produit?: string;
 }
 
 /** Rebord intérieur : largeur d'appui et épaisseur, chanfrein à 45° dessous (sans support). */
@@ -130,7 +132,10 @@ export function direAjout(a: Ajout): string {
       return `un couvercle qui s’emboîte (lèvre de ${mm(LEVRE_EP)} mm, ${mm(LEVRE_JEU)} mm de jeu par côté)`;
     case 'composant': {
       const c = a.composant ? composant(a.composant) : undefined;
-      return `${c ? `le ${c.nom}` : 'une carte'} sur ses plots, prises ${PAROI_TEXTE[a.ports ?? 'arriere']}`;
+      const nom = a.produit ?? c?.nom;
+      if (c?.ecran) return `${/^[eé]cran\b/i.test(nom ?? '') ? 'l’' : 'l’écran '}${nom} sous le couvercle, derrière une fenêtre`;
+      const tenue = c?.carte && geometrieCarte(c, a.mesures ? { [c.id]: a.mesures } : {})?.trous.length === 0 ? 'dans ses glissières' : 'sur ses plots';
+      return `${nom ? `le ${nom}` : 'une carte'} ${tenue}, prises ${PAROI_TEXTE[a.ports ?? 'arriere']}`;
     }
   }
 }
@@ -394,29 +399,170 @@ export function placerAjouts(gabaritId: string, v: Valeurs): AjoutsPlaces {
       case 'emboitement':
         if (!b.couvercle) out.erreurs.push('Cette boîte n’a pas de couvercle : demande-moi « une boîte avec couvercle ».');
         break;
-      case 'composant': {
-        const c = a.composant ? composant(a.composant) : undefined;
-        const g = c ? geometrieCarte(c, a.mesures ? { [c.id]: a.mesures } : {}) : null;
-        if (!c || !g) {
-          out.erreurs.push(`${quoi} : je n’ai pas ses cotes.`);
-          continue;
-        }
-        const pose = poserCarte(`le ${c.nom}`, g, { L, W, H, e, f: fond, zHaut: Math.min(zHaut, zLevre) }, a.ports ?? 'arriere');
-        if (pose.erreurs.length) {
-          out.erreurs.push(...pose.erreurs);
-          continue;
-        }
-        out.plus.push(...pose.plus.map((x) => x.scad));
-        out.moins.push(...pose.moins.map((x) => x.scad));
-        const vis = g.trous[0]?.vis ?? 'M2.5';
-        const longueur = Math.round(g.epaisseur + PLOT_CARTE - 0.6 + 0.1);
-        out.notes.push(`${majuscule(c.nom)} : ${g.trous.length} vis autotaraudeuses ${vis.replace('.', ',')} × ${longueur} (${mm(longueur - g.epaisseur)} mm dans les plots).`);
-        out.notes.push(...pose.incertitudes);
+      case 'composant':
+        // Posés ensemble après la boucle : les cartes côte à côte, les écrans sous le couvercle.
         break;
-      }
     }
   }
+  poserComposants(b, ajouts, { zHaut: Math.min(zHaut, zLevre), plat: couv.plat, levre: couv.levre, jeu: couv.jeu }, out);
   return out;
+}
+
+/** Écart entre deux cartes posées côte à côte le long d'une paroi (mm). */
+const ECART_CARTES = 3;
+/** Cadre d'un écran sans trous : épaisseur du bord et jeu autour de la carte. */
+const CADRE_EP = 1.2;
+const CADRE_JEU = 0.3;
+/** Marge de la fenêtre autour de la zone allumée (mm, par côté). */
+const MARGE_FENETRE = 0.5;
+/** Plots d'un écran sous le couvercle (vis M2). */
+const PLOT_ECRAN = 5;
+
+interface Couv {
+  zHaut: number;
+  plat: boolean;
+  levre: number;
+  jeu: number;
+}
+
+type Emprise = { x: [number, number]; y: [number, number] };
+
+function chevauche(a: Emprise, b: Emprise): boolean {
+  return a.x[0] < b.x[1] - 1e-6 && b.x[0] < a.x[1] - 1e-6 && a.y[0] < b.y[1] - 1e-6 && b.y[0] < a.y[1] - 1e-6;
+}
+
+/**
+ * Les composants posés dans la boîte : les cartes au fond, côte à côte le long de leur paroi de
+ * prises (plots ou glissières), les écrans sous le couvercle, en rangée au milieu, chacun derrière sa
+ * fenêtre. Ce qui ne tient pas est dit avec les cotes qu'il faudrait (pour proposer d'agrandir).
+ */
+function poserComposants(b: Boite, ajouts: readonly Ajout[], couv: Couv, out: AjoutsPlaces): void {
+  const { L, W, H, e, f: fond } = b;
+  const cartes: { nom: string; pose: CartePosee; haut: number }[] = [];
+  const decalages = new Map<Paroi, number>();
+  const ecrans: { nom: string; g: EcranGeometrie | null }[] = [];
+  for (const a of ajouts) {
+    if (a.genre !== 'composant') continue;
+    const c = a.composant ? composant(a.composant) : undefined;
+    const quoi = majuscule(direAjout(a));
+    const nomC = a.produit ?? c?.nom ?? '';
+    if (c?.ecran) {
+      ecrans.push({ nom: /^[eé]cran\b/i.test(nomC) ? `l’${nomC}` : `l’écran ${nomC}`, g: geometrieEcran(c, a.mesures ? { [c.id]: a.mesures } : {}) });
+      continue;
+    }
+    const g = c ? geometrieCarte(c, a.mesures ? { [c.id]: a.mesures } : {}) : null;
+    if (!c || !g) {
+      out.erreurs.push(`${quoi} : je n’ai pas ses cotes.`);
+      continue;
+    }
+    const ports = a.ports ?? 'arriere';
+    const hote = { L, W, H, e, f: fond, zHaut: couv.zHaut };
+    const seule = ajouts.filter((x) => x.genre === 'composant' && (x.ports ?? 'arriere') === ports && !composant(x.composant ?? '')?.ecran).length === 1;
+    let decalage = decalages.get(ports) ?? 0;
+    let pose = poserCarte(`le ${nomC}`, g, hote, ports, { decalage, prisesDemandees: a.ports !== undefined });
+    // Seule le long de sa paroi : au milieu de la place libre (la boîte peut être plus large pour un écran).
+    if (seule && !pose.erreurs.length) {
+      const N = { arriere: 'x+', avant: 'x-', droite: 'y-', gauche: 'y+' }[ports];
+      const libre = N === 'x+' ? pose.emprise.x[0] - e : N === 'x-' ? L - e - pose.emprise.x[1] : N === 'y+' ? pose.emprise.y[0] - e : W - e - pose.emprise.y[1];
+      if (libre > 1) {
+        decalage = libre / 2;
+        pose = poserCarte(`le ${nomC}`, g, hote, ports, { decalage, prisesDemandees: a.ports !== undefined });
+      }
+    }
+    if (pose.erreurs.length) {
+      out.erreurs.push(...pose.erreurs);
+      continue;
+    }
+    // La place prise le long de la paroi des prises, pour la carte suivante.
+    const long = ports === 'arriere' || ports === 'avant' ? pose.emprise.x[1] - pose.emprise.x[0] : pose.emprise.y[1] - pose.emprise.y[0];
+    decalages.set(ports, decalage + long + ECART_CARTES);
+    for (const autre of cartes) {
+      if (chevauche(autre.pose.emprise, pose.emprise)) out.erreurs.push(`${majuscule(autre.nom)} et le ${nomC} se touchent au fond : mets leurs prises sur deux parois différentes, ou agrandis la boîte.`);
+    }
+    cartes.push({ nom: `le ${nomC}`, pose, haut: pose.zDessus + g.hauteurLibre });
+    out.plus.push(...pose.plus.map((x) => x.scad));
+    out.moins.push(...pose.moins.map((x) => x.scad));
+    if (pose.tenue === 'plots') {
+      const vis = g.trous[0]?.vis ?? 'M2.5';
+      const longueur = Math.round(g.epaisseur + (pose.zDessous - fond) - 0.6 + 0.1);
+      out.notes.push(`${majuscule(nomC)} : ${g.trous.length} vis autotaraudeuses ${vis.replace('.', ',')} × ${longueur} (${mm(longueur - g.epaisseur)} mm dans les plots).`);
+    } else out.notes.push(`${majuscule(nomC)} : glissée dans ses glissières, sans vis (appuie au milieu pour passer les crochets).`);
+    out.notes.push(...pose.incertitudes);
+  }
+  if (!ecrans.length) return;
+
+  // Les écrans : sous le couvercle dessiné (ou posé sur le rebord).
+  if (!b.couvercle) {
+    out.erreurs.push('Un écran se pose sous le couvercle : il faut une boîte avec couvercle.');
+    return;
+  }
+  for (const { nom, g } of ecrans) if (!g) out.erreurs.push(`${majuscule(nom)} : je n’ai pas ses cotes.`);
+  const prets = ecrans.filter((x): x is { nom: string; g: EcranGeometrie } => Boolean(x.g));
+  if (!prets.length) return;
+  // Zone libre sous le couvercle : à l'intérieur de sa lèvre (ou du rebord qui le porte).
+  const bordLibre = couv.plat ? e + REBORD_LARGEUR + 0.5 : e + couv.jeu + couv.levre + 0.5;
+  const autour = CADRE_JEU + CADRE_EP;
+  const total = prets.reduce((somme, { g }) => somme + g.longueur + 2 * autour, 0) + ECART_CARTES * (prets.length - 1);
+  const profond = Math.max(...prets.map(({ g }) => g.largeur + 2 * autour));
+  if (total > L - 2 * bordLibre + 1e-6 || profond > W - 2 * bordLibre + 1e-6) {
+    out.erreurs.push(
+      `${majuscule(prets.map((p) => p.nom).join(' et '))} ne tient pas sous le couvercle : il faut ${mm(Math.max(L, total + 2 * bordLibre))} × ${mm(Math.max(W, profond + 2 * bordLibre))} mm au moins (boîte de ${mm(L)} × ${mm(W)} mm).`,
+    );
+    return;
+  }
+  let x = (L - total) / 2 + autour;
+  for (const p of prets) {
+    const pose = { nom: p.nom, x0: x, y0: (W - p.g.largeur) / 2, g: p.g };
+    x += p.g.longueur + 2 * autour + ECART_CARTES;
+    // Ce qui pend sous le couvercle (verre, carte, broches et fils) ne doit pas toucher les cartes du fond.
+    const bas = p.g.hauteurDessus + p.g.epaisseur + p.g.hauteurDessous;
+    const emprise: Emprise = { x: [pose.x0 - autour, pose.x0 + p.g.longueur + autour], y: [pose.y0 - autour, pose.y0 + p.g.largeur + autour] };
+    const dessous = cartes.filter((c) => chevauche(c.pose.emprise, emprise));
+    const besoin = dessous.length ? Math.max(...dessous.map((c) => c.haut)) - fond + 1 + bas : bas + 1;
+    if (besoin > H - fond + 1e-6) {
+      const quoi = dessous.length ? `${dessous.map((c) => c.nom).join(' et ')} au fond, 1 mm, puis ${mm(bas)} mm pour l’écran, ses broches et ses fils` : `${mm(bas)} mm pour l’écran, ses broches et ses fils, plus 1 mm`;
+      out.erreurs.push(`${majuscule(p.nom)} : la boîte est trop basse. Il faut ${mm(besoin)} mm au-dessus du fond (${quoi}), il y en a ${mm(H - fond)}.`);
+      continue;
+    }
+    dessinerEcran(b, pose, out);
+  }
+}
+
+/**
+ * Un écran sous le couvercle, dessiné sur le couvercle imprimé à côté (retourné) : la fenêtre à
+ * travers la plaque, puis des plots vissés (trous connus) ou un cadre (sans trous).
+ */
+function dessinerEcran(b: Boite, p: { nom: string; x0: number; y0: number; g: EcranGeometrie }, out: AjoutsPlaces): void {
+  const { g, x0, y0 } = p;
+  // Une profondeur sous le couvercle → hauteur sur le couvercle imprimé (plaque de 0 à t, dessous en t).
+  const z = (profondeur: number) => b.t + profondeur;
+  const rect = (xa: number, xb: number, ya: number, yb: number, za: number, zb: number) => {
+    const [Xa, Ya] = versCouvercle(b, xa, ya);
+    const [Xb, Yb] = versCouvercle(b, xb, yb);
+    return cube(Math.min(Xa, Xb), Math.min(Ya, Yb), za, Math.max(Xa, Xb), Math.max(Ya, Yb), zb);
+  };
+  // La fenêtre : la zone allumée, plus une marge, à travers la plaque du couvercle.
+  out.moins.push(rect(x0 + g.fenetre.x[0] - MARGE_FENETRE, x0 + g.fenetre.x[1] + MARGE_FENETRE, y0 + g.fenetre.y[0] - MARGE_FENETRE, y0 + g.fenetre.y[1] + MARGE_FENETRE, -1, b.t + 0.01));
+  const verre = g.hauteurDessus;
+  const dos = verre + g.epaisseur;
+  if (g.trous.length) {
+    // Plots de la plaque jusqu'au dessous de la carte (le verre touche le couvercle), avant-trous M2.
+    for (const t of g.trous) {
+      const [X, Y] = versCouvercle(b, x0 + t.x, y0 + t.y);
+      out.plus.push(cylindre(X, Y, b.t - 0.01, z(verre), PLOT_ECRAN));
+      out.moins.push(cylindre(X, Y, b.t + 0.6, z(verre) + 0.01, AVANT_TROU.M2));
+    }
+    out.notes.push(`${majuscule(p.nom)} : ${g.trous.length} vis autotaraudeuses M2 × ${Math.max(3, Math.round(g.epaisseur + verre - 0.5))} dans les plots du couvercle.`);
+  } else {
+    // Un cadre autour de la carte, de la plaque jusqu'au dos de la carte.
+    const a = CADRE_JEU;
+    const c = CADRE_EP;
+    out.plus.push(
+      `difference() { ${rect(x0 - a - c, x0 + g.longueur + a + c, y0 - a - c, y0 + g.largeur + a + c, b.t - 0.01, z(dos))} ${rect(x0 - a, x0 + g.longueur + a, y0 - a, y0 + g.largeur + a, b.t - 1, z(dos) + 1)} }`,
+    );
+    out.notes.push(`${majuscule(p.nom)} : calé dans un cadre sous le couvercle ; mets un point de colle aux coins (ou du ruban adhésif double face) pour qu’il ne tombe pas quand tu ouvres.`);
+  }
+  out.notes.push(...g.incertitudes.map((i) => `${majuscule(p.nom)} — ${i}`));
 }
 
 function majuscule(texte: string): string {
@@ -535,9 +681,10 @@ function lireComposant(t: string, id: string): OpAjout {
   const c = composant(id)!;
   if (/\b(?:enleve|enlever|retire|retirer|supprime|supprimer|vire|sans)\b/.test(t)) return { action: 'enlever', genre: 'composant', champs: { genre: 'composant', composant: id } };
   const op: OpAjout = { action: 'ajouter', genre: 'composant', champs: { genre: 'composant', composant: id } };
-  const ports = lirePorts(t);
+  // Les prises sont celles des cartes ; un écran n'en a pas (il est sous le couvercle).
+  const ports = c.ecran ? undefined : lirePorts(t);
   if (ports) op.champs.ports = ports;
-  if (!c.carte) {
+  if (!c.carte && !c.ecran) {
     op.refus = `Je sais poser les cartes (${CARTES_CONNUES}) sur leurs plots. ${majuscule(c.nom)} se tient autrement (logement et retenues pour l’écran, chariot réglable pour la caméra) : ça viendra avec le boîtier électronique.`;
   }
   return op;
@@ -558,16 +705,20 @@ export function lireAjouts(t: string): { ops: OpAjout[]; reste: string } {
   const texte = ` ${t} `;
   // Un composant de la bibliothèque posé dans la boîte : « mets des plots pour un Raspberry Pi 5
   // dans le fond, ports vers l'arrière », « pose l'ESP32 dans la boîte ». Toute la phrase est pour lui.
-  const nomme = composantNomme(texte);
+  // Plusieurs composants dans la même phrase (« un boîtier pour un ESP32-S3 DevKitC-1 avec un écran
+  // OLED 1,3 pouce I2C ») : un ajout pour chacun.
+  const nommes = produitsNommes(texte);
   // « Rajoute un écran tactile » (essai du 24 novembre) : « rajoute » n'était pas lu.
-  if (nomme && (/\bplots?\b/.test(texte) || /\b(?:mets|met|mettre|pose|poser|place|placer|ajoute|ajouter|rajoute|rajouter|installe|installer|integre|integrer|monte|monter|fixe|fixer|range|enleve|retire|supprime)\b/.test(texte))) {
+  if (nommes.length && (/\bplots?\b/.test(texte) || /\b(?:mets|met|mettre|pose|poser|place|placer|ajoute|ajouter|rajoute|rajouter|installe|installer|integre|integrer|monte|monter|fixe|fixer|range|enleve|retire|supprime)\b/.test(texte))) {
     // Le reste de la phrase garde ses mesures (« une boîte de 120 par 80 par 40 avec un Raspberry Pi 5 ») ;
-    // le nom du composant (et son « 5 »), les prises et les plots partent.
-    const reste = texte
-      .replace(new RegExp(nomme.mots.source, 'g'), ' ')
+    // les références des composants (et leurs nombres : « 1,3 pouce »), les prises et les plots partent.
+    let reste = texte;
+    for (const n of [...nommes].sort((a, b) => b.debut - a.debut)) reste = `${reste.slice(0, n.debut)} ${reste.slice(n.fin)}`;
+    for (const n of nommes) reste = reste.replace(new RegExp(n.composant.mots.source, 'g'), ' ');
+    reste = reste
       .replace(/\b(?:ports?|prises?|connecteurs?|usb)\b(?: [a-z0-9]+){0,4}? (?:vers l |a l |sur l |de l |cote |du cote |sur le cote |vers la |a |sur la |sur |vers |au )?(?:arriere|avant|gauche|droite?|derriere|devant|fond)\b/, ' ')
       .replace(/\b(?:des |les |de |4 |quatre )?plots?\b/, ' ');
-    return { ops: [lireComposant(texte, nomme.id)], reste: reste.replace(/\s+/g, ' ').trim() };
+    return { ops: nommes.map((n) => lireComposant(texte, n.composant.id)), reste: reste.replace(/\s+/g, ' ').trim() };
   }
   const ops: OpAjout[] = [];
   let reste = texte;
@@ -617,6 +768,7 @@ export function appliquerAjouts(
   v: Valeurs,
   ops: readonly OpAjout[],
   mesures: MesuresComposants = {},
+  produits: Readonly<Record<string, string>> = {},
 ): { ajouts: Ajout[]; changements: string[]; erreurs: string[]; question?: { composant: string; champ: string; texte: string } } {
   const existants = ajoutsDe(v);
   const erreurs: string[] = [];
@@ -636,6 +788,7 @@ export function appliquerAjouts(
       const q = prochaineMesure(c, mesures);
       if (q) return { ajouts: [...existants], changements: [], erreurs: [], question: { composant: c.id, champ: q.champ, texte: questionMesure(c, q, mesures) } };
       if (c.etat === 'a_mesurer') op.champs.mesures = { ...(mesures[c.id] ?? {}) };
+      if (produits[c.id]) op.champs.produit = produits[c.id];
       // Un composant de chaque sorte : le reposer remplace l'ancien (autres prises, nouvelles mesures).
       const ancien = liste.filter((a) => a.genre === 'composant' && a.composant === c.id);
       liste = liste.filter((a) => !ancien.includes(a));

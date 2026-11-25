@@ -50,7 +50,10 @@ const REFERENCE = 'C:\\dev\\jarvis-data\\missions\\atelier-boitiers\\reference\\
  * ce ne sont pas des mesures de l'utilisateur, elles ne sont écrites nulle part.
  */
 const MESURES_ESSAI: MesuresComposants = {
-  esp32_s3_devkitc_1_borniers: { longueur: 62, largeur: 67, epaisseur: 1.6, trou_diametre: 3, entraxe_x: 55, entraxe_y: 60, trou_bord_x: 3.5, trou_bord_y: 3.5, hauteur_dessus: 15 },
+  esp32_s3_devkitc_1_borniers: { longueur: 62, largeur: 67, epaisseur: 1.6, trou_diametre: 3, entraxe_x: 55, entraxe_y: 60, trou_bord_x: 3.5, trou_bord_y: 3.5, hauteur_dessus: 15, hauteur_dessous: 3 },
+  // Sans trous de fixation : dans des glissières.
+  max98357a: { longueur: 20, largeur: 18, epaisseur: 1.6, hauteur_dessus: 5, hauteur_dessous: 3 },
+  oled_1_3_sh1106: { longueur: 35, largeur: 33, epaisseur: 1.2, hauteur_dessus: 1.6, hauteur_dessous: 10, fenetre_largeur: 30, fenetre_hauteur: 15, fenetre_bord_x: 2.5, fenetre_bord_y: 6 },
 };
 
 /** Variantes des gabarits (les mêmes cas limites que `atelier:rendre`). */
@@ -104,6 +107,9 @@ const PHRASES: [string, string[]][] = [
   ['composant-pi5-arriere', ['Fais-moi une boîte de 120 par 100 par 40', 'mets des plots pour un Raspberry Pi 5 dans le fond, ports vers l’arrière']],
   ['composant-pi5-droite', ['Fais-moi une boîte avec couvercle de 120 par 100 par 40', 'mets des plots pour un Raspberry Pi 5 dans le fond, ports vers la droite', 'fais que le couvercle s’emboîte']],
   ['composant-esp32-mesures-essai', ['Fais-moi une boîte de 120 par 100 par 40', 'mets des plots pour l’ESP32, ports vers l’avant']],
+  // Assemblage (étape 3) : une carte au fond et un écran sous le couvercle ; une carte sans trous dans ses glissières.
+  ['assemblage-esp32-oled', ['Fais-moi une boîte de 100 par 80 par 60 avec un ESP32 et un écran OLED, prises vers l’avant']],
+  ['glissieres-ampli', ['Fais-moi une boîte de 60 par 50 par 30', 'mets l’ampli MAX98357A dans le fond, prises vers l’arrière']],
 ];
 
 /** Les phrases qui doivent être refusées (pièce qui ne se perce pas…) : le refus n'est pas une casse. */

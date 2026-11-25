@@ -10,7 +10,7 @@
 import { estChoix, fabriquer, gabarit, GABARITS, type Gabarit, type Mesure, type MesureNombre, type Valeurs } from './gabarits.js';
 import { appliquerDecoupes, avecDecoupes, decoupesAffichees, decoupesDe, lireDecoupes, sePerce } from './decoupes.js';
 import { ajoutsAffiches, appliquerAjouts, avecAjouts, lireAjouts } from './ajouts.js';
-import { ajouterMesure, composant, composantNomme, lireMesure, prochaineMesure, questionMesure, type MesuresComposants } from './composants.js';
+import { ajouterMesure, composant, composantNomme, lireMesure, produitsNommes, prochaineMesure, questionMesure, referenceDite, type MesuresComposants } from './composants.js';
 import { liensDits } from './rechercheCotes.js';
 import { comprendre, lireMesures, lireReponse, plier, prochaineQuestion } from './lecture.js';
 
@@ -98,12 +98,22 @@ export type AtelierDecision =
    * Une mesure donnée : le PC la garde (`composants-mesures.json`), puis relit `reprise.texte` avec
    * `reprise.piece` et les mesures à jour (question suivante, ou la pièce).
    */
-  | { kind: 'mesure'; composant: string; champ: string; valeur: number; reprise: { texte: string; piece: Extract<AtelierEtat, { etape: 'piece' }> | null } }
+  | {
+      kind: 'mesure';
+      composant: string;
+      champ: string;
+      valeur: number;
+      /** « prends large » : une marge choisie sans la pièce, gardée comme telle (jamais comme une mesure). */
+      large?: boolean;
+      /** « prends large partout » : toutes les valeurs larges à garder (composants de la demande compris). */
+      larges?: { composant: string; champ: string; valeur: number }[];
+      reprise: { texte: string; piece: Extract<AtelierEtat, { etape: 'piece' }> | null };
+    }
   /**
    * Chercher sur Internet les cotes de `composant`, pour le produit dit par l'utilisateur (référence,
    * ou lien), puis relire `reprise.texte` avec `reprise.piece` et les cotes trouvées.
    */
-  | { kind: 'chercherCotes'; composant: string; produit: string; reprise: { texte: string; piece: Extract<AtelierEtat, { etape: 'piece' }> | null } };
+  | { kind: 'chercherCotes'; recherches: { composant: string; produit: string }[]; reprise: { texte: string; piece: Extract<AtelierEtat, { etape: 'piece' }> | null } };
 
 /** Ce que le PC sait en plus de la discussion : les mesures de composants données par l'utilisateur. */
 export interface ContexteAtelier {
@@ -113,7 +123,64 @@ export interface ContexteAtelier {
   rechercheCotes?: boolean;
   /** Composants déjà cherchés sur Internet (le pied à coulisse ne sert plus qu'à ce qui manque encore). */
   cherches?: readonly string[];
+  /**
+   * Le produit cherché pour chaque composant (référence dite par l'utilisateur), et si la recherche
+   * a regardé les plans des fabricants. Une autre référence dite, ou une recherche sans plans : on cherche.
+   */
+  produits?: Readonly<Record<string, { produit: string; plans?: boolean }>>;
 }
+
+const pli = (x: string) => plier(x).replace(/[^a-z0-9]+/g, ' ').trim();
+
+/**
+ * Avant de poser une question de mesure : les composants nommés avec leur référence précise
+ * (« ESP32-S3 DevKitC-1 », « écran OLED 1,3 pouce I2C ») et pas encore cherchés pour cette référence
+ * sont cherchés sur Internet tout de suite, tous ensemble (demande du 25 novembre : « il doit chercher
+ * seul, me demander seulement ce qu'il n'a pas trouvé »). Sinon, la question.
+ */
+function chercherOuDemander(text: string, q: { composant: string; champ: string; texte: string }, reprise: Reprise, contexte: ContexteAtelier): AtelierDecision {
+  if (contexte.rechercheCotes) {
+    const mesures = contexte.mesures ?? {};
+    const recherches: { composant: string; produit: string }[] = [];
+    for (const n of produitsNommes(plier(text))) {
+      const c = n.composant;
+      if (!n.precis || c.etat !== 'a_mesurer' || !c.aMesurer || recherches.some((r) => r.composant === c.id)) continue;
+      const deja = contexte.produits?.[c.id];
+      const produit = referenceDite(text, n.produit);
+      const memeProduit = deja && pli(deja.produit) === pli(produit) && deja.plans;
+      if (memeProduit || !prochaineMesure(c, mesures)) continue;
+      recherches.push({ composant: c.id, produit });
+    }
+    if (recherches.length) return { kind: 'chercherCotes', recherches, reprise };
+  }
+  return questionComposant(q, reprise, contexte);
+}
+
+/** Réponses « je n'ai pas la pièce » à une question de mesure. */
+const SANS_LA_PIECE = /\b(?:prends? (?:large|grand|de la marge)|mets? (?:large|de la marge)|large|je (?:ne )?sais pas|je (?:ne )?l ai pas|j ai pas la piece|aucune idee|pas la piece)\b/;
+/** « partout », « pour tout le reste » : la valeur large pour toutes les cotes qui manquent. */
+const PARTOUT = /\b(?:partout|pour tout|tout le reste|pour toutes?|a chaque fois|pour le reste)\b/;
+
+/**
+ * Les valeurs larges de toutes les cotes qui manquent encore, pour ce composant puis ceux de la
+ * demande (seulement les cotes d'encombrement qui en ont une).
+ */
+function valeursLarges(texte: string, idCourant: string, mesures: MesuresComposants): { composant: string; champ: string; valeur: number }[] {
+  const ids = [...new Set([idCourant, ...produitsNommes(` ${plier(texte)} `).map((n) => n.composant.id)])];
+  const out: { composant: string; champ: string; valeur: number }[] = [];
+  for (const id of ids) {
+    const c = composant(id);
+    if (!c?.aMesurer || c.etat !== 'a_mesurer') continue;
+    for (const q of c.aMesurer) {
+      if (q.facultatif || q.large === undefined || typeof mesures[id]?.[q.champ] === 'number') continue;
+      out.push({ composant: id, champ: q.champ, valeur: q.large });
+    }
+  }
+  return out;
+}
+
+/** Source d'une valeur large choisie sans la pièce : jamais confondue avec une mesure. */
+export const SOURCE_LARGE = 'valeur large choisie par l’utilisateur, sans la pièce';
 
 type Reprise = { texte: string; piece: Extract<AtelierEtat, { etape: 'piece' }> | null };
 
@@ -304,6 +371,8 @@ export function piecesConnues(): string {
 export function demandePiece(
   text: string,
   mesures: MesuresComposants = {},
+  /** La référence cherchée pour chaque composant (« ESP32-S3 DevKitC-1 »), pour la dire dans la fiche. */
+  produits: Readonly<Record<string, string>> = {},
 ): { gabarit: Gabarit | null; valeurs: Valeurs; erreurs?: string[]; question?: { composant: string; champ: string; texte: string } } | null {
   // « Et un boîtier pour un ESP32 », « aussi une boîte… » : la suite d'une discussion (essai du 24 novembre).
   const t = plier(text)
@@ -315,7 +384,7 @@ export function demandePiece(
   // Sans verbe, il faut une cote (« une boîte de 100 par 60 ») ou une carte connue (« un boîtier
   // pour un ESP32 ») : « une boîte de 6 œufs » n'est pas une demande.
   const sansVerbe =
-    !verbe && demande.gabarit !== null && commenceParLaPiece(t, demande.gabarit) && (COTE.test(t) || Boolean(carte && composant(carte.id)?.carte));
+    !verbe && demande.gabarit !== null && commenceParLaPiece(t, demande.gabarit) && (COTE.test(t) || Boolean(carte && (composant(carte.id)?.carte || composant(carte.id)?.ecran)));
   if (!verbe && !sansVerbe) return null;
   // « Dessine une version adaptée à l'ESP32 », « fais la même pour un Arduino » : une boîte pour
   // cette carte (essai du 24 novembre : la phrase partait à l'équipe Code, qui refusait de dessiner).
@@ -326,12 +395,13 @@ export function demandePiece(
   if (gDemande) {
     // « … avec un trou de 8 à l'arrière » : les découpes sont lues à part, et retirées de la
     // phrase avant de lire les mesures (le 8 n'est pas une longueur).
-    const g = gDemande;
     // « … avec quatre bossages à insert M3 » : les ajouts de matière aussi, lus avant les découpes
     // (« l'avant-trou » des plots n'est pas un trou à percer).
     // « un boîtier pour mon Raspberry Pi 5 » : la carte nommée va sur ses plots, même sans le mot.
-    const nommee = ['boite', 'boite_couvercle'].includes(g.id) ? composantNomme(` ${plier(text)} `) : null;
-    const carteSansPlots = nommee && composant(nommee.id)?.carte && !/\bplots?\b/.test(plier(text));
+    const posables = ['boite', 'boite_couvercle'].includes(gDemande.id) ? produitsNommes(` ${plier(text)} `).map((n) => n.composant).filter((c) => c.carte || c.ecran) : [];
+    // Un écran se pose sous un couvercle : la boîte en prend un.
+    const g = gDemande.id === 'boite' && posables.some((c) => c.ecran) ? (gabarit('boite_couvercle') ?? gDemande) : gDemande;
+    const carteSansPlots = posables.length > 0 && !/\bplots?\b/.test(plier(text));
     const matiere = lireAjouts(carteSansPlots ? `${plier(text)} plots` : plier(text));
     const opsMatiere = matiere.ops.filter((op) => op.action !== 'enlever');
     const lu = lireDecoupes(matiere.reste, { exigerFace: aSonTrou(g) });
@@ -339,7 +409,7 @@ export function demandePiece(
     if (!ajouts.length && !opsMatiere.length) return { gabarit: g, valeurs: demande.valeurs };
     let valeurs = lireMesures(lu.reste, g).valeurs;
     if (opsMatiere.length) {
-      const m = appliquerAjouts(g, valeurs, opsMatiere, mesures);
+      const m = appliquerAjouts(g, valeurs, opsMatiere, mesures, produits);
       if (m.question) return { gabarit: g, valeurs, question: m.question };
       if (m.erreurs.length) return { gabarit: g, valeurs, erreurs: m.erreurs };
       valeurs = avecAjouts(valeurs, m.ajouts);
@@ -596,7 +666,7 @@ export function agrandirPourTenir(
   const H = Number(valeurs.hauteur ?? 30);
   let change = false;
   for (const erreur of erreurs) {
-    const fond = /ne tient pas dans le fond : il faut ([\d,.]+) × ([\d,.]+) mm au moins/.exec(erreur);
+    const fond = /ne tient pas (?:dans le fond|sous le couvercle) : il faut ([\d,.]+) × ([\d,.]+) mm au moins/.exec(erreur);
     if (fond) {
       nouvelles.longueur = Math.max(L, Math.ceil(lireMm(fond[1]!)));
       nouvelles.largeur = Math.max(W, Math.ceil(lireMm(fond[2]!)));
@@ -633,7 +703,7 @@ function taillePourCarte(g: Gabarit, valeurs: Valeurs): AtelierDecision | null {
   const essai: Valeurs = { ...valeurs };
   for (const id of COTES_BOITE) if (!(id in essai)) essai[id] = 20;
   let v = essai;
-  for (let i = 0; i < 3; i += 1) {
+  for (let i = 0; i < 6; i += 1) {
     const p = fabriquer(g, v);
     if (p.ok) break;
     const plus = agrandirPourTenir(g, v, p.erreurs, true);
@@ -713,7 +783,7 @@ export function deciderAtelier(text: string, precedentDonne: AtelierEtat | null,
       if (q) return { kind: 'dire', texte: questionMesure(c, q, mesures), etat: { etape: 'mesure', composant: c.id, champ: q.champ, reprise: precedent.reprise } };
     }
     const produit = c ? lireProduit(text, t, c.nom) : null;
-    if (c && produit) return { kind: 'chercherCotes', composant: c.id, produit, reprise: precedent.reprise };
+    if (c && produit) return { kind: 'chercherCotes', recherches: [{ composant: c.id, produit }], reprise: precedent.reprise };
     // Autre chose : la phrase suit son chemin (la question reste posée une fois).
   }
 
@@ -721,6 +791,23 @@ export function deciderAtelier(text: string, precedentDonne: AtelierEtat | null,
   if (precedent?.etape === 'mesure') {
     const c = composant(precedent.composant);
     if (ANNULER.test(t)) return { kind: 'dire', texte: "D'accord, je laisse tomber. Les mesures déjà données sont gardées." };
+    // « cherche avec ce lien : https://… » : la page ou le plan donné est lu pour ce composant.
+    if (c && liensDits(text).length) return { kind: 'chercherCotes', recherches: [{ composant: c.id, produit: text.trim() }], reprise: precedent.reprise };
+    const q = c?.aMesurer?.find((x) => x.champ === precedent.champ);
+    // « prends large », « je ne sais pas » : une marge annoncée, seulement pour l'encombrement.
+    if (c && q && SANS_LA_PIECE.test(t) && !/\d/.test(t)) {
+      if (PARTOUT.test(t)) {
+        const larges = valeursLarges(precedent.reprise.texte, c.id, mesures);
+        const premiere = larges[0];
+        if (premiere) return { kind: 'mesure', composant: premiere.composant, champ: premiere.champ, valeur: premiere.valeur, large: true, larges, reprise: precedent.reprise };
+      }
+      if (q.large !== undefined) return { kind: 'mesure', composant: c.id, champ: q.champ, valeur: q.large, large: true, reprise: precedent.reprise };
+      return {
+        kind: 'dire',
+        texte: `Pour ${q.nom}, je ne peux pas prendre de marge : la pièce serait fausse. Regarde le plan ou la photo cotée du vendeur, ou colle-moi le lien d'un plan (« cherche avec ce lien : … »).`,
+        etat: precedent,
+      };
+    }
     const valeur = t.split(' ').length <= 6 ? lireMesure(t) : null;
     if (c && valeur !== null) {
       const essai = ajouterMesure(mesures, c.id, precedent.champ, valeur);
@@ -754,10 +841,11 @@ export function deciderAtelier(text: string, precedentDonne: AtelierEtat | null,
   if (plateauVideLanceSuivante(text)) return { kind: 'lancerSuivante' };
 
   // Sinon, une nouvelle pièce passe avant tout.
-  const nouvelle = demandePiece(text, mesures);
+  const produits = Object.fromEntries(Object.entries(contexte.produits ?? {}).map(([id, p]) => [id, p.produit]));
+  const nouvelle = demandePiece(text, mesures, produits);
   if (nouvelle) {
     if (nouvelle.question) {
-      return questionComposant(nouvelle.question, { texte: text, piece: null }, contexte);
+      return chercherOuDemander(text, nouvelle.question, { texte: text, piece: null }, contexte);
     }
     if (!nouvelle.gabarit) {
       return {
@@ -860,9 +948,18 @@ export function deciderAtelier(text: string, precedentDonne: AtelierEtat | null,
   // couvercle s'emboîte ». Les découpes sont lues dans ce qui reste.
   const matiere = court ? lireAjouts(tPiece) : { ops: [], reste: tPiece };
   if (matiere.ops.length) {
-    const r = appliquerAjouts(g, valeurs, matiere.ops, mesures);
+    // Un écran se pose sous un couvercle : une boîte ouverte en prend un.
+    const ecran = matiere.ops.some((op) => op.action === 'ajouter' && op.champs.composant && composant(op.champs.composant)?.ecran);
+    if (g.id === 'boite' && ecran) {
+      const avecCouvercle = gabarit('boite_couvercle');
+      if (avecCouvercle) {
+        g = avecCouvercle;
+        changementsDecoupes.push('Couvercle ajouté (l’écran se pose dessous)');
+      }
+    }
+    const r = appliquerAjouts(g, valeurs, matiere.ops, mesures, Object.fromEntries(Object.entries(contexte.produits ?? {}).map(([id, p]) => [id, p.produit])));
     if (r.question) {
-      return questionComposant(r.question, { texte: text, piece: precedent }, contexte);
+      return chercherOuDemander(text, r.question, { texte: text, piece: precedent }, contexte);
     }
     if (r.erreurs.length) return { kind: 'dire', texte: `${r.erreurs.join(' ')} La version ${actuelle.numero} reste à l'écran.` };
     valeurs = avecAjouts(valeurs, r.ajouts);

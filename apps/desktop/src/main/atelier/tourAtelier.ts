@@ -18,7 +18,10 @@ import { existsSync } from 'node:fs';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
+  ajouterCoteTrouvee,
   ajouterMesure,
+  SOURCE_LARGE,
+  siteDeSource,
   ecrireFichierCotes,
   ecrireFichierMesures,
   fusionnerCotes,
@@ -139,13 +142,24 @@ function cotesParFichier(racine: string): NonNullable<AtelierDeps['cotes']> {
   };
 }
 
-/** Ce que la recherche a donné, en quelques phrases (la suite dit ce qui se passe ensuite). */
+/** Une phrase sans adresses complètes : le site seulement, une fois (« dl.espressif.com »). */
+function sansAdresses(texte: string): string {
+  return texte
+    .replace(/https?:\/\/[^\s;)]+/g, (u) => siteDeSource(u))
+    .replace(/\(([^()]*)\)/g, (_, dedans: string) => `(${[...new Set(dedans.split(' ; '))].join(' ; ')})`);
+}
+
+/** Ce que la recherche a donné, en quelques phrases courtes (la suite dit ce qui se passe ensuite). */
 export function phraseRecherche(r: ResultatEtape<CotesCherchees>, voix: boolean): string {
   if (!r.ok) return r.raison ?? "Je n'ai rien trouvé.";
   if (voix) return `${r.raison} Le détail est sur le PC.`;
   const morceaux = [r.raison ?? ''];
-  if (r.sources.length) morceaux.push(`Sûres (deux sites d'accord) : ${r.sources.join(' ; ')}.`);
-  if (r.incertitudes.length) morceaux.push(`À vérifier quand tu auras la pièce : ${r.incertitudes.join(' ; ')}.`);
+  // Les plans : ce qu'ils ont donné, une fois par site (deux versions du même plan) — le plus complet.
+  const plans = [...new Map([...(r.produit?.plans ?? [])].sort((a, b) => a.resume.length - b.resume.length).map((p) => [siteDeSource(p.url), p])).values()];
+  for (const p of plans) morceaux.push(`Plan du fabricant (${siteDeSource(p.url)}) : ${p.resume}.`);
+  const sures = r.sources.filter((s) => !s.startsWith('plan du fabricant'));
+  if (sures.length) morceaux.push(`Sûres : ${sansAdresses(sures.join(' ; '))}.`);
+  if (r.incertitudes.length) morceaux.push(`À vérifier quand tu auras la pièce : ${sansAdresses(r.incertitudes.join(' ; '))}.`);
   return morceaux.join(' ');
 }
 
@@ -240,35 +254,68 @@ export async function tourAtelier(input: AtelierEntree, deps: AtelierDeps): Prom
   const fichierCotes = deps.cotes ?? cotesParFichier(deps.racine);
   const cotes: CotesTrouvees = await fichierCotes.lire().catch(() => ({}));
   const recherches: RecherchesCotes = await (fichierCotes.lireRecherches?.() ?? Promise.resolve({})).catch(() => ({}));
-  const contexte = () => ({ mesures: fusionnerCotes(mesures, cotes, { uneSource: true }), rechercheCotes: Boolean(deps.chercherCotes), cherches: Object.keys(recherches) });
+  const contexte = () => ({
+    mesures: fusionnerCotes(mesures, cotes, { uneSource: true }),
+    rechercheCotes: Boolean(deps.chercherCotes),
+    cherches: Object.keys(recherches),
+    produits: Object.fromEntries(Object.entries(recherches).map(([id, r]) => [id, { produit: r.produit, ...(r.plans ? { plans: true } : {}) }])),
+  });
   let decision = deciderAtelier(input.text, precedent, contexte());
   // Une mesure de composant donnée : gardée tout de suite (elle sert ensuite partout), puis la
   // phrase d'avant est relue (question suivante, ou la pièce).
+  let phraseLarges = '';
   for (let i = 0; decision.kind === 'mesure' && i < 3; i += 1) {
-    const ajout = ajouterMesure(mesures, decision.composant, decision.champ, decision.valeur);
-    if (ajout.erreur) return precedent ? { texte: ajout.erreur, etat: precedent } : { texte: ajout.erreur };
-    mesures = ajout.mesures;
-    await fichierMesures.ecrire(mesures);
+    if (decision.large) {
+      // « prends large » : gardée avec les cotes trouvées, comme une valeur d'une seule source, jamais
+      // comme une mesure de l'utilisateur (la fiche dira « à vérifier quand tu auras la pièce »).
+      const larges = decision.larges ?? [{ composant: decision.composant, champ: decision.champ, valeur: decision.valeur }];
+      for (const l of larges) {
+        const ajout = ajouterCoteTrouvee(cotes, l.composant, l.champ, { valeur: l.valeur, source: SOURCE_LARGE, choisie: true });
+        if (ajout.erreur) return precedent ? { texte: ajout.erreur, etat: precedent } : { texte: ajout.erreur };
+        Object.assign(cotes, ajout.cotes);
+      }
+      try {
+        await fichierCotes.ecrire?.(cotes, recherches);
+      } catch {
+        /* gardée pour ce tour seulement */
+      }
+      phraseLarges =
+        larges.length > 1
+          ? `D'accord, je prends large pour les ${larges.length} cotes qui manquaient, sans savoir si c'est juste : tout sera marqué « à vérifier quand tu auras la pièce ». `
+          : decision.valeur < 0
+            ? "D'accord, j'ouvre la fenêtre au plus large. "
+            : `D'accord, je prends ${String(decision.valeur).replace('.', ',')} mm, sans savoir si c'est juste. `;
+    } else {
+      const ajout = ajouterMesure(mesures, decision.composant, decision.champ, decision.valeur);
+      if (ajout.erreur) return precedent ? { texte: ajout.erreur, etat: precedent } : { texte: ajout.erreur };
+      mesures = ajout.mesures;
+      await fichierMesures.ecrire(mesures);
+    }
     decision = deciderAtelier(decision.reprise.texte, decision.reprise.piece, contexte());
   }
+  if (phraseLarges && decision.kind === 'dire') decision = { ...decision, texte: `${phraseLarges}${decision.texte}` };
   // Le modèle exact donné : les cotes sont cherchées sur Internet, gardées avec leurs sources, puis la
   // demande d'avant est relue (la pièce, ou ce qui manque encore au pied à coulisse).
   if (decision.kind === 'chercherCotes' && deps.chercherCotes) {
     const d = decision;
-    input.progress?.(`Je cherche les cotes de « ${d.produit} » sur Internet…`);
-    const r = await chercherCotes({ composant: d.composant, produit: d.produit, cotes }, deps.chercherCotes, (a) => {
-      if (a.etape === 'recherche' || a.etape === 'lecture') input.progress?.(a.message);
-    });
-    const apres = r.produit?.cotes ?? cotes;
-    const faites = { ...recherches, [d.composant]: { produit: d.produit, jour: deps.jour(), manquants: r.produit?.manquants ?? [] } };
-    try {
-      await fichierCotes.ecrire?.(apres, faites);
-    } catch {
-      /* gardées pour ce tour seulement */
+    const resumes: string[] = [];
+    // Chaque composant à son tour : la recherche, ses plans, puis les cotes gardées avec leurs sources.
+    for (const { composant: id, produit } of d.recherches) {
+      input.progress?.(`Je cherche les cotes de « ${produit} » sur Internet…`);
+      const r = await chercherCotes({ composant: id, produit, cotes }, deps.chercherCotes, (a) => {
+        if (a.etape === 'recherche' || a.etape === 'lecture' || a.etape === 'plan') input.progress?.(a.message);
+      });
+      const apres = r.produit?.cotes ?? cotes;
+      recherches[id] = { produit, jour: deps.jour(), manquants: r.produit?.manquants ?? [], ...(deps.chercherCotes.lirePlan ? { plans: true } : {}) };
+      Object.assign(cotes, apres);
+      try {
+        await fichierCotes.ecrire?.(cotes, recherches);
+      } catch {
+        /* gardées pour ce tour seulement */
+      }
+      resumes.push(phraseRecherche(r, input.place === 'enceinte'));
     }
-    Object.assign(cotes, apres);
-    Object.assign(recherches, faites);
-    const resume = phraseRecherche(r, input.place === 'enceinte');
+    const resume = resumes.join(' ');
     const suite = await tourAtelier(
       { ...input, text: d.reprise.texte, messages: d.reprise.piece ? [{ role: 'assistant', content: '', atelier: d.reprise.piece } as ChatMessage] : [] },
       { ...deps, cotes: { lire: async () => cotes, lireRecherches: async () => recherches } },

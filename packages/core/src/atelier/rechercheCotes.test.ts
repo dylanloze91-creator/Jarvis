@@ -99,12 +99,11 @@ describe('dans la discussion', () => {
     if (q.kind !== 'dire' || !q.etat) throw new Error(q.kind);
     expect(deciderAtelier("c'est une ESP32 DevKit V1 30 broches", q.etat, avecRecherche)).toMatchObject({
       kind: 'chercherCotes',
-      composant: ESP,
-      produit: 'ESP32 DevKit V1 30 broches',
+      recherches: [{ composant: ESP, produit: 'ESP32 DevKit V1 30 broches' }],
       reprise: { texte: 'Fais-moi un boîtier pour mon ESP32', piece: null },
     });
-    expect(deciderAtelier('celle de ta liste', q.etat, avecRecherche)).toMatchObject({ kind: 'chercherCotes', produit: expect.stringMatching(/DevKitC-1/) });
-    expect(deciderAtelier('celle-là : https://exemple.test/esp32', q.etat, avecRecherche)).toMatchObject({ kind: 'chercherCotes', produit: expect.stringContaining('https://exemple.test/esp32') });
+    expect(deciderAtelier('celle de ta liste', q.etat, avecRecherche)).toMatchObject({ kind: 'chercherCotes', recherches: [{ produit: expect.stringMatching(/DevKitC-1/) }] });
+    expect(deciderAtelier('celle-là : https://exemple.test/esp32', q.etat, avecRecherche)).toMatchObject({ kind: 'chercherCotes', recherches: [{ produit: expect.stringContaining('https://exemple.test/esp32') }] });
     expect(deciderAtelier('je la mesure', q.etat, avecRecherche)).toMatchObject({ kind: 'dire', etat: { etape: 'mesure', champ: 'longueur' } });
     expect(deciderAtelier('laisse tomber', q.etat, avecRecherche)).toEqual({ kind: 'dire', texte: "D'accord, je laisse tomber." });
   });
