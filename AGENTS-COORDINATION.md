@@ -111,6 +111,6 @@ Une seule carte (RTX 2060 6 Go) : un seul agent à la fois lance le banc (`npm r
 
 | État | Par qui | Pour quoi | Depuis |
 | --- | --- | --- | --- |
-| libre | — | — | — |
+| occupée | Claude Code (agent Yeux, essai des webcams) | essai des webcams du PC : photo de « c922 Pro Stream Webcam (046d:085c) » regardée par gemma3:4b, quelques secondes | 2026-11-25 23:03 |
 
 Pour réserver : passer l'état à `occupée`, remplir les colonnes, commiter et pousser **avant** de lancer. Pour libérer : remettre `libre` et `—`, commiter et pousser.
