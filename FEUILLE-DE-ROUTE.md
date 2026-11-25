@@ -1,6 +1,6 @@
 # Feuille de route de Jarvis — à lire avant chaque tâche
 
-Tenue par Claude (le chat, manager du projet). Dernière mise à jour : 24 novembre 2026.
+Tenue par Claude (le chat, manager du projet). Dernière mise à jour : 25 novembre 2026.
 
 **Claude Code et Cursor la lisent avant chaque tâche**, en même temps que `AGENTS-COORDINATION.md`. Elle dit vers où va Jarvis, qui fait quoi et dans quel ordre, et ce qui en dépend. Le but : qu'aucun outil ne soit construit sans tenir compte de ceux qui viendront s'y brancher.
 
@@ -31,6 +31,7 @@ Ce fichier ne contient ni secret, ni donnée personnelle, ni nom de réseau : le
   - **Jarvis** (Live et Test) : l'appli elle-même, cette feuille de route telle quelle ;
   - **Jarvis Development** (branche longue `claude/jarvis-development`) : les **appendices** de Jarvis, c'est-à-dire ses yeux, ses bras, ses jambes, ses sens et ses mains sur la maison, avec leurs programmes et leur électronique. Cahier : `docs/specs/jarvis-development.md` ; matériel : `docs/materiel/electronique-appendices.md` ;
   - **Model Development** (plus tard, pas encore ouvert) : l'entraînement des modèles. La liste de ses besoins est tenue dans le cahier de Jarvis Development, section 9.
+    **Décision de l'utilisateur du 25 novembre : c'est le chantier suivant**, dès que les yeux (étapes 1 et 2) et l'atelier (boîtiers, étape 3) sont faits. On n'ajoute plus guère de fonctions : on **améliore les modèles avec son usage réel**. Ordre prévu : (1) collecte propre de ce qui existe déjà (conversations, carnet des ratés, corrections « non, c'est faux », journal des tours avec l'équipe choisie, photos montrées à Jarvis) ; (2) étiquetage par l'utilisateur, au téléphone, quelques minutes à la fois (page de tri) ; (3) examens tirés de son usage, figés, jamais entraînés ; (4) entraînement sur carte louée, un spécialiste à la fois, en commençant par le **trieur** (le gain le plus visible : la bonne équipe du premier coup), puis la vision sur ses photos, puis les équipes qui ratent le plus d'après le carnet ; (5) examen avant / après, et c'est l'utilisateur qui choisit. Règle inchangée : aucun texte écrit par Claude ou Cursor dans un jeu d'entraînement.
   Quand l'utilisateur n'est pas chez lui, on avance Jarvis Development dans le cloud, et les essais de Live et de Test attendent son retour (accord du 17 novembre).
 - **On n'entraîne un modèle que là où l'usage réel montre qu'il échoue.** Les ratés de tous les jours (carnet des ratés) et la carte de l'utilisation réelle décident des entraînements. Les exercices génériques ne servent que de base.
 
