@@ -45,6 +45,9 @@ describe('construction de Jarvis Test', () => {
     expect(nsh).toContain('!macro customInit');
     expect(nsh).toContain('taskkill /F /T /IM "${APP_EXECUTABLE_FILENAME}"');
     expect(nsh).not.toContain('Jarvis.exe"');
+    // 25 novembre : le filtre par utilisateur bloquait taskkill plus de 10 minutes ; attente bornée.
+    expect(nsh).not.toContain('/FI "USERNAME');
+    expect(nsh).toContain('nsExec::Exec /TIMEOUT=20000');
     expect(yml).not.toContain('installer-test.nsh');
 
     const desktopPkg = JSON.parse(readFileSync(resolve(desktop, 'package.json'), 'utf8')) as {
