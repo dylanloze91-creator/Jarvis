@@ -21,6 +21,16 @@ export type FormeDecoupe = 'rond' | 'rect' | 'encoche';
 export type FaceDecoupe = 'avant' | 'arriere' | 'gauche' | 'droite' | 'dessus' | 'dessous' | 'couvercle';
 export type PlaceU = 'centre' | 'gauche' | 'droite';
 export type PlaceV = 'centre' | 'haut' | 'bas';
+/** Bord depuis lequel une distance en millimètres est donnée (vu de l'extérieur de la face). */
+export type Bord = 'gauche' | 'droite' | 'bas' | 'haut' | 'avant' | 'arriere';
+
+/** « à 12 mm du bord gauche » (jusqu'au bord de la découpe), « centré à 145 mm du bas ». */
+export interface PosMm {
+  bord: Bord;
+  mm: number;
+  /** Vrai : la distance va jusqu'au centre de la découpe ; faux : jusqu'à son bord. */
+  centre?: boolean;
+}
 
 export interface Decoupe {
   forme: FormeDecoupe;
@@ -35,6 +45,13 @@ export interface Decoupe {
   v: PlaceV;
   /** Quatre découpes, une dans chaque coin de la face. */
   coins?: boolean;
+  /** Place en millimètres, sur l'axe gauche-droite et l'axe bas-haut de la face (remplace `u`, `v`). */
+  posU?: PosMm;
+  posV?: PosMm;
+  /** Ouverture à coins arrondis : rayon des coins (mm). */
+  rayon?: number;
+  /** Fenêtre évasée (tronc de pyramide) : largeur et hauteur côté extérieur (mm). */
+  evase?: [number, number];
 }
 
 /** Plus de découpes que ça sur une pièce : refusé (la pièce deviendrait illisible). */
@@ -226,15 +243,47 @@ function faceTexte(face: FaceDecoupe, creux: boolean): string {
 
 /** « trou de 8 mm à l'arrière, en bas », « 2 ouvertures de 15 × 10 mm à l'avant ». */
 export function direDecoupe(d: Decoupe, creux = true): string {
-  const noms = { rond: ['trou', 'trous'], rect: ['ouverture', 'ouvertures'], encoche: ['encoche', 'encoches'] }[d.forme];
+  const noms = d.evase ? ['fenêtre évasée', 'fenêtres évasées'] : { rond: ['trou', 'trous'], rect: ['ouverture', 'ouvertures'], encoche: ['encoche', 'encoches'] }[d.forme];
   const nom = d.nombre > 1 ? `${d.nombre} ${noms[1]}` : noms[0]!;
   const taille = d.forme === 'rect' ? `${mm(d.largeur)} × ${mm(d.hauteur)} mm` : `${mm(d.largeur)} mm`;
   const profondeur = d.forme === 'encoche' && d.hauteur > 0 ? `, ${mm(d.hauteur)} mm de profondeur` : '';
   const couche = REPERES[d.face].n === 2;
   const v = d.v === 'centre' ? '' : couche ? (d.v === 'haut' ? 'vers l’arrière' : 'vers l’avant') : `en ${d.v}`;
   const u = d.u === 'centre' ? '' : `à ${d.u}`;
-  const place = d.coins ? 'aux coins' : [v, u].filter(Boolean).join(' ');
-  return `${nom} de ${taille}${profondeur} ${faceTexte(d.face, creux)}${place ? `, ${place}` : ''}`;
+  const mmPlace = [d.posU, d.posV].filter((p): p is PosMm => Boolean(p)).map((p) => direPos(p, d.forme === 'rond'));
+  const place = d.coins ? 'aux coins' : mmPlace.length ? mmPlace.join(' et ') : [v, u].filter(Boolean).join(' ');
+  const forme = [
+    d.evase ? (d.evase[0] > 0 ? `(${mm(d.evase[0])} × ${mm(d.evase[1])} mm dehors)` : '(à 45°)') : '',
+    d.rayon !== undefined ? `à coins arrondis (rayon ${mm(d.rayon)} mm)` : '',
+  ].filter(Boolean);
+  return `${nom} de ${taille}${profondeur}${forme.length ? ` ${forme.join(' ')}` : ''} ${faceTexte(d.face, creux)}${place ? `, ${place}` : ''}`;
+}
+
+const BORD_TEXTE: Record<Bord, string> = {
+  gauche: 'du bord gauche',
+  droite: 'du bord droit',
+  bas: 'du bas',
+  haut: 'du haut',
+  avant: 'de l’avant',
+  arriere: 'de l’arrière',
+};
+
+function direPos(p: PosMm, masculin = false): string {
+  return `${p.centre ? (masculin ? 'centré ' : 'centrée ') : ''}à ${mm(p.mm)} mm ${BORD_TEXTE[p.bord]}`;
+}
+
+/**
+ * Sur quel axe de la face tombe un bord, et de quel côté (`debut` : gauche ou bas, vu de
+ * l'extérieur). « L'avant » sur le dessus ou le fond, c'est le bas de la face ; sur un côté, c'est
+ * l'un des deux bords gauche-droite. `null` : ce bord n'existe pas sur cette face.
+ */
+export function axeDuBord(face: FaceDecoupe, bord: Bord): { axe: 'u' | 'v'; debut: boolean } | null {
+  if (bord === 'gauche' || bord === 'droite') return { axe: 'u', debut: bord === 'gauche' };
+  if (bord === 'bas' || bord === 'haut') return { axe: 'v', debut: bord === 'bas' };
+  if (REPERES[face].n === 2) return { axe: 'v', debut: bord === 'avant' };
+  if (face === 'gauche') return { axe: 'u', debut: bord === 'arriere' };
+  if (face === 'droite') return { axe: 'u', debut: bord === 'avant' };
+  return null;
 }
 
 /** Libellé d'une découpe pour la liste des mesures, à côté de la pièce. */
@@ -361,12 +410,25 @@ export function placerDecoupes(gabaritId: string, nomPiece: string, v: Valeurs, 
     let pu: [number, number];
     let pv: [number, number];
     let pn: [number, number];
+    /** Bords extérieurs de la face (pour les places en millimètres), surface extérieure et épaisseur traversée. */
+    let eu: [number, number];
+    let ev: [number, number];
+    let dehors: number;
+    let traversee: number;
     if (d.face === 'couvercle' && c.couvercle) {
       const k = c.couvercle;
       pu = [k.x0 + k.marge, k.x0 + k.L - k.marge];
       pv = [k.marge, k.W - k.marge];
       pn = [-1, k.t + 1];
+      eu = [k.x0, k.x0 + k.L];
+      ev = [0, k.W];
+      dehors = 0;
+      traversee = k.t;
     } else {
+      eu = [c.min[r.ua], c.max[r.ua]];
+      ev = [c.min[r.va], c.max[r.va]];
+      dehors = r.cote < 0 ? c.min[r.n] : c.max[r.n];
+      traversee = !c.creux ? c.max[r.n] - c.min[r.n] : couche ? c.fond : c.paroi;
       pu = plage(c, r.ua);
       pv = plage(c, r.va);
       const lo = c.min[r.n];
@@ -396,7 +458,8 @@ export function placerDecoupes(gabaritId: string, nomPiece: string, v: Valeurs, 
         erreurs.push(`${quoi} : trop profonde pour cette pièce (${mm(Math.max(0, maxi))} mm au plus).`);
         continue;
       }
-      const us = centres(pu[0], pu[1], largeur, d.nombre, d.u === 'gauche' ? 'bas' : d.u === 'droite' ? 'haut' : 'centre', r.us);
+      const enU = d.posU ? enMm(d.posU, d.face, eu, r.us, largeur) : null;
+      const us = enU !== null && enU !== undefined ? (enU - largeur / 2 >= pu[0] - 1e-6 && enU + largeur / 2 <= pu[1] + 1e-6 ? [enU] : null) : centres(pu[0], pu[1], largeur, d.nombre, d.u === 'gauche' ? 'bas' : d.u === 'droite' ? 'haut' : 'centre', r.us);
       if (!us) {
         erreurs.push(`${quoi} : ne tient pas ${faceTexte(d.face, c.creux)} (${mm(Math.max(0, pu[1] - pu[0]))} mm de place en largeur).`);
         continue;
@@ -417,8 +480,27 @@ export function placerDecoupes(gabaritId: string, nomPiece: string, v: Valeurs, 
       continue;
     }
 
+    if ((d.posU || d.posV) && (d.nombre > 1 || d.coins)) {
+      erreurs.push(`${quoi} : avec une place en millimètres, une découpe à la fois.`);
+      continue;
+    }
     let points: [number, number][] | null;
-    if (d.coins) {
+    if (d.posU || d.posV) {
+      const surU = d.posU ? enMm(d.posU, d.face, eu, r.us, largeur) : null;
+      const surV = d.posV ? enMm(d.posV, d.face, ev, r.vs, hauteur) : null;
+      if (surU === undefined || surV === undefined) {
+        erreurs.push(`${quoi} : ce bord n’existe pas ${faceTexte(d.face, c.creux)}. Dis plutôt « du bord gauche », « du bas »…`);
+        continue;
+      }
+      const u = surU ?? centres(pu[0], pu[1], largeur, 1, d.u === 'gauche' ? 'bas' : d.u === 'droite' ? 'haut' : 'centre', r.us)?.[0];
+      const w = surV ?? centres(pv[0], pv[1], hauteur, 1, d.v, r.vs)?.[0];
+      const dedans = (x: number | undefined, s: number, p: [number, number]) => x !== undefined && x - s / 2 >= p[0] - 1e-6 && x + s / 2 <= p[1] + 1e-6;
+      if (!dedans(u, largeur, pu) || !dedans(w, hauteur, pv)) {
+        erreurs.push(`${quoi} : déborde de la place utile ${faceTexte(d.face, c.creux)} (les bords et les parois sont gardés). Rapproche-la du centre ou fais-la plus petite.`);
+        continue;
+      }
+      points = [[u!, w!]];
+    } else if (d.coins) {
       const okU = pu[1] - pu[0] >= 2 * largeur + 1.5;
       const okV = pv[1] - pv[0] >= 2 * hauteur + 1.5;
       points = okU && okV
@@ -438,11 +520,78 @@ export function placerDecoupes(gabaritId: string, nomPiece: string, v: Valeurs, 
       );
       continue;
     }
+    if (d.forme === 'rect' && (d.rayon !== undefined || d.evase)) {
+      const R = d.rayon ?? 0;
+      if (R < 0 || 2 * R > Math.min(largeur, hauteur) - 0.2) {
+        erreurs.push(`${quoi} : rayon trop grand pour cette taille (${mm(Math.max(0, Math.min(largeur, hauteur) / 2 - 0.1))} mm au plus).`);
+        continue;
+      }
+      // Évasée sans taille dehors : à 45° (une fois l'épaisseur traversée de chaque côté).
+      const evase: [number, number] | undefined = d.evase ? (d.evase[0] > 0 ? d.evase : [largeur + 2 * traversee, hauteur + 2 * traversee]) : undefined;
+      if (evase && (evase[0] < largeur || evase[1] < hauteur)) {
+        erreurs.push(`${quoi} : une fenêtre évasée est plus grande dehors que dedans.`);
+        continue;
+      }
+      if (evase && !points.every(([u, w]) => dansLaFace(u, w, evase, eu, ev))) {
+        erreurs.push(`${quoi} : côté extérieur, elle dépasse de la face.`);
+        continue;
+      }
+      for (const [u, w] of points) scad.push(fenetre(r, dehors, traversee, u, w, largeur, hauteur, R, evase));
+      continue;
+    }
     for (const [u, w] of points) {
       scad.push(d.forme === 'rond' ? cylindre(r, pn[0], pn[1], u, w, largeur) : pave(r, pn[0], pn[1], u - largeur / 2, u + largeur / 2, w - hauteur / 2, w + hauteur / 2));
     }
   }
   return { scad, erreurs };
+}
+
+/**
+ * Coordonnée (dans la pièce) du centre d'une découpe placée en millimètres sur un axe de la face.
+ * `bords` : bords extérieurs de la face sur cet axe ; `sens` : +1 si gauche (ou bas) est du côté
+ * des petites coordonnées. `null` : la place ne porte pas sur cet axe ; `undefined` : bord inconnu.
+ */
+function enMm(p: PosMm, face: FaceDecoupe, bords: [number, number], sens: -1 | 1, taille: number): number | undefined {
+  const a = axeDuBord(face, p.bord);
+  if (!a) return undefined;
+  const loin = p.centre ? p.mm : p.mm + taille / 2;
+  const debut = sens > 0 ? bords[0] : bords[1];
+  const fin = sens > 0 ? bords[1] : bords[0];
+  return a.debut ? debut + sens * loin : fin - sens * loin;
+}
+
+function dansLaFace(u: number, w: number, taille: [number, number], eu: [number, number], ev: [number, number]): boolean {
+  return u - taille[0] / 2 >= eu[0] && u + taille[0] / 2 <= eu[1] && w - taille[1] / 2 >= ev[0] && w + taille[1] / 2 <= ev[1];
+}
+
+/**
+ * Ouverture à coins arrondis, ou fenêtre évasée (tronc de pyramide, plus grande dehors), dessinée
+ * dans le repère de la face (a vers la droite, b vers le haut, d vers l'intérieur) puis posée sur
+ * la pièce par une matrice.
+ */
+function fenetre(r: Repere, dehors: number, T: number, u: number, w: number, L: number, H: number, R: number, evase?: [number, number]): string {
+  const col = (axe: 0 | 1 | 2, s: number): V3 => {
+    const v: V3 = [0, 0, 0];
+    v[axe] = s;
+    return v;
+  };
+  const a = col(r.ua, r.us);
+  const b = col(r.va, r.vs);
+  const d = col(r.n, r.cote < 0 ? 1 : -1);
+  const o = point(r, dehors, u, w);
+  const m = [0, 1, 2].map((i) => `[${f(a[i]!)}, ${f(b[i]!)}, ${f(d[i]!)}, ${f(o[i]!)}]`).join(', ');
+  const plaque = (sl: number, sh: number, z: number, h: number) => {
+    const rr = Math.min(R, sl / 2 - 0.05, sh / 2 - 0.05);
+    const coeur = `square([${f(sl - 2 * Math.max(rr, 0))}, ${f(sh - 2 * Math.max(rr, 0))}], center = true)`;
+    const forme = rr > 0 ? `offset(r = ${f(rr)}) ${coeur}` : coeur;
+    return `translate([0, 0, ${f(z)}]) linear_extrude(height = ${f(h)}) ${forme};`;
+  };
+  if (!evase) return `multmatrix([${m}, [0, 0, 0, 1]]) ${plaque(L, H, -1, T + 2)}`;
+  // Même pente prolongée de 0,5 mm de chaque côté, pour couper franchement.
+  const taille = (z: number): [number, number] => [evase[0] + ((L - evase[0]) * z) / T, evase[1] + ((H - evase[1]) * z) / T];
+  const [l0, h0] = taille(-0.5);
+  const [l1, h1] = taille(T + 0.5);
+  return `multmatrix([${m}, [0, 0, 0, 1]]) hull() { ${plaque(l0, h0, -0.5, 0.01)} ${plaque(l1, h1, T + 0.49, 0.01)} }`;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -466,6 +615,12 @@ export interface OpDecoupe {
   profond?: 'plus' | 'moins';
   cable: boolean;
   vis: boolean;
+  /** Places en millimètres (« à 12 mm du bord gauche et 8 mm du bas »). */
+  positions?: PosMm[];
+  /** « à coins arrondis » : rayon (0 : choisi par l'atelier). */
+  rayon?: number;
+  /** « évasée » : taille dehors ([0, 0] : à 45°). */
+  evase?: [number, number];
 }
 
 const QUANTITES: Record<string, number> = { un: 1, une: 1, deux: 2, trois: 3, quatre: 4, cinq: 5, six: 6, des: 2 };
@@ -502,7 +657,40 @@ const UN_COTE = /\b(?:sur|du|au|d un) (?:le |un )?cote\b/;
 const A_GAUCHE = /\b(?:a|sur la|vers la|tout a) gauche\b/;
 const A_DROITE = /\b(?:a|sur la|vers la|tout a) droite\b/;
 
-function lireSegment(article: string | undefined, cle: string, s: string, avant: string): OpDecoupe | null {
+const POS = new RegExp(String.raw`(?:\b(centree?|centre|le centre|son centre)\s+)?(?:\ba\s+)?${N}${U}\s*(?:du|de la|de l|des)\s+(?:bord\s+|cote\s+)?(gauche|droite?|bas|haut|avant|arriere)\b`, 'g');
+const ARRONDI = new RegExp(String.raw`\b(?:a |aux |avec des |avec les )?coins arrondis\b(?:\s*(?:de|d un rayon de|rayon)\s*${N}${U})?|\barrondie?s?\b|\brayon (?:de |des coins de )?${N}${U}`);
+const EVASE = new RegExp(String.raw`\bevasee?s?\b`);
+const EVASE_DEHORS = new RegExp(String.raw`${N}${U}\s*(?:x|par|sur)\s*${N}${U}\s*(?:a l |cote |vers l |de l )?(?:exterieur|dehors)`);
+
+/** Places en millimètres d'un morceau de phrase, et le morceau sans elles. */
+function lirePositions(s: string): { positions: PosMm[]; reste: string } {
+  const positions: PosMm[] = [];
+  const reste = s.replace(POS, (_m, centre: string | undefined, n: string, unite: string | undefined, bord: string) => {
+    positions.push({ bord: (bord === 'droit' ? 'droite' : bord) as Bord, mm: lu(n, unite)!, ...(centre ? { centre: true } : {}) });
+    return ' ';
+  });
+  return { positions, reste: reste.replace(/\s+/g, ' ').trim() };
+}
+
+function lireSegment(article: string | undefined, cle: string, s0: string, avant: string): OpDecoupe | null {
+  // Les places en millimètres, la taille dehors d'une fenêtre évasée et les coins arrondis sont
+  // lus d'abord et retirés : leurs nombres ne sont pas la taille de la découpe.
+  const pos = lirePositions(s0);
+  let s = pos.reste;
+  let evase: [number, number] | undefined;
+  if (EVASE.test(s)) {
+    const dehors = EVASE_DEHORS.exec(s);
+    evase = dehors ? [lu(dehors[1], dehors[2] ?? dehors[4])!, lu(dehors[3], dehors[4])!] : [0, 0];
+    if (dehors) s = s.replace(dehors[0], ' ');
+    s = s.replace(EVASE, ' ');
+  }
+  let rayon: number | undefined;
+  const ar = ARRONDI.exec(s);
+  if (ar) {
+    rayon = lu(ar[1] ?? ar[3], ar[2] ?? ar[4]) ?? 0;
+    s = s.replace(ar[0], ' ');
+  }
+  s = s.replace(/\s+/g, ' ').trim();
   const retrait = RETRAIT.exec(avant);
   const forme: FormeDecoupe | null = /^(?:ouverture|fenetre|encadrement|fente)/.test(cle)
     ? 'rect'
@@ -589,8 +777,19 @@ function lireSegment(article: string | undefined, cle: string, s: string, avant:
   const plusCote = /\bplus a (gauche|droite)\b/.exec(autour);
   if (plusCote) op.u = plusCote[1] === 'gauche' ? 'gauche' : 'droite';
 
+  if (pos.positions.length) op.positions = pos.positions;
+  if (rayon !== undefined) op.rayon = rayon;
+  if (evase) {
+    op.evase = evase;
+    if (op.forme !== 'encoche') op.forme = 'rect';
+    op.souple = false;
+  }
+  if (rayon !== undefined && op.forme !== 'encoche') {
+    op.forme = 'rect';
+    op.souple = false;
+  }
   const mesure = op.largeur !== undefined || op.hauteur !== undefined;
-  const relatif = op.taille !== undefined || op.profond !== undefined || plusHaut !== null || plusCote !== null;
+  const relatif = op.taille !== undefined || op.profond !== undefined || plusHaut !== null || plusCote !== null || pos.positions.length > 0;
   if (retrait) op.action = 'enlever';
   else if ((article && DEFINIS.has(article)) || (!article && relatif && !mesure)) op.action = 'modifier';
   else if (article && article in QUANTITES) op.nombre = QUANTITES[article];
@@ -619,8 +818,8 @@ export function lireDecoupes(t: string, options: { exigerFace?: boolean } = {}):
     const suivant = trouves[i + 1]?.index ?? texte.length;
     let s = texte.slice(finCle, suivant);
     // Le morceau s'arrête à la virgule, à « avec », « puis », ou « et » qui ne continue pas la découpe.
-    const suite = String.raw`(?:en (?:bas|haut)|tout en (?:bas|haut)|a (?:gauche|droite)|au (?:centre|milieu))`;
-    const arret = new RegExp(String.raw` ,(?! ${suite})| avec | puis | et (?!\d|de \d|${suite})`).exec(s);
+    const suite = String.raw`(?:en (?:bas|haut)|tout en (?:bas|haut)|a (?:gauche|droite)|au (?:centre|milieu)|a \d|centree? a \d|centree? |le centre a|evasee?|a coins|aux coins arrondis|\d+(?:\.\d+)? ?(?:mm )?(?:du|de la|de l) |\d+(?:\.\d+)? ?(?:mm )?(?:x|par|sur) \d+(?:\.\d+)? ?(?:mm )?(?:a l |cote |vers l |de l )?(?:exterieur|dehors))`;
+    const arret = new RegExp(String.raw` ,(?! ${suite})| avec (?!(?:des |les )?coins arrondis)| puis | et (?!\d|de \d|${suite})`).exec(s);
     if (arret) s = s.slice(0, arret.index);
     // « des trous comme des encadrements » : un seul genre de découpe, celui d'après.
     if (trouves[i + 1] && /^(?:comme|genre|style|facon|en forme d(?:e)?)$/.test(s.trim())) return;
@@ -644,6 +843,30 @@ function arrondi(x: number): number {
 
 function changer(x: number, sens: 'plus' | 'moins'): number {
   return sens === 'plus' ? arrondi(Math.max(x * 1.25, x + 1)) : arrondi(Math.max(1, Math.min(x * 0.8, x - 1)));
+}
+
+/** Rayon des coins quand l'utilisateur ne l'a pas dit : 3 mm, ou moins pour une petite ouverture. */
+function rayonPropose(l: number, h: number): number {
+  return Math.min(3, Math.floor((Math.min(l, h) / 4) * 2) / 2);
+}
+
+/** Range les places en millimètres sur les axes de la face. Une phrase d'erreur, ou `null`. */
+function placerEnMm(d: Decoupe, positions: readonly PosMm[]): string | null {
+  const vues = new Set<string>();
+  for (const p of positions) {
+    const a = axeDuBord(d.face, p.bord);
+    if (!a) return `${maj(direDecoupe(d))} : « ${BORD_TEXTE[p.bord]} » n’a pas de sens sur cette face. Dis plutôt « du bord gauche », « du bas »…`;
+    if (vues.has(a.axe)) return `${maj(direDecoupe(d))} : deux places sur le même axe, je ne sais pas laquelle prendre.`;
+    vues.add(a.axe);
+    if (a.axe === 'u') {
+      d.posU = p;
+      d.u = 'centre';
+    } else {
+      d.posV = p;
+      d.v = 'centre';
+    }
+  }
+  return null;
 }
 
 function correspond(d: Decoupe, op: OpDecoupe): boolean {
@@ -706,11 +929,32 @@ export function appliquerDecoupes(
           }
           if (op.profond && n.forme === 'encoche') n.hauteur = changer(n.hauteur > 0 ? n.hauteur : n.largeur, op.profond);
           if (deplacer) n.face = op.faces[0]!;
-          if (op.u) n.u = op.u;
-          if (op.v) n.v = op.v;
+          if (op.u) {
+            n.u = op.u;
+            delete n.posU;
+          }
+          if (op.v) {
+            n.v = op.v;
+            delete n.posV;
+          }
           if (op.coins) {
             n.coins = true;
             n.nombre = 4;
+          }
+          if (op.rayon !== undefined || op.evase) {
+            if (n.forme === 'rond') {
+              n.forme = 'rect';
+              n.hauteur = n.largeur;
+            }
+            if (op.rayon !== undefined) n.rayon = op.rayon > 0 ? op.rayon : rayonPropose(n.largeur, n.hauteur);
+            if (op.evase) n.evase = op.evase;
+          }
+          if (op.positions?.length) {
+            const erreur = placerEnMm(n, op.positions);
+            if (erreur) {
+              erreurs.push(erreur);
+              return d;
+            }
           }
           const avant = direDecoupe(d, creux);
           const apres = direDecoupe(n, creux);
@@ -750,7 +994,16 @@ export function appliquerDecoupes(
         u: op.coins ? 'centre' : (op.u ?? 'centre'),
         v: op.coins ? 'centre' : (op.v ?? 'centre'),
         ...(op.coins ? { coins: true } : {}),
+        ...(op.rayon !== undefined && forme === 'rect' ? { rayon: op.rayon > 0 ? op.rayon : rayonPropose(largeur, hauteur) } : {}),
+        ...(op.evase && forme === 'rect' ? { evase: op.evase } : {}),
       };
+      if (op.positions?.length) {
+        const erreur = placerEnMm(d, op.positions);
+        if (erreur) {
+          erreurs.push(erreur);
+          continue;
+        }
+      }
       liste.push(d);
       changements.push(`Ajout : ${direDecoupe(d, creux)}${propose ? ' (taille proposée)' : ''}`);
     }

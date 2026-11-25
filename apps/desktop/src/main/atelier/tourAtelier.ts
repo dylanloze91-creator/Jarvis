@@ -15,24 +15,36 @@
  *   carte, et seulement imprimante libre.
  */
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
+  ajouterCoteTrouvee,
+  ajouterMesure,
+  mesuresContredites,
+  SOURCE_LARGE,
+  siteDeSource,
+  ecrireFichierCotes,
+  ecrireFichierMesures,
+  fusionnerCotes,
+  lireFichierCotes,
+  lireFichierMesures,
+  lireRecherchesCotes,
+  type CotesTrouvees,
+  type RecherchesCotes,
+  type ResultatEtape,
   controlerStl,
   dernierAtelier,
   deciderAtelier,
-  fabriquer,
-  fichePiece,
   lireStl,
-  mesuresAffichees,
-  nomDossierPiece,
   phraseConfirmationAtelier,
   phraseConfirmationFile,
   phraseConfirmationSuivante,
   phraseTempsFilament,
+  PHONE_CANNOT_START,
   SPEAKER_CANNOT_START,
   type AtelierEtat,
   type AtelierVersionInfo,
+  type MesuresComposants,
   type ChatMessage,
   type InfosGcode,
   type PrintStatus,
@@ -40,6 +52,9 @@ import {
   type QueueStatus,
   type VolumeImpression,
 } from '@jarvis/core';
+
+import { ATELIER_SANS_OPENSCAD, fabriquerVersion } from './etapes.js';
+import { chercherCotes, type CotesCherchees, type DepsChercherCotes } from './chercherCotes.js';
 
 type EtatPiece = Extract<AtelierEtat, { etape: 'piece' }>;
 
@@ -62,6 +77,11 @@ export interface ProgrammesAtelier {
   openscad(): string | null;
   rendreStl(openscad: string, scad: string, stl: string): Promise<{ ok: boolean; message: string }>;
   rendreImage(openscad: string, scad: string, png: string): Promise<{ ok: boolean }>;
+  /**
+   * Les deux vues lues dans le STL (trois quarts, dessus) : noms des images faites, ou `null`.
+   * Absent : l'ancienne image de trois quarts par `rendreImage`.
+   */
+  rendreVues?(openscad: string, dossier: string, numero: number): Promise<{ troisQuarts: string | null; dessus: string | null }>;
   /** Tranche le STL ; `ok: false` avec une phrase si OrcaSlicer manque ou échoue. */
   trancher(stl: string, sortie: string): Promise<{ ok: boolean; message: string; gcode: string | null; infos: InfosGcode | null }>;
 }
@@ -76,6 +96,111 @@ export interface AtelierDeps {
   imprimante(): ImprimanteAtelier | null;
   /** Jour local `AAAA-MM-JJ`. */
   jour(): string;
+  /**
+   * Mesures de composants données par l'utilisateur. Absent : `composants-mesures.json` dans le
+   * dossier de l'atelier (`C:\dev\jarvis-data\atelier\composants-mesures.json`).
+   */
+  mesures?: {
+    lire(): Promise<MesuresComposants>;
+    ecrire(m: MesuresComposants): Promise<void>;
+    /** Met de côté des mesures (gardées dans le fichier, plus utilisées), avec la raison. */
+    mettreDeCote?(id: string, champs: Record<string, number>, raison: string): Promise<void>;
+  };
+  /**
+   * Réglage `printer.phoneStart` : faux = depuis le téléphone, ni « imprime-la » ni « lance la
+   * suivante » ; « mets-la dans la file » reste permis. Absent : oui, comme avant.
+   */
+  telephonePeutLancer?: () => boolean;
+  /**
+   * Cotes de composants trouvées ailleurs (recherche, fiches), chacune avec sa source. Absent :
+   * `composants-cotes.json` dans le dossier de l'atelier, lu seulement.
+   */
+  cotes?: {
+    lire(): Promise<CotesTrouvees>;
+    /** Recherches déjà faites, par composant. Absent : aucune. */
+    lireRecherches?(): Promise<RecherchesCotes>;
+    /** Garde les cotes trouvées et les recherches. Absent : rien n'est gardé. */
+    ecrire?(cotes: CotesTrouvees, recherches: RecherchesCotes): Promise<void>;
+  };
+  /**
+   * Chercher les cotes d'un composant sur Internet (recherche, lecture des pages, modèle local qui
+   * propose, Jarvis qui vérifie). Absent : le pied à coulisse, comme avant.
+   */
+  chercherCotes?: DepsChercherCotes;
+}
+
+/** Fichier des mesures de composants, dans le dossier de l'atelier. */
+export const FICHIER_MESURES = 'composants-mesures.json';
+/** Fichier des cotes trouvées ailleurs, à côté (jamais mêlées aux mesures de l'utilisateur). */
+export const FICHIER_COTES = 'composants-cotes.json';
+
+function cotesParFichier(racine: string): NonNullable<AtelierDeps['cotes']> {
+  const chemin = join(racine, FICHIER_COTES);
+  return {
+    lire: async () => (existsSync(chemin) ? lireFichierCotes(await readFile(chemin, 'utf8')) : {}),
+    lireRecherches: async () => (existsSync(chemin) ? lireRecherchesCotes(await readFile(chemin, 'utf8')) : {}),
+    ecrire: async (cotes, recherches) => {
+      await mkdir(racine, { recursive: true });
+      const temp = `${chemin}.tmp`;
+      await writeFile(temp, ecrireFichierCotes(cotes, recherches), 'utf8');
+      await rename(temp, chemin);
+    },
+  };
+}
+
+/** Une phrase sans adresses complètes : le site seulement, une fois (« dl.espressif.com »). */
+function sansAdresses(texte: string): string {
+  return texte
+    .replace(/https?:\/\/[^\s;)]+/g, (u) => siteDeSource(u))
+    .replace(/\(([^()]*)\)/g, (_, dedans: string) => `(${[...new Set(dedans.split(' ; '))].join(' ; ')})`);
+}
+
+/** Ce que la recherche a donné, en quelques phrases courtes (la suite dit ce qui se passe ensuite). */
+export function phraseRecherche(r: ResultatEtape<CotesCherchees>, voix: boolean): string {
+  if (!r.ok) return r.raison ?? "Je n'ai rien trouvé.";
+  if (voix) return `${r.raison} Le détail est sur le PC.`;
+  const morceaux = [r.raison ?? ''];
+  // Les plans : ce qu'ils ont donné, une fois par site (deux versions du même plan) — le plus complet.
+  const plans = [...new Map([...(r.produit?.plans ?? [])].sort((a, b) => a.resume.length - b.resume.length).map((p) => [siteDeSource(p.url), p])).values()];
+  for (const p of plans) morceaux.push(`Plan du fabricant (${siteDeSource(p.url)}) : ${p.resume}.`);
+  const sures = r.sources.filter((s) => !s.startsWith('plan du fabricant'));
+  if (sures.length) morceaux.push(`Sûres : ${sansAdresses(sures.join(' ; '))}.`);
+  if (r.incertitudes.length) morceaux.push(`À vérifier quand tu auras la pièce : ${sansAdresses(r.incertitudes.join(' ; '))}.`);
+  return morceaux.join(' ');
+}
+
+function mesuresParFichier(racine: string): NonNullable<AtelierDeps['mesures']> {
+  const chemin = join(racine, FICHIER_MESURES);
+  /** Le fichier tel quel (pour garder ce qui a été mis de côté). */
+  const brut = async (): Promise<Record<string, unknown>> => {
+    try {
+      return existsSync(chemin) ? (JSON.parse(await readFile(chemin, 'utf8')) as Record<string, unknown>) : {};
+    } catch {
+      return {};
+    }
+  };
+  const ecrireTout = async (m: MesuresComposants, deCote: unknown) => {
+    await mkdir(racine, { recursive: true });
+    const texte = ecrireFichierMesures(m);
+    const avecDeCote = deCote && typeof deCote === 'object' && Object.keys(deCote).length ? `${JSON.stringify({ ...JSON.parse(texte), mises_de_cote: deCote }, null, 2)}\n` : texte;
+    const temp = `${chemin}.tmp`;
+    await writeFile(temp, avecDeCote, 'utf8');
+    await rename(temp, chemin);
+  };
+  return {
+    lire: async () => (existsSync(chemin) ? lireFichierMesures(await readFile(chemin, 'utf8')) : {}),
+    ecrire: async (m) => ecrireTout(m, (await brut()).mises_de_cote),
+    mettreDeCote: async (id, champs, raison) => {
+      const avant = await brut();
+      const actives = lireFichierMesures(JSON.stringify(avant));
+      const reste = Object.fromEntries(Object.entries(actives[id] ?? {}).filter(([k]) => !(k in champs)));
+      const m: MesuresComposants = { ...actives, [id]: reste };
+      if (!Object.keys(reste).length) delete m[id];
+      const deCote = { ...((avant.mises_de_cote as Record<string, unknown> | undefined) ?? {}) } as Record<string, { champs: Record<string, number>; raison: string }[]>;
+      deCote[id] = [...(Array.isArray(deCote[id]) ? deCote[id] : []), { champs, raison }];
+      await ecrireTout(m, deCote);
+    },
+  };
 }
 
 export interface AtelierEntree {
@@ -93,8 +218,7 @@ export interface AtelierSortie {
   etat?: AtelierEtat;
 }
 
-export const ATELIER_SANS_OPENSCAD =
-  "OpenSCAD n'est pas installé sur ce PC : je ne peux pas dessiner la pièce. Installe-le (winget install --id=OpenSCAD.OpenSCAD -e), puis redemande-la.";
+export { ATELIER_SANS_OPENSCAD };
 export const ATELIER_IMPRIMANTE_ABSENTE =
   "Le fichier est prêt, mais l'imprimante n'est pas réglée dans Jarvis (Réglages → Services → Imprimante) : je n'envoie rien.";
 export const ATELIER_IMPRIMANTE_MUETTE = "L'imprimante ne répond pas : je n'envoie rien.";
@@ -120,13 +244,6 @@ export function nomSimple(nom: string): boolean {
   return /^[a-z0-9][a-z0-9._-]*$/i.test(nom) && !nom.includes('..');
 }
 
-async function dossierLibre(racine: string, base: (n: number) => string): Promise<string> {
-  const pris = new Set(existsSync(racine) ? await readdir(racine) : []);
-  for (let n = 1; ; n += 1) {
-    const nom = base(n);
-    if (!pris.has(nom)) return nom;
-  }
-}
 
 function detailCarte(infos: InfosGcode | null): string | null {
   if (!infos) return null;
@@ -149,13 +266,113 @@ function avecVersion(etat: EtatPiece, version: AtelierVersionInfo, choisie = ver
   };
 }
 
+/** Lancement refusé depuis le téléphone quand le réglage le coupe. */
+function telephoneBloque(input: AtelierEntree, deps: AtelierDeps): boolean {
+  return input.place === 'telephone' && deps.telephonePeutLancer?.() === false;
+}
+
 /** Un tour d'atelier. `null` : la phrase n'est pas pour l'atelier, le tour suit son chemin. */
 export async function tourAtelier(input: AtelierEntree, deps: AtelierDeps): Promise<AtelierSortie | null> {
   const precedent = dernierAtelier(input.messages);
-  const decision = deciderAtelier(input.text, precedent);
+  const fichierMesures = deps.mesures ?? mesuresParFichier(deps.racine);
+  let mesures = await fichierMesures.lire();
+  // Cotes trouvées sur Internet : elles comblent ce que l'utilisateur n'a pas mesuré (sûres, ou d'une
+  // seule source et dites « à vérifier »).
+  const fichierCotes = deps.cotes ?? cotesParFichier(deps.racine);
+  const cotes: CotesTrouvees = await fichierCotes.lire().catch(() => ({}));
+  const recherches: RecherchesCotes = await (fichierCotes.lireRecherches?.() ?? Promise.resolve({})).catch(() => ({}));
+  const contexte = () => ({
+    mesures: fusionnerCotes(mesures, cotes, { uneSource: true }),
+    rechercheCotes: Boolean(deps.chercherCotes),
+    cherches: Object.keys(recherches),
+    produits: Object.fromEntries(Object.entries(recherches).map(([id, r]) => [id, { produit: r.produit, ...(r.plans ? { plans: true } : {}) }])),
+  });
+  let decision = deciderAtelier(input.text, precedent, contexte());
+  // Une mesure de composant donnée : gardée tout de suite (elle sert ensuite partout), puis la
+  // phrase d'avant est relue (question suivante, ou la pièce).
+  let phraseLarges = '';
+  for (let i = 0; decision.kind === 'mesure' && i < 3; i += 1) {
+    if (decision.large) {
+      // « prends large » : gardée avec les cotes trouvées, comme une valeur d'une seule source, jamais
+      // comme une mesure de l'utilisateur (la fiche dira « à vérifier quand tu auras la pièce »).
+      const larges = decision.larges ?? [{ composant: decision.composant, champ: decision.champ, valeur: decision.valeur }];
+      for (const l of larges) {
+        const ajout = ajouterCoteTrouvee(cotes, l.composant, l.champ, { valeur: l.valeur, source: SOURCE_LARGE, choisie: true });
+        if (ajout.erreur) return precedent ? { texte: ajout.erreur, etat: precedent } : { texte: ajout.erreur };
+        Object.assign(cotes, ajout.cotes);
+      }
+      try {
+        await fichierCotes.ecrire?.(cotes, recherches);
+      } catch {
+        /* gardée pour ce tour seulement */
+      }
+      phraseLarges =
+        larges.length > 1
+          ? `D'accord, je prends large pour les ${larges.length} cotes qui manquaient, sans savoir si c'est juste : tout sera marqué « à vérifier quand tu auras la pièce ». `
+          : decision.valeur < 0
+            ? "D'accord, j'ouvre la fenêtre au plus large. "
+            : `D'accord, je prends ${String(decision.valeur).replace('.', ',')} mm, sans savoir si c'est juste. `;
+    } else {
+      const ajout = ajouterMesure(mesures, decision.composant, decision.champ, decision.valeur);
+      if (ajout.erreur) return precedent ? { texte: ajout.erreur, etat: precedent } : { texte: ajout.erreur };
+      mesures = ajout.mesures;
+      await fichierMesures.ecrire(mesures);
+    }
+    decision = deciderAtelier(decision.reprise.texte, decision.reprise.piece, contexte());
+  }
+  if (phraseLarges && decision.kind === 'dire') decision = { ...decision, texte: `${phraseLarges}${decision.texte}` };
+  // Le modèle exact donné : les cotes sont cherchées sur Internet, gardées avec leurs sources, puis la
+  // demande d'avant est relue (la pièce, ou ce qui manque encore au pied à coulisse).
+  if (decision.kind === 'chercherCotes' && deps.chercherCotes) {
+    const d = decision;
+    const resumes: string[] = [];
+    // Chaque composant à son tour : la recherche, ses plans, puis les cotes gardées avec leurs sources.
+    for (const { composant: id, produit } of d.recherches) {
+      input.progress?.(`Je cherche les cotes de « ${produit} » sur Internet…`);
+      const r = await chercherCotes({ composant: id, produit, cotes }, deps.chercherCotes, (a) => {
+        if (a.etape === 'recherche' || a.etape === 'lecture' || a.etape === 'plan') input.progress?.(a.message);
+      });
+      const apres = r.produit?.cotes ?? cotes;
+      recherches[id] = { produit, jour: deps.jour(), manquants: r.produit?.manquants ?? [], ...(deps.chercherCotes.lirePlan ? { plans: true } : {}) };
+      Object.assign(cotes, apres);
+      try {
+        await fichierCotes.ecrire?.(cotes, recherches);
+      } catch {
+        /* gardées pour ce tour seulement */
+      }
+      resumes.push(phraseRecherche(r, input.place === 'enceinte'));
+      // D'anciennes mesures (sans référence) qui contredisent ce qui est sûr pour cette référence : mises de côté.
+      const contre = mesuresContredites(id, mesures, cotes);
+      if (contre.length) {
+        const champs = Object.fromEntries(contre.map((x) => [x.champ, x.mesure]));
+        try {
+          await fichierMesures.mettreDeCote?.(id, champs, `contredites par les cotes sûres de « ${produit} » (${deps.jour()})`);
+          const reste = Object.fromEntries(Object.entries(mesures[id] ?? {}).filter(([k]) => !(k in champs)));
+          mesures = { ...mesures, [id]: reste };
+          resumes.push(
+            `J'ai mis de côté tes anciennes mesures (${contre.map((x) => `${String(x.mesure).replace('.', ',')} mm`).join(', ')}) : elles ne collent pas avec « ${produit} » (${contre.map((x) => `${String(x.trouvee).replace('.', ',')} mm`).join(', ')}). Elles restent dans le fichier des mesures.`,
+          );
+        } catch {
+          /* le fichier n'a pas pu être écrit : les mesures restent */
+        }
+      }
+    }
+    const resume = resumes.join(' ');
+    const suite = await tourAtelier(
+      { ...input, text: d.reprise.texte, messages: d.reprise.piece ? [{ role: 'assistant', content: '', atelier: d.reprise.piece } as ChatMessage] : [] },
+      { ...deps, cotes: { lire: async () => cotes, lireRecherches: async () => recherches } },
+    );
+    if (!suite) return { texte: resume };
+    return { ...suite, texte: `${resume} ${suite.texte}` };
+  }
   const voix = input.place === 'enceinte';
 
   switch (decision.kind) {
+    case 'mesure':
+      return { texte: 'Mesure gardée.' };
+    case 'chercherCotes':
+      // Pas de recherche sur ce PC : le pied à coulisse.
+      return { texte: "Je ne peux pas chercher sur Internet d'ici. Si tu as la pièce, dis « je la mesure »." };
     case 'rien':
       return null;
     case 'dire':
@@ -166,57 +383,40 @@ export async function tourAtelier(input: AtelierEntree, deps: AtelierDeps): Prom
         etat: { ...decision.etat, versionChoisie: decision.numero },
       };
     case 'fabriquer': {
-      const volume = await deps.volume();
-      const piece = fabriquer(decision.gabarit, decision.valeurs, volume);
-      if (!piece.ok) {
-        const reste = decision.base ? ` La version ${decision.base.versionChoisie} reste à l'écran.` : '';
-        return { texte: `${piece.erreurs.join(' ')}${reste}` };
-      }
-      const openscad = deps.programmes.openscad();
-      if (!openscad) return { texte: ATELIER_SANS_OPENSCAD };
-
-      const dossier =
-        decision.base?.dossier ?? (await dossierLibre(deps.racine, (n) => nomDossierPiece(decision.gabarit, deps.jour(), n)));
-      const chemin = join(deps.racine, dossier);
-      await mkdir(chemin, { recursive: true });
-      const numero = decision.base ? Math.max(...decision.base.versions.map((v) => v.numero)) + 1 : 1;
-      const scad = join(chemin, `v${numero}.scad`);
-      const stl = join(chemin, `v${numero}.stl`);
-      await writeFile(scad, piece.scad, 'utf8');
-
-      input.progress?.('OpenSCAD dessine la pièce…');
-      const rendu = await deps.programmes.rendreStl(openscad, scad, stl);
-      if (!rendu.ok) return { texte: `${rendu.message} Le fichier .scad est gardé dans ${chemin}.` };
-      const controle = controlerStl(lireStl(new Uint8Array(await readFile(stl))), piece.taille);
-      const image = (await deps.programmes.rendreImage(openscad, scad, join(chemin, `v${numero}.png`))).ok ? `v${numero}.png` : undefined;
-
-      const version: AtelierVersionInfo = {
-        numero,
-        valeurs: piece.valeurs,
-        fiche: fichePiece(piece),
-        mesures: mesuresAffichees(decision.gabarit, piece.valeurs),
-        taille: piece.taille,
-        stl: `v${numero}.stl`,
-        ...(image ? { image } : {}),
-        ...(decision.changement ? { changement: decision.changement } : {}),
-      };
-      const etat: EtatPiece = decision.base
-        ? avecVersion(decision.base, version)
-        : {
-            etape: 'piece',
+      // L'étape appelable (la même que celle du futur chef de projet) ; ici, elle devient des phrases.
+      const r = await fabriquerVersion(
+        { gabarit: decision.gabarit, valeurs: decision.valeurs, ...(decision.base ? { base: decision.base } : {}), ...(decision.changement ? { changement: decision.changement } : {}), mesures, cotes },
+        deps,
+        (a) => {
+          if (a.etape === 'dessin' || a.etape === 'images') input.progress?.(a.message);
+        },
+      );
+      const reste = decision.base ? ` La version ${decision.base.versionChoisie} reste à l'écran.` : '';
+      const proposition = r.produit?.proposition;
+      if (proposition) {
+        // Une carte qui ne tient pas : Jarvis propose des cotes qui marchent (vérifiées), et attend « oui ».
+        return {
+          texte: `${r.raison} Je l'agrandis à ${proposition.cotes} ? Dis « oui », ou redis-moi la pièce autrement.${reste}`,
+          etat: {
+            etape: 'proposition',
             gabarit: decision.gabarit.id,
-            nom: decision.gabarit.nom,
-            dossier,
-            versions: [version],
-            versionChoisie: numero,
-            plateau: { x: volume.x, y: volume.y },
-          };
-      const probleme = controle.ok ? '' : ` Attention : ${controle.problemes.join(' ')}`;
+            valeurs: proposition.valeurs,
+            base: decision.base ?? null,
+            ...(decision.changement ? { changement: decision.changement } : {}),
+          },
+        };
+      }
+      const etat = r.produit?.etat;
+      const version = r.produit?.version;
+      if (!etat || !version) return { texte: r.raison === ATELIER_SANS_OPENSCAD || r.produit?.scad ? (r.raison ?? '') : `${r.raison ?? ''}${reste}` };
+      const probleme = [r.ok ? '' : ` Attention : ${r.raison}`, ...r.avertissements.filter((a) => a.startsWith('Sans support')).map((a) => ` ${a}`)].join('');
       if (voix) return { texte: `C'est prêt : ${version.fiche} Regarde l'écran du PC.${probleme}`, etat };
-      const quoi = decision.changement ? `Version ${numero} (${decision.changement}). ` : '';
-      const suite = controle.ok
-        ? ' La pièce est à l’écran : tourne-la à la souris. Dis-moi ce qu’il faut changer, ou « imprime-la ».'
-        : '';
+      const quoi = decision.changement ? `Version ${version.numero} (${decision.changement}). ` : '';
+      const suite = !r.ok
+        ? ''
+        : input.place === 'telephone'
+          ? ' Les images arrivent ci-dessous ; « Voir en 3D » pour la tourner au doigt. Dis-moi ce qu’il faut changer.'
+          : ' La pièce est à l’écran : tourne-la à la souris. Dis-moi ce qu’il faut changer, ou « imprime-la ».';
       return { texte: `${quoi}${version.fiche}${probleme}${suite}`, etat };
     }
     case 'lancerSuivante':
@@ -224,6 +424,7 @@ export async function tourAtelier(input: AtelierEntree, deps: AtelierDeps): Prom
     case 'file':
     case 'imprimer': {
       if (input.place === 'enceinte') return { texte: SPEAKER_CANNOT_START };
+      if (decision.kind === 'imprimer' && telephoneBloque(input, deps)) return { texte: PHONE_CANNOT_START, etat: decision.etat };
       const { etat, numero } = decision;
       const version = etat.versions.find((v) => v.numero === numero)!;
       if (!version.stl) return { texte: `La version ${numero} n'a pas de fichier de pièce.` };
@@ -359,6 +560,7 @@ async function mettreEnFile(
 /** « le plateau est vide, lance la suivante » : la première pièce de la file, après une carte. */
 async function lancerSuivante(input: AtelierEntree, deps: AtelierDeps): Promise<AtelierSortie> {
   if (input.place === 'enceinte') return { texte: SPEAKER_CANNOT_START };
+  if (telephoneBloque(input, deps)) return { texte: PHONE_CANNOT_START };
   const imprimante = deps.imprimante();
   if (!imprimante) return { texte: "L'imprimante n'est pas réglée dans Jarvis (Réglages → Services → Imprimante) : je ne lance rien." };
   let file: QueueStatus;

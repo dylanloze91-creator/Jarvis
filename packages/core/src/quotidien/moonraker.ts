@@ -267,6 +267,14 @@ export function printerIntent(text: string): PrinterIntent | null {
 }
 
 export const SPEAKER_CANNOT_START = "Le lancement d'une impression se fait sur le PC ou le téléphone.";
+/** Réglage `printer.phoneStart: false` : rien ne se lance à distance ; la file d'attente reste permise. */
+export const PHONE_CANNOT_START =
+  "Depuis le téléphone, je ne lance aucune impression pour l'instant. Tu peux dire « mets-la dans la file » : elle attendra, file en pause, que tu sois devant l'imprimante.";
+
+/** Le téléphone peut-il lancer (ou reprendre) une impression ? Absent : oui, comme avant. */
+export function phoneMayStartPrint(printer: { phoneStart?: boolean } | undefined): boolean {
+  return printer?.phoneStart !== false;
+}
 
 const PLATE = 'Vérifie que le plateau est vide.';
 

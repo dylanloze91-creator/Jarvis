@@ -69,6 +69,7 @@ import {
   ToolResultMemory,
   type ToolManager,
   MoonrakerClient,
+  phoneMayStartPrint,
   checkRoverBaseUrl,
   createMessage,
   formatPrintStatus,
@@ -372,7 +373,11 @@ async function printerReply(input: {
   place: 'fenetre' | 'telephone' | 'enceinte';
   confirm: (summary: string) => Promise<boolean>;
 }): Promise<string | null> {
-  return runPrinterReply(input, () => new MoonrakerClient(settings.printer?.baseUrl ?? '', settings.printer?.apiKey ?? ''));
+  return runPrinterReply(
+    input,
+    () => new MoonrakerClient(settings.printer?.baseUrl ?? '', settings.printer?.apiKey ?? ''),
+    () => phoneMayStartPrint(settings.printer),
+  );
 }
 
 let printWatch: { stop(): void } | null = null;
@@ -448,6 +453,7 @@ function buildTools(): ToolManager {
         return printer?.enabled === true && !!printer.baseUrl && checkRoverBaseUrl(printer.baseUrl).ok;
       },
       client: () => new MoonrakerClient(settings.printer?.baseUrl ?? '', settings.printer?.apiKey ?? ''),
+      phoneMayStart: () => phoneMayStartPrint(settings.printer),
     },
     summarizeYoutube: (url, onProgress, signal) =>
       summarizeYoutubeLink({
@@ -495,7 +501,7 @@ function settingsForWindow(): Settings {
  * chemin d'avant. Jarvis Live n'a pas cette fonction (`undefined`).
  */
 /** Atelier 3D dans la discussion : Jarvis Test seulement (`undefined` dans Live). */
-const atelierReply = edition().atelier ? creerAtelierPC(() => settings) : undefined;
+const atelierReply = edition().atelier ? creerAtelierPC(() => settings, undefined, undefined, searchRegistry) : undefined;
 
 const stopAllReply = edition().appendices
   ? async (input: { text: string }): Promise<string | null> => {
@@ -610,6 +616,8 @@ const phone = new PhoneService({
     phoneVoiceMode(settings.voice.ttsProvider, await piper.isReady(settings.voice.ttsVoice || undefined)),
   synthesizeSpeech: async (text: string) =>
     piper.synthesizeWav({ text, voiceId: settings.voice.ttsVoice || undefined }),
+  // Atelier 3D (Jarvis Test) : images et STL d'une pièce, par liens à usage unique.
+  ...(atelierReply ? { fichierAtelier: (dossier: string, fichier: string) => lireFichierAtelier(dossier, fichier) } : {}),
   log: (line) => console.info(line),
   broadcast: (status) => {
     const contents = overlay?.browserWindow.webContents;

@@ -1,7 +1,10 @@
 #!/usr/bin/env node
 /**
  * Atelier 3D : rendre les pièces par défaut (et quelques variantes) avec OpenSCAD, puis vérifier
- * chaque STL sans modèle : surface fermée, cotes égales à `taille()` du gabarit.
+ * chaque STL sans modèle : surface fermée, cotes égales à `taille()` du gabarit, et impression sans
+ * support (surplombs de plus de 45°, ponts de plus de 25 mm). Les pièces d'essai des outils
+ * (découpes en millimètres, bossages, plots, nervures, rebord, emboîtement) sont faites en passant
+ * par les phrases, comme dans la discussion.
  *
  * Depuis la racine du dépôt :
  *   npm run atelier:rendre --workspace @jarvis/core -- --dir C:\dev\jarvis-data\atelier\_essais
@@ -11,6 +14,7 @@
  *   --openscad CHEMIN   programme OpenSCAD (défaut : cherché dans Program Files)
  *   --defauts           seulement les 10 pièces par défaut, sans les variantes
  *   --sans-image        ne fait pas les images
+ *   --outils            seulement les pièces d'essai des outils (phrases)
  *
  * OpenSCAD est lancé comme programme à part, sans shell. Rien n'est envoyé ailleurs.
  */
@@ -21,7 +25,7 @@ import { join, resolve } from 'node:path';
 
 const here = new URL('.', import.meta.url);
 const atelier = await import(new URL('../dist/atelier/index.js', here).href);
-const { GABARITS, gabarit, fabriquer, lireStl, controlerStl } = atelier;
+const { GABARITS, gabarit, fabriquer, lireStl, controlerStl, controlerImpression, deciderAtelier } = atelier;
 
 const args = process.argv.slice(2);
 const opt = (name) => {
@@ -30,6 +34,7 @@ const opt = (name) => {
 };
 const dir = resolve(opt('--dir') ?? 'C:\\dev\\jarvis-data\\atelier\\_essais');
 const seulementDefauts = args.includes('--defauts');
+const seulementOutils = args.includes('--outils');
 const sansImage = args.includes('--sans-image');
 
 function trouverOpenscad() {
@@ -84,8 +89,41 @@ const VARIANTES = [
   ['porte_etiquette', 'large', { largeur: 120, hauteur: 40 }],
 ];
 
-const essais = GABARITS.map((g) => [g.id, 'defaut', {}]);
-if (!seulementDefauts) essais.push(...VARIANTES);
+/** Pièces d'essai des outils : une suite de phrases dites dans la discussion. */
+const OUTILS = [
+  ['mm-fond', ['Fais-moi une boîte de 120 par 80 par 40', 'ajoute une ouverture de 17 par 15 dans le fond, à 12 mm du bord gauche et 8 mm du bas']],
+  ['mm-centre', ['Fais-moi une boîte de 100 par 60 par 160', 'ajoute un trou de 8 centré à 145 mm du bas']],
+  ['formes', ['Fais-moi une boîte avec couvercle de 120 par 80 par 40', 'ajoute une ouverture de 30 par 20 à coins arrondis à l’avant', 'ajoute une fenêtre évasée de 14 par 13 sur le couvercle']],
+  ['bossages-emboite', ['Fais-moi une boîte avec couvercle de 120 par 80 par 40', 'ajoute quatre bossages avec insert M3 à 7 mm des coins', 'fais que le couvercle s’emboîte']],
+  ['bossage-plus-haut', ['Fais-moi une boîte de 120 par 80 par 40', 'ajoute quatre bossages avec insert M3 de 15 mm de haut à 7 mm des coins', 'le bossage plus haut']],
+  ['plots-nervure', ['Fais-moi une boîte de 120 par 80 par 40', 'ajoute 4 plots M2,5 avec un entraxe de 58 par 49', 'ajoute une nervure de 6 mm dans la largeur']],
+  ['rebord-couvercle', ['Fais-moi une boîte avec couvercle de 100 par 70 par 40', 'ajoute un rebord intérieur pour le couvercle', 'ajoute quatre bossages avec insert M3 à 7 mm des coins']],
+];
+
+/** Les mesures de la pièce après la suite de phrases (la décision finale doit être « fabriquer »). */
+function parPhrases(phrases) {
+  let etat = null;
+  let derniere = null;
+  for (const phrase of phrases) {
+    const d = deciderAtelier(phrase, etat);
+    if (d.kind !== 'fabriquer') return { erreur: `« ${phrase} » : ${d.kind === 'dire' ? d.texte : d.kind}` };
+    const p = fabriquer(d.gabarit, d.valeurs);
+    if (!p.ok) return { erreur: `« ${phrase} » : ${p.erreurs.join(' ')}` };
+    const version = { numero: (etat?.versions.length ?? 0) + 1, valeurs: p.valeurs, fiche: '', mesures: [], taille: p.taille, stl: 'x.stl' };
+    etat = etat ? { ...etat, versions: [...etat.versions, version], versionChoisie: version.numero } : { etape: 'piece', gabarit: p.gabarit.id, nom: p.gabarit.nom, dossier: 'x', versions: [version], versionChoisie: 1, plateau: { x: 300, y: 300 } };
+    derniere = { id: p.gabarit.id, valeurs: p.valeurs };
+  }
+  return derniere;
+}
+
+const essais = seulementOutils ? [] : GABARITS.map((g) => [g.id, 'defaut', {}]);
+if (!seulementDefauts && !seulementOutils) essais.push(...VARIANTES);
+if (!seulementDefauts) {
+  for (const [nom, phrases] of OUTILS) {
+    const r = parPhrases(phrases);
+    essais.push(r.erreur ? ['outils', nom, null, r.erreur] : [r.id, `outils-${nom}`, r.valeurs]);
+  }
+}
 
 const openscad = trouverOpenscad();
 const version = await lancer(openscad, ['--version']);
@@ -97,7 +135,11 @@ if (version.code !== 0) {
 await mkdir(dir, { recursive: true });
 
 const resultats = [];
-for (const [id, nom, valeurs] of essais) {
+for (const [id, nom, valeurs, refus] of essais) {
+  if (refus) {
+    resultats.push({ id, nom, ok: false, raison: `phrase non comprise ou refusée : ${refus}` });
+    continue;
+  }
   const g = gabarit(id);
   const piece = fabriquer(g, valeurs);
   const base = join(dir, `${id}-${nom}`);
@@ -113,8 +155,11 @@ for (const [id, nom, valeurs] of essais) {
     continue;
   }
   let a;
+  let imp;
   try {
-    a = controlerStl(lireStl(new Uint8Array(await readFile(`${base}.stl`))), piece.taille);
+    const maillage = lireStl(new Uint8Array(await readFile(`${base}.stl`)));
+    a = controlerStl(maillage, piece.taille);
+    imp = controlerImpression(maillage, g.nom);
   } catch (e) {
     resultats.push({ id, nom, ok: false, raison: `STL illisible : ${e.message}` });
     continue;
@@ -124,7 +169,7 @@ for (const [id, nom, valeurs] of essais) {
     const png = await lancer(openscad, ['--render', '-o', `${base}.png`, '--imgsize=800,600', '--viewall', '--autocenter', '--colorscheme=Tomorrow', `${base}.scad`]);
     image = png.code === 0 && existsSync(`${base}.png`) ? `${base}.png` : `échec (${png.code}) ${png.sortie.trim().slice(-200)}`;
   }
-  const ok = a.ok && avertissements.length === 0;
+  const ok = a.ok && imp.ok && avertissements.length === 0;
   resultats.push({
     id,
     nom,
@@ -134,7 +179,8 @@ for (const [id, nom, valeurs] of essais) {
     triangles: a.triangles,
     mesure: a.taille.map((x) => Math.round(x * 100) / 100),
     attendu: piece.taille.map((x) => Math.round(x * 100) / 100),
-    problemes: a.problemes,
+    problemes: [...a.problemes, ...imp.problemes],
+    pontLePlusLong: imp.ponts.length ? Math.round(imp.ponts[0].mm * 10) / 10 : 0,
     avertissements,
     secondes: Math.round(rendu.ms / 100) / 10,
     image,
@@ -143,7 +189,7 @@ for (const [id, nom, valeurs] of essais) {
 
 for (const r of resultats) {
   const etat = r.ok ? 'OK ' : 'NON';
-  const detail = r.raison ?? `${r.fermee ? 'fermée' : `ouverte (${r.aretesOuvertes} arêtes)`}, ${r.mesure.join(' × ')} mm (attendu ${r.attendu.join(' × ')}), ${r.secondes} s${r.problemes.length ? ` — ${r.problemes.join(' ')}` : ''}${r.avertissements.length ? ` — ${r.avertissements.join(' | ')}` : ''}`;
+  const detail = r.raison ?? `${r.fermee ? 'fermée' : `ouverte (${r.aretesOuvertes} arêtes)`}, ${r.mesure.join(' × ')} mm (attendu ${r.attendu.join(' × ')}), pont le plus long ${r.pontLePlusLong} mm, ${r.secondes} s${r.problemes.length ? ` — ${r.problemes.join(' ')}` : ''}${r.avertissements.length ? ` — ${r.avertissements.join(' | ')}` : ''}`;
   console.log(`${etat} ${r.id} (${r.nom}) : ${detail}`);
 }
 await writeFile(join(dir, 'resultats.json'), JSON.stringify({ openscad: version.sortie.trim(), date: new Date().toISOString(), resultats }, null, 2), 'utf8');

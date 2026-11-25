@@ -251,3 +251,73 @@ describe('découpes : dans la discussion', () => {
     expect(d.kind === 'fabriquer' && d.changement).toBe('Hauteur : 30 mm → 38 mm');
   });
 });
+
+describe('découpes placées en millimètres', () => {
+  const GRANDE = { longueur: 120, largeur: 80, hauteur: 40, paroi: 2.4, fond: 2 };
+
+  it('« une ouverture de 17 par 15 dans le fond, à 12 mm du bord gauche et 8 mm du bas »', () => {
+    const [d] = ajouter('boite', 'une ouverture de 17 par 15 dans le fond, à 12 mm du bord gauche et 8 mm du bas');
+    expect(d).toMatchObject({ forme: 'rect', face: 'dessous', largeur: 17, hauteur: 15, posU: { bord: 'gauche', mm: 12 }, posV: { bord: 'bas', mm: 8 } });
+    expect(direDecoupe(d!)).toBe('ouverture de 17 × 15 mm dans le fond, à 12 mm du bord gauche et à 8 mm du bas');
+    // Vu de dessous, la gauche est en x = 0 et le bas vers l'avant (y = 0) : bord de l'ouverture à 12 et 8 mm.
+    const r = placerDecoupes('boite', 'boîte', { ...GRANDE }, [d!]);
+    expect(r.erreurs).toEqual([]);
+    expect(r.scad[0]).toBe('translate([12, 8, -1]) cube([17, 15, 4]);');
+  });
+
+  it('« un trou de 8 centré à 145 mm du bas » : le centre à 145 mm', () => {
+    const [d] = ajouter('boite', 'un trou de 8 centré à 145 mm du bas');
+    expect(d).toMatchObject({ forme: 'rond', face: 'avant', largeur: 8, posV: { bord: 'bas', mm: 145, centre: true } });
+    expect(direDecoupe(d!)).toBe('trou de 8 mm à l’avant, centré à 145 mm du bas');
+    const r = placerDecoupes('boite', 'boîte', { longueur: 100, largeur: 60, hauteur: 160, paroi: 2, fond: 2 }, [d!]);
+    expect(r.scad[0]).toBe('translate([50, -1, 145]) rotate([-90, 0, 0]) cylinder(h = 4, d = 8);');
+  });
+
+  it('côté droit : « à 10 mm de l’avant » se compte depuis le bord avant', () => {
+    const [d] = ajouter('boite', 'une ouverture de 9 par 4 sur le côté droit, à 10 mm de l’avant et 5 mm du bas');
+    const r = placerDecoupes('boite', 'boîte', { ...GRANDE }, [d!]);
+    expect(r.scad[0]).toBe('translate([116.6, 10, 5]) cube([4.4, 9, 4]);');
+  });
+
+  it('refus : bord qui n’existe pas sur la face, découpe qui déborde', () => {
+    const r = appliquerDecoupes(gabarit('boite')!, [], lire('un trou de 8 à l’avant, à 20 mm de l’avant').ops);
+    expect(r.erreurs[0]).toMatch(/n’a pas de sens sur cette face/);
+    const [d] = ajouter('boite', 'une ouverture de 17 par 15 dans le fond, à 1 mm du bord gauche');
+    expect(placerDecoupes('boite', 'boîte', { ...GRANDE }, [d!]).erreurs[0]).toMatch(/déborde de la place utile/);
+  });
+
+  it('« le trou à 20 mm du bord gauche » déplace la découpe', () => {
+    const etat = piece('boite', { ...GRANDE, decoupes: JSON.stringify(ajouter('boite', 'un trou de 8 à l’avant')) });
+    const d = deciderAtelier('mets le trou à 20 mm du bord gauche', etat);
+    if (d.kind !== 'fabriquer') throw new Error(d.kind);
+    expect(decoupesDe(d.valeurs)[0]).toMatchObject({ posU: { bord: 'gauche', mm: 20 } });
+  });
+});
+
+describe('nouvelles formes de découpe', () => {
+  it('rectangle à coins arrondis', () => {
+    const [d] = ajouter('boite', 'une ouverture de 30 par 20 à coins arrondis à l’avant');
+    expect(d).toMatchObject({ forme: 'rect', rayon: 3 });
+    expect(direDecoupe(d!)).toBe('ouverture de 30 × 20 mm à coins arrondis (rayon 3 mm) à l’avant');
+    const r = placerDecoupes('boite', 'boîte', BOITE, [d!]);
+    expect(r.erreurs).toEqual([]);
+    expect(r.scad[0]).toMatch(/^multmatrix\(.*offset\(r = 3\) square\(\[24, 14\], center = true\);$/);
+    expect(equilibre(r.scad[0]!)).toBe(true);
+    const [g] = ajouter('boite', 'une ouverture de 30 par 20 avec des coins arrondis de 12 mm à l’avant');
+    expect(placerDecoupes('boite', 'boîte', BOITE, [g!]).erreurs[0]).toMatch(/rayon trop grand/);
+  });
+
+  it('fenêtre évasée (caméra) : plus grande dehors, tronc de pyramide', () => {
+    const [d] = ajouter('boite', 'une fenêtre évasée de 14 par 13, 18,5 par 15 à l’extérieur, à l’avant');
+    expect(d).toMatchObject({ forme: 'rect', largeur: 14, hauteur: 13, evase: [18.5, 15] });
+    expect(direDecoupe(d!)).toBe('fenêtre évasée de 14 × 13 mm (18,5 × 15 mm dehors) à l’avant');
+    const r = placerDecoupes('boite', 'boîte', BOITE, [d!]);
+    expect(r.erreurs).toEqual([]);
+    expect(r.scad[0]).toMatch(/hull\(\)/);
+    expect(equilibre(r.scad[0]!)).toBe(true);
+    // Sans taille dehors : à 45°.
+    const [e] = ajouter('boite', 'une fenêtre évasée de 14 par 13 dans le fond');
+    expect(e!.evase).toEqual([0, 0]);
+    expect(direDecoupe(e!)).toBe('fenêtre évasée de 14 × 13 mm (à 45°) dans le fond');
+  });
+});

@@ -11,7 +11,7 @@ export default defineConfig({
   },
   esbuild: { jsx: 'automatic' },
   test: {
-    include: ['src/main/vitesse/*.banc.ts'],
+    include: ['src/main/vitesse/*.banc.ts', 'src/main/atelier/*.banc.ts'],
     testTimeout: 6_000_000,
     hookTimeout: 120_000,
     fileParallelism: false,

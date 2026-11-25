@@ -81,6 +81,7 @@ import {
   type ModelPlace,
   type AuditLogStore,
   type AtelierEtat,
+  pourAtelier,
   type ChatMessage,
   type ConfirmationRequest,
   type Conversation,
@@ -496,7 +497,9 @@ export class ChatSession {
     this.deps.noteUserTurn?.({ text: input.text, attachments });
     // Mode direct de Jarvis Imager : `/image …` ou une demande repérée par règles part à Imager sans
     // aucun modèle de langage ; le tour est marqué `direct` et jamais renvoyé au modèle ensuite.
-    const direct = attachments.length ? null : await this.directImageRequest(input.text, conversation.messages);
+    // Atelier 3D (Jarvis Test) : une demande de pièce passe avant (« dessine-moi un boîtier… »).
+    const pourLAtelier = Boolean(this.deps.atelier) && pourAtelier(input.text, conversation.messages);
+    const direct = attachments.length || pourLAtelier ? null : await this.directImageRequest(input.text, conversation.messages);
     const userMessage = createMessage('user', input.text, {
       ...(attachments.length ? { attachments } : {}),
       ...(direct ? { direct: 'image' as const, directPrompt: direct.prompt } : {}),
@@ -566,6 +569,7 @@ export class ChatSession {
                 {
                   requestConfirmation: (request) => this.askUser(sender, emit, request, controller.signal),
                   fromSpeaker: input.place?.kind === 'enceinte',
+                  fromPhone: input.place?.kind === 'telephone',
                   signal: controller.signal,
                 },
               );
@@ -769,6 +773,7 @@ export class ChatSession {
         debug: settings.debugLogging,
         spotifyVoiceSessionId: this.spotifyVoiceSessionId,
         fromSpeaker: input.place?.kind === 'enceinte',
+        fromPhone: input.place?.kind === 'telephone',
         requestConfirmation: (request) => this.askUser(sender, emit, request, controller.signal),
       });
       if (route.expressTool) {
@@ -805,6 +810,7 @@ export class ChatSession {
         debug: settings.debugLogging,
         spotifyVoiceSessionId: this.spotifyVoiceSessionId,
         fromSpeaker: input.place?.kind === 'enceinte',
+        fromPhone: input.place?.kind === 'telephone',
         requestConfirmation: (request) => this.askUser(sender, emit, request, controller.signal),
       });
     }

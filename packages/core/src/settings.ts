@@ -338,6 +338,11 @@ export const settingsSchema = z.object({
       enabled: z.boolean().optional(),
       baseUrl: z.string().max(300).optional(),
       apiKey: z.string().max(200).optional(),
+      /**
+       * `false` : aucune impression lancée ni reprise depuis le téléphone (la file d'attente reste
+       * permise, en pause). Absent : comme avant, le téléphone peut lancer après une carte.
+       */
+      phoneStart: z.boolean().optional(),
     })
     .optional(),
   /**

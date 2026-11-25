@@ -3,6 +3,7 @@
  * la phrase ne part jamais au modèle.
  */
 import {
+  PHONE_CANNOT_START,
   SPEAKER_CANNOT_START,
   formatPrintStatus,
   printerIntent,
@@ -20,10 +21,13 @@ export async function runPrinterReply(
     confirm: (summary: string) => Promise<boolean>;
   },
   open: () => MoonrakerClient,
+  /** Réglage `printer.phoneStart` : faux = ni lancement ni reprise depuis le téléphone. */
+  phoneMayStart: () => boolean = () => true,
 ): Promise<string | null> {
   const intent = printerIntent(input.text);
   if (!intent) return null;
   if ((intent.kind === 'start' || intent.kind === 'resume') && input.place === 'enceinte') return SPEAKER_CANNOT_START;
+  if ((intent.kind === 'start' || intent.kind === 'resume') && input.place === 'telephone' && !phoneMayStart()) return PHONE_CANNOT_START;
   let printer: MoonrakerClient;
   try {
     printer = open();

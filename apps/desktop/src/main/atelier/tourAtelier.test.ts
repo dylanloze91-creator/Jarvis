@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { createMessage, ecrireStlBinaire, MoonrakerClient, SPEAKER_CANNOT_START, type AtelierEtat, type ChatMessage } from '@jarvis/core';
+import { createMessage, ecrireStlBinaire, MoonrakerClient, PHONE_CANNOT_START, SPEAKER_CANNOT_START, type AtelierEtat, type ChatMessage } from '@jarvis/core';
 import { FakeMoonraker } from '../../../../../packages/core/src/quotidien/fakeMoonraker.testkit.js';
 import { dossierAtelier, lireFichierAtelier } from './atelierPC.js';
 import {
@@ -92,7 +92,7 @@ async function dire(
   messages: ChatMessage[],
   text: string,
   d: AtelierDeps,
-  options: { place?: 'fenetre' | 'enceinte'; confirm?: (s: string) => Promise<boolean> } = {},
+  options: { place?: 'fenetre' | 'telephone' | 'enceinte'; confirm?: (s: string) => Promise<boolean> } = {},
 ): Promise<{ texte: string; etat?: AtelierEtat } | null> {
   const sortie = await tourAtelier(
     { text, messages, place: options.place ?? 'fenetre', confirm: options.confirm ?? (async () => false) },
@@ -151,6 +151,44 @@ describe('atelier dans la discussion, côté PC', () => {
     expect(sortie?.texte).toContain('250 × 250 × 250');
     expect(sortie?.etat).toBeUndefined();
     expect(rendus).toHaveLength(0);
+  });
+
+  it('pièce qui ne s’imprime pas sans support : dit, avec l’endroit', async () => {
+    // Faux OpenSCAD : une « table » de 80 × 50 × 30, plateau tenu par deux pieds à 60 mm l'un de l'autre.
+    const morceau = (x0: number, x1: number, z0: number, z1: number) => {
+      const p = [[x0, 0, z0], [x1, 0, z0], [x1, 50, z0], [x0, 50, z0], [x0, 0, z1], [x1, 0, z1], [x1, 50, z1], [x0, 50, z1]] as const;
+      const faces = [[0, 2, 1], [0, 3, 2], [4, 5, 6], [4, 6, 7], [0, 1, 5], [0, 5, 4], [1, 2, 6], [1, 6, 5], [2, 3, 7], [2, 7, 6], [3, 0, 4], [3, 4, 7]];
+      return faces.flatMap((f) => f.flatMap((i) => [...p[i]!]));
+    };
+    const d = deps({
+      programmes: {
+        ...deps().programmes,
+        rendreStl: async (_exe, _scad, stl) => {
+          await writeFile(stl, ecrireStlBinaire([...morceau(0, 10, 0, 27), ...morceau(70, 80, 0, 27), ...morceau(0, 80, 27, 30)]));
+          return { ok: true, message: 'Pièce dessinée.' };
+        },
+      },
+    });
+    const sortie = await dire([], 'Fais-moi une boîte de 80 par 50 par 30', d);
+    expect(sortie?.texte).toMatch(/Sans support, ça risque de mal s’imprimer : Boîte : pont de (?:59,5|6\d(?:,\d)?) mm sans appui \(25 mm au plus\), à 27 mm de haut/);
+    expect(sortie?.etat).toMatchObject({ etape: 'piece' });
+  });
+
+  it('composant à mesurer : la question, puis la mesure gardée dans composants-mesures.json', async () => {
+    const messages: ChatMessage[] = [];
+    const d = deps();
+    await dire(messages, 'Fais-moi une boîte de 120 par 100 par 40', d);
+    const q1 = await dire(messages, 'mets des plots pour l’ESP32', d);
+    expect(q1?.texte).toMatch(/Mesure 1 sur 5 : la longueur de la carte/);
+    expect(q1?.etat).toMatchObject({ etape: 'mesure', composant: 'esp32_s3_devkitc_1_borniers', champ: 'longueur' });
+    const q2 = await dire(messages, '62', d);
+    expect(q2?.texte).toMatch(/^Mesure 2 sur 5 : la largeur de la carte/);
+    const fichier = JSON.parse(await readFile(join(racine, 'composants-mesures.json'), 'utf8'));
+    expect(fichier.composants).toEqual({ esp32_s3_devkitc_1_borniers: { longueur: 62 } });
+    // Une autre discussion le lendemain : la mesure déjà donnée n'est pas redemandée.
+    const autre: ChatMessage[] = [];
+    await dire(autre, 'Fais-moi une boîte de 120 par 100 par 40', d);
+    expect((await dire(autre, 'mets des plots pour l’ESP32', d))?.texte).toMatch(/^Mesure 2 sur 5/);
   });
 
   it('sans OpenSCAD : dit, rien inventé', async () => {
@@ -239,6 +277,52 @@ describe('atelier dans la discussion, côté PC', () => {
     const deux = await dire(messages, 'ajoute-la à la file', d, { confirm: async () => true });
     expect(deux?.texte).toContain('version 2, est dans la file d\'attente (place 2 sur 2)');
     expect(imprimante.fake.queue.map((j) => j.filename)).toEqual(['boite-2026-11-23-1-v1.gcode', 'boite-2026-11-23-1-v2.gcode']);
+  });
+
+  it('téléphone, lancement coupé (printer.phoneStart: false) : ni « imprime-la » ni « lance la suivante », la file reste permise', async () => {
+    const imprimante = new FausseImprimante();
+    const d = deps({ telephonePeutLancer: () => false }, imprimante);
+    const messages: ChatMessage[] = [];
+    await dire(messages, 'Fais-moi une boîte de 80 par 50 par 30', d, { place: 'telephone' });
+    const cartes: string[] = [];
+    const confirm = async (t: string) => (cartes.push(t), true);
+
+    const imprime = await dire(messages, 'Imprime-la', d, { place: 'telephone', confirm });
+    expect(imprime?.texte).toBe(PHONE_CANNOT_START);
+    expect(imprime?.etat).toMatchObject({ etape: 'piece', versionChoisie: 1 });
+    const suivante = await dire(messages, 'Le plateau est vide, lance la suivante', d, { place: 'telephone', confirm });
+    expect(suivante?.texte).toBe(PHONE_CANNOT_START);
+    expect(cartes).toEqual([]);
+    expect(tranches).toEqual([]);
+    expect(imprimante.envois).toEqual([]);
+
+    const file = await dire(messages, 'Mets-la dans la file', d, { place: 'telephone', confirm });
+    expect(file?.texte).toContain("est dans la file d'attente");
+    expect(imprimante.envois).toEqual([{ name: 'boite-2026-11-23-1-v1.gcode', print: false }]);
+    expect(imprimante.fake.queue.map((j) => j.filename)).toEqual(['boite-2026-11-23-1-v1.gcode']);
+    expect(imprimante.fake.status.state).toBe('standby');
+  });
+
+  it('téléphone, réglage absent : comme avant, le lancement passe par la carte', async () => {
+    const imprimante = new FausseImprimante();
+    const d = deps({}, imprimante);
+    const messages: ChatMessage[] = [];
+    await dire(messages, 'Fais-moi une boîte de 80 par 50 par 30', d, { place: 'telephone' });
+    let carte = '';
+    await dire(messages, 'Imprime-la', d, { place: 'telephone', confirm: async (t) => ((carte = t), false) });
+    expect(carte).toMatch(/^Lancer l'impression de « boîte », version 1\./);
+    expect(imprimante.envois).toEqual([]);
+  });
+
+  it('les deux vues (trois quarts, dessus) sont posées sur la version quand le PC sait les faire', async () => {
+    const d = deps();
+    d.programmes.rendreVues = async (_exe, dossier, numero) => {
+      await writeFile(join(dossier, `v${numero}.png`), 'x');
+      return { troisQuarts: `v${numero}.png`, dessus: `v${numero}-dessus.png` };
+    };
+    const v1 = await dire([], 'Fais-moi une boîte de 80 par 50 par 30', d);
+    const etat = v1?.etat as Extract<AtelierEtat, { etape: 'piece' }>;
+    expect(etat.versions[0]).toMatchObject({ image: 'v1.png', imageDessus: 'v1-dessus.png' });
   });
 
   it('même version deux fois : un nouveau nom, jamais le fichier en cours écrasé', async () => {

@@ -1,4 +1,4 @@
-import { timingSafeEqual, randomInt } from 'node:crypto';
+import { timingSafeEqual, randomBytes, randomInt } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import {
   PHONE_PAIRING_MAX_ATTEMPTS,
@@ -9,6 +9,7 @@ import {
   phoneSpeakRequestSchema,
   phoneTeamValidationSchema,
   speechTextForSpeaker,
+  type AtelierEtat,
   type Conversation,
 } from '@jarvis/core';
 import type { ChatEvent, SendChatInput, TeamValidationInput } from '../../shared/ipc.js';
@@ -48,8 +49,32 @@ export interface PhoneServerDeps {
   /** Synthèse locale pour `/api/speak` (texte déjà nettoyé). */
   synthesizeSpeech?: (text: string) => Promise<Uint8Array>;
   onPaired?: (device: PhoneDevice) => void;
+  /**
+   * Atelier 3D (Jarvis Test) : lit une image ou le STL d'une version, par le même contrôle que la
+   * fenêtre (nom simple, dossier de pièce, sous le dossier de l'atelier). Absent : pas de carte de
+   * pièce sur le téléphone, le texte seulement.
+   */
+  fichierAtelier?: (dossier: string, fichier: string) => Promise<Uint8Array>;
   log?: (line: string) => void;
   now?: () => number;
+}
+
+/** Lien d'un fichier de l'atelier vers le téléphone : à usage unique, 2 minutes, un seul appareil. */
+export const PHONE_ATELIER_TTL_MS = 2 * 60_000;
+
+type EtatPiece = Extract<AtelierEtat, { etape: 'piece' }>;
+
+/** Ce que le téléphone reçoit d'une pièce : le résumé et des liens, jamais un chemin ni un dossier. */
+export interface CartePieceTelephone {
+  type: 'atelier';
+  nom: string;
+  numero: number;
+  fiche: string;
+  changement?: string;
+  mesures: { nom: string; valeur: string }[];
+  images: { vue: 'trois-quarts' | 'dessus'; url: string }[];
+  /** Le STL de la version, pour la vue 3D qu'on tourne au doigt. */
+  modele?: string;
 }
 
 export interface PhonePairing {
@@ -64,7 +89,8 @@ const PAGE_POLICY = [
   "default-src 'none'",
   "script-src 'self'",
   "style-src 'self'",
-  "img-src 'self'",
+  // `blob:` : les images de l'atelier, lues avec le jeton puis montrées depuis la mémoire de la page.
+  "img-src 'self' blob:",
   "connect-src 'self'",
   "manifest-src 'self'",
   "base-uri 'none'",
@@ -264,6 +290,21 @@ export class PhoneServer {
       if (!result.ok) throw new HttpError(400, result.error);
       return sendJson(res, 200, { ok: true });
     }
+    if (path.startsWith('/api/atelier/fichier/') && method === 'GET') {
+      const cle = path.slice('/api/atelier/fichier/'.length);
+      const lien = /^[0-9a-f]{32}$/.test(cle) ? this.liensAtelier.get(cle) : undefined;
+      // Usage unique : le lien est effacé dès la première lecture, bonne ou non.
+      this.liensAtelier.delete(cle);
+      if (!lien || this.now() > lien.expire || lien.appareil !== device.id || !this.deps.fichierAtelier) {
+        throw new HttpError(404, 'Image expirée : redemande la pièce.');
+      }
+      const octets = await this.deps.fichierAtelier(lien.dossier, lien.fichier).catch(() => null);
+      if (!octets) throw new HttpError(404, 'Image expirée : redemande la pièce.');
+      const type = lien.fichier.toLowerCase().endsWith('.png') ? 'image/png' : 'model/stl';
+      res.writeHead(200, { 'Content-Type': type, 'Content-Length': octets.byteLength, 'Cache-Control': 'no-store' });
+      res.end(Buffer.from(octets));
+      return;
+    }
     if (path === '/api/speak' && method === 'POST') {
       if ((await this.deps.phoneVoice()) !== 'piper') throw new HttpError(503, 'La voix Piper n’est pas disponible sur ce PC.');
       if (!this.deps.synthesizeSpeech) throw new HttpError(503, 'Synthèse vocale indisponible.');
@@ -311,6 +352,36 @@ export class PhoneServer {
     throw new HttpError(404, 'Introuvable.');
   }
 
+  private readonly liensAtelier = new Map<string, { dossier: string; fichier: string; appareil: string; expire: number }>();
+
+  private lienAtelier(dossier: string, fichier: string, device: PhoneDevice): string {
+    const maintenant = this.now();
+    for (const [cle, lien] of this.liensAtelier) if (maintenant > lien.expire) this.liensAtelier.delete(cle);
+    const cle = randomBytes(16).toString('hex');
+    this.liensAtelier.set(cle, { dossier, fichier, appareil: device.id, expire: maintenant + PHONE_ATELIER_TTL_MS });
+    return `/api/atelier/fichier/${cle}`;
+  }
+
+  /** La pièce rendue, pour le téléphone : résumé, mesures, liens à usage unique vers ses images et son STL. */
+  private cartePiece(etat: EtatPiece, device: PhoneDevice): CartePieceTelephone | null {
+    if (!this.deps.fichierAtelier) return null;
+    const version = etat.versions.find((v) => v.numero === etat.versionChoisie) ?? etat.versions.at(-1);
+    if (!version) return null;
+    const images: CartePieceTelephone['images'] = [];
+    if (version.image) images.push({ vue: 'trois-quarts', url: this.lienAtelier(etat.dossier, version.image, device) });
+    if (version.imageDessus) images.push({ vue: 'dessus', url: this.lienAtelier(etat.dossier, version.imageDessus, device) });
+    return {
+      type: 'atelier',
+      nom: etat.nom,
+      numero: version.numero,
+      fiche: version.fiche,
+      ...(version.changement ? { changement: version.changement } : {}),
+      mesures: version.mesures,
+      images,
+      ...(version.stl ? { modele: this.lienAtelier(etat.dossier, version.stl, device) } : {}),
+    };
+  }
+
   private async pair(body: unknown, res: ServerResponse): Promise<void> {
     const parsed = phonePairRequestSchema.safeParse(body);
     const pairing = this.pairing;
@@ -354,7 +425,18 @@ export class PhoneServer {
     const sender: PhoneSender = {
       isDestroyed: () => closed || res.writableEnded,
       send: (_channel, event) => {
-        if (!closed && !res.writableEnded) res.write(`${JSON.stringify(event)}\n`);
+        if (closed || res.writableEnded) return;
+        // Une pièce de l'atelier part comme une carte avec des liens à usage unique, jamais l'état
+        // brut (dossier, noms de fichiers). Sans lecteur de fichiers, elle n'est pas envoyée.
+        const sortie =
+          event.type === 'atelier'
+            ? event.etat.etape === 'piece'
+              ? this.cartePiece(event.etat, device)
+              : null
+            : event.type === 'done'
+              ? { ...event, messages: event.messages.map(({ atelier: _atelier, ...message }) => message) }
+              : event;
+        if (sortie) res.write(`${JSON.stringify(sortie)}\n`);
       },
       once: (_event, listener) => {
         listeners.add(listener);
