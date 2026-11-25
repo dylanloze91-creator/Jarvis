@@ -51,6 +51,8 @@ import {
   type QueueSettings,
   type QueueStatus,
   type VolumeImpression,
+  type BoitierEcran,
+  type ControleBoitier,
 } from '@jarvis/core';
 
 import { ATELIER_SANS_OPENSCAD, fabriquerVersion } from './etapes.js';
@@ -75,7 +77,8 @@ export interface ImprimanteAtelier {
 export interface ProgrammesAtelier {
   /** Chemin d'OpenSCAD, ou `null` s'il n'est pas installé. */
   openscad(): string | null;
-  rendreStl(openscad: string, scad: string, stl: string): Promise<{ ok: boolean; message: string }>;
+  /** `delaiMs` : plus long pour une grosse pièce (le socle d'un boîtier). */
+  rendreStl(openscad: string, scad: string, stl: string, delaiMs?: number): Promise<{ ok: boolean; message: string }>;
   rendreImage(openscad: string, scad: string, png: string): Promise<{ ok: boolean }>;
   /**
    * Les deux vues lues dans le STL (trois quarts, dessus) : noms des images faites, ou `null`.
@@ -127,6 +130,11 @@ export interface AtelierDeps {
    * propose, Jarvis qui vérifie). Absent : le pied à coulisse, comme avant.
    */
   chercherCotes?: DepsChercherCotes;
+  /**
+   * Les contrôles du boîtier à écran (64 pour le hub, environ une minute). Absent : ceux du cœur,
+   * dans ce processus. Les essais en passent un plus court.
+   */
+  controlerBoitier?: (b: BoitierEcran, avancement: (part: number, quoi: string) => void) => Promise<ControleBoitier[]>;
 }
 
 /** Fichier des mesures de composants, dans le dossier de l'atelier. */
@@ -388,7 +396,7 @@ export async function tourAtelier(input: AtelierEntree, deps: AtelierDeps): Prom
         { gabarit: decision.gabarit, valeurs: decision.valeurs, ...(decision.base ? { base: decision.base } : {}), ...(decision.changement ? { changement: decision.changement } : {}), mesures, cotes },
         deps,
         (a) => {
-          if (a.etape === 'dessin' || a.etape === 'images') input.progress?.(a.message);
+          if (a.etape === 'dessin' || a.etape === 'images' || (a.etape === 'controle' && decision.gabarit.id === 'boitier_ecran')) input.progress?.(a.message);
         },
       );
       const reste = decision.base ? ` La version ${decision.base.versionChoisie} reste à l'écran.` : '';
@@ -412,9 +420,14 @@ export async function tourAtelier(input: AtelierEntree, deps: AtelierDeps): Prom
       const probleme = [r.ok ? '' : ` Attention : ${r.raison}`, ...r.avertissements.filter((a) => a.startsWith('Sans support')).map((a) => ` ${a}`)].join('');
       if (voix) return { texte: `C'est prêt : ${version.fiche} Regarde l'écran du PC.${probleme}`, etat };
       const quoi = decision.changement ? `Version ${version.numero} (${decision.changement}). ` : '';
+      const ensemble = Boolean(version.pieces?.length);
       const suite = !r.ok
         ? ''
-        : input.place === 'telephone'
+        : ensemble
+          ? input.place === 'telephone'
+            ? ' Les images arrivent ci-dessous ; « Voir en 3D » pour le tourner au doigt. Dis-moi ce qu’il faut changer (« l’écran plus incliné », « les ports sur le côté »), ou « imprime la façade ».'
+            : ' Le boîtier est à l’écran : tourne-le à la souris. Dis-moi ce qu’il faut changer (« l’écran plus incliné », « les ports sur le côté »), ou quelle pièce imprimer (« imprime la façade »).'
+          : input.place === 'telephone'
           ? ' Les images arrivent ci-dessous ; « Voir en 3D » pour la tourner au doigt. Dis-moi ce qu’il faut changer.'
           : ' La pièce est à l’écran : tourne-la à la souris. Dis-moi ce qu’il faut changer, ou « imprime-la ».';
       return { texte: `${quoi}${version.fiche}${probleme}${suite}`, etat };
@@ -427,26 +440,32 @@ export async function tourAtelier(input: AtelierEntree, deps: AtelierDeps): Prom
       if (decision.kind === 'imprimer' && telephoneBloque(input, deps)) return { texte: PHONE_CANNOT_START, etat: decision.etat };
       const { etat, numero } = decision;
       const version = etat.versions.find((v) => v.numero === numero)!;
-      if (!version.stl) return { texte: `La version ${numero} n'a pas de fichier de pièce.` };
+      // Un ensemble (boîtier à écran) : la pièce nommée, avec son propre fichier.
+      const piece = decision.piece ? version.pieces?.find((p) => p.nom === decision.piece) : undefined;
+      if (decision.piece && !piece) return { texte: `Je ne trouve pas cette pièce dans la version ${numero}.`, etat };
+      const fichierStl = piece ? piece.stl : version.stl;
+      if (!fichierStl) return { texte: `La version ${numero} n'a pas de fichier de pièce.` };
       const chemin = join(deps.racine, etat.dossier);
-      const stl = join(chemin, version.stl);
+      const stl = join(chemin, fichierStl);
       if (!existsSync(stl)) return { texte: `Je ne retrouve plus le fichier de la version ${numero} dans ${chemin}.` };
-      const controle = controlerStl(lireStl(new Uint8Array(await readFile(stl))), version.taille);
-      if (!controle.ok) return { texte: `Je n'imprime pas la version ${numero} : ${controle.problemes.join(' ')}` };
+      const controle = controlerStl(lireStl(new Uint8Array(await readFile(stl))), piece ? piece.taille : version.taille);
+      if (!controle.ok) return { texte: `Je n'imprime pas ${piece ? `la pièce « ${piece.titre} »` : `la version ${numero}`} : ${controle.problemes.join(' ')}` };
 
       input.progress?.('OrcaSlicer prépare le fichier d’impression…');
-      const tranche = await deps.programmes.trancher(stl, join(chemin, `v${numero}-tranche`));
+      const suffixe = piece ? `-${piece.nom}` : '';
+      const tranche = await deps.programmes.trancher(stl, join(chemin, `v${numero}${suffixe}-tranche`));
       if (!tranche.ok || !tranche.gcode) return { texte: tranche.message };
       const detail = detailCarte(tranche.infos);
+      const lus = {
+        ...(tranche.infos?.dureeTexte ? { temps: tranche.infos.dureeTexte } : {}),
+        ...(tranche.infos?.filamentG != null ? { filament: `${String(Math.round(tranche.infos.filamentG * 10) / 10).replace('.', ',')} g` } : {}),
+      };
       const misAJour = avecVersion(
         etat,
-        {
-          ...version,
-          ...(tranche.infos?.dureeTexte ? { temps: tranche.infos.dureeTexte } : {}),
-          ...(tranche.infos?.filamentG != null ? { filament: `${String(Math.round(tranche.infos.filamentG * 10) / 10).replace('.', ',')} g` } : {}),
-        },
+        piece ? { ...version, pieces: version.pieces!.map((p) => (p.nom === piece.nom ? { ...p, ...lus } : p)) } : { ...version, ...lus },
         numero,
       );
+      const nomCarte = piece ? `${etat.nom} — ${piece.titre}${piece.nombre > 1 ? ` (1 sur ${piece.nombre})` : ''}` : etat.nom;
 
       const imprimante = deps.imprimante();
       if (!imprimante) return { texte: `${detail ? `${detail} ` : ''}${ATELIER_IMPRIMANTE_ABSENTE} (${tranche.gcode})`, etat: misAJour };
@@ -458,19 +477,19 @@ export async function tourAtelier(input: AtelierEntree, deps: AtelierDeps): Prom
       }
       if (decision.kind === 'file' || OCCUPEE.has(statut.state)) {
         const texte = await mettreEnFile(input, imprimante, {
-          nom: etat.nom,
+          nom: nomCarte,
           numero,
-          base: `${etat.dossier}-v${numero}`,
+          base: `${etat.dossier}-v${numero}${suffixe}`,
           gcode: tranche.gcode,
           detail,
           occupee: decision.kind === 'imprimer',
         });
         return { texte, etat: misAJour };
       }
-      if (!(await input.confirm(phraseConfirmationAtelier(etat.nom, numero, detail)))) {
+      if (!(await input.confirm(phraseConfirmationAtelier(nomCarte, numero, detail)))) {
         return { texte: "Rien n'a été lancé.", etat: misAJour };
       }
-      const nomFichier = `${etat.dossier}-v${numero}.gcode`;
+      const nomFichier = `${etat.dossier}-v${numero}${suffixe}.gcode`;
       try {
         await imprimante.upload(nomFichier, new Uint8Array(await readFile(tranche.gcode)), true);
       } catch {

@@ -59,8 +59,8 @@ export interface ResultatProgramme {
 }
 
 /** Pièce `.scad` → `.stl`. */
-export async function rendreStl(openscad: string, scad: string, stl: string): Promise<ResultatProgramme> {
-  const r = await run(openscad, ['-o', stl, scad], { timeoutMs: DELAI_OPENSCAD_MS, maxOutputChars: 4_000 });
+export async function rendreStl(openscad: string, scad: string, stl: string, delaiMs = DELAI_OPENSCAD_MS): Promise<ResultatProgramme> {
+  const r = await run(openscad, ['-o', stl, scad], { timeoutMs: delaiMs, maxOutputChars: 4_000 });
   const detail = `${r.stdout}\n${r.stderr}`.trim();
   if (r.timedOut) return { ok: false, message: 'OpenSCAD a mis trop longtemps à dessiner la pièce.', detail };
   if (r.code !== 0 || !existsSync(stl)) return { ok: false, message: `OpenSCAD n'a pas pu dessiner la pièce (code ${r.code}).`, detail };

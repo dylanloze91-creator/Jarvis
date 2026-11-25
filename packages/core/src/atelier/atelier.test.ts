@@ -29,10 +29,10 @@ function equilibre(text: string): boolean {
 }
 
 describe('gabarits', () => {
-  it('une dizaine de pièces, chacune avec des mesures cohérentes', () => {
-    expect(GABARITS.length).toBe(10);
+  it('une dizaine de pièces (et le boîtier à écran), chacune avec des mesures cohérentes', () => {
+    expect(GABARITS.length).toBe(11);
     const ids = new Set(GABARITS.map((x) => x.id));
-    expect(ids.size).toBe(10);
+    expect(ids.size).toBe(11);
     for (const gab of GABARITS) {
       for (const m of gab.mesures) {
         if (estChoix(m)) expect(m.options.some((o) => o.valeur === m.defaut)).toBe(true);
@@ -87,7 +87,8 @@ describe('gabarits', () => {
       [{}, [90, 80, 77.94]],
       [{ angle: 45, base: 120 }, [120, 80, 63.64]],
       [{ angle: 75 }, [90, 80, 86.93]],
-      [{ angle: 40, dos: 160, rainure: 25, base: 110 }, [154.14, 80, 102.85]],
+      // Sous 45° : imprimé couché sur le côté (hauteur et largeur échangées).
+      [{ angle: 40, dos: 160, rainure: 25, base: 110 }, [154.14, 102.85, 80]],
     ];
     for (const [valeurs, attendu] of cas) {
       const piece = fabriquer(g('support_telephone'), valeurs);

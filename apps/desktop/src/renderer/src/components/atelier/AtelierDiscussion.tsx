@@ -11,7 +11,7 @@ type EtatPiece = Extract<AtelierEtat, { etape: 'piece' }>;
  */
 export function AtelierDiscussion({ etat, onSend }: { etat: EtatPiece; onSend?: (text: string) => void }) {
   const [choisie, setChoisie] = useState(etat.versionChoisie);
-  const [fichiers, setFichiers] = useState<Record<number, Uint8Array | null>>({});
+  const [fichiers, setFichiers] = useState<Record<string, Uint8Array | null>>({});
   const [erreur, setErreur] = useState<string | null>(null);
   const api = window.jarvis.atelier;
 
@@ -19,13 +19,14 @@ export function AtelierDiscussion({ etat, onSend }: { etat: EtatPiece; onSend?: 
     if (!api) return;
     let fini = false;
     for (const version of etat.versions) {
-      if (!version.stl) continue;
-      const nom = version.stl;
-      void api.fichier(etat.dossier, nom).then((r) => {
-        if (fini) return;
-        if (r.ok) setFichiers((avant) => ({ ...avant, [version.numero]: r.data }));
-        else setErreur(`Fichier ${nom} : ${r.error}`);
-      });
+      for (const nom of [version.stl, version.eclate]) {
+        if (!nom) continue;
+        void api.fichier(etat.dossier, nom).then((r) => {
+          if (fini) return;
+          if (r.ok) setFichiers((avant) => ({ ...avant, [nom]: r.data }));
+          else setErreur(`Fichier ${nom} : ${r.error}`);
+        });
+      }
     }
     return () => {
       fini = true;
@@ -36,8 +37,11 @@ export function AtelierDiscussion({ etat, onSend }: { etat: EtatPiece; onSend?: 
     numero: v.numero,
     fiche: v.fiche,
     mesures: v.mesures,
-    stl: fichiers[v.numero] ?? null,
+    stl: (v.stl ? fichiers[v.stl] : null) ?? null,
     tailleAttendue: v.taille,
+    ...(v.eclate ? { eclate: fichiers[v.eclate] ?? null } : {}),
+    ...(v.pieces ? { pieces: v.pieces.map((p) => ({ titre: p.titre, nombre: p.nombre, sens: p.sens, ...(p.temps ? { temps: p.temps } : {}), ...(p.filament ? { filament: p.filament } : {}) })) } : {}),
+    ...(v.controles ? { controles: v.controles } : {}),
     ...(v.temps ? { temps: v.temps } : {}),
     ...(v.filament ? { filament: v.filament } : {}),
     ...(v.changement ? { changement: v.changement } : {}),
@@ -50,7 +54,7 @@ export function AtelierDiscussion({ etat, onSend }: { etat: EtatPiece; onSend?: 
         versions={versions}
         versionChoisie={choisie}
         onChoisirVersion={setChoisie}
-        {...(onSend ? { onImprimer: (numero: number) => onSend(`Imprime la version ${numero}`) } : {})}
+        {...(onSend ? { onImprimer: (numero: number) => onSend(`Imprime la version ${numero}`), onImprimerPiece: (titre: string) => onSend(`Imprime ${titre.startsWith('retenue') || titre.startsWith('façade') ? 'la' : 'le'} ${titre}`) } : {})}
         {...(api ? { onOuvrirDossier: () => void api.ouvrirDossier(etat.dossier) } : {})}
         message={api ? erreur : 'Aperçu : les fichiers de la pièce ne se lisent que dans Jarvis.'}
         plateau={etat.plateau}

@@ -20,9 +20,11 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
+  CHOIX_HUB,
   controlerImpression,
   controlerStl,
   deciderAtelier,
+  dessinerBoitierEcran,
   fabriquer,
   fichierScad,
   fichePiece,
@@ -38,6 +40,7 @@ import {
 } from '@jarvis/core';
 import { PLAQUE_ORCA } from './atelierPC.js';
 import { preparerPresetsOrca, rendreStl, trancher, trouverOpenscad, trouverOrca, type CopiesOrca } from './programmes.js';
+import { DELAI_PIECE_MS } from './boitierEcranPC.js';
 
 const DOSSIER = process.env.JARVIS_GRAND_CONTROLE_DIR ?? 'C:\\dev\\jarvis-data\\atelier\\_grand-controle';
 const SEULEMENT = process.env.JARVIS_GRAND_CONTROLE_SEULEMENT ?? '';
@@ -126,6 +129,8 @@ interface Essai {
   taille: [number, number, number] | null;
   fiche: string;
   reference?: string;
+  /** Délai d'OpenSCAD (une grosse pièce du boîtier à écran met plusieurs minutes). */
+  delaiMs?: number;
 }
 
 interface Resultat {
@@ -170,7 +175,8 @@ function essais(): { liste: Essai[]; refus: Resultat[] } {
     }
     liste.push({ nom, titre: p.gabarit.nom, scad: p.scad, taille: p.taille, fiche: fichePiece(p) });
   };
-  for (const g of GABARITS) ajouter(`${g.id}-defaut`, g.id, {});
+  // Le boîtier à écran est un ensemble : ses pièces sont rendues une par une plus bas.
+  for (const g of GABARITS) if (g.id !== 'boitier_ecran') ajouter(`${g.id}-defaut`, g.id, {});
   for (const [id, nom, v] of VARIANTES) ajouter(`${id}-${nom}`, id, v);
   for (const [nom, phrases] of PHRASES) {
     const r = parPhrases(phrases);
@@ -187,6 +193,20 @@ function essais(): { liste: Essai[]; refus: Resultat[] } {
   for (const p of piecesATenirAImprimer()) {
     liste.push({ nom: `tenir-${p.nom}`, titre: p.titre, scad: fichierScad(p.titre, p.forme), taille: null, fiche: p.titre, reference: references[p.nom] });
   }
+  // Le boîtier à écran de l'examen (le hub) : chaque pièce dans son sens d'impression, comparée au
+  // STL de la référence du même nom.
+  for (const p of dessinerBoitierEcran(CHOIX_HUB).pieces()) {
+    const a = p.forme.geo!.aabb;
+    liste.push({
+      nom: `hub-${p.nom}`,
+      titre: p.titre,
+      scad: fichierScad(p.titre, p.forme),
+      taille: [a[1] - a[0], a[3] - a[2], a[5] - a[4]],
+      fiche: `${p.titre} (${p.sens})`,
+      reference: `Hub_${p.nom}.stl`,
+      delaiMs: DELAI_PIECE_MS,
+    });
+  }
   return { liste: SEULEMENT ? liste.filter((e) => e.nom.includes(SEULEMENT)) : liste, refus: SEULEMENT ? refus.filter((e) => e.nom.includes(SEULEMENT)) : refus };
 }
 
@@ -200,7 +220,7 @@ async function controler(e: Essai, openscad: string, orca: string | null, copies
   const stl = join(dossier, 'piece.stl');
   await writeFile(scad, e.scad, 'utf8');
   const t0 = Date.now();
-  const rendu = await rendreStl(openscad, scad, stl);
+  const rendu = await rendreStl(openscad, scad, stl, e.delaiMs);
   r.secondes.openscad = Math.round((Date.now() - t0) / 100) / 10;
   if (!rendu.ok || !existsSync(stl)) {
     r.etapes.rendu = rendu.message;

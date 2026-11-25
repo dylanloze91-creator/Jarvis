@@ -39,6 +39,50 @@ export interface AtelierVersionInfo {
   /** Lus dans le fichier tranché, une fois tranchée. */
   temps?: string;
   filament?: string;
+  /**
+   * Un ensemble de pièces (boîtier à écran) : chaque pièce a son fichier et s'imprime seule.
+   * `stl` est alors le boîtier monté, pour l'écran 3D et les images.
+   */
+  pieces?: PieceVersionInfo[];
+  /** Contrôles complets passés avant de montrer l'ensemble. */
+  controles?: { total: number; ok: number };
+  /** Le boîtier en vue éclatée (`v2-eclate.stl`). */
+  eclate?: string;
+}
+
+/** Une pièce d'un ensemble, dans une version. */
+export interface PieceVersionInfo {
+  /** Nom de fichier court : `Facade`, `Retenue_A`… */
+  nom: string;
+  /** Nom dit : « façade », « retenue A de l'écran ». */
+  titre: string;
+  nombre: number;
+  /** Sens d'impression. */
+  sens: string;
+  /** `v1-Facade.stl`. */
+  stl: string;
+  taille: [number, number, number];
+  temps?: string;
+  filament?: string;
+}
+
+/** Les mots qui désignent une pièce d'un ensemble : « façade », « retenue a », « cache », « bouton ». */
+export function motsPiece(titre: string): string {
+  return plier(titre)
+    .replace(/ (?:de l ecran|de la camera|du cache)\b.*$/, '')
+    .trim();
+}
+
+/** La pièce d'un ensemble nommée dans la phrase, la plus précise d'abord (« retenue b » avant « retenue »). */
+export function pieceDite(t: string, pieces: readonly PieceVersionInfo[]): PieceVersionInfo | null {
+  const tries = [...pieces].sort((a, b) => motsPiece(b.titre).length - motsPiece(a.titre).length);
+  for (const p of tries) if (new RegExp(`\\b${motsPiece(p.titre)}s?\\b`).test(t)) return p;
+  // « la retenue » : la première retenue (A), la B se nomme.
+  for (const p of tries) {
+    const premier = motsPiece(p.titre).split(' ')[0]!;
+    if (new RegExp(`\\b${premier}s?\\b`).test(t)) return p;
+  }
+  return null;
 }
 
 export type AtelierEtat =
@@ -88,9 +132,9 @@ export type AtelierDecision =
       base?: Extract<AtelierEtat, { etape: 'piece' }>;
       changement?: string;
     }
-  | { kind: 'imprimer'; etat: Extract<AtelierEtat, { etape: 'piece' }>; numero: number }
+  | { kind: 'imprimer'; etat: Extract<AtelierEtat, { etape: 'piece' }>; numero: number; piece?: string }
   /** « mets-la dans la file » : envoyée sans être lancée, ajoutée à la file d'attente de Moonraker. */
-  | { kind: 'file'; etat: Extract<AtelierEtat, { etape: 'piece' }>; numero: number }
+  | { kind: 'file'; etat: Extract<AtelierEtat, { etape: 'piece' }>; numero: number; piece?: string }
   /** « le plateau est vide, lance la suivante » : la première pièce de la file. */
   | { kind: 'lancerSuivante' }
   | { kind: 'choisir'; etat: Extract<AtelierEtat, { etape: 'piece' }>; numero: number }
@@ -344,8 +388,10 @@ function nombre(x: number): string {
 }
 
 /** « 30 mm », « 60° », « 4 ». */
+const CHOIX_DITS: Record<string, string> = { carre: 'carré', arriere: 'à l’arrière', cote: 'sur le côté' };
+
 export function valeurDite(mesure: Mesure, valeur: number | string): string {
-  if (estChoix(mesure)) return valeur === 'carre' ? 'carré' : String(valeur);
+  if (estChoix(mesure)) return CHOIX_DITS[String(valeur)] ?? String(valeur);
   const x = nombre(Number(valeur));
   return mesure.unite === 'mm' ? `${x} mm` : mesure.unite === '°' ? `${x}°` : x;
 }
@@ -392,6 +438,23 @@ export function demandePiece(
   const versionPourCarte =
     verbe && carte && composant(carte.id)?.carte && /^(?:version|variante|copie|autre|meme|pareille)\b/.test(objetDemande.replace(/^(?:une |la |l )/, ''));
   const gDemande = demande.gabarit ?? (versionPourCarte ? gabarit('boite') : undefined);
+  // « un boîtier pour un Raspberry Pi 5 avec l'écran tactile 7 pouces (et la caméra grand angle) » :
+  // le boîtier à écran (socle + écran incliné), dessiné par règles, sans question sur ces composants.
+  const nommes = produitsNommes(` ${plier(text)} `).map((n) => n.composant);
+  const gEcran = gabarit('boitier_ecran');
+  if (gEcran && nommes.some((c) => c.id === 'touch_display_2_7') && (!gDemande || ['boite', 'boite_couvercle', 'boitier_ecran'].includes(gDemande.id))) {
+    const autres = nommes.filter((c) => (c.carte || c.ecran) && !BOITIER_ECRAN_COMPOSANTS.includes(c.id));
+    if (autres.length) {
+      return {
+        gabarit: gEcran,
+        valeurs: {},
+        erreurs: [`Le boîtier à écran est dessiné pour un Raspberry Pi 5 avec l’écran tactile 7 pouces : je ne sais pas encore y mettre ${autres.map((c) => c.nom).join(', ')}.`],
+      };
+    }
+    const valeurs = lireMesures(text, gEcran).valeurs;
+    valeurs.camera = valeurs.camera !== 'non' && nommes.some((c) => c.id === 'camera_module_3_wide') ? 'oui' : 'non';
+    return { gabarit: gEcran, valeurs };
+  }
   if (gDemande) {
     // « … avec un trou de 8 à l'arrière » : les découpes sont lues à part, et retirées de la
     // phrase avant de lire les mesures (le 8 n'est pas une longueur).
@@ -446,6 +509,9 @@ function demanderOuFabriquer(g: Gabarit, valeurs: Valeurs, avant = ''): AtelierD
   };
 }
 
+/** Les composants que le boîtier à écran sait tenir. */
+const BOITIER_ECRAN_COMPOSANTS: readonly string[] = ['touch_display_2_7', 'raspberry_pi_5', 'camera_module_3_wide'];
+
 /** Changements relatifs : « plus haut », « trou plus gros », « moins large ». */
 const RELATIFS: { mots: RegExp; ids: string[] }[] = [
   { mots: /\btrou(?:s)? (?:un peu )?(?:plus|moins) (?:gros|grand|large|petit)|\b(?:plus|moins) (?:gros|grand|petit) (?:le |les )?trou/, ids: ['trou', 'vis'] },
@@ -454,7 +520,7 @@ const RELATIFS: { mots: RegExp; ids: string[] }[] = [
   { mots: /\b(?:plus|moins) (?:long|longue|court|courte)\b/, ids: ['longueur', 'branche1'] },
   { mots: /\b(?:plus|moins) (?:profond|profonde)\b/, ids: ['profondeur', 'base'] },
   { mots: /\b(?:plus|moins) (?:epais|epaisse|fin|fine)\b/, ids: ['paroi', 'epaisseur'] },
-  { mots: /\b(?:plus|moins) (?:incline|inclinee|penche)\b/, ids: ['angle'] },
+  { mots: /\b(?:plus|moins) (?:incline|inclinee|penche|penchee)\b/, ids: ['angle', 'inclinaison'] },
 ];
 const PLUS_PETIT = /\b(?:moins (?:gros|grand|large|long|longue|haut|haute|profond|profonde|epais|epaisse|incline|inclinee|penche)|plus (?:petit|bas|basse|etroit|court|courte|fin|fine))\b/;
 
@@ -464,6 +530,8 @@ function arrondi(x: number): number {
 
 /** Nouvelle valeur d'une mesure : +25 % (au moins 2 mm, 1 mm pour un trou), ou −20 %. */
 function relatif(mesure: MesureNombre, actuelle: number, plus: boolean): number {
+  // Écran du boîtier : « plus incliné » = plus couché vers l'arrière, de 5° en 5°.
+  if (mesure.id === 'inclinaison') return actuelle + (plus ? 5 : -5);
   if (mesure.unite === '°') return actuelle + (plus ? -10 : 10); // « plus incliné » : dossier plus couché
   if (mesure.entier) return actuelle + (plus ? 1 : -1);
   const pas = mesure.id === 'trou' || mesure.id === 'vis' ? 1 : 2;
@@ -822,6 +890,24 @@ export function deciderAtelier(text: string, precedentDonne: AtelierEtat | null,
 
   // Une pièce à l'écran : « imprime-la », « imprime la boîte » passe avant une nouvelle demande.
   if (precedent?.etape === 'piece') {
+    // Un ensemble (boîtier à écran) s'imprime pièce par pièce : « imprime la façade », « mets le
+    // socle dans la file ». Sans pièce nommée, Jarvis demande laquelle.
+    const ensemble = precedent.versions.find((v) => v.numero === precedent.versionChoisie)?.pieces;
+    if (ensemble?.length) {
+      const versFile = /\b(?:file|liste) d attente\b|\bdans la file\b/.test(tn);
+      const ordre = /^(?:imprime|imprimes|lance|mets|met|ajoute|rajoute|envoie|place)\b/.test(tn) && (versFile || /^(?:imprime|imprimes|lance)\b/.test(tn));
+      if (ordre) {
+        const piece = pieceDite(tn, ensemble);
+        if (piece) return { kind: versFile ? 'file' : 'imprimer', etat: precedent, numero: precedent.versionChoisie, piece: piece.nom };
+        if (numeroAImprimer(tn, precedent) !== null || numeroEnFile(tn, precedent) !== null) {
+          return {
+            kind: 'dire',
+            texte: `Le boîtier a ${ensemble.length} pièces à imprimer une par une : ${ensemble.map((p) => (p.nombre > 1 ? `${p.titre} (× ${p.nombre})` : p.titre)).join(', ')}. Dis-moi laquelle, par exemple « imprime la façade ».`,
+            etat: precedent,
+          };
+        }
+      }
+    }
     const imprimer = numeroAImprimer(tn, precedent);
     if (imprimer !== null) {
       if (!precedent.versions.some((v) => v.numero === imprimer)) {
@@ -854,6 +940,7 @@ export function deciderAtelier(text: string, precedentDonne: AtelierEtat | null,
       };
     }
     if (nouvelle.erreurs?.length) {
+      if (nouvelle.gabarit.id === 'boitier_ecran') return { kind: 'dire', texte: nouvelle.erreurs.join(' ') };
       return { kind: 'dire', texte: `${nouvelle.erreurs.join(' ')} Redis-moi la pièce sans cette découpe, ou ailleurs.` };
     }
     const pourCarte = taillePourCarte(nouvelle.gabarit, nouvelle.valeurs);

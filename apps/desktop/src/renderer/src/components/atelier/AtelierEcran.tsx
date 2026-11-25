@@ -1,4 +1,5 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
+import { lireStl } from '@jarvis/core';
 import { etatVersion, raisonPasImprimable, type VersionAtelier } from './atelierEtat';
 import { Vue3D } from './Vue3D';
 
@@ -11,6 +12,8 @@ export interface AtelierEcranProps {
   onChoisirVersion: (numero: number) => void;
   /** Absent : bouton masqué. Ouvre la carte de confirmation, jamais une impression directe. */
   onImprimer?: (numero: number) => void;
+  /** Un ensemble (boîtier à écran) : imprimer une pièce, par son nom (« façade »), avec la carte. */
+  onImprimerPiece?: (titre: string) => void;
   onOuvrirDossier?: (numero: number) => void;
   /** Message d'état : « OpenSCAD rend la pièce… », « Tranchage en cours… ». */
   message?: string | null;
@@ -19,15 +22,34 @@ export interface AtelierEcranProps {
 }
 
 /** L'écran « Atelier » : la pièce en 3D, ses mesures, ses versions, et l'impression (avec carte). */
-export function AtelierEcran({ nomPiece, versions, versionChoisie, onChoisirVersion, onImprimer, onOuvrirDossier, message, plateau }: AtelierEcranProps) {
+export function AtelierEcran({ nomPiece, versions, versionChoisie, onChoisirVersion, onImprimer, onImprimerPiece, onOuvrirDossier, message, plateau }: AtelierEcranProps) {
   const version = versions.find((v) => v.numero === versionChoisie) ?? versions[versions.length - 1];
   const etat = useMemo(() => etatVersion(version), [version]);
   const bloque = raisonPasImprimable(version, etat);
+  const [eclate, setEclate] = useState(false);
+  const maillageEclate = useMemo(() => {
+    try {
+      return version?.eclate ? lireStl(version.eclate) : null;
+    } catch {
+      return null;
+    }
+  }, [version]);
+  const ensemble = Boolean(version?.pieces?.length);
 
   return (
     <section className="flex w-full flex-col gap-3 text-sm text-slate-100 lg:flex-row">
       <div className="min-w-0 flex-1">
-        <Vue3D maillage={etat.maillage} className="h-[460px]" plateau={plateau} />
+        <Vue3D maillage={eclate && maillageEclate ? maillageEclate : etat.maillage} className="h-[460px]" plateau={plateau} />
+        {ensemble && maillageEclate ? (
+          <button
+            type="button"
+            className="mt-2 rounded-md border border-white/15 bg-slate-900/70 px-2.5 py-1 text-xs text-slate-100 hover:border-cyan-300/50"
+            aria-pressed={eclate}
+            onClick={() => setEclate((x) => !x)}
+          >
+            {eclate ? 'Monté' : 'Éclaté'}
+          </button>
+        ) : null}
         {message ? <p className="mt-2 text-xs text-cyan-200">{message}</p> : null}
       </div>
 
@@ -53,9 +75,14 @@ export function AtelierEcran({ nomPiece, versions, versionChoisie, onChoisirVers
           <p className="mb-1 font-medium">Contrôle</p>
           {!version?.stl ? <p className="text-slate-400">En attente du rendu de la pièce…</p> : null}
           {etat.erreur ? <p className="text-red-300">Illisible : {etat.erreur}</p> : null}
+          {version?.controles ? (
+            <p className={version.controles.ok === version.controles.total ? 'text-emerald-300' : 'text-amber-200'}>
+              {version.controles.ok} contrôles sur {version.controles.total}
+            </p>
+          ) : null}
           {etat.controle ? (
             etat.controle.ok ? (
-              <p className="text-emerald-300">Pièce fermée et aux bonnes mesures : prête à trancher.</p>
+              <p className="text-emerald-300">{ensemble ? 'Pièces fermées et aux bonnes mesures.' : 'Pièce fermée et aux bonnes mesures : prête à trancher.'}</p>
             ) : (
               <ul className="list-disc pl-4 text-amber-200">
                 {etat.controle.problemes.map((probleme) => (
@@ -96,8 +123,34 @@ export function AtelierEcran({ nomPiece, versions, versionChoisie, onChoisirVers
           </div>
         ) : null}
 
+        {ensemble ? (
+          <div>
+            <p className="mb-1 text-xs text-slate-400">Pièces (une impression chacune, avec la carte)</p>
+            <ul className="flex flex-col gap-1">
+              {version!.pieces!.map((p) => (
+                <li key={p.titre} className="flex items-center justify-between gap-2 rounded-md border border-white/10 px-2 py-1 text-xs">
+                  <span>
+                    {p.titre}
+                    {p.nombre > 1 ? ` × ${p.nombre}` : ''}
+                    <span className="block text-[11px] text-slate-400">
+                      {p.sens}
+                      {p.temps ? ` · ${p.temps}` : ''}
+                      {p.filament ? ` · ${p.filament}` : ''}
+                    </span>
+                  </span>
+                  {onImprimerPiece ? (
+                    <button type="button" className="rounded border border-white/15 px-1.5 py-0.5 hover:border-cyan-300/50" onClick={() => onImprimerPiece(p.titre)}>
+                      Imprimer…
+                    </button>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+
         <div className="flex flex-col gap-2">
-          {onImprimer ? (
+          {onImprimer && !ensemble ? (
             <button
               type="button"
               className="rounded-md border border-white/15 bg-slate-900/70 px-2.5 py-1.5 text-xs text-slate-100 hover:border-cyan-300/50 disabled:cursor-not-allowed disabled:opacity-40 text-center"

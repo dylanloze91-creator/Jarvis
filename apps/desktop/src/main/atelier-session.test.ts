@@ -162,7 +162,8 @@ describe('atelier 3D dans la session', () => {
   it('« Dessine-moi un boîtier… » va à l’atelier même avec Imager activé ; « dessine-moi un chat » reste à Imager', async () => {
     const { modelCalls, say, imagerAppels } = setup(true, { atelierReel: true, imagerActif: true });
     const messages = await say('Dessine-moi un boîtier pour un écran de 7 pouces');
-    expect(messages.at(-1)?.content).toMatch(/^Boîte, d'accord\./);
+    // L'écran de 7 pouces est l'écran tactile du Pi : le boîtier à écran (depuis l'examen du hub, 25 novembre).
+    expect(messages.at(-1)?.atelier?.etape).toBe('piece');
     expect(imagerAppels).toEqual([]);
     expect(modelCalls).toEqual([]);
     await say('Dessine-moi un chat');
