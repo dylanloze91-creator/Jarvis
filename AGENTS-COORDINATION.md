@@ -103,7 +103,7 @@ Une seule fenêtre de Jarvis Test de développement à la fois pour les essais a
 
 | État | Par qui | Pour quoi | Depuis |
 | --- | --- | --- | --- |
-| libre | — | — | — |
+| occupée | Claude Code (agent Yeux) | essai des deux webcams du PC, nuit du 25 au 26 novembre (instance de développement isolée, dossier de données à part, port 9223 ; photos en mémoire seulement) | 2026-11-26 00:05 |
 
 ## Ressource GPU / Ollama
 
