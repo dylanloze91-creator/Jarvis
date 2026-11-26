@@ -25,8 +25,9 @@ Ce fichier ne contient ni secret, ni donnée personnelle, ni nom de réseau : le
 2. **Yeux, fin de l'étape 2** : choix du modèle de vision au banc (gemma3:4b d'abord ; `qwen2.5vl:7b` seulement avec l'accord de l'utilisateur), vidéo, puis les yeux dans la Live.
 3. **La surveillance qui agit** (`imprimante-surveillance.md`) : seulement quand les questionnaires montrent peu de fausses alertes sur une dizaine d'impressions, dont des ratées ; pause d'abord, toujours la carte pour le reste.
 4. **Model Development** (décision du 25 novembre, § 3 « Jarvis Development ») : améliorer les modèles avec l'usage réel, en commençant par le trieur, puis la vision sur les photos de l'utilisateur.
-5. **Jarvis chef de projet** : après les points 1 et 2.
-6. **Les mains** (Holo desk : piloter l'écran 3D de l'atelier par gestes devant la webcam, MediaPipe) : idée validée en principe, cahier à écrire, après les yeux.
+5. **Jarvis Développeur facile, étape 3** (décision de l'utilisateur du 26 novembre, `docs/specs/developpeur-facile-etape3.md`) : d'abord **fusionner les étapes 1 et 2 dans Jarvis Test** (jamais faites : l'utilisateur ne les a jamais eues) ; puis le plan visible coché étape par étape, « où en est mon appli ? », « mes applis », et **Claude en renfort** quand le local bloque, sur une carte avec estimation de durée et de coût, plafond par appli (2 € par défaut), clé de l'utilisateur dans le coffre, rien de Claude dans l'entraînement. Examen : le suivi de commandes de Driver's Ink. Passe **avant** Model Development et le chef de projet.
+6. **Jarvis chef de projet** : après les points 1, 2 et 5.
+7. **Les mains** (Holo desk : piloter l'écran 3D de l'atelier par gestes devant la webcam, MediaPipe) : idée validée en principe, cahier à écrire, après les yeux.
 
 ## 1. Le cap
 
