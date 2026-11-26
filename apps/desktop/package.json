@@ -1,6 +1,6 @@
 {
   "name": "@jarvis/desktop",
-  "version": "5.1.0-test.3",
+  "version": "5.1.0-test.4",
   "private": true,
   "description": "Application de bureau Jarvis (Electron)",
   "main": "./out/main/index.js",
