@@ -14,6 +14,8 @@
  */
 import { cleanMissionObjective, looksLikeCodeExplanationOnly } from '../chatMissions/detect.js';
 import type { MissionState, MissionStep } from '../engine/mission.js';
+import type { RenfortCard } from '../renfort/renfort.js';
+import type { FacilePlanStep } from './suivi.js';
 
 /** Dite (et écrite) tout de suite, sans attendre un modèle. */
 export const FACILE_IMMEDIATE_REPLY = 'Pas de souci, je m’en occupe. Je regarde d’abord ce qui existe déjà.';
@@ -253,6 +255,14 @@ export interface FacilePayload {
   template?: string | null;
   /** « Ouvrir l'appli » : en cours, ouverte, ou ratée avec sa raison (étape 2). */
   ouverture?: { etat: 'en-cours' | 'ouverte' | 'ratee'; message: string } | null;
+  /** Étape 3 : le plan coché (six étapes, états tirés des étapes réelles). Absent dans les cartes d'avant. */
+  plan?: FacilePlanStep[];
+  /** Étape 3 : le nom lisible de l'appli (celui du projet, dès qu'il existe). */
+  nom?: string | null;
+  /** Étape 3 : la carte « Claude en renfort », quand un signe mesuré la justifie. */
+  renfort?: RenfortCard | null;
+  /** Étape 3 : dépensé chez Claude pour cette appli (euros). */
+  claudeEur?: number;
 }
 
 /** Mots de développeur → mots simples, dans un texte venu du moteur. */

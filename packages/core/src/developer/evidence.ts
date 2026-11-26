@@ -3,6 +3,7 @@
  * Une candidate de jeu reste à l’écart de l’export tant qu’elle n’est pas validée.
  */
 import { redactSecrets } from '../security/redact.js';
+import { isClaudeModel, RENFORT_EVIDENCE_LIMIT } from './renfort/renfort.js';
 import { buildFinetuneDataset, type DatasetBuild, type DatasetCategory, type DatasetSource } from '../learning/dataset.js';
 import { proposeSkillFromMission } from '../learning/skillProof.js';
 
@@ -262,6 +263,10 @@ function stagingFor(evidence: Omit<MissionEvidence, 'staging' | 'skill'>, seen: 
     fingerprint: evidence.fingerprint,
     limits: evidence.limits.join(' '),
   };
+  // Rien de ce que Claude écrit n'entre dans un jeu d'entraînement (Développeur facile, étape 3, § 3.6).
+  if (isClaudeModel(evidence.model) || evidence.limits.includes(RENFORT_EVIDENCE_LIMIT)) {
+    return { ...base, validationStatus: 'rejected', reason: 'aide de Claude : jamais dans un jeu d’entraînement' };
+  }
   if (seen.includes(evidence.fingerprint)) {
     return { ...base, validationStatus: 'rejected', reason: 'doublon : la même preuve est déjà en attente' };
   }

@@ -3,6 +3,7 @@ import type { MissionGate } from '../engine/difficulty.js';
 import type { MissionKind } from '../engine/router.js';
 import type { ProposerMissionType } from './proposerMission.js';
 import type { FacilePayload } from '../facile/facile.js';
+import type { FacileAppsPayload } from '../facile/suivi.js';
 
 export type ChatMissionProposalStatus = 'pending' | 'declined' | 'launched';
 
@@ -58,6 +59,8 @@ export interface ChatMissionReportPayload {
 export type ChatMissionEnvelope =
   | { kind: 'proposal'; data: ChatMissionProposalPayload }
   | { kind: 'track'; data: ChatMissionTrackPayload }
+  /** Étape 3 de Développeur facile : la liste « Mes applis ». */
+  | { kind: 'facile-applis'; data: FacileAppsPayload }
   | { kind: 'report'; data: ChatMissionReportPayload }
   | { kind: 'notice'; text: string }
   /** Jarvis Développeur facile : une création racontée dans la discussion (Jarvis Test). */

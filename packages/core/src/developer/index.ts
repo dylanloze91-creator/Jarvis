@@ -3,6 +3,8 @@ export * from './chatMissions/proposerMission.js';
 export * from './chatMissions/detect.js';
 export * from './chatMissions/envelope.js';
 export * from './facile/facile.js';
+export * from './facile/suivi.js';
+export * from './renfort/renfort.js';
 export * from './commandSafety.js';
 export * from './graphicsEngineAccess.js';
 export { parseNDJSON } from '../providers/ndjson.js';

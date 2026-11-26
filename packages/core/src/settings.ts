@@ -161,6 +161,21 @@ export const developerSettingsSchema = z.object({
    * Actif seulement si le mode Développeur et le chef d'orchestre sont activés.
    */
   chatMissions: z.boolean().optional(),
+  /**
+   * « Claude en renfort » (Développeur facile, étape 3) : absent ou `enabled` faux = jamais proposé.
+   * Plafonds en euros (par appli : 2 € si absent ; par mois : aucun si absent). `usdToEur` : le taux
+   * du dollar (absent : 1 $ compté 1 €). `apiKey` : la clé Anthropic de l'utilisateur, tapée par lui,
+   * gardée dans le coffre comme les autres clés ; la fenêtre ne la revoit jamais.
+   */
+  renfort: z
+    .object({
+      enabled: z.boolean().optional(),
+      apiKey: z.string().max(400).optional(),
+      capPerAppEur: z.number().min(0).max(100).optional(),
+      capPerMonthEur: z.number().min(0).max(1000).optional(),
+      usdToEur: z.number().min(0.5).max(2).optional(),
+    })
+    .optional(),
   /** Recherche web périodique. Absente ou fausse : coupée. */
   periodicWebResearch: z.boolean().optional(),
   /** Sujets surveillés, trois au plus sont vraiment interrogés. */
