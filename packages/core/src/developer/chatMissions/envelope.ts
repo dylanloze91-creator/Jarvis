@@ -2,6 +2,7 @@ import type { MissionState, MissionStep } from '../engine/mission.js';
 import type { MissionGate } from '../engine/difficulty.js';
 import type { MissionKind } from '../engine/router.js';
 import type { ProposerMissionType } from './proposerMission.js';
+import type { FacilePayload } from '../facile/facile.js';
 
 export type ChatMissionProposalStatus = 'pending' | 'declined' | 'launched';
 
@@ -58,7 +59,9 @@ export type ChatMissionEnvelope =
   | { kind: 'proposal'; data: ChatMissionProposalPayload }
   | { kind: 'track'; data: ChatMissionTrackPayload }
   | { kind: 'report'; data: ChatMissionReportPayload }
-  | { kind: 'notice'; text: string };
+  | { kind: 'notice'; text: string }
+  /** Jarvis Développeur facile : une création racontée dans la discussion (Jarvis Test). */
+  | { kind: 'facile'; data: FacilePayload };
 
 export function trackFromMission(mission: MissionState): ChatMissionTrackPayload {
   const waitingQuestions =

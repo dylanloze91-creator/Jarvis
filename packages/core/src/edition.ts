@@ -84,6 +84,11 @@ export interface Edition {
    * l'adresse sans port. Test : 8443, pour ne jamais prendre la publication de Live.
    */
   phoneHttpsPort?: number;
+  /**
+   * Jarvis Développeur facile (`docs/specs/developpeur-facile.md`) : une demande d'application
+   * dans la discussion démarre tout de suite, racontée en mots simples. Absent dans Live.
+   */
+  easyDeveloper?: boolean;
 }
 
 const PHONE_OFFSET = 6;
@@ -150,6 +155,7 @@ export const TEST_EDITION: Edition = {
   appendices: { port: 53224 + APPENDICE_OFFSET },
   atelier: true,
   yeux: true,
+  easyDeveloper: true,
 };
 
 export function readEditionId(input: { env?: string; baked?: string } = {}): EditionId {

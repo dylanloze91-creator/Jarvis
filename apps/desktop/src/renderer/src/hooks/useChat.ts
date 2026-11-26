@@ -168,6 +168,14 @@ export function useChat(options: UseChatOptions = {}) {
           setItems((current) => [...closeStreaming(current), { kind: 'yeux', id: `yeux-${event.messageId}`, photo }]);
           break;
         }
+        case 'mission_card': {
+          // Développeur facile : la carte apparaît, rien de plus n'est dit (la phrase vient d'être dite).
+          setItems((current) => [
+            ...closeStreaming(current),
+            { kind: 'chat_mission', id: event.message.id, envelope: event.message.chatMission! },
+          ]);
+          break;
+        }
         case 'mission_update': {
           setItems((current) =>
             current.map((item) =>
@@ -176,6 +184,7 @@ export function useChat(options: UseChatOptions = {}) {
                 : item,
             ),
           );
+          if (event.voiceHint) onAssistantFinal.current?.(event.voiceHint);
           break;
         }
         case 'confirm': {

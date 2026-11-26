@@ -27,6 +27,9 @@ import {
   manifestIsValid,
   maskSecrets,
   coderLearningPrompt,
+  buildAuditEntry,
+  randomId,
+  type FacileHit,
   memoryRetrievalEnabled,
   skillLibraryEnabled,
   createDefaultMarketDataRegistry,
@@ -76,7 +79,6 @@ import {
   startPrintWatch,
   withMessages,
   HealthScreenWatch,
-  buildAuditEntry,
   isStopAllPhrase,
 } from '@jarvis/core';
 import {
@@ -157,6 +159,7 @@ import { ChatActivity } from './developer/task/chatActivity.js';
 import { ChatMissionHub } from './chatMission/hub.js';
 import { ChatMissionSync } from './chatMission/sync.js';
 import { registerChatMissionIpc } from './chatMission/ipc.js';
+import { FacileCoordinator } from './chatMission/facile.js';
 import { summarizeYoutubeLink } from './youtube/runtime.js';
 import { UpdateManager } from './updater.js';
 import { VoiceBridge } from './voice.js';
@@ -309,6 +312,7 @@ let googleStarted = false;
 let developerIpc: ReturnType<typeof registerDeveloperIpc> | null = null;
 let chatMissionHub: ChatMissionHub | null = null;
 let chatMissionSync: ChatMissionSync | null = null;
+let facileCoordinator: FacileCoordinator | null = null;
 
 function pushChatEvent(event: ChatEvent): void {
   const contents = overlay?.browserWindow.webContents;
@@ -575,6 +579,7 @@ const session = new ChatSession({
   knowledge,
   localLearning,
   getChatMissionHub: () => chatMissionHub,
+  getFacile: () => facileCoordinator,
   images,
   openImagePath: (path) => shell.openPath(path),
   noteUserTurn: (turn) => {
@@ -1870,6 +1875,7 @@ function registerIpc(): void {
     target: () => overlay?.browserWindow.webContents ?? null,
     onDeveloperState: (state) => {
       void chatMissionSync?.onDeveloperState(state);
+      void facileCoordinator?.onDeveloperState(state);
     },
     registry,
     searchRegistry,
@@ -1894,7 +1900,27 @@ function registerIpc(): void {
     getSettings: () => settings,
     developer: () => developerIpc?.current() ?? null,
     realBenches: () => developerIpc?.current()?.state().model.realBenches ?? [],
+    easyDeveloper: () => edition().easyDeveloper === true,
   });
+  // Développeur facile : Jarvis Test seulement (table d'édition). Live n'en a pas.
+  facileCoordinator = edition().easyDeveloper
+    ? new FacileCoordinator({
+        developer: () => developerIpc?.ensure() ?? null,
+        search: async (query) => {
+          const outcome = await tools.execute(
+            { id: randomId(), name: 'web_search', arguments: { query, limit: 5 } },
+            { requestConfirmation: async () => false },
+          );
+          void auditLog.append(buildAuditEntry(outcome)).catch(() => undefined);
+          if (outcome.status !== 'ok') return null;
+          const results = (outcome.data as { results?: FacileHit[] } | undefined)?.results;
+          return Array.isArray(results) ? results : [];
+        },
+        store,
+        pushEvent: pushChatEvent,
+        openExternal: (url) => shell.openExternal(url),
+      })
+    : null;
   chatMissionSync = new ChatMissionSync({
     hub: chatMissionHub,
     store,
@@ -1909,6 +1935,7 @@ function registerIpc(): void {
       await developerIpc?.ensure()?.openMission(missionId, projectId);
     },
     missionWorktree: () => developerIpc?.current()?.state().codeTask?.worktreePath ?? null,
+    facile: () => facileCoordinator,
   });
   openPlayProject(pendingPlayProjectId);
 }

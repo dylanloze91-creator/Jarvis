@@ -34,6 +34,7 @@ import {
   SAMPLE_CHAT_MISSION_REPORT,
   SAMPLE_CHAT_MISSION_TRACK,
 } from '@/preview/sampleChatMission';
+import { sampleFacileConversation } from '@/preview/sampleFacile';
 import { useVoice } from '@/voice/useVoice';
 import { deliverVoiceTranscript } from '@/voice/voiceTranscriptRouter';
 import { SetupGuideView } from '@/components/SetupGuideView';
@@ -224,6 +225,9 @@ export default function App() {
     if (scene === 'chat') {
       seeded.current = true;
       chat.load(SAMPLE_CONVERSATION);
+    } else if (scene && sampleFacileConversation(scene)) {
+      seeded.current = true;
+      chat.load(sampleFacileConversation(scene)!);
     } else if (scene === 'chat-mission-proposal') {
       seeded.current = true;
       chat.load(SAMPLE_CHAT_MISSION_PROPOSAL);

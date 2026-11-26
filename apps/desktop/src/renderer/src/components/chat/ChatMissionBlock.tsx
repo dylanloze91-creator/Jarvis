@@ -1,4 +1,5 @@
 import type { ChatMissionEnvelope } from '@jarvis/core';
+import { ChatMissionFacileCard } from './ChatMissionFacileCard';
 import { ChatMissionProposalCard } from './ChatMissionProposalCard';
 import { ChatMissionReportCard } from './ChatMissionReportCard';
 import { ChatMissionTrackCard } from './ChatMissionTrackCard';
@@ -14,6 +15,17 @@ export function ChatMissionBlock({
 }) {
   if (envelope.kind === 'notice') {
     return <p className="text-[12px] text-slate-400">{envelope.text}</p>;
+  }
+  if (envelope.kind === 'facile') {
+    return (
+      <ChatMissionFacileCard
+        data={envelope.data}
+        onChoice={(choice) => void window.jarvis.chat.facileChoice(choice)}
+        onAnswer={(text) => void window.jarvis.chat.facileAnswer(text)}
+        onOpenFolder={() => void window.jarvis.chat.facileOpenFolder()}
+        onOpenApp={() => void window.jarvis.chat.facileOpenApp()}
+      />
+    );
   }
   if (envelope.kind === 'proposal') {
     return (

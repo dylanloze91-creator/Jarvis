@@ -47,6 +47,10 @@ const api: JarvisApi = {
     setMissionProposalProject: (input) => ipcRenderer.invoke(IpcChannel.chatMissionSetProject, input),
     patchMissionProposal: (input) => ipcRenderer.invoke(IpcChannel.chatMissionPatchProposal, input),
     openMissionFolder: (input) => ipcRenderer.invoke(IpcChannel.chatMissionOpenFolder, input),
+    facileChoice: (choice) => ipcRenderer.invoke(IpcChannel.chatFacileChoice, { choice }),
+    facileAnswer: (text) => ipcRenderer.invoke(IpcChannel.chatFacileAnswer, { text }),
+    facileOpenFolder: () => ipcRenderer.invoke(IpcChannel.chatFacileOpenFolder),
+    facileOpenApp: () => ipcRenderer.invoke(IpcChannel.chatFacileOpenApp),
     reloadConversationMissions: (conversationId: string) =>
       ipcRenderer.invoke(IpcChannel.chatMissionReload, conversationId),
     onEvent: (listener) => {

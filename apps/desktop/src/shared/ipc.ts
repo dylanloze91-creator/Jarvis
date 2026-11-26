@@ -97,6 +97,10 @@ export const IpcChannel = {
   chatMissionPatchProposal: 'chat:mission-patch-proposal',
   chatMissionOpenFolder: 'chat:mission-open-folder',
   chatMissionReload: 'chat:mission-reload',
+  chatFacileChoice: 'chat:facile-choice',
+  chatFacileAnswer: 'chat:facile-answer',
+  chatFacileOpenFolder: 'chat:facile-open-folder',
+  chatFacileOpenApp: 'chat:facile-open-app',
   orchestraValidateTeam: 'orchestra:validate-team',
   orchestraRouterScore: 'orchestra:router-score',
   settingsGet: 'settings:get',
@@ -741,7 +745,11 @@ export type ChatEvent =
       conversationId: string;
       messageId: string;
       envelope: ChatMissionEnvelope;
+      /** Développeur facile : un moment important, dit à voix haute si la demande venait de la voix. */
+      voiceHint?: string;
     }
+  /** Développeur facile : la carte d'une création apparaît dans la discussion, sans rien dire de plus. */
+  | { type: 'mission_card'; message: ChatMessage }
   /**
    * Mode direct d'Imager : le modèle a répondu sans appeler generer_image alors que la demande
    * ressemblait à une image. Le bouton « Envoyer à Imager » renvoie `/image <texte>`.
@@ -940,6 +948,11 @@ export interface JarvisApi {
       objectif: string;
     }): Promise<void>;
     openMissionFolder(input: { messageId: string; missionId: string }): Promise<void>;
+    /** Développeur facile : choix sous « Ça existe déjà », réponse à une question, dossier du projet. */
+    facileChoice(choice: 'construire' | 'voir' | 'changer'): Promise<void>;
+    facileAnswer(text: string): Promise<void>;
+    facileOpenFolder(): Promise<void>;
+    facileOpenApp(): Promise<void>;
     reloadConversationMissions(conversationId: string): Promise<void>;
   };
   orchestra: {

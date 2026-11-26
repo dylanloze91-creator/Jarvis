@@ -733,6 +733,30 @@ export class DeveloperController {
     return { path: folder, state: this.emit() };
   }
 
+  /**
+   * Développeur facile, étape 2 : « Ouvrir l'appli » sur une création prête. Une base qui se
+   * construit (`vite-react`) est préparée d'abord (`npm run build` dans son dossier, accord donné
+   * par le clic, noté au journal), puis ouverte dans la fenêtre d'aperçu, servie en local.
+   */
+  async openCreatedApp(projectId: string): Promise<{ ok: boolean; message: string }> {
+    if (!this.enabled()) return { ok: false, message: 'Le mode Développeur est coupé.' };
+    const resolved = await this.projects.resolve(projectId);
+    if (typeof resolved === 'string') return { ok: false, message: resolved };
+    if (resolved.template === 'vite-react') {
+      const before = this.task;
+      await this.projects.build(projectId, { autoConfirm: true });
+      const task = this.task;
+      if (!task || task === before || task.outcome !== 'success') {
+        const why = task?.message?.trim();
+        return { ok: false, message: `Je n’ai pas réussi à la préparer${why ? ` : ${why}` : '.'}` };
+      }
+    }
+    const ok = await this.projectPreview.open(projectId, resolved.root, resolved.template ?? null);
+    return ok
+      ? { ok: true, message: 'ouverte' }
+      : { ok: false, message: 'Je n’ai pas trouvé de page à ouvrir dans le dossier du projet.' };
+  }
+
   async playProject(projectId: string): Promise<DeveloperState> {
     const resolved = await this.projects.resolve(projectId);
     if (typeof resolved === 'string') {
