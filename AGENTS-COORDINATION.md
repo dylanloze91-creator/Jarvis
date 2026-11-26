@@ -15,6 +15,7 @@ Statuts possibles : `en cours`, `en pause`, `bloqué`, `terminé`.
 
 | Agent | Branche | Tâche | Fichiers concernés | Début | Statut |
 | --- | --- | --- | --- | --- | --- |
+| Claude Code (agent Yeux, à la place de l'agent Corrections injoignable) | `main` | Publication de la Live 5.0.81 sur le « publie » de l'utilisateur (26 novembre) : fusion de `claude/live-5081` dans `main` (avance rapide, sans conflit), `bash release.sh`, vérification de la release, installation silencieuse sur le PC, contrôles (version, téléphone, enceintes, Jarvis Test intact) ; rien n'est envoyé à l'imprimante | `apps/desktop/release/` | 2026-11-26 | en cours |
 | Claude Code | `claude/corrections-5080-suite` (essais du 23) | Essais de la Live 5.0.80 avec l'utilisateur, corrections pendant les essais (infos du PC « ou », pause / play Spotify malgré Whisper, question de l'appareil). Pas de publication sans « publie ». | `agent/expressRules.ts`, `media/playIntent.ts`, `agent/agent.ts`, `tools/spotify.ts` | 2026-11-23 | terminé : rapport `rapports/2026-11-23-live-5080-fin-des-corrections.md` ; non publié |
 | Claude Code | `claude/corrections-5080-suite` | Live 5.0.80 : préchauffage des enceintes, déchargement / rechargement d'Imager et reformulation envoient les mêmes `num_ctx` / `num_gpu` que le chat (sinon Ollama recharge le 7B) ; contrôle de style qui ignore `.claude/worktrees/`. Pas de publication sans « publie ». | `packages/core/src/speaker/warmup.ts`, `apps/desktop/src/main/speaker/warmupRun.ts`, — | 2026-11-23 | terminé : options alignées (préchauffage 5,8 s → 0,016 s, demande suivante 6,2 s → 0,30 s avec les réglages de Live), lint qui ignore `.claude/worktrees/` ; essais E16 et E17 ajoutés à `rapports/2026-11-19-live-5080-a-verifier.md` ; rapport `rapports/2026-11-23-live-5080-options-ollama.md` ; non publié |
 | Claude (chat) | `claude/corrections-5080-suite` (partie de `claude/live-5080`) | Corrections de « Ce qui coince » après les essais du 20 novembre, à la demande de l'utilisateur : fenêtre active à la voix, fiche rejetée à tort par une correction, Spotify (pause en double, précédent/suivant sans modèle et vérifiés), « mon PC est lent en ce moment » qui partait sur Internet. Corrections seulement. | `agent/expressRules.ts`, `providers/toolCallRecovery.ts`, `learning/continuous.ts`, `media/playIntent.ts`, `agent/agent.ts` (`forcedSpotify`, `looksLikeWebResearchIntent`), `apps/desktop/src/main/tools/spotify.ts` et leurs essais | 2026-11-20 | terminé : poussée ; contrôles officiels et report dans `claude/dev` puis `claude/live-5080` à faire par Claude Code (`rapports/2026-11-20-corrections-5080-suite.md`) |
@@ -91,6 +92,6 @@ Une seule carte (RTX 2060 6 Go) : un seul agent à la fois lance le banc (`npm r
 
 | État | Par qui | Pour quoi | Depuis |
 | --- | --- | --- | --- |
-| libre | — | — | — |
+| occupée | Claude Code (agent Yeux, publication 5.0.81) | `release.sh` : `npm test` charge un modèle dans Ollama ; l'observation des impressions attend | 2026-11-26 11:50 |
 
 Pour réserver : passer l'état à `occupée`, remplir les colonnes, commiter et pousser **avant** de lancer. Pour libérer : remettre `libre` et `—`, commiter et pousser.
