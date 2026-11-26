@@ -95,3 +95,14 @@ Une seule carte (RTX 2060 6 Go) : un seul agent à la fois lance le banc (`npm r
 | libre | — | — | — |
 
 Pour réserver : passer l'état à `occupée`, remplir les colonnes, commiter et pousser **avant** de lancer. Pour libérer : remettre `libre` et `—`, commiter et pousser.
+
+### Réservation locale (courte), sans commit — règle du 26 novembre 2026
+
+La table ci-dessus sert aux usages **longs** (banc, générateur, entraînement, essais de plusieurs minutes). Pour les usages **courts** sur ce PC (une analyse de quelques secondes, comme la veille des impressions), on ne commite plus : plus de 100 commits par impression, c'était trop.
+
+- **Fichier** : `C:\dev\jarvis-data\coordination\gpu.json` (sur le PC, hors du dépôt). Absent = libre.
+- **Contenu** : `{ "etat": "occupée", "qui": "…", "pourQuoi": "…", "depuis": "<ISO>", "jusqua": "<ISO>", "pid": 1234, "machine": "<nom du PC>" }`. `jusqua` est obligatoire : 10 minutes au plus après `depuis`.
+- **Réserver** : créer le fichier **en création exclusive** (Node : `writeFileSync(chemin, json, { flag: 'wx' })` ; PowerShell : `[IO.File]::Open(chemin, 'CreateNew')`). Si le fichier existe déjà et qu'il est valide, la carte est prise : attendre. Il est **périmé** (on peut le supprimer puis réessayer) si `jusqua` est passé, ou si `machine` est ce PC et que le processus `pid` n'existe plus.
+- **Libérer** : supprimer le fichier, seulement si c'est le sien (`qui` et `pid`).
+- **Avant tout usage de la carte**, long ou court : lire ce fichier **et** la table ci-dessus. Les deux doivent être libres. Un agent qui réserve la table pour un usage long attend d'abord que le fichier soit absent ou périmé (au plus 10 minutes).
+- **Qui s'en sert** : la veille des impressions (agent Yeux, tâche planifiée « Jarvis - veille des impressions », `apps/desktop/scripts/veille-impressions.ps1`), qui ne commite plus rien et lit la table sans jamais l'écrire.
