@@ -298,7 +298,7 @@ function carteOccupeeParAutre() {
   }
   for (const [ou, texte] of textes) {
     const l = ligneGpu(texte);
-    if (l && /^occup/i.test(l.cellules[0]) && !/agent Yeux/i.test(l.cellules[1]) && !/agent Yeux[^|]*(passe avant|peut charger|quand il en a besoin)/i.test(l.cellules[2])) return `${l.cellules[1]} (${ou}) : ${l.cellules[2]}`;
+    if (l && /^occup/i.test(l.cellules[0]) && !/agent Yeux/i.test(l.cellules[1]) && !/agent Yeux[^|]*(passe avant|peut charger|quand il en a besoin)|partag\S* avec la veille/i.test(l.cellules[2])) return `${l.cellules[1]} (${ou}) : ${l.cellules[2]}`;
   }
   return null;
 }
@@ -598,18 +598,25 @@ async function tick() {
 /**
  * Prévenir que le questionnaire est prêt. Seulement si veille\notification.json existe
  * ({ "ntfy": "https://ntfy.sh/<sujet>", "lien": "https://<pc>.<tailnet>.ts.net:8444" }).
- * Le message ne contient que le nom du fichier et le lien (qui ne s'ouvre que sur le tailnet).
+ * Le message contient seulement « Questionnaire prêt » et un lien neutre (/questionnaire, qui mène au
+ * dernier questionnaire à remplir) : ni le nom du fichier d'impression, ni le nom du dossier. Le lien
+ * ne s'ouvre que sur le tailnet de l'utilisateur.
  */
+export function messageNotification(base) {
+  const lien = `${String(base).replace(/\/+$/, '')}/questionnaire`;
+  return { lien, corps: `Questionnaire prêt\n${lien}` };
+}
+
 async function prevenir(nom, imp) {
   const reglage = lireJson(NOTIFICATION);
-  const lien = `${reglage?.lien ?? `http://127.0.0.1:${PORT}`}/q/${encodeURIComponent(nom)}`;
-  writeFileSync(join(VEILLE, 'dernier-questionnaire.txt'), `${imp.fichier}\r\n${lien}\r\n`);
-  if (!reglage?.ntfy || !/^https:\/\//.test(reglage.ntfy)) return;
+  writeFileSync(join(VEILLE, 'dernier-questionnaire.txt'), `${imp.fichier}\r\nhttp://127.0.0.1:${PORT}/q/${encodeURIComponent(nom)}\r\n`);
+  if (!reglage?.ntfy || !/^https:\/\//.test(reglage.ntfy) || !reglage.lien) return;
+  const { lien, corps } = messageNotification(reglage.lien);
   try {
     const r = await fetch(reglage.ntfy, {
       method: 'POST',
-      headers: { Title: 'Questionnaire pret', Click: lien, Tags: 'printer' },
-      body: `Impression finie (${imp.etatFinal}) : ${imp.fichier}. Questionnaire : ${lien}`,
+      headers: { Click: lien, 'content-type': 'text/plain; charset=utf-8' },
+      body: corps,
       signal: AbortSignal.timeout(15_000),
     });
     log(`notification envoyée (${r.status})`);
@@ -808,6 +815,14 @@ const serveur = createServer(async (req, res) => {
     const url = new URL(req.url, 'http://x');
     const parts = url.pathname.split('/').filter(Boolean).map(decodeURIComponent);
     if (req.method === 'GET' && url.pathname === '/') return envoyer(200, 'text/html; charset=utf-8', pageIndex());
+    if (req.method === 'GET' && url.pathname === '/questionnaire') {
+      // Le dernier questionnaire pas encore rempli, sinon la liste.
+      const aRemplir = dossiersImpressions()
+        .reverse()
+        .find((nom) => lireJson(join(RACINE, nom, 'impression.json'))?.etat === 'finie' && !existsSync(join(RACINE, nom, 'reponses.json')));
+      res.writeHead(302, { location: aRemplir ? `/q/${encodeURIComponent(aRemplir)}` : '/', 'cache-control': 'no-store' });
+      return res.end();
+    }
     if (req.method === 'GET' && url.pathname === '/style.css') return envoyer(200, 'text/css; charset=utf-8', CSS);
     if (req.method === 'GET' && url.pathname === '/app.js') return envoyer(200, 'text/javascript; charset=utf-8', JS);
     if (req.method === 'GET' && parts[0] === 'photo' && parts.length === 3 && nomValide(parts[1]) && /^photo-\d{3}_[\d-]+(_fin)?\.jpg$/.test(parts[2])) {

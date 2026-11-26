@@ -27,9 +27,12 @@ Branche `claude/yeux-etape-1`. Rien n'est envoyé à l'imprimante : la veille ne
 - **Redémarrage du PC** : à 19 h 10 le PC a été éteint (démarrage rapide de Windows), il est revenu à 19 h 36. La tâche a relancé la veille seule à 19 h 38, qui a repris la même impression, le même dossier, et pris la photo 9. Ollama n'était pas encore prêt : l'analyse a attendu 6 minutes, sans compter d'échec. Pas de photo entre 19 h 01 et 19 h 38 (PC éteint).
 - **Une seule instance** : une deuxième veille lancée à la main s'est arrêtée seule (port pris, code 0).
 
-## Prévenir sur l'iPhone (à décider)
+## Prévenir sur l'iPhone : ntfy (décision de l'utilisateur, 26 novembre au soir)
 
-À la fin d'une impression, la veille écrit le lien du questionnaire dans `veille\dernier-questionnaire.txt`. Elle peut aussi envoyer une notification si `veille\notification.json` existe. Ce fichier n'existe pas encore : rien ne part tant que l'utilisateur n'a pas choisi.
+- À la fin d'une impression, la veille envoie à ntfy.sh, sur un sujet secret de 22 lettres tiré au hasard (`veille\notification.json`, hors du dépôt), un message qui contient **seulement** « Questionnaire prêt » et le lien `https://desktop-hah329d.taild65d4d.ts.net:8444/questionnaire`. Ni le nom du fichier d'impression, ni celui du dossier : le lien `/questionnaire` mène au dernier questionnaire pas encore rempli, sinon à la liste.
+- Le port **8444 reste publié en permanence** par Tailscale (`tailscale serve --bg --https=8444 http://127.0.0.1:53190`), visible seulement des appareils du tailnet. Pour le retirer : `tailscale serve --https=8444 off`.
+- Sans `notification.json`, rien ne part. Le lien local est aussi écrit dans `veille\dernier-questionnaire.txt`.
+- La veille comprend aussi une réservation de la table qui dit « partagée avec la veille » : elle analyse alors si le fichier local est libre.
 
 ## Arrêter ou mettre en pause
 
