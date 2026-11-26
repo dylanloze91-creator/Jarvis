@@ -111,6 +111,6 @@ Une seule carte (RTX 2060 6 Go) : un seul agent à la fois lance le banc (`npm r
 
 | État | Par qui | Pour quoi | Depuis |
 | --- | --- | --- | --- |
-| libre | — | — | — |
+| occupée | Claude Code (agent Yeux) | observation de l’impression « 2026-11-26_17-48_support-de-telephone-2026-11-26-1-v1 » : photo 4 regardée par gemma3:4b, quelques secondes | 2026-11-26 17:20 |
 
 Pour réserver : passer l'état à `occupée`, remplir les colonnes, commiter et pousser **avant** de lancer. Pour libérer : remettre `libre` et `—`, commiter et pousser.
