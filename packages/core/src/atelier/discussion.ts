@@ -396,7 +396,7 @@ const ACCORD =
   /^(?:(?:bah|ben|alors|bon|eh bien|ah|bien|ouais|oui|ok) )*(?:oui|ouais|ouai|ok|okay|d accord|daccord|vas y|va s y|go|allez|allez y|pas de (?:probleme|souci|soucis)|aucun (?:probleme|souci)|bien sur|evidemment|bien evidemment|parfait|nickel|top|super|ca marche|ca me va|ca roule|c est bon|c est parfait|carrement|exactement|tout a fait|volontiers|je veux bien|avec plaisir|fais le|fais la|fais comme ca|agrandis la|agrandis le|valide|je valide|c est ok|yes|d acc|dac|impec|impeccable|entendu|ca marche|vas y fonce|fonce)\b/;
 /** Un simple « ok » (et rien d'autre) : « ouais vas-y », « super merci », « c'est bon ». */
 const ACQUIESCEMENT =
-  /^(?=.*\b(?:oui|ouais|ok|okay|vas y|go|d accord|d acc|c est bon|ca marche|yes)\b)(?:(?:oui|ouais|ok|okay|d accord|vas y|go|super|parfait|nickel|top|merci|beaucoup|cool|c est bon|c est parfait|ca marche|ca me va|impec|impeccable|bien|tres|genial|yes|d acc|carrement|excellent|parfait|nickel)\s*)+$/;
+  /^(?=.*\b(?:oui|ouais|ok|okay|vas y|go|d accord|d acc|c est bon|c est parfait|ca marche|ca me va|nickel|parfait|super|top|impec|impeccable|genial|excellent|yes)\b)(?:(?:oui|ouais|ok|okay|d accord|vas y|go|super|parfait|nickel|top|merci|beaucoup|cool|c est bon|c est parfait|ca marche|ca me va|impec|impeccable|bien|tres|genial|yes|d acc|carrement|excellent|parfait|nickel)\s*)+$/;
 /**
  * Accepter ce que Jarvis propose pour une mesure, dit comme on parle : « ouais vas-y », « fais comme
  * tu veux », « je sais pas trop », « peu importe ».
@@ -419,6 +419,16 @@ const OBJET_PRECIS = /\b(?:pour|qui|avec|comme)\b/;
 /** Ce qu'on demande avec « fais-moi un… » et qui n'est pas une pièce à imprimer. */
 const PAS_UNE_PIECE =
   /\b(?:images?|photos?|dessins?|logos?|stickers?|resumes?|listes?|mails?|messages?|playlists?|recherches?|notes?|rappels?|cafes?|blagues?|histoires?|poemes?|points?|bilans?|recap\w*|calculs?|programmes?|scripts?|applis?|applications?|sites?|codes?|tableaux?|textes?|lettres?|plannings?|comptes? rendus?|tours?|pauses?|exemples?|tests?|essais?|copies?|sauvegardes?|captures?)\b/;
+/** Un ordre sans ses mots de liaison : « vas y imprime » → « imprime », « mets la plutot en file d attente » → « mets la en file d attente ». */
+function sansLiaisons(t: string): string {
+  return t
+    .replace(/^(?:(?:vas y|va s y|allez|go|bon|ok|oui|ouais|du coup|alors|donc|ben|bah) )+/, '')
+    .replace(/\b(?:plutot|du coup|alors|donc|maintenant|stp|svp|deja|vite|direct|directement)\b/g, ' ')
+    .replace(/ +/g, ' ')
+    .trim();
+}
+/** « et le même à droite », « pareil à l'arrière », « un autre à gauche » : la dernière découpe, ailleurs. */
+const LE_MEME = /^(?:et )?(?:(?:le|la|les) memes?(?: chose| trou| ouverture)?|pareil|idem|un autre|une autre|aussi)(?: aussi)? (.+)$/;
 /** « encore », « encore un peu » : le dernier changement relatif, une fois de plus. */
 const ENCORE = /^(?:encore(?: un peu| plus| une fois| pareil)?|un peu plus|pareil|continue)$/;
 /** Phrases très courtes qui ne répondent à aucune question de l'atelier. */
@@ -1076,16 +1086,18 @@ function decider(text: string, precedentDonne: AtelierEtat | null, contexte: Con
 
   // Une pièce à l'écran : « imprime-la », « imprime la boîte » passe avant une nouvelle demande.
   if (precedent?.etape === 'piece') {
+    // « vas-y imprime », « bon mets-la plutôt en file d'attente » : l'ordre, sans ses mots de liaison.
+    const to = sansLiaisons(tn);
     // Un ensemble (boîtier à écran) s'imprime pièce par pièce : « imprime la façade », « mets le
     // socle dans la file ». Sans pièce nommée, Jarvis demande laquelle.
     const ensemble = precedent.versions.find((v) => v.numero === precedent.versionChoisie)?.pieces;
     if (ensemble?.length) {
-      const versFile = /\b(?:file|liste) d attente\b|\bdans la file\b/.test(tn);
-      const ordre = /^(?:imprime|imprimes|lance|mets|met|ajoute|rajoute|envoie|place)\b/.test(tn) && (versFile || /^(?:imprime|imprimes|lance)\b/.test(tn));
+      const versFile = /\b(?:file|liste) d attente\b|\bdans la file\b/.test(to);
+      const ordre = /^(?:imprime|imprimes|lance|mets|met|ajoute|rajoute|envoie|place)\b/.test(to) && (versFile || /^(?:imprime|imprimes|lance)\b/.test(to));
       if (ordre) {
-        const piece = pieceDite(tn, ensemble);
+        const piece = pieceDite(to, ensemble);
         if (piece) return { kind: versFile ? 'file' : 'imprimer', etat: precedent, numero: precedent.versionChoisie, piece: piece.nom };
-        if (numeroAImprimer(tn, precedent) !== null || numeroEnFile(tn, precedent) !== null) {
+        if (numeroAImprimer(to, precedent) !== null || numeroEnFile(to, precedent) !== null) {
           return {
             kind: 'dire',
             texte: `Le boîtier a ${ensemble.length} pièces à imprimer une par une : ${ensemble.map((p) => (p.nombre > 1 ? `${p.titre} (× ${p.nombre})` : p.titre)).join(', ')}. Dis-moi laquelle, par exemple « imprime la façade ».`,
@@ -1094,14 +1106,14 @@ function decider(text: string, precedentDonne: AtelierEtat | null, contexte: Con
         }
       }
     }
-    const imprimer = numeroAImprimer(tn, precedent);
+    const imprimer = numeroAImprimer(to, precedent);
     if (imprimer !== null) {
       if (!precedent.versions.some((v) => v.numero === imprimer)) {
         return { kind: 'dire', texte: `Il n'y a pas de version ${imprimer}. Les versions sont : ${precedent.versions.map((v) => v.numero).join(', ')}.` };
       }
       return { kind: 'imprimer', etat: precedent, numero: imprimer };
     }
-    const enFile = numeroEnFile(tn, precedent);
+    const enFile = numeroEnFile(to, precedent);
     if (enFile !== null) {
       if (!precedent.versions.some((v) => v.numero === enFile)) {
         return { kind: 'dire', texte: `Il n'y a pas de version ${enFile}. Les versions sont : ${precedent.versions.map((v) => v.numero).join(', ')}.` };
@@ -1162,7 +1174,8 @@ function decider(text: string, precedentDonne: AtelierEtat | null, contexte: Con
 
   // « tu sais faire quoi comme pièces en 3D », « j'aimerais imprimer un truc », « modélise-moi ça » :
   // l'atelier dit ce qu'il sait faire (aucune équipe du chef d'orchestre ne le sait).
-  if (CAPACITES.test(tn) || (ENVIE_3D.test(tn) && !SUJET_AUTRE.test(tn) && !/\b(?:document|page|pdf|fichier|photo|image|texte|mail|facture|feuille)s?\b/.test(tn))) {
+  const envie = ENVIE_3D.test(tn) || ENVIE_3D.test(t) || /^(?:imprime|modelise|fabrique)(?: moi| nous)? (?:un truc|quelque chose|un objet|une piece|ca|un machin)\b/.test(tn);
+  if (CAPACITES.test(tn) || CAPACITES.test(t) || (envie && !SUJET_AUTRE.test(tn) && !/\b(?:document|page|pdf|fichier|photo|image|texte|mail|facture|feuille)s?\b/.test(tn))) {
     return { kind: 'dire', texte: `En 3D, je sais dessiner et préparer pour l'imprimante : ${piecesConnues()}, et un boîtier pour une carte électronique (Raspberry Pi 5, ESP32). Dis-moi laquelle, avec ses mesures si tu les as : « fais-moi une boîte de 80 par 50 par 30 ».`, etat: { etape: 'choix' } };
   }
   // Dans une discussion d'atelier (une pièce, une question), « fais-moi un pot de fleurs » demande une
@@ -1404,6 +1417,17 @@ function decider(text: string, precedentDonne: AtelierEtat | null, contexte: Con
   }
   Object.assign(valeurs, dites);
 
+  // « et le même à droite » : la découpe ajoutée par la version à l'écran, refaite là où il dit.
+  const meme = !lu.ops.length && !matiere.ops.length ? LE_MEME.exec(tn) : null;
+  if (meme && actuelle.changement) {
+    const rond = /Ajout : (?:\d+ )?trous? de ([\d,]+) mm/.exec(actuelle.changement);
+    const rect = /Ajout : ouverture de ([\d,]+) × ([\d,]+) mm/.exec(actuelle.changement);
+    const phrase = rond ? `ajoute un trou de ${rond[1]!.replace(',', '.')} ${meme[1]}` : rect ? `ajoute une ouverture de ${rect[1]!.replace(',', '.')} par ${rect[2]!.replace(',', '.')} ${meme[1]}` : null;
+    if (phrase) {
+      const suite = deciderAtelier(phrase, precedent, contexte);
+      if (suite.kind !== 'rien') return suite;
+    }
+  }
   // « encore un peu » : la mesure changée par la version à l'écran, une fois de plus dans le même sens.
   if (ENCORE.test(tn) && actuelle.changement) {
     const dernier = /^([^:,]+) : ([\d,.]+)[^→]*→ ([\d,.]+)/.exec(actuelle.changement);
@@ -1485,7 +1509,7 @@ export function phraseConfirmationAtelier(nom: string, numero: number, tempsFila
  * une « version 2 » avec des cotes (nuit du 25 novembre).
  */
 export const ATELIER_NOTE_EQUIPES =
-  "ATELIER 3D : Jarvis a un atelier qui dessine et prépare pour l'imprimante 3D des pièces simples (boîte, boîte avec couvercle, bac à compartiments, entretoise, équerre, crochet, support de téléphone, socle, porte-étiquette, cale, boîtier pour Raspberry Pi 5 ou ESP32). Ce n'est pas toi qui le fais : tu ne dessines, ne modifies et n'imprimes aucune pièce, tu n'annonces jamais de « version » ni de cotes de pièce, et tu ne dis jamais que Jarvis ne peut pas imprimer en 3D. Si l'utilisateur veut une pièce ou un changement sur sa pièce, réponds en une phrase qu'il le redise simplement à l'atelier, par exemple « fais-moi une boîte de 80 par 50 par 30 » ou « hauteur 40 ».";
+  "ATELIER 3D : Jarvis a un atelier qui dessine et prépare pour l'imprimante 3D des pièces simples (boîte, boîte avec couvercle, bac à compartiments, entretoise, équerre, crochet, support de téléphone, socle, porte-étiquette, cale, boîtier pour Raspberry Pi 5 ou ESP32). Ce n'est pas toi qui le fais : tu ne dessines, ne modifies et n'imprimes aucune pièce, tu n'annonces jamais de « version » ni de cotes de pièce, et tu ne dis jamais que Jarvis ne peut pas imprimer en 3D. Les images, photos et dessins ne concernent pas l'atelier : pour eux, fais comme d'habitude. Si l'utilisateur veut une pièce ou un changement sur sa pièce, réponds en une phrase qu'il le redise simplement à l'atelier, par exemple « fais-moi une boîte de 80 par 50 par 30 » ou « hauteur 40 ».";
 
 /** Ce qu'un modèle de langage voit à la place d'une réponse de l'atelier. */
 export const ATELIER_REPONSE_MASQUEE = "(Réponse de l'atelier 3D, déjà montrée à l'utilisateur. Tu ne la connais pas : ne l'imite pas, n'invente ni version ni cotes.)";

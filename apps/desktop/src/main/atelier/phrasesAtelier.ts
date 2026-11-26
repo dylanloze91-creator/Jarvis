@@ -678,7 +678,7 @@ export const DISCUSSIONS: DiscussionEssai[] = [
       { dire: 'fais moi une boite de 80 par 60 par 40', attendu: { piece: 'boite', taille: [80, 60, 40] } },
       { dire: 'elle est trop petite', attendu: { dit: /longueur|largeur|hauteur|quelle|combien/i } },
       { dire: 'bah en longueur genre 100', attendu: { piece: 'boite', taille: [100, 60, 40] } },
-      { dire: 'nickel merci', attendu: { ailleurs: true } },
+      { dire: 'nickel merci', attendu: { dit: /est faite/ } },
       { dire: 'ah et les parois plus epaisses', attendu: { piece: 'boite', taille: [100, 60, 40] } },
     ],
   },
@@ -773,7 +773,88 @@ export const DISCUSSIONS_EXAMEN: DiscussionEssai[] = [
       { dire: 'Tu peux me faire un socle carré de 60 ?', lieu: 'enceinte', attendu: { dit: /socle/i } },
       { dire: 'Oui.', lieu: 'enceinte', attendu: { dit: /./ } },
       { dire: 'Elle est trop basse.', lieu: 'enceinte', attendu: { dit: /./ } },
-      { dire: 'Lance l’impression.', lieu: 'enceinte', accord: true, attendu: { ailleurs: true }, pasImprimante: ENVOI },
+      { dire: 'Lance l’impression.', lieu: 'enceinte', accord: true, attendu: { dit: /PC ou le téléphone/ }, pasImprimante: ENVOI },
+    ],
+  },
+];
+
+/**
+ * Deuxième série « examen », écrite après les corrections tirées de la première, et passée une
+ * seule fois : `JARVIS_ATELIER_SEULEMENT=examen2`.
+ */
+export const DISCUSSIONS_EXAMEN_2: DiscussionEssai[] = [
+  {
+    id: 'examen2-bac',
+    fonction: 'examen 2',
+    tours: [
+      { dire: 'bon jarvis il me faut un casier pour mes forets', attendu: { question: /longueur/i } },
+      { dire: 'vingt centimetres', attendu: { question: /largeur/i } },
+      { dire: 'dix', attendu: { question: /hauteur/i } },
+      { dire: 'la meme chose que la largeur', attendu: { dit: /./ } },
+      { dire: 'bah 5 cm alors', attendu: { dit: /./ } },
+    ],
+  },
+  {
+    id: 'examen2-boite',
+    fonction: 'examen 2',
+    tours: [
+      { dire: 'dessine moi une boite de 7 par 7 par 3 cm', attendu: { piece: 'boite', taille: [70, 70, 30] } },
+      { dire: 'en fait fais la plus longue de 2 cm', attendu: { piece: 'boite', taille: [90, 70, 30], version: 2 } },
+      { dire: 'perce un trou de 10 au milieu du fond', attendu: { piece: 'boite', version: 3, mesures: /10 mm/ } },
+      { dire: 'non enleve le', attendu: { piece: 'boite', taille: [90, 70, 30] } },
+      { dire: 'tu peux la lancer', accord: true, attendu: { dit: /lancée|imprime/i }, imprimante: ENVOI },
+    ],
+  },
+  {
+    id: 'examen2-equerre',
+    fonction: 'examen 2',
+    tours: [
+      { dire: 'j aurais besoin d une equerre de 50 par 50', attendu: { dit: /équerre/i } },
+      { dire: 'ouais ouais', attendu: { dit: /./ } },
+      { dire: 'plus epaisse', attendu: { dit: /./ } },
+    ],
+  },
+  {
+    id: 'examen2-pi',
+    fonction: 'examen 2',
+    tours: [
+      { dire: 'fais moi un boitier pour mon pi 5 avec un couvercle', attendu: { dit: /Raspberry Pi 5/ } },
+      { dire: 'vas y', attendu: { dit: /./ } },
+      { dire: 'rajoute un trou pour le cable a gauche', attendu: { dit: /./ } },
+      { dire: 'c est quoi la hauteur', attendu: { dit: /\d+ mm de haut/ } },
+    ],
+  },
+  {
+    id: 'examen2-esp',
+    fonction: 'examen 2',
+    tours: [
+      { dire: 'il me faut un boitier pour une esp32', attendu: { question: /modèle|référence|mesure/i } },
+      { dire: 'je sais pas c est quoi comme modele', attendu: { dit: /./ } },
+      { dire: 'bon je la mesure', attendu: { question: /Mesure 1 sur/ } },
+      { dire: 'six centimetres', attendu: { question: /Mesure 2 sur/ } },
+      { dire: 'attends je reviens', attendu: { dit: /./ } },
+      { dire: 'trois centimetres', attendu: { dit: /./ } },
+    ],
+  },
+  {
+    id: 'examen2-ailleurs',
+    fonction: 'examen 2',
+    tours: [
+      { dire: 'fais moi un crochet', attendu: { question: /./ } },
+      { dire: 'mets pause', attendu: { ailleurs: true } },
+      { dire: 'fais moi un crochet', attendu: { question: /./ } },
+      { dire: 'ok', attendu: { dit: /./ } },
+      { dire: 'tu peux me rappeler d acheter du filament', attendu: { ailleurs: true } },
+    ],
+  },
+  {
+    id: 'examen2-telephone',
+    fonction: 'examen 2',
+    tours: [
+      { dire: 'Fais-moi une cale de 40 par 20', lieu: 'telephone', attendu: { dit: /cale/i } },
+      { dire: 'Oui', lieu: 'telephone', attendu: { dit: /./ } },
+      { dire: 'Envoie moi les images', lieu: 'telephone', attendu: { dit: /./ } },
+      { dire: 'Mets la dans la file', lieu: 'telephone', accord: true, attendu: { dit: /file d.attente/i }, imprimante: FILE, pasImprimante: LANCER },
     ],
   },
 ];

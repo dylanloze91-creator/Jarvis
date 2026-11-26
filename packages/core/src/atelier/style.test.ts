@@ -389,3 +389,32 @@ describe('troisième série de la nuit', () => {
     expect(deciderAtelier('une boite de 6 oeufs ca coute combien', null, {})).toEqual({ kind: 'rien' });
   });
 });
+
+describe('après la série « examen »', () => {
+  const entretoise = ['fais moi une entretoise de 10 de diametre et 8 de haut avec un trou de 4'];
+
+  it('« vas y imprime », « bon mets la plutot en file d attente » : l’ordre sans ses mots de liaison', () => {
+    expect(derniere([...entretoise, 'vas y imprime'])).toMatchObject({ kind: 'imprimer', numero: 1 });
+    expect(derniere([...entretoise, 'bon mets la plutot en file d attente'])).toMatchObject({ kind: 'file', numero: 1 });
+    expect(derniere([...entretoise, 'du coup imprime la'])).toMatchObject({ kind: 'imprimer' });
+  });
+
+  it('« ca me va », « nickel » après une pièce : rien à valider, dit par l’atelier ; « merci beaucoup » reste au chat', () => {
+    expect(derniere([...entretoise, 'ca me va'])).toMatchObject({ kind: 'dire' });
+    expect(derniere([...entretoise, 'nickel'])).toMatchObject({ kind: 'dire' });
+    expect(derniere([...entretoise, 'Merci beaucoup !'])).toEqual({ kind: 'rien' });
+  });
+
+  it('« tu peux m imprimer quelque chose » : la liste, puis « un bac pour trier mes vis »', () => {
+    const { decisions } = discussion(['jarvis tu peux m imprimer quelque chose', 'un bac pour trier mes vis', '20 par 15 par 4 cm', 'quatre']);
+    expect(decisions[0]).toMatchObject({ kind: 'dire', etat: { etape: 'choix' } });
+    expect(decisions[1]).toMatchObject({ kind: 'dire', etat: { etape: 'question', gabarit: 'bac' } });
+    expect(decisions[3]).toMatchObject({ kind: 'fabriquer', valeurs: { longueur: 200, largeur: 150, hauteur: 40, colonnes: 4 } });
+  });
+
+  it('« et le meme a droite », « pareil a l arriere » : la dernière découpe, ailleurs', () => {
+    const { decisions } = discussion(['fais moi un boitier avec couvercle de 80 par 80 par 50', 'rajoute moi un trou de 12 sur le cote gauche', 'et le meme a droite', 'pareil a l arriere']);
+    expect(decisions[2]).toMatchObject({ kind: 'fabriquer', changement: 'Ajout : trou de 12 mm sur le côté droit' });
+    expect(decisions[3]).toMatchObject({ kind: 'fabriquer', changement: 'Ajout : trou de 12 mm à l’arrière' });
+  });
+});
