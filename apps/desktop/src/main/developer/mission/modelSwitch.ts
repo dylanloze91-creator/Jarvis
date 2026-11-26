@@ -4,6 +4,14 @@ import type { RunningModel } from '../models/ollamaApi.js';
 /** 20 s pour lister ou décharger. La génération de code garde ses propres plafonds. */
 export const MODEL_PREP_TIMEOUT_MS = 20_000;
 
+/**
+ * Après un déchargement accepté, Ollama met parfois quelques secondes à libérer un gros modèle
+ * (essai réel du 26 novembre 2026 : Ornith 9B encore listé juste après, « Modèle encore chargé »,
+ * diagnostic raté à chaque tour et création suivante refusée). On relit la liste jusqu'à ce délai.
+ */
+export const MODEL_UNLOAD_SETTLE_MS = 15_000;
+const MODEL_UNLOAD_POLL_MS = 500;
+
 export type ModelSwitchFailure = 'timeout' | 'load' | 'call';
 
 export class ModelSwitchError extends Error {
@@ -36,6 +44,8 @@ export function createModelSwitch(): {
     api: ModelSwitchApi;
     model: string;
     timeoutMs?: number;
+    /** Attente maximale de la libération réelle après un déchargement (défaut `MODEL_UNLOAD_SETTLE_MS`). */
+    settleMs?: number;
     log: ModelSwitchLog;
   }): Promise<void>;
 } {
@@ -79,7 +89,8 @@ export function createModelSwitch(): {
   return {
     switchTo(input) {
       const timeoutMs = input.timeoutMs ?? MODEL_PREP_TIMEOUT_MS;
-      const run = tail.then(() => prepare(input.api, input.model, timeoutMs, input.log, call));
+      const settleMs = input.settleMs ?? MODEL_UNLOAD_SETTLE_MS;
+      const run = tail.then(() => prepare(input.api, input.model, timeoutMs, settleMs, input.log, call));
       tail = run.then(
         () => undefined,
         () => Promise.allSettled([...inflight]).then(() => undefined),
@@ -93,6 +104,7 @@ async function prepare(
   api: ModelSwitchApi,
   model: string,
   timeoutMs: number,
+  settleMs: number,
   log: ModelSwitchLog,
   call: <T>(
     label: string,
@@ -128,10 +140,18 @@ async function prepare(
       );
     }
   }
-  const after = await call('vérification des modèles chargés', model, timeoutMs, (signal) =>
-    api.running(signal),
-  );
-  const others = after.filter((item) => item.name && item.name !== model);
+  const stillLoaded = async (): Promise<RunningModel[]> => {
+    const after = await call('vérification des modèles chargés', model, timeoutMs, (signal) =>
+      api.running(signal),
+    );
+    return after.filter((item) => item.name && item.name !== model);
+  };
+  let others = await stillLoaded();
+  const waitUntil = Date.now() + settleMs;
+  while (others.length && Date.now() < waitUntil) {
+    await new Promise((resolve) => setTimeout(resolve, Math.min(MODEL_UNLOAD_POLL_MS, settleMs)));
+    others = await stillLoaded();
+  }
   if (others.length) {
     throw new ModelSwitchError(
       `Modèle encore chargé : ${others.map((item) => item.name).join(', ')}`,

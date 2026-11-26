@@ -46,6 +46,36 @@ describe('préparation du modèle (Ollama simulé, pas un vrai passage)', () => 
     expect(lines.at(-1)).toMatch(/Modèle prêt coder/);
   });
 
+  it('un gros modèle encore listé juste après son déchargement : on attend qu’il soit parti', async () => {
+    let listed = 0;
+    const api: ModelSwitchApi = {
+      status: async () => detected(['coder']),
+      // Listé au départ, encore listé aux deux vérifications suivantes, puis parti.
+      running: async () => {
+        listed += 1;
+        return listed <= 3 ? [{ name: 'gros', sizeBytes: 2, sizeVramBytes: 2 }] : [];
+      },
+      unload: async () => true,
+    };
+    const lines: string[] = [];
+    await createModelSwitch().switchTo({ api, model: 'coder', timeoutMs: 200, settleMs: 2_000, log: (line) => lines.push(line) });
+    expect(listed).toBe(4);
+    expect(lines.at(-1)).toMatch(/Modèle prêt coder/);
+  });
+
+  it('un modèle qui ne part jamais reste une erreur, après l’attente', async () => {
+    const api: ModelSwitchApi = {
+      status: async () => detected(['coder']),
+      running: async () => [{ name: 'gros', sizeBytes: 2, sizeVramBytes: 2 }],
+      unload: async () => true,
+    };
+    const error = await createModelSwitch()
+      .switchTo({ api, model: 'coder', timeoutMs: 200, settleMs: 30, log: () => undefined })
+      .catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(ModelSwitchError);
+    expect((error as ModelSwitchError).message).toMatch(/Modèle encore chargé : gros/);
+  });
+
   it('un modèle absent est une erreur de chargement, pas une génération', async () => {
     const api: ModelSwitchApi = {
       status: async () => detected(['autre']),
