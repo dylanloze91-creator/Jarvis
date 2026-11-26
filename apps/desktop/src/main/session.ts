@@ -631,7 +631,9 @@ export class ChatSession {
     // règles sans modèle, lues dans l'état réel de la création. `null` : la phrase suit son chemin.
     const suiviReply =
       facile && creationHub?.enabled() && !creationAsked && !attachments.length && !briefingText && !notesText && !routineText
-        ? await facile.suivi(input.text, { voice: source === 'voice', speaker: input.place?.kind === 'enceinte' }).catch(() => null)
+        ? await Promise.resolve()
+            .then(() => facile.suivi(input.text, { voice: source === 'voice', speaker: input.place?.kind === 'enceinte' }))
+            .catch(() => null)
         : null;
     const atelierCallId = randomId();
     let atelierStarted = false;
@@ -685,9 +687,9 @@ export class ChatSession {
     const orchestra = activeOrchestra(settings);
     const creation = !atelierText && !printerText && !healthIntent ? creationAsked : null;
     const routeGap: { kind: 'illisible' | 'silence' | null } = { kind: null };
-    const routed = !creation && !briefingText && !notesText && !routineText && !atelierText && !printerText && !healthIntent && Boolean(orchestra);
+    const routed = !creation && !suiviReply && !briefingText && !notesText && !routineText && !atelierText && !printerText && !healthIntent && Boolean(orchestra);
     if (routed) clock.startRouting();
-    const route = !creation && !briefingText && !notesText && !routineText && !atelierText && !printerText && !healthIntent && orchestra
+    const route = !creation && !suiviReply && !briefingText && !notesText && !routineText && !atelierText && !printerText && !healthIntent && orchestra
       ? await this.routeTurn(
           settings,
           orchestra,
@@ -1092,7 +1094,7 @@ export class ChatSession {
       place: input.place,
       route: routeNotee(route, orchestra),
       health: healthIntent,
-      fixedReply: Boolean(briefingText || notesText || routineText || atelierText || printerText || creation),
+      fixedReply: Boolean(briefingText || notesText || routineText || atelierText || printerText || creation || suiviReply),
       directMission: directMissionTake,
       chatProviderId: settings.provider,
       chatModel: resolveChatModel(settings),

@@ -42,7 +42,8 @@ const getSettings = () => settings;
 
 const DEMANDE = 'Fais-moi une petite appli pour noter mes heures de chantier';
 
-function build(options: { facile?: boolean; busy?: boolean; hubEnabled?: boolean; atelier?: boolean } = {}) {
+function build(options: {
+    suivi?: (text: string, where: { voice: boolean; speaker: boolean }) => { text: string; envelope?: core.ChatMissionEnvelope } | null; facile?: boolean; busy?: boolean; hubEnabled?: boolean; atelier?: boolean } = {}) {
   let modelCalls = 0;
   /** Phrases que l'atelier 3D a reçues (il répond à tout ce qu'on lui donne). */
   const atelierAsked: string[] = [];
@@ -73,6 +74,8 @@ function build(options: { facile?: boolean; busy?: boolean; hubEnabled?: boolean
   const pending: Array<Promise<void>> = [];
   const facile = {
     busy: () => options.busy === true,
+    // Étape 3 : le suivi (« où en est mon appli ? », « mes applis »), par règles ; `null` : pas pour lui.
+    suivi: async (text: string, where: { voice: boolean; speaker: boolean }) => options.suivi?.(text, where) ?? null,
     prepare: (request: Parameters<FacileCoordinator['prepare']>[0], voice: boolean) =>
       core.newFacilePayload({ id: 'creation-1', request, now: 1, voice }),
     start: (conversationId: string, messageId: string) => {
@@ -203,6 +206,46 @@ describe('Développeur facile : réservé à Jarvis Test', () => {
     const { card } = await jarvis.say(DEMANDE);
     expect(card).toBeUndefined();
     expect(jarvis.savedAtStart).toEqual([]);
+  });
+});
+
+describe('Développeur facile, étape 3 : le suivi dans la discussion', () => {
+  it('« où en est mon appli ? » : réponse par règles, sans modèle, sans passer par l’atelier', async () => {
+    const vus: Array<{ text: string; speaker: boolean }> = [];
+    const jarvis = build({
+      atelier: true,
+      suivi: (text, where) => {
+        vus.push({ text, speaker: where.speaker });
+        return /appli/.test(text) ? { text: 'Je construis ton appli : je démarre.' } : null;
+      },
+    });
+    const { reply, card, route } = await jarvis.say('où en est mon appli ?');
+    expect(reply).toBe('Je construis ton appli : je démarre.');
+    expect(card).toBeUndefined();
+    expect(route).toMatchObject({ team: 'code', how: 'mission-directe', model: 'sans modèle' });
+    expect(jarvis.calls()).toBe(0);
+    expect(jarvis.atelierAsked).toEqual([]);
+    // Une phrase qui n'est pas pour le suivi suit son chemin (ici : l'atelier).
+    expect((await jarvis.say('fais-moi une boîte de 80 par 50 par 30')).reply).toBe('Voici la pièce.');
+    expect(vus.map((v) => v.speaker)).toEqual([false, false]);
+  });
+
+  it('« mes applis » : la phrase, puis la carte de la liste', async () => {
+    const jarvis = build({ suivi: () => ({ text: 'Voici ton appli :', envelope: { kind: 'facile-applis', data: { apps: [] } } }) });
+    const { reply, card } = await jarvis.say('mes applis');
+    expect(reply).toBe('Voici ton appli :');
+    expect(card?.message.chatMission?.kind).toBe('facile-applis');
+    expect(jarvis.calls()).toBe(0);
+  });
+
+  it('un suivi qui lève une erreur ne casse pas le tour', async () => {
+    const jarvis = build({
+      atelier: true,
+      suivi: () => {
+        throw new Error('fichier illisible');
+      },
+    });
+    expect((await jarvis.say('fais-moi une boîte de 80 par 50 par 30')).reply).toBe('Voici la pièce.');
   });
 });
 

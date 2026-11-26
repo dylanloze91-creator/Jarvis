@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Field, Input, Toggle } from '@/components/ui/field';
 import { useDeveloper } from '@/hooks/useDeveloper';
 import { CommandTester } from './CommandTester';
+import { RenfortSettings } from './RenfortSettings';
 import { DeveloperConfirmationCard } from './DeveloperConfirmationCard';
 import { CheckList, SectionTitle, StepTimeline } from './parts';
 
@@ -124,6 +125,7 @@ export function DeveloperSettingsSection({
               onChange={(chatMissions) => onSave({ ...developer, chatMissions })}
             />
           ) : null}
+          {developer.enabled ? <RenfortSettings developer={developer} onSave={onSave} /> : null}
           {developer.enabled && onOpenAdvanced ? (
             <Button type="button" size="sm" variant="subtle" onClick={onOpenAdvanced}>
               Copie de travail, modèle, environnement…
