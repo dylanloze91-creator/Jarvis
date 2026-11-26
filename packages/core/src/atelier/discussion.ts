@@ -432,7 +432,12 @@ const LE_MEME = /^(?:et )?(?:(?:le|la|les) memes?(?: chose| trou| ouverture)?|pa
 /** « encore », « encore un peu » : le dernier changement relatif, une fois de plus. */
 const ENCORE = /^(?:encore(?: un peu| plus| une fois| pareil)?|un peu plus|pareil|continue)$/;
 /** Phrases très courtes qui ne répondent à aucune question de l'atelier. */
-const HORS_SUJET_COURT = /^(?:pause|play|lecture|suivant|suivante|precedent|merci(?: beaucoup)?|salut|bonjour|bonsoir|bonne nuit|au revoir|a plus)$/;
+const HORS_SUJET_COURT =
+  /^(?:(?:mets?|met) (?:sur |en |la |le )?(?:pause|play|lecture)|pause|play|lecture|stop la musique|coupe (?:le son|la musique)|monte (?:le son|le volume)|baisse (?:le son|le volume)|plus fort|moins fort|suivant|suivante|precedent|(?:morceau|chanson|titre) (?:suivante?|precedente?)|merci(?: beaucoup)?|salut|bonjour|bonsoir|bonne nuit|au revoir|a plus)$/;
+/** « attends », « je reviens », « deux secondes » pendant une question : l'atelier attend, sans dire qu'il n'a pas compris. */
+const ATTENDS = /^(?:attends?|att|deux secondes|une seconde|un instant|une minute|je reviens|bouge pas|deux minutes)\b/;
+/** « je sais pas », « aucune idée », « c'est quoi comme modèle » à la question du modèle exact : pas une référence. */
+const NE_SAIT_PAS = /\b(?:je (?:ne )?sais pas|j en sais rien|aucune idee|pas sur|je (?:ne )?connais pas|c est quoi|ca veut dire quoi|comment je (?:sais|fais|trouve)|ou (?:je|ca) (?:trouve|se trouve))\b/;
 /** « tu sais faire quoi comme pièces en 3D », « qu'est-ce que tu peux m'imprimer » : ce que l'atelier sait faire. */
 const CAPACITES =
   /^(?:et )?(?:(?:tu (?:sais|peux|saurais)|sais tu|peux tu) (?:me |m )?(?:faire|imprimer|dessiner|modeliser|fabriquer) quoi\b.*\b(?:3d|pieces?|imprim\w*|atelier)\b|(?:tu (?:sais|peux|saurais)|sais tu|peux tu) (?:me |m )?(?:imprimer|modeliser) quoi\b|qu est ce que tu (?:sais|peux|saurais) (?:me |m )?(?:imprimer|modeliser|fabriquer|(?:faire|dessiner) (?:en 3d|comme pieces?|avec l imprimante))|quelles? pieces? (?:tu (?:sais|peux)|sais tu|peux tu)\b|(?:c est quoi|quelles sont) les pieces que tu (?:sais|peux)\b|tu (?:sais|peux) (?:faire|imprimer|dessiner|modeliser) quelles? pieces?)/;
@@ -457,10 +462,10 @@ function couvercleDemande(tn: string): boolean {
 }
 /** « remets la version d'avant », « annule le dernier changement », « reviens en arrière ». */
 const VERSION_AVANT =
-  /\b(?:version (?:d avant|precedente)|annule (?:le |la |mon |ma |ce |cette )?(?:dernier |derniere )?(?:changement|modification)|reviens en arriere|retour en arriere|annule ca|defais (?:le|ca)|comme avant|c etait mieux avant)\b|^(?:non ,? ?)?remets (?:le|la|les|ca)(?: comme (?:avant|c etait))?$/;
+  /\b(?:version (?:d avant|precedente)|annule (?:le |la |mon |ma |ce |cette )?(?:dernier |derniere )?(?:changement|modification)|reviens en arriere|retour en arriere|annule ca|defais (?:le|ca)|comme avant|c etait mieux avant)\b|^(?:non ,? ?)?remets (?:le|la|les|ca)(?: comme (?:avant|c etait))?$|^(?:(?:ouais|oui|bon|en fait) )?(?:non ,? ?)?remets comme avant$|^non ,? ?(?:enleve|retire|vire|supprime) (?:le|la|les|ca)$/;
 /** Revoir la pièce à l'écran : « réessaie », « remontre-la », « renvoie les images », « je ne la vois pas ». */
 const REMONTRER =
-  /^(?:re ?essa(?:ie|ye|yer)|recommence|remontre(?: la| le| moi)*|montre(?: la| le| moi)+|renvoie(?: la| le| moi)*(?: les)?(?: images?| photos?)?|redonne(?: moi)?(?: les)? images?|je (?:ne )?(?:la |le )?vois (?:pas|rien)|(?:les )?images? (?:ne )?(?:s affiche(?:nt)? pas|n arrive(?:nt)? pas))\b/;
+  /^(?:re ?essa(?:ie|ye|yer)|recommence|remontre(?: la| le| moi)*|montre(?: la| le| moi)+|renvoie(?: la| le| moi)*(?: les)?(?: images?| photos?)?|envoie(?: moi)? (?:les |l |une |des )?(?:images?|photos?|vues?)|redonne(?: moi)?(?: les)? images?|je (?:ne )?(?:la |le )?vois (?:pas|rien)|(?:les )?images? (?:ne )?(?:s affiche(?:nt)? pas|n arrive(?:nt)? pas))\b/;
 /** Question sur la taille de la pièce. */
 const DIMENSIONS = /\b(?:dimensions?|taille|mesures?|cotes|grande|haute?|large|longue?|epaisse|hauteur|largeur|longueur)\b/;
 /** Une question, même posée sans mot interrogatif en tête : « elle fait combien de haut ? ». */
@@ -693,7 +698,7 @@ const INFINITIFS: Record<string, string> = {
   ajouter: 'ajoute', rajouter: 'rajoute', mettre: 'mets', remettre: 'remets', faire: 'fais', percer: 'perce',
   agrandir: 'agrandis', elargir: 'elargis', allonger: 'allonge', rallonger: 'rallonge', augmenter: 'augmente',
   diminuer: 'diminue', reduire: 'reduis', baisser: 'baisse', retirer: 'retire', enlever: 'enleve', supprimer: 'supprime',
-  imprimer: 'imprime', deplacer: 'deplace', creuser: 'creuse', rehausser: 'rehausse', raccourcir: 'raccourcis',
+  imprimer: 'imprime', lancer: 'lance', deplacer: 'deplace', creuser: 'creuse', rehausser: 'rehausse', raccourcir: 'raccourcis',
 };
 
 /**
@@ -1021,6 +1026,15 @@ function decider(text: string, precedentDonne: AtelierEtat | null, contexte: Con
       const q = prochaineMesure(c, mesures);
       if (q) return { kind: 'dire', texte: questionMesure(c, q, mesures), etat: { etape: 'mesure', composant: c.id, champ: q.champ, reprise: precedent.reprise } };
     }
+    if (c && (NE_SAIT_PAS.test(t) || ATTENDS.test(t)) && !liensDits(text).length) {
+      return {
+        kind: 'dire',
+        texte: ATTENDS.test(t)
+          ? "Pas de souci, je t'attends. Donne-moi la référence de la carte quand tu l'as, ou dis « je la mesure »."
+          : `Pas grave. La référence est souvent écrite sur la carte, ou sur la page où tu l'as achetée. Sinon : « je la mesure » si tu l'as sous la main, « celle de ta liste » si c'est ${c.nom}, ou « laisse tomber ».`,
+        etat: precedent,
+      };
+    }
     // « d'accord dessine tout ça », « vas-y » : pas une référence à chercher. Avec de la marge si
     // c'est possible, sinon la question est reposée.
     const ordreDeDessiner = (FAIS_QUAND_MEME.test(t) || (ACCEPTE_DEFAUT.test(t) && t.split(' ').length <= 4)) && !/\d/.test(t) && !liensDits(text).length;
@@ -1061,6 +1075,9 @@ function decider(text: string, precedentDonne: AtelierEtat | null, contexte: Con
         texte: `Pour ${q.nom}, je ne peux pas prendre de marge : la pièce serait fausse. Regarde le plan ou la photo cotée du vendeur, ou colle-moi le lien d'un plan (« cherche avec ce lien : … »).`,
         etat: precedent,
       };
+    }
+    if (c && q && (MESURER_SOI_MEME.test(t) || ATTENDS.test(t)) && !/\d/.test(t)) {
+      return { kind: 'dire', texte: `${ATTENDS.test(t) ? "Pas de souci, je t'attends. " : ''}${questionMesure(c, q, mesures)}`, etat: precedent };
     }
     if (c && q && FAIS_QUAND_MEME.test(t) && !/\d/.test(t) && t.split(' ').length <= 12) {
       const larges = valeursLarges(precedent.reprise.texte, c.id, mesures);
@@ -1234,6 +1251,7 @@ function decider(text: string, precedentDonne: AtelierEtat | null, contexte: Con
     const question = prochaineQuestion(g, precedent.valeurs)?.texte ?? '';
     // « c'est quoi déjà la question », « répète » : la question est redite.
     if (REPETER.test(t)) return { kind: 'dire', texte: question, etat: precedent };
+    if (ATTENDS.test(t) && !/\d/.test(t)) return { kind: 'dire', texte: `Pas de souci, je t'attends. ${question}`, etat: precedent };
     const nombreDeMots = t.split(' ').filter((m) => m !== ',').length;
     // « 10 par 6 par 3 centimètres » : plusieurs cotes d'un coup, celle demandée d'abord puis les suivantes.
     if (!estChoix(mesure) && (t.match(/\d+(?:\.\d+)?/g) ?? []).length >= 2 && nombreDeMots <= 14) {

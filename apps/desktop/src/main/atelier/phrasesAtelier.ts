@@ -789,7 +789,8 @@ export const DISCUSSIONS_EXAMEN_2: DiscussionEssai[] = [
     tours: [
       { dire: 'bon jarvis il me faut un casier pour mes forets', attendu: { question: /longueur/i } },
       { dire: 'vingt centimetres', attendu: { question: /largeur/i } },
-      { dire: 'dix', attendu: { question: /hauteur/i } },
+      // 10 mm de large : sous le minimum d'un bac (20 mm), refusé et la question revient.
+      { dire: 'dix', attendu: { question: /hors des limites/ } },
       { dire: 'la meme chose que la largeur', attendu: { dit: /./ } },
       { dire: 'bah 5 cm alors', attendu: { dit: /./ } },
     ],

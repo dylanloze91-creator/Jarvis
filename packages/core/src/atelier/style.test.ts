@@ -418,3 +418,41 @@ describe('après la série « examen »', () => {
     expect(decisions[3]).toMatchObject({ kind: 'fabriquer', changement: 'Ajout : trou de 12 mm à l’arrière' });
   });
 });
+
+describe('après la deuxième série « examen »', () => {
+  const boite = ['dessine moi une boite de 7 par 7 par 3 cm'];
+
+  it('« non enleve le » juste après un ajout : la version d’avant', () => {
+    expect(derniere([...boite, 'perce un trou de 10 au milieu du fond', 'non enleve le'])).toMatchObject({ kind: 'choisir', numero: 1 });
+  });
+
+  it('« tu peux la lancer » = « imprime-la »', () => {
+    expect(derniere([...boite, 'tu peux la lancer'])).toMatchObject({ kind: 'imprimer', numero: 1 });
+  });
+
+  it('« envoie moi les images » remontre la pièce', () => {
+    expect(derniere([...boite, 'Envoie moi les images'])).toMatchObject({ kind: 'choisir', numero: 1 });
+  });
+
+  it('« mets pause » pendant une question : la musique, pas l’atelier', () => {
+    expect(derniere(['fais moi un crochet', 'mets pause'])).toEqual({ kind: 'rien' });
+    expect(derniere(['fais moi un crochet', 'morceau suivant'])).toEqual({ kind: 'rien' });
+  });
+
+  it('à la question du modèle exact, « je sais pas c est quoi comme modele » n’est pas cherché sur Internet', () => {
+    const contexte = { rechercheCotes: true };
+    const d = derniere(['il me faut un boitier pour une esp32', 'je sais pas c est quoi comme modele'], contexte);
+    expect(d).toMatchObject({ kind: 'dire', etat: { etape: 'produit' } });
+    expect(d.kind === 'dire' ? d.texte : '').toMatch(/je la mesure/);
+    expect(derniere(['il me faut un boitier pour une esp32', 'attends je regarde'], contexte)).toMatchObject({ kind: 'dire', etat: { etape: 'produit' } });
+  });
+
+  it('pendant une mesure : « attends je reviens » et « je la mesure » reposent la question sans reproche', () => {
+    const contexte = { rechercheCotes: true };
+    for (const phrase of ['attends je reviens', 'bon je la mesure']) {
+      const d = derniere(['il me faut un boitier pour une esp32', 'je la mesure', phrase], contexte);
+      expect(d).toMatchObject({ kind: 'dire', etat: { etape: 'mesure' } });
+      expect(d.kind === 'dire' ? d.texte : '').not.toMatch(/pas compris/);
+    }
+  });
+});
