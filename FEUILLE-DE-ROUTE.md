@@ -1,10 +1,32 @@
 # Feuille de route de Jarvis — à lire avant chaque tâche
 
-Tenue par Claude (le chat, manager du projet). Dernière mise à jour : 25 novembre 2026.
+Tenue par Claude (le chat, manager du projet). Dernière mise à jour : 26 novembre 2026.
 
 **Claude Code et Cursor la lisent avant chaque tâche**, en même temps que `AGENTS-COORDINATION.md`. Elle dit vers où va Jarvis, qui fait quoi et dans quel ordre, et ce qui en dépend. Le but : qu'aucun outil ne soit construit sans tenir compte de ceux qui viendront s'y brancher.
 
 Ce fichier ne contient ni secret, ni donnée personnelle, ni nom de réseau : le dépôt est public.
+
+## 0. Où on en est (26 novembre 2026, à lire en premier)
+
+**L'équipe** : trois agents Claude Code sur le PC (Atelier, Yeux, Corrections ; un seul à la fois sur Jarvis Test, Ollama et la carte graphique, réservés dans `AGENTS-COORDINATION.md`), Claude (le chat) chef d'équipe. Cursor ne reçoit plus de mission pour l'instant.
+
+**Fait :**
+- **Live 5.0.81 publiée le 26 novembre** (release `v5.0.81`, installée sur le PC) : la 5.0.80 (corrections, enceinte branchée par USB, volume) **et l'atelier 3D**. Exception voulue par l'utilisateur à « la Live ne reçoit que des corrections ». Les yeux n'y sont pas.
+- **Deuxième enceinte** branchée et active (le pont « IN-OUT » de la carte était à souder ; léger grésillement à regarder plus tard, non urgent).
+- **Atelier 3D** : onze pièces, mesures et questions, versions, trous/encadrements/encoches, boîtiers électroniques (plots, inserts, couvercle emboîté), bibliothèque de composants, **cotes cherchées seul sur Internet** et lues sur les plans DXF/PDF des fabricants, boîtier à écran (examen du hub : 64 contrôles sur 64), écran 3D, images sur l'iPhone, OrcaSlicer avec les préréglages de l'utilisateur, file d'attente de Moonraker. Revue de nuit du 25 au 26 : 279 phrases dans le style de l'utilisateur sur 279, 67 pièces sur 67 au grand contrôle. Première impression lancée par Jarvis le 26 au soir (support de téléphone).
+- **Yeux** (Jarvis Test `5.1.0-test.4`, coupés par défaut) : registre des yeux, caméra de Klipper, **deux webcams du PC**, iPhone (« Montrer à Jarvis »), écran « Yeux », programme de l'œil pour Raspberry Pi (rover et hub) ; **regarder n'importe quoi** (photo + question, référence lue → recherche web) ; câblage de l'enceinte comparé à `config.h` ; vidéo commencée ; **observation des impressions** (une photo toutes les 10 min, gemma3:4b, questionnaire de l'utilisateur à la fin, étiquettes données par lui seul) : première impression observée la nuit du 25 au 26, questionnaire rempli.
+- **Cap « chef de projet »** fixé (`docs/specs/chef-de-projet.md`) et règle § 5 donnée à tous les agents.
+
+**En cours :**
+- **Agent Yeux** : observation **automatique et permanente** de toute impression (lancée par Jarvis ou depuis Mainsail), lecture seule, démarrage avec Windows, réservation locale de la carte graphique (plus de commits à chaque photo), lien du questionnaire envoyé sur l'iPhone. Puis : la vidéo branchée (fenêtre et iPhone), et le banc du modèle de vision sur les photos d'électronique de l'utilisateur (`C:\dev\jarvis-data\yeux\examen\`) et les questionnaires d'impression.
+
+**À faire, dans cet ordre :**
+1. **Atelier, petits restes de la revue de nuit** (`rapports/2026-11-26-nuit-atelier.md`, § 5) : rejouer la recherche des cotes **en vrai** (moteurs débloqués, clé Tavily de l'utilisateur) ; dire quand les mesures de l'utilisateur passent avant celles d'Internet ; cotes par défaut « à vérifier » pour micro, ampli, haut-parleur ; place faite pour d'autres écrans.
+2. **Yeux, fin de l'étape 2** : choix du modèle de vision au banc (gemma3:4b d'abord ; `qwen2.5vl:7b` seulement avec l'accord de l'utilisateur), vidéo, puis les yeux dans la Live.
+3. **La surveillance qui agit** (`imprimante-surveillance.md`) : seulement quand les questionnaires montrent peu de fausses alertes sur une dizaine d'impressions, dont des ratées ; pause d'abord, toujours la carte pour le reste.
+4. **Model Development** (décision du 25 novembre, § 3 « Jarvis Development ») : améliorer les modèles avec l'usage réel, en commençant par le trieur, puis la vision sur les photos de l'utilisateur.
+5. **Jarvis chef de projet** : après les points 1 et 2.
+6. **Les mains** (Holo desk : piloter l'écran 3D de l'atelier par gestes devant la webcam, MediaPipe) : idée validée en principe, cahier à écrire, après les yeux.
 
 ## 1. Le cap
 
