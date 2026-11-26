@@ -116,6 +116,7 @@ import { VoiceBridge } from './voice.js';
 import { PiperService, phoneVoiceMode } from './piper/service.js';
 import { SpeakerChronoFile } from './speaker/chronoFile.js';
 import { warmOllamaModels } from './speaker/warmupRun.js';
+import { ModelIdleRelease } from './modelIdleRelease.js';
 import { presentWindow } from './startup.js';
 import { allowPermissionCheck, allowPermissionRequest, isAppDocumentUrl, originForLog } from './mediaPermissions.js';
 import { isCopyableText } from './copyText.js';
@@ -319,7 +320,10 @@ function settingsForWindow(): Settings {
 }
 
 /** Atelier 3D dans la discussion (5.0.81) : pièces dessinées par règles, OpenSCAD et OrcaSlicer s'ils sont installés. */
-const atelierReply = creerAtelierPC(() => settings, undefined, undefined, searchRegistry, { live: true });
+const atelierReply = creerAtelierPC(() => settings, undefined, undefined, searchRegistry, {
+  live: true,
+  ouvrirDossier: (chemin) => void shell.openPath(chemin),
+});
 
 const session = new ChatSession({
   registry,
@@ -400,7 +404,24 @@ const phone = new PhoneService({
   },
 });
 
+/**
+ * Modèles libérés après usage : dix minutes sans tour de discussion ni réveil d'enceinte, et les
+ * modèles de la discussion encore chargés rendent la carte graphique (ils se rechargent à la demande).
+ */
+const modelIdle = new ModelIdleRelease({
+  getSettings: () => settings,
+  busy: () =>
+    chatActivity.busy ||
+    (chatMissionHub?.missionBusy() ?? false) ||
+    localLearning.status().running ||
+    (developerIpc?.current()?.workInProgress() ?? false),
+  log: (line) => console.log(`[jarvis] ${line}`),
+});
+chatActivity.onActivity = () => modelIdle.noteUse();
+
 async function warmSpeakerSide(): Promise<void> {
+  // Un réveil d'enceinte (ou le démarrage) charge le modèle : c'est un usage, le repos repart de là.
+  modelIdle.noteUse();
   const base =
     settings.provider === 'ollama' && settings.baseUrl.trim()
       ? settings.baseUrl.trim()
@@ -607,6 +628,7 @@ if (!app.requestSingleInstanceLock()) {
 
 async function bootstrap(): Promise<void> {
   app.setName('Jarvis');
+  modelIdle.start();
   settingsFileExisted = await settingsFileExists();
   const [loaded] = await Promise.all([
     settingsFileExisted ? readSettings() : Promise.resolve(parseSettings({})),
@@ -1405,6 +1427,9 @@ app.on('window-all-closed', () => {
 
 app.on('will-quit', () => {
   globalShortcut.unregisterAll();
+  // Jarvis fermé : ses modèles ne restent pas chargés derrière lui (au mieux : la demande part, sans attendre).
+  modelIdle.stop();
+  void modelIdle.releaseNow();
   void phone.stop();
   void speakers.stop();
   void piper.stop();

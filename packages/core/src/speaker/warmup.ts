@@ -6,8 +6,13 @@
  */
 
 export const SPEAKER_WAKE_KEEP_ALIVE = '10m';
-/** Négatif : Ollama garde le modèle jusqu'à un déchargement explicite. */
-export const SPEAKER_AWAKE_KEEP_ALIVE = -1;
+/**
+ * « Garder Jarvis éveillé » : une garde plus longue après chaque réveil d'enceinte. Jusqu'à la 5.0.81
+ * c'était -1 (sans limite) : le modèle occupait la carte graphique jour et nuit, même Jarvis fermé, et
+ * l'affichage de Windows saccadait (27 novembre 2026). La garde est maintenant bornée, et Jarvis libère
+ * de lui-même ses modèles après dix minutes sans usage (`agent/modelIdle.ts`).
+ */
+export const SPEAKER_AWAKE_KEEP_ALIVE = '30m';
 export const SPEAKER_WAKE_INTERVAL_MS = 10_000;
 
 export interface OllamaLoadRequest {

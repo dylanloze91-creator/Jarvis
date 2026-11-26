@@ -199,7 +199,7 @@ export function creerAtelierPC(
    * `ADRESSE_IMPRIMANTE_PAR_DEFAUT` tant que rien n'est réglé (décochée dans les réglages : rien
    * n'est envoyé), et l'atelier est le seul à lui parler.
    */
-  options: { live?: boolean } = {},
+  options: { live?: boolean; ouvrirDossier?: (chemin: string) => void } = {},
 ): (input: AtelierEntree) => Promise<AtelierSortie | null> {
   const dossierOrca = join(racine, '_orca');
   const recherche = searchRegistry ? rechercheCotesPC(getSettings, searchRegistry) : undefined;
@@ -220,6 +220,7 @@ export function creerAtelierPC(
       },
       telephonePeutLancer: () => phoneMayStartPrint(getSettings().printer),
       ...(options.live ? { sansAutreImprimante: true } : {}),
+      ...(options.ouvrirDossier ? { ouvrirDossier: options.ouvrirDossier } : {}),
       imprimante: () => {
         const printer = getSettings().printer;
         const adresse = adresseImprimante(printer, options.live === true);

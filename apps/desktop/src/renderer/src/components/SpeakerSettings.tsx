@@ -221,7 +221,7 @@ export function SpeakerSettingsSection() {
         />
         <Toggle
           label="Garder Jarvis éveillé"
-          hint="Le modèle qui trie reste chargé tant que les enceintes sont allumées. La carte graphique reste occupée."
+          hint="Le modèle qui trie est chargé dès le réveil d'une enceinte et reste prêt tant que tu te sers de Jarvis. Dix minutes sans usage, et il rend la carte graphique."
           checked={settings?.speakerKeepAwake === true || fast}
           disabled={!settings}
           onChange={(on) => setPiece('speakerKeepAwake', on)}
