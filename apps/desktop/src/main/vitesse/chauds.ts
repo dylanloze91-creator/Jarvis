@@ -28,6 +28,11 @@ export interface ModelWarmerDeps {
   getSettings: () => Settings;
   /** Vrai quand la carte doit rester libre (image en cours, mission, entraînement). */
   busy?: () => boolean;
+  /**
+   * Vrai quand Jarvis n'a pas servi depuis un moment (modèles libérés après usage) : rien n'est
+   * prolongé, les modèles rendent la carte graphique. Absent : prolongés comme avant.
+   */
+  idle?: () => boolean;
   /** Équipe la plus utilisée d'après les journaux de tour. Absent ou `null` : Conversation. */
   mostUsedTeam?: () => Promise<OrchestraTeam | null>;
   fetch?: typeof fetch;
@@ -130,6 +135,8 @@ export class ModelWarmer {
 
   /** Prolonge les modèles du chef d'orchestre encore chargés. N'en charge aucun. */
   beat(): Promise<WarmReport> {
+    // Au repos : prolonger garderait la carte graphique occupée pour rien.
+    if (this.deps.idle?.()) return Promise.resolve({ done: [], skipped: [] });
     return this.run(
       async () => orchestraModelTargets(this.deps.getSettings()),
       async (targets) => warmTargetsToRefresh(targets, await this.loaded()),

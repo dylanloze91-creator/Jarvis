@@ -40,10 +40,17 @@ function parle(t: string): string {
     .replace(/\b(?:euh+|heu+|hum+|bah|ben|genre|en fait|du coup|tu vois|voila|hein)\b/g, ' ')
     .replace(/\brasp?berr(?:y|i|ie|ies)\b(?: (?:pie|pis|py|paille))?/g, 'raspberry pi')
     .replace(/\braspberry pi pi\b/g, 'raspberry pi')
+    // « Raspberry Pie V », « Raspberry Pi V » : le 5 dicté, écrit en chiffre romain (Live, 26 novembre).
+    .replace(/\braspberry pi (?:v|five)\b/g, 'raspberry pi 5')
     .replace(/\s*,?\s*\bquoi\s*$/, '')
     .replace(/^(?:\s*,\s*)+/, '')
     .replace(/\s+/g, ' ')
     .replace(/^(?:(?:hey|he|eh|ok|dis|alors|bon) )?jarvis\b ?,? ?/, '')
+    // Le mot de réveil mal transcrit en tête : « J'allie ? Est-ce que tu peux… » (Live, 26 novembre).
+    .replace(/^(?:j allie|jarvi|javis|gervais)\b ?,? ?/, '')
+    // « Fait moins support de téléphone » : « fais-moi un support… » mal transcrit. Seulement devant
+    // le nom d'une pièce : « fais moins haut » reste un changement.
+    .replace(/^(?:fais|fait) moins (?=(?:support|boite|boitier|bac|crochet|socle|cale|equerre|entretoise|porte etiquette)\b)/, 'fais moi un ')
     .replace(/(?: ,)+(?= ,)/g, '')
     .replace(/^(?:\s*,\s*)+/, '')
     .trim();

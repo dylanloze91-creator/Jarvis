@@ -15,7 +15,7 @@
  *   carte, et seulement imprimante libre.
  */
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   ajouterCoteTrouvee,
@@ -142,6 +142,12 @@ export interface AtelierDeps {
    * la discussion reçoit sa réponse au lieu de partir à un modèle. Absent (Jarvis Test) : le lot B.
    */
   sansAutreImprimante?: boolean;
+  /**
+   * Ouvre le dossier d'une pièce dans l'explorateur (« où est le fichier STL ? », depuis la fenêtre
+   * seulement). Le chemin vient toujours du dossier de l'atelier, jamais de la phrase. Absent : le
+   * chemin est seulement dit.
+   */
+  ouvrirDossier?: (chemin: string) => void;
 }
 
 /** Fichier des mesures de composants, dans le dossier de l'atelier. */
@@ -463,6 +469,26 @@ export async function tourAtelier(input: AtelierEntree, deps: AtelierDeps): Prom
     }
     case 'lancerSuivante':
       return lancerSuivante(input, deps);
+    case 'fichiers': {
+      // Où sont les fichiers de la pièce à l'écran : le dossier, et ce qu'il contient pour cette version.
+      const { etat } = decision;
+      const chemin = join(deps.racine, etat.dossier);
+      if (!existsSync(chemin)) return { texte: `Je ne retrouve plus le dossier de cette pièce (${chemin}).`, etat };
+      if (input.place === 'enceinte') {
+        return { texte: 'Les fichiers de la pièce sont dans le dossier de l’atelier, sur le PC. Demande-le-moi sur le PC : je te l’ouvre.', etat };
+      }
+      const numero = etat.versionChoisie;
+      const noms = (await readdir(chemin))
+        .filter((nom) => new RegExp(`(?:^|-)v${numero}(?:[.-]|$)`).test(nom) && /\.(?:stl|gcode|3mf)$/i.test(nom))
+        .sort();
+      const liste = noms.length ? ` Pour la version ${numero} : ${noms.join(', ')}.` : ` Je n’y vois pas de fichier pour la version ${numero}.`;
+      let ouvert = '';
+      if (input.place === 'fenetre' && deps.ouvrirDossier) {
+        deps.ouvrirDossier(chemin);
+        ouvert = ' Je l’ouvre.';
+      }
+      return { texte: `Les fichiers de cette pièce sont dans le dossier ${chemin}.${liste}${ouvert}`, etat };
+    }
     case 'file':
     case 'imprimer': {
       if (input.place === 'enceinte') return { texte: SPEAKER_CANNOT_START };

@@ -64,6 +64,17 @@ describe('ModelWarmer', () => {
     expect(seen).toEqual([]);
   });
 
+  it('au repos (modèles libérés après usage) : rien n’est prolongé, Ollama n’est même pas interrogé', async () => {
+    const { fake, seen } = fauxOllama(['modele-cerveau']);
+    let repos = true;
+    const warmer = new ModelWarmer({ getSettings: reglages(), idle: () => repos, fetch: fake });
+    expect(await warmer.beat()).toEqual({ done: [], skipped: [] });
+    expect(seen).toEqual([]);
+    // Jarvis vient de servir : la prolongation reprend.
+    repos = false;
+    expect((await warmer.beat()).done.map((item) => item.model)).toEqual(['modele-cerveau']);
+  });
+
   it('prolongation : un modèle déchargé exprès n’est jamais rechargé', async () => {
     const dechargé = fauxOllama([]);
     const warmer = new ModelWarmer({ getSettings: reglages(), mostUsedTeam: async () => 'musique', fetch: dechargé.fake });

@@ -104,6 +104,7 @@ export {
   type MessageOrigin,
 } from './agent/voiceOriginNotice.js';
 export * from './agent/orchestra.js';
+export * from './agent/modelIdle.js';
 export * from './agent/expressRules.js';
 export {
   teamValidationEnabled,

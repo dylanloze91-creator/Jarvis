@@ -166,6 +166,7 @@ import { VoiceBridge } from './voice.js';
 import { PiperService, phoneVoiceMode } from './piper/service.js';
 import { SpeakerChronoFile } from './speaker/chronoFile.js';
 import { warmOllamaModels } from './speaker/warmupRun.js';
+import { ModelIdleRelease } from './modelIdleRelease.js';
 import { presentWindow } from './startup.js';
 import { allowPermissionCheck, allowPermissionRequest, isAppDocumentUrl, originForLog } from './mediaPermissions.js';
 import { isCopyableText } from './copyText.js';
@@ -510,7 +511,9 @@ function settingsForWindow(): Settings {
  * chemin d'avant. Jarvis Live n'a pas cette fonction (`undefined`).
  */
 /** Atelier 3D dans la discussion : Jarvis Test seulement (`undefined` dans Live). */
-const atelierReply = edition().atelier ? creerAtelierPC(() => settings, undefined, undefined, searchRegistry) : undefined;
+const atelierReply = edition().atelier
+  ? creerAtelierPC(() => settings, undefined, undefined, searchRegistry, { ouvrirDossier: (chemin) => void shell.openPath(chemin) })
+  : undefined;
 // Les yeux (Jarvis Test) : caméra de l'imprimante en lecture seule, photos en mémoire seulement.
 const yeuxPC = edition().yeux
   ? creerYeuxPC({
@@ -678,6 +681,8 @@ const phone = new PhoneService({
 });
 
 async function warmSpeakerSide(): Promise<void> {
+  // Un réveil d'enceinte charge le modèle : c'est un usage, le repos repart de là.
+  modelIdle.noteUse();
   const base =
     settings.provider === 'ollama' && settings.baseUrl.trim()
       ? settings.baseUrl.trim()
@@ -795,10 +800,28 @@ const speakers = new SpeakerService({
   },
 });
 
+/**
+ * Modèles libérés après usage (27 novembre 2026) : dix minutes sans tour de discussion ni réveil
+ * d'enceinte, et les modèles de la discussion encore chargés rendent la carte graphique. Ils se
+ * rechargent à la demande suivante. Les modèles gardés chauds ne sont plus prolongés au repos.
+ */
+const modelIdle = new ModelIdleRelease({
+  getSettings: () => settings,
+  busy: () =>
+    chatActivity.busy ||
+    images.isBusy() ||
+    (chatMissionHub?.missionBusy() ?? false) ||
+    localLearning.status().running ||
+    (developerIpc?.current()?.workInProgress() ?? false),
+  log: (line) => console.info(`[jarvis] ${line}`),
+});
+chatActivity.onActivity = () => modelIdle.noteUse();
+
 // Modèles gardés chauds : Jarvis Test seulement (table d'édition). Live : rien n'est créé.
 const modelWarmer = edition().keepModelsWarm
   ? new ModelWarmer({
       getSettings: () => settings,
+      idle: () => modelIdle.idle(),
       busy: () =>
         images.isBusy() ||
         (chatMissionHub?.missionBusy() ?? false) ||
@@ -996,6 +1019,7 @@ async function bootstrap(): Promise<void> {
   void healthMonitor?.run();
   // Après la première image : le démarrage n'attend jamais Ollama.
   modelWarmer?.start();
+  modelIdle.start();
   backupService?.start();
   // 5.0.64 : un raccourci déjà pris au démarrage (ou mal écrit) laissait Jarvis sans
   // porte d'entrée ; comme à l'enregistrement, on retombe sur Control+Space.
@@ -1978,6 +2002,9 @@ app.on('will-quit', () => {
   // Un Forge lancé par Jarvis ne survit pas à Jarvis (un Forge lancé par l'utilisateur n'est pas touché).
   void images.shutdown();
   modelWarmer?.stop();
+  // Jarvis fermé : ses modèles ne restent pas chargés derrière lui (au mieux : la demande part, sans attendre).
+  modelIdle.stop();
+  void modelIdle.releaseNow();
   updateManager.stop();
 });
 

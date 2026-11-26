@@ -147,6 +147,8 @@ export type AtelierDecision =
   /** « le plateau est vide, lance la suivante » : la première pièce de la file. */
   | { kind: 'lancerSuivante' }
   | { kind: 'choisir'; etat: Extract<AtelierEtat, { etape: 'piece' }>; numero: number }
+  /** « où est le fichier STL du support ? » : le PC dit où sont les fichiers de la pièce à l'écran. */
+  | { kind: 'fichiers'; etat: Extract<AtelierEtat, { etape: 'piece' }> }
   /**
    * Une mesure donnée : le PC la garde (`composants-mesures.json`), puis relit `reprise.texte` avec
    * `reprise.piece` et les mesures à jour (question suivante, ou la pièce).
@@ -344,7 +346,7 @@ const DEMANDE = new RegExp(
   `^(?:jarvis )?(?:(?:est ce que )?(?:tu peux|peux tu|pourrais tu|tu pourrais) )?(?:me |m )?${VERBES}(?: moi| nous)?(?: en 3d)? (?:un|une|des|deux|trois|quatre|le|la|mon|ma)\\b`,
 );
 const VOULOIR =
-  /^(?:jarvis )?(?:je voudrais|j aimerais|il me faut|il me faudrait|j ai besoin d|j aurais besoin d|je veux|je cherche|on va faire|on fait|on peut faire|on pourrait faire|tu me fais|tu peux me faire|fais nous) (?:un|une|des)\b/;
+  /^(?:jarvis )?(?:(?:je souhaiterais|je souhaite|j aimerais|je voudrais|je veux|il faudrait|faudrait)(?: de ta part)? que tu (?:me |m )?(?:fasses?|dessines?|imprimes?|fabriques?|crees?|modelises?|concoives?)|je souhaiterais|je souhaite|je voudrais|j aimerais|il me faut|il me faudrait|j ai besoin d|j aurais besoin d|je veux|je cherche|on va faire|on fait|on peut faire|on pourrait faire|tu me fais|tu peux me faire|fais nous) (?:un|une|des)\b/;
 const EN_3D = /\b(?:en 3d|imprimante 3d|impression 3d|a imprimer|pour l imprimante)\b/;
 /**
  * Une pièce nommée sans verbe : « une boîte de 100 par 60 par 30 pour un Raspberry Pi ». Il faut
@@ -917,7 +919,38 @@ export function pourAtelier(text: string, messages: readonly { role: string; ate
  * `rien` : la phrase n'est pas pour l'atelier, le tour suit son chemin habituel.
  */
 export function deciderAtelier(text: string, precedentDonne: AtelierEtat | null, contexte: ContexteAtelier = {}): AtelierDecision {
+  // « Tu peux me montrer où est le fichier STL du support ? », puis le nom du fichier dicté
+  // (« support téléphone 2026-11-26 v1 ») : les fichiers de la pièce à l'écran, jamais une mesure
+  // (Live, 26 novembre : la date du nom était lue comme une largeur de 2021 mm).
+  if (precedentDonne?.etape === 'piece' && demandeLesFichiers(text)) {
+    const { refus: _refus, nombre: _nombre, ...piece } = precedentDonne;
+    return { kind: 'fichiers', etat: piece };
+  }
+  // Une proposition pour le Raspberry Pi seul attend sa réponse, et l'utilisateur nomme l'écran de
+  // 7 pouces : c'est le boîtier à écran qu'il veut.
+  if (
+    precedentDonne?.etape === 'proposition' &&
+    !DEMANDE.test(plier(text)) &&
+    produitsNommes(` ${plier(text)} `).some((n) => n.composant.id === 'touch_display_2_7')
+  ) {
+    const suite = decider(`fais-moi un boîtier pour mon Raspberry Pi 5 ${text}`, precedentDonne.base, contexte);
+    if (suite.kind !== 'rien') return suite;
+  }
   const decision = decider(text, precedentDonne, contexte);
+  // « un boîtier pour mon Raspberry Pi 5 avec un écran, un micro et une caméra » : ce qui n'est pas
+  // nommé assez précisément n'est ni refusé par une phrase obscure, ni oublié sans rien dire (Live,
+  // 26 novembre). L'atelier dit ce qu'il sait faire avec, puis propose le boîtier du Pi seul.
+  const flous = decision.kind === 'dire' && decision.etat?.etape !== 'piece' ? accessoiresFlous(text) : null;
+  if (flous) {
+    const seul = decider('fais-moi un boîtier pour mon Raspberry Pi 5', precedentDonne?.etape === 'piece' ? precedentDonne : null, contexte);
+    if (seul.kind === 'dire' && seul.etat?.etape === 'proposition') {
+      const micro = flous.micro ? ' Le micro, je ne sais pas encore lui faire sa place.' : '';
+      return {
+        ...seul,
+        texte: `Avec un écran, je sais faire le boîtier à écran : le Raspberry Pi 5, l’écran tactile officiel de 7 pouces et la caméra grand angle. Pour celui-là, dis « avec l’écran 7 pouces et la caméra ».${micro} Sinon, le Raspberry Pi seul : ${seul.texte.replace(/^Boîte avec le Raspberry Pi 5/, 'boîte avec la carte')}`,
+      };
+    }
+  }
   // Un écran d'une taille que la bibliothèque n'a pas (« un écran de 5 pouces ») : la réponse le dit,
   // au lieu de l'oublier sans rien dire (essai du 25 novembre).
   const oublie = decision.kind === 'dire' && decision.etat && decision.etat.etape !== 'piece' ? ecranInconnu(text) : null;
@@ -928,6 +961,39 @@ export function deciderAtelier(text: string, precedentDonne: AtelierEtat | null,
     };
   }
   return decision;
+}
+
+const LIEU_FICHIER =
+  /\b(?:ou (?:est|sont|se trouvent?|je (?:peux )?trouver?|tu as (?:mis|range)|t as (?:mis|range))|c est ou|(?:il|ils|elle) (?:est|sont) ou|montre(?: moi)?|ouvre(?: moi)?|donne(?: moi)?|retrouve(?: moi)?|trouve(?: moi)?)\b/;
+/** Une date dans un nom de fichier dicté : « support téléphone 2026-11-26 v1 », « 2021-21-21 ». */
+const NOM_DE_FICHIER = /\b\d{4}[- ]\d{1,2}[- ]\d{1,2}\b/;
+
+/** L'utilisateur demande où sont les fichiers de la pièce (STL, G-code, dossier), ou dicte le nom d'un fichier. */
+function demandeLesFichiers(text: string): boolean {
+  const t = plier(text);
+  // « imprime le fichier boite.gcode » reste une impression ; un PDF, une photo ne sont pas des fichiers de pièce.
+  if (/^(?:imprime|lance|envoie)\b/.test(t) || /\b(?:pdf|documents?|photos?|images?|word|excel)\b/.test(t)) return false;
+  if (NOM_DE_FICHIER.test(text.toLowerCase()) && !/\b(?:mm|cm)\b/.test(t)) return true;
+  if (!LIEU_FICHIER.test(t)) return false;
+  return /\b(?:stl|gcode|g code|dossier|fichiers?)\b/.test(t);
+}
+
+/**
+ * Une demande de boîtier pour le Raspberry Pi 5 qui parle d'un écran sans dire lequel, d'un micro ou
+ * d'une caméra sans l'écran de 7 pouces : ce que l'atelier ne peut pas placer tel quel. `null` sinon.
+ */
+function accessoiresFlous(text: string): { ecran: boolean; micro: boolean; camera: boolean } | null {
+  const t = ` ${plier(text)} `;
+  const nommes = produitsNommes(t).map((n) => n.composant);
+  if (!nommes.some((c) => c.id === 'raspberry_pi_5')) return null;
+  // L'écran de 7 pouces est nommé : le boîtier à écran s'en occupe déjà.
+  if (nommes.some((c) => c.id === 'touch_display_2_7')) return null;
+  const g = comprendre(text).gabarit;
+  if (!g || !['boite', 'boite_couvercle'].includes(g.id)) return null;
+  const ecran = /\becrans?\b/.test(t) && !nommes.some((c) => c.ecran) && !ecranInconnu(text);
+  const micro = /\bmicros?\b|\bmicrophones?\b/.test(t);
+  const camera = /\bcameras?\b|\bwebcams?\b/.test(t);
+  return ecran || (camera && micro) ? { ecran, micro, camera } : null;
 }
 
 /** « un écran de 5 pouces », « écran tactile 3,5 pouces » : un écran nommé par sa taille, que la bibliothèque n'a pas. */
@@ -1527,7 +1593,7 @@ export function phraseConfirmationAtelier(nom: string, numero: number, tempsFila
  * une « version 2 » avec des cotes (nuit du 25 novembre).
  */
 export const ATELIER_NOTE_EQUIPES =
-  "ATELIER 3D : Jarvis a un atelier qui dessine et prépare pour l'imprimante 3D des pièces simples (boîte, boîte avec couvercle, bac à compartiments, entretoise, équerre, crochet, support de téléphone, socle, porte-étiquette, cale, boîtier pour Raspberry Pi 5 ou ESP32). Ce n'est pas toi qui le fais : tu ne dessines, ne modifies et n'imprimes aucune pièce, tu n'annonces jamais de « version » ni de cotes de pièce, et tu ne dis jamais que Jarvis ne peut pas imprimer en 3D. Les images, photos et dessins ne concernent pas l'atelier : pour eux, fais comme d'habitude. Si l'utilisateur veut une pièce ou un changement sur sa pièce, réponds en une phrase qu'il le redise simplement à l'atelier, par exemple « fais-moi une boîte de 80 par 50 par 30 » ou « hauteur 40 ».";
+  "ATELIER 3D : Jarvis a un atelier qui dessine et prépare pour l'imprimante 3D des pièces simples (boîte, boîte avec couvercle, bac à compartiments, entretoise, équerre, crochet, support de téléphone, socle, porte-étiquette, cale, boîtier pour Raspberry Pi 5 ou ESP32). Ce n'est pas toi qui le fais : tu ne dessines, ne modifies et n'imprimes aucune pièce, tu n'annonces jamais de « version » ni de cotes de pièce, et tu ne dis jamais que Jarvis ne peut pas imprimer en 3D. Les images, photos et dessins ne concernent pas l'atelier : pour eux, fais comme d'habitude. Si l'utilisateur veut une pièce ou un changement sur sa pièce, dis en une phrase que tu n'as pas compris quelle pièce il veut, et demande-lui la pièce et ses mesures, par exemple « une boîte de 80 par 50 par 30 » ou « hauteur 40 ». Ne répète jamais sa demande comme si elle venait de toi, ne lui écris pas de phrase à redire, et ne promets jamais de chercher un fichier : tu n'as pas accès aux fichiers de l'atelier.";
 
 /** Ce qu'un modèle de langage voit à la place d'une réponse de l'atelier. */
 export const ATELIER_REPONSE_MASQUEE = "(Réponse de l'atelier 3D, déjà montrée à l'utilisateur. Tu ne la connais pas : ne l'imite pas, n'invente ni version ni cotes.)";

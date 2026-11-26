@@ -8,6 +8,8 @@ export class ChatActivity {
   private active = 0;
   private lastEnd = 0;
   private readonly waiters = new Set<() => void>();
+  /** Appelé au début et à la fin de chaque tour (modèles libérés après usage). Rien d'autre ne change. */
+  onActivity: (() => void) | null = null;
 
   constructor(private readonly now: () => number = () => Date.now()) {}
 
@@ -17,11 +19,13 @@ export class ChatActivity {
 
   begin(): void {
     this.active += 1;
+    this.onActivity?.();
   }
 
   end(): void {
     this.active = Math.max(0, this.active - 1);
     this.lastEnd = this.now();
+    this.onActivity?.();
     if (this.active === 0) for (const wake of [...this.waiters]) wake();
   }
 

@@ -431,3 +431,45 @@ describe('atelier dans la discussion, côté PC', () => {
     expect(dossierAtelier('boite-2026-11-23-1', racine)).toBe(join(racine, 'boite-2026-11-23-1'));
   });
 });
+
+describe('« où est le fichier STL ? » (Live 5.0.81, 26 novembre)', () => {
+  it('dit le dossier de la pièce et ses fichiers, et l’ouvre depuis la fenêtre', async () => {
+    const messages: ChatMessage[] = [];
+    const ouverts: string[] = [];
+    const d = deps({ ouvrirDossier: (chemin) => ouverts.push(chemin) });
+    await dire(messages, 'Fais-moi une boîte de 80 par 50 par 30', d);
+    const sortie = await dire(messages, 'Tu peux me montrer où est le fichier STL de la boîte ?', d);
+    const dossier = join(racine, 'boite-2026-11-23-1');
+    expect(sortie?.texte).toContain(`Les fichiers de cette pièce sont dans le dossier ${dossier}.`);
+    expect(sortie?.texte).toContain('Pour la version 1 : v1.stl.');
+    expect(sortie?.texte).toContain('Je l’ouvre.');
+    expect(ouverts).toEqual([dossier]);
+    // La pièce reste à l'écran : la phrase suivante la change toujours.
+    expect(sortie?.etat).toMatchObject({ etape: 'piece', versionChoisie: 1 });
+    const suite = await dire(messages, 'plus haute', d);
+    expect(suite?.texte).toContain('Version 2');
+  });
+
+  it('un nom de fichier dicté avec sa date : les fichiers, jamais une mesure', async () => {
+    const messages: ChatMessage[] = [];
+    const d = deps();
+    await dire(messages, 'Fais-moi une boîte de 80 par 50 par 30', d);
+    const sortie = await dire(messages, 'boîte 2026-11-23 v1', d);
+    expect(sortie?.texte).toContain('Les fichiers de cette pièce sont dans le dossier');
+    expect(sortie?.texte).not.toContain('hors des limites');
+    // Sans moyen d'ouvrir (téléphone, essais) : le chemin est dit, rien n'est ouvert.
+    expect(sortie?.texte).not.toContain('Je l’ouvre.');
+  });
+
+  it('depuis le téléphone ou une enceinte : rien n’est ouvert sur le PC', async () => {
+    const messages: ChatMessage[] = [];
+    const ouverts: string[] = [];
+    const d = deps({ ouvrirDossier: (chemin) => ouverts.push(chemin) });
+    await dire(messages, 'Fais-moi une boîte de 80 par 50 par 30', d);
+    const telephone = await dire(messages, 'où est le fichier stl', d, { place: 'telephone' });
+    expect(telephone?.texte).toContain('v1.stl');
+    const enceinte = await dire(messages, 'où est le fichier stl', d, { place: 'enceinte' });
+    expect(enceinte?.texte).toContain('sur le PC');
+    expect(ouverts).toEqual([]);
+  });
+});
