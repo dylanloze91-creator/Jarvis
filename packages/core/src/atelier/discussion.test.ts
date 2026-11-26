@@ -178,7 +178,8 @@ describe('atelier dans la discussion : imprimer', () => {
     }
     expect(deciderAtelier('mets la version 1 dans la file', piece('boite', {}, 1))).toMatchObject({ kind: 'file', numero: 1 });
     expect(deciderAtelier('mets la version 7 dans la file', boite).kind).toBe('dire');
-    expect(deciderAtelier('mets-la dans la file', null).kind).toBe('rien');
+    // Sans pièce dans la discussion : l'atelier le dit (la phrase partait à un modèle, qui répondait « ajoutée à la file »).
+    expect(deciderAtelier('mets-la dans la file', null)).toMatchObject({ kind: 'dire', texte: expect.stringContaining('pas de pièce à imprimer') });
   });
 
   it('relancer la file : seulement si la phrase dit que le plateau est vide', () => {

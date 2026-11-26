@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { fabriquer, fichePiece, type Gabarit } from './gabarits.js';
-import { deciderAtelier, dernierAtelier, mesuresAffichees, normaliserOrdre, type AtelierDecision, type AtelierEtat } from './discussion.js';
+import { ATELIER_REPONSE_MASQUEE, deciderAtelier, dernierAtelier, masquerAtelier, mesuresAffichees, normaliserOrdre, type AtelierDecision, type AtelierEtat } from './discussion.js';
 import { plier } from './lecture.js';
 import { ajouterCoteTrouvee } from './composants.js';
 
@@ -46,6 +46,12 @@ function discussion(phrases: string[], contexte: Parameters<typeof deciderAtelie
       etat = d.etat ?? (etat?.etape === 'piece' ? etat : null);
     } else if (d.kind === 'choisir') {
       etat = { ...d.etat, versionChoisie: d.numero };
+    } else if (d.kind === 'rien' && etat?.etape === 'piece') {
+      // Un autre échange est passé (comme `dernierAtelier`) : ce qui attendait une suite est oublié.
+      const { refus: _refus, nombre: _nombre, ...piece } = etat;
+      etat = piece;
+    } else if (d.kind === 'rien') {
+      etat = null;
     }
   }
   return { decisions, etat };
@@ -271,10 +277,14 @@ describe('deuxième série de la nuit', () => {
   });
 
   it('« imprime-la » sans pièce : réponse de l’atelier dans la Live seulement', () => {
-    expect(deciderAtelier('imprime la', null, {})).toEqual({ kind: 'rien' });
-    const live = deciderAtelier('imprime la', null, { sansAutreImprimante: true });
-    expect(live.kind === 'dire' ? live.texte : '').toMatch(/pas de pièce à imprimer/);
-    expect(deciderAtelier('bon bah mets la dans la file', null, { sansAutreImprimante: true }).kind).toBe('dire');
+    // Avec le pronom, la phrase vise une pièce : l'atelier répond partout.
+    const partout = deciderAtelier('imprime la', null, {});
+    expect(partout.kind === 'dire' ? partout.texte : '').toMatch(/pas de pièce à imprimer/);
+    expect(deciderAtelier('bon bah mets la dans la file', null, {}).kind).toBe('dire');
+    // « imprime » seul : le lot B dans Jarvis Test, l'atelier dans la Live.
+    expect(deciderAtelier('imprime', null, {})).toEqual({ kind: 'rien' });
+    expect(deciderAtelier('lance l impression', null, {})).toEqual({ kind: 'rien' });
+    expect(deciderAtelier('imprime', null, { sansAutreImprimante: true }).kind).toBe('dire');
     // « imprime le fichier x.gcode », « imprime ce document » ne sont jamais pris.
     expect(deciderAtelier('imprime le fichier boite.gcode', null, { sansAutreImprimante: true })).toEqual({ kind: 'rien' });
   });
@@ -326,5 +336,56 @@ describe('cotes lues sur une page : vraisemblables ou pas gardées', () => {
     expect(ajouterCoteTrouvee({}, id, 'hauteur_dessus', { valeur: 12, source: SOURCE }).erreur).toBeUndefined();
     expect(ajouterCoteTrouvee({}, id, 'entraxe_x', { valeur: 58, source: SOURCE }).erreur).toBeUndefined();
     expect(ajouterCoteTrouvee({}, id, 'hauteur_dessus', { valeur: 45, source: SOURCE, plan: true }).erreur).toBeUndefined();
+  });
+});
+
+describe('ce qu’un modèle de langage voit de l’atelier', () => {
+  it('les réponses de l’atelier sont masquées, le reste ne bouge pas', () => {
+    const question: AtelierEtat = { etape: 'question', gabarit: 'boite', valeurs: {}, mesure: 'longueur' };
+    const messages = [
+      { role: 'user', content: 'fais moi une boite' },
+      { role: 'assistant', content: 'Boîte, d’accord. Longueur : je propose 80 mm.', atelier: question },
+      { role: 'user', content: 'quelle heure il est' },
+      { role: 'assistant', content: 'Il est 14 h.' },
+    ];
+    const vus = masquerAtelier(messages);
+    expect(vus[1]!.content).toBe(ATELIER_REPONSE_MASQUEE);
+    expect(vus[0]).toBe(messages[0]);
+    expect(vus[3]).toBe(messages[3]);
+    expect(messages[1]!.content).toContain('Longueur');
+  });
+
+  it('sans réponse d’atelier, la liste est rendue telle quelle', () => {
+    const messages = [{ role: 'user', content: 'salut' }, { role: 'assistant', content: 'Bonjour.' }];
+    expect(masquerAtelier(messages)).toBe(messages);
+  });
+
+  it('proposition en attente : une réponse courte illisible redit la proposition', () => {
+    const d = derniere(['je voudrais un boitier pour mon rasberry pie 5', 'prends large partout']);
+    expect(d).toMatchObject({ kind: 'dire', etat: { etape: 'proposition' } });
+  });
+});
+
+describe('troisième série de la nuit', () => {
+  it('« mets 50 » puis « en hauteur » : le nombre va à la mesure nommée', () => {
+    const { decisions } = discussion(['fais moi une boite de 100 par 80 par 40', 'mets 50', 'en hauteur']);
+    expect(decisions[1]).toMatchObject({ kind: 'dire', etat: { etape: 'piece', nombre: '50' } });
+    expect(decisions[2]).toMatchObject({ kind: 'fabriquer', valeurs: { longueur: 100, largeur: 80, hauteur: 50 } });
+  });
+
+  it('le nombre gardé est oublié à la phrase suivante', () => {
+    const { decisions } = discussion(['fais moi une boite de 100 par 80 par 40', 'mets 50', 'quelle heure il est', 'en hauteur']);
+    expect(decisions[3]?.kind).not.toBe('fabriquer');
+  });
+
+  it('« et un boitier pour un pi zero » avec une pièce à l’écran : une nouvelle pièce, carte inconnue dite', () => {
+    const d = derniere(['fais moi une boite de 100 par 70 par 30', 'et un boitier pour un pi zero']);
+    expect(d).toMatchObject({ kind: 'dire', etat: { etape: 'question', gabarit: 'boite' } });
+    expect(d.kind === 'dire' ? d.texte : '').toMatch(/Je n'ai pas les cotes de « /);
+  });
+
+  it('« une boite pour mes bijoux », « une boite de 6 oeufs » sans verbe : pas des demandes', () => {
+    expect(deciderAtelier('une boite pour mes bijoux', null, {})).toEqual({ kind: 'rien' });
+    expect(deciderAtelier('une boite de 6 oeufs ca coute combien', null, {})).toEqual({ kind: 'rien' });
   });
 });

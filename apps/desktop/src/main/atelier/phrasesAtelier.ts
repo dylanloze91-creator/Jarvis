@@ -538,10 +538,9 @@ export const DISCUSSIONS: DiscussionEssai[] = [
     id: 'imprimer-rien',
     fonction: 'préparation et impression',
     tours: [
-      // Dans Jarvis Test, « imprime » sans pièce reste à l'imprimante du lot B ; l'atelier ne le prend pas.
-      // (Dans la Live, où l'atelier est seul, il répond « pas de pièce » : essai du cœur.)
-      { dire: 'imprime la', attendu: { ailleurs: true }, pasImprimante: ENVOI },
-      { dire: 'bon bah mets la dans la file', attendu: { ailleurs: true }, pasImprimante: ENVOI },
+      // Avec le pronom, la phrase vise une pièce : l'atelier répond qu'il n'y en a pas.
+      { dire: 'imprime la', attendu: { dit: /pas de pièce/ }, pasImprimante: ENVOI },
+      { dire: 'bon bah mets la dans la file', attendu: { dit: /pas de pièce/ }, pasImprimante: ENVOI },
     ],
   },
   {
@@ -640,8 +639,7 @@ export const DISCUSSIONS: DiscussionEssai[] = [
     tours: [
       { dire: 'fais moi une boite de 100 par 80 par 40', attendu: { piece: 'boite', taille: [100, 80, 40] } },
       { dire: 'mets 50', attendu: { dit: /pour quelle mesure/ } },
-      { dire: 'en hauteur', attendu: { dit: /./ } },
-      { dire: 'hauteur 50', attendu: { piece: 'boite', taille: [100, 80, 50] } },
+      { dire: 'en hauteur', attendu: { piece: 'boite', taille: [100, 80, 50], version: 2 } },
       { dire: 'plus longue', attendu: { piece: 'boite', taille: [null, 80, 50], mesures: /Longueur : 1[1-9]\d/ } },
       { dire: 'non moins longue', attendu: { piece: 'boite', taille: [null, 80, 50], mesures: /Longueur : [89]\d\b/ } },
       { dire: 'le couvercle a charniere', attendu: { dit: /pas su faire ce changement/ } },

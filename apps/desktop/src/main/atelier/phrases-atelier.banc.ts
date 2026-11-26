@@ -100,7 +100,7 @@ function versionChoisie(etat: Piece) {
 }
 
 /** Contrôle d'un tour : `null` si tout est bon, sinon la raison. */
-function controler(attendu: Attendu, sortie: { texte: string; etat?: AtelierEtat } | null | undefined, racine: string, reponse: string): string | null {
+function controler(attendu: Attendu, sortie: { texte: string; etat?: AtelierEtat } | null | undefined, racine: string, reponse: string, lieu = 'fenetre'): string | null {
   if ('ailleurs' in attendu) {
     if (sortie) return `pris par l'atelier (« ${sortie.texte.slice(0, 80)} »)`;
     if (attendu.dit && !attendu.dit.test(reponse)) return `réponse inattendue (${attendu.dit})`;
@@ -127,6 +127,11 @@ function controler(attendu: Attendu, sortie: { texte: string; etat?: AtelierEtat
       const controle = core.controlerStl(core.lireStl(readFileSync(join(racine, etat.dossier, p.stl))), p.taille);
       if (!controle.ok) return `STL ${p.stl} : ${controle.problemes.join(' ')}`;
     }
+    // Les images de la pièce (écran 3D, téléphone) : annoncées, donc présentes ; sur le téléphone, exigées.
+    for (const image of [v.image, v.imageDessus]) {
+      if (image && !existsSync(join(racine, etat.dossier, image))) return `image absente (${image})`;
+    }
+    if (lieu === 'telephone' && !v.image) return 'pas d’image pour le téléphone';
     if (attendu.taille) {
       for (let i = 0; i < 3; i += 1) {
         const voulu = attendu.taille[i];
@@ -274,7 +279,7 @@ it(
           .replace(/\s+/g, ' ');
         const appels = imprimante.calls.slice(avant);
         const sortieAtelier = boite.sortie as { texte: string; etat?: AtelierEtat } | null | undefined;
-        let pourquoi = controler(essai.attendu, sortieAtelier, racine, reponse);
+        let pourquoi = controler(essai.attendu, sortieAtelier, racine, reponse, lieu);
         if (!pourquoi && ms >= TURN_DEADLINE_MS) pourquoi = 'délai dépassé';
         if (!pourquoi && essai.imprimante && !appels.some((a) => essai.imprimante!.test(a))) pourquoi = `imprimante : appel attendu ${essai.imprimante} (${appels.join(', ') || 'aucun'})`;
         if (!pourquoi && essai.pasImprimante && appels.some((a) => essai.pasImprimante!.test(a))) pourquoi = `imprimante : appel interdit ${essai.pasImprimante} (${appels.join(', ')})`;

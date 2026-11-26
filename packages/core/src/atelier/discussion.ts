@@ -125,6 +125,8 @@ export type AtelierEtat =
        * déjà pliée : « bon alors de 10 » le redemande avec ce nombre, au lieu de changer la longueur.
        */
       refus?: string;
+      /** Un nombre dit seul (« mets 50 ») : Jarvis a demandé pour quelle mesure, « en hauteur » le reprend. */
+      nombre?: string;
     };
 
 export type AtelierDecision =
@@ -321,7 +323,15 @@ export function dernierAtelier(messages: readonly { role: string; atelier?: Atel
     if (message.role !== 'assistant') continue;
     // Une question ne vaut que si c'est la dernière réponse de Jarvis ; une pièce reste
     // à l'écran quelques échanges.
-    if (message.atelier && (premiere || message.atelier.etape === 'piece')) return message.atelier;
+    if (message.atelier && (premiere || message.atelier.etape === 'piece')) {
+      // Ce qui attendait une suite immédiate (un changement refusé, un nombre dit seul) est oublié dès
+      // qu'un autre échange est passé.
+      if (!premiere && message.atelier.etape === 'piece' && (message.atelier.refus !== undefined || message.atelier.nombre !== undefined)) {
+        const { refus: _refus, nombre: _nombre, ...piece } = message.atelier;
+        return piece;
+      }
+      return message.atelier;
+    }
     premiere = false;
   }
   return null;
@@ -512,8 +522,14 @@ export function demandePiece(
   const carte = composantNomme(` ${plier(text)} `);
   // Sans verbe, il faut une cote (« une boîte de 100 par 60 ») ou une carte connue (« un boîtier
   // pour un ESP32 ») : « une boîte de 6 œufs » n'est pas une demande.
+  // « un boîtier pour un pi zero » : une carte que la bibliothèque n'a pas (son nom est déjà remplacé
+  // par « ma carte ») compte comme une carte connue. « une boîte pour mes bijoux » reste hors de l'atelier.
+  const pourQuelqueChose = /\bpour (?:un |une |mon |ma |le |la )?ma carte\b/.test(t);
   const sansVerbe =
-    !verbe && demande.gabarit !== null && commenceParLaPiece(t, demande.gabarit) && (COTE.test(t) || Boolean(carte && (composant(carte.id)?.carte || composant(carte.id)?.ecran)));
+    !verbe &&
+    demande.gabarit !== null &&
+    commenceParLaPiece(t, demande.gabarit) &&
+    (COTE.test(t) || pourQuelqueChose || Boolean(carte && (composant(carte.id)?.carte || composant(carte.id)?.ecran)));
   if (!verbe && !sansVerbe) return null;
   // « Dessine une version adaptée à l'ESP32 », « fais la même pour un Arduino » : une boîte pour
   // cette carte (essai du 24 novembre : la phrase partait à l'équipe Code, qui refusait de dessiner).
@@ -926,6 +942,16 @@ function decider(text: string, precedentDonne: AtelierEtat | null, contexte: Con
       return deciderAtelier(refuse.replace(/\d+(?:\.\d+)?/, autre[1]!), depart, contexte);
     }
   }
+  // « mets 50 » puis « en hauteur » : le nombre gardé va à la mesure nommée.
+  if (depart?.etape === 'piece' && depart.nombre) {
+    const nombre = depart.nombre;
+    const { nombre: _nombre, ...sansNombre } = depart;
+    depart = sansNombre;
+    if (!/\d/.test(tn) && tn.split(' ').length <= 5 && /\b(?:haut\w*|larg\w*|long\w*|profond\w*|epais\w*|parois?|fond|diametre|trous?)\b/.test(tn)) {
+      const suite = deciderAtelier(`${tn.replace(/^(?:en|pour|sur|a|c est|de) (?:la |le |l )?/, '')} ${nombre}`, depart, contexte);
+      if (suite.kind !== 'rien') return suite;
+    }
+  }
   // « non plus large » juste après « plus haute » : la correction part de la version d'avant (on ne
   // garde pas le changement qu'il vient de refuser).
   if (depart?.etape === 'piece' && /^non ,? ?(?:pas (?:ca|comme ca) ,? ?)?(?:plutot )?(?:un peu )?(?:plus|moins) [a-z]+$/.test(t)) {
@@ -964,7 +990,10 @@ function decider(text: string, precedentDonne: AtelierEtat | null, contexte: Con
     // Autre chose : la phrase est lue avec la pièce d'avant. Si elle parle encore de la pièce sans
     // qu'aucune règle ne la comprenne, la proposition est redite plutôt que partir au cerveau.
     const suite = deciderAtelier(text, proposition.base, contexte);
-    if (suite.kind !== 'rien' || !(VOCABULAIRE_PIECE.test(t) || /\b(?:imprim\w*|3d)\b/.test(t))) return suite;
+    // Une réponse courte illisible aussi (« prends large partout », « bof ») : sinon un modèle
+    // répondait à la place, avec un boîtier et des cotes inventés.
+    const courteIllisible = t.split(' ').length <= 6 && !QUESTION.test(t) && !VERBE_AUTRE.test(t) && !SUJET_AUTRE.test(t) && !HORS_SUJET_COURT.test(t);
+    if (suite.kind !== 'rien' || !(VOCABULAIRE_PIECE.test(t) || /\b(?:imprim\w*|3d)\b/.test(t) || courteIllisible)) return suite;
     const v = proposition.valeurs;
     return {
       kind: 'dire',
@@ -1088,7 +1117,13 @@ function decider(text: string, precedentDonne: AtelierEtat | null, contexte: Con
     return { kind: 'dire', texte: 'Pour lancer la pièce suivante de la file, dis-moi d’abord que le plateau est vide : « le plateau est vide, lance la suivante ».', etat: precedent };
   }
   // « imprime-la », « mets-la dans la file » sans aucune pièce dans la discussion.
-  if (contexte.sansAutreImprimante && precedent?.etape !== 'piece' && /^(?:imprime|imprimes)(?: (?:la|le|les))?$|^(?:mets|met|ajoute|rajoute|envoie) (?:la|le|les) (?:dans|a|en|sur) (?:la )?(?:file|liste)(?: d attente)?$/.test(tn)) {
+  // « imprime-la », « mets-la dans la file » visent une pièce (le pronom) : l'atelier répond. « imprime »
+  // et « lance l'impression » seuls sont à l'imprimante du lot B dans Jarvis Test ; dans la Live, où
+  // l'atelier est seul, il répond aussi.
+  const sansPiece =
+    /^(?:imprime|imprimes) (?:la|le|les)$|^(?:mets|met|ajoute|rajoute|envoie) (?:la|le|les) (?:dans|a|en|sur) (?:la )?(?:file|liste)(?: d attente)?$/.test(tn) ||
+    (contexte.sansAutreImprimante === true && /^(?:imprime|imprimes|lance l impression)$/.test(tn));
+  if (precedent?.etape !== 'piece' && sansPiece) {
     return { kind: 'dire', texte: "Je n'ai pas de pièce à imprimer dans cette discussion. Demande-moi d'abord une pièce, par exemple « fais-moi une boîte de 80 par 50 par 30 »." };
   }
 
@@ -1364,7 +1399,7 @@ function decider(text: string, precedentDonne: AtelierEtat | null, contexte: Con
     return {
       kind: 'dire',
       texte: `${n} pour quelle mesure ? Dis par exemple « hauteur ${n} », « largeur ${n} », ou « un trou de ${n} à l'arrière ».`,
-      etat: precedent,
+      etat: { ...precedent, nombre: nombresDits[0]! },
     };
   }
   Object.assign(valeurs, dites);
@@ -1451,3 +1486,17 @@ export function phraseConfirmationAtelier(nom: string, numero: number, tempsFila
  */
 export const ATELIER_NOTE_EQUIPES =
   "ATELIER 3D : Jarvis a un atelier qui dessine et prépare pour l'imprimante 3D des pièces simples (boîte, boîte avec couvercle, bac à compartiments, entretoise, équerre, crochet, support de téléphone, socle, porte-étiquette, cale, boîtier pour Raspberry Pi 5 ou ESP32). Ce n'est pas toi qui le fais : tu ne dessines, ne modifies et n'imprimes aucune pièce, tu n'annonces jamais de « version » ni de cotes de pièce, et tu ne dis jamais que Jarvis ne peut pas imprimer en 3D. Si l'utilisateur veut une pièce ou un changement sur sa pièce, réponds en une phrase qu'il le redise simplement à l'atelier, par exemple « fais-moi une boîte de 80 par 50 par 30 » ou « hauteur 40 ».";
+
+/** Ce qu'un modèle de langage voit à la place d'une réponse de l'atelier. */
+export const ATELIER_REPONSE_MASQUEE = "(Réponse de l'atelier 3D, déjà montrée à l'utilisateur. Tu ne la connais pas : ne l'imite pas, n'invente ni version ni cotes.)";
+
+/**
+ * La discussion telle qu'un modèle de langage la reçoit : les réponses de l'atelier (celles qui
+ * portent son état) sont masquées. Sans cela, un modèle qui reçoit une phrase d'atelier mal lue
+ * imite ces réponses et annonce une « Version 5 » avec des cotes inventées (nuit du 25 novembre).
+ * Sans réponse d'atelier, la liste est rendue telle quelle.
+ */
+export function masquerAtelier<T extends { role: string; content: string; atelier?: AtelierEtat }>(messages: readonly T[]): readonly T[] {
+  if (!messages.some((m) => m.role === 'assistant' && m.atelier)) return messages;
+  return messages.map((m) => (m.role === 'assistant' && m.atelier ? { ...m, content: ATELIER_REPONSE_MASQUEE } : m));
+}
