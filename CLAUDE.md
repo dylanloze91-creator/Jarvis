@@ -899,6 +899,29 @@ Branche `claude/live-5077`, à partir de `main` (5.0.76). Aucune nouveauté. Fus
   - Programme de l'enceinte étiqueté `5.0.77` (`JARVIS_FW_VERSION`), compilé et livré dans l'installateur (`firmware.bin` 1,64 Mo, `srmodels.bin` 0,29 Mo) ; `setup:speaker-firmware` lance PlatformIO avec `PYTHONUTF8=1` (trace Python après `[SUCCESS]` sinon).
   - `release.sh` : `windowsDesktopMissionPath.test.ts` remis, à part et sans charge (3 passages 6/6 sur Windows ; dans la suite complète il échoue encore sous charge, « Journal verrouillé »).
 
+## Atelier 3D (Jarvis Test, puis Live 5.0.81) : l'atelier parlé comme on parle (nuit du 25 au 26 novembre)
+
+Branche `claude/atelier-nuit-1126`, fusionnée dans `claude/dev` (Jarvis Test `5.1.0-test.4`) ; le même atelier est porté dans la Live 5.0.81 (`claude/live-5081`). Rapport : `rapports/2026-11-26-nuit-atelier.md`. Rapports d'avant : `rapports/2026-11-19-atelier-3d-coeur.md` à `2026-11-25-atelier-examen-hub.md`.
+
+- **Ce que c'est.** `packages/core/src/atelier/` : tout se décide par règles, sans modèle (`deciderAtelier`, `discussion.ts`). L'état vit dans la discussion (`ChatMessage.atelier` : `question`, `mesure`, `produit`, `proposition`, `choix`, `piece`). Côté PC (`apps/desktop/src/main/atelier/`) : OpenSCAD rend, le STL est contrôlé, OrcaSlicer prépare, Moonraker reçoit après une carte. Dans la session, la dépendance `atelier` passe avant l'imprimante du lot B et tout modèle.
+- **Le banc des phrases** : `npm run banc:phrases-atelier --workspace @jarvis/desktop` (`phrases-atelier.banc.ts`, phrases dans `phrasesAtelier.ts`). 217 phrases écrites par Claude dans le style de l'utilisateur, dites dans la vraie session (réglages de Jarvis Test lus, vrai modèle, vrai OpenSCAD, vrai OrcaSlicer, **fausse imprimante** `FakeMoonraker`, outils du chat remplacés). Trois contrôles par phrase : la bonne équipe, le bon résultat, une réponse juste (STL fermé et aux cotes, images présentes, texte attendu). Résultats dans `C:\dev\jarvis-data\atelier-nuit\`. **Ces phrases ne servent qu'aux essais, jamais à l'entraînement.**
+- **L'atelier garde la main.** Avant cette nuit, une réponse qu'il ne lisait pas partait à un modèle, qui répondait « je ne peux pas imprimer » ou imitait l'atelier (« Version 5 (…) » avec des cotes inventées). Maintenant :
+  - question en attente : « ouais vas-y », « fais comme tu veux », « je sais pas trop » gardent la valeur proposée (`ACCEPTE_DEFAUT`) ; « c'est quoi déjà la question » la redit (`REPETER`) ; « 10 par 6 par 3 centimètres » répond à plusieurs questions ; une réponse courte illisible repose la question ; une vraie autre demande (« quelle heure il est », « mets la musique ») suit son chemin ;
+  - mesure d'un composant en attente : « dessine-le avec ce que t'as », « vas-y modélise » = de la marge partout où c'est possible, dit (`FAIS_QUAND_MEME`) ; ce n'est jamais pris pour une référence de carte à chercher ;
+  - pièce à l'écran : gardée six demandes (`RECUL_DEMANDES`, comptées en demandes, pas en messages) ; un changement refusé puis « bon alors de 10 » (`refus`) ; un nombre seul demande la mesure (`nombre`), « en hauteur » le reprend ; « non plus large » repart de la version d'avant ; « encore un peu », « remets-le », « la version 2 », « reprends la version une » ; « les ports à gauche » retourne la seule carte ; une phrase courte sur la pièce qu'il ne sait pas lire reçoit « je n'ai pas su faire ce changement » ;
+  - sans pièce : « tu sais faire quoi en 3D », « modélise-moi ça », « imprime-moi un truc » donnent la liste (`CAPACITES`, `ENVIE_3D`, état `choix`), puis « une boîte alors » suffit ; « imprime-la » sans pièce le dit.
+- **Les modèles et l'atelier** (`session.ts`) : `ATELIER_NOTE_EQUIPES` ajoutée aux consignes des équipes quand la dépendance `atelier` existe ; `masquerAtelier` : les réponses de l'atelier sont masquées dans ce que le modèle reçoit (il les imitait). Le cerveau qui trie et les essais figés (sans la dépendance) ne changent pas.
+- **Réponses justes** : la boîte à couvercle se dit à ses cotes (pas à sa place sur le plateau) ; « raspberry pi 4 », « pi zero », « arduino uno » ne sont plus pris pour le Pi 5 (boîte simple, dit) ; un écran d'une taille inconnue est dit, pas oublié ; « 15mn » = 15 mm ; « un bac de 150 par 100 par 30 avec 3 cases par 2 » ; une cote lue sur une page est refusée si elle est invraisemblable (`coteInvraisemblable`) ; à l'enceinte, la première phrase de la fiche seulement.
+- **Options de la Live** (`creerAtelierPC(…, { live: true })`) : imprimante par défaut `http://mainsailos.local` (`adresseImprimante`), `sansAutreImprimante` (« imprime » seul reçoit sa réponse ; dans Jarvis Test il reste au lot B).
+
+À ne pas casser :
+
+- une phrase qui répond à une question de l'atelier ne part jamais à un modèle ; une phrase d'un autre domaine n'est jamais retenue par l'atelier (`routage.test.ts`) ;
+- un nombre dit seul ne change jamais une mesure sans la nommer ;
+- les réponses de l'atelier restent masquées aux modèles, et les équipes n'annoncent ni « version » ni cotes ;
+- le banc des phrases n'appelle jamais la vraie imprimante (garde sur `mainsailos` et le port 7125 dans le banc) ;
+- les phrases de `phrasesAtelier.ts` et de `style.test.ts` n'entrent dans aucun jeu d'entraînement.
+
 ## Ce qu’il ne faut pas casser
 
 - **Le Tool Manager comme seul passage** vers le système. Pas d’`exec` / `fs` / `shell.openExternal` déclenché par le renderer (exceptions : un lien `http(s)` cliqué, ouvert dans le navigateur par `window.ts` ; l’URI fixe `ms-settings:privacy-microphone`, sans paramètre venu du renderer ; 5.0.63 : les deux lectures fixes `tailscale status --json` et `tailscale serve status --json`, sans paramètre venu du renderer).
