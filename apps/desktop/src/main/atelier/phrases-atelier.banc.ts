@@ -30,7 +30,7 @@ import { afterAll, expect, it, vi } from 'vitest';
 import type { AtelierEtat, ToolCallOutcome } from '@jarvis/core';
 import type { ChatEvent } from '../../shared/ipc.js';
 import { FakeMoonraker } from '../../../../../packages/core/src/quotidien/fakeMoonraker.testkit.js';
-import { DISCUSSIONS, type Attendu, type TourEssai } from './phrasesAtelier.js';
+import { DISCUSSIONS, DISCUSSIONS_EXAMEN, type Attendu, type TourEssai } from './phrasesAtelier.js';
 
 const userData = mkdtempSync(join(tmpdir(), 'jarvis-phrases-atelier-'));
 
@@ -223,7 +223,9 @@ it(
     });
 
     const lignes: Ligne[] = [];
-    const choisies = DISCUSSIONS.filter(
+    // La série « examen » ne passe que si elle est demandée (`JARVIS_ATELIER_SEULEMENT=examen`).
+    const toutes = seulement.some((x) => x.startsWith('examen')) ? [...DISCUSSIONS, ...DISCUSSIONS_EXAMEN] : DISCUSSIONS;
+    const choisies = toutes.filter(
       (d) => (!seulement.length || seulement.some((s) => d.id.startsWith(s))) && !(d.marques ?? []).some((m) => sans.includes(m)),
     );
     for (const discussion of choisies) {

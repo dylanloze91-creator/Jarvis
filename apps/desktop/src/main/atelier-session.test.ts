@@ -47,6 +47,7 @@ function setup(wired = true, options: { imagerActif?: boolean; atelierReel?: boo
   const settings = core.parseSettings({ provider: 'ollama', model: 'qwen2.5:7b' });
   const getSettings = () => settings;
   const modelCalls: string[] = [];
+  const modelRequests: { role: string; content: string }[][] = [];
   const registry = new core.ProviderRegistry().register({ ...core.ollamaDescriptor }, (config) => ({
     id: 'ollama',
     label: 'Ollama',
@@ -54,6 +55,7 @@ function setup(wired = true, options: { imagerActif?: boolean; atelierReel?: boo
     requiresApiKey: false,
     async *streamChat(request) {
       modelCalls.push(request.messages.at(-1)?.content ?? '');
+      modelRequests.push(request.messages.map((m) => ({ role: m.role, content: m.content })));
       yield { type: 'text' as const, delta: 'Réponse du modèle.' };
       yield { type: 'done' as const, finishReason: 'stop' as const };
     },
@@ -121,10 +123,22 @@ function setup(wired = true, options: { imagerActif?: boolean; atelierReel?: boo
     conversationId = saved[0]!.id;
     return (await store.get(conversationId))!.messages;
   };
-  return { modelCalls, say, events, vus, imagerAppels };
+  return { modelCalls, modelRequests, say, events, vus, imagerAppels };
 }
 
 describe('atelier 3D dans la session', () => {
+  it('un modèle ne voit pas les réponses de l’atelier (il les imitait)', async () => {
+    const { modelRequests, say } = setup();
+    await say('Fais-moi une boîte de 80 par 50 par 30');
+    await say('Raconte-moi une blague');
+    const vus = modelRequests.at(-1)!;
+    expect(vus.some((m) => m.role === 'assistant' && m.content === core.ATELIER_REPONSE_MASQUEE)).toBe(true);
+    expect(vus.some((m) => m.content.includes('Boîte de 80 × 50 × 30 mm.'))).toBe(false);
+    // La discussion enregistrée, elle, garde la vraie réponse.
+    const messages = await say('Merci');
+    expect(messages.some((m) => m.content === 'Boîte de 80 × 50 × 30 mm.')).toBe(true);
+  });
+
   it('une pièce : sans modèle, état sur la réponse enregistrée, écran 3D envoyé à la fenêtre', async () => {
     const { modelCalls, say, events, vus } = setup();
     const messages = await say('Fais-moi une boîte de 80 par 50 par 30');

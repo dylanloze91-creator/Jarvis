@@ -684,5 +684,99 @@ export const DISCUSSIONS: DiscussionEssai[] = [
   },
 ];
 
+/**
+ * Série « examen » : phrases écrites après les corrections de la nuit, jamais regardées pendant
+ * qu'elles se faisaient. Elles mesurent si l'atelier tient sur des phrases qu'il n'a pas vues.
+ * Passées à part : `JARVIS_ATELIER_SEULEMENT=examen`.
+ */
+export const DISCUSSIONS_EXAMEN: DiscussionEssai[] = [
+  {
+    id: 'examen-boite',
+    fonction: 'examen',
+    tours: [
+      { dire: 'tu peux me faire une boite de 9 cm par 6 par 4', attendu: { piece: 'boite', taille: [90, 60, 40] } },
+      { dire: 'un peu plus haute stp', attendu: { piece: 'boite', version: 2, taille: [90, 60, null] } },
+      { dire: 'ouais non remets comme avant', attendu: { piece: 'boite', version: 1 } },
+      { dire: 'largeur soixante dix', attendu: { piece: 'boite', taille: [90, 70, 40] } },
+      { dire: 'elle fait combien de large maintenant', attendu: { dit: /70 mm de large/ } },
+      { dire: 'ok c est bon merci', attendu: { dit: /./ } },
+    ],
+  },
+  {
+    id: 'examen-questions',
+    fonction: 'examen',
+    tours: [
+      { dire: 'j ai besoin d une cale', attendu: { question: /longueur/i } },
+      { dire: 'bah je sais pas moi', attendu: { question: /./ } },
+      { dire: 'vas y continue', attendu: { dit: /./ } },
+      { dire: 'ca me va', attendu: { dit: /./ } },
+    ],
+  },
+  {
+    id: 'examen-couvercle',
+    fonction: 'examen',
+    tours: [
+      { dire: 'fais moi un boitier avec couvercle de 80 par 80 par 50', attendu: { piece: 'boite_couvercle', dit: /de 80 × 80 × 50 mm/ } },
+      { dire: 'rajoute moi un trou de 12 sur le cote gauche', attendu: { piece: 'boite_couvercle', version: 2, mesures: /12 mm/ } },
+      { dire: 'et le meme a droite', attendu: { dit: /./ } },
+      { dire: 'le trou de gauche plus petit', attendu: { piece: 'boite_couvercle' } },
+    ],
+  },
+  {
+    id: 'examen-pi',
+    fonction: 'examen',
+    tours: [
+      { dire: 'il me faudrait un boitier pour le raspberry pi 5', attendu: { question: /je propose/i } },
+      { dire: 'ok ca marche', attendu: { piece: 'boite', mesures: /Raspberry Pi 5/ } },
+      { dire: 'mets les prises a droite', attendu: { dit: /droite|agrandis/ } },
+      { dire: 'oui', attendu: { dit: /./ } },
+      { dire: 'c est quoi ses dimensions', attendu: { dit: /longueur \d+ mm/ } },
+    ],
+  },
+  {
+    id: 'examen-flou',
+    fonction: 'examen',
+    tours: [
+      { dire: 'jarvis tu peux m imprimer quelque chose', attendu: { dit: QUOI_FAIRE } },
+      { dire: 'un bac pour trier mes vis', attendu: { question: /longueur/i } },
+      { dire: '20 par 15 par 4 cm', attendu: { question: /colonnes|cases|compartiments/i } },
+      { dire: 'quatre', attendu: { piece: 'bac', taille: [200, 150, 40] } },
+      { dire: 'mets en six plutot', attendu: { dit: /./ } },
+    ],
+  },
+  {
+    id: 'examen-ailleurs',
+    fonction: 'examen',
+    tours: [
+      { dire: 'fais moi une boite de 50 par 40 par 30', attendu: { piece: 'boite', taille: [50, 40, 30] } },
+      { dire: 'c est quoi la meteo demain', attendu: { ailleurs: true } },
+      { dire: 'ouvre le bloc notes', attendu: { ailleurs: true } },
+      { dire: 'hauteur 35', attendu: { piece: 'boite', taille: [50, 40, 35], version: 2 } },
+      { dire: 'genere moi une image d un chat dans une boite', attendu: { ailleurs: true } },
+      { dire: 'et un trou de 6 devant', attendu: { piece: 'boite', version: 3, mesures: /6 mm/ } },
+    ],
+  },
+  {
+    id: 'examen-impression',
+    fonction: 'examen',
+    tours: [
+      { dire: 'fais moi une entretoise de 10 de diametre et 8 de haut avec un trou de 4', attendu: { piece: 'entretoise', taille: [10, 10, 8] } },
+      { dire: 'vas y imprime', accord: false, attendu: { dit: /./ }, pasImprimante: ENVOI },
+      { dire: 'bon mets la plutot en file d attente', accord: true, attendu: { dit: /file d.attente/i }, imprimante: FILE, pasImprimante: LANCER },
+      { dire: 'le plateau est libre tu peux lancer la suivante', accord: true, attendu: { dit: /lancée|imprime/i }, imprimante: LANCER },
+    ],
+  },
+  {
+    id: 'examen-enceinte',
+    fonction: 'examen',
+    tours: [
+      { dire: 'Tu peux me faire un socle carré de 60 ?', lieu: 'enceinte', attendu: { dit: /socle/i } },
+      { dire: 'Oui.', lieu: 'enceinte', attendu: { dit: /./ } },
+      { dire: 'Elle est trop basse.', lieu: 'enceinte', attendu: { dit: /./ } },
+      { dire: 'Lance l’impression.', lieu: 'enceinte', accord: true, attendu: { ailleurs: true }, pasImprimante: ENVOI },
+    ],
+  },
+];
+
 /** Nombre de phrases (tours) du jeu d'essai. */
 export const NOMBRE_DE_PHRASES = DISCUSSIONS.reduce((n, d) => n + d.tours.length, 0);
