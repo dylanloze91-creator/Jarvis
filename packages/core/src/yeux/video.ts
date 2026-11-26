@@ -22,6 +22,12 @@ export const SEUIL_CHANGEMENT = 0.12;
 export const IMAGE_CLE_TAILLE_MAX = 1024 * 1024;
 /** Son : PCM 16 bits mono 16 kHz, 3 minutes au plus. */
 export const VIDEO_AUDIO_TAUX = 16_000;
+/**
+ * Corps JSON d'une vidéo jointe (images en base64, son PCM 16 bits en base64), au plus : de quoi
+ * porter 40 images de 1 Mo et 3 minutes de son, plus 64 Ko pour le reste.
+ */
+export const VIDEO_JOINTE_JSON_MAX =
+  IMAGES_CLES_MAX * (Math.ceil((IMAGE_CLE_TAILLE_MAX * 4) / 3) + 64) + Math.ceil((VIDEO_DUREE_MAX_S * VIDEO_AUDIO_TAUX * 2 * 4) / 3) + 64 * 1024;
 /** Whisper reçoit le son par morceaux de cette durée (il travaille sur 30 s au plus). */
 export const MORCEAU_AUDIO_S = 20;
 

@@ -2,7 +2,9 @@ import { ArrowUp, ImagePlus, Square, Sparkles, X } from 'lucide-react';
 import { useEffect, useRef, useState, type ChangeEvent, type DragEvent, type KeyboardEvent } from 'react';
 import { Button } from '@/components/ui/button';
 import { setComposerDraftTarget } from '@/lib/composerDraft';
-import type { ChatAttachmentInput } from '../../../shared/ipc';
+import { VIDEO_JOINTE_MIME, type ChatAttachmentInput } from '../../../shared/ipc';
+import { QUESTION_VIDEO_PAR_DEFAUT } from '@jarvis/core';
+import { estVideo, lireVideoPourLesYeux, VIDEO_TYPES } from './yeux/videoYeux';
 
 /** Photo choisie, pas encore envoyée : octets en base64 pour le processus principal, aperçu pour l'écran. */
 export interface PendingAttachment extends ChatAttachmentInput {
@@ -27,6 +29,9 @@ export function Composer({ busy, onSend, onCancel }: ComposerProps) {
   const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
   const [notice, setNotice] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
+  // Les yeux (Jarvis Test) : une vidéo jointe n'est proposée que si les yeux sont allumés.
+  const [videoPossible, setVideoPossible] = useState(false);
+  const [lectureVideo, setLectureVideo] = useState<string | null>(null);
   const textarea = useRef<HTMLTextAreaElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
@@ -57,19 +62,33 @@ export function Composer({ busy, onSend, onCancel }: ComposerProps) {
   }, []);
 
   useEffect(() => {
+    let vivant = true;
+    void window.jarvis.yeux
+      ?.disponible()
+      .then((oui: unknown) => {
+        if (vivant) setVideoPossible(oui === true);
+      })
+      .catch(() => undefined);
+    return () => {
+      vivant = false;
+    };
+  }, []);
+
+  useEffect(() => {
     if (!notice) return;
     const timer = window.setTimeout(() => setNotice(null), 6000);
     return () => window.clearTimeout(timer);
   }, [notice]);
 
-  const canSend = value.trim().length > 0 || attachments.length > 0;
+  const aUneVideo = attachments.some((item) => item.mime === VIDEO_JOINTE_MIME);
+  const canSend = !lectureVideo && (value.trim().length > 0 || attachments.length > 0);
 
   const submit = (): void => {
     if (busy || !canSend) return;
-    const text = value.trim() || (attachments.length ? 'Voici une photo.' : '');
+    const text = value.trim() || (aUneVideo ? QUESTION_VIDEO_PAR_DEFAUT : attachments.length ? 'Voici une photo.' : '');
     onSend(
       text,
-      attachments.map(({ name, mime, dataBase64 }) => ({ name, mime, dataBase64 })),
+      attachments.map(({ name, mime, dataBase64, video }) => ({ name, mime, dataBase64, ...(video ? { video } : {}) })),
     );
     setValue('');
     setAttachments([]);
@@ -86,6 +105,41 @@ export function Composer({ busy, onSend, onCancel }: ComposerProps) {
     const list = Array.from(files);
     const next: PendingAttachment[] = [];
     for (const file of list) {
+      if (estVideo(file)) {
+        if (!videoPossible) {
+          setNotice('Les vidéos demandent les yeux de Jarvis (Jarvis Test, écran « Yeux »).');
+          continue;
+        }
+        if (attachments.length || next.length || list.length > 1) {
+          setNotice('Une vidéo part seule : retire les autres pièces jointes.');
+          continue;
+        }
+        setLectureVideo('Je lis la vidéo…');
+        try {
+          const lue = await lireVideoPourLesYeux(file, setLectureVideo);
+          next.push({
+            id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            name: file.name,
+            mime: VIDEO_JOINTE_MIME,
+            dataBase64: lue.apercuBase64,
+            video: lue.video,
+            previewUrl: `data:image/jpeg;base64,${lue.apercuBase64}`,
+            size: file.size,
+          });
+          setNotice(
+            `Vidéo prête : ${lue.video.images.length} images clés${lue.video.audioPcm16Base64 ? ', avec le son' : ', sans son'}${lue.video.tronquee ? ' (3 premières minutes)' : ''}.`,
+          );
+        } catch (error) {
+          setNotice(`Je n’arrive pas à lire « ${file.name} » : ${error instanceof Error ? error.message : String(error)}.`);
+        } finally {
+          setLectureVideo(null);
+        }
+        continue;
+      }
+      if (aUneVideo) {
+        setNotice('Une vidéo part seule : retire-la pour joindre une photo.');
+        break;
+      }
       if (attachments.length + next.length >= MAX_ATTACHMENTS) {
         setNotice(`Au plus ${MAX_ATTACHMENTS} photos par message.`);
         break;
@@ -134,12 +188,12 @@ export function Composer({ busy, onSend, onCancel }: ComposerProps) {
               className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.04] py-1 pr-1 pl-1 text-xs text-slate-200"
             >
               <img src={attachment.previewUrl} alt="" className="size-9 rounded-md object-cover" />
-              <span className="max-w-[160px] truncate">{attachment.name}</span>
+              <span className="max-w-[160px] truncate">{attachment.mime === VIDEO_JOINTE_MIME ? `🎬 ${attachment.name}` : attachment.name}</span>
               <button
                 type="button"
                 className="rounded-md p-1 text-slate-400 hover:bg-white/10 hover:text-slate-100"
                 onClick={() => setAttachments((current) => current.filter((item) => item.id !== attachment.id))}
-                title="Retirer cette photo"
+                title={attachment.mime === VIDEO_JOINTE_MIME ? 'Retirer cette vidéo' : 'Retirer cette photo'}
               >
                 <X className="size-3.5" />
               </button>
@@ -163,19 +217,32 @@ export function Composer({ busy, onSend, onCancel }: ComposerProps) {
           value={value}
           onChange={(event) => setValue(event.target.value)}
           onKeyDown={onKeyDown}
-          placeholder={attachments.length ? 'Que faire avec cette photo ? (ex. « fais-en un sticker »)' : 'Demande quelque chose à Jarvis…'}
+          placeholder={
+            aUneVideo
+              ? 'Ta question sur la vidéo ? (vide : « résume cette vidéo »)'
+              : attachments.length
+                ? 'Que faire avec cette photo ? (ex. « fais-en un sticker »)'
+                : 'Demande quelque chose à Jarvis…'
+          }
         />
         <div className="composer-meta">
-          <span>{notice ?? 'Entrée pour envoyer · Maj + Entrée pour une nouvelle ligne · glisse une photo ici'}</span>
+          <span>{lectureVideo ?? notice ?? `Entrée pour envoyer · Maj + Entrée pour une nouvelle ligne · glisse une photo${videoPossible ? ' ou une vidéo' : ''} ici`}</span>
           {busy ? <span className="composer-thinking">Jarvis réfléchit…</span> : null}
         </div>
-        <input ref={fileInput} type="file" accept="image/png,image/jpeg,image/webp" multiple hidden onChange={onPick} />
+        <input
+          ref={fileInput}
+          type="file"
+          accept={`image/png,image/jpeg,image/webp${videoPossible ? `,${VIDEO_TYPES.join(',')}` : ''}`}
+          multiple
+          hidden
+          onChange={onPick}
+        />
         <Button
           variant="subtle"
           size="icon"
           onClick={() => fileInput.current?.click()}
-          disabled={busy || attachments.length >= MAX_ATTACHMENTS}
-          title="Joindre une photo (Jarvis s’en servira comme point de départ d’une image)"
+          disabled={busy || Boolean(lectureVideo) || aUneVideo || attachments.length >= MAX_ATTACHMENTS}
+          title={videoPossible ? 'Joindre une photo ou une vidéo' : 'Joindre une photo (Jarvis s’en servira comme point de départ d’une image)'}
         >
           <ImagePlus className="size-4" />
         </Button>

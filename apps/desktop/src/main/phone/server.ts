@@ -11,6 +11,7 @@ import {
   speechTextForSpeaker,
   typeDesOctets,
   YEUX_IMAGE_MAX,
+  VIDEO_JOINTE_JSON_MAX,
   type Conversation,
 } from '@jarvis/core';
 import type { ChatEvent, SendChatInput, TeamValidationInput } from '../../shared/ipc.js';
@@ -55,6 +56,11 @@ export interface PhoneServerDeps {
    * gardée en mémoire). `photoYeux` : une photo de Jarvis à afficher sur le téléphone. Absents : 404.
    */
   recevoirPhoto?: (photo: { octets: Uint8Array; type: 'image/jpeg' | 'image/png'; appareil: string }) => Promise<{ ok: true } | { ok: false; error: string }>;
+  /**
+   * Les yeux, point 4 : vidéo choisie avec « Montrer à Jarvis ». Safari en a tiré les images clés et le
+   * son (JSON, vérifié par `lireVideoJointe`) ; le fichier vidéo lui-même ne quitte jamais l'iPhone.
+   */
+  recevoirVideo?: (video: unknown, appareil: string) => Promise<{ ok: true } | { ok: false; error: string }>;
   photoYeux?: (photoId: string) => { type: string; data: Uint8Array } | null;
   log?: (line: string) => void;
   now?: () => number;
@@ -75,6 +81,8 @@ const PAGE_POLICY = [
   "script-src 'self'",
   "style-src 'self'",
   "img-src 'self' blob:",
+  // Les yeux, point 4 : la vidéo choisie est lue par la page depuis un objet local (jamais une adresse).
+  "media-src blob:",
   "connect-src 'self'",
   "manifest-src 'self'",
   "base-uri 'none'",
@@ -107,7 +115,7 @@ function sendJson(res: ServerResponse, status: number, body: unknown): void {
   res.end(JSON.stringify(body));
 }
 
-async function readJson(req: IncomingMessage): Promise<unknown> {
+async function readJson(req: IncomingMessage, max = MAX_BODY): Promise<unknown> {
   const type = String(req.headers['content-type'] ?? '');
   // JSON obligatoire : une page d'un autre site ne peut pas l'envoyer sans autorisation préalable (CORS).
   if (!/^application\/json\b/i.test(type)) throw new HttpError(415, 'Format attendu : JSON.');
@@ -116,7 +124,7 @@ async function readJson(req: IncomingMessage): Promise<unknown> {
   for await (const chunk of req) {
     const buffer = chunk as Buffer;
     size += buffer.length;
-    if (size > MAX_BODY) throw new HttpError(413, 'Message trop long.');
+    if (size > max) throw new HttpError(413, max > MAX_BODY ? 'Vidéo trop lourde.' : 'Message trop long.');
     chunks.push(buffer);
   }
   try {
@@ -299,6 +307,16 @@ export class PhoneServer {
       const result = await this.deps.recevoirPhoto({ ...photo, appareil: device.name });
       if (!result.ok) throw new HttpError(400, result.error);
       this.deps.log?.(`[téléphone] photo reçue de ${device.name} (${photo.octets.byteLength} octets)`);
+      return sendJson(res, 200, { ok: true });
+    }
+    if (path === '/api/oeil/video' && method === 'POST') {
+      if (!this.deps.recevoirVideo) throw new HttpError(404, 'Introuvable.');
+      if (Number(req.headers['content-length'] ?? '0') > VIDEO_JOINTE_JSON_MAX) throw new HttpError(413, 'Vidéo trop lourde.');
+      const video = await readJson(req, VIDEO_JOINTE_JSON_MAX);
+      const result = await this.deps.recevoirVideo(video, device.name);
+      if (!result.ok) throw new HttpError(400, result.error);
+      const images = Array.isArray((video as { images?: unknown })?.images) ? (video as { images: unknown[] }).images.length : 0;
+      this.deps.log?.(`[téléphone] vidéo reçue de ${device.name} (${images} images clés)`);
       return sendJson(res, 200, { ok: true });
     }
     if (path.startsWith('/api/oeil/image/') && method === 'GET') {

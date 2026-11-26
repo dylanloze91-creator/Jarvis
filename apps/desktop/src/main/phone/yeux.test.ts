@@ -3,6 +3,7 @@ import { request } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, afterEach, describe, expect, it } from 'vitest';
+import { VIDEO_JOINTE_JSON_MAX } from '@jarvis/core';
 import type { ChatEvent, SendChatInput } from '../../shared/ipc.js';
 import { PHONE_IMAGE_TTL_MS, PhoneServer, type PhoneChat, type PhoneSender } from './server.js';
 import { PhoneStore } from './store.js';
@@ -53,10 +54,11 @@ afterEach(async () => {
   servers = [];
 });
 
-async function setup(options: { now?: () => number } = {}) {
+async function setup(options: { now?: () => number; sansVideo?: boolean } = {}) {
   const store = new PhoneStore(() => join(dir, `phone-${Math.random().toString(36).slice(2)}.json`));
   await store.load();
   const recues: { octets: Uint8Array; type: string; appareil: string }[] = [];
+  const videos: { video: unknown; appareil: string }[] = [];
   const chat: PhoneChat = {
     send: async (sender: PhoneSender, _input: SendChatInput) => {
       sender.send('', { type: 'yeux', messageId: 'm1', photo: { photoId: 'photo-1', prisA: 1000, camera: 'Imprimante' } } as ChatEvent);
@@ -78,6 +80,16 @@ async function setup(options: { now?: () => number } = {}) {
       return { ok: true };
     },
     photoYeux: (photoId) => (photoId === 'photo-1' ? { type: 'image/jpeg', data: new Uint8Array(JPEG) } : null),
+    ...(options.sansVideo
+      ? {}
+      : {
+          recevoirVideo: async (video: unknown, appareil: string) => {
+            const images = (video as { images?: unknown[] })?.images;
+            if (!Array.isArray(images) || !images.length) return { ok: false as const, error: 'Vidéo refusée : aucune image tirée de la vidéo.' };
+            videos.push({ video, appareil });
+            return { ok: true as const };
+          },
+        }),
     ...(options.now ? { now: options.now } : {}),
   });
   await server.start(0);
@@ -88,7 +100,7 @@ async function setup(options: { now?: () => number } = {}) {
     const r = await call(port, '/api/pair', { body: JSON.stringify({ code, name: nom }), type: 'application/json' });
     return (JSON.parse(r.body.toString('utf8')) as { token: string }).token;
   };
-  return { port, recues, relier };
+  return { port, recues, videos, relier };
 }
 
 async function lienDeLaPhoto(port: number, token: string): Promise<{ image: string; prisA: number; camera: string; type: string }> {
@@ -102,6 +114,49 @@ async function lienDeLaPhoto(port: number, token: string): Promise<{ image: stri
 }
 
 describe('les yeux sur le téléphone', () => {
+  it('« Montrer à Jarvis » avec une vidéo : images clés en JSON, jeton exigé, refus dits, taille bornée', async () => {
+    const { port, videos, relier } = await setup();
+    const video = { nom: 'essai.mov', duree: 12, tronquee: false, images: [{ t: 0, jpegBase64: JPEG.toString('base64') }] };
+    expect((await call(port, '/api/oeil/video', { body: JSON.stringify(video), type: 'application/json' })).status).toBe(401);
+    const token = await relier('iPhone');
+    // Le fichier vidéo lui-même n'est jamais accepté : seulement le JSON des images clés.
+    expect((await call(port, '/api/oeil/video', { token, body: Buffer.alloc(2000), type: 'video/quicktime' })).status).toBe(415);
+    const refus = await call(port, '/api/oeil/video', { token, body: JSON.stringify({ ...video, images: [] }), type: 'application/json' });
+    expect(refus.status).toBe(400);
+    expect(refus.body.toString('utf8')).toContain('aucune image');
+    const ok = await call(port, '/api/oeil/video', { token, body: JSON.stringify(video), type: 'application/json' });
+    expect(ok.status).toBe(200);
+    expect(videos).toEqual([{ video, appareil: 'iPhone' }]);
+  });
+
+  it('vidéo : 404 quand les yeux ne la prennent pas, 413 au-delà de la taille annoncée', async () => {
+    const sans = await setup({ sansVideo: true });
+    const t1 = await sans.relier('iPhone');
+    expect((await call(sans.port, '/api/oeil/video', { token: t1, body: '{}', type: 'application/json' })).status).toBe(404);
+    const avec = await setup();
+    const t2 = await avec.relier('iPhone');
+    const r = await new Promise<number>((resolve, reject) => {
+      const req = request(
+        {
+          host: '127.0.0.1',
+          port: avec.port,
+          path: '/api/oeil/video',
+          method: 'POST',
+          headers: { Host: 'pc.tail1a2b.ts.net', 'Content-Type': 'application/json', Authorization: `Bearer ${t2}`, 'Content-Length': String(VIDEO_JOINTE_JSON_MAX + 1) },
+        },
+        (res) => {
+          res.resume();
+          resolve(res.statusCode ?? 0);
+        },
+      );
+      req.on('error', () => resolve(413));
+      req.end();
+      void reject;
+    });
+    expect(r).toBe(413);
+    expect(avec.videos).toHaveLength(0);
+  });
+
   it('« Montrer à Jarvis » : photo acceptée seulement avec le jeton, image seulement, 5 Mo au plus', async () => {
     const { port, recues, relier } = await setup();
     expect((await call(port, '/api/oeil/photo', { body: JPEG, type: 'image/jpeg' })).status).toBe(401);
@@ -154,6 +209,9 @@ describe('les yeux sur le téléphone', () => {
     expect(politique).not.toMatch(/img-src[^;]*(https?:|data:|\*)/);
     const script = (await call(port, '/app.js')).body.toString('utf8');
     expect(script).toContain("indexOf('/api/oeil/image/') !== 0");
-    expect(page.body.toString('utf8')).toContain('capture="environment"');
+    // Photo ou vidéo : sans « capture », l'iPhone propose la photothèque, l'appareil photo ou les fichiers.
+    expect(page.body.toString('utf8')).toContain('accept="image/*,video/*"');
+    expect(politique).toContain('media-src blob:');
+    expect(politique).not.toMatch(/media-src[^;]*(https?:|data:|\*|'self')/);
   });
 });

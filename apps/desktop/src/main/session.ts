@@ -378,6 +378,9 @@ function endsWithQuestion(messages: readonly ChatMessage[]): boolean {
   return false;
 }
 
+/** Refus écrit pour l'utilisateur : le message d'erreur de la discussion le dit tel quel. */
+class MessageRefuse extends Error {}
+
 export class ChatSession {
   private readonly pendingConfirmations = new Map<string, (approved: boolean) => void>();
   private controller: AbortController | null = null;
@@ -1084,12 +1087,13 @@ export class ChatSession {
       }
     }
     emit({ type: 'done', conversationId: updated.id, messages: updated.messages });
-    } catch {
+    } catch (error) {
       if (this.controller === controller) this.controller = null;
       if (superseded()) return;
       emit({
         type: 'error',
-        message: "Le message n'a pas pu être envoyé. Réessaie dans un instant.",
+        // Un refus écrit pour l'utilisateur (vidéo refusée et pourquoi) est dit tel quel.
+        message: error instanceof MessageRefuse ? error.message : "Le message n'a pas pu être envoyé. Réessaie dans un instant.",
       });
       emit({ type: 'done', conversationId, messages: [] });
     }
@@ -1296,8 +1300,8 @@ export class ChatSession {
     const video = list.find((item) => item.mime === VIDEO_JOINTE_MIME);
     if (video) {
       const r = this.deps.regarder?.garderVideoJointe?.(video.video) ?? null;
-      if (!r) throw new Error('Les vidéos jointes demandent les yeux de Jarvis Test (écran « Yeux »).');
-      if ('erreur' in r) throw new Error(`Vidéo refusée : ${r.erreur}.`);
+      if (!r) throw new MessageRefuse('Les vidéos jointes demandent les yeux de Jarvis Test (écran « Yeux »).');
+      if ('erreur' in r) throw new MessageRefuse(`Vidéo refusée : ${r.erreur}.`);
       return r;
     }
     if (!list.length || !this.deps.regarder || !photoPourLesYeux(input.text)) return null;

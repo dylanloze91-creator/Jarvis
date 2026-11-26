@@ -65,7 +65,7 @@ export const PHONE_HTML = String.raw`<!doctype html>
   <form id="composer" class="composer" autocomplete="off">
     <button id="mic" type="button" class="icon mic" aria-label="Parler">🎤</button>
     <button id="eye" type="button" class="icon" aria-label="Montrer à Jarvis">📷</button>
-    <input id="eye-file" type="file" accept="image/*" capture="environment" hidden>
+    <input id="eye-file" type="file" accept="image/*,video/*" hidden>
     <textarea id="input" rows="1" placeholder="Demande à Jarvis…" enterkeyhint="send"></textarea>
     <button id="send" type="submit" class="send" aria-label="Envoyer">➤</button>
   </form>
@@ -811,6 +811,203 @@ export const PHONE_JS = String.raw`(function () {
       });
   }
 
+  // Les yeux, point 4 : une vidéo choisie avec « Montrer à Jarvis ». Safari en tire une petite image
+  // par seconde, garde les images clés (mêmes règles que le PC : une toutes les 2 à 5 s, plus tôt quand
+  // l'image change, 40 au plus, 3 minutes au plus) et le son en 16 kHz. Le fichier reste sur l'iPhone.
+  var VIDEO_MAX_S = 180;
+  var VIDEO_MAX_OCTETS = 200 * 1024 * 1024;
+  function waitFor(target, name, ms) {
+    return new Promise(function (resolve, reject) {
+      var timer = setTimeout(function () { done(new Error('la vidéo ne répond pas')); }, ms);
+      function ok() { done(); }
+      function ko() { done(new Error('vidéo illisible')); }
+      function done(error) {
+        clearTimeout(timer);
+        target.removeEventListener(name, ok);
+        target.removeEventListener('error', ko);
+        if (error) reject(error); else resolve();
+      }
+      target.addEventListener(name, ok);
+      target.addEventListener('error', ko);
+    });
+  }
+  function toBase64(bytes) {
+    var out = '';
+    for (var i = 0; i < bytes.length; i += 0x8000) out += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    return btoa(out);
+  }
+  function jpegBase64(canvas) {
+    var qualities = [0.7, 0.55, 0.4];
+    function attempt(k) {
+      return new Promise(function (resolve) { canvas.toBlob(resolve, 'image/jpeg', qualities[k]); }).then(function (blob) {
+        if (blob && blob.size <= 1024 * 1024) return blob.arrayBuffer().then(function (b) { return toBase64(new Uint8Array(b)); });
+        if (k + 1 < qualities.length) return attempt(k + 1);
+        throw new Error('image trop lourde');
+      });
+    }
+    return attempt(0);
+  }
+  function grayDistance(a, b) {
+    var sum = 0;
+    for (var i = 0; i < a.length; i++) sum += Math.abs(a[i] - b[i]);
+    return sum / a.length / 255;
+  }
+  function pickKeyFrames(samples) {
+    var chosen = [0];
+    var last = samples[0];
+    for (var i = 1; i < samples.length; i++) {
+      var gap = samples[i].t - last.t;
+      if (gap < 2) continue;
+      if (gap >= 5 || grayDistance(samples[i].gray, last.gray) >= 0.12) { chosen.push(i); last = samples[i]; }
+    }
+    if (chosen.length <= 40) return chosen;
+    var out = [];
+    for (var k = 0; k < 40; k++) {
+      var index = chosen[Math.round((k * (chosen.length - 1)) / 39)];
+      if (out.indexOf(index) < 0) out.push(index);
+    }
+    return out;
+  }
+  function soundOf(file, seconds) {
+    var Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return Promise.resolve(null);
+    var ctx = new Ctx();
+    return file.arrayBuffer()
+      .then(function (buffer) {
+        return new Promise(function (resolve, reject) { ctx.decodeAudioData(buffer, resolve, reject); });
+      })
+      .then(function (decoded) {
+        // Mono puis 16 kHz, par interpolation linéaire (sans OfflineAudioContext, inégal selon les iOS).
+        var rate = decoded.sampleRate;
+        var n = Math.max(1, Math.floor(Math.min(decoded.duration, seconds) * 16000));
+        var channels = [];
+        for (var c = 0; c < decoded.numberOfChannels; c++) channels.push(decoded.getChannelData(c));
+        var pcm = new Uint8Array(n * 2);
+        var view = new DataView(pcm.buffer);
+        var loud = 0;
+        for (var i = 0; i < n; i++) {
+          var pos = (i * rate) / 16000;
+          var j = Math.floor(pos);
+          var f = pos - j;
+          var v = 0;
+          for (var c2 = 0; c2 < channels.length; c2++) {
+            var ch = channels[c2];
+            var a = ch[j] || 0;
+            var b = ch[j + 1] === undefined ? a : ch[j + 1];
+            v += a + (b - a) * f;
+          }
+          v = Math.max(-1, Math.min(1, v / channels.length));
+          if (Math.abs(v) > loud) loud = Math.abs(v);
+          view.setInt16(i * 2, Math.round(v < 0 ? v * 32768 : v * 32767), true);
+        }
+        return loud > 0.0001 ? toBase64(pcm) : null;
+      })
+      .catch(function () { return null; })
+      .then(function (result) {
+        try { ctx.close(); } catch (e) { /* rien */ }
+        return result;
+      });
+  }
+  function readVideo(file, progress) {
+    if (file.size > VIDEO_MAX_OCTETS) return Promise.reject(new Error('vidéo de plus de 200 Mo'));
+    var url = URL.createObjectURL(file);
+    var player = document.createElement('video');
+    player.muted = true;
+    player.playsInline = true;
+    player.setAttribute('playsinline', '');
+    player.preload = 'auto';
+    player.src = url;
+    var small = document.createElement('canvas');
+    small.width = 32;
+    small.height = 18;
+    var big = document.createElement('canvas');
+    var samples = [];
+    var images = [];
+    var duration = 0;
+    function finish() {
+      player.removeAttribute('src');
+      player.load();
+      URL.revokeObjectURL(url);
+    }
+    return waitFor(player, 'loadeddata', 20000)
+      .then(function () {
+        duration = player.duration;
+        if (!isFinite(duration) || duration <= 0) throw new Error('durée de la vidéo inconnue');
+        var scale = Math.min(1, 768 / Math.max(player.videoWidth || 640, player.videoHeight || 360));
+        big.width = Math.max(1, Math.round((player.videoWidth || 640) * scale));
+        big.height = Math.max(1, Math.round((player.videoHeight || 360) * scale));
+        var watched = Math.min(duration, VIDEO_MAX_S);
+        var times = [];
+        for (var t = 0; t < watched - 0.05; t += 1) times.push(t);
+        if (!times.length) times.push(0);
+        var chain = Promise.resolve();
+        times.forEach(function (time, i) {
+          chain = chain.then(function () {
+            progress('Je lis la vidéo : image ' + (i + 1) + ' sur ' + times.length + '…');
+            player.currentTime = time;
+            return waitFor(player, 'seeked', 10000);
+          }).then(function () {
+            var sc = small.getContext('2d');
+            sc.drawImage(player, 0, 0, 32, 18);
+            var rgba = sc.getImageData(0, 0, 32, 18).data;
+            var gray = new Uint8Array(32 * 18);
+            for (var p = 0; p < gray.length; p++) gray[p] = Math.round(0.299 * rgba[p * 4] + 0.587 * rgba[p * 4 + 1] + 0.114 * rgba[p * 4 + 2]);
+            samples.push({ t: time, gray: gray });
+            big.getContext('2d').drawImage(player, 0, 0, big.width, big.height);
+            return jpegBase64(big).then(function (b64) { images.push(b64); });
+          });
+        });
+        return chain;
+      })
+      .then(function () {
+        progress('J’écoute le son de la vidéo…');
+        return soundOf(file, Math.min(duration, VIDEO_MAX_S));
+      })
+      .then(function (sound) {
+        finish();
+        var keys = pickKeyFrames(samples).map(function (i) { return { t: samples[i].t, jpegBase64: images[i] }; });
+        var video = { nom: String(file.name || 'vidéo').slice(0, 120), duree: duration, tronquee: duration > VIDEO_MAX_S, images: keys };
+        if (sound) video.audioPcm16Base64 = sound;
+        return video;
+      }, function (error) {
+        finish();
+        throw error;
+      });
+  }
+  function showVideoToJarvis(file) {
+    var note = bubble('note', 'Je lis la vidéo…');
+    readVideo(file, function (message) { note.textContent = message; })
+      .then(function (video) {
+        note.textContent = 'Vidéo en route vers Jarvis (' + video.images.length + ' images clés' + (video.audioPcm16Base64 ? ', avec le son' : ', sans son') + ')…';
+        return fetch('/api/oeil/video', {
+          method: 'POST',
+          headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+          body: JSON.stringify(video),
+        });
+      })
+      .then(function (response) {
+        if (!response) return;
+        if (response.status === 401) {
+          forgetDevice('Ce téléphone n’est plus relié. Demande un nouveau code sur le PC.');
+          return;
+        }
+        return response.json().then(function (data) {
+          if (!response.ok) throw new Error(data.error || 'Vidéo refusée.');
+          var question = input.value.trim();
+          note.textContent = question
+            ? 'Vidéo envoyée : Jarvis la regarde (une à deux minutes).'
+            : 'Vidéo envoyée. Pose ta question (dans les 5 minutes), ou envoie « résume la vidéo ».';
+          if (question) {
+            input.value = '';
+            send(question, 'text');
+          }
+        });
+      })
+      .catch(function (error) {
+        note.textContent = 'Vidéo non envoyée : ' + (error && error.message ? error.message : 'erreur');
+      });
+  }
+
   function setBusy(value) {
     busy = value;
     sendButton.textContent = value ? '■' : '➤';
@@ -993,7 +1190,9 @@ export const PHONE_JS = String.raw`(function () {
   $('eye-file').addEventListener('change', function () {
     var file = this.files && this.files[0];
     this.value = '';
-    if (file) showToJarvis(file);
+    if (!file) return;
+    if (/^video\//.test(file.type || '') || /\.(mov|mp4|m4v|webm)$/i.test(file.name || '')) showVideoToJarvis(file);
+    else showToJarvis(file);
   });
   $('speak').addEventListener('click', function () {
     speakReplies = !speakReplies;

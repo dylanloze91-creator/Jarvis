@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it, vi } from 'vitest';
-import type { ChatEvent } from '../shared/ipc.js';
+import { VIDEO_JOINTE_MIME, type ChatEvent } from '../shared/ipc.js';
 
 /**
  * Les yeux, étape 2, point 1 : une photo et une question sur n'importe quel sujet, dans la vraie
@@ -79,6 +79,7 @@ function setup(options: { yeux?: Record<string, unknown>; edition?: boolean; hor
   const store = new core.InMemoryConversationStore();
   numero += 1;
   const regards: { question: string; octets: Uint8Array; oral: boolean }[] = [];
+  const videosVues: { question: string; images: number; son: boolean; nom: string }[] = [];
   const horloge = options.horloge;
   const yeuxPC = creerYeuxPC({
     getSettings,
@@ -92,6 +93,11 @@ function setup(options: { yeux?: Record<string, unknown>; edition?: boolean; hor
       entree.avancement?.('Je cherche « MAX98357A datasheet »…');
       return { texte: 'Un ampli MAX98357A.', vision: { description: '', texteLu: [], reponse: '', doutes: [], brute: false }, recherches: [], modeleVision: 'gemma3:4b', parLeChat: true };
     },
+    regarderVideo: async (entree) => {
+      videosVues.push({ question: entree.question, images: entree.video.images.length, son: Boolean(entree.video.audio), nom: entree.video.nom });
+      entree.avancement?.('Je regarde la vidéo : image 1 sur 2…');
+      return { texte: 'À 0:00, une carte ; à 0:05, un fil rouge.', instants: [], paroles: null, son: 'muet', modeleVision: 'gemma3:4b', parLeChat: true };
+    },
   });
   const session = new ChatSession({
     registry,
@@ -104,23 +110,81 @@ function setup(options: { yeux?: Record<string, unknown>; edition?: boolean; hor
     knowledge: { indexConversation: async () => 0 } as never,
     localLearning: { recordTurn: async () => undefined } as never,
     yeux: (input) => yeuxPC.tour(input),
-    regarder: { garderPhotoJointe: (p) => yeuxPC.garderPhotoJointe(p), regarder: (input) => yeuxPC.regarder(input) },
+    regarder: {
+      garderPhotoJointe: (p) => yeuxPC.garderPhotoJointe(p),
+      garderVideoJointe: (v) => yeuxPC.garderVideoJointe(v),
+      regarder: (input) => yeuxPC.regarder(input),
+    },
   });
   let conversationId: string | null = null;
-  const say = async (text: string, extra: { photo?: boolean; telephone?: boolean; nouvelle?: boolean } = {}) => {
+  const say = async (text: string, extra: { photo?: boolean; video?: unknown; telephone?: boolean; nouvelle?: boolean } = {}) => {
     events.length = 0;
     await session.send(sender, {
       conversationId: extra.nouvelle ? null : conversationId,
       text,
       ...(extra.photo ? { attachments: [{ name: 'carte.jpg', mime: 'image/jpeg', dataBase64: JPEG_B64 }] } : {}),
+      ...(extra.video ? { attachments: [{ name: 'essai.mp4', mime: VIDEO_JOINTE_MIME, dataBase64: JPEG_B64, video: extra.video as never }] } : {}),
       ...(extra.telephone ? { place: { kind: 'telephone' as const } } : {}),
     });
     const saved = await store.list();
     conversationId = saved[0]!.id;
     return (await store.get(conversationId))!.messages;
   };
-  return { modelCalls, say, events, yeuxPC, regards };
+  return { modelCalls, say, events, yeuxPC, regards, videosVues };
 }
+
+const VIDEO = {
+  nom: 'essai.mp4',
+  duree: 8,
+  tronquee: false,
+  images: [
+    { t: 0, jpegBase64: JPEG_B64 },
+    { t: 5, jpegBase64: JPEG_B64 },
+  ],
+  audioPcm16Base64: Buffer.from(new Uint8Array(3200)).toString('base64'),
+};
+
+describe('vidéo + question dans la fenêtre (point 4)', () => {
+  it('la vidéo va aux yeux, en mémoire seulement, sans le modèle du tour ordinaire', async () => {
+    const { modelCalls, say, events, videosVues } = setup({ yeux: { enabled: true } });
+    const avant = readdirSync(userData).length;
+    const messages = await say('que fait la personne ?', { video: VIDEO });
+    expect(videosVues).toEqual([{ question: 'que fait la personne ?', images: 2, son: true, nom: 'essai.mp4' }]);
+    expect(modelCalls).toEqual([]);
+    const [question, reponse] = messages;
+    expect(reponse!.content).toBe('À 0:00, une carte ; à 0:05, un fil rouge.');
+    expect(question!.attachments).toBeUndefined();
+    expect(question!.yeux?.camera).toBe('Vidéo jointe');
+    expect(JSON.stringify(messages)).not.toContain(JPEG_B64.slice(0, 40));
+    expect(readdirSync(userData).length).toBe(avant);
+    expect(events).toContainEqual(expect.objectContaining({ type: 'tool_start', toolName: 'regarder', summary: 'Je regarde la vidéo : image 1 sur 2…' }));
+  });
+
+  it('une vidéo mal formée est refusée et le dit ; yeux coupés : refusée aussi', async () => {
+    const a = setup({ yeux: { enabled: true } });
+    await a.say('résume', { video: { ...VIDEO, images: [] } }).catch(() => undefined);
+    expect(a.videosVues).toEqual([]);
+    expect(a.events).toContainEqual(expect.objectContaining({ type: 'error', message: expect.stringContaining('aucune image') }));
+    const b = setup({ yeux: { enabled: false } });
+    await b.say('résume', { video: VIDEO }).catch(() => undefined);
+    expect(b.videosVues).toEqual([]);
+    expect(b.events).toContainEqual(expect.objectContaining({ type: 'error', message: expect.stringContaining('yeux') }));
+  });
+});
+
+describe('vidéo sur l’iPhone (point 4)', () => {
+  it('« Montrer à Jarvis » avec une vidéo, puis la question : regardée une fois', async () => {
+    const { modelCalls, say, yeuxPC, videosVues } = setup({ yeux: { enabled: true } });
+    expect(await yeuxPC.recevoirVideoTelephone(VIDEO, 'iPhone')).toEqual({ ok: true });
+    const messages = await say('résume la vidéo', { telephone: true, nouvelle: true });
+    expect(videosVues.map((v) => v.question)).toEqual(['résume la vidéo']);
+    expect(messages.at(-1)!.content).toBe('À 0:00, une carte ; à 0:05, un fil rouge.');
+    expect(modelCalls).toEqual([]);
+    await say('Bonjour', { telephone: true });
+    expect(videosVues).toHaveLength(1);
+    expect(modelCalls).toEqual(['Bonjour']);
+  });
+});
 
 describe('photo + question dans la fenêtre', () => {
   it('la photo va aux yeux, en mémoire seulement, sans le tour ordinaire du modèle', async () => {

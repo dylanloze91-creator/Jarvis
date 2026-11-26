@@ -118,6 +118,7 @@ import { runPrinterReply } from './quotidien/printerReply.js';
 import { creerAtelierPC, dossierAtelier, lireFichierAtelier } from './atelier/atelierPC.js';
 import { creerYeuxPC } from './yeux/yeuxPC.js';
 import { creerRegarder } from './yeux/regarder.js';
+import { creerRegarderVideo } from './yeux/regarderVideo.js';
 import { YeuxStore } from './yeux/store.js';
 import { creerWebcam } from './yeux/webcam.js';
 import { ouvrirFenetreWebcam } from './yeux/webcamFenetre.js';
@@ -512,12 +513,18 @@ const yeuxPC = edition().yeux
       telephone: true,
       // Étape 2 : regarder une photo et répondre (modèle de vision, recherche web vérifiée, modèle du chat).
       regarder: creerRegarder({ getSettings: () => settings, searchRegistry }),
+      // Point 4 : une vidéo (images clés tirées par la fenêtre ou l'iPhone), son transcrit par Whisper dans la fenêtre.
+      regarderVideo: creerRegarderVideo({
+        getSettings: () => settings,
+        transcrire: (pcm) => transcribeViaRenderer({ webContents: overlay?.browserWindow.webContents ?? null, pcm }),
+      }),
     })
   : null;
 const yeuxReply = yeuxPC ? (input: { text: string; place: 'fenetre' | 'telephone' | 'enceinte' }) => yeuxPC.tour(input) : undefined;
 const regarderYeux = yeuxPC
   ? {
       garderPhotoJointe: (photo: { octets: Uint8Array; type: 'image/jpeg' | 'image/png' }) => yeuxPC.garderPhotoJointe(photo),
+      garderVideoJointe: (video: unknown) => yeuxPC.garderVideoJointe(video),
       regarder: (input: Parameters<typeof yeuxPC.regarder>[0]) => yeuxPC.regarder(input),
     }
   : undefined;
@@ -644,6 +651,8 @@ const phone = new PhoneService({
     ? {
         recevoirPhoto: (photo: { octets: Uint8Array; type: 'image/jpeg' | 'image/png'; appareil: string }) =>
           yeuxPC.recevoirPhotoTelephone(photo).then((r) => (r.ok ? { ok: true as const } : { ok: false as const, error: r.error })),
+        recevoirVideo: (video: unknown, appareil: string) =>
+          yeuxPC.recevoirVideoTelephone(video, appareil).then((r) => (r.ok ? { ok: true as const } : { ok: false as const, error: r.error })),
         photoYeux: (photoId: string) => {
           const photo = yeuxPC.photos.lire(photoId);
           return photo ? { type: photo.type, data: photo.octets } : null;
