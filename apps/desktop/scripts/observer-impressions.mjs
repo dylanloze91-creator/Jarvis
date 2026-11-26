@@ -137,6 +137,10 @@ function releve(s, meta) {
     const premiere = meta.premiereCouche ?? meta.hauteurCouche;
     totalCouches = 1 + Math.round((meta.hauteurObjet - premiere) / meta.hauteurCouche);
   }
+  // Après la fin, la buse remonte (garage) : la hauteur Z ne dit plus la couche.
+  if (sourceCouche !== 'Klipper' && couche != null && (!EN_COURS.has(ps.state) || (totalCouches != null && couche > totalCouches))) {
+    couche = null;
+  }
   return {
     etatImpression: ps.state ?? null,
     messageImpression: ps.message || null,
