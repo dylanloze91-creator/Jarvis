@@ -62,6 +62,7 @@ import {
   directMissionRequest,
   looksLikeHealthIntent,
   ATELIER_NOTE_EQUIPES,
+  masquerAtelier,
   pourAtelier,
   type AtelierEtat,
   looksLikeWrittenMissionProposal,
@@ -384,7 +385,8 @@ export class ChatSession {
     });
     const messages: ChatMessage[] = [...conversation.messages, userMessage];
     /** Copie pour le modèle : sans les tours directs, les photos devenues des notes ; `messages` (affiché, enregistré) ne change pas. */
-    const modelMessages = withAttachmentNotes(stripDirectTurns(messages));
+    // Les réponses de l'atelier 3D sont masquées : un modèle qui les lisait les imitait.
+    const modelMessages = withAttachmentNotes(stripDirectTurns([...masquerAtelier(messages)]));
 
     emit({ type: 'started', conversationId: conversation.id, message: userMessage });
 

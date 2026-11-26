@@ -16,6 +16,16 @@
 /** Facettes des cylindres et des arrondis (comme `FN = 96` de la référence). */
 export const FN = 96;
 
+/**
+ * Facettes d'un arrondi selon son rayon. 96 facettes sur un plot de 3 mm ou un coin de 0,5 mm ne
+ * servent à rien et coûtent cher à OpenSCAD : un boîtier de Raspberry Pi 5 mettait 27 s à se
+ * dessiner, 10 s ainsi (nuit du 25 novembre). L'écart avec le cercle parfait reste sous 0,02 mm,
+ * loin sous les jeux (0,25 mm au moins). Toujours un multiple de 8 : les cotes hors tout ne changent pas.
+ */
+export function facettes(rayon: number): number {
+  return rayon < 1 ? 24 : rayon < 4 ? 32 : rayon < 10 ? 48 : FN;
+}
+
 /** Boîte englobante : [xmin, xmax, ymin, ymax, zmin, zmax]. */
 export type Aabb = [number, number, number, number, number, number];
 
@@ -67,7 +77,7 @@ export function boite(x0: number, x1: number, y0: number, y1: number, z0: number
   };
   if (rr <= 0) return { scad: `translate(${v3([x0, y0, z0])}) cube(${v3([w, d, h])});`, geo };
   return {
-    scad: `translate(${v3([x0 + rr, y0 + rr, z0])}) linear_extrude(height = ${n(h)}) offset(r = ${n(rr)}, $fn = ${FN}) square([${n(w - 2 * rr)}, ${n(d - 2 * rr)}]);`,
+    scad: `translate(${v3([x0 + rr, y0 + rr, z0])}) linear_extrude(height = ${n(h)}) offset(r = ${n(rr)}, $fn = ${facettes(rr)}) square([${n(w - 2 * rr)}, ${n(d - 2 * rr)}]);`,
     geo,
   };
 }
@@ -77,7 +87,7 @@ export function cyl(cx: number, cy: number, z0: number, z1: number, r0: number, 
   if (!(z1 > z0)) throw new Error('cylindre vide');
   const R = Math.max(r0, r1);
   return {
-    scad: `translate(${v3([cx, cy, z0])}) cylinder(h = ${n(z1 - z0)}, r1 = ${n(r0)}, r2 = ${n(r1)}, $fn = ${FN});`,
+    scad: `translate(${v3([cx, cy, z0])}) cylinder(h = ${n(z1 - z0)}, r1 = ${n(r0)}, r2 = ${n(r1)}, $fn = ${facettes(R)});`,
     geo: {
       aabb: [cx - R, cx + R, cy - R, cy + R, z0, z1],
       dedansBrut(x, y, z) {
@@ -115,7 +125,7 @@ export function prisme(pts: readonly [number, number][], z0: number, z1: number)
  */
 export function tronc(cx: number, cy: number, z0: number, z1: number, w0: number, h0: number, r0: number, w1: number, h1: number, r1: number): Forme {
   const plaque = (w: number, h: number, r: number, z: number) =>
-    `translate(${v3([cx, cy, z])}) linear_extrude(height = 0.001) offset(r = ${n(r)}, $fn = ${FN}) square([${n(w - 2 * r)}, ${n(h - 2 * r)}], center = true);`;
+    `translate(${v3([cx, cy, z])}) linear_extrude(height = 0.001) offset(r = ${n(r)}, $fn = ${facettes(Math.max(r0, r1))}) square([${n(w - 2 * r)}, ${n(h - 2 * r)}], center = true);`;
   const W = Math.max(w0, w1) / 2;
   const H = Math.max(h0, h1) / 2;
   return {

@@ -118,7 +118,7 @@ describe('dans la discussion', () => {
     const progres: string[] = [];
     const r = await tourAtelier({ text: 'ESP32 DevKit essai', messages, place: 'fenetre', confirm: async () => false, progress: (m) => progres.push(m) }, d);
     expect(progres[0]).toBe('Je cherche les cotes de « ESP32 DevKit essai » sur Internet…');
-    expect(r?.texte).toMatch(/^3 cotes sur 5 trouvées sur Internet pour « ESP32 DevKit essai »\. Trous de fixation trouvés\./);
+    expect(r?.texte).toMatch(/^Sur Internet, pour « ESP32 DevKit essai », j'ai trouvé 3 des 5 cotes qu'il me faut\. Trous de fixation trouvés\./);
     expect(r?.texte).toMatch(/Internet ne m'a pas donné toutes les cotes\..*la hauteur du composant le plus haut/);
     expect(r?.etat).toMatchObject({ etape: 'mesure', champ: 'hauteur_dessus' });
     const fichier = JSON.parse(await readFile(join(racine, 'composants-cotes.json'), 'utf8'));
@@ -220,7 +220,7 @@ describe('plans des fabricants, pendant la recherche', () => {
     expect(cotes.prise_bord?.[0]?.valeur).toBe(2);
     expect(cotes.trou_diametre).toBeUndefined();
     expect(r.produit!.manquants).toEqual(['hauteur_dessus', 'hauteur_dessous']);
-    expect(r.raison).toBe('3 cotes sur 5 trouvées sur Internet pour « ESP32-S3 DevKitC-1 ». Le plan du fabricant ne montre aucun trou de fixation.');
+    expect(r.raison).toBe('Sur Internet, pour « ESP32-S3 DevKitC-1 », j\'ai trouvé 3 des 5 cotes qu\'il me faut. Le plan du fabricant ne montre aucun trou de fixation.');
     expect(r.produit!.plans).toEqual([{ url: 'https://fab.test/dl/DXF_ESP32-S3-DevKitC-1.dxf', resume: 'carte de 60 × 25 mm, aucun trou de fixation, 1 prise (USB), un module qui dépasse du bord' }]);
     expect(r.avertissements.join(' ')).toMatch(/dimensions\.pdf est un dessin sans texte : je ne sais pas en lire les cotes/);
   });
@@ -269,8 +269,8 @@ describe('l’examen, avec un faux Internet', () => {
     const q = await dire(EXAMEN);
     expect(progres).toContain('Je cherche les cotes de « ESP32-S3 DevKitC-1 » sur Internet…');
     expect(progres).toContain('Je cherche les cotes de « écran OLED 1,3 pouce I2C » sur Internet…');
-    expect(q?.texte).toMatch(/^3 cotes sur 5 trouvées sur Internet pour « ESP32-S3 DevKitC-1 »\. Le plan du fabricant ne montre aucun trou de fixation\. Plan du fabricant \(fab\.test\) : carte de 60 × 25 mm/);
-    expect(q?.texte).toMatch(/3 cotes sur 9 trouvées sur Internet pour « écran OLED 1,3 pouce I2C »\. Trous de fixation pas trouvés : il sera calé dans un cadre\./);
+    expect(q?.texte).toMatch(/^Sur Internet, pour « ESP32-S3 DevKitC-1 », j'ai trouvé 3 des 5 cotes qu'il me faut\. Le plan du fabricant ne montre aucun trou de fixation\. Plan du fabricant \(fab\.test\) : carte de 60 × 25 mm/);
+    expect(q?.texte).toMatch(/Sur Internet, pour « écran OLED 1,3 pouce I2C », j'ai trouvé 3 des 9 cotes qu'il me faut\. Trous de fixation pas trouvés : il sera calé dans un cadre\./);
     // Pas d'adresse complète dans la discussion : le site seulement.
     expect(q?.texte).not.toMatch(/https?:\/\//);
     expect(q?.etat).toMatchObject({ etape: 'mesure', composant: ESP, champ: 'hauteur_dessus' });

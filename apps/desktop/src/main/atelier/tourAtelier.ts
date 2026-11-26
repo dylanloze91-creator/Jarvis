@@ -235,7 +235,7 @@ export interface AtelierSortie {
 
 export { ATELIER_SANS_OPENSCAD };
 export const ATELIER_IMPRIMANTE_ABSENTE =
-  "Le fichier est prêt, mais l'imprimante n'est pas réglée dans Jarvis (Réglages → Services → Imprimante) : je n'envoie rien.";
+  "Le fichier est prêt, mais l'imprimante n'est pas réglée dans Jarvis (Réglages → Services → Imprimante, ou Atelier 3D) : je n'envoie rien.";
 export const ATELIER_IMPRIMANTE_MUETTE = "L'imprimante ne répond pas : je n'envoie rien.";
 export const ATELIER_FILE_ABSENTE =
   "La file d'attente n'est pas activée dans Moonraker (section [job_queue] de moonraker.conf) : je n'envoie rien.";
@@ -610,7 +610,7 @@ async function lancerSuivante(input: AtelierEntree, deps: AtelierDeps): Promise<
   if (input.place === 'enceinte') return { texte: SPEAKER_CANNOT_START };
   if (telephoneBloque(input, deps)) return { texte: PHONE_CANNOT_START };
   const imprimante = deps.imprimante();
-  if (!imprimante) return { texte: "L'imprimante n'est pas réglée dans Jarvis (Réglages → Services → Imprimante) : je ne lance rien." };
+  if (!imprimante) return { texte: "L'imprimante n'est pas réglée dans Jarvis (Réglages → Services → Imprimante, ou Atelier 3D) : je ne lance rien." };
   let file: QueueStatus;
   try {
     const statut = await imprimante.status();
