@@ -101,6 +101,9 @@ export const IpcChannel = {
   chatFacileAnswer: 'chat:facile-answer',
   chatFacileOpenFolder: 'chat:facile-open-folder',
   chatFacileOpenApp: 'chat:facile-open-app',
+  chatFacileRenfort: 'chat:facile-renfort',
+  chatFacileAppOpen: 'chat:facile-app-open',
+  chatFacileAppFolder: 'chat:facile-app-folder',
   orchestraValidateTeam: 'orchestra:validate-team',
   orchestraRouterScore: 'orchestra:router-score',
   settingsGet: 'settings:get',
@@ -953,6 +956,11 @@ export interface JarvisApi {
     facileAnswer(text: string): Promise<void>;
     facileOpenFolder(): Promise<void>;
     facileOpenApp(): Promise<void>;
+    /** Étape 3 : réponse à la carte « Claude en renfort » (jamais un appel sans ce clic). */
+    facileRenfort(choice: 'oui' | 'non' | 'arrete'): Promise<void>;
+    /** Étape 3, « Mes applis » : ouvrir une appli prête, ou son dossier. Rend un message si ça rate. */
+    facileAppOpen(id: string): Promise<{ ok: boolean; message: string }>;
+    facileAppFolder(id: string): Promise<void>;
     reloadConversationMissions(conversationId: string): Promise<void>;
   };
   orchestra: {

@@ -30,6 +30,8 @@ import {
   buildAuditEntry,
   randomId,
   type FacileHit,
+  callClaude,
+  renfortCaps,
   memoryRetrievalEnabled,
   skillLibraryEnabled,
   createDefaultMarketDataRegistry,
@@ -160,6 +162,7 @@ import { ChatMissionHub } from './chatMission/hub.js';
 import { ChatMissionSync } from './chatMission/sync.js';
 import { registerChatMissionIpc } from './chatMission/ipc.js';
 import { FacileCoordinator } from './chatMission/facile.js';
+import { facileAppsStore, readProjectFiles, renfortLedgerStore } from './chatMission/suiviStore.js';
 import { summarizeYoutubeLink } from './youtube/runtime.js';
 import { UpdateManager } from './updater.js';
 import { VoiceBridge } from './voice.js';
@@ -1919,6 +1922,22 @@ function registerIpc(): void {
         store,
         pushEvent: pushChatEvent,
         openExternal: (url) => shell.openExternal(url),
+        // Étape 3 : la liste des applis et le registre des dépenses chez Claude, hors des réglages.
+        apps: facileAppsStore(app.getPath('userData')),
+        renfort: {
+          settings: () => {
+            const r = settings.developer.renfort;
+            return {
+              enabled: settings.developer.enabled && r?.enabled === true,
+              apiKey: r?.apiKey ?? '',
+              caps: renfortCaps(r),
+              ...(r?.usdToEur !== undefined ? { usdToEur: r.usdToEur } : {}),
+            };
+          },
+          ledger: renfortLedgerStore(app.getPath('userData')),
+          caller: (apiKey) => callClaude(fetch, apiKey),
+          readFiles: readProjectFiles,
+        },
       })
     : null;
   chatMissionSync = new ChatMissionSync({

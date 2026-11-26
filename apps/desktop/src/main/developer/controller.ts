@@ -687,6 +687,15 @@ export class DeveloperController {
     return this.missions.start(kind, request, skipQuestions, projectId);
   }
 
+  /**
+   * « Claude en renfort » (Développeur facile, étape 3) : le rédacteur des fichiers de la prochaine
+   * mission. `null` : le modèle local, comme toujours. Posé par la carte après le « oui » de
+   * l'utilisateur, retiré dès que la mission est finie.
+   */
+  setMissionWriter(writer: Parameters<MissionWorkflow['setWriter']>[0]): void {
+    this.missions.setWriter(writer);
+  }
+
   async answerMission(answers: string[]): Promise<DeveloperState> {
     return this.guard(true) ?? this.missions.answer(answers);
   }

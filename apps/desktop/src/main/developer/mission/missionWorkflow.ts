@@ -2251,6 +2251,13 @@ export class MissionWorkflow {
     }
   }
 
+  /** « Claude en renfort » : le rédacteur de la prochaine mission (voir `TaskHooks.writer`). `null` : le modèle local. */
+  private renfortWriter: TaskHooks['writer'] | null = null;
+
+  setWriter(writer: TaskHooks['writer'] | null): void {
+    this.renfortWriter = writer;
+  }
+
   private loopHooks(root: string, coder: string, planContext: string): TaskHooks {
     const onPhase: TaskHooks['onPhase'] = (phase, status, detail, extra) => {
       const mission = this.current;
@@ -2376,6 +2383,8 @@ export class MissionWorkflow {
                 : this.deps.verifyWebGameRuntime!(root)
           : undefined,
       onPhase,
+      // Un autre rédacteur : l'écriture passe fichier par fichier (contenu complet de chaque fichier du plan).
+      ...(this.renfortWriter ? { writer: this.renfortWriter, fileByFile: { references: [] as string[] } } : {}),
       review: async (diff, signal) => {
         const model = this.modelFor('REVIEWER');
         const id = this.open.get('review')!;

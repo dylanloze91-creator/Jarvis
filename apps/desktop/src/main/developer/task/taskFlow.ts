@@ -605,6 +605,9 @@ export class TaskRun extends TaskRunBase {
     failure?: { failures: string[]; excerpts: string[]; diagnosis: string },
   ): Promise<{ written: string[]; usage: ChatUsage; expired: boolean }> {
     const perCallMs = 8 * 60_000;
+    // « Claude en renfort » : un autre rédacteur écrit à la place du modèle local (même consigne, mêmes contrôles ensuite).
+    const writer = this.hooks.writer;
+    const complete: CodeAIProvider['complete'] = writer ? (input) => writer(input) : (input) => code.complete(input);
     const perCallTokens = 2_500;
     let expired = false;
     const planned = this.reviewed!.files.filter(
@@ -665,7 +668,7 @@ export class TaskRun extends TaskRunBase {
         this.host.log(`Écriture de ${file.path}…`);
         let text: string;
         try {
-          const reply = await code.complete({
+          const reply = await complete({
             system: fileWriteSystem(this.reviewed!, this.profile, this.manualText()),
             prompt: fileWritePrompt({
               request: this.state.request,
@@ -702,7 +705,7 @@ export class TaskRun extends TaskRunBase {
         if (levelProblem(content) && !deadline.signal.aborted) {
           this.host.log(`${file.path} : ${levelProblem(content)}. Nouvel essai.`);
           try {
-            const again = await code.complete({
+            const again = await complete({
               system: fileWriteSystem(this.reviewed!, this.profile, this.manualText()),
               prompt: `${fileWritePrompt({
                 request: this.state.request,

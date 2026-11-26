@@ -587,6 +587,56 @@ export function proposeRenfort(input: {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Un appel compté, pour le moteur (Claude écrit un fichier à la place du modèle local)
+
+/** Le plafond serait dépassé : l'appel n'a pas eu lieu. */
+export class RenfortCapError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'RenfortCapError';
+  }
+}
+
+/**
+ * Un appel à Claude, compté : plafond revérifié juste avant (avec ce que l'appel peut coûter au
+ * plus), coût réel ajouté après. La consigne et la demande passent par `redactSecrets`. Rend le
+ * texte brut : c'est le moteur qui le lit, l'écrit et le contrôle. `RenfortCapError` : plafond.
+ */
+export async function meteredClaudeCall(input: {
+  appId: string;
+  nom: string;
+  etape: string;
+  modele: ClaudeModel;
+  system: string;
+  prompt: string;
+  ledger: RenfortLedger;
+  caps: RenfortCaps;
+  caller: ClaudeCaller;
+  now: () => number;
+  usdToEur?: number;
+  signal?: AbortSignal;
+}): Promise<{ text: string; stopReason: string; appel: RenfortCall; ledger: RenfortLedger }> {
+  const taux = usdToEur(input.usdToEur);
+  const system = redactSecrets(input.system);
+  const prompt = redactSecrets(input.prompt);
+  const auPlusEur = claudeCostUsd(input.modele, { inputTokens: estimateClaudeTokens(system.length + prompt.length) + 600, outputTokens: RENFORT_MAX_OUTPUT_TOKENS }) * taux;
+  const budget = checkRenfortBudget(input.ledger, input.appId, auPlusEur, input.caps, input.now());
+  if (!budget.ok) throw new RenfortCapError(budget.phrase);
+  const reponse = await input.caller({ model: input.modele.id, system, prompt, maxTokens: RENFORT_MAX_OUTPUT_TOKENS, ...(input.signal ? { signal: input.signal } : {}) });
+  const usd = claudeCostUsd(input.modele, reponse.usage);
+  const appel: RenfortCall = {
+    quand: input.now(),
+    modele: reponse.model || input.modele.id,
+    etape: input.etape,
+    inputTokens: reponse.usage.inputTokens,
+    outputTokens: reponse.usage.outputTokens,
+    usd,
+    eur: usd * taux,
+  };
+  return { text: reponse.text, stopReason: reponse.stopReason, appel, ledger: addRenfortSpend(input.ledger, input.appId, input.nom, appel) };
+}
+
+// ---------------------------------------------------------------------------------------------
 // L'étape : un appel, compté
 
 export interface RenfortRun {

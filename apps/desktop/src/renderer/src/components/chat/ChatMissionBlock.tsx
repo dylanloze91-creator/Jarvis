@@ -1,4 +1,5 @@
 import type { ChatMissionEnvelope } from '@jarvis/core';
+import { ChatMissionAppsCard } from './ChatMissionAppsCard';
 import { ChatMissionFacileCard } from './ChatMissionFacileCard';
 import { ChatMissionProposalCard } from './ChatMissionProposalCard';
 import { ChatMissionReportCard } from './ChatMissionReportCard';
@@ -24,6 +25,25 @@ export function ChatMissionBlock({
         onAnswer={(text) => void window.jarvis.chat.facileAnswer(text)}
         onOpenFolder={() => void window.jarvis.chat.facileOpenFolder()}
         onOpenApp={() => void window.jarvis.chat.facileOpenApp()}
+        onRenfort={(choice) => void window.jarvis.chat.facileRenfort(choice)}
+      />
+    );
+  }
+  if (envelope.kind === 'facile-applis') {
+    return (
+      <ChatMissionAppsCard
+        data={envelope.data}
+        onOpen={(id) => window.jarvis.chat.facileAppOpen(id)}
+        onFolder={(id) => void window.jarvis.chat.facileAppFolder(id)}
+        onContinue={(draft) => {
+          const composer = document.querySelector<HTMLTextAreaElement>('[data-composer-input]');
+          if (composer) {
+            composer.value = draft;
+            composer.dispatchEvent(new Event('input', { bubbles: true }));
+            composer.focus();
+            composer.setSelectionRange(draft.length, draft.length);
+          }
+        }}
       />
     );
   }

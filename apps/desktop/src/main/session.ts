@@ -627,10 +627,16 @@ export class ChatSession {
       facile && creationHub?.enabled() && !attachments.length && !briefingText && !notesText && !routineText
         ? detectCreationRequest(input.text)
         : null;
+    // Étape 3 : « où en est mon appli ? », « mes applis », « passe à Claude pour cette étape » :
+    // règles sans modèle, lues dans l'état réel de la création. `null` : la phrase suit son chemin.
+    const suiviReply =
+      facile && creationHub?.enabled() && !creationAsked && !attachments.length && !briefingText && !notesText && !routineText
+        ? await facile.suivi(input.text, { voice: source === 'voice', speaker: input.place?.kind === 'enceinte' }).catch(() => null)
+        : null;
     const atelierCallId = randomId();
     let atelierStarted = false;
     const atelierReply =
-      !creationAsked && !briefingText && !notesText && !routineText && this.deps.atelier
+      !creationAsked && !suiviReply && !briefingText && !notesText && !routineText && this.deps.atelier
         ? await this.deps.atelier({
             text: input.text,
             messages: conversation.messages,
@@ -736,7 +742,7 @@ export class ChatSession {
       emit(routeEvent);
     }
 
-    if (creation) {
+    if (creation || suiviReply) {
       emit({ type: 'route', team: 'code', label: TEAM_SPECS.code.label, model: 'sans modèle', how: 'mission-directe' });
     }
 
@@ -761,6 +767,17 @@ export class ChatSession {
           creationHub?.unbindMissionMessage();
           emit({ type: 'mission_card', message: card });
           afterSave.push(() => facile.start(conversation.id, card.id, payload, creation));
+        };
+      }
+    } else if (suiviReply) {
+      run = fixedReply(suiviReply.text);
+      const envelope = suiviReply.envelope;
+      if (envelope) {
+        // « Mes applis » : la liste, sous la phrase, avec ses boutons.
+        appendMissionProposal = () => {
+          const card = createMessage('assistant', '', { chatMission: envelope });
+          messages.push(card);
+          emit({ type: 'mission_card', message: card });
         };
       }
     } else if (briefingText) {

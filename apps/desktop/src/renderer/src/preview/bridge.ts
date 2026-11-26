@@ -206,6 +206,9 @@ export function installPreviewBridge(): void {
       facileAnswer: async () => undefined,
       facileOpenFolder: async () => undefined,
       facileOpenApp: async () => undefined,
+      facileRenfort: async () => undefined,
+      facileAppOpen: async () => ({ ok: true, message: '' }),
+      facileAppFolder: async () => undefined,
       reloadConversationMissions: async () => undefined,
       onEvent: (listener) => {
         listeners.add(listener);

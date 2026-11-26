@@ -112,6 +112,24 @@ export function registerChatMissionIpc(ipcMain: IpcMain, deps: ChatMissionIpcDep
     if (folder) await shell.openPath(folder);
   });
 
+  // Étape 3 : la carte « Claude en renfort ». Seul ce clic peut déclencher un appel payant.
+  ipcMain.handle(IpcChannel.chatFacileRenfort, async (_event, input: unknown) => {
+    const choice = (input as { choice?: unknown } | null)?.choice;
+    if (choice !== 'oui' && choice !== 'non' && choice !== 'arrete') return;
+    await deps.facile?.()?.renfortAnswer(choice);
+  });
+  // Étape 3, « Mes applis » : seulement une appli de la liste de Jarvis, désignée par son identifiant.
+  ipcMain.handle(IpcChannel.chatFacileAppOpen, async (_event, input: unknown) => {
+    const id = (input as { id?: unknown } | null)?.id;
+    if (typeof id !== 'string' || id.length > 80) return { ok: false, message: 'Appli inconnue.' };
+    return (await deps.facile?.()?.openListedApp(id)) ?? { ok: false, message: 'Le mode Développeur est coupé.' };
+  });
+  ipcMain.handle(IpcChannel.chatFacileAppFolder, async (_event, input: unknown) => {
+    const id = (input as { id?: unknown } | null)?.id;
+    if (typeof id !== 'string' || id.length > 80) return;
+    const folder = (await deps.facile?.()?.listedApp(id))?.folder;
+    if (folder) await shell.openPath(folder);
+  });
   ipcMain.handle(IpcChannel.chatFacileOpenApp, async () => {
     // Seulement la création affichée, et seulement si elle est prête : aucun projet ne vient de la fenêtre.
     await deps.facile?.()?.openApp();

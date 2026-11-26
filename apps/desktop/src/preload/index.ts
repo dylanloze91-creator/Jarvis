@@ -51,6 +51,9 @@ const api: JarvisApi = {
     facileAnswer: (text) => ipcRenderer.invoke(IpcChannel.chatFacileAnswer, { text }),
     facileOpenFolder: () => ipcRenderer.invoke(IpcChannel.chatFacileOpenFolder),
     facileOpenApp: () => ipcRenderer.invoke(IpcChannel.chatFacileOpenApp),
+    facileRenfort: (choice) => ipcRenderer.invoke(IpcChannel.chatFacileRenfort, { choice }),
+    facileAppOpen: (id) => ipcRenderer.invoke(IpcChannel.chatFacileAppOpen, { id }),
+    facileAppFolder: (id) => ipcRenderer.invoke(IpcChannel.chatFacileAppFolder, { id }),
     reloadConversationMissions: (conversationId: string) =>
       ipcRenderer.invoke(IpcChannel.chatMissionReload, conversationId),
     onEvent: (listener) => {

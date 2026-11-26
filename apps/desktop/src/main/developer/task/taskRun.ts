@@ -23,6 +23,7 @@ import {
   type ModelRunRecord,
 } from '@jarvis/core';
 import type { ManualPassageView } from '@jarvis/core';
+import type { ChatUsage } from '@jarvis/core';
 import type { CodeTaskState, DevStepStatus, DeveloperState } from '../../../shared/developerIpc.js';
 import type { OllamaApi } from '../models/ollamaApi.js';
 import type { Runner } from '../runner.js';
@@ -66,6 +67,13 @@ export interface TaskHooks {
    * fichier (contenu complet rendu par le modèle), avec ces fichiers en référence.
    */
   fileByFile?: { references: readonly string[]; guide?: string };
+  /**
+   * Développeur facile, étape 3 (« Claude en renfort ») : un autre rédacteur écrit le contenu des
+   * fichiers à la place du modèle local, dans l'écriture fichier par fichier. Tout le reste de la
+   * boucle ne change pas : plan, écriture par `dev_write_file` sous la règle du plan, revue du diff,
+   * essais, cartes. Absent : le modèle local écrit, comme avant.
+   */
+  writer?: (input: { system: string; prompt: string; maxTokens?: number; signal?: AbortSignal }) => Promise<{ text: string; usage?: ChatUsage }>;
   /** REVIEWER, une fois les tests verts : des points bloquants comptent comme des échecs à corriger. */
   review?: (
     diff: string,
