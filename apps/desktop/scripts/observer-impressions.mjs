@@ -379,6 +379,43 @@ export function verdictModele(texte) {
   return 'incertain';
 }
 
+// ---------------------------------------------------------------- lumière de la photo
+
+/**
+ * Image trop sombre pour juger : la moitié des pixels (photo réduite à 160 × 120, en gris) sous ce
+ * niveau (0 à 255). Fixé le 26 novembre sur les photos de la caméra de Klipper : la nuit, la médiane
+ * est entre 16 et 33 ; le soir, avec la lampe, entre 44 et 104.
+ */
+export const SEUIL_TROP_SOMBRE = 40;
+export const PHRASE_TROP_SOMBRE = 'image trop sombre, je ne peux pas juger';
+
+/** Médiane et moyenne du gris de la photo, par ffmpeg (lecture seule). `null` si ffmpeg manque. */
+export function lumierePhoto(chemin) {
+  try {
+    const brut = execFileSync('ffmpeg', ['-v', 'error', '-i', chemin, '-vf', 'scale=160:120,format=gray', '-f', 'rawvideo', '-'], {
+      maxBuffer: 1 << 20,
+      timeout: 20_000,
+      stdio: ['ignore', 'pipe', 'ignore'],
+      windowsHide: true,
+    });
+    if (!brut.length) return null;
+    const tri = Uint8Array.from(brut).sort();
+    let somme = 0;
+    for (const v of tri) somme += v;
+    return { mediane: tri[Math.floor((tri.length - 1) / 2)], moyenne: Math.round(somme / tri.length) };
+  } catch {
+    return null;
+  }
+}
+
+export const tropSombre = (lumiere) => lumiere != null && lumiere.mediane < SEUIL_TROP_SOMBRE;
+
+/** Verdict d'une photo : « trop-sombre » d'abord (sans juger), sinon ce que le modèle a dit. */
+export function verdictPhoto(entree) {
+  if (tropSombre(entree.lumiere)) return 'trop-sombre';
+  return entree.modele?.etat === 'fait' ? verdictModele(entree.modele.reponse) : null;
+}
+
 // ---------------------------------------------------------------- impressions (dossiers)
 
 const nomPropre = (fichier) =>
@@ -457,9 +494,11 @@ async function prendrePhoto(nomImp, etat, { derniere = false } = {}) {
   const maintenant = new Date();
   const nomPhoto = `photo-${pad(n, 3)}_${pad(maintenant.getHours())}-${pad(maintenant.getMinutes())}${derniere ? '_fin' : ''}.jpg`;
   let erreurPhoto = null;
+  let lumiere = null;
   try {
     const jpeg = await photoCamera();
     writeFileSync(join(dossier, 'photos', nomPhoto), jpeg);
+    lumiere = lumierePhoto(join(dossier, 'photos', nomPhoto));
   } catch (e) {
     erreurPhoto = String(e.message ?? e);
   }
@@ -469,6 +508,7 @@ async function prendrePhoto(nomImp, etat, { derniere = false } = {}) {
     erreurPhoto,
     heure: maintenant.toISOString(),
     derniere,
+    lumiere,
     ...releve(etat, imp.meta),
     modele: erreurPhoto ? null : { etat: 'en-attente' },
   };
@@ -525,7 +565,7 @@ async function analyserEnAttente() {
         try {
           const jpeg = readFileSync(join(dossier, 'photos', e.photo));
           const r = await demanderAuModele(jpeg);
-          resultat = { etat: 'fait', nom: MODELE, question: QUESTION, reponse: r.reponse, verdictLu: verdictModele(r.reponse), dureeS: r.dureeS, chargementS: r.chargementS, a: new Date().toISOString(), reservationLocale: reservee };
+          resultat = { etat: 'fait', nom: MODELE, question: QUESTION, reponse: r.reponse, verdictLu: tropSombre(e.lumiere) ? 'trop-sombre' : verdictModele(r.reponse), verdictModeleSeul: verdictModele(r.reponse), dureeS: r.dureeS, chargementS: r.chargementS, a: new Date().toISOString(), reservationLocale: reservee };
         } catch (err) {
           resultat = { etat: 'erreur', nom: MODELE, question: QUESTION, erreur: String(err.message ?? err), a: new Date().toISOString(), essais: (e.modele?.essais ?? 0) + 1 };
         } finally {
@@ -538,7 +578,7 @@ async function analyserEnAttente() {
         // relire au cas où une photo a été ajoutée pendant l'analyse
         const a_jour = lireLignes(join(dossier, 'journal.jsonl')).map((x) => (x.n === e.n ? { ...x, modele: resultat.etat === 'erreur' && resultat.essais < 3 ? { ...resultat, etat: 'en-attente' } : resultat } : x));
         reecrireJournal(dossier, a_jour);
-        log(`${nom} : photo ${e.n} → ${resultat.etat === 'fait' ? `${resultat.verdictLu} (${resultat.dureeS} s) « ${resultat.reponse.slice(0, 140).replace(/\s+/g, ' ')}… »` : `erreur : ${resultat.erreur}`}`);
+        log(`${nom} : photo ${e.n} → ${resultat.etat === 'fait' ? `${resultat.verdictLu === 'trop-sombre' ? `${PHRASE_TROP_SOMBRE} (médiane ${e.lumiere.mediane}/255 ; le modèle disait : ${resultat.verdictModeleSeul})` : resultat.verdictLu} (${resultat.dureeS} s) « ${resultat.reponse.slice(0, 140).replace(/\s+/g, ' ')}… »` : `erreur : ${resultat.erreur}`}`);
         if (resultat.etat === 'erreur') return;
       }
     }
@@ -714,16 +754,20 @@ function etiqueter(nom, rep) {
 function comparer(nom) {
   const etiquettes = lireJson(join(RACINE, nom, 'etiquettes.json'))?.photos ?? [];
   const journal = new Map(lireLignes(join(RACINE, nom, 'journal.jsonl')).map((p) => [p.n, p]));
-  const c = { photos: 0, bonnesReponses: 0, faussesAlertes: 0, defautsManques: 0, incertains: 0, nonAnalysees: 0, details: [] };
+  const c = { photos: 0, bonnesReponses: 0, faussesAlertes: 0, defautsManques: 0, incertains: 0, tropSombres: 0, nonAnalysees: 0, details: [] };
   for (const e of etiquettes) {
-    const brut = journal.get(e.n)?.modele;
+    const entree = journal.get(e.n);
+    const brut = entree?.modele;
     // Verdict relu à chaque comparaison : une règle corrigée vaut aussi pour les photos déjà prises.
-    const m = brut?.etat === 'fait' ? { ...brut, verdictLu: verdictModele(brut.reponse) } : brut;
+    const m = brut?.etat === 'fait' ? { ...brut, verdictLu: verdictPhoto(entree) } : brut;
     const defaut = e.etiquette !== 'bonne';
     let resultat;
     if (!m || m.etat !== 'fait') {
       c.nonAnalysees++;
       resultat = 'non analysée';
+    } else if (m.verdictLu === 'trop-sombre') {
+      c.tropSombres++;
+      resultat = 'trop sombre pour juger';
     } else if (m.verdictLu === 'incertain') {
       c.incertains++;
       resultat = 'incertain';
@@ -750,16 +794,16 @@ function pageResultat(nom) {
     .map((d) => `<tr><td>${d.n}</td><td>${echapper(d.etiquette)}</td><td>${echapper(d.verdictModele ?? '—')}</td><td>${echapper(d.resultat)}</td></tr>`)
     .join('');
   const corps = `<h1>Résultat</h1><div class="info">${echapper(imp.fichier)} · ${imp.jeu === 'examen' ? 'examen' : 'entraînement'}</div>
-<div class="carte">Photos étiquetées : <b>${c.photos}</b><br>Bonnes réponses de ${MODELE} : <b>${c.bonnesReponses}</b><br>Fausses alertes : <b>${c.faussesAlertes}</b><br>Défauts manqués : <b>${c.defautsManques}</b><br>Réponses incertaines : <b>${c.incertains}</b>${c.nonAnalysees ? `<br>Non analysées : <b>${c.nonAnalysees}</b>` : ''}</div>
+<div class="carte">Photos étiquetées : <b>${c.photos}</b><br>Bonnes réponses de ${MODELE} : <b>${c.bonnesReponses}</b><br>Fausses alertes : <b>${c.faussesAlertes}</b><br>Défauts manqués : <b>${c.defautsManques}</b><br>Réponses incertaines : <b>${c.incertains}</b><br>Images trop sombres pour juger : <b>${c.tropSombres}</b>${c.nonAnalysees ? `<br>Non analysées : <b>${c.nonAnalysees}</b>` : ''}</div>
 <p class="info">Le verdict du modèle est lu dans sa réponse par des règles fixes (alerte, ok, incertain). Les étiquettes viennent de tes réponses seulement.</p>
 <table><tr><th>Photo</th><th>Ton étiquette</th><th>Modèle</th><th>Résultat</th></tr>${lignes}</table><p><a href="/q/${encodeURIComponent(nom)}">Corriger mes réponses</a> · <a href="/">Toutes les impressions</a></p>`;
   return page('Résultat', corps);
 }
 
 function ecrireBilan() {
-  const lignes = ['# Bilan des yeux sur les impressions', '', `Modèle : ${MODELE}. Question : « ${QUESTION} ». Étiquettes : réponses de l'utilisateur seulement.`, ''];
+  const lignes = ['# Bilan des yeux sur les impressions', '', `Modèle : ${MODELE}. Question : « ${QUESTION} ». Étiquettes : réponses de l'utilisateur seulement. Une photo dont la médiane du gris est sous ${SEUIL_TROP_SOMBRE}/255 est « ${PHRASE_TROP_SOMBRE} ».`, ''];
   for (const jeu of ['examen', 'entrainement']) {
-    const tot = { impressions: 0, photos: 0, bonnesReponses: 0, faussesAlertes: 0, defautsManques: 0, incertains: 0, nonAnalysees: 0 };
+    const tot = { impressions: 0, photos: 0, bonnesReponses: 0, faussesAlertes: 0, defautsManques: 0, incertains: 0, tropSombres: 0, nonAnalysees: 0 };
     for (const nom of dossiersImpressions()) {
       const imp = lireJson(join(RACINE, nom, 'impression.json'));
       if (imp.jeu !== jeu || !existsSync(join(RACINE, nom, 'etiquettes.json'))) continue;
@@ -767,7 +811,7 @@ function ecrireBilan() {
       tot.impressions++;
       for (const k of Object.keys(tot)) if (k !== 'impressions') tot[k] += c[k];
     }
-    lignes.push(`## ${jeu === 'examen' ? 'Examen (jamais pour l’entraînement)' : 'Entraînement'}`, '', `| Impressions | Photos | Bonnes réponses | Fausses alertes | Défauts manqués | Incertains | Non analysées |`, '| --- | --- | --- | --- | --- | --- | --- |', `| ${tot.impressions} | ${tot.photos} | ${tot.bonnesReponses} | ${tot.faussesAlertes} | ${tot.defautsManques} | ${tot.incertains} | ${tot.nonAnalysees} |`, '');
+    lignes.push(`## ${jeu === 'examen' ? 'Examen (jamais pour l’entraînement)' : 'Entraînement'}`, '', `| Impressions | Photos | Bonnes réponses | Fausses alertes | Défauts manqués | Incertains | Trop sombres | Non analysées |`, '| --- | --- | --- | --- | --- | --- | --- | --- |', `| ${tot.impressions} | ${tot.photos} | ${tot.bonnesReponses} | ${tot.faussesAlertes} | ${tot.defautsManques} | ${tot.incertains} | ${tot.tropSombres} | ${tot.nonAnalysees} |`, '');
   }
   writeFileSync(join(RACINE, 'bilan.md'), lignes.join('\n'));
 }
@@ -869,6 +913,26 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
       ].join('\r\n'),
     );
   }
+  // Photos prises avant la règle « trop sombre » : lumière mesurée une fois, bilans refaits.
+  serveur.once('listening', () => {
+    try {
+      let mesurees = 0;
+      for (const nom of dossiersImpressions()) {
+        const dossier = join(RACINE, nom);
+        const entrees = lireLignes(join(dossier, 'journal.jsonl'));
+        if (!entrees.some((x) => x.photo && x.lumiere === undefined)) continue;
+        const a_jour = entrees.map((x) => (x.photo && x.lumiere === undefined ? (mesurees++, { ...x, lumiere: lumierePhoto(join(dossier, 'photos', x.photo)) }) : x));
+        reecrireJournal(dossier, a_jour);
+        if (existsSync(join(dossier, 'etiquettes.json'))) ecrireJson(join(dossier, 'resultat.json'), { modele: MODELE, question: QUESTION, ...comparer(nom) });
+      }
+      if (mesurees) {
+        ecrireBilan();
+        log(`lumière mesurée sur ${mesurees} photos déjà prises (règle « trop sombre », seuil ${SEUIL_TROP_SOMBRE}/255)`);
+      }
+    } catch (e) {
+      log(`mesure de la lumière des anciennes photos ratée : ${e.message ?? e}`);
+    }
+  });
   serveur.on('error', (e) => {
     if (e.code === 'EADDRINUSE') {
       log(`une veille tourne déjà (port ${PORT} pris) : celle-ci s'arrête`);
