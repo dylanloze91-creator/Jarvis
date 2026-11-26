@@ -21,6 +21,11 @@ import {
   ajouterCoteTrouvee,
   ajouterMesure,
   mesuresContredites,
+  avecCotesParDefaut,
+  composantsParDefaut,
+  direMesuresPrioritaires,
+  ajoutsDe,
+  composant,
   SOURCE_LARGE,
   siteDeSource,
   ecrireFichierCotes,
@@ -296,8 +301,16 @@ export async function tourAtelier(input: AtelierEntree, deps: AtelierDeps): Prom
   const fichierCotes = deps.cotes ?? cotesParFichier(deps.racine);
   const cotes: CotesTrouvees = await fichierCotes.lire().catch(() => ({}));
   const recherches: RecherchesCotes = await (fichierCotes.lireRecherches?.() ?? Promise.resolve({})).catch(() => ({}));
+  // Cotes par défaut des petits modules courants (ampli, micro, haut-parleur) : là où il n'y a ni
+  // mesure ni lecture ; jamais écrites dans le fichier, toujours dites « à vérifier ».
+  const utiles = (): CotesTrouvees => avecCotesParDefaut(mesures, cotes);
   const contexte = () => ({
-    mesures: fusionnerCotes(mesures, cotes, { uneSource: true }),
+    mesures: fusionnerCotes(mesures, utiles(), { uneSource: true }),
+    sansDefaut: fusionnerCotes(mesures, cotes, { uneSource: true }),
+    parDefaut: Object.entries(utiles())
+      .filter(([, champs]) => Object.values(champs).some((lues) => lues.some((l) => l.defaut)))
+      .map(([id]) => id),
+    mesuresUtilisateur: Object.keys(mesures).filter((id) => Object.keys(mesures[id] ?? {}).length > 0),
     rechercheCotes: Boolean(deps.chercherCotes),
     ...(deps.sansAutreImprimante ? { sansAutreImprimante: true } : {}),
     cherches: Object.keys(recherches),
@@ -372,6 +385,9 @@ export async function tourAtelier(input: AtelierEntree, deps: AtelierDeps): Prom
           /* le fichier n'a pas pu être écrit : les mesures restent */
         }
       }
+      // Ses mesures qui passent avant ce qu'Internet dit : c'est dit, avec les deux nombres.
+      const prioritaires = direMesuresPrioritaires(id, mesures, cotes);
+      if (prioritaires) resumes.push(prioritaires);
     }
     const resume = resumes.join(' ');
     const suite = await tourAtelier(
@@ -391,6 +407,23 @@ export async function tourAtelier(input: AtelierEntree, deps: AtelierDeps): Prom
       return { texte: "Je ne peux pas chercher sur Internet d'ici. Si tu as la pièce, dis « je la mesure »." };
     case 'rien':
       return null;
+    case 'oublierMesures': {
+      const id = decision.composant;
+      const champs = { ...(mesures[id] ?? {}) };
+      const nom = composant(id)?.nom ?? id;
+      const etat = decision.etat ? { etat: decision.etat } : {};
+      if (!fichierMesures.mettreDeCote) return { texte: "Je ne peux pas mettre tes mesures de côté d'ici.", ...etat };
+      try {
+        await fichierMesures.mettreDeCote(id, champs, `oubliées à la demande de l'utilisateur (${deps.jour()})`);
+      } catch {
+        return { texte: "Je n'ai pas pu écrire le fichier des mesures : elles restent en place.", ...etat };
+      }
+      const n = Object.keys(champs).length;
+      return {
+        texte: `C'est fait : j'ai mis de côté tes ${n} mesure${n > 1 ? 's' : ''} pour ${nom} (elles restent dans le fichier, je ne m'en sers plus). Redis-moi la pièce pour la refaire sans elles.`,
+        ...etat,
+      };
+    }
     case 'dire':
       return decision.etat ? { texte: decision.texte, etat: decision.etat } : { texte: decision.texte };
     case 'choisir':
@@ -401,7 +434,7 @@ export async function tourAtelier(input: AtelierEntree, deps: AtelierDeps): Prom
     case 'fabriquer': {
       // L'étape appelable (la même que celle du futur chef de projet) ; ici, elle devient des phrases.
       const r = await fabriquerVersion(
-        { gabarit: decision.gabarit, valeurs: decision.valeurs, ...(decision.base ? { base: decision.base } : {}), ...(decision.changement ? { changement: decision.changement } : {}), mesures, cotes },
+        { gabarit: decision.gabarit, valeurs: decision.valeurs, ...(decision.base ? { base: decision.base } : {}), ...(decision.changement ? { changement: decision.changement } : {}), mesures, cotes: utiles() },
         deps,
         (a) => {
           if (a.etape === 'dessin' || a.etape === 'images' || (a.etape === 'controle' && decision.gabarit.id === 'boitier_ecran')) input.progress?.(a.message);
@@ -440,7 +473,17 @@ export async function tourAtelier(input: AtelierEntree, deps: AtelierDeps): Prom
         }
         return { texte };
       }
-      const probleme = [r.ok ? '' : ` Attention : ${r.raison}`, ...r.avertissements.filter((a) => a.startsWith('Sans support')).map((a) => ` ${a}`)].join('');
+      // Des cotes par défaut ont servi : c'est dit dans la réponse, pas seulement dans la fiche.
+      const poses = ajoutsDe(version.valeurs)
+        .filter((a) => a.genre === 'composant' && a.composant)
+        .map((a) => a.composant!);
+      const parDefaut = composantsParDefaut(poses, mesures, utiles());
+      const defauts = parDefaut.length
+        ? voix
+          ? ` Cotes par défaut pour ${parDefaut.map((c) => c.nom).join(' et ')} : à vérifier.`
+          : ` Pour ${parDefaut.map((c) => c.nom).join(' et ')}, j'ai pris mes cotes par défaut (celles des modules les plus courants, pas les tiens) : à vérifier sur ta pièce avant d'imprimer. Pour donner les tiennes : « je veux mesurer ${parDefaut[0]!.id === 'inmp441' ? 'le micro' : parDefaut[0]!.id === 'max98357a' ? "l'ampli" : 'le haut-parleur'} ».`
+        : '';
+      const probleme = [defauts, r.ok ? '' : ` Attention : ${r.raison}`, ...r.avertissements.filter((a) => a.startsWith('Sans support')).map((a) => ` ${a}`)].join('');
       if (voix) {
         // À l'oreille : la première phrase de la fiche seulement (les vis, le ventilateur et les marges
         // restent à l'écran), et le changement quand c'en est un.

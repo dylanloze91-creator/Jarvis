@@ -15,7 +15,7 @@
  * Pur : aucune dépendance, aucun accès disque.
  */
 import type { Valeurs } from './gabarits.js';
-import { composant, geometrieCarte, produitsNommes, geometrieEcran, poserCarte, prochaineMesure, questionMesure, type CartePosee, type EcranGeometrie, type MesuresComposant, type MesuresComposants, type Paroi } from './composants.js';
+import { COTES_PAR_DEFAUT, composant, geometrieCarte, produitsNommes, geometrieEcran, poserCarte, prochaineMesure, questionMesure, type CartePosee, type EcranGeometrie, type MesuresComposant, type MesuresComposants, type Paroi } from './composants.js';
 import { AVANT_TROU, choisirVisM3, INSERT_M3, PAROI_INSERT_MIN, VIS_M3_FRAISEE, VIS_M3_PASSAGE, type VisCarte } from './visserie.js';
 
 export type GenreAjout = 'bossages' | 'plots' | 'nervure' | 'rebord' | 'emboitement' | 'composant';
@@ -666,7 +666,7 @@ function lireOp(genre: GenreAjout, s: string, avant: string): OpAjout {
 }
 
 /** Les cartes qu'on sait poser, pour les phrases. */
-const CARTES_CONNUES = 'le Raspberry Pi 5, et après mesure au pied à coulisse : l’ESP32-S3 sur sa carte à borniers, l’ampli MAX98357A et le petit écran OLED';
+const CARTES_CONNUES = 'le Raspberry Pi 5 ; après mesure au pied à coulisse ou recherche : l’ESP32-S3 sur sa carte à borniers et le petit écran OLED ; avec des cotes par défaut à vérifier : l’ampli MAX98357A et le micro INMP441';
 
 /** « ports vers l'arrière », « prises sur le côté droit », « USB à gauche » : la paroi des prises. */
 export function lirePorts(t: string): Paroi | undefined {
@@ -684,7 +684,10 @@ function lireComposant(t: string, id: string): OpAjout {
   // Les prises sont celles des cartes ; un écran n'en a pas (il est sous le couvercle).
   const ports = c.ecran ? undefined : lirePorts(t);
   if (ports) op.champs.ports = ports;
-  if (!c.carte && !c.ecran) {
+  const defaut = COTES_PAR_DEFAUT[id]?.cotes;
+  if (id === 'haut_parleur_3w_4ohm' && defaut) {
+    op.refus = `Je ne sais pas encore tenir un haut-parleur dans une boîte (il lui faut une grille et un appui). Pour lui faire de la place, compte environ ${String(defaut.longueur).replace('.', ',')} mm de diamètre et ${String(defaut.epaisseur).replace('.', ',')} mm de profondeur : ce sont des cotes par défaut pour un ${COTES_PAR_DEFAUT[id]!.modele}, à vérifier sur le tien. Tu peux déjà demander « des aérations sur le dessus » pour laisser passer le son.`;
+  } else if (!c.carte && !c.ecran) {
     op.refus = `Je sais poser les cartes (${CARTES_CONNUES}) sur leurs plots. ${majuscule(c.nom)} se tient autrement (logement et retenues pour l’écran, chariot réglable pour la caméra) : ça viendra avec le boîtier électronique.`;
   }
   return op;

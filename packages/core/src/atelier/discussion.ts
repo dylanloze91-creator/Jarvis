@@ -166,7 +166,12 @@ export type AtelierDecision =
    * Chercher sur Internet les cotes de `composant`, pour le produit dit par l'utilisateur (référence,
    * ou lien), puis relire `reprise.texte` avec `reprise.piece` et les cotes trouvées.
    */
-  | { kind: 'chercherCotes'; recherches: { composant: string; produit: string }[]; reprise: { texte: string; piece: Extract<AtelierEtat, { etape: 'piece' }> | null } };
+  | { kind: 'chercherCotes'; recherches: { composant: string; produit: string }[]; reprise: { texte: string; piece: Extract<AtelierEtat, { etape: 'piece' }> | null } }
+  /**
+   * « oublie mes mesures de l'ESP32 » : le PC met de côté les mesures de l'utilisateur pour ce
+   * composant (gardées dans le fichier, plus utilisées), puis le dit.
+   */
+  | { kind: 'oublierMesures'; composant: string; etat?: AtelierEtat };
 
 /** Ce que le PC sait en plus de la discussion : les mesures de composants données par l'utilisateur. */
 export interface ContexteAtelier {
@@ -187,7 +192,18 @@ export interface ContexteAtelier {
    * a regardé les plans des fabricants. Une autre référence dite, ou une recherche sans plans : on cherche.
    */
   produits?: Readonly<Record<string, { produit: string; plans?: boolean }>>;
+  /** Composants dont des cotes utilisées sont des cotes par défaut de l'atelier (« à vérifier »). */
+  parDefaut?: readonly string[];
+  /** Les mêmes mesures sans les cotes par défaut : ce qui est vraiment mesuré ou trouvé. */
+  sansDefaut?: MesuresComposants;
+  /** Composants pour lesquels l'utilisateur a donné des mesures (pied à coulisse). */
+  mesuresUtilisateur?: readonly string[];
 }
+
+/** Reprise après une mesure donnée d'elle-même (« je veux mesurer l'ampli ») : question suivante, ou la fin. */
+export const REPRISE_MESURES = 'atelier:suite-des-mesures:';
+const MESURER_COMPOSANT = /\b(?:je (?:veux |vais |voudrais |peux |prefere )?(?:le |la |les )?mesure[rs]?|j ai mesure|prends? mes mesures|je (?:te )?donne (?:les|mes) (?:vraies )?(?:mesures|cotes))\b/;
+const OUBLIER_MESURES = /\b(?:oublie|efface|supprime|enleve|retire|jette|vire|ignore)s? (?:toutes )?(?:mes|les) (?:anciennes |vieilles )?mesures\b/;
 
 const pli = (x: string) => plier(x).replace(/[^a-z0-9]+/g, ' ').trim();
 
@@ -979,6 +995,45 @@ function decider(text: string, precedentDonne: AtelierEtat | null, contexte: Con
     }
   }
   const precedent = depart;
+
+  // Suite des mesures données d'elles-mêmes : la question suivante, ou « c'est noté ».
+  if (text.startsWith(REPRISE_MESURES)) {
+    const c = composant(text.slice(REPRISE_MESURES.length));
+    const q = c ? prochaineMesure(c, mesures) : null;
+    const reprise = { texte: text, piece: precedent?.etape === 'piece' ? precedent : null };
+    if (c && q) return { kind: 'dire', texte: questionMesure(c, q, mesures), etat: { etape: 'mesure', composant: c.id, champ: q.champ, reprise } };
+    const fin = `C'est noté : j'ai tes mesures pour ${c?.nom ?? 'ce composant'}, elles remplacent mes cotes par défaut.`;
+    return precedent?.etape === 'piece'
+      ? { kind: 'dire', texte: `${fin} Pour refaire la pièce avec, redis-moi de le poser dans la boîte.`, etat: precedent }
+      : { kind: 'dire', texte: `${fin} Redis-moi la pièce que tu veux.` };
+  }
+  // « oublie mes mesures de l'ESP32 » : mises de côté par le PC (gardées dans le fichier).
+  if (OUBLIER_MESURES.test(t)) {
+    const c = composantNomme(t);
+    const avec = contexte.mesuresUtilisateur ?? [];
+    const etat = precedent?.etape === 'piece' ? { etat: precedent } : {};
+    if (c && avec.includes(c.id)) return { kind: 'oublierMesures', composant: c.id, ...etat };
+    if (!c && avec.length === 1) return { kind: 'oublierMesures', composant: avec[0]!, ...etat };
+    if (avec.length) {
+      return { kind: 'dire', texte: `Tu m'as donné des mesures pour : ${avec.map((id) => composant(id)?.nom ?? id).join(' ; ')}. Dis-moi lesquelles oublier, par exemple « oublie mes mesures de l'ESP32 ».`, ...etat };
+    }
+    return { kind: 'dire', texte: "Je n'ai aucune mesure de toi à oublier.", ...etat };
+  }
+  // « je veux mesurer l'ampli » : ses cotes par défaut cèdent, les questions du pied à coulisse commencent.
+  if (MESURER_COMPOSANT.test(t) && precedent?.etape !== 'mesure' && precedent?.etape !== 'produit') {
+    const c = composantNomme(t);
+    if (c && contexte.parDefaut?.includes(c.id)) {
+      const sans = contexte.sansDefaut ?? {};
+      const q = prochaineMesure(c, sans);
+      if (q) {
+        return {
+          kind: 'dire',
+          texte: `D'accord : tes mesures remplaceront mes cotes par défaut. ${questionMesure(c, q, sans)}`,
+          etat: { etape: 'mesure', composant: c.id, champ: q.champ, reprise: { texte: `${REPRISE_MESURES}${c.id}`, piece: precedent?.etape === 'piece' ? precedent : null } },
+        };
+      }
+    }
+  }
 
   // D'autres cotes proposées (la carte ne tenait pas) : « oui » les prend, « non » garde la pièce
   // d'avant. Autre chose : la phrase est lue avec la pièce d'avant, la proposition est oubliée.

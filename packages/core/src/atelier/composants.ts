@@ -205,6 +205,13 @@ const QUESTIONS_CARTE: QuestionMesure[] = [
   ...CHAMPS_PLAN,
 ];
 
+/** Haut-parleur : son encombrement seulement (il n'est pas encore tenu dans une boîte). */
+const QUESTIONS_HAUT_PARLEUR: QuestionMesure[] = [
+  { champ: 'longueur', nom: 'le diamètre du haut-parleur (ou sa longueur s’il est ovale)', ou: 'pose les becs sur les deux bords opposés du châssis', min: 10, max: 250 },
+  { champ: 'largeur', nom: 'sa largeur (le diamètre encore s’il est rond)', ou: 'même chose dans l’autre sens', min: 10, max: 250 },
+  { champ: 'epaisseur', nom: 'sa profondeur, de la face avant au dos de l’aimant', ou: 'pose-le face contre la table et mesure avec la jauge de profondeur jusqu’au dos de l’aimant', min: 2, max: 120 },
+];
+
 /** Écran à poser sous le couvercle : sa carte, sa zone visible, puis (facultatif) ses trous. */
 const QUESTIONS_ECRAN: QuestionMesure[] = [
   { champ: 'longueur', nom: 'la longueur de la carte de l’écran', ou: 'pose les becs sur les deux bords de la carte parallèles à la rangée de broches', min: 5, max: 250 },
@@ -324,7 +331,8 @@ const MOTS: Record<string, RegExp> = {
   camera_module_3_wide: /\b(?:camera(?: module)?(?: 3)?(?: (?:wide|grand angle))?)\b/,
   esp32_s3_devkitc_1_borniers: /\besp ?32\b/,
   max98357a: /\b(?:max ?98357a?|ampli(?:ficateur)?(?: i2s)?)\b/,
-  inmp441: /\b(?:inmp ?441|micro(?:phone)? i2s)\b/,
+  // « micro USB », « micro HDMI », « micro SD » sont des prises, pas le micro.
+  inmp441: /\b(?:inmp ?441|micro(?:phone)?(?: i2s)?(?! ?(?:usb|hdmi|sd|sim|b\b|onde|controleur|processeur|ordinateur|fibre|interrupteur|switch|moteur|servo)))\b/,
   oled_1_3_sh1106: /\b(?:oled|sh1106|petit ecran)\b/,
   haut_parleur_3w_4ohm: /\b(?:haut parleur|hp 3 ?w)\b/,
 };
@@ -345,12 +353,14 @@ function construire(): Composant[] {
       mots: MOTS[id] ?? /$^/,
     };
     if (id === 'raspberry_pi_5') comp.carte = () => pi5();
-    else if (['esp32_s3_devkitc_1_borniers', 'max98357a'].includes(id)) {
+    else if (['esp32_s3_devkitc_1_borniers', 'max98357a', 'inmp441'].includes(id)) {
       comp.carte = carteMesuree;
       comp.aMesurer = QUESTIONS_CARTE;
     } else if (id === 'oled_1_3_sh1106') {
       comp.ecran = ecranMesure;
       comp.aMesurer = QUESTIONS_ECRAN;
+    } else if (id === 'haut_parleur_3w_4ohm') {
+      comp.aMesurer = QUESTIONS_HAUT_PARLEUR;
     } else if (comp.etat === 'a_mesurer') {
       comp.aMesurer = QUESTIONS_CARTE.slice(0, 3);
     }
@@ -526,6 +536,34 @@ export function mesuresContredites(id: string, mesures: MesuresComposants, cotes
   return out;
 }
 
+/**
+ * Les mesures de l'utilisateur qui **passent avant** ce qu'Internet dit (demande du 26 novembre : le
+ * dire dans la réponse) : une cote trouvée différente de plus de 0,25 mm, que la mesure remplace.
+ * Celles que `mesuresContredites` met de côté (cote sûre, plus de 1 mm d'écart) n'y sont pas.
+ */
+export function mesuresPrioritaires(id: string, mesures: MesuresComposants, cotes: CotesTrouvees): { champ: string; nom: string; mesure: number; trouvee: number; sure: boolean }[] {
+  const c = composant(id);
+  const mises = new Set(mesuresContredites(id, mesures, cotes).map((x) => x.champ));
+  const out: { champ: string; nom: string; mesure: number; trouvee: number; sure: boolean }[] = [];
+  for (const [champ, mesure] of Object.entries(mesures[id] ?? {})) {
+    const lues = cotes[id]?.[champ];
+    if (!lues?.length || mises.has(champ)) continue;
+    const e = etatCoteTrouvee(lues);
+    if (e.defaut || e.valeur === undefined || Math.abs(e.valeur - mesure) <= CONCORDANCE_MM) continue;
+    out.push({ champ, nom: c?.aMesurer?.find((q) => q.champ === champ)?.nom ?? champ, mesure, trouvee: e.valeur, sure: e.etat === 'sur' });
+  }
+  return out;
+}
+
+/** La phrase qui le dit, ou '' s'il n'y a rien à dire. */
+export function direMesuresPrioritaires(id: string, mesures: MesuresComposants, cotes: CotesTrouvees): string {
+  const p = mesuresPrioritaires(id, mesures, cotes);
+  if (!p.length) return '';
+  const c = composant(id);
+  const liste = p.map((x) => `${x.nom} : ${fmt(x.mesure)} mm mesurés par toi, ${fmt(x.trouvee)} mm sur Internet`).join(' ; ');
+  return `Je garde tes mesures plutôt que celles d'Internet (${liste}) : c'est toi qui as la pièce en main. Si elles viennent d'une autre carte, dis « oublie mes mesures de ${c?.nom ?? 'ce composant'} ».`;
+}
+
 export function ecrireFichierMesures(mesures: MesuresComposants): string {
   return `${JSON.stringify({ version: 1, note: 'Mesures prises au pied à coulisse par l’utilisateur (atelier 3D de Jarvis).', composants: mesures }, null, 2)}\n`;
 }
@@ -550,6 +588,12 @@ export interface CoteLue {
    * se contredisent, mais reste « à vérifier » (jamais sûre, jamais une mesure).
    */
   choisie?: boolean;
+  /**
+   * Cote par défaut de l'atelier pour un module courant (`COTES_PAR_DEFAUT`) : ni mesurée, ni lue
+   * quelque part. Elle ne sert que s'il n'y a rien d'autre (une mesure, une lecture, une valeur
+   * choisie l'effacent), reste « à vérifier », et n'est jamais écrite dans le fichier des cotes.
+   */
+  defaut?: boolean;
 }
 /** Les cotes trouvées, par composant et par champ (ceux des mesures à prendre). */
 export type CotesTrouvees = Record<string, Record<string, CoteLue[]>>;
@@ -566,6 +610,8 @@ export interface EtatCoteTrouvee {
   desaccord?: number[];
   /** Valeurs de pages qui contredisent le plan du fabricant (le plan l'emporte). */
   contredite?: number[];
+  /** Vrai : la valeur est une cote par défaut de l'atelier (rien de mesuré, rien de lu). */
+  defaut?: boolean;
 }
 
 /**
@@ -597,17 +643,29 @@ export function ajouterCoteTrouvee(cotes: CotesTrouvees, id: string, champ: stri
   // Une cote lue sur une page (pas sur le plan du fabricant) doit aussi être vraisemblable : le
   // 25 novembre, une page a donné 53,7 mm de haut au-dessus d'une carte ESP32 et 4,6 mm entre deux
   // trous de fixation, gardés « à vérifier » et dits à l'utilisateur.
-  if (!lue.plan && !lue.choisie) {
+  if (!lue.plan && !lue.choisie && !lue.defaut) {
     const invraisemblable = coteInvraisemblable(c, cotes[id] ?? {}, champ, lue.valeur);
     if (invraisemblable) return { cotes, erreur: invraisemblable };
   }
-  const avant = (cotes[id]?.[champ] ?? []).filter((x) => x.source !== lue.source);
-  const nouvelle: CoteLue = { valeur: lue.valeur, source: lue.source.trim(), ...(lue.plan ? { plan: true } : {}), ...(lue.choisie ? { choisie: true } : {}) };
+  // Une vraie lecture efface la cote par défaut ; une cote par défaut ne s'ajoute pas à de vraies lectures.
+  const avant = (cotes[id]?.[champ] ?? []).filter((x) => x.source !== lue.source && !x.defaut);
+  if (lue.defaut && avant.length) return { cotes };
+  const nouvelle: CoteLue = {
+    valeur: lue.valeur,
+    source: lue.source.trim(),
+    ...(lue.plan ? { plan: true } : {}),
+    ...(lue.choisie ? { choisie: true } : {}),
+    ...(lue.defaut ? { defaut: true } : {}),
+  };
   return { cotes: { ...cotes, [id]: { ...(cotes[id] ?? {}), [champ]: [...avant, nouvelle] } } };
 }
 
 /** L'état d'une cote trouvée : sûre si deux sources différentes concordent, ou lue sur un plan du fabricant. */
-export function etatCoteTrouvee(lues: readonly CoteLue[]): EtatCoteTrouvee {
+export function etatCoteTrouvee(toutes: readonly CoteLue[]): EtatCoteTrouvee {
+  // Une cote par défaut ne compte que seule.
+  const vraies = toutes.filter((l) => !l.defaut);
+  if (!vraies.length && toutes.length) return { etat: 'incertain', valeur: toutes[0]!.valeur, sources: [toutes[0]!.source], defaut: true };
+  const lues = vraies;
   const plan = lues.find((l) => l.plan);
   if (plan) {
     const contre = lues.filter((l) => !l.plan && Math.abs(l.valeur - plan.valeur) > CONCORDANCE_MM);
@@ -665,6 +723,54 @@ export function plusGrandeSiProches(champ: string, desaccord: readonly number[] 
   return max <= Math.min(...desaccord) * 1.2 ? max : undefined;
 }
 
+/** Source d'une cote par défaut : jamais confondue avec une mesure ni avec une lecture. */
+export const SOURCE_DEFAUT = 'cote par défaut de l’atelier, à vérifier';
+
+/**
+ * Cotes par défaut des petits modules courants (demande de l'utilisateur, 26 novembre : cinq questions
+ * par composant, c'est long à la voix). Ce sont les cotes des modules les plus vendus, **pas** celles
+ * de la pièce de l'utilisateur : elles évitent les questions, sont dites « à vérifier » à chaque fois,
+ * et cèdent devant une mesure, une lecture sur Internet ou une valeur choisie.
+ *
+ * Relevé du 27 novembre 2026 (fiches des modules courants ; encombrement arrondi au-dessus) :
+ * - MAX98357A : carte d'environ 19,4 × 17,8 mm, épaisseur 1,6 mm ; 10 mm au-dessus avec le bornier à
+ *   vis du haut-parleur, 3 mm dessous (broches soudées) ;
+ * - INMP441 : petite carte ronde de 14 mm de diamètre (prise ici comme un carré de 14 mm), 1,6 mm
+ *   d'épaisseur ; 3 mm au-dessus (fils soudés), 3 mm dessous ;
+ * - haut-parleur 3 W 4 Ω : rond de 40 mm de diamètre, 20 mm de profondeur.
+ */
+export const COTES_PAR_DEFAUT: Readonly<Record<string, { modele: string; cotes: Readonly<Record<string, number>> }>> = {
+  max98357a: { modele: 'module MAX98357A courant, avec son bornier à vis', cotes: { longueur: 19.4, largeur: 17.8, epaisseur: 1.6, hauteur_dessus: 10, hauteur_dessous: 3 } },
+  inmp441: { modele: 'module INMP441 rond courant, 14 mm', cotes: { longueur: 14, largeur: 14, epaisseur: 1.6, hauteur_dessus: 3, hauteur_dessous: 3 } },
+  haut_parleur_3w_4ohm: { modele: 'haut-parleur rond courant de 40 mm', cotes: { longueur: 40, largeur: 40, epaisseur: 20 } },
+};
+
+/**
+ * Les cotes trouvées, complétées des cotes par défaut là où il n'y a ni mesure de l'utilisateur ni
+ * aucune lecture. Un composant dont l'utilisateur a déjà mesuré quelque chose n'en reçoit pas : il a
+ * la pièce en main, le reste se demande.
+ */
+export function avecCotesParDefaut(mesures: MesuresComposants, cotes: CotesTrouvees): CotesTrouvees {
+  let out = cotes;
+  for (const [id, d] of Object.entries(COTES_PAR_DEFAUT)) {
+    if (Object.keys(mesures[id] ?? {}).length) continue;
+    for (const [champ, valeur] of Object.entries(d.cotes)) {
+      if (out[id]?.[champ]?.length) continue;
+      const ajout = ajouterCoteTrouvee(out, id, champ, { valeur, source: SOURCE_DEFAUT, defaut: true });
+      if (!ajout.erreur) out = ajout.cotes;
+    }
+  }
+  return out;
+}
+
+/** Les composants de cette liste dont au moins une cote utilisée est une cote par défaut. */
+export function composantsParDefaut(ids: readonly string[], mesures: MesuresComposants, cotes: CotesTrouvees): Composant[] {
+  return [...new Set(ids)]
+    .filter((id) => Object.entries(cotes[id] ?? {}).some(([champ, lues]) => typeof mesures[id]?.[champ] !== 'number' && lues.length > 0 && lues.every((l) => l.defaut)))
+    .map((id) => composant(id))
+    .filter((c): c is Composant => Boolean(c));
+}
+
 /**
  * Les mesures à utiliser pour dessiner : celles de l'utilisateur d'abord, puis les cotes trouvées
  * **sûres**. Sans `uneSource`, une cote incertaine n'entre pas : elle reste à mesurer.
@@ -703,6 +809,10 @@ export function provenanceCotes(id: string, mesures: MesuresComposants, cotes: C
     // Ce qui n'est lu que sur un plan (bord des prises, absence de trous) : le plan est cité une fois.
     if (q.facultatif === 'plan') {
       for (const l of lues) if (l.plan) plans.add(l.source);
+      continue;
+    }
+    if (e.defaut) {
+      incertitudes.push(`${c.nom}, ${q.nom} : ${fmt(e.valeur!)} mm, cote par défaut (${COTES_PAR_DEFAUT[id]?.modele ?? 'module courant'}), pas mesurée — à vérifier sur ta pièce.`);
       continue;
     }
     if (e.valeur !== undefined && e.valeur < 0) {
@@ -768,7 +878,15 @@ export function lireRecherchesCotes(texte: string): RecherchesCotes {
   return out;
 }
 
-export function ecrireFichierCotes(cotes: CotesTrouvees, recherches: RecherchesCotes = {}): string {
+export function ecrireFichierCotes(toutes: CotesTrouvees, recherches: RecherchesCotes = {}): string {
+  // Les cotes par défaut de l'atelier ne sont pas des cotes trouvées : jamais dans le fichier.
+  const cotes: CotesTrouvees = {};
+  for (const [id, champs] of Object.entries(toutes)) {
+    for (const [champ, lues] of Object.entries(champs)) {
+      const vraies = lues.filter((l) => !l.defaut);
+      if (vraies.length) cotes[id] = { ...(cotes[id] ?? {}), [champ]: vraies };
+    }
+  }
   return `${JSON.stringify({ version: 1, note: 'Cotes de composants trouvées par Jarvis (recherche, fiches), chacune avec sa source.', cotes, recherches }, null, 2)}\n`;
 }
 

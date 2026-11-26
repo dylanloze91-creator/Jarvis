@@ -192,6 +192,55 @@ describe('atelier dans la discussion, côté PC', () => {
     expect((await dire(autre, 'mets des plots pour l’ESP32', d))?.texte).toMatch(/^Mesure 2 sur 5/);
   });
 
+  it('ampli et micro : posés sans question avec des cotes par défaut, dites « à vérifier », jamais écrites', async () => {
+    const messages: ChatMessage[] = [];
+    const d = deps();
+    await dire(messages, 'Fais-moi une boîte de 120 par 100 par 40', d);
+    const ampli = await dire(messages, 'pose l’ampli dans la boîte', d);
+    expect(ampli?.etat).toMatchObject({ etape: 'piece', versionChoisie: 2 });
+    expect(ampli?.texte).toMatch(/Pour ampli I2S MAX98357A, j'ai pris mes cotes par défaut \(celles des modules les plus courants, pas les tiens\) : à vérifier sur ta pièce avant d'imprimer\. Pour donner les tiennes : « je veux mesurer l'ampli »/);
+    const micro = await dire(messages, 'pose le micro dans la boîte', d);
+    expect(micro?.etat).toMatchObject({ etape: 'piece', versionChoisie: 3 });
+    expect(micro?.texte).toMatch(/cotes par défaut/);
+    // Rien d'inventé sur le disque : ni mesure, ni cote « trouvée ».
+    expect(existsSync(join(racine, 'composants-mesures.json'))).toBe(false);
+    expect(existsSync(join(racine, 'composants-cotes.json'))).toBe(false);
+    // À l'enceinte : une phrase courte.
+    const voix: ChatMessage[] = [];
+    await dire(voix, 'Fais-moi une boîte de 120 par 100 par 40', d, { place: 'enceinte' });
+    expect((await dire(voix, 'pose l’ampli dans la boîte', d, { place: 'enceinte' }))?.texte).toMatch(/Cotes par défaut pour ampli I2S MAX98357A : à vérifier\./);
+  });
+
+  it('haut-parleur : pas encore tenu, mais sa place par défaut est dite « à vérifier »', async () => {
+    const messages: ChatMessage[] = [];
+    const d = deps();
+    await dire(messages, 'Fais-moi une boîte de 120 par 100 par 40', d);
+    const r = await dire(messages, 'pose le haut-parleur dans la boîte', d);
+    expect(r?.texte).toMatch(/compte environ 40 mm de diamètre et 20 mm de profondeur : ce sont des cotes par défaut pour un haut-parleur rond courant de 40 mm, à vérifier sur le tien/);
+  });
+
+  it('« je veux mesurer l’ampli » : ses mesures remplacent les cotes par défaut ; « oublie mes mesures » les met de côté', async () => {
+    const messages: ChatMessage[] = [];
+    const d = deps();
+    const q1 = await dire(messages, 'je veux mesurer l’ampli', d);
+    expect(q1?.texte).toMatch(/^D'accord : tes mesures remplaceront mes cotes par défaut\. .*Mesure 1 sur 5 : la longueur de la carte/);
+    const reponses = ['20', '18', '1,6', '9'];
+    for (const [i, r] of reponses.entries()) expect((await dire(messages, r, d))?.texte).toMatch(new RegExp(`^Mesure ${i + 2} sur 5`));
+    const fin = await dire(messages, '3', d);
+    expect(fin?.texte).toMatch(/^C'est noté : j'ai tes mesures pour ampli I2S MAX98357A, elles remplacent mes cotes par défaut\./);
+    const fichier = JSON.parse(await readFile(join(racine, 'composants-mesures.json'), 'utf8'));
+    expect(fichier.composants.max98357a).toEqual({ longueur: 20, largeur: 18, epaisseur: 1.6, hauteur_dessus: 9, hauteur_dessous: 3 });
+    // Posé ensuite : ce sont ses mesures, plus un mot sur des cotes par défaut.
+    await dire(messages, 'Fais-moi une boîte de 120 par 100 par 40', d);
+    expect((await dire(messages, 'pose l’ampli dans la boîte', d))?.texte).not.toMatch(/cotes par défaut/);
+    const oubli = await dire(messages, 'oublie mes mesures de l’ampli', d);
+    expect(oubli?.texte).toMatch(/^C'est fait : j'ai mis de côté tes 5 mesures pour ampli I2S MAX98357A/);
+    const apres = JSON.parse(await readFile(join(racine, 'composants-mesures.json'), 'utf8'));
+    expect(apres.composants.max98357a).toBeUndefined();
+    expect(apres.mises_de_cote.max98357a[0].champs).toMatchObject({ longueur: 20 });
+    expect((await dire([], 'oublie mes mesures', d))?.texte).toBe("Je n'ai aucune mesure de toi à oublier.");
+  });
+
   it('sans OpenSCAD : dit, rien inventé', async () => {
     const sortie = await dire([], 'Fais-moi une boîte de 80 par 50 par 30', deps({ programmes: { ...deps().programmes, openscad: () => null } }));
     expect(sortie).toEqual({ texte: ATELIER_SANS_OPENSCAD });

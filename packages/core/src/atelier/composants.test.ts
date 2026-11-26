@@ -1,7 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { ajoutsDe } from './ajouts.js';
 import {
+  ajouterCoteTrouvee,
   ajouterMesure,
+  avecCotesParDefaut,
+  composantsParDefaut,
+  direMesuresPrioritaires,
+  ecrireFichierCotes,
+  etatCoteTrouvee,
+  fusionnerCotes,
+  mesuresPrioritaires,
+  provenanceCotes,
   composant,
   composantNomme,
   COMPOSANTS,
@@ -50,6 +59,45 @@ describe('bibliothèque : les données', () => {
       expect(geometrieCarte(composant(id)!, {})).toBeNull();
     }
     expect(COMPOSANTS).toHaveLength(8);
+  });
+
+  it('cotes par défaut : seulement sans mesure ni lecture, « à vérifier », jamais dans le fichier', () => {
+    const d = avecCotesParDefaut({}, {});
+    expect(Object.keys(d).sort()).toEqual(['haut_parleur_3w_4ohm', 'inmp441', 'max98357a']);
+    expect(etatCoteTrouvee(d.max98357a!.longueur!)).toMatchObject({ etat: 'incertain', valeur: 19.4, defaut: true });
+    // Elles suffisent à poser l'ampli et le micro, sans aucune question.
+    const m = fusionnerCotes({}, d, { uneSource: true });
+    expect(geometrieCarte(composant('max98357a')!, m)).toMatchObject({ longueur: 19.4, largeur: 17.8 });
+    expect(geometrieCarte(composant('inmp441')!, m)).toMatchObject({ longueur: 14, largeur: 14 });
+    // Sans « une seule source » (cotes sûres seulement), elles ne servent pas.
+    expect(fusionnerCotes({}, d)).toEqual({});
+    expect(provenanceCotes('max98357a', {}, d, { uneSource: true }).incertitudes[0]).toMatch(/19,4 mm, cote par défaut \(module MAX98357A courant, avec son bornier à vis\), pas mesurée — à vérifier sur ta pièce\./);
+    expect(composantsParDefaut(['max98357a', 'raspberry_pi_5'], {}, d).map((c) => c.id)).toEqual(['max98357a']);
+    // Une mesure de l'utilisateur : plus aucune cote par défaut pour ce composant (le reste se demande).
+    expect(avecCotesParDefaut({ max98357a: { longueur: 20 } }, {}).max98357a).toBeUndefined();
+    // Une lecture sur Internet efface la cote par défaut de ce champ, et l'inverse n'arrive jamais.
+    const lue = ajouterCoteTrouvee(d, 'max98357a', 'longueur', { valeur: 18, source: 'https://a.test/x' }).cotes;
+    expect(lue.max98357a!.longueur).toEqual([{ valeur: 18, source: 'https://a.test/x' }]);
+    expect(avecCotesParDefaut({}, lue).max98357a!.longueur).toEqual([{ valeur: 18, source: 'https://a.test/x' }]);
+    // Jamais écrites.
+    expect(JSON.parse(ecrireFichierCotes(lue)).cotes).toEqual({ max98357a: { longueur: [{ valeur: 18, source: 'https://a.test/x' }] } });
+  });
+
+  it('« micro USB », « micro HDMI » ne sont pas le micro', () => {
+    expect(composantNomme('une ouverture pour le micro usb')).toBeNull();
+    expect(composantNomme('pose le micro dans la boite')?.id).toBe('inmp441');
+    expect(composantNomme('un micro i2s inmp441')?.id).toBe('inmp441');
+  });
+
+  it('mesures qui passent avant Internet : dites, sauf celles mises de côté ou qui concordent', () => {
+    const id = 'esp32_s3_devkitc_1_borniers';
+    const deux = (v: number) => [{ valeur: v, source: 'https://a.test/x' }, { valeur: v, source: 'https://b.test/y' }];
+    const cotes = { [id]: { longueur: deux(70), largeur: deux(25.5), epaisseur: [{ valeur: 1.2, source: 'https://a.test/x' }], hauteur_dessus: deux(10) } };
+    const mesures = { [id]: { longueur: 70.2, largeur: 26, epaisseur: 1.6, hauteur_dessus: 30 } };
+    // 70,2 concorde ; 26 passe avant 25,5 (sûre) ; 1,6 passe avant 1,2 (une source) ; 30 contre 10 sûr : mise de côté, pas ici.
+    expect(mesuresPrioritaires(id, mesures, cotes).map((x) => [x.champ, x.mesure, x.trouvee, x.sure])).toEqual([['largeur', 26, 25.5, true], ['epaisseur', 1.6, 1.2, false]]);
+    expect(direMesuresPrioritaires(id, mesures, cotes)).toMatch(/^Je garde tes mesures plutôt que celles d'Internet \(la largeur de la carte : 26 mm mesurés par toi, 25,5 mm sur Internet ; l’épaisseur de la carte : 1,6 mm mesurés par toi, 1,2 mm sur Internet\)/);
+    expect(direMesuresPrioritaires(id, {}, cotes)).toBe('');
   });
 
   it('les noms dans une phrase', () => {

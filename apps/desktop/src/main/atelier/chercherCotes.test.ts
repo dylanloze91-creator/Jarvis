@@ -289,6 +289,24 @@ describe('l’examen, avec un faux Internet', () => {
     await expect(readFile(join(racine, 'composants-mesures.json'), 'utf8')).rejects.toThrow();
   });
 
+  it('une mesure de l’utilisateur qui passe avant Internet : c’est dit, avec les deux nombres', async () => {
+    // L'écran : Internet dit 35,4 mm (deux sites), lui a mesuré 36 : sa mesure reste, et la réponse le dit.
+    await writeFile(join(racine, 'composants-mesures.json'), JSON.stringify({ version: 1, composants: { [OLED]: { longueur: 36 } } }), 'utf8');
+    const d: AtelierDeps = {
+      racine,
+      jour: () => '2026-11-27',
+      volume: async () => ({ x: 250, y: 250, z: 250 }),
+      imprimante: () => null,
+      programmes: { openscad: () => null, rendreStl: async () => ({ ok: false, message: '' }), rendreImage: async () => ({ ok: false }), trancher: async () => ({ ok: false, message: '', gcode: null, infos: null }) },
+      chercherCotes: fauxInternetExamen(),
+    };
+    const r = await tourAtelier({ text: EXAMEN, messages: [], place: 'fenetre', confirm: async () => false }, d);
+    expect(r?.texte).toMatch(/Je garde tes mesures plutôt que celles d'Internet \(la longueur de la carte de l’écran : 36 mm mesurés par toi, 35,4 mm sur Internet\) : c'est toi qui as la pièce en main\. Si elles viennent d'une autre carte, dis « oublie mes mesures de écran OLED/);
+    const fichier = JSON.parse(await readFile(join(racine, 'composants-mesures.json'), 'utf8'));
+    expect(fichier.composants[OLED]).toEqual({ longueur: 36 });
+    expect(fichier.mises_de_cote).toBeUndefined();
+  });
+
   it('d’anciennes mesures sans référence qui contredisent le plan : mises de côté (gardées), et c’est dit', async () => {
     await writeFile(join(racine, 'composants-mesures.json'), JSON.stringify({ version: 1, composants: { [ESP]: { longueur: 73, largeur: 83, epaisseur: 1.6 } } }), 'utf8');
     const d: AtelierDeps = {
