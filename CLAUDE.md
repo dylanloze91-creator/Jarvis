@@ -1202,3 +1202,17 @@ Demander une application dans la discussion normale démarre tout de suite, raco
 - dans Jarvis Test, la création passe **avant** l'atelier 3D (`session.ts`, `creationAsked`) : « fais-moi une appli qui dessine des boîtes » est une création, « crée-moi un boîtier pour un compteur » reste une pièce ; aucune phrase d'essai de l'atelier ne doit être reconnue par `detectCreationRequest` (`atelier/phrases-creation.test.ts`) ;
 - « fais moi une appli » sans trait d'union est une création, comme « fais-moi » (26 novembre).
 
+## Atelier 3D, petits restes de la revue de nuit (branche `claude/atelier-restes`, Jarvis Test seulement)
+
+Partie de `claude/dev`, nuit du 26 au 27 novembre. Rapport : `rapports/2026-11-27-atelier-restes.md`. **Pas de fusion dans `claude/dev`, pas de publication, rien envoyé à l'imprimante.**
+
+- **Cotes par défaut « à vérifier »** (`packages/core/src/atelier/composants.ts`, `COTES_PAR_DEFAUT`, `avecCotesParDefaut`) : l'ampli MAX98357A, le micro INMP441 et le haut-parleur 3 W 4 Ω ont les cotes des modules les plus courants. Une cote par défaut porte `defaut: true` (`CoteLue`) : elle ne sert que s'il n'y a ni mesure de l'utilisateur ni aucune lecture, n'est **jamais écrite** dans `composants-cotes.json`, et la réponse dit « j'ai pris mes cotes par défaut… à vérifier sur ta pièce avant d'imprimer ». L'ampli et le micro se posent donc sans question (le micro est devenu une carte posable) ; le haut-parleur n'est pas encore tenu dans une boîte, mais sa place par défaut est dite. Un composant dont l'utilisateur a mesuré quelque chose ne reçoit plus aucune cote par défaut.
+- **« je veux mesurer l'ampli »** : les questions du pied à coulisse commencent, ses mesures remplacent les cotes par défaut (`REPRISE_MESURES`). **« oublie mes mesures de l'ESP32 »** : mises de côté dans `composants-mesures.json` (`mises_de_cote`), jamais effacées (décision `oublierMesures`).
+- **Mesures de l'utilisateur avant Internet** (`mesuresPrioritaires`, `direMesuresPrioritaires`) : après une recherche, quand une mesure de l'utilisateur diffère de ce qu'Internet dit (plus de 0,25 mm) et reste utilisée, la réponse le dit avec les deux nombres. Les mesures que `mesuresContredites` met de côté (cote sûre, plus de 1 mm d'écart) gardent leur phrase d'avant.
+- **Banc de la recherche en vrai** (`apps/desktop/src/main/atelier/cotes-web.banc.ts`, `npm run banc:cotes-web --workspace @jarvis/desktop`, hors de `npm test`) : chaque recherche est comptée dans un fichier du jour (20 au plus) et espacée de 60 s ; avec `JARVIS_COTES_CLE` (clé Tavily, jamais écrite), Tavily seul, sans repli sur les moteurs sans clé ; chaque appel au modèle prend la réservation locale de la carte graphique (`gpu.json`).
+
+À ne pas casser :
+
+- une cote par défaut n'est jamais écrite dans un fichier, jamais dite sûre, et cède devant une mesure, une lecture ou une valeur choisie ;
+- la bibliothèque seule (`geometrieCarte(c, {})`) ne connaît toujours aucune cote pour les composants « à mesurer » : les cotes par défaut sont une couche à part, ajoutée par le PC ;
+- le banc de la recherche ne dépasse jamais son compte du jour, et ne lit la clé que dans une copie temporaire du coffre.

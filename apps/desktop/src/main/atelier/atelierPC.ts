@@ -65,6 +65,9 @@ export function adresseImprimante(printer: Settings['printer'], live: boolean): 
   return checkRoverBaseUrl(adresse).ok ? adresse : null;
 }
 
+/** Le modèle local a ce temps-là pour lire une page (chargement du modèle compris). */
+export const DELAI_LECTURE_MS = 90_000;
+
 export function rechercheCotesPC(getSettings: () => Settings, searchRegistry: SearchProviderRegistry): DepsChercherCotes {
   return {
     chercher: async (query) => {
@@ -108,7 +111,9 @@ export function rechercheCotesPC(getSettings: () => Settings, searchRegistry: Se
           ],
           options: { temperature: 0, num_predict: 800, num_ctx: 8192 },
         }),
-        ...(signal ? { signal } : {}),
+        // Jamais sans délai : la nuit du 26 au 27 novembre, une recherche est restée dix minutes sur une
+        // seule page (essai en vrai). Au-delà, la page est passée, la recherche continue.
+        signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(DELAI_LECTURE_MS)]) : AbortSignal.timeout(DELAI_LECTURE_MS),
       });
       if (!res.ok) throw new Error(`Ollama a répondu HTTP ${res.status} (${model})`);
       const payload = (await res.json()) as { message?: { content?: string } };

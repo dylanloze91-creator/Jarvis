@@ -169,7 +169,17 @@ it('recherche des cotes en vrai, comptée et espacée', { timeout: 90 * 60_000 }
         writeFileSync(COMPTEUR, `${JSON.stringify(apres, null, 2)}\n`, 'utf8');
       }
     },
-    modele: (systeme: string, demande: string, signal?: AbortSignal) => avecCarte('lecture des cotes d’une page (quelques secondes)', () => base.modele(systeme, demande, signal)),
+    modele: async (systeme: string, demande: string, signal?: AbortSignal) => {
+      const attente = Date.now();
+      return avecCarte('lecture des cotes d’une page (quelques secondes)', async () => {
+        const debut = Date.now();
+        try {
+          return await base.modele(systeme, demande, signal);
+        } finally {
+          console.log(`  modèle : ${Math.round((debut - attente) / 1000)} s d'attente de la carte, ${Math.round((Date.now() - debut) / 1000)} s de lecture (${demande.length} caractères)`);
+        }
+      });
+    },
   };
 
   const produits = (process.env.JARVIS_COTES_PRODUITS ?? PRODUITS_DEFAUT)
