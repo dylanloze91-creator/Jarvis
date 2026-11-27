@@ -1202,3 +1202,22 @@ Demander une application dans la discussion normale démarre tout de suite, raco
 - dans Jarvis Test, la création passe **avant** l'atelier 3D (`session.ts`, `creationAsked`) : « fais-moi une appli qui dessine des boîtes » est une création, « crée-moi un boîtier pour un compteur » reste une pièce ; aucune phrase d'essai de l'atelier ne doit être reconnue par `detectCreationRequest` (`atelier/phrases-creation.test.ts`) ;
 - « fais moi une appli » sans trait d'union est une création, comme « fais-moi » (26 novembre).
 
+## Jarvis Développeur facile, étape 3 : suivre son projet, Claude en renfort (branche `claude/developpeur-facile-etape3`, Jarvis Test seulement, coupé par défaut)
+
+Partie de `claude/dev`, nuit du 26 au 27 novembre. Cahier `docs/specs/developpeur-facile-etape3.md` (§§ 2 et 3, sur `claude/feuille-19-nov`). Rapport : `rapports/2026-11-27-developpeur-facile-etape3.md`. **Pas de fusion, pas de publication. Aucun appel payant n'a eu lieu : faux Claude dans tous les essais. Rien essayé dans la fenêtre.**
+
+- **Suivi** (`packages/core/src/developer/facile/suivi.ts`, pur, sans modèle) : `facilePlan(mission)` = six étapes en mots simples, états tirés des étapes réelles du moteur (`a-faire`, `en-cours`, `fait`, `rate`, `attend`, `saute`), sur la carte dès le début (`FacilePayload.plan`) ; `detectProgressQuestion` / `facileProgressReply` (« où en est mon appli ? », trois phrases, une à l'enceinte) ; `detectMyAppsRequest` / `myAppsReply` et l'enveloppe `facile-applis` (« mes applis »). Dans `session.ts`, le suivi (`FacileCoordinator.suivi`) passe avant l'atelier et avant le tri du chef d'orchestre.
+- **Fichiers du PC** (`apps/desktop/src/main/chatMission/suiviStore.ts`, écriture sûre, hors de `settings.json`) : `userData/developer/facile/applis.json` (la liste) et `renfort.json` (dépenses chez Claude, par appli et par mois).
+- **Claude en renfort** (`packages/core/src/developer/renfort/renfort.ts`) : table `CLAUDE_MODELS` (identifiants et prix **relevés chez Anthropic le 27 novembre 2026**, `CLAUDE_PRICES_DATE`), `renfortReason` (signes mesurés seulement), `chooseRenfortModel` (Haiku pour une correction, Sonnet sinon, jamais Opus sans demande), `estimateRenfort` (« environ »), `checkRenfortBudget` / `addRenfortSpend` (plafond par appli 2 € par défaut, par mois facultatif), `buildRenfortPackage` / `renfortFileRefusal` (ce qui part, ce qui ne part jamais, `redactSecrets`), `callClaude` (HTTP direct comme `providers/anthropic.ts`, `fetch` remplaçable, ni température ni réflexion réglée), `meteredClaudeCall` (plafond revérifié juste avant l'appel, coût réel après).
+- **Réglage** `developer.renfort` (`enabled`, `apiKey`, `capPerAppEur`, `capPerMonthEur`, `usdToEur`), facultatif, **sans défaut Zod** ; `apiKey` est dans la liste du coffre (`SECRET_SETTING_PATHS`). Interface : `components/developer/RenfortSettings.tsx`, visible dans Jarvis Test seulement.
+- **Dans le moteur** : `TaskHooks.writer` (facultatif) remplace le modèle local pour écrire le contenu des fichiers dans l'écriture fichier par fichier ; `MissionWorkflow.setWriter`, `DeveloperController.setMissionWriter`. Après le « oui » sur la carte, le coordinateur relance une mission « modifier » sur le projet avec ce rédacteur, puis le retire à la fin. Sans rédacteur, la boucle est celle d'avant. **Non essayé de bout en bout avec une vraie mission.**
+- **Entraînement** : `stagingFor` (`evidence.ts`) rejette toute preuve dont le modèle est un Claude ou qui porte `RENFORT_EVIDENCE_LIMIT`.
+
+À ne pas casser :
+
+- aucun appel à Claude sans le clic « Oui, avec Claude », jamais depuis une enceinte, jamais sans clé ;
+- le plafond est revérifié avant chaque appel, et le coût réel compté après chaque appel ; un registre des dépenses illisible bloque l'appel ;
+- rien ne part hors du dossier du projet ; clés, réglages et fichiers de jetons sont refusés avant l'envoi ;
+- les prix ne se changent qu'après relecture de la documentation d'Anthropic, avec la date ;
+- une étape du plan n'est dite faite que si ses étapes réelles sont finies ; `parseSettings({})` ne gagne aucune clé ; le chat du fournisseur Anthropic (`providers/anthropic.ts`) n'est pas touché ;
+- rien de ce que Claude écrit n'entre dans un jeu d'entraînement.

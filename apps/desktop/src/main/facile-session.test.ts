@@ -22,6 +22,7 @@ vi.mock('electron', () => ({
   nativeImage: {},
 }));
 
+import type { ChatMissionEnvelope } from '@jarvis/core';
 const core = await import('@jarvis/core');
 const { createToolManager } = await import('./tools/index.js');
 const { ChatSession } = await import('./session.js');
@@ -43,7 +44,7 @@ const getSettings = () => settings;
 const DEMANDE = 'Fais-moi une petite appli pour noter mes heures de chantier';
 
 function build(options: {
-    suivi?: (text: string, where: { voice: boolean; speaker: boolean }) => { text: string; envelope?: core.ChatMissionEnvelope } | null; facile?: boolean; busy?: boolean; hubEnabled?: boolean; atelier?: boolean } = {}) {
+    suivi?: (text: string, where: { voice: boolean; speaker: boolean }) => { text: string; envelope?: ChatMissionEnvelope } | null; facile?: boolean; busy?: boolean; hubEnabled?: boolean; atelier?: boolean } = {}) {
   let modelCalls = 0;
   /** Phrases que l'atelier 3D a reçues (il répond à tout ce qu'on lui donne). */
   const atelierAsked: string[] = [];
